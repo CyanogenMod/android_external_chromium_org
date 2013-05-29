@@ -4,19 +4,20 @@
 
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 
+#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/fileapi/external_mount_points.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_mount_point_provider.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/fileapi/mock_file_system_options.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/browser/fileapi/mock_file_system_options.h"
 
 namespace drive {
 namespace util {
@@ -91,7 +92,7 @@ TEST(FileSystemUtilTest, ExtractDrivePathFromFileSystemUrl) {
   base::ScopedTempDir temp_dir_;
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-  MessageLoop message_loop;
+  base::MessageLoop message_loop;
   scoped_refptr<fileapi::ExternalMountPoints> mount_points =
       fileapi::ExternalMountPoints::CreateRefCounted();
   scoped_refptr<fileapi::FileSystemContext> context(
@@ -168,17 +169,6 @@ TEST(FileSystemUtilTest, EscapeUtf8FileName) {
   EXPECT_EQ("foo", EscapeUtf8FileName("foo"));
   EXPECT_EQ("foo\xE2\x88\x95zzz", EscapeUtf8FileName("foo/zzz"));
   EXPECT_EQ("\xE2\x88\x95\xE2\x88\x95\xE2\x88\x95", EscapeUtf8FileName("///"));
-}
-
-TEST(FileSystemUtilTest, ExtractResourceIdFromUrl) {
-  EXPECT_EQ("file:2_file_resource_id", ExtractResourceIdFromUrl(
-      GURL("https://file1_link_self/file:2_file_resource_id")));
-  // %3A should be unescaped.
-  EXPECT_EQ("file:2_file_resource_id", ExtractResourceIdFromUrl(
-      GURL("https://file1_link_self/file%3A2_file_resource_id")));
-
-  // The resource ID cannot be extracted, hence empty.
-  EXPECT_EQ("", ExtractResourceIdFromUrl(GURL("https://www.example.com/")));
 }
 
 TEST(FileSystemUtilTest, GetCacheRootPath) {
@@ -274,6 +264,66 @@ TEST(FileSystemUtilTest, IsSpecialResourceId) {
 
   EXPECT_TRUE(util::IsSpecialResourceId("<drive>"));
   EXPECT_TRUE(util::IsSpecialResourceId("<other>"));
+}
+
+TEST(FileSystemUtilTest, GDocFile) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  GURL url("https://docs.google.com/document/d/"
+           "1YsCnrMxxgp7LDdtlFDt-WdtEIth89vA9inrILtvK-Ug/edit");
+  std::string resource_id("1YsCnrMxxgp7LDdtlFDt-WdtEIth89vA9inrILtvK-Ug");
+
+  // Read and write gdoc.
+  base::FilePath file = temp_dir.path().AppendASCII("test.gdoc");
+  EXPECT_TRUE(CreateGDocFile(file, url, resource_id));
+  EXPECT_TRUE(HasGDocFileExtension(file));
+  EXPECT_EQ(url, ReadUrlFromGDocFile(file));
+  EXPECT_EQ(resource_id, ReadResourceIdFromGDocFile(file));
+
+  // Read and write gsheet.
+  file = temp_dir.path().AppendASCII("test.gsheet");
+  EXPECT_TRUE(CreateGDocFile(file, url, resource_id));
+  EXPECT_TRUE(HasGDocFileExtension(file));
+  EXPECT_EQ(url, ReadUrlFromGDocFile(file));
+  EXPECT_EQ(resource_id, ReadResourceIdFromGDocFile(file));
+
+  // Read and write gslides.
+  file = temp_dir.path().AppendASCII("test.gslides");
+  EXPECT_TRUE(CreateGDocFile(file, url, resource_id));
+  EXPECT_TRUE(HasGDocFileExtension(file));
+  EXPECT_EQ(url, ReadUrlFromGDocFile(file));
+  EXPECT_EQ(resource_id, ReadResourceIdFromGDocFile(file));
+
+  // Read and write gdraw.
+  file = temp_dir.path().AppendASCII("test.gdraw");
+  EXPECT_TRUE(CreateGDocFile(file, url, resource_id));
+  EXPECT_TRUE(HasGDocFileExtension(file));
+  EXPECT_EQ(url, ReadUrlFromGDocFile(file));
+  EXPECT_EQ(resource_id, ReadResourceIdFromGDocFile(file));
+
+  // Read and write gtable.
+  file = temp_dir.path().AppendASCII("test.gtable");
+  EXPECT_TRUE(CreateGDocFile(file, url, resource_id));
+  EXPECT_TRUE(HasGDocFileExtension(file));
+  EXPECT_EQ(url, ReadUrlFromGDocFile(file));
+  EXPECT_EQ(resource_id, ReadResourceIdFromGDocFile(file));
+
+  // Read and write glink.
+  file = temp_dir.path().AppendASCII("test.glink");
+  EXPECT_TRUE(CreateGDocFile(file, url, resource_id));
+  EXPECT_TRUE(HasGDocFileExtension(file));
+  EXPECT_EQ(url, ReadUrlFromGDocFile(file));
+  EXPECT_EQ(resource_id, ReadResourceIdFromGDocFile(file));
+
+  // Non GDoc file.
+  file = temp_dir.path().AppendASCII("test.txt");
+  std::string data = "Hello world!";
+  EXPECT_EQ(static_cast<int>(data.size()),
+            file_util::WriteFile(file, data.data(), data.size()));
+  EXPECT_FALSE(HasGDocFileExtension(file));
+  EXPECT_TRUE(ReadUrlFromGDocFile(file).is_empty());
+  EXPECT_TRUE(ReadResourceIdFromGDocFile(file).empty());
 }
 
 }  // namespace util

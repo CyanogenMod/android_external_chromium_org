@@ -113,7 +113,7 @@ void MailboxOutputSurface::DiscardBackbuffer() {
   }
 }
 
-void MailboxOutputSurface::Reshape(gfx::Size size) {
+void MailboxOutputSurface::Reshape(gfx::Size size, float scale_factor) {
   if (size == size_)
     return;
 
@@ -197,11 +197,11 @@ void MailboxOutputSurface::OnSwapAck(const cc::CompositorFrameAck& ack) {
   CompositorOutputSurface::OnSwapAck(ack);
 }
 
-void MailboxOutputSurface::SwapBuffers(const cc::LatencyInfo&) {
+void MailboxOutputSurface::SwapBuffers(const ui::LatencyInfo&) {
 }
 
 void MailboxOutputSurface::PostSubBuffer(gfx::Rect rect,
-                                         const cc::LatencyInfo&) {
+                                         const ui::LatencyInfo&) {
   NOTIMPLEMENTED()
       << "Partial swap not supported with composite-to-mailbox yet.";
 

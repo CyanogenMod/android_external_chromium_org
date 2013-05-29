@@ -21,7 +21,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
-#include "ui/message_center/message_center_constants.h"
+#include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/notifier_settings.h"
 
@@ -151,7 +151,8 @@ bool MessageCenterNotificationManager::UpdateNotification(
                                           notification.notification_id(),
                                           notification.title(),
                                           notification.body(),
-                                          notification.optional_fields());
+                                          notification.optional_fields(),
+                                          notification.delegate());
       new_notification->StartDownloads();
       return true;
     }
@@ -240,30 +241,6 @@ void MessageCenterNotificationManager::OnNotificationRemoved(
       profile_notifications_.find(notification_id);
   if (iter != profile_notifications_.end())
     RemoveProfileNotification(iter->second, by_user);
-}
-
-void MessageCenterNotificationManager::OnNotificationClicked(
-    const std::string& notification_id) {
-  ProfileNotification* profile_notification =
-      FindProfileNotification(notification_id);
-  if (!profile_notification)
-    return;
-  profile_notification->notification().Click();
-}
-
-void MessageCenterNotificationManager::OnNotificationButtonClicked(
-    const std::string& notification_id,
-    int button_index) {
-  ProfileNotification* profile_notification =
-      FindProfileNotification(notification_id);
-  if (!profile_notification)
-    return;
-  profile_notification->notification().ButtonClick(button_index);
-}
-
-void MessageCenterNotificationManager::OnNotificationDisplayed(
-    const std::string& notification_id) {
-  FindProfileNotification(notification_id)->notification().Display();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -379,6 +356,7 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloadByKey(
 void MessageCenterNotificationManager::ImageDownloads::DownloadComplete(
     const SetImageCallback& callback,
     int download_id,
+    int http_status_code,
     const GURL& image_url,
     int requested_size,
     const std::vector<SkBitmap>& bitmaps) {
@@ -464,7 +442,8 @@ void MessageCenterNotificationManager::AddProfileNotification(
                                    notification.body(),
                                    notification.display_source(),
                                    profile_notification->GetExtensionId(),
-                                   notification.optional_fields());
+                                   notification.optional_fields(),
+                                   notification.delegate());
   profile_notification->StartDownloads();
 }
 

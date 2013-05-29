@@ -13,8 +13,8 @@
 #include "base/string16.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/ui/webui/managed_user_passphrase_dialog.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
@@ -33,7 +33,7 @@ class PrefRegistrySyncable;
 // This class handles all the information related to a given managed profile
 // (e.g. the installed content packs, the default URL filtering behavior, or
 // manual whitelist/blacklist overrides).
-class ManagedUserService : public ProfileKeyedService,
+class ManagedUserService : public BrowserContextKeyedService,
                            public extensions::ManagementPolicy::Provider,
                            public content::NotificationObserver {
  public:
@@ -50,10 +50,18 @@ class ManagedUserService : public ProfileKeyedService,
 
   bool ProfileIsManaged() const;
 
+  // Checks whether the given profile is managed without constructing a
+  // ManagedUserService (which could lead to cyclic dependencies).
+  static bool ProfileIsManaged(Profile* profile);
+
   // Returns the elevation state for specific WebContents.
   bool IsElevatedForWebContents(const content::WebContents* web_contents) const;
 
   static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  // Returns whether managed users are enabled by Finch or the command line
+  // flag.
+  static bool AreManagedUsersEnabled();
 
   // Returns the URL filter for the IO thread, for filtering network requests
   // (in ManagedModeResourceThrottle).
@@ -101,13 +109,6 @@ class ManagedUserService : public ProfileKeyedService,
   void RequestAuthorization(content::WebContents* web_contents,
                             const PassphraseCheckedCallback& callback);
 
-  // Add an elevation for a specific extension which allows the managed user to
-  // install/uninstall this specific extension.
-  void AddElevationForExtension(const std::string& extension_id);
-
-  // Remove the elevation for a specific extension.
-  void RemoveElevationForExtension(const std::string& extension_id);
-
   // Initializes this object. This method does nothing if the profile is not
   // managed.
   void Init();
@@ -115,8 +116,8 @@ class ManagedUserService : public ProfileKeyedService,
   // Marks the profile as managed and initializes it.
   void InitForTesting();
 
-  // Initializes this object for syncing managed-user-related data with the
-  // server.
+  // Initializes this profile for syncing, using the provided |token| to
+  // authenticate requests.
   void InitSync(const std::string& token);
 
   // Convenience method that registers this managed user with
@@ -126,16 +127,12 @@ class ManagedUserService : public ProfileKeyedService,
   void RegisterAndInitSync(
       ManagedUserRegistrationService* registration_service);
 
-  void set_startup_elevation(bool elevation) {
-    startup_elevation_ = elevation;
-  }
+  // Returns a pseudo-email address for systems that expect well-formed email
+  // addresses (like Sync), even though we're not signed in.
+  static const char* GetManagedUserPseudoEmail();
 
-  bool startup_elevation() const {
-    return startup_elevation_;
-  }
-
-  void set_skip_dialog_for_testing(bool skip) {
-    skip_dialog_for_testing_ = skip;
+  void set_elevated_for_testing(bool skip) {
+    elevated_for_testing_ = skip;
   }
 
   // extensions::ManagementPolicy::Provider implementation:
@@ -213,11 +210,8 @@ class ManagedUserService : public ProfileKeyedService,
 
   base::WeakPtrFactory<ManagedUserService> weak_ptr_factory_;
 
-  // Owns us via the ProfileKeyedService mechanism.
+  // Owns us via the BrowserContextKeyedService mechanism.
   Profile* profile_;
-
-  // Is true if the managed user should start in elevated mode.
-  bool startup_elevation_;
 
   content::NotificationRegistrar registrar_;
   PrefChangeRegistrar pref_change_registrar_;
@@ -226,8 +220,8 @@ class ManagedUserService : public ProfileKeyedService,
   // by the managed user.
   std::set<std::string> elevated_for_extensions_;
 
-  // Skips the passphrase dialog in tests if set to true.
-  bool skip_dialog_for_testing_;
+  // Sets a profile in elevated state for testing if set to true.
+  bool elevated_for_testing_;
 
   URLFilterContext url_filter_context_;
 };

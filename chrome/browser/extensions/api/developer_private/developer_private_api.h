@@ -13,13 +13,13 @@
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/extensions/requirements_checker.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_view_host.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 
 class ExtensionService;
 
@@ -55,7 +55,7 @@ typedef std::vector<linked_ptr<developer::ItemInspectView> >
 namespace extensions {
 
 // The profile-keyed service that manages the DeveloperPrivate API.
-class DeveloperPrivateAPI : public ProfileKeyedService,
+class DeveloperPrivateAPI : public BrowserContextKeyedService,
                             public content::NotificationObserver {
  public:
   // Convenience method to get the DeveloperPrivateAPI for a profile.
@@ -70,7 +70,7 @@ class DeveloperPrivateAPI : public ProfileKeyedService,
     return last_unpacked_directory_;
   }
 
-  // ProfileKeyedService implementation
+  // BrowserContextKeyedService implementation
   virtual void Shutdown() OVERRIDE;
 
   // content::NotificationObserver implementation.
@@ -378,54 +378,6 @@ class DeveloperPrivateExportSyncfsFolderToLocalfsFunction
    // This is set to false if any of the copyFile operations fail on
    // call of the API. It is returned as a response of the API call.
    bool success_;
-};
-
-class DeveloperPrivateLoadProjectToSyncfsFunction
-    : public AsyncExtensionFunction {
-  public:
-   DECLARE_EXTENSION_FUNCTION("developerPrivate.loadProjectToSyncfs",
-                              DEVELOPERPRIVATE_LOADPROJECTTOSYNCFS);
-
-   DeveloperPrivateLoadProjectToSyncfsFunction();
-
-  protected:
-   virtual ~DeveloperPrivateLoadProjectToSyncfsFunction();
-
-   // ExtensionFunction
-   virtual bool RunImpl() OVERRIDE;
-
-   void CopyFolder(const base::FilePath::StringType& project_name);
-
-   void CopyFiles(const std::vector<base::FilePath>& paths);
-
-   void CopyFilesCallback(const base::PlatformFileError result);
-
-  private:
-   // Number of pending copy files callbacks.
-   // It should only be modified on the IO Thread.
-   int pendingCallbacksCount_;
-
-   // True only when all the copyFiles job are successful.
-   // It should only be modified on the IO thread.
-   bool success_;
-
-   scoped_refptr<fileapi::FileSystemContext> context_;
-};
-
-class DeveloperPrivateGetProjectsInfoFunction : public AsyncExtensionFunction {
-  public:
-   DECLARE_EXTENSION_FUNCTION("developerPrivate.getProjectsInfo",
-                              DEVELOPERPRIVATE_GETPROJECTSINFO);
-
-   DeveloperPrivateGetProjectsInfoFunction();
-
-  protected:
-   virtual ~DeveloperPrivateGetProjectsInfoFunction();
-
-   void ReadFolder();
-
-   // ExtensionFunction
-   virtual bool RunImpl() OVERRIDE;
 };
 
 class DeveloperPrivateLoadProjectFunction : public AsyncExtensionFunction {

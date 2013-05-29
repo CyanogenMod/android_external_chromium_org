@@ -30,22 +30,26 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
 
     self._login_ext_dir = os.path.join(os.path.dirname(__file__),
                                        'chromeos_login_ext')
-    if not cri.local:
-      # Push a dummy login extension to the device.
-      # This extension automatically logs in as test@test.test
-      logging.info('Copying dummy login extension to the device')
-      cri.PushFile(self._login_ext_dir, '/tmp/')
-      self._login_ext_dir = '/tmp/chromeos_login_ext'
-      cri.RunCmdOnDevice(['chown', '-R', 'chronos:chronos',
-                          self._login_ext_dir])
 
-      # Copy local extensions to temp directories on the device.
-      for e in options.extensions_to_load:
-        output = cri.RunCmdOnDevice(['mktemp', '-d', '/tmp/extension_XXXXX'])
-        extension_dir = output[0].rstrip()
-        cri.PushFile(e.path, extension_dir)
-        cri.RunCmdOnDevice(['chown', '-R', 'chronos:chronos', extension_dir])
-        e.local_path = os.path.join(extension_dir, os.path.basename(e.path))
+    # Push a dummy login extension to the device.
+    # This extension automatically logs in as test@test.test
+    # Note that we also perform this copy locally to ensure that
+    # the owner of the extensions is set to chronos.
+    logging.info('Copying dummy login extension to the device')
+    cri.PushFile(self._login_ext_dir, '/tmp/')
+    self._login_ext_dir = '/tmp/chromeos_login_ext'
+    cri.RunCmdOnDevice(['chown', '-R', 'chronos:chronos',
+                        self._login_ext_dir])
+
+    # Copy extensions to temp directories on the device.
+    # Note that we also perform this copy locally to ensure that
+    # the owner of the extensions is set to chronos.
+    for e in options.extensions_to_load:
+      output = cri.RunCmdOnDevice(['mktemp', '-d', '/tmp/extension_XXXXX'])
+      extension_dir = output[0].rstrip()
+      cri.PushFile(e.path, extension_dir)
+      cri.RunCmdOnDevice(['chown', '-R', 'chronos:chronos', extension_dir])
+      e.local_path = os.path.join(extension_dir, os.path.basename(e.path))
 
     # Ensure the UI is running and logged out.
     self._RestartUI()
@@ -58,9 +62,13 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
           ['cryptohome', '--action=remove', '--force', '--user=test@test.test'])
     if options.profile_dir:
       profile_dir = '/home/chronos/Default'
-      cri.GetCmdOutput(['rm', '-rf', profile_dir])
+      cri.RunCmdOnDevice(['rm', '-rf', profile_dir])
       cri.PushFile(options.profile_dir + '/Default', profile_dir)
-      cri.GetCmdOutput(['chown', '-R', 'chronos:chronos', profile_dir])
+      cri.RunCmdOnDevice(['chown', '-R', 'chronos:chronos', profile_dir])
+
+    # Escape all commas in the startup arguments we pass to Chrome
+    # because dbus-send delimits array elements by commas
+    startup_args = [a.replace(',', '\\,') for a in self.GetBrowserStartupArgs()]
 
     # Restart Chrome with the login extension and remote debugging.
     logging.info('Restarting Chrome with flags and login')
@@ -69,7 +77,7 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
             '/org/chromium/SessionManager',
             'org.chromium.SessionManagerInterface.EnableChromeTesting',
             'boolean:true',
-            'array:string:%s' % ','.join(self.GetBrowserStartupArgs())]
+            'array:string:"%s"' % ','.join(startup_args)]
     cri.RunCmdOnDevice(args)
 
     if not cri.local:
@@ -147,12 +155,12 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
         self._forwarder.Close()
         self._forwarder = None
 
-      if self._login_ext_dir:
-        self._cri.RmRF(self._login_ext_dir)
-        self._login_ext_dir = None
+    if self._login_ext_dir:
+      self._cri.RmRF(self._login_ext_dir)
+      self._login_ext_dir = None
 
-      for e in self._options.extensions_to_load:
-        self._cri.RmRF(os.path.dirname(e.local_path))
+    for e in self._options.extensions_to_load:
+      self._cri.RmRF(os.path.dirname(e.local_path))
 
     self._cri = None
 

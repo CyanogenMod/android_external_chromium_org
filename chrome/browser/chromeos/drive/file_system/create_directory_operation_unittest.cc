@@ -4,164 +4,110 @@
 
 #include "chrome/browser/chromeos/drive/file_system/create_directory_operation.h"
 
-#include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
-#include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/chromeos/drive/change_list_loader.h"
-#include "chrome/browser/chromeos/drive/drive_webapps_registry.h"
-#include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
-#include "chrome/browser/chromeos/drive/job_scheduler.h"
-#include "chrome/browser/chromeos/drive/resource_metadata.h"
-#include "chrome/browser/chromeos/drive/test_util.h"
-#include "chrome/browser/google_apis/fake_drive_service.h"
+#include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/google_apis/test_util.h"
-#include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
 namespace file_system {
 
-class CreateDirectoryOperationTest
-    : public testing::Test, public OperationObserver {
+class CreateDirectoryOperationTest : public OperationTestBase {
  protected:
-  CreateDirectoryOperationTest()
-      : ui_thread_(content::BrowserThread::UI, &message_loop_) {
+  // Returns FILE_ERROR_OK if a directory is found at |path|.
+  FileError FindDirectory(const base::FilePath& path) {
+    ResourceEntry entry;
+    FileError error = GetLocalResourceEntry(path, &entry);
+    if (error == FILE_ERROR_OK && !entry.file_info().is_directory())
+      error = FILE_ERROR_NOT_A_DIRECTORY;
+    return error;
   }
-
-  virtual void SetUp() OVERRIDE {
-    scoped_refptr<base::SequencedWorkerPool> pool =
-        content::BrowserThread::GetBlockingPool();
-    blocking_task_runner_ =
-        pool->GetSequencedTaskRunner(pool->GetSequenceToken());
-
-    profile_.reset(new TestingProfile);
-    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-
-    fake_drive_service_.reset(new google_apis::FakeDriveService);
-    fake_drive_service_->LoadResourceListForWapi(
-        "chromeos/gdata/root_feed.json");
-    fake_drive_service_->LoadAccountMetadataForWapi(
-        "chromeos/gdata/account_metadata.json");
-    fake_drive_service_->LoadAppListForDriveApi("chromeos/drive/applist.json");
-
-    metadata_.reset(new internal::ResourceMetadata(temp_dir_.path(),
-                                                   blocking_task_runner_));
-
-    FileError error = FILE_ERROR_FAILED;
-    metadata_->Initialize(
-        google_apis::test_util::CreateCopyResultCallback(&error));
-    google_apis::test_util::RunBlockingPoolTask();
-    ASSERT_EQ(FILE_ERROR_OK, error);
-
-    scheduler_.reset(
-        new JobScheduler(profile_.get(), fake_drive_service_.get()));
-
-    DriveWebAppsRegistry drive_web_apps_registry;
-    ChangeListLoader change_list_loader(
-        metadata_.get(), scheduler_.get(), &drive_web_apps_registry);
-
-    // Makes sure the FakeDriveService's content is loaded to the metadata_.
-    change_list_loader.LoadIfNeeded(
-        DirectoryFetchInfo(),
-        google_apis::test_util::CreateCopyResultCallback(&error));
-    google_apis::test_util::RunBlockingPoolTask();
-    ASSERT_EQ(FILE_ERROR_OK, error);
-
-    operation_.reset(
-        new CreateDirectoryOperation(scheduler_.get(), metadata_.get(), this));
-  }
-
-  virtual void TearDown() OVERRIDE {
-    operation_.reset();
-    scheduler_.reset();
-    metadata_.reset();
-    fake_drive_service_.reset();
-    profile_.reset();
-
-    blocking_task_runner_ = NULL;
-  }
-
-  virtual void OnDirectoryChangedByOperation(
-      const base::FilePath& directory_path) OVERRIDE {
-    // Do nothing.
-  }
-
-  CreateDirectoryOperation* operation() const {
-    return operation_.get();
-  }
-
- private:
-  MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
-
-  scoped_ptr<TestingProfile> profile_;
-  base::ScopedTempDir temp_dir_;
-
-  scoped_ptr<google_apis::FakeDriveService> fake_drive_service_;
-  scoped_ptr<internal::ResourceMetadata, test_util::DestroyHelperForTests>
-      metadata_;
-  scoped_ptr<JobScheduler> scheduler_;
-
-  scoped_ptr<CreateDirectoryOperation> operation_;
 };
 
-TEST_F(CreateDirectoryOperationTest, FindFirstMissingParentDirectory) {
-  CreateDirectoryOperation::FindFirstMissingParentDirectoryResult result;
+TEST_F(CreateDirectoryOperationTest, CreateDirectory) {
+  CreateDirectoryOperation operation(blocking_task_runner(),
+                                     observer(),
+                                     scheduler(),
+                                     metadata());
 
-  // Create directory in root.
-  base::FilePath dir_path(FILE_PATH_LITERAL("drive/root/New Folder 1"));
-  operation()->FindFirstMissingParentDirectory(
-      dir_path,
-      google_apis::test_util::CreateCopyResultCallback(&result));
-  google_apis::test_util::RunBlockingPoolTask();
-  EXPECT_EQ(CreateDirectoryOperation::FIND_FIRST_FOUND_MISSING, result.error);
-  EXPECT_EQ(base::FilePath(FILE_PATH_LITERAL("drive/root/New Folder 1")),
-            result.first_missing_parent_path);
-  EXPECT_EQ("fake_root", result.last_dir_resource_id);
+  const base::FilePath kExistingFile(
+      FILE_PATH_LITERAL("drive/root/File 1.txt"));
+  const base::FilePath kExistingDirectory(
+      FILE_PATH_LITERAL("drive/root/Directory 1"));
+  const base::FilePath kNewDirectory1(
+      FILE_PATH_LITERAL("drive/root/New Directory"));
+  const base::FilePath kNewDirectory2 =
+      kNewDirectory1.AppendASCII("New Directory 2/a/b/c");
 
-  // Missing folders in subdir of an existing folder.
-  base::FilePath dir_path2(
-      FILE_PATH_LITERAL("drive/root/Directory 1/New Folder 2"));
-  operation()->FindFirstMissingParentDirectory(
-      dir_path2,
-      google_apis::test_util::CreateCopyResultCallback(&result));
-  google_apis::test_util::RunBlockingPoolTask();
-  EXPECT_EQ(CreateDirectoryOperation::FIND_FIRST_FOUND_MISSING, result.error);
-  EXPECT_EQ(base::FilePath(FILE_PATH_LITERAL(
-                "drive/root/Directory 1/New Folder 2")),
-            result.first_missing_parent_path);
-  EXPECT_NE("fake_root", result.last_dir_resource_id);  // non-root dir.
+  // Create a new directory, not recursively.
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, FindDirectory(kNewDirectory1));
 
-  // Missing two folders on the path.
-  base::FilePath dir_path3 =
-      dir_path2.Append(FILE_PATH_LITERAL("Another Folder"));
-  operation()->FindFirstMissingParentDirectory(
-      dir_path3,
-      google_apis::test_util::CreateCopyResultCallback(&result));
+  FileError error = FILE_ERROR_FAILED;
+  operation.CreateDirectory(
+      kNewDirectory1,
+      true, // is_exclusive
+      false,  // is_recursive
+      google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
-  EXPECT_EQ(CreateDirectoryOperation::FIND_FIRST_FOUND_MISSING, result.error);
-  EXPECT_EQ(base::FilePath(FILE_PATH_LITERAL(
-                "drive/root/Directory 1/New Folder 2")),
-            result.first_missing_parent_path);
-  EXPECT_NE("fake_root", result.last_dir_resource_id);  // non-root dir.
+  EXPECT_EQ(FILE_ERROR_OK, error);
+  EXPECT_EQ(FILE_ERROR_OK, FindDirectory(kNewDirectory1));
+  EXPECT_EQ(1U, observer()->get_changed_paths().size());
+  EXPECT_EQ(1U,
+            observer()->get_changed_paths().count(kNewDirectory1.DirName()));
 
-  // Folders on top of an existing file.
-  operation()->FindFirstMissingParentDirectory(
-      base::FilePath(FILE_PATH_LITERAL("drive/root/File 1.txt/BadDir")),
-      google_apis::test_util::CreateCopyResultCallback(&result));
+  // Create a new directory recursively.
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, FindDirectory(kNewDirectory2));
+  operation.CreateDirectory(
+      kNewDirectory2,
+      true, // is_exclusive
+      false,  // is_recursive
+      google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
-  EXPECT_EQ(CreateDirectoryOperation::FIND_FIRST_FOUND_INVALID, result.error);
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, error);
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, FindDirectory(kNewDirectory2));
 
-  // Existing folder.
-  operation()->FindFirstMissingParentDirectory(
-      base::FilePath(FILE_PATH_LITERAL("drive/root/Directory 1")),
-      google_apis::test_util::CreateCopyResultCallback(&result));
+  operation.CreateDirectory(
+      kNewDirectory2,
+      true, // is_exclusive
+      true,  // is_recursive
+      google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
-  EXPECT_EQ(CreateDirectoryOperation::FIND_FIRST_DIRECTORY_ALREADY_PRESENT,
-            result.error);
+  EXPECT_EQ(FILE_ERROR_OK, error);
+  EXPECT_EQ(FILE_ERROR_OK, FindDirectory(kNewDirectory2));
+
+  // Try to create an existing directory.
+  operation.CreateDirectory(
+      kExistingDirectory,
+      true, // is_exclusive
+      false,  // is_recursive
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  google_apis::test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_EXISTS, error);
+
+  operation.CreateDirectory(
+      kExistingDirectory,
+      false, // is_exclusive
+      false,  // is_recursive
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  google_apis::test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+
+  // Try to create a directory with a path for an existing file.
+  operation.CreateDirectory(
+      kExistingFile,
+      false, // is_exclusive
+      true,  // is_recursive
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  google_apis::test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, error);
+
+  // Try to create a directory under a file.
+  operation.CreateDirectory(
+      kExistingFile.AppendASCII("New Directory"),
+      false, // is_exclusive
+      true,  // is_recursive
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  google_apis::test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, error);
 }
 
 }  // namespace file_system

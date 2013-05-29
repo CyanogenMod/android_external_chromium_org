@@ -17,6 +17,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
+#include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/device_settings_cache.h"
@@ -61,7 +62,6 @@ const char* kKnownSettings[] = {
   kReportDeviceVersionInfo,
   kScreenSaverExtensionId,
   kScreenSaverTimeout,
-  kSettingProxyEverywhere,
   kSignedDataRoamingEnabled,
   kStartUpFlags,
   kStartUpUrls,
@@ -297,17 +297,6 @@ void DeviceSettingsProvider::SetInPolicy() {
     else
       NOTREACHED();
     ApplyRoamingSetting(roaming_value);
-  } else if (prop == kSettingProxyEverywhere) {
-    // TODO(cmasone): NOTIMPLEMENTED() once http://crosbug.com/13052 is fixed.
-    std::string proxy_value;
-    if (value->GetAsString(&proxy_value)) {
-      bool success =
-          device_settings_.mutable_device_proxy_settings()->ParseFromString(
-              proxy_value);
-      DCHECK(success);
-    } else {
-      NOTREACHED();
-    }
   } else if (prop == kReleaseChannel) {
     em::ReleaseChannelProto* release_channel =
         device_settings_.mutable_release_channel();
@@ -500,7 +489,7 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
             entry->deprecated_public_session_id());
         entry_dict->SetIntegerWithoutPathExpansion(
             kAccountsPrefDeviceLocalAccountsKeyType,
-            DEVICE_LOCAL_ACCOUNT_TYPE_PUBLIC_SESSION);
+            policy::DeviceLocalAccount::TYPE_PUBLIC_SESSION);
       }
       account_list->Append(entry_dict.release());
     }
@@ -608,13 +597,6 @@ void DeviceSettingsProvider::DecodeNetworkPolicies(
       policy.has_data_roaming_enabled() &&
       policy.data_roaming_enabled().has_data_roaming_enabled() &&
       policy.data_roaming_enabled().data_roaming_enabled());
-
-  // TODO(cmasone): NOTIMPLEMENTED() once http://crosbug.com/13052 is fixed.
-  std::string serialized;
-  if (policy.has_device_proxy_settings() &&
-      policy.device_proxy_settings().SerializeToString(&serialized)) {
-    new_values_cache->SetString(kSettingProxyEverywhere, serialized);
-  }
 }
 
 void DeviceSettingsProvider::DecodeReportingPolicies(

@@ -266,6 +266,13 @@ bool URLRequestJob::CanSetCookie(const std::string& cookie_line,
   return request_->CanSetCookie(cookie_line, options);
 }
 
+bool URLRequestJob::CanEnablePrivacyMode() const {
+  if (!request_)
+    return false;  // The request was destroyed, so there is no more work to do.
+
+  return request_->CanEnablePrivacyMode();
+}
+
 void URLRequestJob::NotifyHeadersComplete() {
   if (!request_ || !request_->has_delegate())
     return;  // The request was destroyed, so there is no more work to do.
@@ -437,7 +444,7 @@ void URLRequestJob::NotifyDone(const URLRequestStatus &status) {
 
   // Complete this notification later.  This prevents us from re-entering the
   // delegate if we're done because of a synchronous call.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestJob::CompleteNotifyDone,
                  weak_factory_.GetWeakPtr()));

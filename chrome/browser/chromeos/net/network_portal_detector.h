@@ -10,7 +10,7 @@
 
 namespace chromeos {
 
-class Network;
+class NetworkState;
 
 // This class handles all notifications about network changes from
 // NetworkLibrary and delegates portal detection for the active
@@ -43,9 +43,10 @@ class NetworkPortalDetector {
     // second case, |network| is the active network and |state| is a
     // current portal state for the active network, which can be
     // currently in the unknown state, for instance, if portal
-    // detection is in process for the active network.
+    // detection is in process for the active network. Note, that
+    // |network| may be NULL.
     virtual void OnPortalDetectionCompleted(
-        const Network* network,
+        const NetworkState* network,
         const CaptivePortalState& state) = 0;
 
    protected:
@@ -75,7 +76,7 @@ class NetworkPortalDetector {
 
   // Returns Captive Portal state for a given |network|.
   virtual CaptivePortalState GetCaptivePortalState(
-      const chromeos::Network* network) = 0;
+      const chromeos::NetworkState* network) = 0;
 
   // Returns true if portal detection is enabled.
   virtual bool IsEnabled() = 0;
@@ -87,8 +88,13 @@ class NetworkPortalDetector {
   // initiated by this method.
   virtual void Enable(bool start_detection) = 0;
 
+  // Restarts portal detection for the default network if currently in
+  // the idle state. Returns true if new portal detection attempt was
+  // started.
+  virtual bool StartDetectionIfIdle() = 0;
+
   // Enables lazy detection mode. In this mode portal detection after
-  // first 3 consecutive attemps will be performed once in 30 seconds.
+  // first 3 consecutive attemps will be performed once in 5 seconds.
   virtual void EnableLazyDetection() = 0;
 
   // Dizables lazy detection mode.

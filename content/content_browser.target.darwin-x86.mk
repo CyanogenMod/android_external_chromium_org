@@ -85,10 +85,12 @@ LOCAL_SRC_FILES := \
 	content/browser/android/date_time_chooser_android.cc \
 	content/browser/android/download_controller_android_impl.cc \
 	content/browser/android/devtools_auth.cc \
+	content/browser/android/edge_effect.cc \
 	content/browser/android/interstitial_page_delegate_android.cc \
 	content/browser/android/load_url_params.cc \
 	content/browser/android/media_player_manager_impl.cc \
 	content/browser/android/media_resource_getter_impl.cc \
+	content/browser/android/overscroll_glow.cc \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
 	content/browser/android/sync_input_event_filter.cc \
 	content/browser/android/touch_point.cc \
@@ -185,17 +187,12 @@ LOCAL_SRC_FILES := \
 	content/browser/geolocation/wifi_data_provider_common.cc \
 	content/browser/gpu/browser_gpu_channel_host_factory.cc \
 	content/browser/gpu/compositor_util.cc \
-	content/browser/gpu/gpu_blacklist.cc \
-	content/browser/gpu/gpu_control_list.cc \
 	content/browser/gpu/gpu_data_manager_impl.cc \
 	content/browser/gpu/gpu_data_manager_impl_private.cc \
-	content/browser/gpu/gpu_driver_bug_list.cc \
 	content/browser/gpu/gpu_internals_ui.cc \
 	content/browser/gpu/gpu_process_host.cc \
 	content/browser/gpu/gpu_process_host_ui_shim.cc \
 	content/browser/gpu/gpu_surface_tracker.cc \
-	content/browser/gpu/gpu_switching_list.cc \
-	content/browser/gpu/gpu_util.cc \
 	content/browser/gpu/shader_disk_cache.cc \
 	content/browser/histogram_controller.cc \
 	content/browser/histogram_internals_request_job.cc \
@@ -292,6 +289,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/web_contents_tracker.cc \
 	content/browser/renderer_host/media/web_contents_video_capture_device.cc \
 	content/browser/renderer_host/media/webrtc_logging_handler_host.cc \
+	content/browser/renderer_host/memory_benchmark_message_filter.cc \
 	content/browser/renderer_host/native_web_keyboard_event_android.cc \
 	content/browser/renderer_host/native_web_keyboard_event.cc \
 	content/browser/renderer_host/overscroll_configuration.cc \
@@ -413,6 +411,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -473,8 +472,8 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/re2 \
 	$(LOCAL_PATH)/third_party/zlib \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(gyp_shared_intermediate_dir)/webkit \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
@@ -482,9 +481,9 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

@@ -6,13 +6,16 @@
 #define CHROME_BROWSER_EXTENSIONS_API_SYNC_FILE_SYSTEM_EXTENSION_SYNC_EVENT_OBSERVER_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace extensions {
 
 class ExtensionSyncEventObserver;
 
-class ExtensionSyncEventObserverFactory : public ProfileKeyedServiceFactory {
+class ExtensionSyncEventObserverFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   static ExtensionSyncEventObserver* GetForProfile(Profile* profile);
 
@@ -24,8 +27,8 @@ class ExtensionSyncEventObserverFactory : public ProfileKeyedServiceFactory {
   ExtensionSyncEventObserverFactory();
   virtual ~ExtensionSyncEventObserverFactory();
 
-  // ProfileKeyedServiceFactory implementation.
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory implementation.
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 };
 

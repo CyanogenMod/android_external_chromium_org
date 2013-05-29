@@ -11,7 +11,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/drive/drive_system_service.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_notifications.h"
@@ -35,14 +35,14 @@
 #include "chromeos/login/login_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_util.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 using chromeos::DBusThreadManager;
 using chromeos::disks::DiskMountManager;
 using content::BrowserThread;
-using drive::DriveSystemService;
-using drive::DriveSystemServiceFactory;
+using drive::DriveIntegrationService;
+using drive::DriveIntegrationServiceFactory;
 
 namespace {
 
@@ -252,12 +252,6 @@ bool IsDownloadJob(drive::JobType type) {
   return type == drive::TYPE_DOWNLOAD_FILE;
 }
 
-// Checks if |job_info| represents a job for currently active file transfer.
-bool IsActiveFileTransferJobInfo(const drive::JobInfo& job_info) {
-  return job_info.state != drive::STATE_NONE &&
-      (IsUploadJob(job_info.job_type) || IsDownloadJob(job_info.job_type));
-}
-
 // Converts the job info to its JSON (Value) form.
 scoped_ptr<base::DictionaryValue> JobInfoToDictionaryValue(
     Profile* profile,
@@ -326,13 +320,14 @@ void FileManagerEventRouter::Shutdown() {
   if (disk_mount_manager)
     disk_mount_manager->RemoveObserver(this);
 
-  DriveSystemService* system_service =
-      DriveSystemServiceFactory::FindForProfileRegardlessOfStates(profile_);
-  if (system_service) {
-    system_service->RemoveObserver(this);
-    system_service->file_system()->RemoveObserver(this);
-    system_service->drive_service()->RemoveObserver(this);
-    system_service->job_list()->RemoveObserver(this);
+  DriveIntegrationService* integration_service =
+      DriveIntegrationServiceFactory::FindForProfileRegardlessOfStates(
+          profile_);
+  if (integration_service) {
+    integration_service->RemoveObserver(this);
+    integration_service->file_system()->RemoveObserver(this);
+    integration_service->drive_service()->RemoveObserver(this);
+    integration_service->job_list()->RemoveObserver(this);
   }
 
   if (chromeos::ConnectivityStateHelper::IsInitialized()) {
@@ -359,13 +354,14 @@ void FileManagerEventRouter::ObserveFileSystemEvents() {
     disk_mount_manager->RequestMountInfoRefresh();
   }
 
-  DriveSystemService* system_service =
-      DriveSystemServiceFactory::GetForProfileRegardlessOfStates(profile_);
-  if (system_service) {
-    system_service->AddObserver(this);
-    system_service->drive_service()->AddObserver(this);
-    system_service->file_system()->AddObserver(this);
-    system_service->job_list()->AddObserver(this);
+  DriveIntegrationService* integration_service =
+      DriveIntegrationServiceFactory::GetForProfileRegardlessOfStates(
+          profile_);
+  if (integration_service) {
+    integration_service->AddObserver(this);
+    integration_service->drive_service()->AddObserver(this);
+    integration_service->file_system()->AddObserver(this);
+    integration_service->job_list()->AddObserver(this);
   }
 
   if (chromeos::ConnectivityStateHelper::IsInitialized()) {
@@ -541,10 +537,10 @@ void FileManagerEventRouter::OnMountEvent(
     // when mounting failed or unmounting succeeded.
     if ((event == DiskMountManager::MOUNTING) !=
         (error_code == chromeos::MOUNT_ERROR_NONE)) {
-      DriveSystemService* system_service =
-          DriveSystemServiceFactory::GetForProfile(profile_);
+      DriveIntegrationService* integration_service =
+          DriveIntegrationServiceFactory::GetForProfile(profile_);
       drive::FileSystemInterface* file_system =
-          system_service ? system_service->file_system() : NULL;
+          integration_service ? integration_service->file_system() : NULL;
       if (file_system) {
         file_system->MarkCacheFileAsUnmounted(
             base::FilePath(mount_info.source_path),
@@ -621,7 +617,7 @@ void FileManagerEventRouter::OnJobAdded(const drive::JobInfo& job_info) {
 
 void FileManagerEventRouter::OnJobUpdated(const drive::JobInfo& job_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!IsActiveFileTransferJobInfo(job_info))
+  if (!drive::IsActiveFileTransferJobInfo(job_info))
     return;
 
   bool is_new_job = (drive_jobs_.find(job_info.job_id) == drive_jobs_.end());
@@ -639,7 +635,7 @@ void FileManagerEventRouter::OnJobUpdated(const drive::JobInfo& job_info) {
 void FileManagerEventRouter::OnJobDone(const drive::JobInfo& job_info,
                                        drive::FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!IsActiveFileTransferJobInfo(job_info))
+  if (!drive::IsActiveFileTransferJobInfo(job_info))
     return;
 
   // Replace with the latest job info.

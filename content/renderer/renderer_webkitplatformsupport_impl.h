@@ -13,7 +13,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
-#include "webkit/compositor_bindings/web_compositor_support_impl.h"
+#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
 namespace cc {
 class ContextProvider;
@@ -59,6 +59,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual bool isLinkVisited(unsigned long long linkHash);
   virtual WebKit::WebMessagePortChannel* createMessagePortChannel();
   virtual void prefetchHostName(const WebKit::WebString&);
+  virtual WebKit::WebPrescientNetworking* prescientNetworking();
   virtual void cacheMetadata(
       const WebKit::WebURL&, double, const char*, size_t);
   virtual WebKit::WebString defaultLocale();
@@ -116,8 +117,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       size_t* private_bytes, size_t* shared_bytes);
   virtual WebKit::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
-  virtual WebKit::WebGraphicsContext3D* sharedOffscreenGraphicsContext3D();
-  virtual GrContext* sharedOffscreenGrContext();
   virtual WebKit::WebGraphicsContext3DProvider*
       createSharedOffscreenGraphicsContext3DProvider();
   virtual WebKit::WebCompositorSupport* compositorSupport();

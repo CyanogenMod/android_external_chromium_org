@@ -10,19 +10,47 @@ body {
   overflow-x: hidden;
 }
 
-body.hide-ntp {
+body.user-typed {
   overflow: hidden;
 }
 
-#ntp-contents {
-  text-align: -webkit-center;
+#active-suggestions-container {
+  position: absolute;
+  width: 100%;
+  z-index: 1;
 }
 
-body.hide-ntp #ntp-contents {
+.suggestion-contents {
+  z-index: 1;
+}
+
+#ntp-contents {
+  position: absolute;
+  text-align: -webkit-center;
+  width: 100%;
+}
+
+.non-google-page #ntp-contents {
+  top: -webkit-calc(50% - 155px);
+}
+
+body.hide-ntp #ntp-contents,
+body.hide-ntp #attribution {
   display: none;
 }
 
-body.fakebox-animate #ntp-contents {
+body.user-typed #fakebox {
+  border-color: rgba(185, 185, 185, 0.5);
+  border-top-color: rgba(160, 160, 160, 0.5);
+  cursor: default;
+}
+
+body.user-typed #fakebox > input {
+  cursor: default;
+}
+
+body.fakebox-animate #ntp-contents,
+body.fakebox-animate #attribution {
   -webkit-transition: opacity 100ms linear;
   opacity: 0.2;
 }
@@ -35,10 +63,6 @@ body.fakebox-animate #active-suggestions-container {
 
 body.fakebox-animate .suggestion-contents {
   visibility: hidden;
-}
-
-body.google-page #mv-top-margin {
-  display: none;
 }
 
 #logo {
@@ -60,22 +84,23 @@ body.custom-theme #logo {
 #fakebox {
   /* Use GPU compositing if available. */
   -webkit-transform: translate3d(0, 0, 0);
-  -webkit-transition: -webkit-transform 100ms linear;
+  -webkit-transition: -webkit-transform 100ms linear, border-color 100ms linear;
   background-color: #fff;
-  border: 1px solid #b9b9b9;
+  border: 1px solid rgb(185, 185, 185);
   border-radius: 1px;
-  border-top-color: #a0a0a0;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+  border-top-color: rgb(160, 160, 160);
   cursor: text;
   font-size: 18px;
   height: 36px;
   max-width: 620px;
-  width: 300px;
+  /* #fakebox width (here and below) should be 2px less than #mv-tiles
+     to account for its border. */
+  width: 298px;
 }
 
 #fakebox:hover {
-  border: 1px solid #a9a9a9;
-  border-top-color: #909090;
+  border: 1px solid rgb(169, 169, 169);
+  border-top-color: rgb(144, 144, 144);
 }
 
 body.fakebox-focused #fakebox {
@@ -98,10 +123,16 @@ body.fakebox-animate #fakebox {
 #cursor {
   background: #333;
   bottom: 5px;
+  left: 9px;
   position: absolute;
   top: 5px;
   visibility: hidden;
   width: 1px;
+}
+
+body.rtl #cursor {
+  left: auto;
+  right: 9px;
 }
 
 @-webkit-keyframes blink {
@@ -145,16 +176,20 @@ body.fakebox-focused #cursor {
 }
 
 @media only screen and (min-width:660px) {
-  #fakebox,
-  #mv-tiles {
+  #fakebox {
     width: 458px;
+  }
+  #mv-tiles {
+    width: 460px;
   }
 }
 
 @media only screen and (min-width:820px) {
-  #fakebox,
-  #mv-tiles {
+  #fakebox {
     width: 618px;
+  }
+  #mv-tiles {
+    width: 620px;
   }
 }
 
@@ -199,9 +234,11 @@ body.fakebox-focused #cursor {
 .mv-page-ready {
   border: 1px solid #c0c0c0;
   cursor: pointer;
+  outline: none;
 }
 
-.mv-page-ready:hover {
+.mv-page-ready:hover,
+.mv-page-ready:focus {
   border-color: #7f7f7f
 }
 
@@ -237,11 +274,19 @@ body.fakebox-focused #cursor {
   width: 16px;
 }
 
-.mv-x:hover {
+body.custom-theme #mv-notice-x {
+  background: transparent url(images/close_2_white.png);
+}
+
+.mv-x:hover,
+body.custom-theme #mv-notice-x:hover,
+#mv-notice-x:focus,
+body.custom-theme #mv-notice-x:focus {
   background: transparent url(images/close_2_hover.png);
 }
 
-.mv-x:active {
+.mv-x:active,
+body.custom-theme #mv-notice-x:active {
   background: transparent url(images/close_2_active.png);
 }
 
@@ -251,6 +296,11 @@ body.fakebox-focused #cursor {
   position: absolute;
   right: 2px;
   top: 2px;
+}
+
+body.rtl .mv-page .mv-x {
+  left: 2px;
+  right: auto;
 }
 
 .mv-page-ready:hover .mv-x {
@@ -291,15 +341,18 @@ body.fakebox-focused #cursor {
   -webkit-margin-start: 6px;
   color: rgb(17, 85, 204);
   cursor: pointer;
+  outline: none;
   padding: 0 4px;
 }
 
-#mv-notice-links span:hover {
+#mv-notice-links span:hover,
+#mv-notice-links span:focus {
   text-decoration: underline;
 }
 
 #mv-notice-links .mv-x {
   -webkit-margin-start: 8px;
+  outline: none;
   vertical-align: top;
 }
 
@@ -330,6 +383,7 @@ body.fakebox-focused #cursor {
 }
 
 .suggestions-box {
+  background-color: #fff;
   border-bottom: 1px #d9d9d9 solid;
   padding-bottom: 6px;
   padding-top: 6px;

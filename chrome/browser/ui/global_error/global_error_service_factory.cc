@@ -6,13 +6,13 @@
 
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 GlobalErrorService* GlobalErrorServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<GlobalErrorService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -21,14 +21,15 @@ GlobalErrorServiceFactory* GlobalErrorServiceFactory::GetInstance() {
 }
 
 GlobalErrorServiceFactory::GlobalErrorServiceFactory()
-    : ProfileKeyedServiceFactory("GlobalErrorService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "GlobalErrorService",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 GlobalErrorServiceFactory::~GlobalErrorServiceFactory() {
 }
 
-ProfileKeyedService* GlobalErrorServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* GlobalErrorServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new GlobalErrorService(static_cast<Profile*>(profile));
 }

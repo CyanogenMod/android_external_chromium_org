@@ -42,6 +42,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "ui/base/layout.h"
 #include "webkit/base/file_path_string_conversions.h"
+#include "webkit/common/user_agent/user_agent.h"
 #include "webkit/glue/fling_curve_configuration.h"
 #include "webkit/glue/touch_fling_gesture_curve.h"
 #include "webkit/glue/web_discardable_memory_impl.h"
@@ -53,7 +54,6 @@
 #include "webkit/media/audio_decoder.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/webplugininfo.h"
-#include "webkit/user_agent/user_agent.h"
 
 #if defined(OS_ANDROID)
 #include "webkit/glue/fling_animator_impl_android.h"
@@ -62,6 +62,7 @@
 using WebKit::WebAudioBus;
 using WebKit::WebCookie;
 using WebKit::WebData;
+using WebKit::WebFallbackThemeEngine;
 using WebKit::WebLocalizedString;
 using WebKit::WebPluginListBuilder;
 using WebKit::WebString;
@@ -383,7 +384,11 @@ void WebKitPlatformSupportImpl::SetFlingCurveParameters(
 }
 
 WebThemeEngine* WebKitPlatformSupportImpl::themeEngine() {
-  return &theme_engine_;
+  return &native_theme_engine_;
+}
+
+WebFallbackThemeEngine* WebKitPlatformSupportImpl::fallbackThemeEngine() {
+  return &fallback_theme_engine_;
 }
 
 WebURLLoader* WebKitPlatformSupportImpl::createURLLoader() {
@@ -466,16 +471,19 @@ const unsigned char* WebKitPlatformSupportImpl::getTraceCategoryEnabledFlag(
 
 long* WebKitPlatformSupportImpl::getTraceSamplingState(
     const unsigned thread_bucket) {
-  switch(thread_bucket) {
-  case 0:
-    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(0));
-  case 1:
-    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(1));
-  case 2:
-    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(2));
-  default:
-    NOTREACHED() << "Unknown thread bucket type.";
+  // Not supported in split-dll build. http://crbug.com/237249
+#if !defined(CHROME_SPLIT_DLL)
+  switch (thread_bucket) {
+    case 0:
+      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(0));
+    case 1:
+      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(1));
+    case 2:
+      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(2));
+    default:
+      NOTREACHED() << "Unknown thread bucket type.";
   }
+#endif
   return NULL;
 }
 

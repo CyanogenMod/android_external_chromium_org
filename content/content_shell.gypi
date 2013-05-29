@@ -128,6 +128,8 @@
         'shell/shell_message_filter.h',
         'shell/shell_network_delegate.cc',
         'shell/shell_network_delegate.h',
+        'shell/shell_plugin_service_filter.cc',
+        'shell/shell_plugin_service_filter.h',
         'shell/shell_quota_permission_context.cc',
         'shell/shell_quota_permission_context.h',
         'shell/shell_resource_dispatcher_host_delegate.cc',
@@ -194,7 +196,7 @@
             '../webkit/support/webkit_support.gyp:webkit_support',
           ],
         }],  # OS=="android"
-        ['os_posix==1 and use_aura==1 and linux_use_tcmalloc==1', {
+        ['(os_posix==1 and use_aura==1 and linux_use_tcmalloc==1) or (android_use_tcmalloc==1)', {
           'dependencies': [
             # This is needed by content/app/content_main_runner.cc
             '../base/allocator/allocator.gyp:allocator',
@@ -229,6 +231,12 @@
              '../third_party/freetype2/freetype2.gyp:freetype2',
           ],
         }],
+        ['enable_plugins==0', {
+          'sources/': [
+            ['exclude', 'shell/shell_plugin_service_filter.cc'],
+            ['exclude', 'shell/shell_plugin_service_filter.h'],
+          ],
+        }]
       ],
     },
     {
@@ -375,11 +383,11 @@
             },
           },
         }],  # OS=="win"
-        ['OS == "win" or (toolkit_uses_gtk == 1 and selinux == 0)', {
+        ['OS == "win" or toolkit_uses_gtk == 1', {
           'dependencies': [
             '../sandbox/sandbox.gyp:sandbox',
           ],
-        }],  # OS=="win" or (toolkit_uses_gtk == 1 and selinux == 0)
+        }],  # OS=="win" or toolkit_uses_gtk == 1
         ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:gtk',

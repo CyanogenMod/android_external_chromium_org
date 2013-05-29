@@ -6,8 +6,6 @@
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
-#include "base/json/json_file_value_serializer.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -16,7 +14,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_system_service.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_handler.h"
@@ -54,11 +52,11 @@
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_mount_point_provider.h"
-#include "webkit/fileapi/file_system_operation.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/file_system_util.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/plugins/webplugininfo.h"
 
 using base::DictionaryValue;
@@ -71,8 +69,7 @@ using extensions::Extension;
 using file_handler_util::FileTaskExecutor;
 using fileapi::FileSystemURL;
 
-#define FILEBROWSER_EXTENSON_ID "hhaomjibdihmijegdhdafkllkbggdgoj"
-const char kFileBrowserDomain[] = FILEBROWSER_EXTENSON_ID;
+const char kFileBrowserDomain[] = "hhaomjibdihmijegdhdafkllkbggdgoj";
 
 const char kFileBrowserGalleryTaskId[] = "gallery";
 const char kFileBrowserMountArchiveTaskId[] = "mount-archive";
@@ -83,20 +80,6 @@ const char kVideoPlayerAppName[] = "videoplayer";
 
 namespace file_manager_util {
 namespace {
-
-#define FILEBROWSER_URL(PATH) \
-    ("chrome-extension://" FILEBROWSER_EXTENSON_ID "/" PATH)
-// This is the "well known" url for the file manager extension from
-// browser/resources/file_manager.  In the future we may provide a way to swap
-// out this file manager for an aftermarket part, but not yet.
-const char kFileBrowserExtensionUrl[] = FILEBROWSER_URL("");
-const char kBaseFileBrowserUrl[] = FILEBROWSER_URL("main.html");
-const char kBaseFileBrowserNewUIUrl[] = FILEBROWSER_URL("main_new_ui.html");
-const char kMediaPlayerUrl[] = FILEBROWSER_URL("mediaplayer.html");
-const char kVideoPlayerUrl[] = FILEBROWSER_URL("video_player.html");
-const char kActionChoiceUrl[] = FILEBROWSER_URL("action_choice.html");
-#undef FILEBROWSER_URL
-#undef FILEBROWSER_EXTENSON_ID
 
 const char kCRXExtension[] = ".crx";
 const char kPdfExtension[] = ".pdf";
@@ -110,11 +93,6 @@ const char* kBrowserSupportedExtensions[] = {
     ".mhtml", ".mht", ".svg"
 };
 
-// Keep in sync with 'open-hosted' task handler in the File Browser manifest.
-const char* kGDocsExtensions[] = {
-    ".gdoc", ".gsheet", ".gslides", ".gdraw", ".gtable", ".glink"
-};
-
 // List of all extensions we want to be shown in histogram that keep track of
 // files that were unsuccessfully tried to be opened.
 // The list has to be synced with histogram values.
@@ -124,18 +102,14 @@ const char* kUMATrackingExtensions[] = {
   ".mov", ".mpg", ".log"
 };
 
+// Returns a file manager URL for the given |path|.
+GURL GetFileManagerUrl(const char* path) {
+  return GURL(std::string("chrome-extension://") + kFileBrowserDomain + path);
+}
+
 bool IsSupportedBrowserExtension(const char* file_extension) {
   for (size_t i = 0; i < arraysize(kBrowserSupportedExtensions); i++) {
     if (base::strcasecmp(file_extension, kBrowserSupportedExtensions[i]) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool IsSupportedGDocsExtension(const char* file_extension) {
-  for (size_t i = 0; i < arraysize(kGDocsExtensions); i++) {
-    if (base::strcasecmp(file_extension, kGDocsExtensions[i]) == 0) {
       return true;
     }
   }
@@ -484,36 +458,14 @@ bool ExecuteDefaultHandler(Profile* profile, const base::FilePath& path) {
   return true;
 }
 
-// Reads JSON from a Google Docs file and extracts an alternate URL. When the
-// file is not in GDoc format, returns a file URL for |file_path| as fallback.
+// Reads the alternate URL from a GDoc file. When it fails, returns a file URL
+// for |file_path| as fallback.
 // Note that an alternate url is a URL to open a hosted document.
 GURL ReadUrlFromGDocOnBlockingPool(const base::FilePath& file_path) {
-  const int64 kMaxGDocSize = 4096;
-  int64 file_size = 0;
-  if (!file_util::GetFileSize(file_path, &file_size) ||
-      file_size > kMaxGDocSize) {
-    DLOG(INFO) << "File too large to be a GDoc file " << file_path.value();
-    return net::FilePathToFileURL(file_path);
-  }
-
-  JSONFileValueSerializer reader(file_path);
-  std::string error_message;
-  scoped_ptr<base::Value> root_value(reader.Deserialize(NULL, &error_message));
-  if (!root_value.get()) {
-    DLOG(INFO) << "Failed to parse " << file_path.value() << "as JSON."
-               << " error = " << error_message;
-    return net::FilePathToFileURL(file_path);
-  }
-
-  base::DictionaryValue* dictionary_value = NULL;
-  std::string alternate_url_string;
-  if (!root_value->GetAsDictionary(&dictionary_value) ||
-      !dictionary_value->GetString("url", &alternate_url_string)) {
-    DLOG(INFO) << "Non GDoc JSON in " << file_path.value();
-    return net::FilePathToFileURL(file_path);
-  }
-
-  return GURL(alternate_url_string);
+  GURL url = drive::util::ReadUrlFromGDocFile(file_path);
+  if (url.is_empty())
+    url = net::FilePathToFileURL(file_path);
+  return url;
 }
 
 // Used to implement ViewItem().
@@ -567,20 +519,31 @@ void CheckIfDirectoryExists(
 }  // namespace
 
 GURL GetFileBrowserExtensionUrl() {
-  return GURL(kFileBrowserExtensionUrl);
+  return GetFileManagerUrl("/");
 }
 
 GURL GetFileBrowserUrl() {
-  return GURL(IsFileManagerNewUI() ? kBaseFileBrowserNewUIUrl :
-                                     kBaseFileBrowserUrl);
+  return IsFileManagerNewUI() ? GetFileManagerUrl("/main_new_ui.html") :
+                                GetFileManagerUrl("/main.html");
 }
 
 GURL GetMediaPlayerUrl() {
-  return GURL(kMediaPlayerUrl);
+  return GetFileManagerUrl("/mediaplayer.html");
 }
 
 GURL GetVideoPlayerUrl(const GURL& source_url) {
-  return GURL(kVideoPlayerUrl + std::string("?") + source_url.spec());
+  return GURL(GetFileManagerUrl("/video_player.html").spec() +
+              std::string("?") + source_url.spec());
+}
+
+GURL GetActionChoiceUrl(const base::FilePath& virtual_path,
+                        bool advanced_mode) {
+  std::string url = GetFileManagerUrl("/action_choice.html").spec();
+  if (advanced_mode)
+    url += "?advanced-mode";
+  url += "#/" + net::EscapeUrlEncodedData(virtual_path.value(),
+                                          false);  // Space to %20 instead of +.
+  return GURL(url);
 }
 
 bool ConvertFileToFileSystemUrl(Profile* profile,
@@ -756,12 +719,7 @@ void OpenActionChoiceDialog(const base::FilePath& path, bool advanced_mode) {
   if (!ConvertFileToRelativeFileSystemPath(profile, kFileBrowserDomain, path,
                                            &virtual_path))
     return;
-  std::string url = kActionChoiceUrl;
-  if (advanced_mode)
-    url += "?advanced-mode";
-  url += "#/" + net::EscapeUrlEncodedData(virtual_path.value(),
-                                          false);  // Space to %20 instead of +.
-  GURL dialog_url(url);
+  GURL dialog_url = GetActionChoiceUrl(virtual_path, advanced_mode);
 
   const gfx::Size screen = ash::Shell::GetScreen()->GetPrimaryDisplay().size();
   const gfx::Rect bounds((screen.width() - kDialogWidth) / 2,
@@ -821,10 +779,6 @@ void ShowFileInFolder(const base::FilePath& path) {
   OpenFileBrowserImpl(path, REUSE_NEVER, "select");
 }
 
-void OpenFileBrowser() {
-  OpenFileBrowserImpl(base::FilePath(), REUSE_NEVER, "");
-}
-
 bool ExecuteBuiltinHandler(Browser* browser, const base::FilePath& path,
     const std::string& internal_task_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -845,7 +799,7 @@ bool ExecuteBuiltinHandler(Browser* browser, const base::FilePath& path,
     return true;
   }
 
-  if (IsSupportedGDocsExtension(file_extension.data())) {
+  if (drive::util::HasGDocFileExtension(path)) {
     if (drive::util::IsUnderDriveMountPoint(path)) {
       // The file is on Google Docs. Open with drive URL.
       GURL url = drive::util::FilePathToDriveURL(
@@ -899,11 +853,11 @@ bool ExecuteBuiltinHandler(Browser* browser, const base::FilePath& path,
 
   if (IsCRXFile(file_extension.data())) {
     if (drive::util::IsUnderDriveMountPoint(path)) {
-      drive::DriveSystemService* system_service =
-          drive::DriveSystemServiceFactory::GetForProfile(profile);
-      if (!system_service)
+      drive::DriveIntegrationService* integration_service =
+          drive::DriveIntegrationServiceFactory::GetForProfile(profile);
+      if (!integration_service)
         return false;
-      system_service->file_system()->GetFileByPath(
+      integration_service->file_system()->GetFileByPath(
           drive::util::ExtractDrivePath(path),
           base::Bind(&OnCRXDownloadCallback, browser));
     } else {

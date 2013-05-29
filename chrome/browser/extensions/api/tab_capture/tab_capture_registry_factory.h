@@ -6,20 +6,22 @@
 #define CHROME_BROWSER_EXTENSIONS_API_TAB_CAPTURE_TAB_CAPTURE_REGISTRY_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace extensions {
 
 class TabCaptureRegistry;
 
-class TabCaptureRegistryFactory : public ProfileKeyedServiceFactory {
+class TabCaptureRegistryFactory : public BrowserContextKeyedServiceFactory {
  public:
    static TabCaptureRegistry* GetForProfile(Profile* profile);
 
    static TabCaptureRegistryFactory* GetInstance();
 
-  // ProfileKeyedBaseFactory:
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  // BrowserContextKeyedBaseFactory:
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<TabCaptureRegistryFactory>;
@@ -27,8 +29,8 @@ class TabCaptureRegistryFactory : public ProfileKeyedServiceFactory {
   TabCaptureRegistryFactory();
   virtual ~TabCaptureRegistryFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;

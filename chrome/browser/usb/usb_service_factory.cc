@@ -6,8 +6,8 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/usb/usb_service.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 UsbServiceFactory* UsbServiceFactory::GetInstance() {
   return Singleton<UsbServiceFactory>::get();
@@ -15,15 +15,15 @@ UsbServiceFactory* UsbServiceFactory::GetInstance() {
 
 UsbService* UsbServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<UsbService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
-UsbServiceFactory::UsbServiceFactory() : ProfileKeyedServiceFactory(
-    "UsbService", ProfileDependencyManager::GetInstance()) {}
+UsbServiceFactory::UsbServiceFactory() : BrowserContextKeyedServiceFactory(
+    "UsbService", BrowserContextDependencyManager::GetInstance()) {}
 
 UsbServiceFactory::~UsbServiceFactory() {}
 
-ProfileKeyedService* UsbServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* UsbServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new UsbService();
 }

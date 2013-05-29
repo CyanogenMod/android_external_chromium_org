@@ -18,7 +18,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/fileapi/syncable/syncable_file_system_util.h"
+#include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 
 namespace sync_file_system {
 
@@ -58,13 +58,13 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
   }
 
   virtual void SetUp() OVERRIDE {
-    SetEnableSyncDirectoryOperation(true);
+    SetEnableSyncFSDirectoryOperation(true);
     RegisterSyncableFileSystem(DriveFileSyncService::kServiceName);
   }
 
   virtual void TearDown() OVERRIDE {
     RevokeSyncableFileSystem(DriveFileSyncService::kServiceName);
-    SetEnableSyncDirectoryOperation(false);
+    SetEnableSyncFSDirectoryOperation(false);
   }
 
  protected:
@@ -173,8 +173,8 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
     EXPECT_TRUE(done);
 
     metadata_store_->SetSyncRootDirectory(kSyncRootResourceId);
-    metadata_store_->AddBatchSyncOrigin(GURL(kAppOrigin), kParentResourceId);
-    metadata_store_->MoveBatchSyncOriginToIncremental(GURL(kAppOrigin));
+    metadata_store_->AddIncrementalSyncOrigin(GURL(kAppOrigin),
+                                              kParentResourceId);
 
     sync_service_ = DriveFileSyncService::CreateForTesting(
         &profile_,
@@ -326,7 +326,7 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
     }
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 

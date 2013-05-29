@@ -47,19 +47,20 @@
                   'ash/',
     },
     'autofill': {
-      'filepath': 'chrome/browser/api/webdata/|'\
-                  'chrome/browser/autofill/|'\
+      'filepath': 'chrome/browser/autofill/|'\
                   'chrome/browser/resources/options/autofill_|'\
                   'chrome/browser/sync/glue/autofill_|'\
                   'chrome/browser/ui/android/autofill/|'\
                   'chrome/browser/ui/autofill/|'\
+                  'chrome/browser/ui/cocoa/autofill/|'\
                   'chrome/browser/ui/gtk/autofill/|'\
                   'chrome/browser/ui/views/autofill/|'\
                   'chrome/browser/ui/webui/options/autofill_|'\
-                  'chrome/browser/webdata/|'\
                   'chrome/renderer/autofill/|'\
                   'chrome/test/data/autofill/|'\
                   'components/autofill/|'\
+                  'components/autofill/browser/webdata/|'\
+                  'components/webdata/|'\
                   'content/public/common/password_|'\
                   'content/public/renderer/password_|'\
                   'content/renderer/password_',
@@ -113,7 +114,7 @@
     },
     'cc': {
       'filepath': 'cc/|'\
-                  'webkit/compositor_bindings/|'\
+                  'webkit/renderer/compositor_bindings/|'\
                   'content/common/cc_messages'
     },
     'chrome_frame': {
@@ -369,6 +370,9 @@
       'filepath': 'chrome/browser/plugin|chrome/plugin/|'\
         'chrome/common/plugin|webkit/glue/webplugin|webkit/glue/plugins/',
     },
+    'policy_templates': {
+      'filepath': 'chrome/app/policy/policy_templates.json',
+    },
     'predictors': {
       'filepath': 'predictors',
     },
@@ -576,7 +580,6 @@
     'chromeos_power' : ['derat+watch@chromium.org'],
     'chromeos_webui': ['nkostylev+watch@chromium.org'],
     'clang_update': ['ukai+watch@chromium.org',
-                     'glotov+watch@chromium.org',
                      'dmikurube+clang@chromium.org',
                      'eugenis+clang@chromium.org',
                      'glider+clang@chromium.org'],
@@ -647,10 +650,10 @@
     'perf': ['chrome-speed-team+watch@google.com'],
     'plugin': ['jam@chromium.org',
                'stuartmorgan+watch@chromium.org'],
+    'policy_templates': ['joaodasilva+watch@chromium.org'],
     'predictors': ['dominich+watch@chromium.org', 'shishir+watch@chromium.org'],
     'prerender': ['cbentzel+watch@chromium.org', 'tburkard+watch@chromium.org',
-                  'dominich+watch@chromium.org', 'mmenke@chromium.org',
-                  'gavinp+prer@chromium.org'],
+                  'dominich+watch@chromium.org', 'gavinp+prer@chromium.org'],
     'profiles': ['sail+watch@chromium.org'],
     'pyauto': ['anantha@chromium.org',
                'dyu@chromium.org',
@@ -663,7 +666,7 @@
                  'lambroslambrou+watch@chromium.org',
                  'rmsousa+watch@chromium.org',
                  'sergeyu+watch@chromium.org',
-                 'simonmorris+watch@chromium.org',
+                 'weitaosu+watch@chromium.org',
                  'wez+watch@chromium.org',
                  'amit@chromium.org',
                  'sanjeevr@chromium.org'],

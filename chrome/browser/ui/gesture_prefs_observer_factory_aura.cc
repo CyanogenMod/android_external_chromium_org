@@ -13,9 +13,9 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
@@ -25,6 +25,7 @@
 
 #if defined(USE_ASH)
 #include "ash/wm/workspace/workspace_cycler_configuration.h"
+#include "chrome/browser/ui/immersive_fullscreen_configuration.h"
 #endif  // USE_ASH
 
 #if defined(USE_ASH)
@@ -118,12 +119,12 @@ const std::vector<WorkspaceCyclerPref>& GetWorkspaceCyclerPrefs() {
 #endif  // USE_ASH
 
 // This class manages gesture configuration preferences.
-class GesturePrefsObserver : public ProfileKeyedService {
+class GesturePrefsObserver : public BrowserContextKeyedService {
  public:
   explicit GesturePrefsObserver(PrefService* prefs);
   virtual ~GesturePrefsObserver();
 
-  // ProfileKeyedService implementation.
+  // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
  private:
@@ -326,10 +327,11 @@ void GesturePrefsObserver::UpdateOverscrollPrefs() {
 
 void GesturePrefsObserver::UpdateImmersiveModePrefs() {
 #if defined(USE_ASH)
-  GestureConfiguration::set_immersive_mode_reveal_delay_ms(
+  ImmersiveFullscreenConfiguration::set_immersive_mode_reveal_delay_ms(
       prefs_->GetInteger(prefs::kImmersiveModeRevealDelayMs));
-  GestureConfiguration::set_immersive_mode_reveal_x_threshold_pixels(
-      prefs_->GetInteger(prefs::kImmersiveModeRevealXThresholdPixels));
+  ImmersiveFullscreenConfiguration::
+      set_immersive_mode_reveal_x_threshold_pixels(
+          prefs_->GetInteger(prefs::kImmersiveModeRevealXThresholdPixels));
 #endif  // USE_ASH
 }
 
@@ -369,12 +371,14 @@ GesturePrefsObserverFactoryAura::GetInstance() {
 }
 
 GesturePrefsObserverFactoryAura::GesturePrefsObserverFactoryAura()
-    : ProfileKeyedServiceFactory("GesturePrefsObserverAura",
-                                 ProfileDependencyManager::GetInstance()) {}
+    : BrowserContextKeyedServiceFactory(
+        "GesturePrefsObserverAura",
+        BrowserContextDependencyManager::GetInstance()) {}
 
 GesturePrefsObserverFactoryAura::~GesturePrefsObserverFactoryAura() {}
 
-ProfileKeyedService* GesturePrefsObserverFactoryAura::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+GesturePrefsObserverFactoryAura::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new GesturePrefsObserver(static_cast<Profile*>(profile)->GetPrefs());
 }
@@ -413,11 +417,12 @@ void GesturePrefsObserverFactoryAura::RegisterImmersiveModePrefs(
 #if defined(USE_ASH)
   registry->RegisterIntegerPref(
       prefs::kImmersiveModeRevealDelayMs,
-      GestureConfiguration::immersive_mode_reveal_delay_ms(),
+      ImmersiveFullscreenConfiguration::immersive_mode_reveal_delay_ms(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterIntegerPref(
       prefs::kImmersiveModeRevealXThresholdPixels,
-      GestureConfiguration::immersive_mode_reveal_x_threshold_pixels(),
+      ImmersiveFullscreenConfiguration::
+          immersive_mode_reveal_x_threshold_pixels(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif  // USE_ASH
 }
@@ -568,7 +573,8 @@ void GesturePrefsObserverFactoryAura::RegisterUserPrefs(
   RegisterWorkspaceCyclerPrefs(registry);
 }
 
-bool GesturePrefsObserverFactoryAura::ServiceIsCreatedWithProfile() const {
+bool
+GesturePrefsObserverFactoryAura::ServiceIsCreatedWithBrowserContext() const {
   // Create the observer as soon as the profile is created.
   return true;
 }

@@ -16,6 +16,7 @@
 #include "base/observer_list.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/network/managed_state.h"
+#include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_handler_callbacks.h"
 #include "chromeos/network/shill_property_handler.h"
 
@@ -66,18 +67,6 @@ class CHROMEOS_EXPORT NetworkStateHandler
   };
 
   virtual ~NetworkStateHandler();
-
-  // Sets the global instance. Must be called before any calls to Get().
-  static void Initialize();
-
-  // Returns true if the global instance has been initialized.
-  static bool IsInitialized();
-
-  // Destroys the global instance.
-  static void Shutdown();
-
-  // Gets the global instance. Initialize() must be called first.
-  static NetworkStateHandler* Get();
 
   // Add/remove observers.
   void AddObserver(NetworkStateHandlerObserver* observer);
@@ -157,6 +146,19 @@ class CHROMEOS_EXPORT NetworkStateHandler
   // networks when completed.
   void ConnectToBestWifiNetwork();
 
+  // Request an update for an existing NetworkState, e.g. after configuring
+  // a network. This is a no-op if an update request is already pending.
+  // Returns true if the network exists and an update is requested or pending.
+  // When the properties are received, NetworkPropertiesUpdated will be
+  // signaled for each member of |observers_|, regardless of whether any
+  // properties actually changed.
+  bool RequestUpdateForNetwork(const std::string& service_path);
+
+  // Request an update for all existing NetworkState entries, e.g. after
+  // loading an ONC configuration file that may have updated one or more
+  // existing networks.
+  void RequestUpdateForAllNetworks();
+
   // Set the user initiated connecting network.
   void SetConnectingNetwork(const std::string& service_path);
 
@@ -167,12 +169,16 @@ class CHROMEOS_EXPORT NetworkStateHandler
   void GetNetworkStatePropertiesForTest(
       base::DictionaryValue* dictionary) const;
 
+  // Construct and initialize an instance for testing.
+  static NetworkStateHandler* InitializeForTest();
+
   static const char kMatchTypeDefault[];
   static const char kMatchTypeWireless[];
   static const char kMatchTypeMobile[];
   static const char kMatchTypeNonVirtual[];
 
  protected:
+  friend class NetworkHandler;
   NetworkStateHandler();
 
   // ShillPropertyHandler::Listener overrides.
@@ -205,8 +211,8 @@ class CHROMEOS_EXPORT NetworkStateHandler
       const std::string& key,
       const base::Value& value) OVERRIDE;
 
-  // Sends NetworkManagerChanged() to observers.
-  virtual void ManagerPropertyChanged() OVERRIDE;
+  // Sends NetworkManagerChanged() to observers and logs an event.
+  virtual void NotifyManagerPropertyChanged() OVERRIDE;
 
   // Called by |shill_property_handler_| when the service or device list has
   // changed and all entries have been updated. This updates the list and
@@ -215,7 +221,7 @@ class CHROMEOS_EXPORT NetworkStateHandler
   virtual void ManagedStateListChanged(
       ManagedState::ManagedType type) OVERRIDE;
 
-  // Called in Initialize(). Called explicitly by tests after adding
+  // Called after construction. Called explicitly by tests after adding
   // test observers.
   void InitShillPropertyHandler();
 

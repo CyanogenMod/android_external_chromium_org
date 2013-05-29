@@ -202,6 +202,11 @@ class NET_EXPORT_PRIVATE QuicConnection
     FORCE
   };
 
+  enum RetransmissionType {
+    INITIAL_ENCRYPTION_ONLY,
+    ALL_PACKETS
+  };
+
   // Constructs a new QuicConnection for the specified |guid| and |address|.
   // |helper| will be owned by this connection.
   QuicConnection(QuicGuid guid,
@@ -256,6 +261,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Called when the underlying connection becomes writable to allow
   // queued writes to happen.  Returns false if the socket has become blocked.
   virtual bool OnCanWrite() OVERRIDE;
+
+  // Do any work which logically would be done in OnPacket but can not be
+  // safely done until the packet is validated.  Returns true if the packet
+  // can be handled, false otherwise.
+  bool ProcessValidatedPacket();
 
   QuicTag version() const { return quic_version_; }
 
@@ -344,6 +354,13 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Called when an RTO fires.  Returns the time when this alarm
   // should next fire, or 0 if no retransmission alarm should be set.
   QuicTime OnRetransmissionTimeout();
+
+  // Retransmits unacked packets which were sent with initial encryption, if
+  // |initial_encryption_only| is true, otherwise retransmits all unacked
+  // packets. Used when the negotiated protocol version is different than what
+  // was initially assumed and when the visitor wants to re-transmit packets
+  // with initial encryption when the initial encrypter changes.
+  void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
   // Changes the encrypter used for level |level| to |encrypter|. The function
   // takes ownership of |encrypter|.
@@ -489,7 +506,12 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   void MaybeSetupRetransmission(QuicPacketSequenceNumber sequence_number);
   bool IsRetransmission(QuicPacketSequenceNumber sequence_number);
-  void RetransmitAllUnackedPackets();
+
+  // Drop packet corresponding to |sequence_number| by deleting entries from
+  // |unacked_packets_| and |retransmission_map_|, if present. We need to drop
+  // all packets with encryption level NONE after the default level has been set
+  // to FORWARD_SECURE.
+  void DropPacket(QuicPacketSequenceNumber sequence_number);
 
   // Writes as many queued packets as possible.  The connection must not be
   // blocked when this is called.
@@ -503,7 +525,8 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   void MaybeSendAckInResponseToPacket();
 
-  // Get the FEC group associate with the last processed packet.
+  // Get the FEC group associate with the last processed packet or NULL, if the
+  // group has already been deleted.
   QuicFecGroup* GetFecGroup();
 
   // Closes any FEC groups protecting packets before |sequence_number|.
@@ -519,10 +542,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // client.
   IPEndPoint self_address_;
   IPEndPoint peer_address_;
-  // Address on the last(currently being processed) packet received. Not
-  // verified/authenticated.
-  IPEndPoint last_self_address_;
-  IPEndPoint last_peer_address_;
 
   bool last_packet_revived_;  // True if the last packet was revived from FEC.
   size_t last_size_;  // Size of the last received packet.
@@ -606,6 +625,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   // The version of the protocol this connection is using.
   QuicTag quic_version_;
 
+  size_t max_packets_per_retransmission_alarm_;
+
   // Tracks if the connection was created by the server.
   bool is_server_;
 
@@ -618,6 +639,10 @@ class NET_EXPORT_PRIVATE QuicConnection
   bool received_truncated_ack_;
 
   bool send_ack_in_response_to_packet_;
+
+  // Set to true if the udp packet headers have a new self or peer address.
+  // This is checked later on validating a data or version negotiation packet.
+  bool address_migrating_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

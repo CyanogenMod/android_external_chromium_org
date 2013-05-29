@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 
+#include "ash/accelerators/exit_warning_handler.h"
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -23,6 +24,7 @@ namespace ash {
 
 struct AcceleratorData;
 class BrightnessControlDelegate;
+class ExitWarningHandler;
 class ImeControlDelegate;
 class KeyboardBrightnessControlDelegate;
 class ScreenshotDelegate;
@@ -115,6 +117,11 @@ class ASH_EXPORT AcceleratorController : public ui::AcceleratorTarget {
     return &context_;
   }
 
+  // Provides access to the ExitWarningHandler for testing.
+  ExitWarningHandler* GetExitWarningHandlerForTest() {
+    return &exit_warning_handler_;
+  }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(AcceleratorControllerTest, GlobalAccelerators);
 
@@ -141,6 +148,10 @@ class ASH_EXPORT AcceleratorController : public ui::AcceleratorTarget {
 
   // Contextual information, eg. if the current accelerator is repeated.
   AcceleratorControllerContext context_;
+
+  // Handles the exit accelerator which requires a double press to exit and
+  // shows a popup with an explanation.
+  ExitWarningHandler exit_warning_handler_;
 
   // A map from accelerators to the AcceleratorAction values, which are used in
   // the implementation.

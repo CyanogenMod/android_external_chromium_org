@@ -7,14 +7,15 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class StartupTaskRunnerService;
 class PrefRegistrySyncable;
 class Profile;
 
 // Singleton that owns the start-up task runner service.
-class StartupTaskRunnerServiceFactory : public ProfileKeyedServiceFactory {
+class StartupTaskRunnerServiceFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the instance of StartupTaskRunnerService associated with this
   // profile (creating one if none exists).
@@ -29,8 +30,8 @@ class StartupTaskRunnerServiceFactory : public ProfileKeyedServiceFactory {
   StartupTaskRunnerServiceFactory();
   virtual ~StartupTaskRunnerServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(StartupTaskRunnerServiceFactory);

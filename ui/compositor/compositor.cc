@@ -32,8 +32,8 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/gpu/grcontext_for_webgraphicscontext3d.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
+#include "webkit/common/gpu/grcontext_for_webgraphicscontext3d.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 #if defined(OS_CHROMEOS)
 #include "base/chromeos/chromeos_version.h"
@@ -713,10 +713,6 @@ void Compositor::Layout() {
 scoped_ptr<cc::OutputSurface> Compositor::CreateOutputSurface() {
   return make_scoped_ptr(
       ContextFactory::GetInstance()->CreateOutputSurface(this));
-}
-
-scoped_ptr<cc::InputHandlerClient> Compositor::CreateInputHandlerClient() {
-  return scoped_ptr<cc::InputHandlerClient>();
 }
 
 void Compositor::DidCommit() {

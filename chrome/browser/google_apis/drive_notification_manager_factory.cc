@@ -6,9 +6,9 @@
 
 #include "chrome/browser/google_apis/drive_notification_manager.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace google_apis {
 
@@ -19,7 +19,7 @@ DriveNotificationManagerFactory::GetForProfile(Profile* profile) {
     return NULL;
 
   return static_cast<DriveNotificationManager*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -29,14 +29,16 @@ DriveNotificationManagerFactory::GetInstance() {
 }
 
 DriveNotificationManagerFactory::DriveNotificationManagerFactory()
-    : ProfileKeyedServiceFactory("DriveNotificationManager",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "DriveNotificationManager",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(ProfileSyncServiceFactory::GetInstance());
 }
 
 DriveNotificationManagerFactory::~DriveNotificationManagerFactory() {}
 
-ProfileKeyedService* DriveNotificationManagerFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+DriveNotificationManagerFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new DriveNotificationManager(static_cast<Profile*>(profile));
 }

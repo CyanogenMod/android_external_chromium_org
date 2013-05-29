@@ -12,31 +12,27 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
+#include "chrome/browser/media_galleries/fileapi/device_media_async_file_util.h"
 #include "chrome/browser/media_galleries/fileapi/itunes/itunes_file_util.h"
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
-#include "webkit/blob/local_file_stream_reader.h"
-#include "webkit/fileapi/async_file_util_adapter.h"
-#include "webkit/fileapi/copy_or_move_file_validator.h"
-#include "webkit/fileapi/file_system_callback_dispatcher.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_file_stream_reader.h"
-#include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_util.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/fileapi/isolated_file_util.h"
-#include "webkit/fileapi/local_file_stream_writer.h"
-#include "webkit/fileapi/local_file_system_operation.h"
-#include "webkit/fileapi/native_file_util.h"
-
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-#include "chrome/browser/media_galleries/fileapi/device_media_async_file_util.h"
-#endif
+#include "chrome/browser/media_galleries/fileapi/picasa/picasa_file_util.h"
+#include "webkit/browser/blob/local_file_stream_reader.h"
+#include "webkit/browser/fileapi/async_file_util_adapter.h"
+#include "webkit/browser/fileapi/copy_or_move_file_validator.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_file_stream_reader.h"
+#include "webkit/browser/fileapi/file_system_operation_context.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/browser/fileapi/isolated_file_util.h"
+#include "webkit/browser/fileapi/local_file_stream_writer.h"
+#include "webkit/browser/fileapi/local_file_system_operation.h"
+#include "webkit/browser/fileapi/native_file_util.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 using fileapi::FileSystemContext;
-using fileapi::FileSystemType;
 using fileapi::FileSystemURL;
 
 namespace chrome {
@@ -52,24 +48,23 @@ MediaFileSystemMountPointProvider::MediaFileSystemMountPointProvider(
       media_path_filter_(new MediaPathFilter()),
       native_media_file_util_(
           new fileapi::AsyncFileUtilAdapter(new NativeMediaFileUtil())),
+      device_media_async_file_util_(
+          DeviceMediaAsyncFileUtil::Create(profile_path_)),
+      picasa_file_util_(
+          new fileapi::AsyncFileUtilAdapter(new picasa::PicasaFileUtil())),
       itunes_file_util_(new fileapi::AsyncFileUtilAdapter(
           new itunes::ItunesFileUtil())) {
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-  // TODO(kmadhusu): Initialize |device_media_file_util_| in
-  // initialization list.
-  device_media_async_file_util_.reset(
-      DeviceMediaAsyncFileUtil::Create(profile_path_));
-#endif
 }
 
 MediaFileSystemMountPointProvider::~MediaFileSystemMountPointProvider() {
 }
 
 bool MediaFileSystemMountPointProvider::CanHandleType(
-    FileSystemType type) const {
+    fileapi::FileSystemType type) const {
   switch (type) {
     case fileapi::kFileSystemTypeNativeMedia:
     case fileapi::kFileSystemTypeDeviceMedia:
+    case fileapi::kFileSystemTypePicasa:
     case fileapi::kFileSystemTypeItunes:
       return true;
     default:
@@ -77,28 +72,19 @@ bool MediaFileSystemMountPointProvider::CanHandleType(
   }
 }
 
-void MediaFileSystemMountPointProvider::ValidateFileSystemRoot(
+void MediaFileSystemMountPointProvider::OpenFileSystem(
     const GURL& origin_url,
-    FileSystemType type,
-    bool create,
-    const ValidateFileSystemCallback& callback) {
+    fileapi::FileSystemType type,
+    fileapi::OpenFileSystemMode mode,
+    const OpenFileSystemCallback& callback) {
   // We never allow opening a new isolated FileSystem via usual OpenFileSystem.
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, base::PLATFORM_FILE_ERROR_SECURITY));
 }
 
-base::FilePath
-MediaFileSystemMountPointProvider::GetFileSystemRootPathOnFileThread(
-    const FileSystemURL& url,
-    bool create) {
-  // This is not supposed to be used.
-  NOTREACHED();
-  return base::FilePath();
-}
-
 fileapi::FileSystemFileUtil* MediaFileSystemMountPointProvider::GetFileUtil(
-    FileSystemType type) {
+    fileapi::FileSystemType type) {
   switch (type) {
     case fileapi::kFileSystemTypeNativeMedia:
       return native_media_file_util_->sync_file_util();
@@ -109,14 +95,14 @@ fileapi::FileSystemFileUtil* MediaFileSystemMountPointProvider::GetFileUtil(
 }
 
 fileapi::AsyncFileUtil* MediaFileSystemMountPointProvider::GetAsyncFileUtil(
-    FileSystemType type) {
+    fileapi::FileSystemType type) {
   switch (type) {
     case fileapi::kFileSystemTypeNativeMedia:
       return native_media_file_util_.get();
+    case fileapi::kFileSystemTypePicasa:
+      return picasa_file_util_.get();
     case fileapi::kFileSystemTypeDeviceMedia:
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
       return device_media_async_file_util_.get();
-#endif
     case fileapi::kFileSystemTypeItunes:
       return itunes_file_util_.get();
     default:
@@ -127,7 +113,7 @@ fileapi::AsyncFileUtil* MediaFileSystemMountPointProvider::GetAsyncFileUtil(
 
 fileapi::CopyOrMoveFileValidatorFactory*
 MediaFileSystemMountPointProvider::GetCopyOrMoveFileValidatorFactory(
-    FileSystemType type, base::PlatformFileError* error_code) {
+    fileapi::FileSystemType type, base::PlatformFileError* error_code) {
   DCHECK(error_code);
   *error_code = base::PLATFORM_FILE_OK;
   switch (type) {
@@ -142,21 +128,6 @@ MediaFileSystemMountPointProvider::GetCopyOrMoveFileValidatorFactory(
       NOTREACHED();
   }
   return NULL;
-}
-
-void
-MediaFileSystemMountPointProvider::InitializeCopyOrMoveFileValidatorFactory(
-    FileSystemType type,
-    scoped_ptr<fileapi::CopyOrMoveFileValidatorFactory> factory) {
-  switch (type) {
-    case fileapi::kFileSystemTypeNativeMedia:
-    case fileapi::kFileSystemTypeDeviceMedia:
-      if (!media_copy_or_move_file_validator_factory_)
-        media_copy_or_move_file_validator_factory_.reset(factory.release());
-      break;
-    default:
-      NOTREACHED();
-  }
 }
 
 fileapi::FilePermissionPolicy
@@ -178,12 +149,10 @@ MediaFileSystemMountPointProvider::CreateFileSystemOperation(
 
   operation_context->SetUserValue(kMediaPathFilterKey,
                                   media_path_filter_.get());
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
   if (url.type() == fileapi::kFileSystemTypeDeviceMedia) {
     operation_context->SetUserValue(kMTPDeviceDelegateURLKey,
                                     url.filesystem_id());
   }
-#endif
 
   return new fileapi::LocalFileSystemOperation(context,
                                                operation_context.Pass());
@@ -218,7 +187,7 @@ MediaFileSystemMountPointProvider::GetQuotaUtil() {
 
 void MediaFileSystemMountPointProvider::DeleteFileSystem(
     const GURL& origin_url,
-    FileSystemType type,
+    fileapi::FileSystemType type,
     FileSystemContext* context,
     const DeleteFileSystemCallback& callback) {
   NOTREACHED();

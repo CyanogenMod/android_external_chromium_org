@@ -438,6 +438,12 @@ void ChromotingInstance::DidChangeView(const pp::View& view) {
   }
 }
 
+void ChromotingInstance::DidChangeFocus(bool has_focus) {
+  DCHECK(plugin_task_runner_->BelongsToCurrentThread());
+
+  input_handler_.OnFocusChanged(has_focus);
+}
+
 bool ChromotingInstance::HandleInputEvent(const pp::InputEvent& event) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
 
@@ -500,6 +506,7 @@ void ChromotingInstance::SetCapabilities(const std::string& capabilities) {
 }
 
 void ChromotingInstance::FetchSecretFromDialog(
+    bool pairing_supported,
     const protocol::SecretFetchedCallback& secret_fetched_callback) {
   // Once the Session object calls this function, it won't continue the
   // authentication until the callback is called (or connection is canceled).
@@ -507,11 +514,13 @@ void ChromotingInstance::FetchSecretFromDialog(
   DCHECK(secret_fetched_callback_.is_null());
   secret_fetched_callback_ = secret_fetched_callback;
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
+  data->SetBoolean("pairingSupported", pairing_supported);
   PostChromotingMessage("fetchPin", data.Pass());
 }
 
 void ChromotingInstance::FetchSecretFromString(
     const std::string& shared_secret,
+    bool pairing_supported,
     const protocol::SecretFetchedCallback& secret_fetched_callback) {
   secret_fetched_callback.Run(shared_secret);
 }

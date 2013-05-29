@@ -51,12 +51,6 @@ const char kImport[] = "import";
 const char kIncognito[] = "incognito";
 const char kIncludeGlobs[] = "include_globs";
 const char kInputComponents[] = "input_components";
-const char kIntentDisposition[] = "disposition";
-const char kIntentHref[] = "href";
-const char kIntentPath[] = "path";
-const char kIntents[] = "intents";
-const char kIntentTitle[] = "title";
-const char kIntentType[] = "type";
 const char kIsolation[] = "app.isolation";
 const char kJs[] = "js";
 const char kKey[] = "key";
@@ -125,6 +119,7 @@ const char kSpellcheckDictionaryFormat[] = "dictionary_format";
 const char kSpellcheckDictionaryLanguage[] = "dictionary_language";
 const char kSpellcheckDictionaryLocale[] = "dictionary_locale";
 const char kSpellcheckDictionaryPath[] = "dictionary_path";
+const char kStorageManagedSchema[] = "storage.managed_schema";
 const char kSuggestedKey[] = "suggested_key";
 const char kSystemIndicator[] = "system_indicator";
 const char kSystemInfoDisplay[] = "systemInfo.display";
@@ -223,6 +218,8 @@ const char kCannotClaimAllURLsInExtent[] =
     "Cannot claim all URLs in an extent.";
 const char kCannotScriptGallery[] =
     "The extensions gallery cannot be scripted.";
+const char kCannotScriptSigninPage[] =
+    "The sign-in page cannot be scripted.";
 const char kChromeVersionTooLow[] =
     "This extension requires * version * or greater.";
 const char kDisabledByPolicy[] =

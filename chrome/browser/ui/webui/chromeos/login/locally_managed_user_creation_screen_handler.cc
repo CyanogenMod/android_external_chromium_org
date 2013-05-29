@@ -60,7 +60,7 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_CONTINUE_BUTTON_TEXT);
   builder->Add("managedUserCreationFlowStartButtonTitle",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_START_BUTTON_TEXT);
-  builder->Add("managedUserCreationFlowPreviousButtonTitle",
+  builder->Add("managedUserCreationFlowPrevButtonTitle",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PREVIOUS_BUTTON_TEXT);
   builder->Add("managedUserCreationFlowNextButtonTitle",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_NEXT_BUTTON_TEXT);
@@ -124,8 +124,7 @@ void LocallyManagedUserCreationScreenHandler::
     ShowManagerInconsistentStateErrorPage() {
   ShowErrorPage(
       l10n_util::GetStringUTF16(
-          IDS_CREATE_LOCALLY_MANAGED_USER_MANAGER_INCONSISTENT_STATE),
-      false);
+          IDS_CREATE_LOCALLY_MANAGED_USER_MANAGER_INCONSISTENT_STATE));
 }
 
 void LocallyManagedUserCreationScreenHandler::ShowIntroPage() {
@@ -136,8 +135,9 @@ void LocallyManagedUserCreationScreenHandler::ShowManagerPasswordError() {
   CallJS("login.LocallyManagedUserCreationScreen.showManagerPasswordError");
 }
 
-void LocallyManagedUserCreationScreenHandler::ShowProgressPage() {
-  CallJS("login.LocallyManagedUserCreationScreen.showProgressPage");
+void LocallyManagedUserCreationScreenHandler::ShowProgress(
+    const string16& message) {
+  CallJS("login.LocallyManagedUserCreationScreen.showProgress", message);
 }
 
 void LocallyManagedUserCreationScreenHandler::ShowUsernamePage() {
@@ -149,10 +149,8 @@ void LocallyManagedUserCreationScreenHandler::ShowTutorialPage() {
 }
 
 void LocallyManagedUserCreationScreenHandler::ShowErrorPage(
-    const string16& message,
-    bool recoverable) {
-  CallJS("login.LocallyManagedUserCreationScreen.showErrorPage", message,
-         recoverable);
+    const string16& message) {
+  CallJS("login.LocallyManagedUserCreationScreen.showErrorPage", message);
 }
 
 void LocallyManagedUserCreationScreenHandler::SetDelegate(Delegate* delegate) {
@@ -181,9 +179,8 @@ void LocallyManagedUserCreationScreenHandler::HandleCheckLocallyManagedUserName(
   if (NULL != UserManager::Get()->
           FindLocallyManagedUser(CollapseWhitespace(name, true))) {
     CallJS("login.LocallyManagedUserCreationScreen.managedUserNameError",
-           name, l10n_util::GetStringFUTF16(
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS,
-               name));
+           name, l10n_util::GetStringUTF16(
+               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS));
   } else {
     CallJS("login.LocallyManagedUserCreationScreen.managedUserNameOk", name);
   }
@@ -210,6 +207,10 @@ void LocallyManagedUserCreationScreenHandler::HandleCreateManagedUser(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_TOO_SHORT));
     return;
   }
+
+  ShowProgress(
+      l10n_util::GetStringUTF16(
+      IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
 
   delegate_->CreateManagedUser(new_user_name, new_user_password);
 }

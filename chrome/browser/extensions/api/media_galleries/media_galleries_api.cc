@@ -21,13 +21,14 @@
 #include "chrome/browser/media_galleries/media_galleries_dialog_controller.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/api/experimental_media_galleries.h"
 #include "chrome/common/extensions/api/media_galleries.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/pref_names.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -42,6 +43,7 @@ using chrome::MediaFileSystemRegistry;
 using chrome::MediaFileSystemsCallback;
 using content::ChildProcessSecurityPolicy;
 using content::WebContents;
+using web_modal::WebContentsModalDialogManager;
 
 namespace MediaGalleries = extensions::api::media_galleries;
 namespace GetMediaFileSystems = MediaGalleries::GetMediaFileSystems;
@@ -145,8 +147,8 @@ void MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries(
   }
   MediaGalleriesPermission::CheckParam read_param(
       MediaGalleriesPermission::kReadPermission);
-  bool has_read_permission = GetExtension()->CheckAPIPermissionWithParam(
-      APIPermission::kMediaGalleries, &read_param);
+  bool has_read_permission = PermissionsData::CheckAPIPermissionWithParam(
+      GetExtension(), APIPermission::kMediaGalleries, &read_param);
 
   const int child_id = rvh->GetProcess()->GetID();
   base::ListValue* list = new base::ListValue();

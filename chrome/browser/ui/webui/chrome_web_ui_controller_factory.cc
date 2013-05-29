@@ -30,6 +30,7 @@
 #include "chrome/browser/ui/webui/flash_ui.h"
 #include "chrome/browser/ui/webui/help/help_ui.h"
 #include "chrome/browser/ui/webui/history_ui.h"
+#include "chrome/browser/ui/webui/inline_login_ui.h"
 #include "chrome/browser/ui/webui/inspect_ui.h"
 #include "chrome/browser/ui/webui/instant_ui.h"
 #include "chrome/browser/ui/webui/memory_internals/memory_internals_ui.h"
@@ -42,7 +43,7 @@
 #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/browser/ui/webui/profiler_ui.h"
-#include "chrome/browser/ui/webui/quota_internals_ui.h"
+#include "chrome/browser/ui/webui/quota_internals/quota_internals_ui.h"
 #include "chrome/browser/ui/webui/signin/profile_signin_confirmation_ui.h"
 #include "chrome/browser/ui/webui/signin_internals_ui.h"
 #include "chrome/browser/ui/webui/sync_internals_ui.h"
@@ -57,6 +58,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/url_utils.h"
 #include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/favicon_size.h"
@@ -84,7 +86,6 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/ui/webui/chromeos/app_launch_ui.h"
-#include "chrome/browser/ui/webui/chromeos/app_login_ui.h"
 #include "chrome/browser/ui/webui/chromeos/bluetooth_pairing_ui.h"
 #include "chrome/browser/ui/webui/chromeos/choose_mobile_network_ui.h"
 #include "chrome/browser/ui/webui/chromeos/cryptohome_ui.h"
@@ -211,6 +212,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<FlagsUI>;
   if (url.host() == chrome::kChromeUIHistoryFrameHost)
     return &NewWebUI<HistoryUI>;
+  if (url.host() == chrome::kChromeUIInlineLoginHost)
+    return &NewWebUI<InlineLoginUI>;
   if (url.host() == chrome::kChromeUIInstantHost)
     return &NewWebUI<InstantUI>;
   if (url.host() == chrome::kChromeUIManagedUserPassphrasePageHost)
@@ -318,8 +321,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(OS_CHROMEOS)
   if (url.host() == chrome::kChromeUIAppLaunchHost)
     return &NewWebUI<chromeos::AppLaunchUI>;
-  if (url.host() == chrome::kChromeUIAppLoginHost)
-    return &NewWebUI<chromeos::AppLoginUI>;
   if (url.host() == chrome::kChromeUIBluetoothPairingHost)
     return &NewWebUI<chromeos::BluetoothPairingUI>;
   if (url.host() == chrome::kChromeUIChooseMobileNetworkHost)
@@ -433,7 +434,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 
 void RunFaviconCallbackAsync(
     const FaviconService::FaviconResultsCallback& callback,
-    const std::vector<history::FaviconBitmapResult>* results) {
+    const std::vector<chrome::FaviconBitmapResult>* results) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(&FaviconService::FaviconResultsCallbackRunner,
@@ -493,22 +494,22 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
     ExtensionWebUI::GetFaviconForURL(profile, url, callback);
 #else
     RunFaviconCallbackAsync(callback,
-                            new std::vector<history::FaviconBitmapResult>());
+                            new std::vector<chrome::FaviconBitmapResult>());
 #endif
     return;
   }
 
-  std::vector<history::FaviconBitmapResult>* favicon_bitmap_results =
-      new std::vector<history::FaviconBitmapResult>();
+  std::vector<chrome::FaviconBitmapResult>* favicon_bitmap_results =
+      new std::vector<chrome::FaviconBitmapResult>();
 
   for (size_t i = 0; i < scale_factors.size(); ++i) {
     scoped_refptr<base::RefCountedMemory> bitmap(GetFaviconResourceBytes(
           url, scale_factors[i]));
     if (bitmap.get() && bitmap->size()) {
-      history::FaviconBitmapResult bitmap_result;
+      chrome::FaviconBitmapResult bitmap_result;
       bitmap_result.bitmap_data = bitmap;
       // Leave |bitmap_result|'s icon URL as the default of GURL().
-      bitmap_result.icon_type = history::FAVICON;
+      bitmap_result.icon_type = chrome::FAVICON;
       favicon_bitmap_results->push_back(bitmap_result);
 
       // Assume that |bitmap| is |gfx::kFaviconSize| x |gfx::kFaviconSize|

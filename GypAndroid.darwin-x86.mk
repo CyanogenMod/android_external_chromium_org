@@ -2,7 +2,6 @@
 
 
 LOCAL_PATH := $(call my-dir)
-GYP_ABS_ANDROID_TOP_DIR := $(shell pwd)
 GYP_DEFAULT_CONFIGURATION := Debug
 
 include $(LOCAL_PATH)/android_webview/All.target.darwin-x86.mk
@@ -17,6 +16,7 @@ include $(LOCAL_PATH)/base/base.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/base_i18n.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/base_java_activity_state.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/base_jni_headers.target.darwin-x86.mk
+include $(LOCAL_PATH)/base/base_prefs.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/base_static.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/symbolize.target.darwin-x86.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.darwin-x86.mk
@@ -33,6 +33,7 @@ include $(LOCAL_PATH)/components/encryptor.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/tracing.target.darwin-x86.mk
+include $(LOCAL_PATH)/components/user_prefs.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/visitedlink_browser.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/visitedlink_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/components/visitedlink_renderer.target.darwin-x86.mk
@@ -46,6 +47,7 @@ include $(LOCAL_PATH)/content/content.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_app.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_browser.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_common.target.darwin-x86.mk
+include $(LOCAL_PATH)/content/content_common_child.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_gpu.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/content/content_plugin.target.darwin-x86.mk
@@ -69,20 +71,21 @@ include $(LOCAL_PATH)/gpu/gles2_c_lib.target.darwin-x86.mk
 include $(LOCAL_PATH)/gpu/gles2_cmd_helper.target.darwin-x86.mk
 include $(LOCAL_PATH)/gpu/gles2_implementation.target.darwin-x86.mk
 include $(LOCAL_PATH)/gpu/gpu.target.darwin-x86.mk
+include $(LOCAL_PATH)/gpu/gpu_config.target.darwin-x86.mk
 include $(LOCAL_PATH)/gpu/gpu_ipc.target.darwin-x86.mk
 include $(LOCAL_PATH)/ipc/ipc.target.darwin-x86.mk
 include $(LOCAL_PATH)/jingle/jingle_glue.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media_android_jni_headers.target.darwin-x86.mk
-include $(LOCAL_PATH)/media/media_codec_jni_headers.target.darwin-x86.mk
-include $(LOCAL_PATH)/media/media_format_jni_headers.target.darwin-x86.mk
+include $(LOCAL_PATH)/media/media_asm.target.darwin-x86.mk
+include $(LOCAL_PATH)/media/media_mmx.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media_player_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/media_sse.target.darwin-x86.mk
+include $(LOCAL_PATH)/media/media_sse2.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/player_android.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.darwin-x86.mk
+include $(LOCAL_PATH)/media/shared_memory_support_sse.target.darwin-x86.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.darwin-x86.mk
-include $(LOCAL_PATH)/media/yuv_convert.target.darwin-x86.mk
-include $(LOCAL_PATH)/media/yuv_convert_simd_x86.target.darwin-x86.mk
 include $(LOCAL_PATH)/net/cert_verify_result_android_java.target.darwin-x86.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.darwin-x86.mk
 include $(LOCAL_PATH)/net/http_server.target.darwin-x86.mk
@@ -106,7 +109,6 @@ include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/Platform/Platform.gyp/webkit_platform.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit_wtf_support.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/supplemental_dependencies.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.darwin-x86.mk
@@ -227,11 +229,14 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.ia32.host.darwin-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.ia32.target.darwin-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.ia32.host.darwin-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/compositor_bindings/webkit_compositor_bindings.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/compositor_bindings/webkit_compositor_support.target.darwin-x86.mk
-include $(LOCAL_PATH)/webkit/gpu/webkit_gpu.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/support/glue_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/support/plugins.target.darwin-x86.mk
+include $(LOCAL_PATH)/webkit/support/plugins_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/user_agent.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/webkit_base.target.darwin-x86.mk
 include $(LOCAL_PATH)/webkit/support/webkit_media.target.darwin-x86.mk

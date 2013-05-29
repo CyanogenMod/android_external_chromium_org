@@ -510,6 +510,10 @@
   'WEBRTC_QUALITY': {
     'all': [
       'webrtc_video_quality',
+      'webrtc_audio_quality',
+    ],
+    'mac': [
+      '-webrtc_audio_quality',  # Not implemented.
     ],
   },
 

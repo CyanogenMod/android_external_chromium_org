@@ -435,6 +435,9 @@ Press any key to continue exploring.
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_FEATURE_NAME" desc="Title close to icon shown on side of Google sign-in UI to create a locally managed user.">
     Locally managed user
   </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_NO_MANAGER_TEXT" desc="Text shown when managed user can be created, but no users that can be manager exist.">
+    At least one account must exist on this device before creating a Limited user.
+  </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_HTML" desc="Text with actual name shown on side of Google sign-in UI to create a locally managed user.">
     <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>Create managed user<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph> for this device.
   </message>
@@ -477,11 +480,11 @@ Press any key to continue exploring.
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_INSTRUCTIONS_TEXT" desc="Messsage indicating that instructions will be sent to manager's email.">
     To configure this profile, please check your email at <ph name="MANAGER_EMAIL">$1<ex>john.doe@example.com</ex></ph> for further instructions.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS" desc="Error text shown in locally managed user creation dialog when local account with suggested name already exists on machine.">
-    User with name <ph name="USER_DISPLAY_NAME">$1<ex>John</ex></ph> already exists.
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS" desc="Error text shown in locally managed user creation dialog when local account with suggested name already exists on a device.">
+    Whoops, this name is already in use!
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_MISMATCH_ERROR" desc="Error text shown in locally managed user creation dialog when typed passwords does not match.">
-    Passwords do not match.
+    Whoops, passwords do not match!
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_TOO_SHORT" desc="Error text shown in locally managed user creation dialog when typed password is too short.">
     Password is too short.
@@ -498,20 +501,23 @@ Press any key to continue exploring.
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_TPM_ERROR" desc="Text shown in a title when locally managed user creation has failed in case of TPM error">
     TPM error.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_NOT_CONNECTED" desc="Text shown in a title when locally managed user creation has failed in case when device is offline">
-    You need to have internet access to create locally managed user.
-  </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_TIMED_OUT" desc="Text shown in a title when locally managed user creation has failed in case when network timed out">
-    Network timeout. Please check your internet connection and try again.
-  </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_SERVER_ERROR" desc="Text shown in a title when locally managed user creation has failed in case when there was server error on a remote side">
-    Server error. Please try again later.
+    Server error.
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_TOKEN_WRITE_ERROR" desc="Text shown in a title when locally managed user creation has failed in case when there was an error during writing settings.">
+    Could not write settings for managed user.
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_CANCEL_BUTTON_TITLE" desc="Text for button on an error reporting screen for locally managed user creation, that is used to abort whole operation">
     Cancel
   </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_RETRY_BUTTON_TITLE" desc="Text for button on an error reporting screen for locally managed user creation, that is used to retry failed operation">
     Retry
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_AUTH_PROGRESS_MESSAGE" desc="Text shown next to progress indicator upon manager authentication.">
+    Authenticating...
+  </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE" desc="Text shown next to progress indicator upon managed user creation.">
+    Creating profile...
   </message>
   <message name="IDS_USER_IS_LOCALLY_MANAGED_BY_NOTICE" desc="Text for notifications showing that this user is locally managed">
     This user is managed by <ph name="MANAGER_EMAIL">$1<ex>john.doe@example.com</ex></ph>. Device usage and history may be tracked.
@@ -831,23 +837,47 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_TAB_TITLE" desc="Title for the display settings tab.">
     Manage displays
   </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_OPTIONS" desc="The section title for general options for a selected display.">
+    Options:
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_RESOLUTION" desc="The section title for resolution option for a selected display.">
+    Resolution:
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_ORIENTATION" desc="The section title for display orientation option for a selected display.">
+    Orientation:
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_OVERSCAN" desc="The section title for overscan option for a selected display.">
+    Overscan:
+  </message>
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_START_MIRRORING" desc="Button label to start display mirroring.">
     Start mirroring
   </message>
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_STOP_MIRRORING" desc="Button label to stop display mirroring.">
     Stop mirroring
   </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_MIRRORING_DISPLAY_NAME" desc="The text shown at display name field when mirroring.">
+    Mirroring
+  </message>
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_SET_PRIMARY" desc="Button label to set a display primary.">
     Make primary
   </message>
-  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_APPLY_RESULT" desc="Button label to apply the current settings.">
-    Apply
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_RESOLUTION_ANNOTATION_BEST" desc="The text shown for resolution options to annotate this is the best resolution.">
+    (Best)
   </message>
-  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_RESOLUTION" desc="Label to describe the resolution of the currently selected display.">
-    Resolution:
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_STANDARD_ORIENTATION" desc="The default value of display orientation option item.">
+    Standard
   </message>
-  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_START_CALIBRATING_OVERSCAN" desc="Label to start calibrating the overscan preference.">
-    TV alignment
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_ORIENTATION_90" desc="The value of display orientation option item: 90-degree rotated">
+    90&#x00B0;
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_ORIENTATION_180" desc="The value of display orientation option item: 180-degree rotated">
+    180&#x00B0;
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_ORIENTATION_270" desc="The value of display orientation option item: 270-degree rotated">
+    270&#x00B0;
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_START_CALIBRATING_OVERSCAN" desc="Button label to start calibrating the overscan preference.">
+    Adjust overscan...
   </message>
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OVERSCAN_TAB_TITLE" desc="Title for the display overscan calibration tab.">
     TV alignment
@@ -3282,6 +3312,9 @@ Battery full
   </message>
   <message name="IDS_STATUSBAR_LAYOUT_ICELANDIC" desc="In the language menu button, this shows the input mode.">
     Icelandic keyboard
+  </message>
+  <message name="IDS_STATUSBAR_LAYOUT_CANADIAN_MULTILINGUAL" desc="In the language menu button, this shows the input mode.">
+    Canadian Multilingual keyboard
   </message>
   <message name="IDS_INPUT_METHOD_INFOLIST_WINDOW_TITLE" desc="The title of the infolist window where the meanings and the usages of words are displayed.">
     Information

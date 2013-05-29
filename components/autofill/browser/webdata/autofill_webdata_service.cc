@@ -24,20 +24,6 @@ using content::BrowserThread;
 
 namespace autofill {
 
-// static
-void AutofillWebDataService::NotifyOfMultipleAutofillChanges(
-    AutofillWebDataService* web_data_service) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-
-  if (!web_data_service)
-    return;
-
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      Bind(&AutofillWebDataService::NotifyAutofillMultipleChangedOnUIThread,
-           make_scoped_refptr(web_data_service)));
-}
-
 AutofillWebDataService::AutofillWebDataService(
     scoped_refptr<WebDatabaseService> wdbs,
     const ProfileErrorCallback& callback)
@@ -96,12 +82,6 @@ void AutofillWebDataService::RemoveFormElementsAddedBetween(
   wdbs_->ScheduleDBTask(FROM_HERE,
       Bind(&AutofillWebDataBackendImpl::RemoveFormElementsAddedBetween,
            autofill_backend_, delete_begin, delete_end));
-}
-
-void AutofillWebDataService::RemoveExpiredFormElements() {
-  wdbs_->ScheduleDBTask(FROM_HERE,
-      Bind(&AutofillWebDataBackendImpl::RemoveExpiredFormElements,
-           autofill_backend_));
 }
 
 void AutofillWebDataService::RemoveFormValueForElementName(
@@ -174,6 +154,14 @@ void AutofillWebDataService::RemoveAutofillDataModifiedBetween(
   wdbs_->ScheduleDBTask(
       FROM_HERE,
       Bind(&AutofillWebDataBackendImpl::RemoveAutofillDataModifiedBetween,
+           autofill_backend_, delete_begin, delete_end));
+}
+
+void AutofillWebDataService::RemoveOriginURLsModifiedBetween(
+    const Time& delete_begin, const Time& delete_end) {
+  wdbs_->ScheduleDBTask(
+      FROM_HERE,
+      Bind(&AutofillWebDataBackendImpl::RemoveOriginURLsModifiedBetween,
            autofill_backend_, delete_begin, delete_end));
 }
 

@@ -46,9 +46,10 @@ class SpdyStreamSpdy2Test : public testing::Test {
         session_deps_(kProtoSPDY2) {}
 
   scoped_refptr<SpdySession> CreateSpdySession() {
-    HostPortProxyPair pair(host_port_pair_, ProxyServer::Direct());
+    SpdySessionKey key(host_port_pair_, ProxyServer::Direct(),
+                       kPrivacyModeDisabled);
     scoped_refptr<SpdySession> session(
-        session_->spdy_session_pool()->Get(pair, BoundNetLog()));
+        session_->spdy_session_pool()->Get(key, BoundNetLog()));
     return session;
   }
 
@@ -68,7 +69,7 @@ class SpdyStreamSpdy2Test : public testing::Test {
   }
 
   virtual void TearDown() {
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   SpdyTestUtil spdy_util_;
@@ -117,21 +118,21 @@ TEST_F(SpdyStreamSpdy2Test, SendDataAfterOpen) {
   InitializeSpdySession(session, host_port_pair_);
 
   base::WeakPtr<SpdyStream> stream =
-      CreateStreamSynchronously(session, url, LOWEST, BoundNetLog());
+      CreateStreamSynchronously(
+          SPDY_BIDIRECTIONAL_STREAM, session, url, LOWEST, BoundNetLog());
   ASSERT_TRUE(stream.get() != NULL);
 
-  StreamDelegateSendImmediate delegate(
-      stream, scoped_ptr<SpdyHeaderBlock>(), kPostBodyStringPiece);
+  StreamDelegateSendImmediate delegate(stream, kPostBodyStringPiece);
   stream->SetDelegate(&delegate);
 
   EXPECT_FALSE(stream->HasUrl());
 
-  stream->set_spdy_headers(
+  scoped_ptr<SpdyHeaderBlock> headers(
       spdy_util_.ConstructPostHeaderBlock(kStreamUrl, kPostBodyLength));
+  EXPECT_EQ(ERR_IO_PENDING,
+            stream->SendRequestHeaders(headers.Pass(), MORE_DATA_TO_SEND));
   EXPECT_TRUE(stream->HasUrl());
   EXPECT_EQ(kStreamUrl, stream->GetUrl().spec());
-
-  EXPECT_EQ(ERR_IO_PENDING, stream->SendRequest(true));
 
   EXPECT_EQ(ERR_CONNECTION_CLOSED, delegate.WaitForClose());
 
@@ -140,84 +141,7 @@ TEST_F(SpdyStreamSpdy2Test, SendDataAfterOpen) {
   EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue("version"));
   EXPECT_EQ(std::string(kPostBody, kPostBodyLength),
             delegate.TakeReceivedData());
-  EXPECT_EQ(static_cast<int>(kPostBodyLength), delegate.data_sent());
-}
-
-TEST_F(SpdyStreamSpdy2Test, SendHeaderAndDataAfterOpen) {
-  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
-
-  scoped_ptr<SpdyFrame> expected_request(ConstructSpdyWebSocketSynStream(
-      1,
-      "/chat",
-      "server.example.com",
-      "http://example.com"));
-  scoped_ptr<SpdyFrame> expected_headers(ConstructSpdyWebSocketHeadersFrame(
-      1, "6", true));
-  scoped_ptr<SpdyFrame> expected_message(
-      ConstructSpdyBodyFrame(1, "hello!", 6, false));
-  MockWrite writes[] = {
-    CreateMockWrite(*expected_request),
-    CreateMockWrite(*expected_headers),
-    CreateMockWrite(*expected_message)
-  };
-  writes[0].sequence_number = 0;
-  writes[1].sequence_number = 2;
-  writes[1].sequence_number = 3;
-
-  scoped_ptr<SpdyFrame> response(
-      ConstructSpdyWebSocketSynReply(1));
-  MockRead reads[] = {
-    CreateMockRead(*response),
-    MockRead(ASYNC, 0, 0), // EOF
-  };
-  reads[0].sequence_number = 1;
-  reads[1].sequence_number = 4;
-
-  OrderedSocketData data(reads, arraysize(reads),
-                         writes, arraysize(writes));
-  MockConnect connect_data(SYNCHRONOUS, OK);
-  data.set_connect_data(connect_data);
-
-  session_deps_.socket_factory->AddSocketDataProvider(&data);
-
-  scoped_refptr<SpdySession> session(CreateSpdySession());
-  GURL url("ws://server.example.com/chat");
-
-  HostPortPair host_port_pair("server.example.com", 80);
-  InitializeSpdySession(session, host_port_pair);
-
-  base::WeakPtr<SpdyStream> stream =
-      CreateStreamSynchronously(session, url, HIGHEST, BoundNetLog());
-  ASSERT_TRUE(stream.get() != NULL);
-  scoped_ptr<SpdyHeaderBlock> message_headers(new SpdyHeaderBlock);
-  (*message_headers)["opcode"] = "1";
-  (*message_headers)["length"] = "6";
-  (*message_headers)["fin"] = "1";
-
-  StreamDelegateSendImmediate delegate(
-      stream, message_headers.Pass(), base::StringPiece("hello!", 6));
-  stream->SetDelegate(&delegate);
-
-  EXPECT_FALSE(stream->HasUrl());
-
-  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock);
-  (*headers)["path"] = url.path();
-  (*headers)["host"] = url.host();
-  (*headers)["version"] = "WebSocket/13";
-  (*headers)["scheme"] = url.scheme();
-  (*headers)["origin"] = "http://example.com";
-  stream->set_spdy_headers(headers.Pass());
-  EXPECT_TRUE(stream->HasUrl());
-
-  EXPECT_EQ(ERR_IO_PENDING, stream->SendRequest(true));
-
-  EXPECT_EQ(ERR_CONNECTION_CLOSED, delegate.WaitForClose());
-
-  EXPECT_TRUE(delegate.send_headers_completed());
-  EXPECT_EQ("101", delegate.GetResponseHeaderValue("status"));
-  EXPECT_EQ(1, delegate.headers_sent());
-  EXPECT_EQ(std::string(), delegate.TakeReceivedData());
-  EXPECT_EQ(6, delegate.data_sent());
+  EXPECT_TRUE(data.at_write_eof());
 }
 
 TEST_F(SpdyStreamSpdy2Test, PushedStream) {
@@ -238,12 +162,12 @@ TEST_F(SpdyStreamSpdy2Test, PushedStream) {
   BoundNetLog net_log;
 
   // Conjure up a stream.
-  SpdyStream stream(spdy_session,
+  SpdyStream stream(SPDY_PUSH_STREAM,
+                    spdy_session,
                     std::string(),
                     DEFAULT_PRIORITY,
                     kSpdyStreamInitialWindowSize,
                     kSpdyStreamInitialWindowSize,
-                    true,
                     net_log);
   stream.set_stream_id(2);
   EXPECT_FALSE(stream.response_received());
@@ -252,7 +176,7 @@ TEST_F(SpdyStreamSpdy2Test, PushedStream) {
   // Set a couple of headers.
   SpdyHeaderBlock response;
   response["url"] = kStreamUrl;
-  stream.OnResponseReceived(response);
+  stream.OnResponseHeadersReceived(response);
 
   // Send some basic headers.
   SpdyHeaderBlock headers;
@@ -308,21 +232,21 @@ TEST_F(SpdyStreamSpdy2Test, StreamError) {
   InitializeSpdySession(session, host_port_pair_);
 
   base::WeakPtr<SpdyStream> stream =
-      CreateStreamSynchronously(session, url, LOWEST, log.bound());
+      CreateStreamSynchronously(
+          SPDY_BIDIRECTIONAL_STREAM, session, url, LOWEST, log.bound());
   ASSERT_TRUE(stream.get() != NULL);
 
-  StreamDelegateSendImmediate delegate(
-      stream, scoped_ptr<SpdyHeaderBlock>(), kPostBodyStringPiece);
+  StreamDelegateSendImmediate delegate(stream, kPostBodyStringPiece);
   stream->SetDelegate(&delegate);
 
   EXPECT_FALSE(stream->HasUrl());
 
-  stream->set_spdy_headers(
+  scoped_ptr<SpdyHeaderBlock> headers(
       spdy_util_.ConstructPostHeaderBlock(kStreamUrl, kPostBodyLength));
+  EXPECT_EQ(ERR_IO_PENDING,
+            stream->SendRequestHeaders(headers.Pass(), MORE_DATA_TO_SEND));
   EXPECT_TRUE(stream->HasUrl());
   EXPECT_EQ(kStreamUrl, stream->GetUrl().spec());
-
-  EXPECT_EQ(ERR_IO_PENDING, stream->SendRequest(true));
 
   EXPECT_EQ(ERR_CONNECTION_CLOSED, delegate.WaitForClose());
 
@@ -333,7 +257,7 @@ TEST_F(SpdyStreamSpdy2Test, StreamError) {
   EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue("version"));
   EXPECT_EQ(std::string(kPostBody, kPostBodyLength),
             delegate.TakeReceivedData());
-  EXPECT_EQ(static_cast<int>(kPostBodyLength), delegate.data_sent());
+  EXPECT_TRUE(data.at_write_eof());
 
   // Check that the NetLog was filled reasonably.
   net::CapturingNetLog::CapturedEntryList entries;
@@ -349,6 +273,137 @@ TEST_F(SpdyStreamSpdy2Test, StreamError) {
   int stream_id2;
   ASSERT_TRUE(entries[pos].GetIntegerValue("stream_id", &stream_id2));
   EXPECT_EQ(static_cast<int>(stream_id), stream_id2);
+}
+
+// Make sure that large blocks of data are properly split up into
+// frame-sized chunks for a request/response (i.e., an HTTP-like)
+// stream.
+TEST_F(SpdyStreamSpdy2Test, SendLargeDataAfterOpenRequestResponse) {
+  GURL url(kStreamUrl);
+
+  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
+
+  scoped_ptr<SpdyFrame> req(
+      ConstructSpdyPost(kStreamUrl, kPostBodyLength, NULL, 0));
+  std::string chunk_data(kMaxSpdyFrameChunkSize, 'x');
+  scoped_ptr<SpdyFrame> chunk(
+      ConstructSpdyBodyFrame(
+          1, chunk_data.data(), chunk_data.length(), false));
+  scoped_ptr<SpdyFrame> last_chunk(
+      ConstructSpdyBodyFrame(
+          1, chunk_data.data(), chunk_data.length(), true));
+  MockWrite writes[] = {
+    CreateMockWrite(*req, 0),
+    CreateMockWrite(*chunk, 1),
+    CreateMockWrite(*chunk, 2),
+    CreateMockWrite(*last_chunk, 3),
+  };
+
+  scoped_ptr<SpdyFrame> resp(ConstructSpdyPostSynReply(NULL, 0));
+  MockRead reads[] = {
+    CreateMockRead(*resp, 4),
+    MockRead(ASYNC, 0, 0, 5), // EOF
+  };
+
+  OrderedSocketData data(reads, arraysize(reads), writes, arraysize(writes));
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  data.set_connect_data(connect_data);
+
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  scoped_refptr<SpdySession> session(CreateSpdySession());
+
+  InitializeSpdySession(session, host_port_pair_);
+
+  base::WeakPtr<SpdyStream> stream =
+      CreateStreamSynchronously(
+          SPDY_REQUEST_RESPONSE_STREAM, session, url, LOWEST, BoundNetLog());
+  ASSERT_TRUE(stream.get() != NULL);
+
+  std::string body_data(3 * kMaxSpdyFrameChunkSize, 'x');
+  StreamDelegateWithBody delegate(stream, body_data);
+  stream->SetDelegate(&delegate);
+
+  EXPECT_FALSE(stream->HasUrl());
+
+  scoped_ptr<SpdyHeaderBlock> headers(
+      spdy_util_.ConstructPostHeaderBlock(kStreamUrl, kPostBodyLength));
+  EXPECT_EQ(ERR_IO_PENDING,
+            stream->SendRequestHeaders(headers.Pass(), MORE_DATA_TO_SEND));
+  EXPECT_TRUE(stream->HasUrl());
+  EXPECT_EQ(kStreamUrl, stream->GetUrl().spec());
+
+  EXPECT_EQ(ERR_CONNECTION_CLOSED, delegate.WaitForClose());
+
+  EXPECT_TRUE(delegate.send_headers_completed());
+  EXPECT_EQ("200", delegate.GetResponseHeaderValue("status"));
+  EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue("version"));
+  EXPECT_EQ(std::string(), delegate.TakeReceivedData());
+  EXPECT_TRUE(data.at_write_eof());
+}
+
+// Make sure that large blocks of data are properly split up into
+// frame-sized chunks for a bidirectional (i.e., non-HTTP-like)
+// stream.
+TEST_F(SpdyStreamSpdy2Test, SendLargeDataAfterOpenBidirectional) {
+  GURL url(kStreamUrl);
+
+  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
+
+  scoped_ptr<SpdyFrame> req(
+      ConstructSpdyPost(kStreamUrl, kPostBodyLength, NULL, 0));
+  std::string chunk_data(kMaxSpdyFrameChunkSize, 'x');
+  scoped_ptr<SpdyFrame> chunk(
+      ConstructSpdyBodyFrame(
+          1, chunk_data.data(), chunk_data.length(), false));
+  MockWrite writes[] = {
+    CreateMockWrite(*req, 0),
+    CreateMockWrite(*chunk, 2),
+    CreateMockWrite(*chunk, 3),
+    CreateMockWrite(*chunk, 4),
+  };
+
+  scoped_ptr<SpdyFrame> resp(ConstructSpdyPostSynReply(NULL, 0));
+  MockRead reads[] = {
+    CreateMockRead(*resp, 1),
+    MockRead(ASYNC, 0, 0, 5), // EOF
+  };
+
+  OrderedSocketData data(reads, arraysize(reads), writes, arraysize(writes));
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  data.set_connect_data(connect_data);
+
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  scoped_refptr<SpdySession> session(CreateSpdySession());
+
+  InitializeSpdySession(session, host_port_pair_);
+
+  base::WeakPtr<SpdyStream> stream =
+      CreateStreamSynchronously(
+          SPDY_BIDIRECTIONAL_STREAM, session, url, LOWEST, BoundNetLog());
+  ASSERT_TRUE(stream.get() != NULL);
+
+  std::string body_data(3 * kMaxSpdyFrameChunkSize, 'x');
+  StreamDelegateSendImmediate delegate(stream, body_data);
+  stream->SetDelegate(&delegate);
+
+  EXPECT_FALSE(stream->HasUrl());
+
+  scoped_ptr<SpdyHeaderBlock> headers(
+      spdy_util_.ConstructPostHeaderBlock(kStreamUrl, kPostBodyLength));
+  EXPECT_EQ(ERR_IO_PENDING,
+            stream->SendRequestHeaders(headers.Pass(), MORE_DATA_TO_SEND));
+  EXPECT_TRUE(stream->HasUrl());
+  EXPECT_EQ(kStreamUrl, stream->GetUrl().spec());
+
+  EXPECT_EQ(ERR_CONNECTION_CLOSED, delegate.WaitForClose());
+
+  EXPECT_TRUE(delegate.send_headers_completed());
+  EXPECT_EQ("200", delegate.GetResponseHeaderValue("status"));
+  EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue("version"));
+  EXPECT_EQ(std::string(), delegate.TakeReceivedData());
+  EXPECT_TRUE(data.at_write_eof());
 }
 
 }  // namespace

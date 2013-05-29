@@ -61,7 +61,6 @@
 #include "chrome/browser/profiles/bookmark_model_loaded_observer.h"
 #include "chrome/browser/profiles/chrome_version_service.h"
 #include "chrome/browser/profiles/gaia_info_update_service_factory.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -80,6 +79,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/startup_metric_utils.h"
 #include "chrome/common/url_constants.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
@@ -131,7 +131,7 @@ namespace {
   !defined(_GLIBCXX_DEBUG)
 // Make sure that the ProfileImpl doesn't grow. We're currently trying to drive
 // the number of services that are included in ProfileImpl (instead of using
-// ProfileKeyedServiceFactory) to zero.
+// BrowserContextKeyedServiceFactory) to zero.
 //
 // If you don't know about this effort, please read:
 //   https://sites.google.com/a/chromium.org/dev/developers/design-documents/profile-architecture
@@ -465,7 +465,7 @@ void ProfileImpl::DoFinalInit() {
 
   PrefService* local_state = g_browser_process->local_state();
   ssl_config_service_manager_.reset(
-      SSLConfigServiceManager::CreateDefaultManager(local_state, prefs));
+      SSLConfigServiceManager::CreateDefaultManager(local_state));
 
   // Initialize the BackgroundModeManager - this has to be done here before
   // InitExtensions() is called because it relies on receiving notifications
@@ -629,7 +629,8 @@ ProfileImpl::~ProfileImpl() {
         ClearAllIncognitoSessionOnlyPreferences();
   }
 
-  ProfileDependencyManager::GetInstance()->DestroyProfileServices(this);
+  BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
+      this);
 
   if (top_sites_)
     top_sites_->Shutdown();
@@ -733,7 +734,8 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
   // TODO(sky): remove this in a couple of releases (m28ish).
   prefs_->SetBoolean(prefs::kSessionExitedCleanly, true);
 
-  ProfileDependencyManager::GetInstance()->CreateProfileServices(this, false);
+  BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
+      this, false);
 
   DCHECK(!net_pref_observer_);
   net_pref_observer_.reset(new NetPrefObserver(
@@ -861,9 +863,9 @@ ProfileImpl::CreateRequestContextForStoragePartition(
 
 net::SSLConfigService* ProfileImpl::GetSSLConfigService() {
   // If ssl_config_service_manager_ is null, this typically means that some
-  // ProfileKeyedService is trying to create a RequestContext at startup, but
-  // SSLConfigServiceManager is not initialized until DoFinalInit() which is
-  // invoked after all ProfileKeyedServices have been initialized (see
+  // BrowserContextKeyedService is trying to create a RequestContext at startup,
+  // but SSLConfigServiceManager is not initialized until DoFinalInit() which is
+  // invoked after all BrowserContextKeyedServices have been initialized (see
   // http://crbug.com/171406).
   DCHECK(ssl_config_service_manager_) <<
       "SSLConfigServiceManager is not initialized yet";

@@ -13,15 +13,24 @@ namespace tools {
 
 QuicServerSession::QuicServerSession(
     const QuicConfig& config,
-    const QuicCryptoServerConfig& crypto_config,
     QuicConnection* connection,
     QuicSessionOwner* owner)
-    : QuicSession(connection, true),
-      crypto_stream_(config, crypto_config, this),
+    : QuicSession(connection, config, true),
       owner_(owner) {
+  set_max_open_streams(config.max_streams_per_connection());
 }
 
 QuicServerSession::~QuicServerSession() {
+}
+
+void QuicServerSession::Initialize(
+    const QuicCryptoServerConfig& crypto_config) {
+  crypto_stream_.reset(CreateQuicCryptoServerStream(crypto_config));
+}
+
+QuicCryptoServerStream* QuicServerSession::CreateQuicCryptoServerStream(
+    const QuicCryptoServerConfig& crypto_config) {
+  return new QuicCryptoServerStream(crypto_config, this);
 }
 
 void QuicServerSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
@@ -59,7 +68,7 @@ ReliableQuicStream* QuicServerSession::CreateOutgoingReliableStream() {
 }
 
 QuicCryptoServerStream* QuicServerSession::GetCryptoStream() {
-  return &crypto_stream_;
+  return crypto_stream_.get();
 }
 
 }  // namespace tools

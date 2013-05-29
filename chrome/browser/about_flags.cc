@@ -26,7 +26,6 @@
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
 #include "media/base/media_switches.h"
-#include "ui/app_list/app_list_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/switches.h"
@@ -119,6 +118,14 @@ const Experiment::Choice kEnableCompositingForFixedPositionChoices[] = {
     switches::kEnableHighDpiCompositingForFixedPosition, ""}
 };
 
+const Experiment::Choice kEnableCompositingForTransitionChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    switches::kEnableCompositingForTransition, ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kDisableCompositingForTransition, ""},
+};
+
 const Experiment::Choice kGDIPresentChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_FLAGS_PRESENT_WITH_GDI_FIRST_SHOW,
@@ -159,13 +166,6 @@ const Experiment::Choice kNaClDebugMaskChoices[] = {
 };
 
 #if defined(OS_CHROMEOS)
-const Experiment::Choice kAshBootAnimationFunction[] = {
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
-  { IDS_FLAGS_ASH_BOOT_ANIMATION_FUNCTION2,
-    ash::switches::kAshBootAnimationFunction2, ""},
-  { IDS_FLAGS_ASH_BOOT_ANIMATION_FUNCTION3,
-    ash::switches::kAshBootAnimationFunction3, ""}
-};
 
 const Experiment::Choice kChromeCaptivePortalDetectionChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
@@ -428,6 +428,15 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE("")
 #endif
   },
+#if defined(ENABLE_WEBRTC)
+  {
+    "enable-sctp-data-channels",
+    IDS_FLAGS_ENABLE_SCTP_DATA_CHANNELS_NAME,
+    IDS_FLAGS_ENABLE_SCTP_DATA_CHANNELS_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableSCTPDataChannels)
+  },
+#endif
 #if defined(OS_ANDROID)
   {
     "enable-webaudio",
@@ -452,6 +461,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_COMPOSITING_FOR_FIXED_POSITION_DESCRIPTION,
     kOsAll,
     MULTI_VALUE_TYPE(kEnableCompositingForFixedPositionChoices)
+  },
+  {
+    "enable-compositing-for-transition",
+    IDS_FLAGS_COMPOSITING_FOR_TRANSITION_NAME,
+    IDS_FLAGS_COMPOSITING_FOR_TRANSITION_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kEnableCompositingForTransitionChoices)
   },
   // TODO(bbudge): When NaCl is on by default, remove this flag entry.
   {
@@ -670,13 +686,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_AUTOLOGIN_DESCRIPTION,
     kOsMac | kOsWin | kOsLinux,
     SINGLE_VALUE_TYPE(switches::kEnableAutologin)
-  },
-  {
-    "enable-spdy4a1",
-    IDS_FLAGS_ENABLE_SPDY4A1_NAME,
-    IDS_FLAGS_ENABLE_SPDY4A1_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableSpdy4a1)
   },
   {
     "enable-async-dns",
@@ -1002,19 +1011,11 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnablePinch, switches::kDisablePinch),
   },
   {
-    "pinch-zoom-scrollbars",
-    IDS_FLAGS_PINCH_ZOOM_SCROLLBARS_NAME,
-    IDS_FLAGS_PINCH_ZOOM_SCROLLBARS_DESCRIPTION,
-    kOsCrOS,
-    ENABLE_DISABLE_VALUE_TYPE(cc::switches::kEnablePinchZoomScrollbars,
-                              cc::switches::kDisablePinchZoomScrollbars)
-  },
-  {
-    "app-list-show-apps-only",
-    IDS_FLAGS_ENABLE_APP_LIST_SHOW_APPS_ONLY_NAME,
-    IDS_FLAGS_ENABLE_APP_LIST_SHOW_APPS_ONLY_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(app_list::switches::kAppListShowAppsOnly),
+    "enable-pinch-virtual-viewport",
+    IDS_FLAGS_ENABLE_PINCH_VIRTUAL_VIEWPORT_NAME,
+    IDS_FLAGS_ENABLE_PINCH_VIRTUAL_VIEWPORT_DESCRIPTION,
+    kOsLinux | kOsWin | kOsCrOS,
+    SINGLE_VALUE_TYPE(cc::switches::kEnablePinchVirtualViewport),
   },
   {
     "forced-maximize-mode",
@@ -1031,20 +1032,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_BOOT_ANIMATION_DESCRIPTION,
     kOsCrOSOwnerOnly,
     SINGLE_VALUE_TYPE(chromeos::switches::kDisableBootAnimation),
-  },
-  {
-    "disable-boot-animation2",
-    IDS_FLAGS_DISABLE_BOOT_ANIMATION2,
-    IDS_FLAGS_DISABLE_BOOT_ANIMATION2_DESCRIPTION,
-    kOsCrOSOwnerOnly,
-    SINGLE_VALUE_TYPE(ash::switches::kAshDisableBootAnimation2),
-  },
-  {
-    "boot-animation-fucntion",
-    IDS_FLAGS_ASH_BOOT_ANIMATION_FUNCTION,
-    IDS_FLAGS_ASH_BOOT_ANIMATION_FUNCTION_DESCRIPTION,
-    kOsCrOSOwnerOnly,
-    MULTI_VALUE_TYPE(kAshBootAnimationFunction),
   },
   {
     "captive-portal-detector",
@@ -1094,6 +1081,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kDisableQuickofficeComponentApp),
+  },
+  {
+    "enable-kiosk-app-settings",
+    IDS_FLAGS_ENABLE_KIOSK_APP_SETTINGS_NAME,
+    IDS_FLAGS_ENABLE_KIOSK_APP_SETTINGS_DESCRIPTION,
+    kOsCrOSOwnerOnly,
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableKioskAppSettings),
   },
 #endif  // defined(OS_CHROMEOS)
   {
@@ -1176,11 +1170,11 @@ const Experiment kExperiments[] = {
 #endif
 #endif
 #if defined(OS_CHROMEOS)
-  { "ash-disable-new-network-status-area",
-    IDS_FLAGS_ASH_DISABLE_NEW_NETWORK_STATUS_AREA_NAME,
-    IDS_FLAGS_ASH_DISABLE_NEW_NETWORK_STATUS_AREA_DESCRIPTION,
+  { "use-new-network-configuration-handlers",
+    IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONFIGURATION_HANDLERS_NAME,
+    IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONFIGURATION_HANDLERS_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshDisableNewNetworkStatusArea),
+    SINGLE_VALUE_TYPE(chromeos::switches::kUseNewNetworkConfigurationHandlers),
   },
   {
     "ash-enable-new-audio-handler2",
@@ -1265,7 +1259,9 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_INTERACTIVE_AUTOCOMPLETE_NAME,
     IDS_FLAGS_ENABLE_INTERACTIVE_AUTOCOMPLETE_DESCRIPTION,
     kOsWin | kOsCrOS | kOsAndroid,
-    SINGLE_VALUE_TYPE(switches::kEnableInteractiveAutocomplete)
+    ENABLE_DISABLE_VALUE_TYPE(
+        autofill::switches::kEnableInteractiveAutocomplete,
+        autofill::switches::kDisableInteractiveAutocomplete)
   },
 #if defined(USE_AURA)
   {
@@ -1307,7 +1303,7 @@ const Experiment kExperiments[] = {
     "enable-sync-synced-notifications",
     IDS_FLAGS_ENABLE_SYNCED_NOTIFICATIONS_NAME,
     IDS_FLAGS_ENABLE_SYNCED_NOTIFICATIONS_DESCRIPTION,
-    kOsWin | kOsCrOS,
+    kOsDesktop,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableSyncSyncedNotifications,
                               switches::kDisableSyncSyncedNotifications)
   },
@@ -1393,15 +1389,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisableGestureRequirementForMediaPlayback)
   },
 #endif
-#if defined(OS_CHROMEOS)
-  {
-    "enable-experimental-bluetooth",
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_BLUETOOTH_NAME,
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_BLUETOOTH_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kEnableExperimentalBluetooth)
-  },
-#endif
 #if defined(ENABLE_GOOGLE_NOW)
   {
     "enable-google-now",
@@ -1462,6 +1449,29 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kSyncfsEnableDirectoryOperation),
   },
+  {
+    "enable-draggable-menu-button",
+    IDS_FLAGS_ENABLE_DRAGGABLE_MENU_BUTTON_NAME,
+    IDS_FLAGS_ENABLE_DRAGGABLE_MENU_BUTTON_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kEnableDraggableMenuButton)
+  },
+  {
+    "enable-reset-profile-settings",
+    IDS_FLAGS_ENABLE_RESET_PROFILE_SETTINGS_NAME,
+    IDS_FLAGS_ENABLE_RESET_PROFILE_SETTINGS_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableResetProfileSettings)
+  },
+#if defined(OS_MACOSX)
+  {
+    "enable-app-list-shim",
+    IDS_FLAGS_ENABLE_APP_LIST_SHIM_NAME,
+    IDS_FLAGS_ENABLE_APP_LIST_SHIM_DESCRIPTION,
+    kOsMac,
+    SINGLE_VALUE_TYPE(switches::kEnableAppListShim)
+  },
+#endif
 };
 
 const Experiment* experiments = kExperiments;
@@ -1673,13 +1683,15 @@ void ConvertFlagsToSwitches(PrefService* prefs, CommandLine* command_line) {
   FlagsState::GetInstance()->ConvertFlagsToSwitches(prefs, command_line);
 }
 
-ListValue* GetFlagsExperimentsData(PrefService* prefs, FlagAccess access) {
+void GetFlagsExperimentsData(PrefService* prefs,
+                             FlagAccess access,
+                             base::ListValue* supported_experiments,
+                             base::ListValue* unsupported_experiments) {
   std::set<std::string> enabled_experiments;
   GetSanitizedEnabledFlags(prefs, &enabled_experiments);
 
   int current_platform = GetCurrentPlatform();
 
-  ListValue* experiments_data = new ListValue();
   for (size_t i = 0; i < num_experiments; ++i) {
     const Experiment& experiment = experiments[i];
 
@@ -1690,13 +1702,6 @@ ListValue* GetFlagsExperimentsData(PrefService* prefs, FlagAccess access) {
     data->SetString("description",
                     l10n_util::GetStringUTF16(
                         experiment.visible_description_id));
-    bool supported = (experiment.supported_platforms & current_platform) != 0;
-#if defined(OS_CHROMEOS)
-    if (access == kOwnerAccessToFlags &&
-        (experiment.supported_platforms & kOsCrOSOwnerOnly) != 0)
-      supported = true;
-#endif
-    data->SetBoolean("supported", supported);
 
     ListValue* supported_platforms = new ListValue();
     AddOsStrings(experiment.supported_platforms, supported_platforms);
@@ -1716,9 +1721,18 @@ ListValue* GetFlagsExperimentsData(PrefService* prefs, FlagAccess access) {
         NOTREACHED();
     }
 
-    experiments_data->Append(data);
+    bool supported = (experiment.supported_platforms & current_platform) != 0;
+#if defined(OS_CHROMEOS)
+    if (access == kOwnerAccessToFlags &&
+        (experiment.supported_platforms & kOsCrOSOwnerOnly) != 0) {
+      supported = true;
+    }
+#endif
+    if (supported)
+      supported_experiments->Append(data);
+    else
+      unsupported_experiments->Append(data);
   }
-  return experiments_data;
 }
 
 bool IsRestartNeededToCommitChanges() {

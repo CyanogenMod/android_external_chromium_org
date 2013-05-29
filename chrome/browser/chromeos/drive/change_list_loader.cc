@@ -7,11 +7,11 @@
 #include <set>
 
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/chromeos/drive/change_list_loader_observer.h"
 #include "chrome/browser/chromeos/drive/change_list_processor.h"
-#include "chrome/browser/chromeos/drive/drive_webapps_registry.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/logging.h"
@@ -24,14 +24,15 @@
 using content::BrowserThread;
 
 namespace drive {
+namespace internal {
 
 ChangeListLoader::ChangeListLoader(
-    internal::ResourceMetadata* resource_metadata,
-    JobScheduler* scheduler,
-    DriveWebAppsRegistry* webapps_registry)
-    : resource_metadata_(resource_metadata),
+    base::SequencedTaskRunner* blocking_task_runner,
+    ResourceMetadata* resource_metadata,
+    JobScheduler* scheduler)
+    : blocking_task_runner_(blocking_task_runner),
+      resource_metadata_(resource_metadata),
       scheduler_(scheduler),
-      webapps_registry_(webapps_registry),
       last_known_remote_changestamp_(0),
       loaded_(false),
       weak_ptr_factory_(this) {
@@ -60,7 +61,17 @@ void ChangeListLoader::CheckForUpdates(const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (loaded_ && !IsRefreshing()) {
+  if (IsRefreshing()) {
+    // There is in-flight loading. So keep the callback here, and check for
+    // updates when the in-flight loading is completed.
+    pending_update_check_callback_ = callback;
+    return;
+  }
+
+  if (loaded_) {
+    // We only start to check for updates iff the load is done.
+    // I.e., we ignore checking updates if not loaded to avoid starting the
+    // load without user's explicit interaction (such as opening Drive).
     util::Log("Checking for updates");
     Load(DirectoryFetchInfo(), callback);
   }
@@ -109,18 +120,23 @@ void ChangeListLoader::UpdateFromFeed(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  change_list_processor_.reset(new ChangeListProcessor(resource_metadata_));
+  ChangeListProcessor* change_list_processor =
+      new ChangeListProcessor(resource_metadata_);
   // Don't send directory content change notification while performing
   // the initial content retrieval.
   const bool should_notify_changed_directories = is_delta_feed;
 
   util::Log("Apply change lists (is delta: %d)", is_delta_feed);
-  change_list_processor_->ApplyFeeds(
-      about_resource.Pass(),
-      change_lists.Pass(),
-      is_delta_feed,
+  blocking_task_runner_->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(&ChangeListProcessor::ApplyFeeds,
+                 base::Unretained(change_list_processor),
+                 base::Passed(&about_resource),
+                 base::Passed(&change_lists),
+                 is_delta_feed),
       base::Bind(&ChangeListLoader::NotifyDirectoryChangedAfterApplyFeed,
                  weak_ptr_factory_.GetWeakPtr(),
+                 base::Owned(change_list_processor),
                  should_notify_changed_directories,
                  base::Time::Now(),
                  callback));
@@ -227,6 +243,13 @@ void ChangeListLoader::OnChangeListLoadComplete(FileError error) {
     }
   }
   pending_load_callback_.clear();
+
+  // If there is pending update check, try to load the change from the server
+  // again, because there may exist an update during the completed loading.
+  if (!pending_update_check_callback_.is_null()) {
+    Load(DirectoryFetchInfo(),
+         base::ResetAndReturn(&pending_update_check_callback_));
+  }
 }
 
 void ChangeListLoader::OnDirectoryLoadComplete(
@@ -255,23 +278,6 @@ void ChangeListLoader::LoadFromServerIfNeeded(
     const DirectoryFetchInfo& directory_fetch_info,
     int64 local_changestamp) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // Drive v2 needs a separate application list fetch operation.
-  // On GData WAPI, it is not necessary in theory, because the response
-  // of account metadata can include both about account information (such as
-  // quota) and an application list at once.
-  // However, for Drive API v2 migration, we connect to the server twice
-  // (one for about account information and another for an application list)
-  // regardless of underlying API, so that we can simplify the code.
-  // Note that the size of account metadata on GData WAPI seems small enough
-  // and (by controlling the query parameter) the response for GetAboutResource
-  // operation doesn't contain application list. Thus, the effect should be
-  // small cost.
-  // TODO(haruki): Application list rarely changes and is not necessarily
-  // refreshed as often as files.
-  scheduler_->GetAppList(
-      base::Bind(&ChangeListLoader::OnGetAppList,
-                 weak_ptr_factory_.GetWeakPtr()));
 
   // First fetch the latest changestamp to see if there were any new changes
   // there at all.
@@ -610,7 +616,7 @@ void ChangeListLoader::DoLoadGrandRootDirectoryFromServerAfterGetAboutResource(
     return;
   }
 
-  // Build entry proto map for grand root directory, which has two entries;
+  // Build entry map for grand root directory, which has two entries;
   // "/drive/root" and "/drive/other".
   ResourceEntryMap grand_root_entry_map;
   const std::string& root_resource_id = about_resource->root_folder_id();
@@ -644,13 +650,11 @@ void ChangeListLoader::DoLoadDirectoryFromServerAfterLoad(
     return;
   }
 
-  // Do not use |change_list_processor_| as it may be in use for other
-  // purposes.
-  ChangeListProcessor change_list_processor(resource_metadata_);
-  change_list_processor.FeedToEntryProtoMap(change_lists.Pass(), NULL, NULL);
+  ChangeListProcessor::ResourceEntryMap entry_map;
+  ChangeListProcessor::FeedToEntryMap(change_lists.Pass(), &entry_map, NULL);
   resource_metadata_->RefreshDirectoryOnUIThread(
       directory_fetch_info,
-      change_list_processor.entry_map(),
+      entry_map,
       base::Bind(&ChangeListLoader::DoLoadDirectoryFromServerAfterRefresh,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_fetch_info,
@@ -674,24 +678,13 @@ void ChangeListLoader::DoLoadDirectoryFromServerAfterRefresh(
   }
 }
 
-void ChangeListLoader::OnGetAppList(google_apis::GDataErrorCode status,
-                                    scoped_ptr<google_apis::AppList> app_list) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  FileError error = util::GDataToFileError(status);
-  if (error != FILE_ERROR_OK)
-    return;
-
-  if (app_list.get())
-    webapps_registry_->UpdateFromAppList(*app_list);
-}
-
 void ChangeListLoader::NotifyDirectoryChangedAfterApplyFeed(
+    ChangeListProcessor* change_list_processor,
     bool should_notify_changed_directories,
     base::Time start_time,
     const base::Closure& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(change_list_processor_.get());
+  DCHECK(change_list_processor);
   DCHECK(!callback.is_null());
 
   const base::TimeDelta elapsed = base::Time::Now() - start_time;
@@ -700,8 +693,8 @@ void ChangeListLoader::NotifyDirectoryChangedAfterApplyFeed(
 
   if (should_notify_changed_directories) {
     for (std::set<base::FilePath>::iterator dir_iter =
-            change_list_processor_->changed_dirs().begin();
-        dir_iter != change_list_processor_->changed_dirs().end();
+            change_list_processor->changed_dirs().begin();
+        dir_iter != change_list_processor->changed_dirs().end();
         ++dir_iter) {
       FOR_EACH_OBSERVER(ChangeListLoaderObserver, observers_,
                         OnDirectoryChanged(*dir_iter));
@@ -709,9 +702,7 @@ void ChangeListLoader::NotifyDirectoryChangedAfterApplyFeed(
   }
 
   callback.Run();
-
-  // Cannot delete change_list_processor_ yet because we are in
-  // on_complete_callback_, which is owned by change_list_processor_.
 }
 
+}  // namespace internal
 }  // namespace drive

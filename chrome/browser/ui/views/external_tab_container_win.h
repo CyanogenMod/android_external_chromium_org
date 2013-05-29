@@ -131,6 +131,7 @@ class ExternalTabContainerWin : public ExternalTabContainer,
       content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool TakeFocus(content::WebContents* source, bool reverse) OVERRIDE;
+  virtual void WebContentsFocused(content::WebContents* contents) OVERRIDE;
   virtual void CanDownload(content::RenderViewHost* render_view_host,
                            int request_id,
                            const std::string& request_method,
@@ -145,6 +146,8 @@ class ExternalTabContainerWin : public ExternalTabContainer,
       GetJavaScriptDialogManager() OVERRIDE;
   virtual void ShowRepostFormWarningDialog(
       content::WebContents* source) OVERRIDE;
+  virtual content::ColorChooser* OpenColorChooser(
+      content::WebContents* web_contents, SkColor color) OVERRIDE;
   virtual void RunFileChooser(
       content::WebContents* tab,
       const content::FileChooserParams& params) OVERRIDE;

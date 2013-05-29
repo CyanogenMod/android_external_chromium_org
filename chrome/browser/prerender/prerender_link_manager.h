@@ -11,7 +11,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/time.h"
 #include "chrome/browser/prerender/prerender_handle.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "googleurl/src/gurl.h"
 
 class Profile;
@@ -35,7 +35,7 @@ class PrerenderManager;
 // being rendered in this chrome instance.  It receives messages from the
 // renderer indicating addition, cancelation and abandonment of link elements,
 // and controls the PrerenderManager accordingly.
-class PrerenderLinkManager : public ProfileKeyedService,
+class PrerenderLinkManager : public BrowserContextKeyedService,
                              public PrerenderHandle::Observer {
  public:
   explicit PrerenderLinkManager(PrerenderManager* manager);
@@ -113,7 +113,7 @@ class PrerenderLinkManager : public ProfileKeyedService,
 
   void RemovePrerender(LinkPrerender* prerender);
 
-  // From ProfileKeyedService:
+  // From BrowserContextKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // From PrerenderHandle::Observer:
@@ -121,8 +121,6 @@ class PrerenderLinkManager : public ProfileKeyedService,
   virtual void OnPrerenderStopLoading(PrerenderHandle* prerender_handle)
       OVERRIDE;
   virtual void OnPrerenderStop(PrerenderHandle* prerender_handle) OVERRIDE;
-  virtual void OnPrerenderAddAlias(PrerenderHandle* prerender_handle,
-                                   const GURL& alias_url) OVERRIDE;
 
   bool has_shutdown_;
 

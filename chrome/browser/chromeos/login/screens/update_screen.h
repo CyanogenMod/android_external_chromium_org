@@ -21,6 +21,7 @@
 namespace chromeos {
 
 class ErrorScreen;
+class NetworkState;
 class ScreenObserver;
 
 // Controller for the update screen. It does not depend on the specific
@@ -71,7 +72,7 @@ class UpdateScreen: public UpdateEngineClient::Observer,
 
   // NetworkPortalDetector::Observer implementation:
   virtual void OnPortalDetectionCompleted(
-      const Network* network,
+      const NetworkState* network,
       const NetworkPortalDetector::CaptivePortalState& state) OVERRIDE;
 
  private:
@@ -106,7 +107,7 @@ class UpdateScreen: public UpdateEngineClient::Observer,
   void ShowErrorMessage();
   void HideErrorMessage();
   void UpdateErrorMessage(
-      const Network* network,
+      const NetworkState* network,
       const NetworkPortalDetector::CaptivePortalStatus status);
   // Timer for the interval to wait for the reboot.
   // If reboot didn't happen - ask user to reboot manually.
@@ -150,6 +151,12 @@ class UpdateScreen: public UpdateEngineClient::Observer,
   bool is_download_average_speed_computed_;
   double download_average_speed_;
 
+  // True if there was no notification from NetworkPortalDetector
+  // about state for the default network.
+  bool is_first_detection_notification_;
+
+  // True if there was no notification about captive portal state for
+  // the default network.
   bool is_first_portal_notification_;
 
   base::WeakPtrFactory<UpdateScreen> weak_factory_;

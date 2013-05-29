@@ -9,14 +9,14 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 class AutocompleteController;
 struct AutocompleteMatch;
 class GURL;
 class Profile;
 
-class AutocompleteClassifier : public ProfileKeyedService {
+class AutocompleteClassifier : public BrowserContextKeyedService {
  public:
   // Bitmap of AutocompleteProvider::Type values describing the default set of
   // providers queried for the omnibox.  Intended to be passed to
@@ -51,7 +51,7 @@ class AutocompleteClassifier : public ProfileKeyedService {
                 GURL* alternate_nav_url);
 
  private:
-  // ProfileKeyedService:
+  // BrowserContextKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   scoped_ptr<AutocompleteController> controller_;

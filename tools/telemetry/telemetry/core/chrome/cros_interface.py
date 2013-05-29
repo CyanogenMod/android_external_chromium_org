@@ -103,7 +103,11 @@ class CrOSInterface(object):
 
   def FormSSHCommandLine(self, args, extra_ssh_args=None):
     if self.local:
-      return args
+      # We run the command through the shell locally for consistency with
+      # how commands are run through SSH (crbug.com/239161). This work
+      # around will be unnecessary once we implement a persistent SSH
+      # connection to run remote commands (crbug.com/239607).
+      return ['sh', '-c', " ".join(args)]
 
     full_args = ['ssh',
                  '-o ForwardX11=no',
@@ -184,7 +188,13 @@ class CrOSInterface(object):
     return exists
 
   def PushFile(self, filename, remote_filename):
-    assert not self.local
+    if self.local:
+      args = ['cp', '-r', filename, remote_filename]
+      stdout, stderr = GetAllCmdOutput(args, quiet=True)
+      if stderr != '':
+        raise OSError('No such file or directory %s' % stderr)
+      return
+
     args = ['scp', '-r' ] + self._ssh_args
     if self._ssh_identity:
       args.extend(['-i', self._ssh_identity])

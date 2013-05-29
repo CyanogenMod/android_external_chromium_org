@@ -18,29 +18,8 @@
 
 namespace chromeos {
 
-namespace {
-
-base::FilePath GetProfilePathByUserIdHash(const std::string user_id_hash) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  // Fails for KioskTest.InstallAndLaunchApp test - crbug.com/238985
-  // Will probably fail for Guest session / restart after a crash -
-  // crbug.com/238998
-  // TODO(nkostylev): Remove this check once these bugs are fixed.
-  if (command_line.HasSwitch(switches::kMultiProfiles))
-    DCHECK(!user_id_hash.empty());
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  base::FilePath profile_path = profile_manager->user_data_dir();
-  return profile_path.Append(
-      base::FilePath(ProfileHelper::kProfileDirPrefix + user_id_hash));
-}
-
-} // namespace
-
 ////////////////////////////////////////////////////////////////////////////////
 // ProfileHelper, public
-
-// static
-const char ProfileHelper::kProfileDirPrefix[] = "u-";
 
 ProfileHelper::ProfileHelper()
   : signin_profile_clear_requested_(false) {
@@ -54,6 +33,22 @@ Profile* ProfileHelper::GetProfileByUserIdHash(
     const std::string& user_id_hash) {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   return profile_manager->GetProfile(GetProfilePathByUserIdHash(user_id_hash));
+}
+
+// static
+base::FilePath ProfileHelper::GetProfilePathByUserIdHash(
+    const std::string& user_id_hash) {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  // Fails for KioskTest.InstallAndLaunchApp test - crbug.com/238985
+  // Will probably fail for Guest session / restart after a crash -
+  // crbug.com/238998
+  // TODO(nkostylev): Remove this check once these bugs are fixed.
+  if (command_line.HasSwitch(switches::kMultiProfiles))
+    DCHECK(!user_id_hash.empty());
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  base::FilePath profile_path = profile_manager->user_data_dir();
+  return profile_path.Append(
+      base::FilePath(chrome::kProfileDirPrefix + user_id_hash));
 }
 
 // static
@@ -73,7 +68,7 @@ std::string ProfileHelper::GetUserIdHashFromProfile(Profile* profile) {
 
   // Check that profile directory starts with the correct prefix.
   std::string profile_dir = profile->GetPath().BaseName().value();
-  std::string prefix(ProfileHelper::kProfileDirPrefix);
+  std::string prefix(chrome::kProfileDirPrefix);
   if (profile_dir.find(prefix) != 0) {
     NOTREACHED();
     return std::string();
@@ -109,8 +104,7 @@ void ProfileHelper::ProfileStartup(Profile* profile, bool process_startup) {
 
 base::FilePath ProfileHelper::GetActiveUserProfileDir() {
   DCHECK(!active_user_id_hash_.empty());
-  return base::FilePath(
-      ProfileHelper::kProfileDirPrefix + active_user_id_hash_);
+  return base::FilePath(chrome::kProfileDirPrefix + active_user_id_hash_);
 }
 
 void ProfileHelper::Initialize() {
@@ -148,6 +142,9 @@ void ProfileHelper::ActiveUserHashChanged(const std::string& hash) {
   active_user_id_hash_ = hash;
   base::FilePath profile_path = GetProfilePathByUserIdHash(hash);
   LOG(INFO) << "Switching to profile path: " << profile_path.value();
+}
+
+void ProfileHelper::PendingUserSessionsRestoreFinished() {
 }
 
 }  // namespace chromeos

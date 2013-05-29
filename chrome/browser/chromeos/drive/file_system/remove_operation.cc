@@ -16,21 +16,14 @@ using content::BrowserThread;
 namespace drive {
 namespace file_system {
 
-namespace {
-
-void EmptyFileOperationCallback(FileError error) {}
-
-}  // namespace
-
-RemoveOperation::RemoveOperation(
-    JobScheduler* job_scheduler,
-    internal::FileCache* cache,
-    internal::ResourceMetadata* metadata,
-    OperationObserver* observer)
-  : job_scheduler_(job_scheduler),
-    cache_(cache),
+RemoveOperation::RemoveOperation(OperationObserver* observer,
+                                 JobScheduler* scheduler,
+                                 internal::ResourceMetadata* metadata,
+                                 internal::FileCache* cache)
+  : observer_(observer),
+    scheduler_(scheduler),
     metadata_(metadata),
-    observer_(observer),
+    cache_(cache),
     weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -39,23 +32,26 @@ RemoveOperation::~RemoveOperation() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void RemoveOperation::Remove(
-    const base::FilePath& file_path,
-    bool is_recursive,
-    const FileOperationCallback& callback) {
+void RemoveOperation::Remove(const base::FilePath& path,
+                             bool is_recursive,
+                             const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // Get the edit URL of an entry at |file_path|.
+  // Get the edit URL of an entry at |path|.
   metadata_->GetResourceEntryByPathOnUIThread(
-      file_path,
+      path,
       base::Bind(
           &RemoveOperation::RemoveAfterGetResourceEntry,
           weak_ptr_factory_.GetWeakPtr(),
+          path,
+          is_recursive,
           callback));
 }
 
 void RemoveOperation::RemoveAfterGetResourceEntry(
+    const base::FilePath& path,
+    bool is_recursive,
     const FileOperationCallback& callback,
     FileError error,
     scoped_ptr<ResourceEntry> entry) {
@@ -66,14 +62,50 @@ void RemoveOperation::RemoveAfterGetResourceEntry(
     callback.Run(error);
     return;
   }
-  DCHECK(entry.get());
 
-  job_scheduler_->DeleteResource(
+  if (entry->file_info().is_directory() && !is_recursive) {
+    // Check emptiness of the directory.
+    metadata_->ReadDirectoryByPathOnUIThread(
+        path,
+        base::Bind(&RemoveOperation::RemoveAfterReadDirectory,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   entry->resource_id(),
+                   callback));
+    return;
+  }
+
+  scheduler_->DeleteResource(
       entry->resource_id(),
       base::Bind(&RemoveOperation::RemoveResourceLocally,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback,
                  entry->resource_id()));
+}
+
+void RemoveOperation::RemoveAfterReadDirectory(
+    const std::string& resource_id,
+    const FileOperationCallback& callback,
+    FileError error,
+    scoped_ptr<ResourceEntryVector> entries) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (error != FILE_ERROR_OK) {
+    callback.Run(error);
+    return;
+  }
+
+  if (!entries->empty()) {
+    callback.Run(FILE_ERROR_NOT_EMPTY);
+    return;
+  }
+
+  scheduler_->DeleteResource(
+      resource_id,
+      base::Bind(&RemoveOperation::RemoveResourceLocally,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback,
+                 resource_id));
 }
 
 void RemoveOperation::RemoveResourceLocally(
@@ -96,7 +128,7 @@ void RemoveOperation::RemoveResourceLocally(
                  callback));
 
   cache_->RemoveOnUIThread(resource_id,
-                           base::Bind(&EmptyFileOperationCallback));
+                           base::Bind(&util::EmptyFileOperationCallback));
 }
 
 void RemoveOperation::NotifyDirectoryChanged(

@@ -18,6 +18,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/media_galleries/fileapi/itunes_finder.h"
+#include "chrome/browser/media_galleries/fileapi/picasa/picasa_finder.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
@@ -27,6 +28,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
@@ -51,6 +53,7 @@ const char kMediaGalleriesTypeUserAddedValue[] = "userAdded";
 const char kMediaGalleriesTypeBlackListedValue[] = "blackListed";
 
 const char kITunesGalleryName[] = "iTunes";
+const char kPicasaGalleryName[] = "Picasa";
 
 bool GetPrefId(const DictionaryValue& dict, MediaGalleryPrefId* value) {
   std::string string_id;
@@ -184,8 +187,8 @@ DictionaryValue* CreateGalleryPrefInfoDictionary(
 bool HasAutoDetectedGalleryPermission(const extensions::Extension& extension) {
   extensions::MediaGalleriesPermission::CheckParam param(
       extensions::MediaGalleriesPermission::kAllAutoDetectedPermission);
-  return extension.CheckAPIPermissionWithParam(
-      extensions::APIPermission::kMediaGalleries, &param);
+  return extensions::PermissionsData::CheckAPIPermissionWithParam(
+      &extension, extensions::APIPermission::kMediaGalleries, &param);
 }
 
 }  // namespace
@@ -213,10 +216,22 @@ MediaGalleriesPreferences::MediaGalleriesPreferences(Profile* profile)
       profile_(profile) {
   AddDefaultGalleriesIfFreshProfile();
 
+  // TODO(vandebo) Turn this back on when the iTunes code is ready.
+  // Temporarily turned off because it adds an extra user-visible entry to the
+  // preferences that does not quite work.
+#if 0
   // Look for optional default galleries every time.
   itunes::ITunesFinder::FindITunesLibrary(
       base::Bind(&MediaGalleriesPreferences::OnITunesDeviceID,
                  weak_factory_.GetWeakPtr()));
+#endif
+
+  // TODO(tommycli): Turn on when Picasa code is ready.
+#if 0
+  picasa::PicasaFinder::FindPicasaDatabaseOnUIThread(
+      base::Bind(&MediaGalleriesPreferences::OnPicasaDeviceID,
+                 weak_factory_.GetWeakPtr()));
+#endif
 
   InitFromPrefs(false /*no notification*/);
 
@@ -252,7 +267,7 @@ void MediaGalleriesPreferences::AddDefaultGalleriesIfFreshProfile() {
     StorageInfo info;
     if (MediaStorageUtil::GetDeviceInfoFromPath(path, &info, &relative_path)) {
       // TODO(gbillock): Add in the volume metadata here when available.
-      AddGalleryWithName(info.device_id, info.name, relative_path,
+      AddGalleryWithName(info.device_id(), info.name(), relative_path,
                          false /*user added*/);
     }
   }
@@ -261,6 +276,13 @@ void MediaGalleriesPreferences::AddDefaultGalleriesIfFreshProfile() {
 void MediaGalleriesPreferences::OnITunesDeviceID(const std::string& device_id) {
   DCHECK(!device_id.empty());
   AddGalleryWithName(device_id, ASCIIToUTF16(kITunesGalleryName),
+                     base::FilePath(), false /*not user added*/);
+}
+
+void MediaGalleriesPreferences::OnPicasaDeviceID(const std::string& device_id) {
+  // TODO(tommycli): Implement support for location moves.
+  DCHECK(!device_id.empty());
+  AddGalleryWithName(device_id, ASCIIToUTF16(kPicasaGalleryName),
                      base::FilePath(), false /*not user added*/);
 }
 
@@ -309,20 +331,21 @@ void MediaGalleriesPreferences::RemoveGalleryChangeObserver(
 
 void MediaGalleriesPreferences::OnRemovableStorageAttached(
     const StorageInfo& info) {
-  if (!MediaStorageUtil::IsMediaDevice(info.device_id))
+  if (!StorageInfo::IsMediaDevice(info.device_id()))
     return;
 
-  if (info.name.empty()) {
-    AddGallery(info.device_id, base::FilePath(),
+  if (info.name().empty()) {
+    AddGallery(info.device_id(),
+               base::FilePath(),
                false /*not user added*/,
-               info.storage_label,
-               info.vendor_name,
-               info.model_name,
-               info.total_size_in_bytes,
+               info.storage_label(),
+               info.vendor_name(),
+               info.model_name(),
+               info.total_size_in_bytes(),
                base::Time::Now());
   } else {
     // TODO(gbillock): get rid of this code path.
-    AddGalleryWithName(info.device_id, info.name, base::FilePath(), false);
+    AddGalleryWithName(info.device_id(), info.name(), base::FilePath(), false);
   }
 }
 
@@ -339,7 +362,7 @@ bool MediaGalleriesPreferences::LookUpGalleryByPath(
 
   relative_path = relative_path.NormalizePathSeparators();
   MediaGalleryPrefIdSet galleries_on_device =
-      LookUpGalleriesByDeviceId(info.device_id);
+      LookUpGalleriesByDeviceId(info.device_id());
   for (MediaGalleryPrefIdSet::const_iterator it = galleries_on_device.begin();
        it != galleries_on_device.end();
        ++it) {
@@ -361,8 +384,8 @@ bool MediaGalleriesPreferences::LookUpGalleryByPath(
   // conflate LookUp.
   if (gallery_info) {
     gallery_info->pref_id = kInvalidMediaGalleryPrefId;
-    gallery_info->display_name = info.name;
-    gallery_info->device_id = info.device_id;
+    gallery_info->display_name = info.name();
+    gallery_info->device_id = info.device_id();
     gallery_info->path = relative_path;
     gallery_info->type = MediaGalleryPrefInfo::kUserAdded;
     // TODO(gbillock): Need to add volume metadata here from |info|.
@@ -434,6 +457,13 @@ MediaGalleryPrefId MediaGalleriesPreferences::AddGalleryInternal(
 
     bool update_gallery_type =
         user_added && (existing.type == MediaGalleryPrefInfo::kBlackListed);
+    // TODO(gbillock): Once we have all updates adding the device metadata,
+    // we'll change this to always update the gallery name if we have device
+    // metadata.
+    // Status quo: In M27 and M28, galleries added manually use version 0,
+    // and galleries added automatically (including default galleries) use
+    // version 1. The name override is used by default galleries as well
+    // as all device attach events.
     bool update_gallery_name = existing.display_name != display_name;
     bool update_gallery_metadata = volume_metadata_valid &&
         ((existing.volume_label != volume_label) ||

@@ -1,0 +1,35 @@
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
+/**
+ * This file contains the <code>PPB_Flash_DRM</code> interface.
+ */
+
+[generate_thunk]
+
+label Chrome {
+  M29 = 1.0
+};
+
+/**
+ * A resource for performing Flash DRM-related operations.
+ */
+interface PPB_Flash_DRM {
+  /**
+   * Creates a PPB_Flash_DRM resource for performing DRM-related operations in
+   * Flash.
+   */
+  PP_Resource Create([in] PP_Instance instance);
+
+  /**
+   * Asynchronously computes the device ID. When available, it will place the
+   * string in |*id| and will call the completion callback. On failure the
+   * given var will be PP_VARTYPE_UNDEFINED.
+   */
+  int32_t GetDeviceID([in] PP_Resource drm,
+                      [out] PP_Var id,
+                      [in] PP_CompletionCallback callback);
+};
+

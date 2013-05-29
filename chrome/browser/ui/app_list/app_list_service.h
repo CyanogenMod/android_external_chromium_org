@@ -11,6 +11,7 @@
 #include "base/compiler_specific.h"
 
 class AppListControllerDelegate;
+class CommandLine;
 class PrefRegistrySimple;
 class Profile;
 
@@ -32,8 +33,10 @@ class AppListService {
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
-  virtual base::FilePath GetAppListProfilePath(
+  virtual base::FilePath GetProfilePath(
       const base::FilePath& user_data_dir) = 0;
+
+  static void RecordShowTimings(const CommandLine& command_line);
 
   // Show the app list.
   virtual void ShowAppList(Profile* requested_profile) = 0;
@@ -41,6 +44,7 @@ class AppListService {
   // Dismiss the app list.
   virtual void DismissAppList() = 0;
 
+  // TODO(koz): Merge this into ShowAppList().
   virtual void SetAppListProfile(const base::FilePath& profile_file_path) = 0;
 
   // Show the app list for the profile configured in the user data dir for the

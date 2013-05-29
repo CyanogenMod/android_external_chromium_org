@@ -20,6 +20,7 @@
 #include "base/process.h"
 #include "base/timer.h"
 #include "build/build_config.h"
+#include "cc/input/top_controls_state.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/common/edit_command.h"
@@ -31,6 +32,7 @@
 #include "content/public/common/referrer.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/stop_find_action.h"
+#include "content/public/common/top_controls_state.h"
 #include "content/public/renderer/render_view.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_view_pepper_helper.h"
@@ -375,6 +377,11 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Change the device scale factor and force the compositor to resize.
   void SetDeviceScaleFactorForTesting(float factor);
+
+  // Control autoresize mode.
+  void EnableAutoResizeForTesting(const gfx::Size& min_size,
+                                  const gfx::Size& max_size);
+  void DisableAutoResizeForTesting(const gfx::Size& new_size);
 
   // IPC::Listener implementation ----------------------------------------------
 
@@ -725,6 +732,9 @@ class CONTENT_EXPORT RenderViewImpl
   virtual SSLStatus GetSSLStatusOfFrame(WebKit::WebFrame* frame) const OVERRIDE;
 #if defined(OS_ANDROID)
   virtual skia::RefPtr<SkPicture> CapturePicture() OVERRIDE;
+  virtual void UpdateTopControlsState(TopControlsState constraints,
+                                      TopControlsState current,
+                                      bool animate) OVERRIDE;
 #endif
 
   // webkit_glue::WebPluginPageDelegate implementation -------------------------
@@ -760,11 +770,7 @@ class CONTENT_EXPORT RenderViewImpl
  protected:
   // RenderWidget overrides:
   virtual void Close() OVERRIDE;
-  virtual void OnResize(const gfx::Size& new_size,
-                        const gfx::Size& physical_backing_size,
-                        float overdraw_bottom_height,
-                        const gfx::Rect& resizer_rect,
-                        bool is_fullscreen) OVERRIDE;
+  virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
   virtual void WillInitiatePaint() OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;

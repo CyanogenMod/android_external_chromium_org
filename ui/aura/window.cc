@@ -163,10 +163,10 @@ ui::Layer* Window::RecreateLayer() {
 
   UpdateLayerName(name_);
   layer_->SetFillsBoundsOpaquely(!transparent_);
-  // Install new layer as a sibling of the old layer, stacked on top of it.
+  // Install new layer as a sibling of the old layer, stacked below it.
   if (old_layer->parent()) {
     old_layer->parent()->Add(layer_);
-    old_layer->parent()->StackAbove(layer_, old_layer);
+    old_layer->parent()->StackBelow(layer_, old_layer);
   }
   // Migrate all the child layers over to the new layer. Copy the list because
   // the items are removed during iteration.
@@ -712,6 +712,9 @@ void Window::SetVisible(bool visible) {
                     OnWindowVisibilityChanging(this, visible));
 
   RootWindow* root_window = GetRootWindow();
+  if (root_window)
+    root_window->DispatchMouseExitToHidingWindow(this);
+
   client::VisibilityClient* visibility_client =
       client::GetVisibilityClient(this);
   if (visibility_client)
@@ -844,8 +847,14 @@ void Window::StackChildRelativeTo(Window* child,
   // for an explanation of this.
   size_t final_target_i = target_i;
   while (final_target_i > 0 &&
-         children_[final_target_i]->layer()->delegate() == NULL)
+         children_[final_target_i]->layer()->delegate() == NULL) {
     --final_target_i;
+  }
+
+  // Allow stacking immediately below a window with a NULL layer.
+  if (direction == STACK_BELOW && target_i != final_target_i)
+    direction = STACK_ABOVE;
+
   Window* final_target = children_[final_target_i];
 
   // If we couldn't find a valid target position, don't move anything.

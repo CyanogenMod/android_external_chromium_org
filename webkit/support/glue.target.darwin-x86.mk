@@ -11,7 +11,6 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,ppapi_ppapi_c_gyp)/ppapi_c.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
@@ -35,75 +34,15 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/plugins/npapi/plugin_host.cc \
-	webkit/plugins/npapi/plugin_instance.cc \
-	webkit/plugins/npapi/plugin_lib.cc \
-	webkit/plugins/npapi/plugin_lib_posix.cc \
-	webkit/plugins/npapi/plugin_list.cc \
-	webkit/plugins/npapi/plugin_list_posix.cc \
-	webkit/plugins/npapi/plugin_stream.cc \
-	webkit/plugins/npapi/plugin_stream_posix.cc \
-	webkit/plugins/npapi/plugin_stream_url.cc \
-	webkit/plugins/npapi/plugin_string_stream.cc \
-	webkit/plugins/npapi/plugin_utils.cc \
-	webkit/plugins/npapi/webplugin.cc \
-	webkit/plugins/npapi/webplugin_delegate_impl.cc \
-	webkit/plugins/npapi/webplugin_delegate_impl_android.cc \
-	webkit/plugins/npapi/webplugin_impl.cc \
-	webkit/plugins/plugin_constants.cc \
-	webkit/plugins/plugin_switches.cc \
-	webkit/plugins/ppapi/audio_helper.cc \
-	webkit/plugins/ppapi/content_decryptor_delegate.cc \
-	webkit/plugins/ppapi/event_conversion.cc \
-	webkit/plugins/ppapi/file_callbacks.cc \
-	webkit/plugins/ppapi/host_array_buffer_var.cc \
-	webkit/plugins/ppapi/host_globals.cc \
-	webkit/plugins/ppapi/host_var_tracker.cc \
-	webkit/plugins/ppapi/message_channel.cc \
-	webkit/plugins/ppapi/npapi_glue.cc \
-	webkit/plugins/ppapi/npobject_var.cc \
-	webkit/plugins/ppapi/plugin_module.cc \
-	webkit/plugins/ppapi/plugin_object.cc \
-	webkit/plugins/ppapi/ppapi_interface_factory.cc \
-	webkit/plugins/ppapi/ppapi_plugin_instance.cc \
-	webkit/plugins/ppapi/ppapi_webplugin_impl.cc \
-	webkit/plugins/ppapi/ppb_audio_impl.cc \
-	webkit/plugins/ppapi/ppb_broker_impl.cc \
-	webkit/plugins/ppapi/ppb_buffer_impl.cc \
-	webkit/plugins/ppapi/ppb_file_ref_impl.cc \
-	webkit/plugins/ppapi/ppb_flash_message_loop_impl.cc \
-	webkit/plugins/ppapi/ppb_gpu_blacklist_private_impl.cc \
-	webkit/plugins/ppapi/ppb_graphics_3d_impl.cc \
-	webkit/plugins/ppapi/ppb_image_data_impl.cc \
-	webkit/plugins/ppapi/ppb_network_monitor_private_impl.cc \
-	webkit/plugins/ppapi/ppb_proxy_impl.cc \
-	webkit/plugins/ppapi/ppb_scrollbar_impl.cc \
-	webkit/plugins/ppapi/ppb_tcp_server_socket_private_impl.cc \
-	webkit/plugins/ppapi/ppb_tcp_socket_private_impl.cc \
-	webkit/plugins/ppapi/ppb_uma_private_impl.cc \
-	webkit/plugins/ppapi/ppb_url_loader_impl.cc \
-	webkit/plugins/ppapi/ppb_var_deprecated_impl.cc \
-	webkit/plugins/ppapi/ppb_video_decoder_impl.cc \
-	webkit/plugins/ppapi/ppb_widget_impl.cc \
-	webkit/plugins/ppapi/ppb_x509_certificate_private_impl.cc \
-	webkit/plugins/ppapi/quota_file_io.cc \
-	webkit/plugins/ppapi/resource_creation_impl.cc \
-	webkit/plugins/ppapi/resource_helper.cc \
-	webkit/plugins/ppapi/string.cc \
-	webkit/plugins/ppapi/url_response_info_util.cc \
-	webkit/plugins/ppapi/url_request_info_util.cc \
-	webkit/plugins/ppapi/usb_key_code_conversion.cc \
-	webkit/plugins/sad_plugin.cc \
-	webkit/plugins/webplugininfo.cc \
 	webkit/glue/cpp_bound_class.cc \
 	webkit/glue/cpp_variant.cc \
-	webkit/glue/dom_operations.cc \
+	webkit/glue/cursor_utils.cc \
 	webkit/glue/fling_curve_configuration.cc \
 	webkit/glue/fling_animator_impl_android.cc \
 	webkit/glue/ftp_directory_listing_response_delegate.cc \
-	webkit/glue/glue_serialize.cc \
+	webkit/glue/glue_serialize_deprecated.cc \
 	webkit/glue/image_decoder.cc \
-	webkit/glue/multipart_response_delegate.cc \
+	webkit/glue/latin1_string_conversions.cc \
 	webkit/glue/npruntime_util.cc \
 	webkit/glue/resource_loader_bridge.cc \
 	webkit/glue/resource_request_body.cc \
@@ -114,9 +53,8 @@ LOCAL_SRC_FILES := \
 	webkit/glue/web_discardable_memory_impl.cc \
 	webkit/glue/webclipboard_impl.cc \
 	webkit/glue/webcookie.cc \
-	webkit/glue/webcursor.cc \
-	webkit/glue/webcursor_android.cc \
 	webkit/glue/webdropdata.cc \
+	webkit/glue/webfallbackthemeengine_impl.cc \
 	webkit/glue/webfileutilities_impl.cc \
 	webkit/glue/webkit_glue.cc \
 	webkit/glue/webkitplatformsupport_impl.cc \
@@ -126,8 +64,6 @@ LOCAL_SRC_FILES := \
 	webkit/glue/webthemeengine_impl_android.cc \
 	webkit/glue/webthread_impl.cc \
 	webkit/glue/weburlloader_impl.cc \
-	webkit/glue/weburlrequest_extradata_impl.cc \
-	webkit/glue/weburlresponse_extradata_impl.cc \
 	webkit/glue/web_io_operators.cc \
 	webkit/glue/worker_task_runner.cc
 
@@ -180,6 +116,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -188,8 +125,6 @@ MY_DEFS := \
 	'-DENABLE_LANGUAGE_DETECTION=1' \
 	'-DWEBKIT_EXTENSIONS_IMPLEMENTATION' \
 	'-DWEBKIT_GLUE_IMPLEMENTATION' \
-	'-DWEBKIT_PLUGINS_IMPLEMENTATION' \
-	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_BUILD_NO_IMAGE_ENCODE' \
 	'-DSK_DEFERRED_CANVAS_USES_GPIPE=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
@@ -237,17 +172,17 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(LOCAL_PATH)/v8/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

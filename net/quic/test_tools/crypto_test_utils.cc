@@ -100,7 +100,106 @@ void MovePackets(PacketSavingConnection* source_conn,
   }
 }
 
+// HexChar parses |c| as a hex character. If valid, it sets |*value| to the
+// value of the hex character and returns true. Otherwise it returns false.
+bool HexChar(char c, uint8* value) {
+  if (c >= '0' && c <= '9') {
+    *value = c - '0';
+    return true;
+  }
+  if (c >= 'a' && c <= 'f') {
+    *value = c - 'a';
+    return true;
+  }
+  if (c >= 'A' && c <= 'F') {
+    *value = c - 'A';
+    return true;
+  }
+  return false;
+}
+
 }  // anonymous namespace
+
+CryptoTestUtils::FakeClientOptions::FakeClientOptions()
+    : dont_verify_certs(false) {
+}
+
+// static
+int CryptoTestUtils::HandshakeWithFakeServer(
+    PacketSavingConnection* client_conn,
+    QuicCryptoClientStream* client) {
+  QuicGuid guid(1);
+  IPAddressNumber ip;
+  CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
+  IPEndPoint addr = IPEndPoint(ip, 1);
+  PacketSavingConnection* server_conn =
+      new PacketSavingConnection(guid, addr, true);
+  TestSession server_session(server_conn, QuicConfig(), true);
+
+  QuicCryptoServerConfig crypto_config(QuicCryptoServerConfig::TESTING);
+  SetupCryptoServerConfigForTest(
+      server_session.connection()->clock(),
+      server_session.connection()->random_generator(),
+      server_session.config(), &crypto_config);
+
+  QuicCryptoServerStream server(crypto_config, &server_session);
+  server_session.SetCryptoStream(&server);
+
+  // The client's handshake must have been started already.
+  CHECK_NE(0u, client_conn->packets_.size());
+
+  CommunicateHandshakeMessages(client_conn, client, server_conn, &server);
+
+  CompareClientAndServerKeys(client, &server);
+
+  return client->num_sent_client_hellos();
+}
+
+// static
+int CryptoTestUtils::HandshakeWithFakeClient(
+    PacketSavingConnection* server_conn,
+    QuicCryptoServerStream* server,
+    const FakeClientOptions& options) {
+  QuicGuid guid(1);
+  IPAddressNumber ip;
+  CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
+  IPEndPoint addr = IPEndPoint(ip, 1);
+  PacketSavingConnection* client_conn =
+      new PacketSavingConnection(guid, addr, false);
+  TestSession client_session(client_conn, QuicConfig(), false);
+  QuicCryptoClientConfig crypto_config;
+
+  client_session.config()->SetDefaults();
+  crypto_config.SetDefaults();
+  // TODO(rtenneti): Enable testing of ProofVerifier.
+  // if (!options.dont_verify_certs) {
+  //  crypto_config.SetProofVerifier(ProofVerifierForTesting());
+  // }
+  QuicCryptoClientStream client("test.example.com", &client_session,
+                                &crypto_config);
+  client_session.SetCryptoStream(&client);
+
+  CHECK(client.CryptoConnect());
+  CHECK_EQ(1u, client_conn->packets_.size());
+
+  CommunicateHandshakeMessages(client_conn, &client, server_conn, server);
+
+  CompareClientAndServerKeys(&client, server);
+
+  return client.num_sent_client_hellos();
+}
+
+// static
+void CryptoTestUtils::SetupCryptoServerConfigForTest(
+    const QuicClock* clock,
+    QuicRandom* rand,
+    QuicConfig* config,
+    QuicCryptoServerConfig* crypto_config) {
+  config->SetDefaults();
+  scoped_ptr<CryptoHandshakeMessage> scfg(
+      crypto_config->AddDefaultConfig(
+          rand, clock, QuicCryptoServerConfig::kDefaultExpiry));
+}
 
 // static
 void CryptoTestUtils::CommunicateHandshakeMessages(
@@ -122,88 +221,6 @@ void CryptoTestUtils::CommunicateHandshakeMessages(
       LOG(INFO) << "here";
     }
     MovePackets(b_conn, &b_i, a, a_conn);
-  }
-}
-
-// static
-int CryptoTestUtils::HandshakeWithFakeServer(
-    PacketSavingConnection* client_conn,
-    QuicCryptoClientStream* client) {
-  QuicGuid guid(1);
-  IPAddressNumber ip;
-  CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
-  IPEndPoint addr = IPEndPoint(ip, 1);
-  PacketSavingConnection* server_conn =
-      new PacketSavingConnection(guid, addr, true);
-  TestSession server_session(server_conn, true);
-
-  QuicConfig config;
-  QuicCryptoServerConfig crypto_config(QuicCryptoServerConfig::TESTING);
-  SetupCryptoServerConfigForTest(
-      server_session.connection()->clock(),
-      server_session.connection()->random_generator(),
-      &config, &crypto_config);
-
-  QuicCryptoServerStream server(config, crypto_config, &server_session);
-  server_session.SetCryptoStream(&server);
-
-  // The client's handshake must have been started already.
-  CHECK_NE(0u, client_conn->packets_.size());
-
-  CommunicateHandshakeMessages(client_conn, client, server_conn, &server);
-
-  CompareClientAndServerKeys(client, &server);
-
-  return client->num_sent_client_hellos();
-}
-
-// static
-int CryptoTestUtils::HandshakeWithFakeClient(
-    PacketSavingConnection* server_conn,
-    QuicCryptoServerStream* server) {
-  QuicGuid guid(1);
-  IPAddressNumber ip;
-  CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
-  IPEndPoint addr = IPEndPoint(ip, 1);
-  PacketSavingConnection* client_conn =
-      new PacketSavingConnection(guid, addr, false);
-  TestSession client_session(client_conn, true);
-  QuicConfig config;
-  QuicCryptoClientConfig crypto_config;
-
-  config.SetDefaults();
-  crypto_config.SetDefaults();
-  // TODO(rtenneti): Enable testing of ProofVerifier.
-  // crypto_config.SetProofVerifier(ProofVerifierForTesting());
-  QuicCryptoClientStream client("test.example.com", config, &client_session,
-                                &crypto_config);
-  client_session.SetCryptoStream(&client);
-
-  CHECK(client.CryptoConnect());
-  CHECK_EQ(1u, client_conn->packets_.size());
-
-  CommunicateHandshakeMessages(client_conn, &client, server_conn, server);
-
-  CompareClientAndServerKeys(&client, server);
-
-  return client.num_sent_client_hellos();
-}
-
-// static
-void CryptoTestUtils::SetupCryptoServerConfigForTest(
-    const QuicClock* clock,
-    QuicRandom* rand,
-    QuicConfig* config,
-    QuicCryptoServerConfig* crypto_config) {
-  config->SetDefaults();
-  CryptoHandshakeMessage extra_tags;
-  config->ToHandshakeMessage(&extra_tags);
-
-  scoped_ptr<CryptoHandshakeMessage> scfg(
-      crypto_config->AddDefaultConfig(
-          rand, clock, extra_tags, QuicCryptoServerConfig::kDefaultExpiry));
-  if (!config->SetFromHandshakeMessage(*scfg)) {
-    CHECK(false) << "Crypto config could not be parsed by QuicConfig.";
   }
 }
 
@@ -274,8 +291,8 @@ class MockCommonCertSets : public CommonCertSets {
 };
 
 CommonCertSets* CryptoTestUtils::MockCommonCertSets(StringPiece cert,
-                                                   uint64 hash,
-                                                   uint32 index) {
+                                                    uint64 hash,
+                                                    uint32 index) {
   return new class MockCommonCertSets(cert, hash, index);
 }
 
@@ -365,5 +382,91 @@ void CryptoTestUtils::CompareClientAndServerKeys(
                                 client_forward_secure_decrypter_iv.data(),
                                 client_forward_secure_decrypter_iv.length());
 }
+
+// static
+QuicTag CryptoTestUtils::ParseTag(const char* tagstr) {
+  const size_t len = strlen(tagstr);
+  CHECK_NE(0u, len);
+
+  QuicTag tag = 0;
+
+  if (tagstr[0] == '#') {
+    CHECK_EQ(static_cast<size_t>(1 + 2*4), len);
+    tagstr++;
+
+    for (size_t i = 0; i < 8; i++) {
+      tag <<= 4;
+
+      uint8 v = 0;
+      CHECK(HexChar(tagstr[i], &v));
+      tag |= v;
+    }
+
+    return tag;
+  }
+
+  CHECK_LE(len, 4u);
+  for (size_t i = 0; i < 4; i++) {
+    tag >>= 8;
+    if (i < len) {
+      tag |= static_cast<uint32>(tagstr[i]) << 24;
+    }
+  }
+
+  return tag;
+}
+
+// static
+CryptoHandshakeMessage CryptoTestUtils::Message(const char* message_tag, ...) {
+  va_list ap;
+  va_start(ap, message_tag);
+
+  CryptoHandshakeMessage message = BuildMessage(message_tag, ap);
+  va_end(ap);
+  return message;
+}
+
+// static
+CryptoHandshakeMessage CryptoTestUtils::BuildMessage(const char* message_tag,
+                                                     va_list ap) {
+  CryptoHandshakeMessage msg;
+  msg.set_tag(ParseTag(message_tag));
+
+  for (;;) {
+    const char* tagstr = va_arg(ap, const char*);
+    if (tagstr == NULL) {
+      break;
+    }
+
+    const QuicTag tag = ParseTag(tagstr);
+    const char* valuestr = va_arg(ap, const char*);
+
+    size_t len = strlen(valuestr);
+    if (len > 0 && valuestr[0] == '#') {
+      valuestr++;
+      len--;
+
+      CHECK(len % 2 == 0);
+      scoped_ptr<uint8[]> buf(new uint8[len/2]);
+
+      for (size_t i = 0; i < len/2; i++) {
+        uint8 v = 0;
+        CHECK(HexChar(valuestr[i*2], &v));
+        buf[i] = v << 4;
+        CHECK(HexChar(valuestr[i*2 + 1], &v));
+        buf[i] |= v;
+      }
+
+      msg.SetStringPiece(
+          tag, StringPiece(reinterpret_cast<char*>(buf.get()), len/2));
+      continue;
+    }
+
+    msg.SetStringPiece(tag, valuestr);
+  }
+
+  return msg;
+}
+
 }  // namespace test
 }  // namespace net

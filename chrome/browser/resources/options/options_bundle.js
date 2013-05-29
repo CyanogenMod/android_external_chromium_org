@@ -76,9 +76,6 @@
 <include src="cookies_list.js"></include>
 <include src="cookies_view.js"></include>
 <include src="factory_reset_overlay.js"></include>
-<include src="managed_user_exceptions_area.js"></include>
-<include src="managed_user_settings.js"></include>
-<include src="managed_user_set_passphrase.js"></include>
 <include src="font_settings.js"></include>
 <include src="handler_options.js"></include>
 <include src="handler_options_list.js"></include>
@@ -92,12 +89,14 @@
 <include src="language_list.js"></include>
 <include src="language_options.js"></include>
 <include src="manage_profile_overlay.js"></include>
+<include src="managed_user_learn_more.js"</include>
 <include src="media_galleries_list.js"></include>
 <include src="media_galleries_manager_overlay.js"></include>
 <include src="options_focus_manager.js"></include>
 <include src="password_manager.js"></include>
 <include src="password_manager_list.js"></include>
 <include src="profiles_icon_grid.js"></include>
+<include src="reset_profile_settings_overlay.js"></include>
 <include src="search_engine_manager.js"></include>
 <include src="search_engine_manager_engine_list.js"></include>
 <include src="search_page.js"></include>

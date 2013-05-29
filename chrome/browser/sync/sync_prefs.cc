@@ -351,6 +351,8 @@ const char* SyncPrefs::GetPrefNameForDataType(syncer::ModelType data_type) {
       return prefs::kSyncTabs;
     case syncer::PRIORITY_PREFERENCES:
       return prefs::kSyncPriorityPreferences;
+    case syncer::MANAGED_USERS:
+      return prefs::kSyncManagedUsers;
     default:
       break;
   }
@@ -430,6 +432,8 @@ void SyncPrefs::RegisterPrefGroups() {
   pref_groups_[syncer::PROXY_TABS].Put(syncer::SESSIONS);
   pref_groups_[syncer::PROXY_TABS].Put(syncer::FAVICON_IMAGES);
   pref_groups_[syncer::PROXY_TABS].Put(syncer::FAVICON_TRACKING);
+
+  pref_groups_[syncer::MANAGED_USER_SETTINGS].Put(syncer::SESSIONS);
 
   // TODO(zea): put favicons in the bookmarks group as well once it handles
   // those favicons.

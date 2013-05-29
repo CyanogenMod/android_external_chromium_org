@@ -11,6 +11,7 @@
 #include "base/base64.h"
 #include "base/debug/trace_event.h"
 #include "base/values.h"
+#include "cc/base/math_util.h"
 #include "cc/base/util.h"
 #include "cc/debug/rendering_stats.h"
 #include "cc/debug/traced_picture.h"
@@ -23,6 +24,8 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/utils/SkPictureUtils.h"
+#include "ui/gfx/codec/jpeg_codec.h"
+#include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
 
@@ -30,12 +33,52 @@ namespace cc {
 
 namespace {
 
-// Version ID; to be used in serialization.
-const int kPictureVersion = 1;
+SkData* EncodeBitmap(size_t* offset, const SkBitmap& bm) {
+  const int kJpegQuality = 80;
+  std::vector<unsigned char> data;
 
-// Minimum size of a decoded stream that we need.
-// 4 bytes for version, 4 * 4 for each of the 2 rects.
-const unsigned int kMinPictureSizeBytes = 36;
+  // If bitmap is opaque, encode as JPEG.
+  // Otherwise encode as PNG.
+  bool encoding_succeeded = false;
+  if (bm.isOpaque()) {
+    SkAutoLockPixels lock_bitmap(bm);
+    if (bm.empty())
+      return NULL;
+
+    encoding_succeeded = gfx::JPEGCodec::Encode(
+        reinterpret_cast<unsigned char*>(bm.getAddr32(0, 0)),
+        gfx::JPEGCodec::FORMAT_SkBitmap,
+        bm.width(),
+        bm.height(),
+        bm.rowBytes(),
+        kJpegQuality,
+        &data);
+  } else {
+    encoding_succeeded = gfx::PNGCodec::EncodeBGRASkBitmap(bm, false, &data);
+  }
+
+  if (encoding_succeeded) {
+    *offset = 0;
+    return SkData::NewWithCopy(&data.front(), data.size());
+  }
+  return NULL;
+}
+
+bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
+  const unsigned char* data = static_cast<const unsigned char *>(buffer);
+
+  // Try PNG first.
+  if (gfx::PNGCodec::Decode(data, size, bm))
+    return true;
+
+  // Try JPEG.
+  scoped_ptr<SkBitmap> decoded_jpeg(gfx::JPEGCodec::Decode(data, size));
+  if (decoded_jpeg) {
+    *bm = *decoded_jpeg;
+    return true;
+  }
+  return false;
+}
 
 class DisableLCDTextFilter : public SkDrawFilter {
  public:
@@ -86,11 +129,10 @@ scoped_refptr<Picture> Picture::Create(gfx::Rect layer_rect) {
   return make_scoped_refptr(new Picture(layer_rect));
 }
 
-scoped_refptr<Picture> Picture::CreateFromBase64String(
-    const std::string& encoded_string) {
+scoped_refptr<Picture> Picture::CreateFromValue(const base::Value* value) {
   bool success;
   scoped_refptr<Picture> picture =
-    make_scoped_refptr(new Picture(encoded_string, &success));
+    make_scoped_refptr(new Picture(value, &success));
   if (!success)
     picture = NULL;
   return picture;
@@ -102,43 +144,46 @@ Picture::Picture(gfx::Rect layer_rect)
   // the picture to be recorded in Picture::Record.
 }
 
-Picture::Picture(const std::string& encoded_string, bool* success) {
+Picture::Picture(const base::Value* raw_value, bool* success) {
+  const base::DictionaryValue* value = NULL;
+  if (!raw_value->GetAsDictionary(&value)) {
+    *success = false;
+    return;
+  }
+
   // Decode the picture from base64.
+  std::string encoded;
+  if (!value->GetString("skp64", &encoded)) {
+    *success = false;
+    return;
+  }
+
   std::string decoded;
-  base::Base64Decode(encoded_string, &decoded);
+  base::Base64Decode(encoded, &decoded);
   SkMemoryStream stream(decoded.data(), decoded.size());
 
-  if (decoded.size() < kMinPictureSizeBytes) {
+  const base::Value* layer_rect = NULL;
+  if (!value->Get("params.layer_rect", &layer_rect)) {
+    *success = false;
+    return;
+  }
+  if (!MathUtil::FromValue(layer_rect, &layer_rect_)) {
     *success = false;
     return;
   }
 
-  int version = stream.readS32();
-  if (version != kPictureVersion) {
+  const base::Value* opaque_rect = NULL;
+  if (!value->Get("params.opaque_rect", &opaque_rect)) {
     *success = false;
     return;
   }
-
-  // First, read the layer and opaque rects.
-  int layer_rect_x = stream.readS32();
-  int layer_rect_y = stream.readS32();
-  int layer_rect_width = stream.readS32();
-  int layer_rect_height = stream.readS32();
-  layer_rect_ = gfx::Rect(layer_rect_x,
-                          layer_rect_y,
-                          layer_rect_width,
-                          layer_rect_height);
-  int opaque_rect_x = stream.readS32();
-  int opaque_rect_y = stream.readS32();
-  int opaque_rect_width = stream.readS32();
-  int opaque_rect_height = stream.readS32();
-  opaque_rect_ = gfx::Rect(opaque_rect_x,
-                           opaque_rect_y,
-                           opaque_rect_width,
-                           opaque_rect_height);
+  if (!MathUtil::FromValue(opaque_rect, &opaque_rect_)) {
+    *success = false;
+    return;
+  }
 
   // Read the picture. This creates an empty picture on failure.
-  picture_ = skia::AdoptRef(new SkPicture(&stream, success, NULL));
+  picture_ = skia::AdoptRef(new SkPicture(&stream, success, &DecodeBitmap));
 }
 
 Picture::Picture(const skia::RefPtr<SkPicture>& picture,
@@ -192,8 +237,6 @@ void Picture::Record(ContentLayerClient* painter,
                "width", layer_rect_.width(),
                "height", layer_rect_.height());
 
-  // Record() should only be called once.
-  DCHECK(!picture_);
   DCHECK(!tile_grid_info.fTileInterval.isEmpty());
   picture_ = skia::AdoptRef(new SkTileGridPicture(
       layer_rect_.width(), layer_rect_.height(), tile_grid_info));
@@ -208,15 +251,11 @@ void Picture::Record(ContentLayerClient* painter,
   canvas->translate(SkFloatToScalar(-layer_rect_.x()),
                     SkFloatToScalar(-layer_rect_.y()));
 
-  SkPaint paint;
-  paint.setAntiAlias(false);
-  paint.setXfermodeMode(SkXfermode::kClear_Mode);
   SkRect layer_skrect = SkRect::MakeXYWH(layer_rect_.x(),
                                          layer_rect_.y(),
                                          layer_rect_.width(),
                                          layer_rect_.height());
   canvas->clipRect(layer_skrect);
-  canvas->drawRect(layer_skrect, paint);
 
   gfx::RectF opaque_layer_rect;
   base::TimeTicks begin_record_time;
@@ -300,52 +339,53 @@ void Picture::GatherPixelRefs(
 
 void Picture::Raster(
     SkCanvas* canvas,
+    SkDrawPictureCallback* callback,
     gfx::Rect content_rect,
     float contents_scale,
     bool enable_lcd_text) {
-  TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("cc.debug"), "Picture::Raster",
+  TRACE_EVENT_BEGIN1("cc", "Picture::Raster",
     "data", AsTraceableRasterData(content_rect, contents_scale));
 
   DCHECK(picture_);
 
-  DisableLCDTextFilter disable_lcd_text_filter;
+  skia::RefPtr<DisableLCDTextFilter> disable_lcd_text_filter;
 
   canvas->save();
   canvas->clipRect(gfx::RectToSkRect(content_rect));
   canvas->scale(contents_scale, contents_scale);
   canvas->translate(layer_rect_.x(), layer_rect_.y());
   // Pictures by default have LCD text enabled.
-  if (!enable_lcd_text)
-    canvas->setDrawFilter(&disable_lcd_text_filter);
-  canvas->drawPicture(*picture_);
+  if (!enable_lcd_text) {
+    disable_lcd_text_filter = skia::AdoptRef(new DisableLCDTextFilter);
+    canvas->setDrawFilter(disable_lcd_text_filter.get());
+  }
+  picture_->draw(canvas, callback);
+  SkIRect bounds;
+  canvas->getClipDeviceBounds(&bounds);
   canvas->restore();
+  TRACE_EVENT_END1("cc", "Picture::Raster",
+                   "num_pixels_rasterized", bounds.width() * bounds.height());
 }
 
-void Picture::AsBase64String(std::string* output) const {
+scoped_ptr<Value> Picture::AsValue() const {
   SkDynamicMemoryWStream stream;
 
-  // First save the version, layer_rect_ and opaque_rect.
-  stream.write32(kPictureVersion);
-
-  stream.write32(layer_rect_.x());
-  stream.write32(layer_rect_.y());
-  stream.write32(layer_rect_.width());
-  stream.write32(layer_rect_.height());
-
-  stream.write32(opaque_rect_.x());
-  stream.write32(opaque_rect_.y());
-  stream.write32(opaque_rect_.width());
-  stream.write32(opaque_rect_.height());
-
   // Serialize the picture.
-  picture_->serialize(&stream);
+  picture_->serialize(&stream, &EncodeBitmap);
 
   // Encode the picture as base64.
+  scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
+  res->Set("params.layer_rect", MathUtil::AsValue(layer_rect_).release());
+  res->Set("params.opaque_rect", MathUtil::AsValue(opaque_rect_).release());
+
   size_t serialized_size = stream.bytesWritten();
   scoped_ptr<char[]> serialized_picture(new char[serialized_size]);
   stream.copyTo(serialized_picture.get());
+  std::string b64_picture;
   base::Base64Encode(std::string(serialized_picture.get(), serialized_size),
-                     output);
+                     &b64_picture);
+  res->SetString("skp64", b64_picture);
+  return res.PassAs<base::Value>();
 }
 
 base::LazyInstance<Picture::PixelRefs>

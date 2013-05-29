@@ -18,7 +18,6 @@
 #include "googleurl/src/gurl.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/media_player_listener.h"
-#include "media/base/media_export.h"
 
 namespace media {
 
@@ -44,16 +43,11 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
                     const GURL& url,
                     const GURL& first_party_for_cookies,
                     bool hide_url_log,
-                    MediaPlayerManager* manager,
-                    const MediaErrorCB& media_error_cb,
-                    const VideoSizeChangedCB& video_size_changed_cb,
-                    const BufferingUpdateCB& buffering_update_cb,
-                    const MediaMetadataChangedCB& media_prepared_cb,
-                    const PlaybackCompleteCB& playback_complete_cb,
-                    const SeekCompleteCB& seek_complete_cb,
-                    const TimeUpdateCB& time_update_cb,
-                    const MediaInterruptedCB& media_interrupted_cb);
+                    MediaPlayerManager* manager);
   virtual ~MediaPlayerBridge();
+
+  // Initialize this object and extract the metadata from the media.
+  virtual void Initialize();
 
   // MediaPlayerAndroid implementation.
   virtual void SetVideoSurface(jobject surface) OVERRIDE;
@@ -90,9 +84,6 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   void OnMediaPrepared();
 
  private:
-  // Initialize this object and extract the metadata from the media.
-  void Initialize();
-
   // Create the actual android media player.
   void CreateMediaPlayer();
 

@@ -30,7 +30,6 @@
 #include "content/test/test_content_client.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/glue/webkit_glue.h"
 
 namespace content {
 namespace {
@@ -297,8 +296,7 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
   NavigationControllerImpl& cont =
       static_cast<NavigationControllerImpl&>(controller());
   ViewHostMsg_FrameNavigate_Params params;
-  InitNavigateParams(&params, 0, GURL(chrome::kAboutBlankURL),
-                     PAGE_TRANSITION_TYPED);
+  InitNavigateParams(&params, 0, GURL(kAboutBlankURL), PAGE_TRANSITION_TYPED);
 
   LoadCommittedDetails details;
   cont.RendererDidNavigate(params, &details);
@@ -414,12 +412,16 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
 
   EXPECT_FALSE(contents()->cross_navigation_pending());
   EXPECT_EQ(orig_rvh, contents()->GetRenderViewHost());
+  EXPECT_EQ(url, contents()->GetLastCommittedURL());
+  EXPECT_EQ(url, contents()->GetActiveURL());
 
   // Navigate to new site
   const GURL url2("http://www.yahoo.com");
   controller().LoadURL(
       url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   EXPECT_TRUE(contents()->cross_navigation_pending());
+  EXPECT_EQ(url, contents()->GetLastCommittedURL());
+  EXPECT_EQ(url2, contents()->GetActiveURL());
   TestRenderViewHost* pending_rvh =
       static_cast<TestRenderViewHost*>(contents()->GetPendingRenderViewHost());
   int pending_rvh_delete_count = 0;
@@ -437,6 +439,8 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
 
   EXPECT_FALSE(contents()->cross_navigation_pending());
   EXPECT_EQ(pending_rvh, contents()->GetRenderViewHost());
+  EXPECT_EQ(url2, contents()->GetLastCommittedURL());
+  EXPECT_EQ(url2, contents()->GetActiveURL());
   EXPECT_NE(instance1, instance2);
   EXPECT_TRUE(contents()->GetPendingRenderViewHost() == NULL);
   // We keep the original RVH around, swapped out.
@@ -1018,7 +1022,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationCanceled) {
   EXPECT_TRUE(contents()->GetPendingRenderViewHost() == NULL);
 }
 
-// Test that NavigationEntries have the correct content state after going
+// Test that NavigationEntries have the correct page state after going
 // forward and back.  Prevents regression for bug 1116137.
 TEST_F(WebContentsImplTest, NavigationEntryContentState) {
   TestRenderViewHost* orig_rvh = test_rvh();
@@ -1029,30 +1033,30 @@ TEST_F(WebContentsImplTest, NavigationEntryContentState) {
   NavigationEntry* entry = controller().GetLastCommittedEntry();
   EXPECT_TRUE(entry == NULL);
 
-  // Committed entry should have content state after DidNavigate.
+  // Committed entry should have page state after DidNavigate.
   contents()->TestDidNavigate(orig_rvh, 1, url, PAGE_TRANSITION_TYPED);
   entry = controller().GetLastCommittedEntry();
-  EXPECT_FALSE(entry->GetContentState().empty());
+  EXPECT_TRUE(entry->GetPageState().IsValid());
 
   // Navigate to same site.
   const GURL url2("http://images.google.com");
   controller().LoadURL(url2, Referrer(), PAGE_TRANSITION_TYPED, std::string());
   entry = controller().GetLastCommittedEntry();
-  EXPECT_FALSE(entry->GetContentState().empty());
+  EXPECT_TRUE(entry->GetPageState().IsValid());
 
-  // Committed entry should have content state after DidNavigate.
+  // Committed entry should have page state after DidNavigate.
   contents()->TestDidNavigate(orig_rvh, 2, url2, PAGE_TRANSITION_TYPED);
   entry = controller().GetLastCommittedEntry();
-  EXPECT_FALSE(entry->GetContentState().empty());
+  EXPECT_TRUE(entry->GetPageState().IsValid());
 
-  // Now go back.  Committed entry should still have content state.
+  // Now go back.  Committed entry should still have page state.
   controller().GoBack();
   contents()->TestDidNavigate(orig_rvh, 1, url, PAGE_TRANSITION_TYPED);
   entry = controller().GetLastCommittedEntry();
-  EXPECT_FALSE(entry->GetContentState().empty());
+  EXPECT_TRUE(entry->GetPageState().IsValid());
 }
 
-// Test that NavigationEntries have the correct content state and SiteInstance
+// Test that NavigationEntries have the correct page state and SiteInstance
 // state after opening a new window to about:blank.  Prevents regression for
 // bugs b/1116137 and http://crbug.com/111975.
 TEST_F(WebContentsImplTest, NavigationEntryContentStateNewWindow) {
@@ -1060,13 +1064,13 @@ TEST_F(WebContentsImplTest, NavigationEntryContentStateNewWindow) {
 
   // When opening a new window, it is navigated to about:blank internally.
   // Currently, this results in two DidNavigate events.
-  const GURL url(chrome::kAboutBlankURL);
+  const GURL url(kAboutBlankURL);
   contents()->TestDidNavigate(orig_rvh, 1, url, PAGE_TRANSITION_TYPED);
   contents()->TestDidNavigate(orig_rvh, 1, url, PAGE_TRANSITION_TYPED);
 
-  // Should have a content state here.
+  // Should have a page state here.
   NavigationEntry* entry = controller().GetLastCommittedEntry();
-  EXPECT_FALSE(entry->GetContentState().empty());
+  EXPECT_TRUE(entry->GetPageState().IsValid());
 
   // The SiteInstance should be available for other navigations to use.
   NavigationEntryImpl* entry_impl =

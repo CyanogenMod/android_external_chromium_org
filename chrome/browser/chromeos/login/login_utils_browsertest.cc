@@ -35,6 +35,7 @@
 #include "chrome/browser/policy/cloud/device_management_service.h"
 #include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
+#include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -133,7 +134,7 @@ void BlockLoop(base::WaitableEvent* completion, base::Callback<bool()> work) {
   do {
     completion->Wait();
   } while (work.Run());
-  MessageLoop::current()->QuitNow();
+  base::MessageLoop::current()->QuitNow();
 }
 
 void CopyLockResult(base::RunLoop* loop,
@@ -158,7 +159,7 @@ class LoginUtilsTest : public testing::Test,
   LoginUtilsTest()
       : fake_io_thread_completion_(false, false),
         fake_io_thread_("fake_io_thread"),
-        loop_(MessageLoop::TYPE_IO),
+        loop_(base::MessageLoop::TYPE_IO),
         browser_process_(TestingBrowserProcess::GetGlobal()),
         local_state_(browser_process_),
         ui_thread_(BrowserThread::UI, &loop_),
@@ -184,8 +185,8 @@ class LoginUtilsTest : public testing::Test,
     // A thread is needed to create a new MessageLoop, since there can be only
     // one loop per thread.
     fake_io_thread_.StartWithOptions(
-        base::Thread::Options(MessageLoop::TYPE_IO, 0));
-    MessageLoop* fake_io_loop = fake_io_thread_.message_loop();
+        base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
+    base::MessageLoop* fake_io_loop = fake_io_thread_.message_loop();
     // Make this loop enter the single task, BlockLoop(). Pass in the completion
     // event and the work callback.
     fake_io_thread_.StopSoon();
@@ -362,7 +363,7 @@ class LoginUtilsTest : public testing::Test,
     fake_io_thread_work_.Reset();
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        MessageLoop::QuitWhenIdleClosure());
+        base::MessageLoop::QuitWhenIdleClosure());
     // If there was work then keep waiting for more work.
     // If there was no work then quit the fake IO loop.
     return has_work;
@@ -405,6 +406,12 @@ class LoginUtilsTest : public testing::Test,
   }
 
   void PrepareProfile(const std::string& username) {
+    // Normally this would happen during browser startup, but for tests
+    // we need to trigger creation of Profile-related services.
+    ChromeBrowserMainExtraPartsProfiles::
+        EnsureBrowserContextKeyedServiceFactoriesBuilt();
+    ProfileManager::AllowGetDefaultProfile();
+
     DeviceSettingsTestHelper device_settings_test_helper;
     DeviceSettingsService::Get()->SetSessionManager(
         &device_settings_test_helper, new MockOwnerKeyUtil());
@@ -428,9 +435,10 @@ class LoginUtilsTest : public testing::Test,
     // Setting |kHasCookies| to false prevents ProfileAuthData::Transfer from
     // waiting for an IO task before proceeding.
     const bool kHasCookies = false;
+    const bool kHasActiveSession = false;
     LoginUtils::Get()->PrepareProfile(
         UserContext(username, "password", std::string(), username),
-        std::string(), kUsingOAuth, kHasCookies, this);
+        std::string(), kUsingOAuth, kHasCookies, kHasActiveSession, this);
     device_settings_test_helper.Flush();
     RunUntilIdle();
 
@@ -496,7 +504,7 @@ class LoginUtilsTest : public testing::Test,
   base::WaitableEvent fake_io_thread_completion_;
   base::Thread fake_io_thread_;
 
-  MessageLoop loop_;
+  base::MessageLoop loop_;
   TestingBrowserProcess* browser_process_;
   ScopedTestingLocalState local_state_;
 

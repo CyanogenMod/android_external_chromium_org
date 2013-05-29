@@ -291,12 +291,6 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kURLWhitelist,
     prefs::kUrlWhitelist,
     Value::TYPE_LIST },
-  { key::kEnterpriseWebStoreURL,
-    prefs::kEnterpriseWebStoreURL,
-    Value::TYPE_STRING },
-  { key::kEnterpriseWebStoreName,
-    prefs::kEnterpriseWebStoreName,
-    Value::TYPE_STRING },
   { key::kEnableMemoryInfo,
     prefs::kEnableMemoryInfo,
     Value::TYPE_BOOLEAN },
@@ -321,6 +315,12 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kVideoCaptureAllowed,
     prefs::kVideoCaptureAllowed,
     Value::TYPE_BOOLEAN },
+  { key::kAudioCaptureAllowedUrls,
+    prefs::kAudioCaptureAllowedUrls,
+    Value::TYPE_LIST },
+  { key::kVideoCaptureAllowedUrls,
+    prefs::kVideoCaptureAllowedUrls,
+    Value::TYPE_LIST },
   { key::kHideWebStoreIcon,
     prefs::kHideWebStoreIcon,
     Value::TYPE_BOOLEAN },
@@ -416,7 +416,6 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
   }
 
   handlers_.push_back(new AutofillPolicyHandler());
-  handlers_.push_back(new ClearSiteDataOnExitPolicyHandler());
   handlers_.push_back(new DefaultSearchPolicyHandler());
   handlers_.push_back(new DiskCacheDirPolicyHandler());
   handlers_.push_back(new FileSelectionDialogsHandler());

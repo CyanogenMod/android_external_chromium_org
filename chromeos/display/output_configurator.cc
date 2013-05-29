@@ -12,15 +12,12 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time.h"
+#include "chromeos/display/output_util.h"
 #include "chromeos/display/real_output_configurator_delegate.h"
 
 namespace chromeos {
 
 namespace {
-
-// Prefixes for the built-in displays.
-const char kInternal_LVDS[] = "LVDS";
-const char kInternal_eDP[] = "eDP";
 
 // The delay to perform configuration after RRNotify.  See the comment
 // in |Dispatch()|.
@@ -40,6 +37,24 @@ std::string DisplayPowerStateToString(DisplayPowerState state) {
     default:
       return "unknown (" + base::IntToString(state) + ")";
   }
+}
+
+// Returns a string describing |state|.
+std::string OutputStateToString(OutputState state) {
+  switch (state) {
+    case STATE_INVALID:
+      return "INVALID";
+    case STATE_HEADLESS:
+      return "HEADLESS";
+    case STATE_SINGLE:
+      return "SINGLE";
+    case STATE_DUAL_MIRROR:
+      return "DUAL_MIRROR";
+    case STATE_DUAL_EXTENDED:
+      return "DUAL_EXTENDED";
+  }
+  NOTREACHED() << "Unknown state " << state;
+  return "INVALID";
 }
 
 // Returns the number of outputs in |outputs| that should be turned on, per
@@ -93,7 +108,8 @@ OutputConfigurator::OutputSnapshot::OutputSnapshot()
       is_internal(false),
       is_aspect_preserving_scaling(false),
       touch_device_id(0),
-      index(0) {}
+      display_id(0),
+      has_display_id(false) {}
 
 OutputConfigurator::CoordinateTransformation::CoordinateTransformation()
   : x_scale(1.0),
@@ -142,13 +158,9 @@ bool OutputConfigurator::TestApi::SendOutputChangeEvents(bool connected) {
   return true;
 }
 
-// static
-bool OutputConfigurator::IsInternalOutputName(const std::string& name) {
-  return name.find(kInternal_LVDS) == 0 || name.find(kInternal_eDP) == 0;
-}
-
 OutputConfigurator::OutputConfigurator()
     : state_controller_(NULL),
+      mirroring_controller_(NULL),
       configure_display_(base::chromeos::IsRunningOnChromeOS()),
       xrandr_event_base_(0),
       output_state_(STATE_INVALID),
@@ -193,7 +205,8 @@ void OutputConfigurator::Start() {
   delegate_->InitXRandRExtension(&xrandr_event_base_);
 
   std::vector<OutputSnapshot> outputs = delegate_->GetOutputs();
-  EnterState(GetOutputState(outputs, power_state_), power_state_, outputs);
+  EnterStateOrFallBackToSoftwareMirroring(
+      GetOutputState(outputs, power_state_), power_state_, outputs);
 
   // Force the DPMS on chrome startup as the driver doesn't always detect
   // that all displays are on when signing out.
@@ -223,7 +236,8 @@ bool OutputConfigurator::SetDisplayPower(DisplayPowerState power_state,
       flags & kSetDisplayPowerOnlyIfSingleInternalDisplay;
   bool single_internal_display = outputs.size() == 1 && outputs[0].is_internal;
   if ((single_internal_display || !only_if_single_internal_display) &&
-      EnterState(GetOutputState(outputs, power_state), power_state, outputs)) {
+      EnterStateOrFallBackToSoftwareMirroring(
+          GetOutputState(outputs, power_state), power_state, outputs)) {
     if (power_state != DISPLAY_POWER_ALL_OFF)  {
       // Force the DPMS on since the driver doesn't always detect that it
       // should turn on. This is needed when coming back from idle suspend.
@@ -239,12 +253,14 @@ bool OutputConfigurator::SetDisplayMode(OutputState new_state) {
   if (!configure_display_)
     return false;
 
+  VLOG(1) << "SetDisplayMode: state=" << OutputStateToString(new_state);
   if (output_state_ == new_state)
     return true;
 
   delegate_->GrabServer();
   std::vector<OutputSnapshot> outputs = delegate_->GetOutputs();
-  bool success = EnterState(new_state, power_state_, outputs);
+  bool success = EnterStateOrFallBackToSoftwareMirroring(
+      new_state, power_state_, outputs);
   delegate_->UngrabServer();
 
   if (success) {
@@ -332,7 +348,8 @@ void OutputConfigurator::ConfigureOutputs() {
   delegate_->GrabServer();
   std::vector<OutputSnapshot> outputs = delegate_->GetOutputs();
   OutputState new_state = GetOutputState(outputs, power_state_);
-  bool success = EnterState(new_state, power_state_, outputs);
+  bool success = EnterStateOrFallBackToSoftwareMirroring(
+      new_state, power_state_, outputs);
   delegate_->UngrabServer();
 
   if (success) {
@@ -348,14 +365,32 @@ void OutputConfigurator::NotifyOnDisplayChanged() {
   FOR_EACH_OBSERVER(Observer, observers_, OnDisplayModeChanged());
 }
 
+bool OutputConfigurator::EnterStateOrFallBackToSoftwareMirroring(
+    OutputState output_state,
+    DisplayPowerState power_state,
+    const std::vector<OutputSnapshot>& outputs) {
+  bool success = EnterState(output_state, power_state, outputs);
+  if (mirroring_controller_) {
+    bool enable_software_mirroring = false;
+    if (!success && output_state == STATE_DUAL_MIRROR) {
+      if (output_state_ != STATE_DUAL_EXTENDED || power_state_ != power_state)
+        EnterState(STATE_DUAL_EXTENDED, power_state, outputs);
+      enable_software_mirroring = success =
+          output_state_ == STATE_DUAL_EXTENDED;
+    }
+    mirroring_controller_->SetSoftwareMirroring(enable_software_mirroring);
+  }
+  return success;
+}
+
 bool OutputConfigurator::EnterState(
     OutputState output_state,
     DisplayPowerState power_state,
     const std::vector<OutputSnapshot>& outputs) {
   std::vector<bool> output_power;
   int num_on_outputs = GetOutputPower(outputs, power_state, &output_power);
-  VLOG(1) << "EnterState: output=" << output_state
-          << ", power=" << power_state;
+  VLOG(1) << "EnterState: output=" << OutputStateToString(output_state)
+          << " power=" << DisplayPowerStateToString(power_state);
   switch (output_state) {
     case STATE_HEADLESS:
       if (outputs.size() != 0) {
@@ -512,7 +547,14 @@ OutputState OutputConfigurator::GetOutputState(
       } else {
         // With either both outputs on or both outputs off, use one of the
         // dual modes.
-        return state_controller_->GetStateForOutputs(outputs);
+        std::vector<int64> display_ids;
+        for (size_t i = 0; i < outputs.size(); ++i) {
+          // If display id isn't available, switch to extended mode.
+          if (!outputs[i].has_display_id)
+            return STATE_DUAL_EXTENDED;
+          display_ids.push_back(outputs[i].display_id);
+        }
+        return state_controller_->GetStateForDisplayIds(display_ids);
       }
     }
     default:

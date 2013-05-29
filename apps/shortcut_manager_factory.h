@@ -5,9 +5,11 @@
 #ifndef APPS_SHORTCUT_MANAGER_FACTORY_H_
 #define APPS_SHORTCUT_MANAGER_FACTORY_H_
 
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 template<typename Type> struct DefaultSingletonTraits;
+
+class Profile;
 
 namespace apps {
 
@@ -17,11 +19,9 @@ class ShortcutManager;
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated ShortcutManager.
 // ShortcutManagers should not exist in incognito profiles.
-class ShortcutManagerFactory : public ProfileKeyedServiceFactory {
+class ShortcutManagerFactory : public BrowserContextKeyedServiceFactory {
  public:
   static ShortcutManager* GetForProfile(Profile* profile);
-
-  static void ResetForProfile(Profile* profile);
 
   static ShortcutManagerFactory* GetInstance();
 
@@ -31,10 +31,10 @@ class ShortcutManagerFactory : public ProfileKeyedServiceFactory {
   ShortcutManagerFactory();
   virtual ~ShortcutManagerFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
 };
 
 }  // namespace apps

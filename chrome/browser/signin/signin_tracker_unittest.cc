@@ -40,7 +40,8 @@ class MockTokenService : public TokenService {
   MOCK_CONST_METHOD1(HasTokenForService, bool(const char*));
 };
 
-ProfileKeyedService* BuildMockTokenService(content::BrowserContext* profile) {
+BrowserContextKeyedService* BuildMockTokenService(
+    content::BrowserContext* profile) {
   return new MockTokenService;
 }
 
@@ -73,7 +74,7 @@ class SigninTrackerTest : public testing::Test {
     mock_signin_manager_ = static_cast<FakeSigninManagerBase*>(
         SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
             profile_.get(), FakeSigninManagerBase::Build));
-    mock_signin_manager_->Initialize(profile_.get());
+    mock_signin_manager_->Initialize(profile_.get(), NULL);
     // Make gmock not spam the output with information about these uninteresting
     // calls.
     EXPECT_CALL(*mock_pss_, AddObserver(_)).Times(AnyNumber());

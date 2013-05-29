@@ -82,6 +82,7 @@
 #include "ui/webui/web_ui_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/managed_mode/managed_user_registration_service.h"
 #include "chrome/browser/managed_mode/managed_user_registration_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
@@ -264,7 +265,6 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     { "linkDoctorPref", IDS_OPTIONS_LINKDOCTOR_PREF },
     { "manageAutofillSettings", IDS_OPTIONS_MANAGE_AUTOFILL_SETTINGS_LINK },
     { "managePasswords", IDS_OPTIONS_PASSWORDS_MANAGE_PASSWORDS_LINK },
-    { "managedUsersSectionTitle", IDS_OPTIONS_MANAGED_USERS_SECTION_TITLE },
     { "networkPredictionEnabledDescription",
       IDS_NETWORK_PREDICTION_ENABLED_DESCRIPTION },
     { "passwordsAndAutofillGroupName",
@@ -286,6 +286,11 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     { "proxiesLabelExtension", IDS_OPTIONS_EXTENSION_PROXIES_LABEL },
     { "proxiesLabelSystem", IDS_OPTIONS_SYSTEM_PROXIES_LABEL,
       IDS_PRODUCT_NAME },
+    { "resetProfileSettings", IDS_RESET_PROFILE_SETTINGS_BUTTON },
+    { "resetProfileSettingsDescription",
+      IDS_RESET_PROFILE_SETTINGS_DESCRIPTION },
+    { "resetProfileSettingsSectionTitle",
+      IDS_RESET_PROFILE_SETTINGS_SECTION_TITLE },
     { "safeBrowsingEnableProtection",
       IDS_OPTIONS_SAFEBROWSING_ENABLEPROTECTION },
     { "sectionTitleAppearance", IDS_APPEARANCE_GROUP_NAME },
@@ -394,9 +399,10 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       IDS_OPTIONS_SYSTEM_ENABLE_HARDWARE_ACCELERATION_MODE_RESTART },
     // Strings with product-name substitutions.
     { "syncOverview", IDS_SYNC_OVERVIEW, IDS_PRODUCT_NAME },
-    { "syncButtonTextStart", IDS_SYNC_START_SYNC_BUTTON_LABEL,
-      IDS_SHORT_PRODUCT_NAME },
+    { "syncButtonTextStart", IDS_SYNC_SETUP_BUTTON_LABEL },
 #endif
+    { "syncButtonTextSignIn", IDS_SYNC_START_SYNC_BUTTON_LABEL,
+      IDS_SHORT_PRODUCT_NAME },
     { "profilesSingleUser", IDS_PROFILES_SINGLE_USER_MESSAGE,
       IDS_PRODUCT_NAME },
     { "defaultBrowserUnknown", IDS_OPTIONS_DEFAULTBROWSER_UNKNOWN,
@@ -483,6 +489,8 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
   // Sets flag of whether kiosk section should be enabled.
   values->SetBoolean(
       "enableKioskSection",
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kEnableKioskAppSettings) &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kDisableAppMode) &&
       (chromeos::UserManager::Get()->IsCurrentUserOwner() ||
@@ -510,6 +518,10 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       "gpuEnabledAtStart",
       g_browser_process->gpu_mode_manager()->initial_gpu_mode_pref());
 #endif
+
+  values->SetBoolean("enableResetProfileSettingsSection",
+                     CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kEnableResetProfileSettings));
 }
 
 void BrowserOptionsHandler::RegisterCloudPrintValues(DictionaryValue* values) {
@@ -716,15 +728,19 @@ void BrowserOptionsHandler::InitializeHandler() {
       prefs::kDownloadExtensionsToOpen, prefs,
       base::Bind(&BrowserOptionsHandler::SetupAutoOpenFileTypes,
                  base::Unretained(this)));
-  default_font_size_.Init(
-      prefs::kWebKitDefaultFontSize, prefs,
-      base::Bind(&BrowserOptionsHandler::SetupFontSizeSelector,
-                 base::Unretained(this)));
   default_zoom_level_.Init(
       prefs::kDefaultZoomLevel, prefs,
       base::Bind(&BrowserOptionsHandler::SetupPageZoomSelector,
                  base::Unretained(this)));
   profile_pref_registrar_.Init(prefs);
+  profile_pref_registrar_.Add(
+      prefs::kWebKitDefaultFontSize,
+      base::Bind(&BrowserOptionsHandler::SetupFontSizeSelector,
+                 base::Unretained(this)));
+  profile_pref_registrar_.Add(
+      prefs::kWebKitDefaultFixedFontSize,
+      base::Bind(&BrowserOptionsHandler::SetupFontSizeSelector,
+                 base::Unretained(this)));
   profile_pref_registrar_.Add(
       prefs::kSigninAllowed,
       base::Bind(&BrowserOptionsHandler::OnSigninAllowedPrefChange,
@@ -1108,7 +1124,7 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
   if (create_shortcut)
     callbacks.push_back(base::Bind(&CreateDesktopShortcutForProfile));
 
-  if (managed_user) {
+  if (managed_user && ManagedUserService::AreManagedUsersEnabled()) {
 #if defined(ENABLE_MANAGED_USERS)
     ManagedUserRegistrationService* registration_service =
         ManagedUserRegistrationServiceFactory::GetForProfile(profile);
@@ -1276,7 +1292,8 @@ void BrowserOptionsHandler::HandleDefaultFontSize(const ListValue* args) {
   int font_size;
   if (ExtractIntegerValue(args, &font_size)) {
     if (font_size > 0) {
-      default_font_size_.SetValue(font_size);
+      PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
+      pref_service->SetInteger(prefs::kWebKitDefaultFontSize, font_size);
       SetupFontSizeSelector();
     }
   }
@@ -1478,9 +1495,35 @@ void BrowserOptionsHandler::SetupPasswordGenerationSettingVisibility() {
 }
 
 void BrowserOptionsHandler::SetupFontSizeSelector() {
-  // We're only interested in integer values, so convert to int.
-  base::FundamentalValue font_size(default_font_size_.GetValue());
-  web_ui()->CallJavascriptFunction("BrowserOptions.setFontSize", font_size);
+  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
+  const PrefService::Preference* default_font_size =
+      pref_service->FindPreference(prefs::kWebKitDefaultFontSize);
+  const PrefService::Preference* default_fixed_font_size =
+      pref_service->FindPreference(prefs::kWebKitDefaultFixedFontSize);
+
+  DictionaryValue dict;
+  dict.SetInteger("value",
+                  pref_service->GetInteger(prefs::kWebKitDefaultFontSize));
+
+  // The font size control displays the value of the default font size, but
+  // setting it alters both the default font size and the default fixed font
+  // size. So it must be disabled when either of those prefs is not user
+  // modifiable.
+  dict.SetBoolean("disabled",
+      !default_font_size->IsUserModifiable() ||
+      !default_fixed_font_size->IsUserModifiable());
+
+  // This is a poor man's version of CoreOptionsHandler::CreateValueForPref,
+  // adapted to consider two prefs. It may be better to refactor
+  // CreateValueForPref so it can be called from here.
+  if (default_font_size->IsManaged() || default_fixed_font_size->IsManaged()) {
+      dict.SetString("controlledBy", "policy");
+  } else if (default_font_size->IsExtensionControlled() ||
+             default_fixed_font_size->IsExtensionControlled()) {
+      dict.SetString("controlledBy", "extension");
+  }
+
+  web_ui()->CallJavascriptFunction("BrowserOptions.setFontSize", dict);
 }
 
 void BrowserOptionsHandler::SetupPageZoomSelector() {

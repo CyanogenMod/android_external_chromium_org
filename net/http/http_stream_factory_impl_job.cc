@@ -162,10 +162,9 @@ LoadState HttpStreamFactoryImpl::Job::GetLoadState() const {
   switch (next_state_) {
     case STATE_RESOLVE_PROXY_COMPLETE:
       return session_->proxy_service()->GetLoadState(pac_request_);
+    case STATE_INIT_CONNECTION_COMPLETE:
     case STATE_CREATE_STREAM_COMPLETE:
       return using_quic_ ? LOAD_STATE_CONNECTING : connection_->GetLoadState();
-    case STATE_INIT_CONNECTION_COMPLETE:
-      return LOAD_STATE_SENDING_REQUEST;
     default:
       return LOAD_STATE_IDLE;
   }
@@ -198,7 +197,7 @@ void HttpStreamFactoryImpl::Job::Resume(Job* job) {
   // We know we're blocked if the next_state_ is STATE_WAIT_FOR_JOB_COMPLETE.
   // Unblock |this|.
   if (next_state_ == STATE_WAIT_FOR_JOB_COMPLETE) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&HttpStreamFactoryImpl::Job::OnIOComplete,
                    ptr_factory_.GetWeakPtr(), OK));
@@ -252,15 +251,19 @@ void HttpStreamFactoryImpl::Job::GetSSLInfo() {
   ssl_socket->GetSSLInfo(&ssl_info_);
 }
 
-HostPortProxyPair HttpStreamFactoryImpl::Job::GetSpdySessionKey() const {
+SpdySessionKey HttpStreamFactoryImpl::Job::GetSpdySessionKey() const {
   // In the case that we're using an HTTPS proxy for an HTTP url,
   // we look for a SPDY session *to* the proxy, instead of to the
   // origin server.
+  PrivacyMode privacy_mode = request_info_.privacy_mode;
   if (IsHttpsProxyAndHttpUrl()) {
-    return HostPortProxyPair(proxy_info_.proxy_server().host_port_pair(),
-                             ProxyServer::Direct());
+    return SpdySessionKey(proxy_info_.proxy_server().host_port_pair(),
+                          ProxyServer::Direct(),
+                          privacy_mode);
   } else {
-    return HostPortProxyPair(origin_, proxy_info_.proxy_server());
+    return SpdySessionKey(origin_,
+                          proxy_info_.proxy_server(),
+                          privacy_mode);
   }
 }
 
@@ -377,7 +380,7 @@ void HttpStreamFactoryImpl::Job::OnPreconnectsComplete() {
 // static
 int HttpStreamFactoryImpl::Job::OnHostResolution(
     SpdySessionPool* spdy_session_pool,
-    const HostPortProxyPair& spdy_session_key,
+    const SpdySessionKey& spdy_session_key,
     const AddressList& addresses,
     const BoundNetLog& net_log) {
   // It is OK to dereference spdy_session_pool, because the
@@ -403,7 +406,7 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
   DCHECK(result == OK || waiting_job_ == NULL);
 
   if (IsPreconnecting()) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(
             &HttpStreamFactoryImpl::Job::OnPreconnectsComplete,
@@ -416,7 +419,7 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
     GetSSLInfo();
 
     next_state_ = STATE_WAITING_USER_ACTION;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(
             &HttpStreamFactoryImpl::Job::OnCertificateErrorCallback,
@@ -438,7 +441,7 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
             proxy_socket->GetConnectResponseInfo();
 
         next_state_ = STATE_WAITING_USER_ACTION;
-        MessageLoop::current()->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
             base::Bind(
                 &HttpStreamFactoryImpl::Job::OnNeedsProxyAuthCallback,
@@ -449,7 +452,7 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
       return ERR_IO_PENDING;
 
     case ERR_SSL_CLIENT_AUTH_CERT_NEEDED:
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(
               &HttpStreamFactoryImpl::Job::OnNeedsClientAuthCallback,
@@ -465,7 +468,7 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
 
         ProxyClientSocket* proxy_socket =
             static_cast<ProxyClientSocket*>(connection_->socket());
-        MessageLoop::current()->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
             base::Bind(
                 &HttpStreamFactoryImpl::Job::OnHttpsProxyTunnelResponseCallback,
@@ -478,13 +481,13 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
     case OK:
       next_state_ = STATE_DONE;
       if (new_spdy_session_) {
-        MessageLoop::current()->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
             base::Bind(
                 &HttpStreamFactoryImpl::Job::OnSpdySessionReadyCallback,
                 ptr_factory_.GetWeakPtr()));
       } else {
-        MessageLoop::current()->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
             base::Bind(
                 &HttpStreamFactoryImpl::Job::OnStreamReadyCallback,
@@ -493,7 +496,7 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
       return ERR_IO_PENDING;
 
     default:
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(
               &HttpStreamFactoryImpl::Job::OnStreamFailedCallback,
@@ -704,7 +707,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
 
   // Check first if we have a spdy session for this group.  If so, then go
   // straight to using that.
-  HostPortProxyPair spdy_session_key = GetSpdySessionKey();
+  SpdySessionKey spdy_session_key = GetSpdySessionKey();
   scoped_refptr<SpdySession> spdy_session =
       session_->spdy_session_pool()->GetIfExists(spdy_session_key, net_log_);
   if (spdy_session && CanUseExistingSpdySession()) {
@@ -779,6 +782,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
         want_spdy_over_npn,
         server_ssl_config_,
         proxy_ssl_config_,
+        request_info_.privacy_mode,
         net_log_,
         num_streams_);
   } else {
@@ -791,13 +795,16 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
     return InitSocketHandleForHttpRequest(
         origin_url_, request_info_.extra_headers, request_info_.load_flags,
         priority_, session_, proxy_info_, ShouldForceSpdySSL(),
-        want_spdy_over_npn, server_ssl_config_, proxy_ssl_config_, net_log_,
+        want_spdy_over_npn, server_ssl_config_, proxy_ssl_config_,
+        request_info_.privacy_mode, net_log_,
         connection_.get(), resolution_callback, io_callback_);
   }
 }
 
 int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
   if (IsPreconnecting()) {
+    if (using_quic_)
+      return result;
     DCHECK_EQ(OK, result);
     return OK;
   }
@@ -805,7 +812,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
   if (result == ERR_SPDY_SESSION_ALREADY_EXISTS) {
     // We found a SPDY connection after resolving the host.  This is
     // probably an IP pooled connection.
-    HostPortProxyPair spdy_session_key = GetSpdySessionKey();
+    SpdySessionKey spdy_session_key = GetSpdySessionKey();
     existing_spdy_session_ =
         session_->spdy_session_pool()->GetIfExists(spdy_session_key, net_log_);
     if (existing_spdy_session_) {
@@ -898,6 +905,8 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
   }
 
   if (using_quic_) {
+    if (result < 0)
+      return result;
     stream_ = quic_request_.ReleaseStream();
     next_state_ = STATE_NONE;
     return OK;
@@ -997,12 +1006,15 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
 
   bool direct = true;
   const ProxyServer& proxy_server = proxy_info_.proxy_server();
-  HostPortProxyPair pair(origin_, proxy_server);
+  PrivacyMode privacy_mode = request_info_.privacy_mode;
+  SpdySessionKey spdy_session_key(origin_, proxy_server, privacy_mode);
   if (IsHttpsProxyAndHttpUrl()) {
     // If we don't have a direct SPDY session, and we're using an HTTPS
     // proxy, then we might have a SPDY session to the proxy.
-    pair = HostPortProxyPair(proxy_server.host_port_pair(),
-                             ProxyServer::Direct());
+    // We never use privacy mode for connection to proxy server.
+    spdy_session_key = SpdySessionKey(proxy_server.host_port_pair(),
+                                      ProxyServer::Direct(),
+                                      kPrivacyModeDisabled);
     direct = false;
   }
 
@@ -1015,14 +1027,14 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     spdy_session.swap(existing_spdy_session_);
   } else {
     SpdySessionPool* spdy_pool = session_->spdy_session_pool();
-    spdy_session = spdy_pool->GetIfExists(pair, net_log_);
+    spdy_session = spdy_pool->GetIfExists(spdy_session_key, net_log_);
     if (!spdy_session) {
       int error = spdy_pool->GetSpdySessionFromSocket(
-          pair, connection_.release(), net_log_, spdy_certificate_error_,
-          &new_spdy_session_, using_ssl_);
+          spdy_session_key, connection_.release(), net_log_,
+          spdy_certificate_error_, &new_spdy_session_, using_ssl_);
       if (error != OK)
         return error;
-      const HostPortPair& host_port_pair = pair.first;
+      const HostPortPair& host_port_pair = spdy_session_key.host_port_pair();
       HttpServerProperties* http_server_properties =
           session_->http_server_properties();
       if (http_server_properties)
@@ -1171,6 +1183,10 @@ void HttpStreamFactoryImpl::Job::InitSSLConfig(
 
   if (request_info_.load_flags & LOAD_VERIFY_EV_CERT)
     ssl_config->verify_ev_cert = true;
+
+  // Disable Channel ID if privacy mode is enabled.
+  if (request_info_.privacy_mode == kPrivacyModeEnabled)
+    ssl_config->channel_id_enabled = false;
 }
 
 

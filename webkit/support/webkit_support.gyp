@@ -4,7 +4,7 @@
 
 {
   'includes': [
-    '../user_agent/webkit_user_agent.gypi',
+    '../common/user_agent/webkit_user_agent.gypi',
   ],
   'conditions': [
     # TODO(stuartmorgan): All dependencies from code built on iOS to
@@ -15,9 +15,9 @@
         '../../build/win_precompile.gypi',
         '../appcache/webkit_appcache.gypi',
         '../base/webkit_base.gypi',
-        '../database/webkit_database.gypi',
         '../glue/webkit_glue.gypi',
         '../media/webkit_media.gypi',
+        '../plugins/webkit_plugins.gypi',
         '../quota/webkit_quota.gypi',
         '../storage/webkit_storage.gypi',
         'webkit_support.gypi',

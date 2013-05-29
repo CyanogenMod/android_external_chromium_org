@@ -48,7 +48,6 @@ LOCAL_SRC_FILES := \
 	cc/debug/debug_rect_history.cc \
 	cc/debug/fake_web_graphics_context_3d.cc \
 	cc/debug/frame_rate_counter.cc \
-	cc/debug/latency_info.cc \
 	cc/debug/layer_tree_debug_state.cc \
 	cc/debug/overdraw_metrics.cc \
 	cc/debug/paint_time_counter.cc \
@@ -57,9 +56,6 @@ LOCAL_SRC_FILES := \
 	cc/debug/traced_picture.cc \
 	cc/debug/traced_value.cc \
 	cc/input/page_scale_animation.cc \
-	cc/input/pinch_zoom_scrollbar.cc \
-	cc/input/pinch_zoom_scrollbar_geometry.cc \
-	cc/input/pinch_zoom_scrollbar_painter.cc \
 	cc/input/top_controls_manager.cc \
 	cc/layers/content_layer.cc \
 	cc/layers/contents_scaling_layer.cc \
@@ -82,8 +78,6 @@ LOCAL_SRC_FILES := \
 	cc/layers/picture_layer_impl.cc \
 	cc/layers/render_surface.cc \
 	cc/layers/render_surface_impl.cc \
-	cc/layers/scrollbar_geometry_fixed_thumb.cc \
-	cc/layers/scrollbar_geometry_stub.cc \
 	cc/layers/scrollbar_layer.cc \
 	cc/layers/scrollbar_layer_impl.cc \
 	cc/layers/solid_color_layer.cc \
@@ -98,6 +92,7 @@ LOCAL_SRC_FILES := \
 	cc/output/compositor_frame.cc \
 	cc/output/compositor_frame_ack.cc \
 	cc/output/compositor_frame_metadata.cc \
+	cc/output/copy_output_request.cc \
 	cc/output/delegated_frame_data.cc \
 	cc/output/delegating_renderer.cc \
 	cc/output/direct_renderer.cc \
@@ -230,6 +225,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -282,16 +278,16 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/skia/ext \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

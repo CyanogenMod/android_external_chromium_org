@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/file_util.h"
-#include "base/json/json_file_value_serializer.h"
+#include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/create_file_operation.h"
@@ -17,6 +17,7 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
+#include "chrome/browser/google_apis/drive_api_util.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -36,47 +37,28 @@ FileError CopyLocalFileOnBlockingPool(
       FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
-// Checks if a local file at |local_file_path| is a JSON file referencing a
-// hosted document on blocking pool, and if so, gets the resource ID of the
-// document.
-std::string GetDocumentResourceIdOnBlockingPool(
-    const base::FilePath& local_file_path) {
-  std::string result;
-  if (google_apis::ResourceEntry::HasHostedDocumentExtension(
-          local_file_path)) {
-    std::string error;
-    DictionaryValue* dict_value = NULL;
-    JSONFileValueSerializer serializer(local_file_path);
-    scoped_ptr<Value> value(serializer.Deserialize(NULL, &error));
-    if (value.get() && value->GetAsDictionary(&dict_value))
-      dict_value->GetString("resource_id", &result);
-  }
-  return result;
-}
-
 }  // namespace
 
-CopyOperation::CopyOperation(
-    JobScheduler* job_scheduler,
-    FileSystemInterface* file_system,
-    internal::ResourceMetadata* metadata,
-    internal::FileCache* cache,
-    scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
-    OperationObserver* observer)
-  : job_scheduler_(job_scheduler),
-    file_system_(file_system),
+CopyOperation::CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
+                             OperationObserver* observer,
+                             JobScheduler* scheduler,
+                             internal::ResourceMetadata* metadata,
+                             internal::FileCache* cache,
+                             FileSystemInterface* file_system,
+                             google_apis::DriveServiceInterface* drive_service)
+  : blocking_task_runner_(blocking_task_runner),
+    observer_(observer),
+    scheduler_(scheduler),
     metadata_(metadata),
     cache_(cache),
-    blocking_task_runner_(blocking_task_runner),
-    observer_(observer),
-    create_file_operation_(new CreateFileOperation(job_scheduler,
-                                                   cache,
+    file_system_(file_system),
+    drive_service_(drive_service),
+    create_file_operation_(new CreateFileOperation(blocking_task_runner,
+                                                   observer,
+                                                   scheduler,
                                                    metadata,
-                                                   blocking_task_runner,
-                                                   observer)),
-    move_operation_(new MoveOperation(job_scheduler,
-                                      metadata,
-                                      observer)),
+                                                   cache)),
+    move_operation_(new MoveOperation(observer, scheduler, metadata)),
     weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -222,7 +204,7 @@ void CopyOperation::CopyHostedDocumentToDirectory(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  job_scheduler_->CopyHostedDocument(
+  scheduler_->CopyHostedDocument(
       resource_id,
       base::FilePath(new_name).AsUTF8Unsafe(),
       base::Bind(&CopyOperation::OnCopyHostedDocumentCompleted,
@@ -308,18 +290,36 @@ void CopyOperation::CopyAfterGetResourceEntryPair(
     return;
   }
 
+  // If Drive API v2 is enabled, we can copy resources on server side.
+  if (google_apis::util::IsDriveV2ApiEnabled()) {
+    base::FilePath new_name = dest_file_path.BaseName();
+    if (src_file_proto->file_specific_info().is_hosted_document()) {
+      // Drop the document extension, which should not be in the title.
+      // TODO(yoshiki): Remove this code with crbug.com/223304.
+      new_name = new_name.RemoveExtension();
+    }
+
+    scheduler_->CopyResource(
+        src_file_proto->resource_id(),
+        dest_parent_proto->resource_id(),
+        new_name.value(),
+        base::Bind(&CopyOperation::OnCopyResourceCompleted,
+                   weak_ptr_factory_.GetWeakPtr(), callback));
+    return;
+  }
+
+
   if (src_file_proto->file_specific_info().is_hosted_document()) {
     CopyHostedDocumentToDirectory(
         dest_file_path.DirName(),
         src_file_proto->resource_id(),
         // Drop the document extension, which should not be in the title.
+        // TODO(yoshiki): Remove this code with crbug.com/223304.
         dest_file_path.BaseName().RemoveExtension().value(),
         callback);
     return;
   }
 
-  // TODO(kochi): Reimplement this once the server API supports
-  // copying of regular files directly on the server side. crbug.com/138273
   const base::FilePath& src_file_path = result->first.path;
   file_system_->GetFileByPath(
       src_file_path,
@@ -327,6 +327,31 @@ void CopyOperation::CopyAfterGetResourceEntryPair(
                  weak_ptr_factory_.GetWeakPtr(),
                  dest_file_path,
                  callback));
+}
+
+void CopyOperation::OnCopyResourceCompleted(
+    const FileOperationCallback& callback,
+    google_apis::GDataErrorCode status,
+    scoped_ptr<google_apis::ResourceEntry> resource_entry) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  FileError error = util::GDataToFileError(status);
+  if (error != FILE_ERROR_OK) {
+    callback.Run(error);
+    return;
+  }
+  DCHECK(resource_entry);
+
+  // The copy on the server side is completed successfully. Update the local
+  // metadata.
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadata::AddEntry,
+                 base::Unretained(metadata_),
+                 ConvertToResourceEntry(*resource_entry)),
+      callback);
 }
 
 void CopyOperation::OnGetFileCompleteForCopy(
@@ -369,15 +394,20 @@ void CopyOperation::TransferFileFromLocalToRemoteAfterGetResourceEntry(
     return;
   }
 
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&GetDocumentResourceIdOnBlockingPool, local_src_file_path),
-      base::Bind(&CopyOperation::TransferFileForResourceId,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 local_src_file_path,
-                 remote_dest_file_path,
-                 callback));
+  if (util::HasGDocFileExtension(local_src_file_path)) {
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_,
+        FROM_HERE,
+        base::Bind(&util::ReadResourceIdFromGDocFile, local_src_file_path),
+        base::Bind(&CopyOperation::TransferFileForResourceId,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   local_src_file_path,
+                   remote_dest_file_path,
+                   callback));
+  } else {
+    ScheduleTransferRegularFile(local_src_file_path, remote_dest_file_path,
+                                callback);
+  }
 }
 
 void CopyOperation::TransferFileForResourceId(
@@ -395,13 +425,18 @@ void CopyOperation::TransferFileForResourceId(
     return;
   }
 
+  // GDoc file may contain a resource ID in the old format.
+  const std::string canonicalized_resource_id =
+      drive_service_->CanonicalizeResourceId(resource_id);
+
   // Otherwise, copy the document on the server side and add the new copy
   // to the destination directory (collection).
   CopyHostedDocumentToDirectory(
       remote_dest_file_path.DirName(),
-      resource_id,
+      canonicalized_resource_id,
       // Drop the document extension, which should not be
       // in the document title.
+      // TODO(yoshiki): Remove this code with crbug.com/223304.
       remote_dest_file_path.BaseName().RemoveExtension().value(),
       callback);
 }

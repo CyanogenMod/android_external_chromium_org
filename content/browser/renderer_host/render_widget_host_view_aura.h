@@ -237,6 +237,10 @@ class RenderWidgetHostViewAura
   virtual void UnlockMouse() OVERRIDE;
   virtual void OnSwapCompositorFrame(
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
+#if defined(OS_WIN)
+  virtual void SetParentNativeViewAccessible(
+      gfx::NativeViewAccessible accessible_parent) OVERRIDE;
+#endif
 
   // Overridden from ui::TextInputClient:
   virtual void SetCompositionText(
@@ -333,6 +337,7 @@ class RenderWidgetHostViewAura
   }
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
 
@@ -452,10 +457,12 @@ class RenderWidgetHostViewAura
   // The common entry point for full buffer updates from renderer
   // and GPU process.
   void BuffersSwapped(const gfx::Size& size,
+                      float surface_scale_factor,
                       const std::string& mailbox_name,
                       const BufferPresentedCallback& ack_callback);
 
   bool SwapBuffersPrepare(const gfx::Rect& surface_rect,
+                          float surface_scale_factor,
                           const gfx::Rect& damage_rect,
                           const std::string& mailbox_name,
                           const BufferPresentedCallback& ack_callback);
@@ -567,6 +574,7 @@ class RenderWidgetHostViewAura
   // Used to determine when the skipped_damage_ needs to be reset due to
   // size changes between front- and backbuffer.
   gfx::Size last_swapped_surface_size_;
+  float last_swapped_surface_scale_factor_;
 
   int pending_thumbnail_tasks_;
 

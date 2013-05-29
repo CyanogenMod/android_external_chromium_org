@@ -177,6 +177,7 @@
     { "name": "plus.sandbox.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "script.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "history.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
+    { "name": "security.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
 
     // Other Google-related domains that must use HTTPS.
     { "name": "market.android.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
@@ -469,6 +470,7 @@
     { "name": "betnet.fr", "include_subdomains": true, "mode": "force-https" },
     { "name": "uprotect.it", "include_subdomains": true, "mode": "force-https" },
     { "name": "squareup.com", "mode": "force-https" },
+    { "name": "square.com", "mode": "force-https" },
     { "name": "cert.se", "include_subdomains": true, "mode": "force-https" },
     { "name": "crypto.is", "include_subdomains": true, "mode": "force-https" },
     { "name": "simon.butcher.name", "include_subdomains": true, "mode": "force-https" },
@@ -591,6 +593,15 @@
     { "name": "sah3.net", "include_subdomains": true, "mode": "force-https" },
     { "name": "grc.com", "mode": "force-https" },
     { "name": "www.grc.com", "mode": "force-https" },
+    { "name": "linode.com", "mode": "force-https" },
+    { "name": "www.linode.com", "mode": "force-https" },
+    { "name": "manager.linode.com", "mode": "force-https" },
+    { "name": "blog.linode.com", "mode": "force-https" },
+    { "name": "library.linode.com", "mode": "force-https" },
+    { "name": "forum.linode.com", "mode": "force-https" },
+    { "name": "p.linode.com", "mode": "force-https" },
+    { "name": "paste.linode.com", "mode": "force-https" },
+    { "name": "pastebin.linode.com", "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },

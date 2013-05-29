@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_INSTALL_TRACKER_FACTORY_H_
 #define CHROME_BROWSER_EXTENSIONS_INSTALL_TRACKER_FACTORY_H_
 
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 template <typename T> struct DefaultSingletonTraits;
 
@@ -15,7 +15,7 @@ namespace extensions {
 
 class InstallTracker;
 
-class InstallTrackerFactory : public ProfileKeyedServiceFactory {
+class InstallTrackerFactory : public BrowserContextKeyedServiceFactory {
  public:
   static InstallTracker* GetForProfile(Profile* profile);
   static InstallTrackerFactory* GetInstance();
@@ -26,8 +26,8 @@ class InstallTrackerFactory : public ProfileKeyedServiceFactory {
   InstallTrackerFactory();
   virtual ~InstallTrackerFactory();
 
-  // ProfileKeyedServiceFactory overrides:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory overrides:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;

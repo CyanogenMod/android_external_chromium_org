@@ -30,8 +30,8 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/download/download_target_determiner.h"
 #include "chrome/browser/download/download_test_file_activity_observer.h"
-#include "chrome/browser/download/download_util.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -123,7 +123,7 @@ class CreatedObserver : public content::DownloadManager::Observer {
                                  content::DownloadItem* item) OVERRIDE {
     DCHECK_EQ(manager_, manager);
     if (waiting_)
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
   }
 
   content::DownloadManager* manager_;
@@ -147,7 +147,7 @@ class PercentWaiter : public content::DownloadItem::Observer {
   }
 
   bool WaitForFinished() {
-    if (item_->IsComplete()) {
+    if (item_->GetState() == DownloadItem::COMPLETE) {
       return item_->PercentComplete() == 100;
     }
     waiting_ = true;
@@ -161,14 +161,14 @@ class PercentWaiter : public content::DownloadItem::Observer {
     DCHECK_EQ(item_, item);
     if (!error_ &&
         ((prev_percent_ > item_->PercentComplete()) ||
-         (item_->IsComplete() &&
+         (item_->GetState() == DownloadItem::COMPLETE &&
           (item_->PercentComplete() != 100)))) {
       error_ = true;
       if (waiting_)
-        MessageLoopForUI::current()->Quit();
+        base::MessageLoopForUI::current()->Quit();
     }
-    if (item_->IsComplete() && waiting_)
-      MessageLoopForUI::current()->Quit();
+    if (item_->GetState() == DownloadItem::COMPLETE && waiting_)
+      base::MessageLoopForUI::current()->Quit();
   }
 
   virtual void OnDownloadDestroyed(content::DownloadItem* item) OVERRIDE {
@@ -220,7 +220,7 @@ class DownloadsHistoryDataCollector {
       scoped_ptr<std::vector<history::DownloadRow> > entries) {
     result_valid_ = true;
     results_ = entries.Pass();
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
   }
 
   Profile* profile_;
@@ -246,7 +246,7 @@ class MockAbortExtensionInstallPrompt : public ExtensionInstallPrompt {
       const Extension* extension,
       const ShowDialogCallback& show_dialog_callback) OVERRIDE {
     delegate->InstallUIAbort(true);
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
   }
 
   virtual void OnInstallSuccess(const Extension* extension,
@@ -349,7 +349,7 @@ class HistoryObserver : public DownloadHistory::Observer {
 
     seen_stored_ = true;
     if (waiting_)
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
   }
 
   virtual void OnDownloadHistoryDestroyed() OVERRIDE {
@@ -1007,7 +1007,7 @@ class DownloadTest : public InProcessBrowserTest {
     if (URLRequestSlowDownloadJob::NumberOutstandingRequests())
       *result = false;
     BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE, MessageLoop::QuitClosure());
+        BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   // Location of the test data.
@@ -1186,8 +1186,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadResourceThrottleCancels) {
   ASSERT_TRUE(download_assempted);
   observer.WaitForObservation(
       base::Bind(&content::RunMessageLoop),
-      base::Bind(&MessageLoop::Quit,
-                 base::Unretained(MessageLoopForUI::current())));
+      base::Bind(&base::MessageLoop::Quit,
+                 base::Unretained(base::MessageLoopForUI::current())));
 
   // Check that we did not download the file.
   base::FilePath file(FILE_PATH_LITERAL("download-test1.lib"));
@@ -1685,7 +1685,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadHistoryCheck) {
   // slow download job.
   history::DownloadRow& row(downloads_in_database->at(0));
   EXPECT_EQ(DestinationFile(browser(), file), row.target_path);
-  EXPECT_EQ(download_util::GetCrDownloadPath(DestinationFile(browser(), file)),
+  EXPECT_EQ(DownloadTargetDeterminer::GetCrDownloadPath(
+                DestinationFile(browser(), file)),
             row.current_path);
   ASSERT_EQ(2u, row.url_chain.size());
   EXPECT_EQ(redirect_url.spec(), row.url_chain[0].spec());
@@ -1769,7 +1770,8 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadHistoryDangerCheck) {
   // dangerous file.
   history::DownloadRow& row(downloads_in_database->at(0));
   EXPECT_EQ(DestinationFile(browser(), file), row.target_path);
-  EXPECT_NE(download_util::GetCrDownloadPath(DestinationFile(browser(), file)),
+  EXPECT_NE(DownloadTargetDeterminer::GetCrDownloadPath(
+                DestinationFile(browser(), file)),
             row.current_path);
   EXPECT_EQ(content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE, row.danger_type);
   EXPECT_LE(start, row.start_time);
@@ -2640,8 +2642,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, HiddenDownload) {
   base::FilePath file(FILE_PATH_LITERAL("download-test1.lib"));
   GURL url(URLRequestMockHTTPJob::GetMockUrl(file));
 
-  scoped_refptr<DownloadManager> download_manager =
-      DownloadManagerForBrowser(browser());
+  DownloadManager* download_manager = DownloadManagerForBrowser(browser());
   scoped_ptr<content::DownloadTestObserver> observer(
       new content::DownloadTestObserverTerminal(
           download_manager,
@@ -2723,7 +2724,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_Renaming) {
     EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
     content::DownloadItem* item = manager->GetDownload(index);
     ASSERT_TRUE(item);
-    ASSERT_TRUE(item->IsComplete());
+    ASSERT_EQ(DownloadItem::COMPLETE, item->GetState());
     base::FilePath target_path(item->GetTargetFilePath());
     EXPECT_EQ(std::string("a_zip_file") +
         (index == 0 ? std::string(".zip") :
@@ -2841,14 +2842,14 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_PauseResumeCancel) {
   ASSERT_TRUE(download_item);
   ASSERT_FALSE(download_item->GetTargetFilePath().empty());
   EXPECT_FALSE(download_item->IsPaused());
-  EXPECT_FALSE(download_item->IsCancelled());
+  EXPECT_NE(DownloadItem::CANCELLED, download_item->GetState());
   download_item->Pause();
   EXPECT_TRUE(download_item->IsPaused());
   download_item->Resume();
   EXPECT_FALSE(download_item->IsPaused());
-  EXPECT_FALSE(download_item->IsCancelled());
+  EXPECT_NE(DownloadItem::CANCELLED, download_item->GetState());
   download_item->Cancel(true);
-  EXPECT_TRUE(download_item->IsCancelled());
+  EXPECT_EQ(DownloadItem::CANCELLED, download_item->GetState());
 }
 
 // The Mac downloaded files quarantine feature is implemented by the

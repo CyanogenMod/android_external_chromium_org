@@ -28,7 +28,8 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
        gfx::Rect content_rect,
        gfx::Rect opaque_rect,
        float contents_scale,
-       int layer_id);
+       int layer_id,
+       int source_frame_number);
 
   PicturePileImpl* picture_pile() {
     return picture_pile_.get();
@@ -43,15 +44,25 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
                         priority_[PENDING_TREE]);
   }
 
-  void SetPriority(WhichTree tree, const TilePriority& priority);
+  void SetPriority(WhichTree tree, const TilePriority& priority) {
+    priority_[tree] = priority;
+  }
+
+  void mark_required_for_activation() {
+    priority_[PENDING_TREE].required_for_activation = true;
+  }
+
+  bool required_for_activation() const {
+    return priority_[PENDING_TREE].required_for_activation;
+  }
 
   scoped_ptr<base::Value> AsValue() const;
 
-  const ManagedTileState::DrawingInfo& drawing_info() const {
-    return managed_state_.drawing_info;
+  const ManagedTileState::TileVersion& tile_version() const {
+    return managed_state_.tile_version;
   }
-  ManagedTileState::DrawingInfo& drawing_info() {
-    return managed_state_.drawing_info;
+  ManagedTileState::TileVersion& tile_version() {
+    return managed_state_.tile_version;
   }
 
   gfx::Rect opaque_rect() const { return opaque_rect_; }
@@ -64,13 +75,15 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
 
   int layer_id() const { return layer_id_; }
 
+  int source_frame_number() const { return source_frame_number_; }
+
   void set_picture_pile(scoped_refptr<PicturePileImpl> pile) {
     DCHECK(pile->CanRaster(contents_scale_, content_rect_));
     picture_pile_ = pile;
   }
 
   bool IsAssignedGpuMemory() const {
-    return drawing_info().memory_state_ != NOT_ALLOWED_TO_USE_MEMORY;
+    return tile_version().memory_state_ != NOT_ALLOWED_TO_USE_MEMORY;
   }
 
  private:
@@ -99,6 +112,7 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
   TilePriority priority_[NUM_BIN_PRIORITIES];
   ManagedTileState managed_state_;
   int layer_id_;
+  int source_frame_number_;
 
   DISALLOW_COPY_AND_ASSIGN(Tile);
 };

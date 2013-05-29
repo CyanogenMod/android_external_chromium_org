@@ -38,6 +38,7 @@
 #include "chrome/common/extensions/manifest.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/one_shot_event.h"
 #include "sync/api/string_ordinal.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/syncable_service.h"
@@ -66,11 +67,6 @@ class ExtensionSystem;
 class ExtensionUpdater;
 class PendingExtensionManager;
 class SettingsFrontend;
-
-namespace app_file_handler_util {
-struct SavedFileEntry;
-}
-
 }
 
 namespace syncer {
@@ -144,10 +140,6 @@ class ExtensionService
       public content::NotificationObserver,
       public extensions::Blacklist::Observer {
  public:
-  // The name of the directory inside the profile where extensions are
-  // installed to.
-  static const char kInstallDirectoryName[];
-
   // If auto-updates are turned on, default to running every 5 hours.
   static const int kDefaultUpdateFrequencySeconds = 60 * 60 * 5;
 
@@ -203,7 +195,8 @@ class ExtensionService
                    extensions::ExtensionPrefs* extension_prefs,
                    extensions::Blacklist* blacklist,
                    bool autoupdate_enabled,
-                   bool extensions_enabled);
+                   bool extensions_enabled,
+                   extensions::OneShotEvent* ready);
 
   virtual ~ExtensionService();
 
@@ -708,7 +701,7 @@ class ExtensionService
   };
   typedef std::list<NaClModuleInfo> NaClModuleInfoList;
 
-  // Sets the ready_ flag and sends a notification to the listeners.
+  // Signals *ready_ and sends a notification to the listeners.
   void SetReadyAndNotifyListeners();
 
   // Return true if the sync type of |extension| matches |type|.
@@ -803,10 +796,7 @@ class ExtensionService
 
   // Dispatches a restart event to the platform app associated with
   // |extension_host|.
-  static void RestartApplication(
-      std::vector<extensions::app_file_handler_util::SavedFileEntry>
-          file_entries,
-      extensions::ExtensionHost* extension_host);
+  static void RestartApplication(extensions::ExtensionHost* extension_host);
 
   // Helper to inspect an ExtensionHost after it has been loaded.
   void InspectExtensionHost(extensions::ExtensionHost* host);
@@ -903,9 +893,8 @@ class ExtensionService
   // Used by dispatchers to limit API quota for individual extensions.
   ExtensionsQuotaService quota_service_;
 
-  // Record that Init() has been called, and chrome::EXTENSIONS_READY
-  // has fired.
-  bool ready_;
+  // Signaled when all extensions are loaded.
+  extensions::OneShotEvent* const ready_;
 
   // Our extension updater, if updates are turned on.
   scoped_ptr<extensions::ExtensionUpdater> updater_;
@@ -930,13 +919,6 @@ class ExtensionService
   // Maps extension ids to a bitmask that indicates which events should be
   // dispatched to the extension when it is loaded.
   std::map<std::string, int> on_load_events_;
-
-  // Maps extension ids to vectors of saved file entries that the extension
-  // should be given access to on restart.
-  typedef std::map<std::string,
-      std::vector<extensions::app_file_handler_util::SavedFileEntry> >
-          SavedFileEntryMap;
-  SavedFileEntryMap on_restart_file_entries_;
 
   content::NotificationRegistrar registrar_;
   PrefChangeRegistrar pref_change_registrar_;

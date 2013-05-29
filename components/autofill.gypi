@@ -35,6 +35,15 @@
       },
       'includes': [ '../build/protoc.gypi' ]
     },
+    {
+      'target_name': 'autofill_test_util',
+      'type': 'static_library',
+      'sources': [
+        'autofill/browser/wallet/wallet_test_util.cc',
+        'autofill/browser/wallet/wallet_test_util.h',
+      ],
+      'include_dirs': [ '..' ],
+    },
   ],
   'conditions': [
     ['OS != "ios"', {
@@ -107,12 +116,15 @@
             'autofill_regexes',
             'autofill_risk_proto',
             'encryptor',
+            'user_prefs',
             'webdata_common',
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
+            '../base/base.gyp:base_prefs',
             '../build/temp_gyp/googleurl.gyp:googleurl',
             '../content/content.gyp:content_browser',
             '../content/content.gyp:content_common',
+            '../google_apis/google_apis.gyp:google_apis',
             '../ipc/ipc.gyp:ipc',
             '../skia/skia.gyp:skia',
             '../sql/sql.gyp:sql',

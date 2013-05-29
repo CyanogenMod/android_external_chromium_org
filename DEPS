@@ -8,42 +8,42 @@ vars = {
   "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "150352",
+  "webkit_revision": "151349",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "swig_revision": "69281",
-  "nacl_revision": "11338",
+  "nacl_revision": "11406",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11323",  # native_client/DEPS: tools_rev
   "gtm_revision": "608",
 
-  "libjingle_revision": "316",
+  "libjingle_revision": "321",
   "libphonenumber_revision": "456",
   "libvpx_revision": "197977",
   "lss_revision": "20",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "198257",
-  "ffmpeg_hash": "04db474e52bae0eef2cd22341aca1caf427411de",
+  "ffmpeg_revision": "201877",
+  "ffmpeg_hash": "077e57825aec6da2fb11d85484ac3132d164aa34",
 
   "sfntly_revision": "134",
-  "skia_revision": "9113",
+  "skia_revision": "9286",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "14662",
+  "v8_revision": "14861",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "3990",
+  "webrtc_revision": "4125",
   "jsoncpp_revision": "248",
-  "nss_revision": "199075",
+  "nss_revision": "200337",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
-  "swarm_revision": "197757",
+  "swarm_revision": "201600",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -58,7 +58,7 @@ vars = {
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1178",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1182",
 
   "src/googleurl":
     (Var("googlecode_url") % "google-url") + "/trunk@183",
@@ -73,10 +73,10 @@ deps = {
     (Var("googlecode_url") % "googlemock") + "/trunk@410",
 
   "src/third_party/angle":
-    (Var("googlecode_url") % "angleproject") + "/trunk@2184",
+    (Var("googlecode_url") % "angleproject") + "/trunk@2245",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@384",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@517",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
@@ -101,16 +101,16 @@ deps = {
     "/trunk/src@303",
 
   "src/third_party/leveldatabase/src":
-    (Var("googlecode_url") % "leveldb") + "/trunk@72",
+    (Var("googlecode_url") % "leveldb") + "/trunk@73",
 
   "src/third_party/snappy/src":
     (Var("googlecode_url") % "snappy") + "/trunk@74",
 
   "src/tools/grit":
-    (Var("googlecode_url") % "grit-i18n") + "/trunk@119",
+    (Var("googlecode_url") % "grit-i18n") + "/trunk@121",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1626",
+    (Var("googlecode_url") % "gyp") + "/trunk@1636",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -160,7 +160,7 @@ deps = {
     (Var("googlecode_url") % "bidichecker") + "/trunk/lib@4",
 
   "src/third_party/v8-i18n":
-    (Var("googlecode_url") % "v8-i18n") + "/trunk@174",
+    (Var("googlecode_url") % "v8-i18n") + "/trunk@180",
 
   # When roll to another webgl conformance tests revision, please goto
   # chrome/test/gpu and run generate_webgl_conformance_test_list.py.
@@ -288,7 +288,7 @@ deps = {
         "/trunk/jsoncpp/src/lib_json@" + Var("jsoncpp_revision"),
 
   "src/third_party/libyuv":
-    (Var("googlecode_url") % "libyuv") + "/trunk@682",
+    (Var("googlecode_url") % "libyuv") + "/trunk@698",
 
   "src/third_party/smhasher/src":
     (Var("googlecode_url") % "smhasher") + "/trunk@149",
@@ -385,7 +385,7 @@ deps_os = {
     # Binary level profile guided optimizations. This points to the
     # latest release binaries for the toolchain.
     "src/third_party/syzygy/binaries":
-      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1494",
+      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1528",
 
     # Binaries for nacl sdk.
     "src/third_party/nacl_sdk_binaries":
@@ -529,7 +529,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@35319f42106fab09ae8ccb639b8e74406120e1c4",
+      "@fe53c8f602e01b8da327573db74be384b39695a4",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -539,7 +539,7 @@ deps_os = {
     # Build tools for targeting ChromeOS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@dfd2710856705831dd4e8cd6267899fd4721e11a",
+      "@785fedc51fc430445d8f397440012ea3b489bac9",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":
@@ -549,7 +549,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@b12d410c0ee23385da78e6c9f353d28fd992e0bd",
+      "@e9da75d5e88d3e122ac60ee1d642cdcc1acb2bd8",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",

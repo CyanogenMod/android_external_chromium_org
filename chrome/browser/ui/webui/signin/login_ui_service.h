@@ -7,14 +7,14 @@
 
 #include "base/basictypes.h"
 #include "base/observer_list.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 class Browser;
 class Profile;
 
 // The LoginUIService helps track per-profile information for the login UI -
 // for example, whether there is login UI currently on-screen.
-class LoginUIService : public ProfileKeyedService {
+class LoginUIService : public BrowserContextKeyedService {
  public:
   // Various UI components implement this API to allow LoginUIService to
   // manipulate their associated login UI.

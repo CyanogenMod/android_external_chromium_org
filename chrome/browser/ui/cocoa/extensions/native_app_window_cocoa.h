@@ -46,7 +46,7 @@ class NativeAppWindowCocoa : public NativeAppWindow {
   NativeAppWindowCocoa(ShellWindow* shell_window,
                        const ShellWindow::CreateParams& params);
 
-  // BaseWindow implementation.
+  // ui::BaseWindow implementation.
   virtual bool IsActive() const OVERRIDE;
   virtual bool IsMaximized() const OVERRIDE;
   virtual bool IsMinimized() const OVERRIDE;
@@ -89,6 +89,9 @@ class NativeAppWindowCocoa : public NativeAppWindow {
   // Called when the window is un-minimized.
   void WindowDidDeminiaturize();
 
+  // Called when the window is zoomed (maximized or de-maximized).
+  void WindowWillZoom();
+
   // Called to handle a key event.
   bool HandledByExtensionCommand(NSEvent* event);
 
@@ -119,9 +122,9 @@ class NativeAppWindowCocoa : public NativeAppWindow {
   virtual gfx::NativeView GetHostView() const OVERRIDE;
   virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE;
   virtual void AddObserver(
-      WebContentsModalDialogHostObserver* observer) OVERRIDE;
+      web_modal::WebContentsModalDialogHostObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
-      WebContentsModalDialogHostObserver* observer) OVERRIDE;
+      web_modal::WebContentsModalDialogHostObserver* observer) OVERRIDE;
 
  private:
   virtual ~NativeAppWindowCocoa();
@@ -148,6 +151,7 @@ class NativeAppWindowCocoa : public NativeAppWindow {
 
   bool has_frame_;
 
+  bool is_maximized_;
   bool is_fullscreen_;
   NSRect restored_bounds_;
 

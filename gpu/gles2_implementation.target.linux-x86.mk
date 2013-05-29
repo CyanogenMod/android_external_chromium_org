@@ -30,7 +30,7 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/client/gles2_implementation.cc \
 	gpu/command_buffer/client/gles2_interface.cc \
 	gpu/command_buffer/client/gles2_trace_implementation.cc \
-	gpu/command_buffer/client/gpu_memory_buffer_factory.cc \
+	gpu/command_buffer/client/gpu_memory_buffer_tracker.cc \
 	gpu/command_buffer/client/program_info_manager.cc \
 	gpu/command_buffer/client/query_tracker.cc \
 	gpu/command_buffer/client/share_group.cc \
@@ -80,6 +80,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -110,9 +111,9 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

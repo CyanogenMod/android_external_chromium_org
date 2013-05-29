@@ -147,6 +147,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       is_accelerated_compositing_active_(false),
       repaint_ack_pending_(false),
       resize_ack_pending_(false),
+      screen_info_out_of_date_(false),
       overdraw_bottom_height_(0.f),
       should_auto_resize_(false),
       waiting_for_screen_rects_ack_(false),
@@ -318,6 +319,8 @@ void RenderWidgetHostImpl::SendScreenRects() {
   last_window_screen_rect_ = view_->GetBoundsInRootWindow();
   Send(new ViewMsg_UpdateScreenRects(
       GetRoutingID(), last_view_screen_rect_, last_window_screen_rect_));
+  if (delegate_)
+    delegate_->DidSendScreenRects(this);
   waiting_for_screen_rects_ack_ = true;
 }
 
@@ -388,6 +391,7 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnCompositorSurfaceBuffersSwapped)
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
                                 msg_is_ok = OnSwapCompositorFrame(msg))
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidOverscroll, OnOverscrolled)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
     IPC_MESSAGE_HANDLER(InputHostMsg_HandleInputEvent_ACK, OnInputEventAck)
@@ -523,6 +527,7 @@ void RenderWidgetHostImpl::WasResized() {
 
   bool size_changed = new_size != current_size_;
   bool side_payload_changed =
+      screen_info_out_of_date_ ||
       old_physical_backing_size != physical_backing_size_ ||
       was_fullscreen != is_fullscreen_ ||
       old_overdraw_bottom_height != overdraw_bottom_height_;
@@ -534,14 +539,24 @@ void RenderWidgetHostImpl::WasResized() {
       !side_payload_changed)
     return;
 
-  // We don't expect to receive an ACK when the requested size is empty or when
-  // the main viewport size didn't change.
-  if (!new_size.IsEmpty() && size_changed)
+  if (!screen_info_) {
+    screen_info_.reset(new WebKit::WebScreenInfo);
+    GetWebScreenInfo(screen_info_.get());
+  }
+
+  // We don't expect to receive an ACK when the requested size or the physical
+  // backing size is empty, or when the main viewport size didn't change.
+  if (!new_size.IsEmpty() && !physical_backing_size_.IsEmpty() && size_changed)
     resize_ack_pending_ = true;
 
-  if (!Send(new ViewMsg_Resize(routing_id_, new_size, physical_backing_size_,
-                               overdraw_bottom_height_,
-                               GetRootWindowResizerRect(), is_fullscreen_))) {
+  ViewMsg_Resize_Params params;
+  params.screen_info = *screen_info_;
+  params.new_size = new_size;
+  params.physical_backing_size = physical_backing_size_;
+  params.overdraw_bottom_height = overdraw_bottom_height_;
+  params.resizer_rect = GetRootWindowResizerRect();
+  params.is_fullscreen = is_fullscreen_;
+  if (!Send(new ViewMsg_Resize(routing_id_, params))) {
     resize_ack_pending_ = false;
   } else {
     in_flight_size_ = new_size;
@@ -982,7 +997,7 @@ void RenderWidgetHostImpl::ForwardWheelEvent(
 
 void RenderWidgetHostImpl::ForwardWheelEventWithLatencyInfo(
     const WebMouseWheelEvent& wheel_event,
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   TRACE_EVENT0("renderer_host",
                "RenderWidgetHostImpl::ForwardWheelEventWithLatencyInfo");
   if (ignore_input_events_ || process_->IgnoreInputEvents())
@@ -1045,7 +1060,7 @@ void RenderWidgetHostImpl::ForwardGestureEvent(
   if (ignore_input_events_ || process_->IgnoreInputEvents())
     return;
 
-  cc::LatencyInfo latency_info = NewInputLatencyInfo();
+  ui::LatencyInfo latency_info = NewInputLatencyInfo();
 
   if (!IsInOverscrollGesture() &&
       !gesture_event_filter_->ShouldForward(
@@ -1200,16 +1215,17 @@ int64 RenderWidgetHostImpl::GetLatencyComponentId() {
   return GetRoutingID() | (static_cast<int64>(GetProcess()->GetID()) << 32);
 }
 
-cc::LatencyInfo RenderWidgetHostImpl::NewInputLatencyInfo() {
-  cc::LatencyInfo info;
-  info.AddLatencyNumber(
-      cc::kInputEvent, GetLatencyComponentId(), ++last_input_number_);
+ui::LatencyInfo RenderWidgetHostImpl::NewInputLatencyInfo() {
+  ui::LatencyInfo info;
+  info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_COMPONENT,
+                        GetLatencyComponentId(),
+                        ++last_input_number_);
   return info;
 }
 
 void RenderWidgetHostImpl::SendInputEvent(const WebInputEvent& input_event,
                                           int event_size,
-                                          const cc::LatencyInfo& latency_info,
+                                          const ui::LatencyInfo& latency_info,
                                           bool is_keyboard_shortcut) {
   input_event_start_time_ = TimeTicks::Now();
   Send(new InputMsg_HandleInputEvent(
@@ -1219,7 +1235,7 @@ void RenderWidgetHostImpl::SendInputEvent(const WebInputEvent& input_event,
 
 void RenderWidgetHostImpl::ForwardInputEvent(
     const WebInputEvent& input_event, int event_size,
-    const cc::LatencyInfo& latency_info, bool is_keyboard_shortcut) {
+    const ui::LatencyInfo& latency_info, bool is_keyboard_shortcut) {
   TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::ForwardInputEvent");
 
   if (!process_->HasConnection())
@@ -1330,9 +1346,12 @@ const NativeWebKeyboardEvent*
 }
 
 void RenderWidgetHostImpl::NotifyScreenInfoChanged() {
-  WebKit::WebScreenInfo screen_info;
-  GetWebScreenInfo(&screen_info);
-  Send(new ViewMsg_ScreenInfoChanged(GetRoutingID(), screen_info));
+  // The resize message (which may not happen immediately) will carry with it
+  // the screen info as well as the new size (if the screen has changed scale
+  // factor).
+  screen_info_.reset();
+  screen_info_out_of_date_ = true;
+  WasResized();
 }
 
 void RenderWidgetHostImpl::GetSnapshotFromRenderer(
@@ -1344,7 +1363,7 @@ void RenderWidgetHostImpl::GetSnapshotFromRenderer(
   gfx::Rect copy_rect = src_subrect.IsEmpty() ?
       gfx::Rect(view_->GetViewBounds().size()) : src_subrect;
 
-  gfx::Rect copy_rect_in_pixel = ConvertRectToPixel(view_, copy_rect);
+  gfx::Rect copy_rect_in_pixel = ConvertViewRectToPixel(view_, copy_rect);
   Send(new ViewMsg_Snapshot(GetRoutingID(), copy_rect_in_pixel));
 }
 
@@ -1644,28 +1663,25 @@ void RenderWidgetHostImpl::OnPaintAtSizeAck(int tag, const gfx::Size& size) {
 }
 
 void RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped(
-      int32 surface_id,
-      uint64 surface_handle,
-      int32 route_id,
-      const gfx::Size& size,
-      int32 gpu_process_host_id) {
+      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params) {
   TRACE_EVENT0("renderer_host",
                "RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwapped");
   if (!view_) {
     AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
     ack_params.sync_point = 0;
-    RenderWidgetHostImpl::AcknowledgeBufferPresent(route_id,
-                                                   gpu_process_host_id,
+    RenderWidgetHostImpl::AcknowledgeBufferPresent(params.route_id,
+                                                   params.gpu_process_host_id,
                                                    ack_params);
     return;
   }
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params gpu_params;
-  gpu_params.surface_id = surface_id;
-  gpu_params.surface_handle = surface_handle;
-  gpu_params.route_id = route_id;
-  gpu_params.size = size;
+  gpu_params.surface_id = params.surface_id;
+  gpu_params.surface_handle = params.surface_handle;
+  gpu_params.route_id = params.route_id;
+  gpu_params.size = params.size;
+  gpu_params.scale_factor = params.scale_factor;
   view_->AcceleratedSurfaceBuffersSwapped(gpu_params,
-                                          gpu_process_host_id);
+                                          params.gpu_process_host_id);
 }
 
 bool RenderWidgetHostImpl::OnSwapCompositorFrame(
@@ -1691,6 +1707,13 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
     SendSwapCompositorFrameAck(routing_id_, process_->GetID(), ack);
   }
   return true;
+}
+
+void RenderWidgetHostImpl::OnOverscrolled(
+    gfx::Vector2dF accumulated_overscroll,
+    gfx::Vector2dF current_fling_velocity) {
+  if (view_)
+    view_->OnOverscrolled(accumulated_overscroll, current_fling_velocity);
 }
 
 void RenderWidgetHostImpl::OnUpdateRect(
@@ -2306,6 +2329,12 @@ void RenderWidgetHostImpl::FatalAccessibilityTreeError() {
 }
 
 #if defined(OS_WIN) && defined(USE_AURA)
+void RenderWidgetHostImpl::SetParentNativeViewAccessible(
+    gfx::NativeViewAccessible accessible_parent) {
+  if (view_)
+    view_->SetParentNativeViewAccessible(accessible_parent);
+}
+
 gfx::NativeViewAccessible
 RenderWidgetHostImpl::GetParentNativeViewAccessible() const {
   return delegate_->GetParentNativeViewAccessible();
@@ -2472,7 +2501,7 @@ void RenderWidgetHostImpl::DetachDelegate() {
   delegate_ = NULL;
 }
 
-void RenderWidgetHostImpl::FrameSwapped(const cc::LatencyInfo& latency_info) {
+void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
 }
 
 }  // namespace content

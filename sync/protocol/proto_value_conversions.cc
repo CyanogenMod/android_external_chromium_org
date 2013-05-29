@@ -198,6 +198,8 @@ base::DictionaryValue* TabNavigationToValue(
   SET_INT64(global_id);
   SET_STR(search_terms);
   SET_STR(favicon_url);
+  SET_ENUM(blocked_state, GetBlockedStateString);
+  SET_STR_REP(content_pack_categories);
   return value;
 }
 
@@ -423,6 +425,15 @@ base::DictionaryValue* ManagedUserSettingSpecificsToValue(
   return value;
 }
 
+base::DictionaryValue* ManagedUserSpecificsToValue(
+    const sync_pb::ManagedUserSpecifics& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(id);
+  SET_STR(name);
+  SET_BOOL(acknowledged);
+  return value;
+}
+
 base::DictionaryValue* NigoriSpecificsToValue(
     const sync_pb::NigoriSpecifics& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
@@ -552,6 +563,7 @@ base::DictionaryValue* EntitySpecificsToValue(
   SET_FIELD(favicon_tracking, FaviconTrackingSpecificsToValue);
   SET_FIELD(history_delete_directive, HistoryDeleteDirectiveSpecificsToValue);
   SET_FIELD(managed_user_setting, ManagedUserSettingSpecificsToValue);
+  SET_FIELD(managed_user, ManagedUserSpecificsToValue);
   SET_FIELD(nigori, NigoriSpecificsToValue);
   SET_FIELD(password, PasswordSpecificsToValue);
   SET_FIELD(preference, PreferenceSpecificsToValue);

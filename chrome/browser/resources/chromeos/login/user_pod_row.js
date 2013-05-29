@@ -319,6 +319,9 @@ cr.define('login', function() {
           loadTimeData.getStringF('ownerUserPattern', this.user_.displayName) :
           this.user_.displayName;
       this.actionBoxMenuTitleEmailElement.textContent = this.user_.emailAddress;
+      this.actionBoxMenuTitleEmailElement.hidden =
+          this.user_.locallyManagedUser;
+
       this.actionBoxMenuCommandElement.textContent =
           loadTimeData.getString('removeUser');
       this.passwordElement.setAttribute('aria-label', loadTimeData.getStringF(
@@ -471,8 +474,6 @@ cr.define('login', function() {
     handleActionAreaButtonClick_: function(e) {
       if (this.parentNode.disabled)
         return;
-      console.error('Action area clicked: ' + !this.isActionBoxMenuActive +
-                    ' at ' + e.x + ', ' + e.y);
       this.isActionBoxMenuActive = !this.isActionBoxMenuActive;
     },
 
@@ -486,11 +487,8 @@ cr.define('login', function() {
       switch (e.keyIdentifier) {
         case 'Enter':
         case 'U+0020':  // Space
-          if (this.parentNode.focusedPod_ && !this.isActionBoxMenuActive) {
-            console.error('Action area keyed: ' + !this.isActionBoxMenuActive +
-                          ' at ' + e.x + ', ' + e.y);
+          if (this.parentNode.focusedPod_ && !this.isActionBoxMenuActive)
             this.isActionBoxMenuActive = true;
-          }
           e.stopPropagation();
           break;
         case 'Up':
@@ -1146,6 +1144,15 @@ cr.define('login', function() {
     },
 
     /**
+     * Restores input focus to current selected pod, if there is any.
+     */
+    refocusCurrentPod: function() {
+      if (this.focusedPod_) {
+        this.focusedPod_.focusInput();
+      }
+    },
+
+    /**
      * Clears focused pod password field.
      */
     clearFocusedPod: function() {
@@ -1197,9 +1204,6 @@ cr.define('login', function() {
     handleClick_: function(e) {
       if (this.disabled)
         return;
-
-      console.error('Document clicked at ' + e.x + ', ' + e.y +
-                    ', pod: ' + findAncestorByClass(e.target, 'pod'));
 
       // Clear all menus if the click is outside pod menu and its
       // button area.

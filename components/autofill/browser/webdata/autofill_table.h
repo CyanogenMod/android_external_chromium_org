@@ -9,6 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_vector.h"
 #include "base/string16.h"
 #include "components/webdata/common/web_database_table.h"
 
@@ -235,12 +236,8 @@ class AutofillTable : public WebDatabaseTable {
   // Records a single Autofill profile in the autofill_profiles table.
   virtual bool AddAutofillProfile(const AutofillProfile& profile);
 
-  // Updates the database values for the specified profile.
-  // DEPRECATED: Use |UpdateAutofillProfileMulti| instead.
-  virtual bool UpdateAutofillProfile(const AutofillProfile& profile);
-
   // Updates the database values for the specified profile.  Mulit-value aware.
-  virtual bool UpdateAutofillProfileMulti(const AutofillProfile& profile);
+  virtual bool UpdateAutofillProfile(const AutofillProfile& profile);
 
   // Removes a row from the autofill_profiles table.  |guid| is the identifier
   // of the profile to remove.
@@ -271,16 +268,27 @@ class AutofillTable : public WebDatabaseTable {
   virtual bool GetCreditCards(std::vector<CreditCard*>* credit_cards);
 
   // Removes rows from autofill_profiles and credit_cards if they were created
-  // on or after |delete_begin| and strictly before |delete_end|.  Returns lists
-  // of deleted guids in |profile_guids| and |credit_card_guids|. Return value
-  // is true if all rows were successfully removed. Returns false on database
-  // error. In that case, the output vector state is undefined, and may be
-  // partially filled.
+  // on or after |delete_begin| and strictly before |delete_end|.  Returns the
+  // list of deleted profile guids in |profile_guids|.  Return value is true if
+  // all rows were successfully removed.  Returns false on database error.  In
+  // that case, the output vector state is undefined, and may be partially
+  // filled.
   bool RemoveAutofillDataModifiedBetween(
       const base::Time& delete_begin,
       const base::Time& delete_end,
       std::vector<std::string>* profile_guids,
       std::vector<std::string>* credit_card_guids);
+
+  // Removes origin URLs from the autofill_profiles and credit_cards tables if
+  // they were written on or after |delete_begin| and strictly before
+  // |delete_end|.  Returns the list of modified profiles in |profiles|.  Return
+  // value is true if all rows were successfully updated.  Returns false on
+  // database error.  In that case, the output vector state is undefined, and
+  // may be partially filled.
+  bool RemoveOriginURLsModifiedBetween(
+      const base::Time& delete_begin,
+      const base::Time& delete_end,
+      ScopedVector<AutofillProfile>* profiles);
 
   // Retrieves all profiles in the database that have been deleted since last
   // "empty" of the trash.
@@ -311,7 +319,7 @@ class AutofillTable : public WebDatabaseTable {
   bool MigrateToVersion34ProfilesBasedOnCountryCode();
   bool MigrateToVersion35GreatBritainCountryCodes();
   bool MigrateToVersion37MergeAndCullOlderProfiles();
-  bool MigrateToVersion50AddOriginColumn();
+  bool MigrateToVersion51AddOriginColumn();
 
   // Max data length saved in the table;
   static const size_t kMaxDataLength;

@@ -29,8 +29,8 @@
 #include "chrome/browser/media_galleries/win/snapshot_file_details.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/file_system_util.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 namespace chrome {
 
@@ -208,7 +208,7 @@ base::PlatformFileError ReadDirectoryOnBlockingPoolThread(
   scoped_ptr<fileapi::FileSystemFileUtil::AbstractFileEnumerator> file_enum =
       CreateFileEnumeratorOnBlockingPoolThread(device_info, root);
   while (!(current = file_enum->Next()).empty()) {
-    fileapi::AsyncFileUtil::Entry entry;
+    fileapi::DirectoryEntry entry;
     entry.is_directory = file_enum->IsDirectory();
     entry.name = fileapi::VirtualPath::BaseName(current).value();
     entry.size = file_enum->Size();

@@ -236,8 +236,8 @@ RootWindowController::GetSystemModalLayoutManager(aura::Window* window) {
         kShellWindowId_SystemModalContainer;
     container = GetContainer(modal_window_id);
   }
-  return static_cast<SystemModalContainerLayoutManager*>(
-      container->layout_manager());
+  return container ? static_cast<SystemModalContainerLayoutManager*>(
+      container->layout_manager()) : NULL;
 }
 
 aura::Window* RootWindowController::GetContainer(int container_id) {
@@ -281,7 +281,7 @@ void RootWindowController::InitForPrimaryDisplay() {
       new ToplevelWindowEventHandler(panel_container));
   panel_container->SetLayoutManager(panel_layout_manager_);
 
-  if (Shell::GetInstance()->session_state_delegate()->HasActiveUser())
+  if (Shell::GetInstance()->session_state_delegate()->NumberOfLoggedInUsers())
     shelf_->CreateLauncher();
 
   InitKeyboard();

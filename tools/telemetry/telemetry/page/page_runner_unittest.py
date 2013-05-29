@@ -1,6 +1,7 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import logging
 import os
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from telemetry.core import user_agent
 from telemetry.page import page as page_module
 from telemetry.page import page_set
 from telemetry.page import page_test
+from telemetry.page import page_test_results
 from telemetry.page import page_runner
 from telemetry.test import options_for_unittests
 
@@ -46,7 +48,7 @@ class PageRunnerTests(unittest.TestCase):
     ps = page_set.PageSet()
     page1 = page_module.Page('chrome://crash', ps)
     ps.pages.append(page1)
-    results = page_test.PageTestResults()
+    results = page_test_results.PageTestResults()
 
     class Test(page_test.PageTest):
       def RunTest(self, *args):
@@ -56,8 +58,8 @@ class PageRunnerTests(unittest.TestCase):
       options = options_for_unittests.GetCopy()
       possible_browser = browser_finder.FindBrowser(options)
       runner.Run(options, possible_browser, Test('RunTest'), results)
-    self.assertEquals(0, len(results.page_successes))
-    self.assertEquals(1, len(results.page_failures))
+    self.assertEquals(0, len(results.successes))
+    self.assertEquals(1, len(results.errors))
 
   def testDiscardFirstResult(self):
     ps = page_set.PageSet()
@@ -66,7 +68,7 @@ class PageRunnerTests(unittest.TestCase):
         ps,
         base_dir=os.path.dirname(__file__))
     ps.pages.append(page)
-    results = page_test.PageTestResults()
+    results = page_test_results.PageTestResults()
 
     class Test(page_test.PageTest):
       @property
@@ -79,23 +81,19 @@ class PageRunnerTests(unittest.TestCase):
       options = options_for_unittests.GetCopy()
       possible_browser = browser_finder.FindBrowser(options)
       runner.Run(options, possible_browser, Test('RunTest'), results)
-    self.assertEquals(0, len(results.page_successes))
-    self.assertEquals(0, len(results.page_failures))
+    self.assertEquals(0, len(results.successes))
+    self.assertEquals(0, len(results.failures))
 
-  def disabled_testCredentialsWhenLoginFails(self):
-    # This test is disabled because it runs against live sites, and needs to be
-    # fixed. crbug.com/179038
-    results = page_test.PageTestResults()
+  def testCredentialsWhenLoginFails(self):
+    results = page_test_results.PageTestResults()
     credentials_backend = StubCredentialsBackend(login_return_value=False)
     did_run = self.runCredentialsTest(credentials_backend, results)
     assert credentials_backend.did_get_login == True
     assert credentials_backend.did_get_login_no_longer_needed == False
     assert did_run == False
 
-  def disabled_testCredentialsWhenLoginSucceeds(self):
-    # This test is disabled because it runs against live sites, and needs to be
-    # fixed. crbug.com/179038
-    results = page_test.PageTestResults()
+  def testCredentialsWhenLoginSucceeds(self):
+    results = page_test_results.PageTestResults()
     credentials_backend = StubCredentialsBackend(login_return_value=True)
     did_run = self.runCredentialsTest(credentials_backend, results)
     assert credentials_backend.did_get_login == True
@@ -106,16 +104,19 @@ class PageRunnerTests(unittest.TestCase):
                          credentials_backend,
                          results):
     ps = page_set.PageSet()
-    page = page_module.Page('http://www.google.com', ps)
+    page = page_module.Page(
+        'file:///' + os.path.join('..', '..', 'unittest_data', 'blank.html'),
+        ps,
+        base_dir=os.path.dirname(__file__))
     page.credentials = "test"
     ps.pages.append(page)
 
     did_run = [False]
 
-    with tempfile.NamedTemporaryFile() as f:
-      f.write(SIMPLE_CREDENTIALS_STRING)
-      f.flush()
-      ps.credentials_path = f.name
+    try:
+      with tempfile.NamedTemporaryFile(delete=False) as f:
+        f.write(SIMPLE_CREDENTIALS_STRING)
+        ps.credentials_path = f.name
 
       class TestThatInstallsCredentialsBackend(page_test.PageTest):
         def __init__(self, credentials_backend):
@@ -133,6 +134,8 @@ class PageRunnerTests(unittest.TestCase):
         options = options_for_unittests.GetCopy()
         possible_browser = browser_finder.FindBrowser(options)
         runner.Run(options, possible_browser, test, results)
+    finally:
+      os.remove(f.name)
 
     return did_run[0]
 
@@ -160,7 +163,7 @@ class PageRunnerTests(unittest.TestCase):
     with page_runner.PageRunner(ps) as runner:
       options = options_for_unittests.GetCopy()
       possible_browser = browser_finder.FindBrowser(options)
-      results = page_test.PageTestResults()
+      results = page_test_results.PageTestResults()
       runner.Run(options, possible_browser, test, results)
 
     self.assertTrue(hasattr(test, 'hasRun') and test.hasRun)
@@ -185,14 +188,18 @@ class PageRunnerTests(unittest.TestCase):
 
       def SetUpBrowser(self, browser):
         self._browser = browser
-        self._browser.tabs.New()
+        if self._browser.supports_tab_control:
+          self._browser.tabs.New()
 
       def RunTest(self, page, tab, results): # pylint: disable=W0613,R0201
+        if not self._browser.supports_tab_control:
+          logging.warning('Browser does not support tab control, skipping test')
+          return
         assert len(self._browser.tabs) == 1
 
     test = TestOneTab('RunTest')
     with page_runner.PageRunner(ps) as runner:
       options = options_for_unittests.GetCopy()
       possible_browser = browser_finder.FindBrowser(options)
-      results = page_test.PageTestResults()
+      results = page_test_results.PageTestResults()
       runner.Run(options, possible_browser, test, results)

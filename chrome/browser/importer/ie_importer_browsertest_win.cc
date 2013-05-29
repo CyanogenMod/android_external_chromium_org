@@ -30,7 +30,9 @@
 #include "base/win/windows_version.h"
 #include "chrome/browser/bookmarks/imported_bookmark_entry.h"
 #include "chrome/browser/favicon/imported_favicon_usage.h"
+#include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/ie_importer.h"
+#include "chrome/browser/importer/ie_importer_utils_win.h"
 #include "chrome/browser/importer/ie_importer_test_registry_overrider_win.h"
 #include "chrome/browser/importer/importer_bridge.h"
 #include "chrome/browser/importer/importer_data_types.h"
@@ -86,10 +88,6 @@ const char16 kIEIdentifyUrl[] =
     L"http://A79029D6-753E-4e27-B807-3D46AB1545DF.com:8080/path?key=value";
 const char16 kIEIdentifyTitle[] =
     L"Unittest GUID";
-
-const char16 kIEFavoritesOrderKey[] =
-    L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\"
-    L"MenuOrder\\Favorites";
 
 const char16 kFaviconStreamSuffix[] = L"url:favicon:$DATA";
 const char kDummyFaviconImageData[] =
@@ -147,7 +145,7 @@ bool CreateOrderBlob(const base::FilePath& favorites_folder,
     ILFree(id_list_full);
   }
 
-  string16 key_path = kIEFavoritesOrderKey;
+  base::string16 key_path(importer::GetIEFavoritesOrderKey());
   if (!path.empty())
     key_path += L"\\" + path;
   base::win::RegKey key;
@@ -270,7 +268,7 @@ class TestObserver : public ProfileWriter,
   virtual void ImportItemStarted(importer::ImportItem item) OVERRIDE {}
   virtual void ImportItemEnded(importer::ImportItem item) OVERRIDE {}
   virtual void ImportEnded() OVERRIDE {
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
     EXPECT_EQ(arraysize(kIEBookmarks), bookmark_count_);
     EXPECT_EQ(1, history_count_);
     EXPECT_EQ(arraysize(kIEFaviconGroup), favicon_count_);
@@ -376,7 +374,7 @@ class MalformedFavoritesRegistryTestObserver
   virtual void ImportItemStarted(importer::ImportItem item) OVERRIDE {}
   virtual void ImportItemEnded(importer::ImportItem item) OVERRIDE {}
   virtual void ImportEnded() OVERRIDE {
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
     EXPECT_EQ(arraysize(kIESortedBookmarks), bookmark_count_);
   }
 
@@ -415,15 +413,13 @@ class IEImporterBrowserTest : public InProcessBrowserTest {
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    // Turn the override on for this process and flag child processes that they
-    // should do so as well.
-    ASSERT_TRUE(test_registry_overrider_.SetRegistryOverride());
-
     // This will launch the browser test and thus needs to happen last.
     InProcessBrowserTest::SetUp();
   }
 
   base::ScopedTempDir temp_dir_;
+
+  // Overrides the default registry key for IE's favorites order blob.
   IEImporterTestRegistryOverrider test_registry_overrider_;
 };
 
@@ -489,8 +485,7 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest, IEImporter) {
 
   // Starts to import the above settings.
   // Deletes itself.
-  // TODO(gab): Use ExternalProcessImporterHost on Windows.
-  ImporterHost* host = new ImporterHost;
+  ImporterHost* host = new ExternalProcessImporterHost;
   TestObserver* observer = new TestObserver();
   host->SetObserver(observer);
 
@@ -503,7 +498,7 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest, IEImporter) {
       browser()->profile(),
       importer::HISTORY | importer::PASSWORDS | importer::FAVORITES,
       observer);
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   // Cleans up.
   url_history_stg2->DeleteUrl(kIEIdentifyUrl, 0);
@@ -556,17 +551,17 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest,
   // Verify malformed registry data are safely ignored and alphabetical
   // sort is performed.
   for (size_t i = 0; i < arraysize(kBadBinary); ++i) {
+    base::string16 key_path(importer::GetIEFavoritesOrderKey());
     base::win::RegKey key;
     ASSERT_EQ(ERROR_SUCCESS,
-              key.Create(HKEY_CURRENT_USER, kIEFavoritesOrderKey, KEY_WRITE));
+              key.Create(HKEY_CURRENT_USER, key_path.c_str(), KEY_WRITE));
     ASSERT_EQ(ERROR_SUCCESS,
               key.WriteValue(L"Order", kBadBinary[i].data, kBadBinary[i].length,
                              REG_BINARY));
 
     // Starts to import the above settings.
     // Deletes itself.
-    // TODO(gab): Use ExternalProcessImporterHost on Windows.
-    ImporterHost* host = new ImporterHost;
+    ImporterHost* host = new ExternalProcessImporterHost;
     MalformedFavoritesRegistryTestObserver* observer =
         new MalformedFavoritesRegistryTestObserver();
     host->SetObserver(observer);
@@ -580,6 +575,6 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest,
         browser()->profile(),
         importer::FAVORITES,
         observer);
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 }

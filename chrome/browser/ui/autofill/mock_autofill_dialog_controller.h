@@ -30,15 +30,16 @@ class MockAutofillDialogController : public AutofillDialogController {
   MOCK_METHOD0(MenuModelForAccountChooser, ui::MenuModel*());
   virtual gfx::Image AccountChooserImage() OVERRIDE;
   virtual bool ShouldShowProgressBar() const OVERRIDE;
+  virtual int GetDialogButtons() const OVERRIDE;
   virtual bool ShouldShowDetailArea() const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
   virtual const std::vector<ui::Range>& LegalDocumentLinks() OVERRIDE;
   virtual bool SectionIsActive(DialogSection section) const OVERRIDE;
-  virtual const DetailInputs& RequestedFieldsForSection(
-      DialogSection section) const OVERRIDE;
-  virtual ui::ComboboxModel* ComboboxModelForAutofillType(
-      AutofillFieldType type) OVERRIDE;
-  virtual ui::MenuModel* MenuModelForSection(DialogSection section) OVERRIDE;
+  MOCK_CONST_METHOD1(RequestedFieldsForSection,
+                     const DetailInputs&(DialogSection));
+  MOCK_METHOD1(ComboboxModelForAutofillType,
+               ui::ComboboxModel*(AutofillFieldType));
+  MOCK_METHOD1(MenuModelForSection, ui::MenuModel*(DialogSection));
   virtual string16 LabelForSection(DialogSection section) const OVERRIDE;
   virtual SuggestionState SuggestionStateForSection(
       DialogSection section) OVERRIDE;
@@ -78,8 +79,8 @@ class MockAutofillDialogController : public AutofillDialogController {
   MOCK_METHOD0(profile, Profile*());
   virtual content::WebContents* web_contents() OVERRIDE;
  private:
+  DetailInputs default_inputs_;
   std::vector<ui::Range> range_;
-  DetailInputs inputs_;
 };
 
 }  // namespace autofill

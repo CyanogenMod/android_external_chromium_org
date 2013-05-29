@@ -6,7 +6,8 @@ import os
 import sys
 
 import buildbot_common
-import build_utils
+import build_version
+import getos
 from buildbot_common import ErrorExit
 from easy_template import RunTemplateFileIfChanged
 from build_paths import SCRIPT_DIR, SDK_EXAMPLE_DIR
@@ -140,8 +141,9 @@ def GenerateManifest(srcroot, dstroot, desc):
   replace = {
       'name': desc['TITLE'],
       'description': '%s Example' % desc['TITLE'],
+      'key': True,
       'permissions': desc.get('PERMISSIONS', []),
-      'version': build_utils.ChromeVersionNoTrunk()
+      'version': build_version.ChromeVersionNoTrunk()
   }
   RunTemplateFileIfChanged(srcpath, dstpath, replace)
 
@@ -204,7 +206,8 @@ def ProcessProject(pepperdir, srcroot, dstroot, desc, toolchains, configs=None,
   RunTemplateFileIfChanged(template, make_path, template_dict)
 
   outdir = os.path.dirname(os.path.abspath(make_path))
-  AddMakeBat(pepperdir, outdir)
+  if getos.GetPlatform() == 'win':
+    AddMakeBat(pepperdir, outdir)
 
   if IsExample(desc):
     ProcessHTML(srcroot, dstroot, desc, toolchains, configs,
@@ -224,13 +227,12 @@ def GenerateMasterMakefile(pepperdir, out_path, targets):
   """
   in_path = os.path.join(SDK_EXAMPLE_DIR, 'Makefile')
   out_path = os.path.join(out_path, 'Makefile')
-  rel_path = os.path.relpath(pepperdir, out_path)
+  rel_path = os.path.relpath(pepperdir, os.path.dirname(out_path))
   template_dict = {
     'projects': targets,
     'rel_sdk' : rel_path,
   }
   RunTemplateFileIfChanged(in_path, out_path, template_dict)
   outdir = os.path.dirname(os.path.abspath(out_path))
-  AddMakeBat(pepperdir, outdir)
-
-
+  if getos.GetPlatform() == 'win':
+    AddMakeBat(pepperdir, outdir)

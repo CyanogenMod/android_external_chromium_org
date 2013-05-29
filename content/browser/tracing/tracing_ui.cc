@@ -11,6 +11,7 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
+#include "base/json/string_escape.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
@@ -88,7 +89,8 @@ class TracingMessageHandler
   void OnGetKnownCategories(const base::ListValue* list);
 
   // Callbacks.
-  void LoadTraceFileComplete(string16* file_contents);
+  void LoadTraceFileComplete(string16* file_contents,
+                             const base::FilePath &path);
   void SaveTraceFileComplete();
 
  private:
@@ -120,9 +122,10 @@ class TaskProxy : public base::RefCountedThreadSafe<TaskProxy> {
  public:
   explicit TaskProxy(const base::WeakPtr<TracingMessageHandler>& handler)
       : handler_(handler) {}
-  void LoadTraceFileCompleteProxy(string16* file_contents) {
+  void LoadTraceFileCompleteProxy(string16* file_contents,
+                                  const base::FilePath& path) {
     if (handler_)
-      handler_->LoadTraceFileComplete(file_contents);
+      handler_->LoadTraceFileComplete(file_contents, path);
     delete file_contents;
   }
 
@@ -257,7 +260,8 @@ void ReadTraceFileCallback(TaskProxy* proxy, const base::FilePath& path) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&TaskProxy::LoadTraceFileCompleteProxy, proxy,
-                 contents16.release()));
+                 contents16.release(),
+                 path));
 }
 
 // A callback used for asynchronously writing a file from a string. Calls the
@@ -324,7 +328,8 @@ void TracingMessageHandler::OnLoadTraceFile(const base::ListValue* list) {
       NULL);
 }
 
-void TracingMessageHandler::LoadTraceFileComplete(string16* contents) {
+void TracingMessageHandler::LoadTraceFileComplete(string16* contents,
+                                                  const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // We need to pass contents to tracingController.onLoadTraceFileComplete, but
@@ -344,8 +349,12 @@ void TracingMessageHandler::LoadTraceFileComplete(string16* contents) {
     javascript += contents->substr(i, kMaxSize) + suffix;
     rvh->ExecuteJavascriptInWebFrame(string16(), javascript);
   }
+
+  // The CallJavascriptFunction is not used because we need to pass
+  // the first param |window.traceData| through as an un-quoted string.
   rvh->ExecuteJavascriptInWebFrame(string16(), UTF8ToUTF16(
-      "tracingController.onLoadTraceFileComplete(window.traceData);"
+      "tracingController.onLoadTraceFileComplete(window.traceData," +
+      base::GetDoubleQuotedJson(path.value()) + ");" +
       "delete window.traceData;"));
 }
 
@@ -487,16 +496,15 @@ void TracingMessageHandler::OnTraceDataCollected(
     const scoped_refptr<base::RefCountedString>& trace_fragment) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  std::string javascript("window.traceData += '");
-
-  std::string escaped_data;
-  ReplaceChars(trace_fragment->data(), "\\", "\\\\", &escaped_data);
-  javascript += escaped_data;
+  std::string javascript;
+  javascript.reserve(trace_fragment->size() * 2);
+  javascript.append("window.traceData += \"");
+  base::JsonDoubleQuote(trace_fragment->data(), false, &javascript);
 
   // Intentionally append a , to the traceData. This technically causes all
   // traceData that we pass back to JS to end with a comma, but that is actually
   // something the JS side strips away anyway
-  javascript += ",';";
+  javascript.append(",\";");
 
   web_ui()->GetWebContents()->GetRenderViewHost()->
     ExecuteJavascriptInWebFrame(string16(), UTF8ToUTF16(javascript));
@@ -522,7 +530,7 @@ void TracingMessageHandler::OnKnownCategoriesCollected(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   scoped_ptr<base::ListValue> categories(new base::ListValue());
-  for (std::set<std::string>::iterator iter = known_categories.begin();
+  for (std::set<std::string>::const_iterator iter = known_categories.begin();
        iter != known_categories.end();
        ++iter) {
     categories->AppendString(*iter);

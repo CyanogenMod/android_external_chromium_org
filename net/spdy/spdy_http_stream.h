@@ -14,6 +14,7 @@
 #include "net/base/net_log.h"
 #include "net/http/http_stream.h"
 #include "net/spdy/spdy_read_queue.h"
+#include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
 
 namespace net {
@@ -84,28 +85,31 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
 
   // SpdyStream::Delegate implementation.
-  virtual SpdySendStatus OnSendHeadersComplete() OVERRIDE;
-  virtual int OnSendBody() OVERRIDE;
-  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
-  virtual int OnResponseReceived(const SpdyHeaderBlock& response,
-                                 base::Time response_time,
-                                 int status) OVERRIDE;
-  virtual void OnHeadersSent() OVERRIDE;
+  virtual void OnRequestHeadersSent() OVERRIDE;
+  virtual int OnResponseHeadersReceived(const SpdyHeaderBlock& response,
+                                        base::Time response_time,
+                                        int status) OVERRIDE;
   virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
-  virtual void OnDataSent(size_t bytes_sent) OVERRIDE;
+  virtual void OnDataSent() OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
+  bool HasUploadData() const;
+
   void OnStreamCreated(const CompletionCallback& callback, int rv);
 
-  // Reads the data (whether chunked or not) from the request body stream and
-  // sends the data by calling WriteStreamData on the underlying SpdyStream.
-  int SendData();
+  // Reads the remaining data (whether chunked or not) from the
+  // request body stream and sends it if there's any. The read and
+  // subsequent sending may happen asynchronously. Must be called only
+  // when HasUploadData() is true.
+  void ReadAndSendRequestBodyData();
+
+  // Called when data has just been read from the request body stream;
+  // does the actual sending of data.
+  void OnRequestBodyReadCompleted(int status);
 
   // Call the user callback.
   void DoCallback(int rv);
-
-  int OnRequestBodyReadCompleted(int status);
 
   void ScheduleBufferedReadCallback();
 
@@ -122,14 +126,11 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   bool stream_closed_;
 
   // Set only when |stream_closed_| is true.
-  bool closed_stream_pushed_;
   int closed_stream_status_;
   SpdyStreamId closed_stream_id_;
 
   // The request to send.
   const HttpRequestInfo* request_info_;
-
-  bool has_upload_data_;
 
   // |response_info_| is the HTTP response data object which is filled in
   // when a SYN_REPLY comes in for the stream.
@@ -150,9 +151,8 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   int user_buffer_len_;
 
   // Temporary buffer used to read the request body from UploadDataStream.
-  scoped_refptr<IOBufferWithSize> raw_request_body_buf_;
-  // Wraps raw_request_body_buf_ to read the remaining data progressively.
-  scoped_refptr<DrainableIOBuffer> request_body_buf_;
+  scoped_refptr<IOBufferWithSize> request_body_buf_;
+  int request_body_buf_size_;
 
   // Is there a scheduled read callback pending.
   bool buffered_read_callback_pending_;

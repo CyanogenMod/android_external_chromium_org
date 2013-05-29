@@ -22,6 +22,7 @@
 #include "base/string16.h"
 #include "base/string_number_conversions.h"  // Temporary
 #include "base/threading/thread_local.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/common/appcache/appcache_dispatcher.h"
@@ -33,14 +34,14 @@
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/indexed_db/indexed_db_dispatcher.h"
-#include "content/common/indexed_db/indexed_db_message_filter.h"
-#include "content/common/npobject_util.h"
-#include "content/common/plugin_messages.h"
 #include "content/common/resource_dispatcher.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
-#include "content/common/web_database_observer_impl.h"
+#include "content/common_child/indexed_db/indexed_db_dispatcher.h"
+#include "content/common_child/indexed_db/indexed_db_message_filter.h"
+#include "content/common_child/npobject_util.h"
+#include "content/common_child/plugin_messages.h"
+#include "content/common_child/web_database_observer_impl.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
@@ -106,7 +107,7 @@
 #else
 // TODO(port)
 #include "base/memory/scoped_handle.h"
-#include "content/common/np_channel_base.h"
+#include "content/common_child/np_channel_base.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -117,6 +118,7 @@
 #include "third_party/webrtc/system_wrappers/interface/event_tracer.h"
 #endif
 
+using base::ThreadRestrictions;
 using WebKit::WebDocument;
 using WebKit::WebFrame;
 using WebKit::WebNetworkStateNotifier;
@@ -397,8 +399,10 @@ void RenderThreadImpl::Init() {
   if (command_line.HasSwitch(switches::kEnableGpuBenchmarking))
       RegisterExtension(GpuBenchmarkingExtension::Get());
 
+#if defined(USE_TCMALLOC) && (defined(OS_LINUX) || defined(OS_ANDROID))
   if (command_line.HasSwitch(switches::kEnableMemoryBenchmarking))
     RegisterExtension(MemoryBenchmarkingExtension::Get());
+#endif  // USE_TCMALLOC
 
   if (command_line.HasSwitch(switches::kEnableSkiaBenchmarking)) {
     LOG(WARNING) << "Enabling unsafe Skia benchmarking extension.";
@@ -648,6 +652,10 @@ static void AdjustRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableGamepad(false);
   // input[type=week] in Android is incomplete. crbug.com/135938
   WebRuntimeFeatures::enableInputTypeWeek(false);
+  // Android does not have support for PagePopup
+  WebRuntimeFeatures::enablePagePopup(false);
+  // datalist on Android is not enabled
+  WebRuntimeFeatures::enableDataListElement(false);
 #endif
 }
 
@@ -717,9 +725,6 @@ static void AdjustRuntimeFeaturesFromArgs(const CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kDisableJavaScriptI18NAPI))
     WebRuntimeFeatures::enableJavaScriptI18NAPI(false);
 
-  if (command_line.HasSwitch(switches::kEnableExperimentalWebSocket))
-    WebRuntimeFeatures::enableExperimentalWebSocket(true);
-
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
 
@@ -749,8 +754,15 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
     } else {
       compositor_thread_.reset(new base::Thread("Compositor"));
       compositor_thread_->Start();
+#if defined(OS_ANDROID)
+      compositor_thread_->SetPriority(base::kThreadPriority_Display);
+#endif
       compositor_message_loop_proxy_ =
           compositor_thread_->message_loop_proxy();
+      compositor_message_loop_proxy_->PostTask(
+          FROM_HERE,
+          base::Bind(base::IgnoreResult(&ThreadRestrictions::SetIOAllowed),
+                     false));
     }
 
     if (GetContentClient()->renderer()->ShouldCreateCompositorInputHandler()) {
@@ -1213,7 +1225,7 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
   // Ask the browser for the channel name.
   int client_id = 0;
   IPC::ChannelHandle channel_handle;
-  GPUInfo gpu_info;
+  gpu::GPUInfo gpu_info;
   if (!Send(new GpuHostMsg_EstablishGpuChannel(cause_for_gpu_launch,
                                                &client_id,
                                                &channel_handle,

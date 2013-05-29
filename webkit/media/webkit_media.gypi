@@ -32,14 +32,15 @@
         '<(DEPTH)/cc/cc.gyp:cc',
         '<(DEPTH)/media/media.gyp:media',
         '<(DEPTH)/media/media.gyp:shared_memory_support',
-        '<(DEPTH)/media/media.gyp:yuv_convert',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
         '<(DEPTH)/third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
-        '<(DEPTH)/webkit/compositor_bindings/compositor_bindings.gyp:webkit_compositor_bindings',
+        '<(DEPTH)/webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_bindings',
       ],
       'sources': [
         'android/audio_decoder_android.cc',
+        'android/media_source_delegate.cc',
+        'android/media_source_delegate.h',
         'android/stream_texture_factory_android.h',
         'android/webmediaplayer_android.cc',
         'android/webmediaplayer_android.h',
@@ -71,10 +72,14 @@
         'preload.h',
         'simple_video_frame_provider.cc',
         'simple_video_frame_provider.h',
+        'texttrack_impl.cc',
+        'texttrack_impl.h',
         'video_frame_provider.cc',
         'video_frame_provider.h',
         'webaudiosourceprovider_impl.cc',
         'webaudiosourceprovider_impl.h',
+        'webinbandtexttrack_impl.cc',
+        'webinbandtexttrack_impl.h',
         'webmediaplayer_delegate.h',
         'webmediaplayer_impl.cc',
         'webmediaplayer_impl.h',
@@ -87,7 +92,7 @@
         'webmediasourceclient_impl.cc',
         'webmediasourceclient_impl.h',
         'websourcebuffer_impl.cc',
-        'websourcebuffer_impl.h',
+        'websourcebuffer_impl.h'
       ],
       'conditions': [
         ['OS == "android"', {
@@ -110,12 +115,14 @@
           ],
         }],
         ['google_tv == 1', {
-          'sources': [
-            'android/media_source_delegate.cc',
-            'android/media_source_delegate.h',
-          ],
           'sources!': [
             'crypto/key_systems_info.cc',
+          ],
+        }],
+        ['enable_pepper_cdms != 1', {
+          'sources!': [
+            'crypto/ppapi_decryptor.cc',
+            'crypto/ppapi_decryptor.h',
           ],
         }],
       ],
@@ -162,9 +169,10 @@
             'crypto/ppapi/libvpx_cdm_video_decoder.h',
           ],
         }],
-        ['os_posix == 1 and OS != "mac"', {
+        ['os_posix == 1 and OS != "mac" and enable_pepper_cdms==1', {
           'type': 'loadable_module',  # Must be in PRODUCT_DIR for ASAN bots.
-        }, {  # 'os_posix != 1 or OS == "mac"'
+        }],
+        ['(OS == "mac" or OS == "win") and enable_pepper_cdms==1', {
           'type': 'shared_library',
         }],
         ['OS == "mac"', {
@@ -193,7 +201,7 @@
       'target_name': 'clearkeycdmadapter',
       'type': 'none',
       # Check whether the plugin's origin URL is valid.
-      'defines': ['CHECK_ORIGIN_URL'],
+      'defines': ['CHECK_DOCUMENT_URL'],
       'dependencies': [
         '<(DEPTH)/ppapi/ppapi.gyp:ppapi_cpp',
         'clearkeycdm',
@@ -204,7 +212,7 @@
         'crypto/ppapi/linked_ptr.h',
       ],
       'conditions': [
-        ['os_posix == 1 and OS != "mac"', {
+        ['os_posix == 1 and OS != "mac" and enable_pepper_cdms==1', {
           'cflags': ['-fvisibility=hidden'],
           'type': 'loadable_module',
           # Allow the plugin wrapper to find the CDM in the same directory.
@@ -214,12 +222,12 @@
             '<(PRODUCT_DIR)/libclearkeycdm.so',
           ],
         }],
-        ['OS == "win"', {
+        ['OS == "win" and enable_pepper_cdms==1', {
           'type': 'shared_library',
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
         }],
-        ['OS == "mac"', {
+        ['OS == "mac" and enable_pepper_cdms==1', {
           'type': 'loadable_module',
           'product_extension': 'plugin',
           'xcode_settings': {

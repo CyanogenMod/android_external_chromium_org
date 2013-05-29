@@ -52,15 +52,15 @@
 #include "ui/gl/gl_surface.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/compositor_bindings/web_compositor_support_impl.h"
-#include "webkit/compositor_bindings/web_layer_tree_view_impl_for_testing.h"
-#include "webkit/fileapi/isolated_context.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/common/gpu/test_context_provider_factory.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
+#include "webkit/common/user_agent/user_agent.h"
+#include "webkit/common/user_agent/user_agent_util.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlrequest_extradata_impl.h"
-#include "webkit/gpu/test_context_provider_factory.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "webkit/media/media_stream_client.h"
 #include "webkit/media/webmediaplayer_impl.h"
 #include "webkit/media/webmediaplayer_ms.h"
@@ -69,17 +69,17 @@
 #include "webkit/plugins/npapi/webplugin_impl.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
 #include "webkit/plugins/webplugininfo.h"
+#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/support/platform_support.h"
 #include "webkit/support/simple_database_system.h"
 #include "webkit/support/test_webidbfactory.h"
 #include "webkit/support/test_webkit_platform_support.h"
 #include "webkit/support/test_webplugin_page_delegate.h"
+#include "webkit/support/web_layer_tree_view_impl_for_testing.h"
 #include "webkit/tools/test_shell/simple_appcache_system.h"
 #include "webkit/tools/test_shell/simple_dom_storage_system.h"
 #include "webkit/tools/test_shell/simple_file_system.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
-#include "webkit/user_agent/user_agent.h"
-#include "webkit/user_agent/user_agent_util.h"
 
 #if defined(OS_ANDROID)
 #include "base/test/test_support_android.h"
@@ -467,7 +467,7 @@ WebKit::WebLayerTreeView* CreateLayerTreeView(
   scoped_ptr<webkit::WebLayerTreeViewImplForTesting> view(
       new webkit::WebLayerTreeViewImplForTesting(type, client));
 
-  if (!view->initialize(compositor_thread.Pass()))
+  if (!view->Initialize(compositor_thread.Pass()))
     return NULL;
   return view.release();
 }
@@ -569,27 +569,36 @@ void PostDelayedTask(TaskAdaptor* task, int64 delay_ms) {
 // Wrappers for FilePath and file_util
 
 WebString GetAbsoluteWebStringFromUTF8Path(const std::string& utf8_path) {
+  // WebKit is happy with a relative path if the absolute path doesn't exist,
+  // so we need to check the result of MakeAbsoluteFilePath().
 #if defined(OS_WIN)
-  base::FilePath path(UTF8ToWide(utf8_path));
-  return WebString(base::MakeAbsoluteFilePath(path).value());
+  base::FilePath orig_path(UTF8ToWide(utf8_path));
+  base::FilePath path = base::MakeAbsoluteFilePath(orig_path);
+  return WebString(path.empty() ? orig_path.value() : path.value());
 #else
-  base::FilePath path(base::SysWideToNativeMB(base::SysUTF8ToWide(utf8_path)));
+  base::FilePath orig_path(
+      base::SysWideToNativeMB(base::SysUTF8ToWide(utf8_path)));
+  base::FilePath path;
 #if defined(OS_ANDROID)
   if (WebKit::layoutTestMode()) {
     // See comment of TestEnvironment::set_mock_current_directory().
-    if (!path.IsAbsolute()) {
-      // Not using FilePath::Append() because it can't handle '..' in path.
+    if (!orig_path.IsAbsolute()) {
+      // Not using FilePath::Append() because it can't handle '..' in orig_path.
       DCHECK(test_environment);
       GURL base_url = net::FilePathToFileURL(
           test_environment->mock_current_directory()
               .Append(FILE_PATH_LITERAL("foo")));
-      net::FileURLToFilePath(base_url.Resolve(path.value()), &path);
+      net::FileURLToFilePath(base_url.Resolve(orig_path.value()), &path);
     }
   } else {
-    path = base::MakeAbsoluteFilePath(path);
+    path = base::MakeAbsoluteFilePath(orig_path);
+    if (path.empty())
+      path = orig_path;
   }
 #else
-  path = base::MakeAbsoluteFilePath(path);
+  path = base::MakeAbsoluteFilePath(orig_path);
+  if (path.empty())
+    path = orig_path;
 #endif  // else defined(OS_ANDROID)
   return WideToUTF16(base::SysNativeMBToWide(path.value()));
 #endif  // else defined(OS_WIN)

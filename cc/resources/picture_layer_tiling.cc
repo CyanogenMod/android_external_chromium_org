@@ -44,9 +44,9 @@ PictureLayerTiling::PictureLayerTiling(float contents_scale,
 
   DCHECK(!gfx::ToFlooredSize(
       gfx::ScaleSize(layer_bounds, contents_scale)).IsEmpty()) <<
-      "Tiling created with scale too small as contents become empty. " <<
-      "Layer bounds: " << layer_bounds.ToString() <<
-      "Contents scale: " << contents_scale;
+      "Tiling created with scale too small as contents become empty." <<
+      " Layer bounds: " << layer_bounds.ToString() <<
+      " Contents scale: " << contents_scale;
 
   tiling_data_.SetTotalSize(content_bounds);
   tiling_data_.SetMaxTextureSize(tile_size);
@@ -74,7 +74,9 @@ Tile* PictureLayerTiling::TileAt(int i, int j) const {
   return iter->second.get();
 }
 
-void PictureLayerTiling::CreateTile(int i, int j) {
+void PictureLayerTiling::CreateTile(int i,
+                                    int j,
+                                    const PictureLayerTiling* twin_tiling) {
   TileMapKey key(i, j);
   DCHECK(tiles_.find(key) == tiles_.end());
 
@@ -83,13 +85,12 @@ void PictureLayerTiling::CreateTile(int i, int j) {
   tile_rect.set_size(tiling_data_.max_texture_size());
 
   // Check our twin for a valid tile.
-  const PictureLayerTiling* twin = client_->GetTwinTiling(this);
-  if (twin && tiling_data_.max_texture_size() ==
-      twin->tiling_data_.max_texture_size()) {
-    Tile* candidate_tile = twin->TileAt(i, j);
-    if (candidate_tile) {
+  if (twin_tiling &&
+      tiling_data_.max_texture_size() ==
+      twin_tiling->tiling_data_.max_texture_size()) {
+    if (Tile* candidate_tile = twin_tiling->TileAt(i, j)) {
       gfx::Rect rect =
-          gfx::ToEnclosingRect(ScaleRect(paint_rect, 1.0f / contents_scale_));
+          gfx::ScaleToEnclosingRect(paint_rect, 1.0f / contents_scale_);
       if (!client_->GetInvalidation()->Intersects(rect)) {
         tiles_[key] = candidate_tile;
         return;
@@ -117,9 +118,10 @@ void PictureLayerTiling::DestroyAndRecreateTilesWithText() {
       new_tiles.push_back(it->first);
   }
 
+  const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
   for (size_t i = 0; i < new_tiles.size(); ++i) {
     tiles_.erase(new_tiles[i]);
-    CreateTile(new_tiles[i].first, new_tiles[i].second);
+    CreateTile(new_tiles[i].first, new_tiles[i].second, twin_tiling);
   }
 }
 
@@ -160,9 +162,9 @@ PictureLayerTiling::CoverageIterator::CoverageIterator(
       1 / dest_to_content_scale_));
 
   gfx::Rect content_rect =
-      gfx::ToEnclosingRect(gfx::ScaleRect(dest_rect_,
-                                          dest_to_content_scale_,
-                                          dest_to_content_scale_));
+      gfx::ScaleToEnclosingRect(dest_rect_,
+                                dest_to_content_scale_,
+                                dest_to_content_scale_);
   // IndexFromSrcCoord clamps to valid tile ranges, so it's necessary to
   // check for non-intersection first.
   content_rect.Intersect(gfx::Rect(tiling_->tiling_data_.total_size()));
@@ -211,9 +213,10 @@ PictureLayerTiling::CoverageIterator::operator++() {
 
   gfx::Rect content_rect = tiling_->tiling_data_.TileBounds(tile_i_, tile_j_);
 
-  current_geometry_rect_ = gfx::ToEnclosingRect(
-      gfx::ScaleRect(content_rect, 1 / dest_to_content_scale_,
-                                   1 / dest_to_content_scale_));
+  current_geometry_rect_ =
+      gfx::ScaleToEnclosingRect(content_rect,
+                                1 / dest_to_content_scale_,
+                                1 / dest_to_content_scale_);
 
   current_geometry_rect_.Intersect(dest_rect_);
 
@@ -283,8 +286,8 @@ void PictureLayerTiling::Reset() {
 void PictureLayerTiling::UpdateTilePriorities(
     WhichTree tree,
     gfx::Size device_viewport,
-    const gfx::RectF& viewport_in_layer_space,
-    const gfx::RectF& visible_layer_rect,
+    gfx::Rect viewport_in_layer_space,
+    gfx::Rect visible_layer_rect,
     gfx::Size last_layer_bounds,
     gfx::Size current_layer_bounds,
     float last_layer_contents_scale,
@@ -292,7 +295,6 @@ void PictureLayerTiling::UpdateTilePriorities(
     const gfx::Transform& last_screen_transform,
     const gfx::Transform& current_screen_transform,
     double current_frame_time_in_seconds,
-    bool store_screen_space_quads_on_tiles,
     size_t max_tiles_for_interest_area) {
   if (!NeedsUpdateForFrameAtTime(current_frame_time_in_seconds)) {
     // This should never be zero for the purposes of has_ever_been_updated().
@@ -305,11 +307,9 @@ void PictureLayerTiling::UpdateTilePriorities(
   }
 
   gfx::Rect viewport_in_content_space =
-      gfx::ToEnclosingRect(gfx::ScaleRect(viewport_in_layer_space,
-                                          contents_scale_));
+      gfx::ScaleToEnclosingRect(viewport_in_layer_space, contents_scale_);
   gfx::Rect visible_content_rect =
-      gfx::ToEnclosingRect(gfx::ScaleRect(visible_layer_rect,
-                                          contents_scale_));
+      gfx::ScaleToEnclosingRect(visible_layer_rect, contents_scale_);
 
   gfx::Size tile_size = tiling_data_.max_texture_size();
   int64 interest_rect_area =
@@ -337,6 +337,10 @@ void PictureLayerTiling::UpdateTilePriorities(
   gfx::Rect view_rect(device_viewport);
   float current_scale = current_layer_contents_scale / contents_scale_;
   float last_scale = last_layer_contents_scale / contents_scale_;
+
+  bool store_screen_space_quads_on_tiles;
+  TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+                                     &store_screen_space_quads_on_tiles);
 
   // Fast path tile priority calculation when both transforms are translations.
   if (last_screen_transform.IsIdentityOrTranslation() &&
@@ -415,8 +419,8 @@ void PictureLayerTiling::UpdateTilePriorities(
           time_to_visible_in_seconds,
           distance_to_visible_in_pixels);
       if (store_screen_space_quads_on_tiles) {
-          bool clipped;
-          priority.set_current_screen_quad(
+        bool clipped;
+        priority.set_current_screen_quad(
             MathUtil::MapQuad(current_screen_transform,
                               gfx::QuadF(current_layer_content_rect),
                               &clipped));
@@ -450,6 +454,8 @@ void PictureLayerTiling::SetLiveTilesRect(
     tiles_.erase(found);
   }
 
+  const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
+
   // Iterate to allocate new tiles for all regions with newly exposed area.
   for (TilingData::DifferenceIterator iter(&tiling_data_,
                                            new_live_tiles_rect,
@@ -457,7 +463,7 @@ void PictureLayerTiling::SetLiveTilesRect(
        iter;
        ++iter) {
     TileMapKey key(iter.index());
-    CreateTile(key.first, key.second);
+    CreateTile(key.first, key.second, twin_tiling);
   }
 
   live_tiles_rect_ = new_live_tiles_rect;
@@ -485,6 +491,15 @@ scoped_ptr<base::Value> PictureLayerTiling::AsValue() const {
   state->Set("content_bounds",
              MathUtil::AsValue(ContentRect().size()).release());
   return state.PassAs<base::Value>();
+}
+
+size_t PictureLayerTiling::GPUMemoryUsageInBytes() const {
+  size_t amount = 0;
+  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
+    const Tile* tile = it->second;
+    amount += tile->tile_version().GPUMemoryUsageInBytes();
+  }
+  return amount;
 }
 
 namespace {

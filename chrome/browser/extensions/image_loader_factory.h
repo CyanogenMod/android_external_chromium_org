@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_EXTENSIONS_IMAGE_LOADER_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class Profile;
 
@@ -17,11 +17,9 @@ class ImageLoader;
 // Singleton that owns all ImageLoaders and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated ImageLoader.
-class ImageLoaderFactory : public ProfileKeyedServiceFactory {
+class ImageLoaderFactory : public BrowserContextKeyedServiceFactory {
  public:
   static ImageLoader* GetForProfile(Profile* profile);
-
-  static void ResetForProfile(Profile* profile);
 
   static ImageLoaderFactory* GetInstance();
 
@@ -31,10 +29,10 @@ class ImageLoaderFactory : public ProfileKeyedServiceFactory {
   ImageLoaderFactory();
   virtual ~ImageLoaderFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
 };

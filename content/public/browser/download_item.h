@@ -158,6 +158,11 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   virtual bool IsPaused() const = 0;
   virtual bool IsTemporary() const = 0;
 
+  // Returns true if the download can be resumed. A download can be resumed if
+  // an in-progress download was paused or if an interrupted download requires
+  // user-interaction to resume.
+  virtual bool CanResume() const = 0;
+
   //    Convenience routines for accessing GetState() results conceptually -----
 
   // Returns true if the download needs more data.
@@ -216,11 +221,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // If the download forced a path rather than requesting name determination,
   // return the path requested.
   virtual const base::FilePath& GetForcedFilePath() const = 0;
-
-  // Returns the user-verified target file path for the download.
-  // This returns the same path as GetTargetFilePath() for safe downloads
-  // but does not for dangerous downloads until the name is verified.
-  virtual base::FilePath GetUserVerifiedFilePath() const = 0;
 
   // Returns the file-name that should be reported to the user. If a display
   // name has been explicitly set using SetDisplayName(), this function returns

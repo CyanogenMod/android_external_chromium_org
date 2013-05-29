@@ -198,7 +198,7 @@ PictureLayerTilingSet::CoverageIterator::operator++() {
   // Loop until we find a valid place to stop.
   while (true) {
     while (tiling_iter_ &&
-           (!*tiling_iter_ || !tiling_iter_->drawing_info().IsReadyToDraw())) {
+           (!*tiling_iter_ || !tiling_iter_->tile_version().IsReadyToDraw())) {
       missing_region_.Union(tiling_iter_.geometry_rect());
       ++tiling_iter_;
     }
@@ -262,12 +262,11 @@ void PictureLayerTilingSet::UpdateTilePriorities(
     const gfx::Transform& last_screen_transform,
     const gfx::Transform& current_screen_transform,
     double current_frame_time_in_seconds,
-    bool store_screen_space_quads_on_tiles,
     size_t max_tiles_for_interest_area) {
-  gfx::RectF viewport_in_layer_space = gfx::ScaleRect(
+  gfx::Rect viewport_in_layer_space = gfx::ScaleToEnclosingRect(
       viewport_in_content_space,
       1.f / current_layer_contents_scale);
-  gfx::RectF visible_layer_rect = gfx::ScaleRect(
+  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
       visible_content_rect,
       1.f / current_layer_contents_scale);
 
@@ -284,7 +283,6 @@ void PictureLayerTilingSet::UpdateTilePriorities(
         last_screen_transform,
         current_screen_transform,
         current_frame_time_in_seconds,
-        store_screen_space_quads_on_tiles,
         max_tiles_for_interest_area);
   }
 }
@@ -299,6 +297,13 @@ scoped_ptr<base::Value> PictureLayerTilingSet::AsValue() const {
   for (size_t i = 0; i < tilings_.size(); ++i)
     state->Append(tilings_[i]->AsValue().release());
   return state.PassAs<base::Value>();
+}
+
+size_t PictureLayerTilingSet::GPUMemoryUsageInBytes() const {
+  size_t amount = 0;
+  for (size_t i = 0; i < tilings_.size(); ++i)
+    amount += tilings_[i]->GPUMemoryUsageInBytes();
+  return amount;
 }
 
 }  // namespace cc

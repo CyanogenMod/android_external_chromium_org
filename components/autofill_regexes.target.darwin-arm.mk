@@ -15,8 +15,8 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "autofill_regexes":
 $(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/autofill_regex_constants.cc: $(LOCAL_PATH)/build/escape_unicode.py $(LOCAL_PATH)/components/autofill/browser/autofill_regex_constants.cc.utf8 $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: components_components_gyp_autofill_regexes_target_autofill_regexes ($@)"

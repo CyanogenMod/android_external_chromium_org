@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_AUTOFILL_AUTOCHECKOUT_WHITELIST_MANAGER_FACTORY_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 template <typename T> struct DefaultSingletonTraits;
 class Profile;
@@ -19,7 +19,7 @@ class WhitelistManager;
 
 // A wrapper of WhitelistManager so we can use it as a profiled
 // keyed service. Exposed in header file only for tests.
-class WhitelistManagerService : public ProfileKeyedService {
+class WhitelistManagerService : public BrowserContextKeyedService {
  public:
   virtual WhitelistManager* GetWhitelistManager() = 0;
 };
@@ -28,7 +28,7 @@ class WhitelistManagerService : public ProfileKeyedService {
 // with Profiles.
 // Listens for the Profile's destruction notification and cleans up the
 // associated WhitelistManager.
-class WhitelistManagerFactory : public ProfileKeyedServiceFactory {
+class WhitelistManagerFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the WhitelistManager for |profile|, creating it if
   // it is not yet created.
@@ -42,8 +42,8 @@ class WhitelistManagerFactory : public ProfileKeyedServiceFactory {
   WhitelistManagerFactory();
   virtual ~WhitelistManagerFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;

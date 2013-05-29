@@ -12,7 +12,7 @@
 #include "base/time.h"
 #include "base/timer.h"
 #include "chrome/browser/captive_portal/captive_portal_detector.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/backoff_entry.h"
 
@@ -27,7 +27,7 @@ namespace captive_portal {
 // Captive portal checks are rate-limited.  The CaptivePortalService may only
 // be accessed on the UI thread.
 // Design doc: https://docs.google.com/document/d/1k-gP2sswzYNvryu9NcgN7q5XrsMlUdlUdoW9WRaEmfM/edit
-class CaptivePortalService : public ProfileKeyedService,
+class CaptivePortalService : public BrowserContextKeyedService,
                              public base::NonThreadSafe {
  public:
   enum TestingState {
@@ -114,7 +114,7 @@ class CaptivePortalService : public ProfileKeyedService,
   void OnPortalDetectionCompleted(
       const CaptivePortalDetector::Results& results);
 
-  // ProfileKeyedService:
+  // BrowserContextKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // Called when a captive portal check completes.  Passes the result to all

@@ -24,6 +24,10 @@
 #include "third_party/skia/include/core/SkTileGridPicture.h"
 #include "ui/gfx/rect.h"
 
+namespace base {
+class Value;
+}
+
 namespace skia {
 class AnalysisCanvas;
 }
@@ -41,8 +45,7 @@ class CC_EXPORT Picture
   typedef base::hash_map<PixelRefMapKey, PixelRefs> PixelRefMap;
 
   static scoped_refptr<Picture> Create(gfx::Rect layer_rect);
-  static scoped_refptr<Picture> CreateFromBase64String(
-      const std::string& encoded_string);
+  static scoped_refptr<Picture> CreateFromValue(const base::Value* value);
 
   gfx::Rect LayerRect() const { return layer_rect_; }
   gfx::Rect OpaqueRect() const { return opaque_rect_; }
@@ -69,11 +72,12 @@ class CC_EXPORT Picture
 
   // Apply this contents scale and raster the content rect into the canvas.
   void Raster(SkCanvas* canvas,
+              SkDrawPictureCallback* callback,
               gfx::Rect content_rect,
               float contents_scale,
               bool enable_lcd_text);
 
-  void AsBase64String(std::string* output) const;
+  scoped_ptr<base::Value> AsValue() const;
 
   class CC_EXPORT PixelRefIterator {
    public:
@@ -110,7 +114,7 @@ class CC_EXPORT Picture
 
  private:
   explicit Picture(gfx::Rect layer_rect);
-  Picture(const std::string& encoded_string, bool* success);
+  Picture(const base::Value*, bool* success);
   // This constructor assumes SkPicture is already ref'd and transfers
   // ownership to this picture.
   Picture(const skia::RefPtr<SkPicture>&,

@@ -11,6 +11,7 @@
 
 #include "ash/ash_switches.h"
 #include "ash/display/display_controller.h"
+#include "ash/display/mirror_window_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "base/auto_reset.h"
@@ -38,7 +39,9 @@
 #endif
 
 #if defined(OS_CHROMEOS)
+#include "ash/display/output_configurator_animation.h"
 #include "base/chromeos/chromeos_version.h"
+#include "chromeos/display/output_configurator.h"
 #endif
 
 #if defined(OS_WIN)
@@ -85,7 +88,74 @@ struct ScaleComparator {
   float scale;
 };
 
-std::vector<float> GetScalesForDisplay(const DisplayInfo& info) {
+gfx::Display& GetInvalidDisplay() {
+  static gfx::Display* invalid_display = new gfx::Display();
+  return *invalid_display;
+}
+
+// Used to either create or close the mirror window
+// after all displays and associated RootWidows are
+// configured in UpdateDisplay.
+class MirrorWindowUpdater {
+ public:
+  virtual ~MirrorWindowUpdater() {}
+};
+
+class MirrorWindowCreator : public MirrorWindowUpdater {
+ public:
+  explicit MirrorWindowCreator(const DisplayInfo& display_info)
+      : display_info_(display_info) {
+  }
+
+  virtual ~MirrorWindowCreator() {
+    Shell::GetInstance()->mirror_window_controller()->
+        UpdateWindow(display_info_);
+  }
+
+ private:
+  const DisplayInfo display_info_;
+  DISALLOW_COPY_AND_ASSIGN(MirrorWindowCreator);
+};
+
+class MirrorWindowCloser : public MirrorWindowUpdater {
+ public:
+  MirrorWindowCloser() {}
+  virtual ~MirrorWindowCloser() {
+    Shell::GetInstance()->mirror_window_controller()->Close();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MirrorWindowCloser);
+};
+
+}  // namespace
+
+using aura::RootWindow;
+using aura::Window;
+using std::string;
+using std::vector;
+
+DEFINE_WINDOW_PROPERTY_KEY(int64, kDisplayIdKey,
+                           gfx::Display::kInvalidDisplayID);
+
+DisplayManager::DisplayManager()
+    : first_display_id_(gfx::Display::kInvalidDisplayID),
+      num_connected_displays_(0),
+      force_bounds_changed_(false),
+      change_display_upon_host_resize_(false),
+      software_mirroring_enabled_(false) {
+#if defined(OS_CHROMEOS)
+  change_display_upon_host_resize_ = !base::chromeos::IsRunningOnChromeOS();
+#endif
+  Init();
+}
+
+DisplayManager::~DisplayManager() {
+}
+
+// static
+std::vector<float> DisplayManager::GetScalesForDisplay(
+    const DisplayInfo& info) {
   std::vector<float> ret;
   if (info.device_scale_factor() == 2.0f) {
     ret.assign(kUIScalesFor2x, kUIScalesFor2x + arraysize(kUIScalesFor2x));
@@ -109,46 +179,6 @@ std::vector<float> GetScalesForDisplay(const DisplayInfo& info) {
 #endif
   }
   return ret;
-}
-
-gfx::Display& GetInvalidDisplay() {
-  static gfx::Display* invalid_display = new gfx::Display();
-  return *invalid_display;
-}
-
-}  // namespace
-
-using aura::RootWindow;
-using aura::Window;
-using std::string;
-using std::vector;
-
-DEFINE_WINDOW_PROPERTY_KEY(int64, kDisplayIdKey,
-                           gfx::Display::kInvalidDisplayID);
-
-DisplayManager::DisplayManager()
-    : first_display_id_(gfx::Display::kInvalidDisplayID),
-      mirrored_display_id_(gfx::Display::kInvalidDisplayID),
-      num_connected_displays_(0),
-      force_bounds_changed_(false),
-      change_display_upon_host_resize_(false) {
-#if defined(OS_CHROMEOS)
-  change_display_upon_host_resize_ = !base::chromeos::IsRunningOnChromeOS();
-#endif
-  Init();
-}
-
-DisplayManager::~DisplayManager() {
-}
-
-// static
-void DisplayManager::CycleDisplay() {
-  Shell::GetInstance()->display_manager()->CycleDisplayImpl();
-}
-
-// static
-void DisplayManager::ToggleDisplayScaleFactor() {
-  Shell::GetInstance()->display_manager()->ScaleDisplayImpl();
 }
 
 // static
@@ -344,7 +374,7 @@ void DisplayManager::OnNativeDisplaysChanged(
 
   bool internal_display_connected = false;
   num_connected_displays_ = updated_displays.size();
-  mirrored_display_id_ = gfx::Display::kInvalidDisplayID;
+  mirrored_display_ = gfx::Display();
   DisplayInfoList new_display_info_list;
   for (DisplayInfoList::const_iterator iter = updated_displays.begin();
        iter != updated_displays.end();
@@ -355,7 +385,7 @@ void DisplayManager::OnNativeDisplaysChanged(
     int y = iter->bounds_in_pixel().y();
     if (y_coords.find(y) != y_coords.end()) {
       InsertAndUpdateDisplayInfo(*iter);
-      mirrored_display_id_ = iter->id();
+      mirrored_display_ = CreateDisplayFromDisplayInfoById(iter->id());
     } else {
       y_coords.insert(y);
       new_display_info_list.push_back(*iter);
@@ -401,8 +431,31 @@ void DisplayManager::UpdateDisplays(
   DisplayList new_displays;
   bool update_mouse_location = false;
 
+  scoped_ptr<MirrorWindowUpdater> mirror_window_updater;
+  // TODO(oshima): We may want to use external as the source.
+  int mirrored_display_id = gfx::Display::kInvalidDisplayID;
+  if (software_mirroring_enabled_ && updated_display_info_list.size() == 2)
+    mirrored_display_id = updated_display_info_list[1].id();
+
   while (curr_iter != displays_.end() ||
          new_info_iter != new_display_info_list.end()) {
+    if (new_info_iter != new_display_info_list.end() &&
+        mirrored_display_id == new_info_iter->id()) {
+      InsertAndUpdateDisplayInfo(*new_info_iter);
+      mirrored_display_ = CreateDisplayFromDisplayInfoById(new_info_iter->id());
+      mirror_window_updater.reset(
+          new MirrorWindowCreator(display_info_[new_info_iter->id()]));
+      ++new_info_iter;
+      // Remove existing external dispaly if it is going to be mirrored.
+      if (curr_iter != displays_.end() &&
+          curr_iter->id() == mirrored_display_id) {
+        removed_displays.push_back(*curr_iter);
+        ++curr_iter;
+      }
+      update_mouse_location = true;
+      continue;
+    }
+
     if (curr_iter == displays_.end()) {
       // more displays in new list.
       added_display_indices.push_back(new_displays.size());
@@ -429,16 +482,13 @@ void DisplayManager::UpdateDisplays(
           current_display_info.bounds_in_pixel() !=
           new_display_info.bounds_in_pixel();
 
-      // TODO(oshima): Rotating square dislay doesn't work as the size
-      // won't change. This doesn't cause a problem now as there is no
-      // such display. This will be fixed by comparing the rotation as
-      // well when the rotation variable is added to gfx::Display.
       if (force_bounds_changed_ ||
           host_window_bounds_changed ||
           (current_display.device_scale_factor() !=
            new_display.device_scale_factor()) ||
           (current_display_info.size_in_pixel() !=
-           new_display.GetSizeInPixel())) {
+           new_display.GetSizeInPixel()) ||
+          (current_display.rotation() != new_display.rotation())) {
 
         // Don't update mouse location if the display size has
         // changed due to rotation or zooming.
@@ -466,6 +516,10 @@ void DisplayManager::UpdateDisplays(
       ++new_info_iter;
     }
   }
+
+  // Try to close mirror window unless mirror window is necessary.
+  if (!mirror_window_updater.get())
+    mirror_window_updater.reset(new MirrorWindowCloser);
 
   // Do not update |displays_| if there's nothing to be updated. Without this,
   // it will not update the display layout, which causes the bug
@@ -548,7 +602,7 @@ size_t DisplayManager::GetNumDisplays() const {
 }
 
 bool DisplayManager::IsMirrored() const {
-  return mirrored_display_id_ != gfx::Display::kInvalidDisplayID;
+  return mirrored_display_.id() != gfx::Display::kInvalidDisplayID;
 }
 
 const gfx::Display& DisplayManager::GetDisplayNearestWindow(
@@ -609,6 +663,67 @@ std::string DisplayManager::GetDisplayNameForId(int64 id) {
   return base::StringPrintf("Display %d", static_cast<int>(id));
 }
 
+void DisplayManager::SetMirrorMode(bool mirrored) {
+  if (num_connected_displays() <= 1)
+    return;
+
+#if defined(OS_CHROMEOS)
+  if (base::chromeos::IsRunningOnChromeOS()) {
+    chromeos::OutputState new_state = mirrored ?
+        chromeos::STATE_DUAL_MIRROR : chromeos::STATE_DUAL_EXTENDED;
+    Shell::GetInstance()->output_configurator()->SetDisplayMode(new_state);
+    return;
+  }
+#endif
+  SetSoftwareMirroring(mirrored);
+  DisplayInfoList display_info_list;
+  int count = 0;
+  for (std::map<int64, DisplayInfo>::const_iterator iter =
+           display_info_.begin();
+       count < 2; ++iter, ++count) {
+    display_info_list.push_back(GetDisplayInfo(iter->second.id()));
+  }
+  UpdateDisplays(display_info_list);
+#if defined(OS_CHROMEOS)
+  if (Shell::GetInstance()->output_configurator_animation()) {
+    Shell::GetInstance()->output_configurator_animation()->
+        StartFadeInAnimation();
+  }
+#endif
+}
+
+void DisplayManager::AddRemoveDisplay() {
+  DCHECK(!displays_.empty());
+  std::vector<DisplayInfo> new_display_info_list;
+  new_display_info_list.push_back(
+      GetDisplayInfo(DisplayController::GetPrimaryDisplay().id()));
+  // Add if there is only one display connected.
+  if (num_connected_displays() == 1) {
+    // Layout the 2nd display below the primary as with the real device.
+    aura::RootWindow* primary = Shell::GetPrimaryRootWindow();
+    gfx::Rect host_bounds =
+        gfx::Rect(primary->GetHostOrigin(),  primary->GetHostSize());
+    new_display_info_list.push_back(DisplayInfo::CreateFromSpec(
+        base::StringPrintf(
+            "%d+%d-500x400", host_bounds.x(), host_bounds.bottom())));
+  }
+  num_connected_displays_ = new_display_info_list.size();
+  UpdateDisplays(new_display_info_list);
+}
+
+void DisplayManager::ToggleDisplayScaleFactor() {
+  DCHECK(!displays_.empty());
+  std::vector<DisplayInfo> new_display_info_list;
+  for (DisplayList::const_iterator iter = displays_.begin();
+       iter != displays_.end(); ++iter) {
+    DisplayInfo display_info = GetDisplayInfo(iter->id());
+    display_info.set_device_scale_factor(
+        display_info.device_scale_factor() == 1.0f ? 2.0f : 1.0f);
+    new_display_info_list.push_back(display_info);
+  }
+  UpdateDisplays(new_display_info_list);
+}
+
 void DisplayManager::OnRootWindowResized(const aura::RootWindow* root,
                                          const gfx::Size& old_size) {
   if (change_display_upon_host_resize_) {
@@ -622,6 +737,11 @@ void DisplayManager::OnRootWindowResized(const aura::RootWindow* root,
       Shell::GetInstance()->screen()->NotifyBoundsChanged(display);
     }
   }
+}
+
+void DisplayManager::SetSoftwareMirroring(bool enabled) {
+  software_mirroring_enabled_ = enabled;
+  mirrored_display_ = gfx::Display();
 }
 
 int64 DisplayManager::GetDisplayIdForUIScaling() const {
@@ -652,41 +772,15 @@ void DisplayManager::Init() {
   num_connected_displays_ = displays_.size();
 }
 
-void DisplayManager::CycleDisplayImpl() {
-  DCHECK(!displays_.empty());
-  std::vector<DisplayInfo> new_display_info_list;
-  new_display_info_list.push_back(
-      GetDisplayInfo(DisplayController::GetPrimaryDisplay().id()));
-  // Add if there is only one display.
-  if (displays_.size() == 1) {
-    // Layout the 2nd display below the primary as with the real device.
-    aura::RootWindow* primary = Shell::GetPrimaryRootWindow();
-    gfx::Rect host_bounds =
-        gfx::Rect(primary->GetHostOrigin(),  primary->GetHostSize());
-    new_display_info_list.push_back(DisplayInfo::CreateFromSpec(
-        base::StringPrintf(
-            "%d+%d-500x400", host_bounds.x(), host_bounds.bottom())));
-  }
-  num_connected_displays_ = new_display_info_list.size();
-  UpdateDisplays(new_display_info_list);
-}
-
-void DisplayManager::ScaleDisplayImpl() {
-  DCHECK(!displays_.empty());
-  std::vector<DisplayInfo> new_display_info_list;
-  for (DisplayList::const_iterator iter = displays_.begin();
-       iter != displays_.end(); ++iter) {
-    DisplayInfo display_info = GetDisplayInfo(iter->id());
-    display_info.set_device_scale_factor(
-        display_info.device_scale_factor() == 1.0f ? 2.0f : 1.0f);
-    new_display_info_list.push_back(display_info);
-  }
-  UpdateDisplays(new_display_info_list);
-}
-
 gfx::Display& DisplayManager::FindDisplayForRootWindow(
     const aura::RootWindow* root_window) {
   int64 id = root_window->GetProperty(kDisplayIdKey);
+  // RootWindow needs Display to determine it's device scale factor.
+  // TODO(oshima): We don't need full display info for mirror
+  // window. Refactor so that RootWindow doesn't use it.
+  if (mirrored_display_.id() == id)
+    return mirrored_display_;
+
   // if id is |kInvaildDisplayID|, it's being deleted.
   DCHECK(id != gfx::Display::kInvalidDisplayID);
   gfx::Display& display = FindDisplayForId(id);

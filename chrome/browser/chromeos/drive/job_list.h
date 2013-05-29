@@ -24,8 +24,10 @@ enum JobType {
   TYPE_CONTINUE_GET_RESOURCE_LIST,
   TYPE_GET_RESOURCE_ENTRY,
   TYPE_DELETE_RESOURCE,
+  TYPE_COPY_RESOURCE,
   TYPE_COPY_HOSTED_DOCUMENT,
   TYPE_RENAME_RESOURCE,
+  TYPE_TOUCH_RESOURCE,
   TYPE_ADD_RESOURCE_TO_DIRECTORY,
   TYPE_REMOVE_RESOURCE_FROM_DIRECTORY,
   TYPE_ADD_NEW_DIRECTORY,
@@ -87,6 +89,9 @@ struct JobInfo {
   // Returns the string representation of the job info.
   std::string ToString() const;
 };
+
+// Checks if |job_info| represents a job for currently active file transfer.
+bool IsActiveFileTransferJobInfo(const JobInfo& job_info);
 
 // The interface for observing JobListInterface.
 // All events are notified in the UI thread.

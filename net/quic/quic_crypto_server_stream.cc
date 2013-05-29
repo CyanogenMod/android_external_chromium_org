@@ -14,11 +14,9 @@
 namespace net {
 
 QuicCryptoServerStream::QuicCryptoServerStream(
-    const QuicConfig& config,
     const QuicCryptoServerConfig& crypto_config,
     QuicSession* session)
     : QuicCryptoStream(session),
-      config_(config),
       crypto_config_(crypto_config) {
 }
 
@@ -40,12 +38,8 @@ void QuicCryptoServerStream::OnHandshakeMessage(
 
   string error_details;
   CryptoHandshakeMessage reply;
-  QuicErrorCode error = crypto_config_.ProcessClientHello(
-      message, session()->connection()->guid(),
-      session()->connection()->peer_address(),
-      session()->connection()->clock(),
-      session()->connection()->random_generator(),
-      &crypto_negotiated_params_, &reply, &error_details);
+
+  QuicErrorCode error = ProcessClientHello(message, &reply, &error_details);
 
   if (error != QUIC_NO_ERROR) {
     CloseConnectionWithDetails(error, error_details);
@@ -58,13 +52,14 @@ void QuicCryptoServerStream::OnHandshakeMessage(
   }
 
   // If we are returning a SHLO then we accepted the handshake.
-  error = config_.ProcessFinalPeerHandshake(
-      message, CryptoUtils::LOCAL_PRIORITY, &negotiated_params_,
-      &error_details);
+  QuicConfig* config = session()->config();
+  error = config->ProcessClientHello(message, &error_details);
   if (error != QUIC_NO_ERROR) {
     CloseConnectionWithDetails(error, error_details);
     return;
   }
+
+  config->ToHandshakeMessage(&reply);
 
   // Receiving a full CHLO implies the client is prepared to decrypt with
   // the new server write key.  We can start to encrypt with the new server
@@ -94,6 +89,19 @@ void QuicCryptoServerStream::OnHandshakeMessage(
   encryption_established_ = true;
   handshake_confirmed_ = true;
   session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
+}
+
+QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
+    const CryptoHandshakeMessage& message,
+    CryptoHandshakeMessage* reply,
+    string* error_details) {
+  return crypto_config_.ProcessClientHello(
+      message,
+      session()->connection()->guid(),
+      session()->connection()->peer_address(),
+      session()->connection()->clock(),
+      session()->connection()->random_generator(),
+      &crypto_negotiated_params_, reply, error_details);
 }
 
 }  // namespace net

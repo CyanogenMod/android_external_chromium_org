@@ -5,18 +5,20 @@
 #ifndef CHROME_BROWSER_BROWSER_PROCESS_PLATFORM_PART_H_
 #define CHROME_BROWSER_BROWSER_PROCESS_PLATFORM_PART_H_
 
-#include "base/basictypes.h"
+#include "build/build_config.h"
 
-class BrowserProcessPlatformPart {
- public:
-  BrowserProcessPlatformPart();
-  virtual ~BrowserProcessPlatformPart();
-
-  // Called from BrowserProcessImpl::StartTearDown().
-  virtual void StartTearDown();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserProcessPlatformPart);
-};
+// Include the appropriate BrowserProcessPlatformPart based on the platform.
+#if defined(OS_ANDROID)
+#include "chrome/browser/browser_process_platform_part_android.h"
+#elif defined(OS_CHROMEOS)
+#include "chrome/browser/browser_process_platform_part_chromeos.h"
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
+#include "chrome/browser/browser_process_platform_part_mac.h"
+#elif defined(OS_WIN) && defined(USE_AURA)
+#include "chrome/browser/browser_process_platform_part_aurawin.h"
+#else
+#include "chrome/browser/browser_process_platform_part_base.h"
+typedef BrowserProcessPlatformPartBase BrowserProcessPlatformPart;
+#endif
 
 #endif  // CHROME_BROWSER_BROWSER_PROCESS_PLATFORM_PART_H_

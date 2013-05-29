@@ -4,18 +4,18 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api_factory.h"
 
-#include "chrome/browser/chromeos/drive/drive_system_service.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 FileBrowserPrivateAPI*
 FileBrowserPrivateAPIFactory::GetForProfile(Profile* profile) {
   return static_cast<FileBrowserPrivateAPI*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -25,17 +25,18 @@ FileBrowserPrivateAPIFactory::GetInstance() {
 }
 
 FileBrowserPrivateAPIFactory::FileBrowserPrivateAPIFactory()
-    : ProfileKeyedServiceFactory(
+    : BrowserContextKeyedServiceFactory(
           "FileBrowserPrivateAPI",
-          ProfileDependencyManager::GetInstance()) {
-  DependsOn(drive::DriveSystemServiceFactory::GetInstance());
+          BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(drive::DriveIntegrationServiceFactory::GetInstance());
   DependsOn(extensions::ExtensionSystemFactory::GetInstance());
 }
 
 FileBrowserPrivateAPIFactory::~FileBrowserPrivateAPIFactory() {
 }
 
-ProfileKeyedService* FileBrowserPrivateAPIFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+FileBrowserPrivateAPIFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new FileBrowserPrivateAPI(static_cast<Profile*>(profile));
 }
@@ -46,7 +47,7 @@ content::BrowserContext* FileBrowserPrivateAPIFactory::GetBrowserContextToUse(
   return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
-bool FileBrowserPrivateAPIFactory::ServiceIsCreatedWithProfile() const {
+bool FileBrowserPrivateAPIFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

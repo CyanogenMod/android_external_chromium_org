@@ -9,6 +9,7 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/compositor_frame_metadata.h"
+#include "cc/output/copy_output_request.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/software_output_device.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -30,19 +31,6 @@
 namespace cc {
 
 namespace {
-
-void ToSkMatrix(SkMatrix* flattened, const gfx::Transform& m) {
-  // Convert from 4x4 to 3x3 by dropping the third row and column.
-  flattened->set(0, SkDoubleToScalar(m.matrix().getDouble(0, 0)));
-  flattened->set(1, SkDoubleToScalar(m.matrix().getDouble(0, 1)));
-  flattened->set(2, SkDoubleToScalar(m.matrix().getDouble(0, 3)));
-  flattened->set(3, SkDoubleToScalar(m.matrix().getDouble(1, 0)));
-  flattened->set(4, SkDoubleToScalar(m.matrix().getDouble(1, 1)));
-  flattened->set(5, SkDoubleToScalar(m.matrix().getDouble(1, 3)));
-  flattened->set(6, SkDoubleToScalar(m.matrix().getDouble(3, 0)));
-  flattened->set(7, SkDoubleToScalar(m.matrix().getDouble(3, 1)));
-  flattened->set(8, SkDoubleToScalar(m.matrix().getDouble(3, 3)));
-}
 
 bool IsScaleAndTranslate(const SkMatrix& matrix) {
   return SkScalarNearlyZero(matrix[SkMatrix::kMSkewX]) &&
@@ -119,7 +107,7 @@ void SoftwareRenderer::FinishDrawingFrame(DrawingFrame* frame) {
   }
 }
 
-void SoftwareRenderer::SwapBuffers(const LatencyInfo& latency_info) {
+void SoftwareRenderer::SwapBuffers(const ui::LatencyInfo& latency_info) {
   if (Settings().compositor_frame_message)
     output_surface_->SendFrameToParentCompositor(&compositor_frame_);
 }
@@ -228,7 +216,8 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
       frame->window_matrix * frame->projection_matrix * quad_rect_matrix;
   contents_device_transform.FlattenTo2d();
   SkMatrix sk_device_matrix;
-  ToSkMatrix(&sk_device_matrix, contents_device_transform);
+  gfx::TransformToFlattenedSkMatrix(contents_device_transform,
+                                    &sk_device_matrix);
   current_canvas_->setMatrix(sk_device_matrix);
 
   current_paint_.reset();
@@ -309,7 +298,7 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
     SkDevice temp_device(temp_bitmap);
     SkCanvas temp_canvas(&temp_device);
 
-    quad->picture_pile->Raster(
+    quad->picture_pile->RasterToBitmap(
         &temp_canvas, quad->content_rect, quad->contents_scale, NULL);
 
     current_paint_.setFilterBitmap(true);
@@ -317,7 +306,7 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
   } else {
     TRACE_EVENT0("cc",
                  "SoftwareRenderer::DrawPictureQuad direct from PicturePile");
-    quad->picture_pile->Raster(
+    quad->picture_pile->RasterDirect(
         current_canvas_, quad->content_rect, quad->contents_scale, NULL);
   }
 }
@@ -447,7 +436,7 @@ void SoftwareRenderer::DrawUnsupportedQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
-    const CopyRenderPassCallback& callback) {
+    scoped_ptr<CopyOutputRequest> request) {
   gfx::Size render_pass_size = frame->current_render_pass->output_rect.size();
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
@@ -456,7 +445,7 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
                     render_pass_size.height());
   current_canvas_->readPixels(bitmap.get(), 0, 0);
 
-  callback.Run(bitmap.Pass());
+  request->SendBitmapResult(bitmap.Pass());
 }
 
 void SoftwareRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {

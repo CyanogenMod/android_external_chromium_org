@@ -38,6 +38,7 @@ namespace content {
 
 class BrowserContext;
 class InterstitialPage;
+class PageState;
 class RenderProcessHost;
 class RenderViewHost;
 class RenderWidgetHostView;
@@ -125,7 +126,21 @@ class WebContents : public PageNavigator,
   virtual content::BrowserContext* GetBrowserContext() const = 0;
 
   // Gets the URL that is currently being displayed, if there is one.
+  // This method is deprecated. DO NOT USE! Pick either |GetActiveURL| or
+  // |GetLastCommittedURL| as appropriate.
   virtual const GURL& GetURL() const = 0;
+
+  // Gets the URL currently being displayed in the URL bar, if there is one.
+  // This URL might be a pending navigation that hasn't committed yet, so it is
+  // not guaranteed to match the current page in this WebContents. A typical
+  // example of this is interstitials, which show the URL of the new/loading
+  // page (active) but the security context is of the old page (last committed).
+  virtual const GURL& GetActiveURL() const = 0;
+
+  // Gets the last committed URL. It represents the current page that is
+  // displayed in  this WebContents. It represents the current security
+  // context.
+  virtual const GURL& GetLastCommittedURL() const = 0;
 
   // Return the currently active RenderProcessHost and RenderViewHost. Each of
   // these may change over time.
@@ -375,7 +390,7 @@ class WebContents : public PageNavigator,
   virtual void ViewSource() = 0;
 
   virtual void ViewFrameSource(const GURL& url,
-                               const std::string& content_state)= 0;
+                               const PageState& page_state)= 0;
 
   // Gets the minimum/maximum zoom percent.
   virtual int GetMinimumZoomPercent() const = 0;
@@ -393,11 +408,10 @@ class WebContents : public PageNavigator,
   virtual bool GotResponseToLockMouseRequest(bool allowed) = 0;
 
   // Called when the user has selected a color in the color chooser.
-  virtual void DidChooseColorInColorChooser(int color_chooser_id,
-                                            SkColor color) = 0;
+  virtual void DidChooseColorInColorChooser(SkColor color) = 0;
 
   // Called when the color chooser has ended.
-  virtual void DidEndColorChooser(int color_chooser_id) = 0;
+  virtual void DidEndColorChooser() = 0;
 
   // Returns true if the location bar should be focused by default rather than
   // the page contents. The view calls this function when the tab is focused
@@ -408,6 +422,7 @@ class WebContents : public PageNavigator,
   virtual bool HasOpener() const = 0;
 
   typedef base::Callback<void(int, /* id */
+                              int, /* HTTP status code */
                               const GURL&, /* image_url */
                               int,  /* requested_size */
                               const std::vector<SkBitmap>& /* bitmaps*/)>

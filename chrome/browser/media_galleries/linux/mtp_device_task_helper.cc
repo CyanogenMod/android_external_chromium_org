@@ -12,8 +12,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
-#include "webkit/fileapi/async_file_util.h"
-#include "webkit/fileapi/file_system_util.h"
+#include "webkit/browser/fileapi/async_file_util.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 namespace chrome {
 
@@ -162,7 +162,7 @@ void MTPDeviceTaskHelper::OnDidReadDirectoryByPath(
   base::FilePath current;
   MTPDeviceObjectEnumerator file_enum(file_entries);
   while (!(current = file_enum.Next()).empty()) {
-    fileapi::AsyncFileUtil::Entry entry;
+    fileapi::DirectoryEntry entry;
     entry.name = fileapi::VirtualPath::BaseName(current).value();
     entry.is_directory = file_enum.IsDirectory();
     entry.size = file_enum.Size();

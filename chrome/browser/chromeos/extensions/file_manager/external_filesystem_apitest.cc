@@ -12,7 +12,7 @@
 #include "base/path_service.h"
 #include "base/threading/worker_pool.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/drive/drive_system_service.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system.h"
 #include "chrome/browser/chromeos/extensions/file_manager/drive_test_util.h"
 #include "chrome/browser/extensions/event_router.h"
@@ -34,11 +34,11 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
-#include "webkit/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
 
 // Tests for access to external file systems (as defined in
-// webkit/fileapi/file_system_types.h) from extensions with fileBrowserPrivate
-// and fileBrowserHandler extension permissions.
+// webkit/common/fileapi/file_system_types.h) from extensions with
+// fileBrowserPrivate and fileBrowserHandler extension permissions.
 // The tests cover following external file system types:
 // - local (kFileSystemTypeLocalNative): a local file system on which files are
 //   accessed using native local path.
@@ -73,15 +73,10 @@ const char kLocalMountPointName[] = "local";
 const char kRestrictedMountPointName[] = "restricted";
 
 // Default file content for the test files.
-// The content format is influenced by fake drive service implementation which
-// fills the file with 'x' characters until its size matches the size declared
-// in the root feed.
-// The size of the files in |kTestRootFeed| has to be set to the length of
-// |kTestFileContent| string.
-const char kTestFileContent[] = "xxxxxxxxxxxxx";
+const char kTestFileContent[] = "This is some test content.";
 
-// Contains feed for drive file system. The file system hiearchy is the same for
-// local and restricted file systems:
+// Contains feed for drive file system. The file system hierarchy is the same
+// for local and restricted file systems:
 //   test_dir/ - - subdir/
 //              |
 //               - empty_test_dir/
@@ -329,9 +324,10 @@ class DriveFileSystemExtensionApiTest : public FileSystemExtensionApiTestBase {
     PathService::Get(base::DIR_TEMP, &tmp_dir_path);
     ASSERT_TRUE(test_cache_root_.CreateUniqueTempDirUnderPath(tmp_dir_path));
 
-    drive::DriveSystemServiceFactory::SetFactoryForTest(
-        base::Bind(&DriveFileSystemExtensionApiTest::CreateDriveSystemService,
-                   base::Unretained(this)));
+    drive::DriveIntegrationServiceFactory::SetFactoryForTest(
+        base::Bind(
+            &DriveFileSystemExtensionApiTest::CreateDriveIntegrationService,
+            base::Unretained(this)));
   }
 
   // FileSystemExtensionApiTestBase OVERRIDE.
@@ -340,18 +336,19 @@ class DriveFileSystemExtensionApiTest : public FileSystemExtensionApiTestBase {
   }
 
  protected:
-  // DriveSystemService factory function for this test.
-  drive::DriveSystemService* CreateDriveSystemService(Profile* profile) {
+  // DriveIntegrationService factory function for this test.
+  drive::DriveIntegrationService* CreateDriveIntegrationService(
+      Profile* profile) {
     fake_drive_service_ = new google_apis::FakeDriveService;
     fake_drive_service_->LoadResourceListForWapi(kTestRootFeed);
     fake_drive_service_->LoadAccountMetadataForWapi(
         "chromeos/gdata/account_metadata.json");
     fake_drive_service_->LoadAppListForDriveApi("chromeos/drive/applist.json");
 
-    return new drive::DriveSystemService(profile,
-                                         fake_drive_service_,
-                                         test_cache_root_.path(),
-                                         NULL);
+    return new drive::DriveIntegrationService(profile,
+                                              fake_drive_service_,
+                                              test_cache_root_.path(),
+                                              NULL);
   }
 
   base::ScopedTempDir test_cache_root_;
@@ -386,13 +383,8 @@ IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest, FileWatch) {
       FLAGS_NONE)) << message_;
 }
 
-#if defined(OS_CHROMEOS)
-#define MAYBE_FileBrowserHandlers DISABLED_FileBrowserHandlers
-#else
-#define MAYBE_FileBrowserHandlers FileBrowserHandlers
-#endif
 IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest,
-                       MAYBE_FileBrowserHandlers) {
+                       FileBrowserHandlers) {
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest_v1.json"),
@@ -400,13 +392,8 @@ IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest,
       FLAGS_USE_FILE_HANDLER)) << message_;
 }
 
-#if defined(OS_CHROMEOS)
-#define MAYBE_FileBrowserHandlers_Packaged DISABLED_FileBrowserHandlers_Packaged
-#else
-#define MAYBE_FileBrowserHandlers_Packaged FileBrowserHandlers_Packaged
-#endif
 IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest,
-                       MAYBE_FileBrowserHandlers_Packaged) {
+                       FileBrowserHandlers_Packaged) {
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest_v2.json"),
@@ -414,13 +401,8 @@ IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest,
       FLAGS_USE_FILE_HANDLER)) << message_;
 }
 
-#if defined(OS_CHROMEOS)
-#define MAYBE_FileBrowserHandlersLazy DISABLED_FileBrowserHandlersLazy
-#else
-#define MAYBE_FileBrowserHandlersLazy FileBrowserHandlersLazy
-#endif
 IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest,
-                       MAYBE_FileBrowserHandlersLazy) {
+                       FileBrowserHandlersLazy) {
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest_v1.json"),
@@ -428,14 +410,8 @@ IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest,
       FLAGS_USE_FILE_HANDLER | FLAGS_LAZY_FILE_HANDLER)) << message_;
 }
 
-#if defined(OS_CHROMEOS)
-#define MAYBE_FileBrowserHandlersLazy_Packaged \
-    DISABLED_FileBrowserHandlersLazy_Packaged
-#else
-#define MAYBE_FileBrowserHandlersLazy_Packaged FileBrowserHandlersLazy_Packaged
-#endif
 IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest,
-                       MAYBE_FileBrowserHandlersLazy_Packaged) {
+                       FileBrowserHandlersLazy_Packaged) {
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest_v2.json"),
@@ -443,12 +419,7 @@ IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest,
       FLAGS_USE_FILE_HANDLER | FLAGS_LAZY_FILE_HANDLER)) << message_;
 }
 
-#if defined(OS_CHROMEOS)
-#define MAYBE_AppFileHandler DISABLED_AppFileHandler
-#else
-#define MAYBE_AppFileHandler AppFileHandler
-#endif
-IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest, MAYBE_AppFileHandler) {
+IN_PROC_BROWSER_TEST_F(LocalFileSystemExtensionApiTest, AppFileHandler) {
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest_v2.json"),
@@ -506,7 +477,7 @@ IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, FileWatch) {
 }
 
 IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest,
-                       MAYBE_FileBrowserHandlers) {
+                       FileBrowserHandlers) {
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest_v1.json"),
@@ -515,7 +486,7 @@ IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest,
 }
 
 IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest,
-                       MAYBE_FileBrowserHandlers_Packaged) {
+                       FileBrowserHandlers_Packaged) {
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest_v2.json"),
@@ -524,7 +495,7 @@ IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest,
 }
 
 IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest,
-                       MAYBE_FileBrowserHandlersLazy) {
+                       FileBrowserHandlersLazy) {
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest_v1.json"),
@@ -543,7 +514,7 @@ IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, Search) {
       FLAGS_NONE)) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, MAYBE_AppFileHandler) {
+IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, AppFileHandler) {
   fake_drive_service_->set_default_max_results(1);
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",

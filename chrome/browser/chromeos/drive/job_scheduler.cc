@@ -9,13 +9,10 @@
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
-#include "base/stl_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -27,6 +24,8 @@ namespace drive {
 namespace {
 
 const int kMaxThrottleCount = 5;
+
+const int kMaxRetryCount = kMaxThrottleCount - 1;
 
 // Parameter struct for RunUploadNewFile.
 struct UploadNewFileParams {
@@ -83,7 +82,8 @@ const int JobScheduler::kMaxJobCount[] = {
 
 JobScheduler::JobEntry::JobEntry(JobType type)
     : job_info(type),
-      context(DriveClientContext(USER_INITIATED)) {
+      context(ClientContext(USER_INITIATED)),
+      retry_count(0) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -91,11 +91,11 @@ JobScheduler::JobEntry::~JobEntry() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-bool JobScheduler::JobEntry::Less(const JobEntry& left, const JobEntry& right) {
-  // Lower values of ContextType are higher priority.
-  // See also the comment at ContextType.
-  return (left.context.type < right.context.type);
-}
+struct JobScheduler::ResumeUploadParams {
+  base::FilePath drive_file_path;
+  base::FilePath local_file_path;
+  std::string content_type;
+};
 
 JobScheduler::JobScheduler(
     Profile* profile,
@@ -107,9 +107,9 @@ JobScheduler::JobScheduler(
       profile_(profile),
       weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  for (int i = 0; i < NUM_QUEUES; ++i) {
-    jobs_running_[i] = 0;
-  }
+
+  for (int i = 0; i < NUM_QUEUES; ++i)
+    queue_[i].reset(new JobQueue(kMaxJobCount[i], NUM_CONTEXT_TYPES));
 
   net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
 }
@@ -117,13 +117,10 @@ JobScheduler::JobScheduler(
 JobScheduler::~JobScheduler() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  size_t num_pending_jobs = 0;
-  size_t num_running_jobs = 0;
-  for (int i = 0; i < NUM_QUEUES; ++i) {
-    num_pending_jobs += queue_[i].size();
-    num_running_jobs += jobs_running_[i];
-  }
-  DCHECK_EQ(num_pending_jobs + num_running_jobs, job_map_.size());
+  size_t num_queued_jobs = 0;
+  for (int i = 0; i < NUM_QUEUES; ++i)
+    num_queued_jobs += queue_[i]->GetNumberOfJobs();
+  DCHECK_EQ(num_queued_jobs, job_map_.size());
 
   net::NetworkChangeNotifier::RemoveConnectionTypeObserver(this);
 }
@@ -287,7 +284,7 @@ void JobScheduler::ContinueGetResourceList(
 
 void JobScheduler::GetResourceEntry(
     const std::string& resource_id,
-    const DriveClientContext& context,
+    const ClientContext& context,
     const google_apis::GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -324,6 +321,27 @@ void JobScheduler::DeleteResource(
   StartJob(new_job);
 }
 
+void JobScheduler::CopyResource(
+    const std::string& resource_id,
+    const std::string& parent_resource_id,
+    const std::string& new_name,
+    const google_apis::GetResourceEntryCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  JobEntry* new_job = CreateNewJob(TYPE_COPY_RESOURCE);
+  new_job->task = base::Bind(
+      &google_apis::DriveServiceInterface::CopyResource,
+      base::Unretained(drive_service_),
+      resource_id,
+      parent_resource_id,
+      new_name,
+      base::Bind(&JobScheduler::OnGetResourceEntryJobDone,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 new_job->job_info.job_id,
+                 callback));
+  StartJob(new_job);
+}
 
 void JobScheduler::CopyHostedDocument(
     const std::string& resource_id,
@@ -359,6 +377,28 @@ void JobScheduler::RenameResource(
       resource_id,
       new_name,
       base::Bind(&JobScheduler::OnEntryActionJobDone,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 new_job->job_info.job_id,
+                 callback));
+  StartJob(new_job);
+}
+
+void JobScheduler::TouchResource(
+    const std::string& resource_id,
+    const base::Time& modified_date,
+    const base::Time& last_viewed_by_me_date,
+    const google_apis::GetResourceEntryCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  JobEntry* new_job = CreateNewJob(TYPE_TOUCH_RESOURCE);
+  new_job->task = base::Bind(
+      &google_apis::DriveServiceInterface::TouchResource,
+      base::Unretained(drive_service_),
+      resource_id,
+      modified_date,
+      last_viewed_by_me_date,
+      base::Bind(&JobScheduler::OnGetResourceEntryJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
                  callback));
@@ -427,7 +467,7 @@ JobID JobScheduler::DownloadFile(
     const base::FilePath& virtual_path,
     const base::FilePath& local_cache_path,
     const GURL& download_url,
-    const DriveClientContext& context,
+    const ClientContext& context,
     const google_apis::DownloadActionCallback& download_action_callback,
     const google_apis::GetContentCallback& get_content_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -460,8 +500,8 @@ void JobScheduler::UploadNewFile(
     const base::FilePath& local_file_path,
     const std::string& title,
     const std::string& content_type,
-    const DriveClientContext& context,
-    const google_apis::UploadCompletionCallback& callback) {
+    const ClientContext& context,
+    const google_apis::GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   JobEntry* new_job = CreateNewJob(TYPE_UPLOAD_NEW_FILE);
@@ -474,9 +514,16 @@ void JobScheduler::UploadNewFile(
   params.local_file_path = local_file_path;
   params.title = title;
   params.content_type = content_type;
+
+  ResumeUploadParams resume_params;
+  resume_params.drive_file_path = params.drive_file_path;
+  resume_params.local_file_path = params.local_file_path;
+  resume_params.content_type = params.content_type;
+
   params.callback = base::Bind(&JobScheduler::OnUploadCompletionJobDone,
                                weak_ptr_factory_.GetWeakPtr(),
                                new_job->job_info.job_id,
+                               resume_params,
                                callback);
   params.progress_callback = base::Bind(&JobScheduler::UpdateProgress,
                                         weak_ptr_factory_.GetWeakPtr(),
@@ -492,8 +539,8 @@ void JobScheduler::UploadExistingFile(
     const base::FilePath& local_file_path,
     const std::string& content_type,
     const std::string& etag,
-    const DriveClientContext& context,
-    const google_apis::UploadCompletionCallback& upload_completion_callback) {
+    const ClientContext& context,
+    const google_apis::GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   JobEntry* new_job = CreateNewJob(TYPE_UPLOAD_EXISTING_FILE);
@@ -506,10 +553,17 @@ void JobScheduler::UploadExistingFile(
   params.local_file_path = local_file_path;
   params.content_type = content_type;
   params.etag = etag;
+
+  ResumeUploadParams resume_params;
+  resume_params.drive_file_path = params.drive_file_path;
+  resume_params.local_file_path = params.local_file_path;
+  resume_params.content_type = params.content_type;
+
   params.callback = base::Bind(&JobScheduler::OnUploadCompletionJobDone,
                                weak_ptr_factory_.GetWeakPtr(),
                                new_job->job_info.job_id,
-                               upload_completion_callback);
+                               resume_params,
+                               callback);
   params.progress_callback = base::Bind(&JobScheduler::UpdateProgress,
                                         weak_ptr_factory_.GetWeakPtr(),
                                         new_job->job_info.job_id);
@@ -523,9 +577,11 @@ void JobScheduler::CreateFile(
     const base::FilePath& drive_file_path,
     const std::string& title,
     const std::string& content_type,
-    const DriveClientContext& context,
-    const google_apis::UploadCompletionCallback& callback) {
+    const ClientContext& context,
+    const google_apis::GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  const base::FilePath kDevNull(FILE_PATH_LITERAL("/dev/null"));
 
   JobEntry* new_job = CreateNewJob(TYPE_CREATE_FILE);
   new_job->job_info.file_path = drive_file_path;
@@ -534,12 +590,19 @@ void JobScheduler::CreateFile(
   UploadNewFileParams params;
   params.parent_resource_id = parent_resource_id;
   params.drive_file_path = drive_file_path;
-  params.local_file_path = base::FilePath(util::kSymLinkToDevNull);
+  params.local_file_path = kDevNull;  // Upload an empty file.
   params.title = title;
   params.content_type = content_type;
+
+  ResumeUploadParams resume_params;
+  resume_params.drive_file_path = params.drive_file_path;
+  resume_params.local_file_path = params.local_file_path;
+  resume_params.content_type = params.content_type;
+
   params.callback = base::Bind(&JobScheduler::OnUploadCompletionJobDone,
                                weak_ptr_factory_.GetWeakPtr(),
                                new_job->job_info.job_id,
+                               resume_params,
                                callback);
   params.progress_callback = google_apis::ProgressCallback();
 
@@ -559,7 +622,7 @@ void JobScheduler::StartJob(JobEntry* job) {
 
   QueueJob(job->job_info.job_id);
   NotifyJobAdded(job->job_info);
-  StartJobLoop(GetJobQueueType(job->job_info.job_type));
+  DoJobLoop(GetJobQueueType(job->job_info.job_type));
 }
 
 void JobScheduler::QueueJob(JobID job_id) {
@@ -570,47 +633,23 @@ void JobScheduler::QueueJob(JobID job_id) {
   const JobInfo& job_info = job_entry->job_info;
 
   QueueType queue_type = GetJobQueueType(job_info.job_type);
-  std::list<JobID>* queue = &queue_[queue_type];
-
-  std::list<JobID>::iterator it = queue->begin();
-  for (; it != queue->end(); ++it) {
-    JobEntry* job_entry2 = job_map_.Lookup(*it);
-    if (JobEntry::Less(*job_entry, *job_entry2))
-      break;
-  }
-  queue->insert(it, job_id);
+  queue_[queue_type]->Push(job_id, job_entry->context.type);
 
   util::Log("Job queued: %s - %s", job_info.ToString().c_str(),
             GetQueueInfo(queue_type).c_str());
 }
 
-void JobScheduler::StartJobLoop(QueueType queue_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (jobs_running_[queue_type] < kMaxJobCount[queue_type])
-    DoJobLoop(queue_type);
-}
-
 void JobScheduler::DoJobLoop(QueueType queue_type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (queue_[queue_type].empty()) {
+  JobID job_id = -1;
+  if (!queue_[queue_type]->PopForRun(GetCurrentAcceptedPriority(queue_type),
+                                     &job_id)) {
     return;
   }
 
-  JobID job_id = queue_[queue_type].front();
   JobEntry* entry = job_map_.Lookup(job_id);
   DCHECK(entry);
-
-  // Check if we should defer based on the first item in the queue
-  if (ShouldStopJobLoop(queue_type, entry->context)) {
-    return;
-  }
-
-  // Increment the number of jobs.
-  ++jobs_running_[queue_type];
-
-  queue_[queue_type].pop_front();
 
   JobInfo* job_info = &entry->job_info;
   job_info->state = STATE_RUNNING;
@@ -624,38 +663,30 @@ void JobScheduler::DoJobLoop(QueueType queue_type) {
             GetQueueInfo(queue_type).c_str());
 }
 
-bool JobScheduler::ShouldStopJobLoop(QueueType queue_type,
-                                     const DriveClientContext& context) {
+int JobScheduler::GetCurrentAcceptedPriority(QueueType queue_type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  const int kNoJobShouldRun = -1;
 
   // Should stop if the gdata feature was disabled while running the fetch
   // loop.
   if (profile_->GetPrefs()->GetBoolean(prefs::kDisableDrive))
-    return true;
+    return kNoJobShouldRun;
 
   // Should stop if the network is not online.
   if (net::NetworkChangeNotifier::IsOffline())
-    return true;
+    return kNoJobShouldRun;
 
-  // Should stop background jobs if the current connection is on cellular
-  // network, and fetching is disabled over cellular.
-  bool should_stop_on_cellular_network = false;
-  switch (context.type) {
-    case USER_INITIATED:
-      should_stop_on_cellular_network = false;
-      break;
-    case BACKGROUND:
-      should_stop_on_cellular_network = (queue_type == FILE_QUEUE);
-      break;
-  }
-  if (should_stop_on_cellular_network &&
+  // For the file queue, if it is on cellular network, only user initiated
+  // operations are allowed to start.
+  if (queue_type == FILE_QUEUE &&
       profile_->GetPrefs()->GetBoolean(prefs::kDisableDriveOverCellular) &&
       net::NetworkChangeNotifier::IsConnectionCellular(
-          net::NetworkChangeNotifier::GetConnectionType())) {
-    return true;
-  }
+          net::NetworkChangeNotifier::GetConnectionType()))
+    return USER_INITIATED;
 
-  return false;
+  // Otherwise, every operations including background tasks are allowed.
+  return BACKGROUND;
 }
 
 void JobScheduler::ThrottleAndContinueJobLoop(QueueType queue_type) {
@@ -702,6 +733,7 @@ bool JobScheduler::OnJobDone(JobID job_id, google_apis::GDataErrorCode error) {
   DCHECK(job_entry);
   JobInfo* job_info = &job_entry->job_info;
   QueueType queue_type = GetJobQueueType(job_info->job_type);
+  queue_[queue_type]->MarkFinished(job_id);
 
   const base::TimeDelta elapsed = base::Time::Now() - job_info->start_time;
   util::Log("Job done: %s => %s (elapsed time: %sms) - %s",
@@ -710,14 +742,14 @@ bool JobScheduler::OnJobDone(JobID job_id, google_apis::GDataErrorCode error) {
             base::Int64ToString(elapsed.InMilliseconds()).c_str(),
             GetQueueInfo(queue_type).c_str());
 
-  // Decrement the number of jobs for this queue.
-  --jobs_running_[queue_type];
-
   // Retry, depending on the error.
-  if (error == google_apis::HTTP_SERVICE_UNAVAILABLE ||
-      error == google_apis::HTTP_INTERNAL_SERVER_ERROR) {
+  if ((error == google_apis::HTTP_SERVICE_UNAVAILABLE ||
+      error == google_apis::HTTP_INTERNAL_SERVER_ERROR) &&
+      job_entry->retry_count < kMaxRetryCount) {
     job_info->state = STATE_RETRY;
     NotifyJobUpdated(*job_info);
+
+    ++job_entry->retry_count;
 
     // Requeue the job.
     QueueJob(job_id);
@@ -808,16 +840,40 @@ void JobScheduler::OnDownloadActionJobDone(
 
 void JobScheduler::OnUploadCompletionJobDone(
     JobID job_id,
-    const google_apis::UploadCompletionCallback& callback,
+    const ResumeUploadParams& resume_params,
+    const google_apis::GetResourceEntryCallback& callback,
     google_apis::GDataErrorCode error,
-    const base::FilePath& drive_path,
-    const base::FilePath& file_path,
+    const GURL& upload_location,
     scoped_ptr<google_apis::ResourceEntry> resource_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
+  if (!upload_location.is_empty()) {
+    // If upload_location is available, update the task to resume the
+    // upload process from the terminated point.
+    // When we need to retry, the error code should be HTTP_SERVICE_UNAVAILABLE
+    // so OnJobDone called below will be in charge to re-queue the job.
+    JobEntry* job_entry = job_map_.Lookup(job_id);
+    DCHECK(job_entry);
+    job_entry->task = base::Bind(
+        &google_apis::DriveUploaderInterface::ResumeUploadFile,
+        base::Unretained(uploader_.get()),
+        upload_location,
+        resume_params.drive_file_path,
+        resume_params.local_file_path,
+        resume_params.content_type,
+        base::Bind(&JobScheduler::OnUploadCompletionJobDone,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   job_id,
+                   resume_params,
+                   callback),
+        base::Bind(&JobScheduler::UpdateProgress,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   job_id));
+  }
+
   if (OnJobDone(job_id, error))
-    callback.Run(error, drive_path, file_path, resource_entry.Pass());
+    callback.Run(error, resource_entry.Pass());
 }
 
 void JobScheduler::UpdateProgress(JobID job_id, int64 progress, int64 total) {
@@ -838,7 +894,7 @@ void JobScheduler::OnConnectionTypeChanged(
   // ShouldStopJobLoop() as soon as the loop is resumed.
   if (!net::NetworkChangeNotifier::IsOffline()) {
     for (int i = METADATA_QUEUE; i < NUM_QUEUES; ++i) {
-      StartJobLoop(static_cast<QueueType>(i));
+      DoJobLoop(static_cast<QueueType>(i));
     }
   }
 }
@@ -854,8 +910,10 @@ JobScheduler::QueueType JobScheduler::GetJobQueueType(JobType type) {
     case TYPE_CONTINUE_GET_RESOURCE_LIST:
     case TYPE_GET_RESOURCE_ENTRY:
     case TYPE_DELETE_RESOURCE:
+    case TYPE_COPY_RESOURCE:
     case TYPE_COPY_HOSTED_DOCUMENT:
     case TYPE_RENAME_RESOURCE:
+    case TYPE_TOUCH_RESOURCE:
     case TYPE_ADD_RESOURCE_TO_DIRECTORY:
     case TYPE_REMOVE_RESOURCE_FROM_DIRECTORY:
     case TYPE_ADD_NEW_DIRECTORY:
@@ -889,10 +947,7 @@ void JobScheduler::NotifyJobUpdated(const JobInfo& job_info) {
 }
 
 std::string JobScheduler::GetQueueInfo(QueueType type) const {
-  return base::StringPrintf("%s: pending: %d, running: %d",
-                            QueueTypeToString(type).c_str(),
-                            static_cast<int>(queue_[type].size()),
-                            jobs_running_[type]);
+  return QueueTypeToString(type) + " " + queue_[type]->ToString();
 }
 
 // static
@@ -903,11 +958,10 @@ std::string JobScheduler::QueueTypeToString(QueueType type) {
     case FILE_QUEUE:
       return "FILE_QUEUE";
     case NUM_QUEUES:
-      return "NUM_QUEUES";
+      break;  // This value is just a sentinel. Should never be used.
   }
   NOTREACHED();
   return "";
 }
-
 
 }  // namespace drive

@@ -19,8 +19,10 @@ namespace cc {
 
 ContentLayerUpdater::ContentLayerUpdater(
     scoped_ptr<LayerPainter> painter,
-    RenderingStatsInstrumentation* stats_instrumentation)
+    RenderingStatsInstrumentation* stats_instrumentation,
+    int layer_id)
     : rendering_stats_instrumentation_(stats_instrumentation),
+      layer_id_(layer_id),
       painter_(painter.Pass()) {}
 
 ContentLayerUpdater::~ContentLayerUpdater() {}
@@ -42,9 +44,8 @@ void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
     canvas->scale(SkFloatToScalar(contents_width_scale),
                   SkFloatToScalar(contents_height_scale));
 
-    gfx::RectF rect = gfx::ScaleRect(
+    layer_rect = gfx::ScaleToEnclosingRect(
         content_rect, 1.f / contents_width_scale, 1.f / contents_height_scale);
-    layer_rect = gfx::ToEnclosingRect(rect);
   }
 
   SkPaint paint;
@@ -59,9 +60,9 @@ void ContentLayerUpdater::PaintContents(SkCanvas* canvas,
   painter_->Paint(canvas, layer_rect, &opaque_layer_rect);
   canvas->restore();
 
-  gfx::RectF opaque_content_rect = gfx::ScaleRect(
-      opaque_layer_rect, contents_width_scale, contents_height_scale);
-  *resulting_opaque_rect = gfx::ToEnclosedRect(opaque_content_rect);
+  gfx::Rect opaque_content_rect = gfx::ToEnclosedRect(gfx::ScaleRect(
+      opaque_layer_rect, contents_width_scale, contents_height_scale));
+  *resulting_opaque_rect = opaque_content_rect;
 
   content_rect_ = content_rect;
 }

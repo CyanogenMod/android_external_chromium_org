@@ -43,6 +43,7 @@ class WebMouseEvent;
 
 namespace content {
 class ContentViewCoreImpl;
+class OverscrollGlow;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
 class SurfaceTextureTransportClient;
@@ -152,6 +153,8 @@ class RenderWidgetHostViewAndroid
   virtual void HasTouchEventHandlers(bool need_touch_events) OVERRIDE;
   virtual void OnSwapCompositorFrame(
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
+  virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
+                              gfx::Vector2dF current_fling_velocity) OVERRIDE;
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) OVERRIDE;
   virtual SmoothScrollGesture* CreateSmoothScrollGesture(
@@ -174,12 +177,12 @@ class RenderWidgetHostViewAndroid
   void SendMouseEvent(const WebKit::WebMouseEvent& event);
   void SendMouseWheelEvent(const WebKit::WebMouseWheelEvent& event);
   void SendGestureEvent(const WebKit::WebGestureEvent& event);
-  void SendVSync(base::TimeTicks frame_time);
+  void SendBeginFrame(base::TimeTicks frame_time);
 
   void OnProcessImeBatchStateAck(bool is_begin);
   void OnDidChangeBodyBackgroundColor(SkColor color);
   void OnStartContentIntent(const GURL& content_url);
-  void OnSetVSyncNotificationEnabled(bool enabled);
+  void OnSetNeedsBeginFrame(bool enabled);
 
   int GetNativeImeAdapter();
 
@@ -198,6 +201,10 @@ class RenderWidgetHostViewAndroid
   void RequestContentClipping(const gfx::Rect& clipping,
                               const gfx::Size& content_size);
 
+  // Returns true when animation ticks are still needed. This avoids a separate
+  // round-trip for requesting follow-up animation.
+  bool Animate(base::TimeTicks frame_time);
+
  private:
   void BuffersSwapped(const gpu::Mailbox& mailbox,
                       const base::Closure& ack_callback);
@@ -211,6 +218,12 @@ class RenderWidgetHostViewAndroid
   void ResetClipping();
   void ClipContents(const gfx::Rect& clipping, const gfx::Size& content_size);
 
+  void AttachLayers();
+  void RemoveLayers();
+
+  void UpdateAnimationSize(const cc::CompositorFrame* frame);
+  void ScheduleAnimationIfNecessary();
+
   // The model object.
   RenderWidgetHostImpl* host_;
 
@@ -218,7 +231,7 @@ class RenderWidgetHostViewAndroid
   // This view may not actually be attached if this is true, but it should be
   // treated as such, because as soon as a ContentViewCore is set the layer
   // will be attached automatically.
-  bool is_layer_attached_;
+  bool are_layers_attached_;
 
   // ContentViewCoreImpl is our interface to the view system.
   ContentViewCoreImpl* content_view_core_;
@@ -259,6 +272,9 @@ class RenderWidgetHostViewAndroid
   base::WeakPtrFactory<RenderWidgetHostViewAndroid> weak_ptr_factory_;
 
   std::queue<base::Closure> ack_callbacks_;
+
+  // Used to render overscroll overlays.
+  scoped_ptr<OverscrollGlow> overscroll_effect_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAndroid);
 };

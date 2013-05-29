@@ -25,10 +25,10 @@
 #include "chrome/browser/history/delete_directive_handler.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/ref_counted_util.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "components/visitedlink/browser/visitedlink_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -54,10 +54,9 @@ class FilePath;
 class Thread;
 }
 
-namespace components {
+namespace visitedlink {
 class VisitedLinkMaster;
-}  // namespace components
-
+}
 
 namespace history {
 
@@ -85,8 +84,8 @@ struct HistoryDetails;
 class HistoryService : public CancelableRequestProvider,
                        public content::NotificationObserver,
                        public syncer::SyncableService,
-                       public ProfileKeyedService,
-                       public components::VisitedLinkDelegate {
+                       public BrowserContextKeyedService,
+                       public visitedlink::VisitedLinkDelegate {
  public:
   // Miscellaneous commonly-used types.
   typedef std::vector<PageUsageData*> PageUsageDataList;
@@ -169,7 +168,7 @@ class HistoryService : public CancelableRequestProvider,
     return in_memory_url_index_.get();
   }
 
-  // ProfileKeyedService:
+  // BrowserContextKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // Navigation ----------------------------------------------------------------
@@ -657,7 +656,7 @@ class HistoryService : public CancelableRequestProvider,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Implementation of components::VisitedLinkDelegate.
+  // Implementation of visitedlink::VisitedLinkDelegate.
   virtual void RebuildTable(
       const scoped_refptr<URLEnumerator>& enumerator) OVERRIDE;
 
@@ -739,7 +738,7 @@ class HistoryService : public CancelableRequestProvider,
   // with |favicon_id| from the history backend. If |desired_size_in_dip| is 0,
   // the largest favicon bitmap for |favicon_id| is returned.
   CancelableTaskTracker::TaskId GetFaviconForID(
-      history::FaviconID favicon_id,
+      chrome::FaviconID favicon_id,
       int desired_size_in_dip,
       ui::ScaleFactor desired_scale_factor,
       const FaviconService::FaviconResultsCallback& callback,
@@ -795,7 +794,7 @@ class HistoryService : public CancelableRequestProvider,
   // TODO(pkotwicz): Remove once no longer required by sync.
   void MergeFavicon(const GURL& page_url,
                     const GURL& icon_url,
-                    history::IconType icon_type,
+                    chrome::IconType icon_type,
                     scoped_refptr<base::RefCountedMemory> bitmap_data,
                     const gfx::Size& pixel_size);
 
@@ -812,8 +811,8 @@ class HistoryService : public CancelableRequestProvider,
   // criteria for |favicon_bitmap_data| to be valid.
   void SetFavicons(
       const GURL& page_url,
-      history::IconType icon_type,
-      const std::vector<history::FaviconBitmapData>& favicon_bitmap_data);
+      chrome::IconType icon_type,
+      const std::vector<chrome::FaviconBitmapData>& favicon_bitmap_data);
 
   // Used by the FaviconService to mark the favicon for the page as being out
   // of date.
@@ -1068,7 +1067,7 @@ class HistoryService : public CancelableRequestProvider,
 
   // Used for propagating link highlighting data across renderers. May be null
   // in tests.
-  scoped_ptr<components::VisitedLinkMaster> visitedlink_master_;
+  scoped_ptr<visitedlink::VisitedLinkMaster> visitedlink_master_;
 
   // Has the backend finished loading? The backend is loaded once Init has
   // completed.

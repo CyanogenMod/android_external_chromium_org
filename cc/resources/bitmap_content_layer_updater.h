@@ -7,6 +7,7 @@
 
 #include "cc/base/cc_export.h"
 #include "cc/resources/content_layer_updater.h"
+#include "skia/ext/refptr.h"
 
 class SkCanvas;
 
@@ -40,7 +41,8 @@ class CC_EXPORT BitmapContentLayerUpdater : public ContentLayerUpdater {
 
   static scoped_refptr<BitmapContentLayerUpdater> Create(
       scoped_ptr<LayerPainter> painter,
-      RenderingStatsInstrumentation* stats_instrumenation);
+      RenderingStatsInstrumentation* stats_instrumenation,
+      int layer_id);
 
   virtual scoped_ptr<LayerUpdater::Resource> CreateResource(
       PrioritizedResourceManager* manager) OVERRIDE;
@@ -55,16 +57,17 @@ class CC_EXPORT BitmapContentLayerUpdater : public ContentLayerUpdater {
                      gfx::Rect source_rect,
                      gfx::Vector2d dest_offset,
                      bool partial_update);
-
   virtual void SetOpaque(bool opaque) OVERRIDE;
+  virtual void ReduceMemoryUsage() OVERRIDE;
 
  protected:
   BitmapContentLayerUpdater(
       scoped_ptr<LayerPainter> painter,
-      RenderingStatsInstrumentation* stats_instrumenation);
+      RenderingStatsInstrumentation* stats_instrumenation,
+      int layer_id);
   virtual ~BitmapContentLayerUpdater();
 
-  scoped_ptr<SkCanvas> canvas_;
+  skia::RefPtr<SkCanvas> canvas_;
   gfx::Size canvas_size_;
   bool opaque_;
 

@@ -96,8 +96,17 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   // Returns true if audio output is muted.
   virtual bool IsOutputMuted();
 
+  // Returns true if audio output is muted for a device.
+  virtual bool IsOutputMutedForDevice(uint64 device_id);
+
   // Returns true if audio input is muted.
   virtual bool IsInputMuted();
+
+  // Returns true if audio input is muted for a device.
+  virtual bool IsInputMutedForDevice(uint64 device_id);
+
+  // Returns true if the output volume is below the default mute volume level.
+  virtual bool IsOutputVolumeBelowDefaultMuteLvel();
 
   // Gets volume level in 0-100% range (0 being pure silence) for the current
   // active node.
@@ -138,6 +147,9 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
 
   // Adjusts volume up (positive percentage) or down (negative percentage).
   virtual void AdjustOutputVolumeByPercent(int adjust_by_percent);
+
+  // Adjusts output volume to a minimum audible level if it is too low.
+  virtual void AdjustOutputVolumeToAudibleLevel();
 
   // Mutes or unmutes audio output device.
   virtual void SetOutputMute(bool mute_on);
@@ -181,15 +193,27 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   void SetupAudioInputState();
   void SetupAudioOutputState();
 
+  // Initializes audio state, which should only be called when CrasAudioHandler
+  // is created or cras audio client is restarted.
+  void InitializeAudioState();
+
   // Applies the audio muting policies whenever the user logs in or policy
   // change notification is received.
   void ApplyAudioPolicy();
 
-  // Sets output volume to specified value and notifies observers.
+  // Sets output volume to specified value of |volume|.
   void SetOutputVolumeInternal(int volume);
+
+  // Sets output mute state to |mute_on| internally, returns true if output mute
+  // is set.
+  bool SetOutputMuteInternal(bool mute_on);
 
   // Sets output volume to specified value and notifies observers.
   void SetInputGainInternal(int gain);
+
+  // Sets input mute state to |mute_on| internally, returns true if input mute
+  // is set.
+  bool SetInputMuteInternal(bool mute_on);
 
   // Calling dbus to get nodes data.
   void GetNodes();

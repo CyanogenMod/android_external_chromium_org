@@ -16,16 +16,19 @@
 #include "base/stringprintf.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "chrome/common/autocomplete_match_type.h"
 #include "chrome/common/common_param_traits.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/instant_types.h"
+#include "chrome/common/language_detection_details.h"
 #include "chrome/common/nacl_types.h"
 #include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/search_provider.h"
 #include "chrome/common/search_types.h"
 #include "chrome/common/translate_errors.h"
 #include "content/public/common/common_param_traits.h"
+#include "content/public/common/top_controls_state.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
@@ -115,6 +118,7 @@ struct ParamTraits<ContentSettingsPattern> {
 
 #define IPC_MESSAGE_START ChromeMsgStart
 
+IPC_ENUM_TRAITS(AutocompleteMatchType::Type)
 IPC_ENUM_TRAITS(ChromeViewHostMsg_GetPluginInfo_Status::Value)
 IPC_ENUM_TRAITS(InstantCompleteBehavior)
 IPC_ENUM_TRAITS(InstantSizeUnits)
@@ -126,6 +130,7 @@ IPC_ENUM_TRAITS(ThemeBackgroundImageAlignment)
 IPC_ENUM_TRAITS(ThemeBackgroundImageTiling)
 IPC_ENUM_TRAITS(TranslateErrors::Type)
 IPC_ENUM_TRAITS(WebKit::WebConsoleMessage::Level)
+IPC_ENUM_TRAITS(content::TopControlsState)
 
 IPC_STRUCT_TRAITS_BEGIN(ChromeViewHostMsg_GetPluginInfo_Status)
 IPC_STRUCT_TRAITS_MEMBER(value)
@@ -237,6 +242,15 @@ IPC_STRUCT_TRAITS_BEGIN(WebKit::WebCache::UsageStats)
   IPC_STRUCT_TRAITS_MEMBER(capacity)
   IPC_STRUCT_TRAITS_MEMBER(liveSize)
   IPC_STRUCT_TRAITS_MEMBER(deadSize)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(LanguageDetectionDetails)
+  IPC_STRUCT_TRAITS_MEMBER(time)
+  IPC_STRUCT_TRAITS_MEMBER(url)
+  IPC_STRUCT_TRAITS_MEMBER(content_language)
+  IPC_STRUCT_TRAITS_MEMBER(cld_language)
+  IPC_STRUCT_TRAITS_MEMBER(is_cld_reliable)
+  IPC_STRUCT_TRAITS_MEMBER(adopted_language)
 IPC_STRUCT_TRAITS_END()
 
 //-----------------------------------------------------------------------------
@@ -410,6 +424,14 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetClientSidePhishingDetection,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_StartFrameSniffer,
                     string16 /* frame-name */)
 
+// Notifies the renderer whether hiding/showing the top controls is enabled,
+// what the current state should be, and whether or not to animate to the
+// proper state.
+IPC_MESSAGE_ROUTED3(ChromeViewMsg_UpdateTopControlsState,
+                    content::TopControlsState /* constraints */,
+                    content::TopControlsState /* current */,
+                    bool /* animate */)
+
 // JavaScript related messages -----------------------------------------------
 
 // Notify the JavaScript engine in the render to change its parameters
@@ -443,8 +465,8 @@ IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_PageContents,
 
 // Notification that the language for the tab has been determined.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_TranslateLanguageDetermined,
-                    std::string  /* page ISO639_1 language code */,
-                    bool         /* whether the page can be translated */)
+                    LanguageDetectionDetails /* details about lang detection */,
+                    bool /* whether the page needs translation */)
 
 IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_UpdatedCacheStats,
                      WebKit::WebCache::UsageStats /* stats */)
@@ -592,11 +614,12 @@ IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_NaClErrorStatus,
 
 // A renderer sends this to the browser process when it wants to
 // open a NaCl executable file from an installed application directory.
-IPC_SYNC_MESSAGE_CONTROL2_2(ChromeViewHostMsg_OpenNaClExecutable,
+IPC_SYNC_MESSAGE_CONTROL2_3(ChromeViewHostMsg_OpenNaClExecutable,
                             int /* render_view_id */,
                             GURL /* URL of NaCl executable file */,
-                            base::FilePath /* absolute path to opened file */,
-                            IPC::PlatformFileForTransit /* output file */)
+                            IPC::PlatformFileForTransit /* output file */,
+                            uint64_t /* file_token_lo */,
+                            uint64_t /* file_token_hi */)
 
 // Notification that the page has an OpenSearch description document
 // associated with it.
@@ -621,6 +644,10 @@ IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_V8HeapStats,
 // NameList is typedef'ed std::vector<std::string>
 IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_DnsPrefetch,
                      std::vector<std::string> /* hostnames */)
+
+// Request for preconnect to host providing resource specified by URL
+IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_Preconnect,
+                     GURL /* preconnect target url */)
 
 // Notifies when a plugin couldn't be loaded because it's outdated.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_BlockedOutdatedPlugin,

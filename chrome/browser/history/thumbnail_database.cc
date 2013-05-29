@@ -8,10 +8,14 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/debug/alias.h"
 #include "base/file_util.h"
+#include "base/format_macros.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram.h"
+#include "base/rand_util.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/time.h"
@@ -20,9 +24,12 @@
 #include "chrome/browser/history/history_publisher.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/history/url_database.h"
+#include "chrome/common/chrome_version_info.h"
+#include "chrome/common/dump_without_crashing.h"
 #include "chrome/common/thumbnail_score.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "third_party/sqlite/sqlite3.h"
 #include "ui/gfx/image/image_util.h"
 
 #if defined(OS_MACOSX)
@@ -74,16 +81,153 @@
 //  width             Pixel width of |image_data|.
 //  height            Pixel height of |image_data|.
 
-static void FillIconMapping(const sql::Statement& statement,
-                            const GURL& page_url,
-                            history::IconMapping* icon_mapping) {
+namespace {
+
+void FillIconMapping(const sql::Statement& statement,
+                     const GURL& page_url,
+                     history::IconMapping* icon_mapping) {
   icon_mapping->mapping_id = statement.ColumnInt64(0);
   icon_mapping->icon_id = statement.ColumnInt64(1);
   icon_mapping->icon_type =
-      static_cast<history::IconType>(statement.ColumnInt(2));
+      static_cast<chrome::IconType>(statement.ColumnInt(2));
   icon_mapping->icon_url = GURL(statement.ColumnString(3));
   icon_mapping->page_url = page_url;
 }
+
+// Attempt to pass 1000 bytes of |debug_info| into a crash dump.
+void DumpWithoutCrashing1000(const std::string& debug_info) {
+  char debug_buf[1000];
+  base::strlcpy(debug_buf, debug_info.c_str(), arraysize(debug_buf));
+  base::debug::Alias(&debug_buf);
+
+  logging::DumpWithoutCrashing();
+}
+
+void ReportCorrupt(sql::Connection* db, size_t startup_kb) {
+  // Buffer for accumulating debugging info about the error.  Place
+  // more-relevant information earlier, in case things overflow the
+  // fixed-size buffer.
+  std::string debug_info;
+
+  base::StringAppendF(&debug_info, "SQLITE_CORRUPT, integrity_check:\n");
+
+  // Check files up to 4M to keep things from blocking too long.
+  const size_t kMaxIntegrityCheckSize = 4096;
+  if (startup_kb > kMaxIntegrityCheckSize) {
+    base::StringAppendF(&debug_info, "too big %" PRIuS "\n", startup_kb);
+  } else {
+    std::vector<std::string> messages;
+
+    const base::TimeTicks before = base::TimeTicks::Now();
+    db->IntegrityCheck(&messages);
+    base::StringAppendF(&debug_info, "# %" PRIx64 " ms, %" PRIuS " records\n",
+                        (base::TimeTicks::Now() - before).InMilliseconds(),
+                        messages.size());
+
+    // SQLite returns up to 100 messages by default, trim deeper to
+    // keep close to the 1000-character size limit for dumping.
+    //
+    // TODO(shess): If the first 20 tend to be actionable, test if
+    // passing the count to integrity_check makes it exit earlier.  In
+    // that case it may be possible to greatly ease the size
+    // restriction.
+    const size_t kMaxMessages = 20;
+    for (size_t i = 0; i < kMaxMessages && i < messages.size(); ++i) {
+      base::StringAppendF(&debug_info, "%s\n", messages[i].c_str());
+    }
+  }
+
+  DumpWithoutCrashing1000(debug_info);
+}
+
+void ReportError(sql::Connection* db, int error) {
+  // Buffer for accumulating debugging info about the error.  Place
+  // more-relevant information earlier, in case things overflow the
+  // fixed-size buffer.
+  std::string debug_info;
+
+  // The error message from the failed statement (GetErrorCode()
+  // should be identical to error).
+  base::StringAppendF(&debug_info, "db error: %d/%d/%s\n",
+                      error, db->GetErrorCode(), db->GetErrorMessage());
+
+  // System errno information.
+  base::StringAppendF(&debug_info, "errno: %d\n", db->GetLastErrno());
+
+  // TODO(shess): Think of other things to log.  Not logging the
+  // statement text because the backtrace should suffice in most
+  // cases.  The database schema is a possibility, but the
+  // likelihood of recursive error callbacks makes that risky (same
+  // reasoning applies to other data fetched from the database).
+
+  DumpWithoutCrashing1000(debug_info);
+}
+
+// TODO(shess): If this proves out, perhaps lift the code out to
+// chrome/browser/diagnostics/sqlite_diagnostics.{h,cc}.
+void DatabaseErrorCallback(sql::Connection* db,
+                           size_t startup_kb,
+                           int error,
+                           sql::Statement* stmt) {
+  // TODO(shess): Assert that this is running on a safe thread.
+  // AFAICT, should be the history thread, but at this level I can't
+  // see how to reach that.
+
+  // Infrequently report information about the error up to the crash
+  // server.
+  static const uint64 kReportsPerMillion = 50000;
+
+  // TODO(shess): For now, don't report on beta or stable so as not to
+  // overwhelm the crash server.  Once the big fish are fried,
+  // consider reporting at a reduced rate on the bigger channels.
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+
+  // Since some/most errors will not resolve themselves, only report
+  // once per Chrome run.
+  static bool reported = false;
+
+  if (channel != chrome::VersionInfo::CHANNEL_STABLE &&
+      channel != chrome::VersionInfo::CHANNEL_BETA &&
+      !reported) {
+    uint64 rand = base::RandGenerator(1000000);
+    if (error == SQLITE_CORRUPT) {
+      // Once the database is known to be corrupt, it will generate a
+      // stream of errors until someone fixes it, so give one chance.
+      // Set first in case of errors in generating the report.
+      reported = true;
+
+      // Corrupt cases currently dominate, report them very infrequently.
+      static const uint64 kCorruptReportsPerMillion = 1000;
+      if (rand < kCorruptReportsPerMillion)
+        ReportCorrupt(db, startup_kb);
+    } else if (error == SQLITE_READONLY) {
+      if (rand < kReportsPerMillion)
+        ReportError(db, error);
+
+      // SQLITE_READONLY appears similar to SQLITE_CORRUPT - once it
+      // is seen, it is almost guaranteed to be seen again.
+      reported = true;
+    } else {
+      // Only setting the flag after a report, so that later
+      // (potentially different) errors in a stream of errors can be
+      // reported.
+      //
+      // TODO(shess): Would it be worthwile to audit for which cases
+      // want once-only handling?  Sqlite.Error.Thumbnail shows
+      // CORRUPT and READONLY as almost 95% of all reports on these
+      // channels, so probably easier to just harvest from the field.
+      if (rand < kReportsPerMillion) {
+        ReportError(db, error);
+        reported = true;
+      }
+    }
+  }
+
+  // The default handling is to assert on debug and to ignore on release.
+  DLOG(FATAL) << db->GetErrorMessage();
+}
+
+}  // namespace
 
 namespace history {
 
@@ -218,7 +362,13 @@ sql::InitStatus ThumbnailDatabase::Init(
 
 sql::InitStatus ThumbnailDatabase::OpenDatabase(sql::Connection* db,
                                                 const base::FilePath& db_name) {
-  db->set_error_histogram_name("Sqlite.Thumbnail.Error");
+  size_t startup_kb = 0;
+  int64 size_64;
+  if (file_util::GetFileSize(db_name, &size_64))
+    startup_kb = static_cast<size_t>(size_64 / 1024);
+
+  db->set_histogram_tag("Thumbnail");
+  db->set_error_callback(base::Bind(&DatabaseErrorCallback, db, startup_kb));
 
   // Thumbnails db now only stores favicons, so we don't need that big a page
   // size or cache.
@@ -476,7 +626,7 @@ bool ThumbnailDatabase::ThumbnailScoreForId(URLID id,
 }
 
 bool ThumbnailDatabase::GetFaviconBitmapIDSizes(
-    FaviconID icon_id,
+    chrome::FaviconID icon_id,
     std::vector<FaviconBitmapIDSize>* bitmap_id_sizes) {
   DCHECK(icon_id);
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
@@ -499,7 +649,7 @@ bool ThumbnailDatabase::GetFaviconBitmapIDSizes(
 }
 
 bool ThumbnailDatabase::GetFaviconBitmaps(
-    FaviconID icon_id,
+    chrome::FaviconID icon_id,
     std::vector<FaviconBitmap>* favicon_bitmaps) {
   DCHECK(icon_id);
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
@@ -561,7 +711,7 @@ bool ThumbnailDatabase::GetFaviconBitmap(
 }
 
 FaviconBitmapID ThumbnailDatabase::AddFaviconBitmap(
-    FaviconID icon_id,
+    chrome::FaviconID icon_id,
     const scoped_refptr<base::RefCountedMemory>& icon_data,
     base::Time time,
     const gfx::Size& pixel_size) {
@@ -615,7 +765,8 @@ bool ThumbnailDatabase::SetFaviconBitmapLastUpdateTime(
   return statement.Run();
 }
 
-bool ThumbnailDatabase::DeleteFaviconBitmapsForFavicon(FaviconID icon_id) {
+bool ThumbnailDatabase::DeleteFaviconBitmapsForFavicon(
+    chrome::FaviconID icon_id) {
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM favicon_bitmaps WHERE icon_id=?"));
   statement.BindInt64(0, icon_id);
@@ -629,7 +780,7 @@ bool ThumbnailDatabase::DeleteFaviconBitmap(FaviconBitmapID bitmap_id) {
   return statement.Run();
 }
 
-bool ThumbnailDatabase::SetFaviconSizes(FaviconID icon_id,
+bool ThumbnailDatabase::SetFaviconSizes(chrome::FaviconID icon_id,
                                         const FaviconSizes& favicon_sizes) {
   std::string favicon_sizes_as_string;
   FaviconSizesToDatabaseString(favicon_sizes, &favicon_sizes_as_string);
@@ -642,7 +793,7 @@ bool ThumbnailDatabase::SetFaviconSizes(FaviconID icon_id,
   return statement.Run();
 }
 
-bool ThumbnailDatabase::SetFaviconOutOfDate(FaviconID icon_id) {
+bool ThumbnailDatabase::SetFaviconOutOfDate(chrome::FaviconID icon_id) {
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
       "UPDATE favicon_bitmaps SET last_updated=? WHERE icon_id=?"));
   statement.BindInt64(0, 0);
@@ -651,9 +802,10 @@ bool ThumbnailDatabase::SetFaviconOutOfDate(FaviconID icon_id) {
   return statement.Run();
 }
 
-FaviconID ThumbnailDatabase::GetFaviconIDForFaviconURL(const GURL& icon_url,
-                                                       int required_icon_type,
-                                                       IconType* icon_type) {
+chrome::FaviconID ThumbnailDatabase::GetFaviconIDForFaviconURL(
+    const GURL& icon_url,
+    int required_icon_type,
+    chrome::IconType* icon_type) {
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
       "SELECT id, icon_type FROM favicons WHERE url=? AND (icon_type & ? > 0) "
       "ORDER BY icon_type DESC"));
@@ -664,15 +816,14 @@ FaviconID ThumbnailDatabase::GetFaviconIDForFaviconURL(const GURL& icon_url,
     return 0;  // not cached
 
   if (icon_type)
-    *icon_type = static_cast<IconType>(statement.ColumnInt(1));
+    *icon_type = static_cast<chrome::IconType>(statement.ColumnInt(1));
   return statement.ColumnInt64(0);
 }
 
-bool ThumbnailDatabase::GetFaviconHeader(
-    FaviconID icon_id,
-    GURL* icon_url,
-    IconType* icon_type,
-    FaviconSizes* favicon_sizes) {
+bool ThumbnailDatabase::GetFaviconHeader(chrome::FaviconID icon_id,
+                                         GURL* icon_url,
+                                         chrome::IconType* icon_type,
+                                         FaviconSizes* favicon_sizes) {
   DCHECK(icon_id);
 
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
@@ -685,16 +836,17 @@ bool ThumbnailDatabase::GetFaviconHeader(
   if (icon_url)
     *icon_url = GURL(statement.ColumnString(0));
   if (icon_type)
-    *icon_type = static_cast<history::IconType>(statement.ColumnInt(1));
+    *icon_type = static_cast<chrome::IconType>(statement.ColumnInt(1));
   if (favicon_sizes)
     DatabaseStringToFaviconSizes(statement.ColumnString(2), favicon_sizes);
 
   return true;
 }
 
-FaviconID ThumbnailDatabase::AddFavicon(const GURL& icon_url,
-                                        IconType icon_type,
-                                        const FaviconSizes& favicon_sizes) {
+chrome::FaviconID ThumbnailDatabase::AddFavicon(
+    const GURL& icon_url,
+    chrome::IconType icon_type,
+    const FaviconSizes& favicon_sizes) {
   std::string favicon_sizes_as_string;
   FaviconSizesToDatabaseString(favicon_sizes, &favicon_sizes_as_string);
 
@@ -709,21 +861,21 @@ FaviconID ThumbnailDatabase::AddFavicon(const GURL& icon_url,
   return db_.GetLastInsertRowId();
 }
 
-FaviconID ThumbnailDatabase::AddFavicon(
+chrome::FaviconID ThumbnailDatabase::AddFavicon(
     const GURL& icon_url,
-    IconType icon_type,
+    chrome::IconType icon_type,
     const FaviconSizes& favicon_sizes,
     const scoped_refptr<base::RefCountedMemory>& icon_data,
     base::Time time,
     const gfx::Size& pixel_size) {
-  FaviconID icon_id = AddFavicon(icon_url, icon_type, favicon_sizes);
+  chrome::FaviconID icon_id = AddFavicon(icon_url, icon_type, favicon_sizes);
   if (!icon_id || !AddFaviconBitmap(icon_id, icon_data, time, pixel_size))
     return 0;
 
   return icon_id;
 }
 
-bool ThumbnailDatabase::DeleteFavicon(FaviconID id) {
+bool ThumbnailDatabase::DeleteFavicon(chrome::FaviconID id) {
   sql::Statement statement;
   statement.Assign(db_.GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM favicons WHERE id = ?"));
@@ -791,12 +943,12 @@ bool ThumbnailDatabase::GetIconMappingsForPageURL(
 }
 
 IconMappingID ThumbnailDatabase::AddIconMapping(const GURL& page_url,
-                                                FaviconID icon_id) {
+                                                chrome::FaviconID icon_id) {
   return AddIconMapping(page_url, icon_id, false);
 }
 
 bool ThumbnailDatabase::UpdateIconMapping(IconMappingID mapping_id,
-                                          FaviconID icon_id) {
+                                          chrome::FaviconID icon_id) {
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
       "UPDATE icon_mapping SET icon_id=? WHERE id=?"));
   statement.BindInt64(0, icon_id);
@@ -821,7 +973,7 @@ bool ThumbnailDatabase::DeleteIconMapping(IconMappingID mapping_id) {
   return statement.Run();
 }
 
-bool ThumbnailDatabase::HasMappingFor(FaviconID id) {
+bool ThumbnailDatabase::HasMappingFor(chrome::FaviconID id) {
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
       "SELECT id FROM icon_mapping "
       "WHERE icon_id=?"));
@@ -854,7 +1006,7 @@ bool ThumbnailDatabase::CloneIconMappings(const GURL& old_page_url,
 }
 
 bool ThumbnailDatabase::InitIconMappingEnumerator(
-    IconType type,
+    chrome::IconType type,
     IconMappingEnumerator* enumerator) {
   DCHECK(!enumerator->statement_.is_valid());
   enumerator->statement_.Assign(db_.GetCachedStatement(
@@ -922,12 +1074,14 @@ bool ThumbnailDatabase::CommitTemporaryTables() {
 }
 
 IconMappingID ThumbnailDatabase::AddToTemporaryIconMappingTable(
-    const GURL& page_url, const FaviconID icon_id) {
+    const GURL& page_url,
+    const chrome::FaviconID icon_id) {
   return AddIconMapping(page_url, icon_id, true);
 }
 
-FaviconID ThumbnailDatabase::CopyFaviconAndFaviconBitmapsToTemporaryTables(
-    FaviconID source) {
+chrome::FaviconID
+ThumbnailDatabase::CopyFaviconAndFaviconBitmapsToTemporaryTables(
+    chrome::FaviconID source) {
   sql::Statement statement;
   statement.Assign(db_.GetCachedStatement(SQL_FROM_HERE,
       "INSERT INTO temp_favicons (url, icon_type, sizes) "
@@ -937,7 +1091,7 @@ FaviconID ThumbnailDatabase::CopyFaviconAndFaviconBitmapsToTemporaryTables(
   if (!statement.Run())
     return 0;
 
-  FaviconID new_favicon_id = db_.GetLastInsertRowId();
+  chrome::FaviconID new_favicon_id = db_.GetLastInsertRowId();
 
   statement.Assign(db_.GetCachedStatement(SQL_FROM_HERE,
       "INSERT INTO temp_favicon_bitmaps (icon_id, last_updated, image_data, "
@@ -1065,7 +1219,7 @@ bool ThumbnailDatabase::InitIconMappingIndex() {
 }
 
 IconMappingID ThumbnailDatabase::AddIconMapping(const GURL& page_url,
-                                                FaviconID icon_id,
+                                                chrome::FaviconID icon_id,
                                                 bool is_temporary) {
   const char* name = is_temporary ? "temp_icon_mapping" : "icon_mapping";
   const char* statement_name =

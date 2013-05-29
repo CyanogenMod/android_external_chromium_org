@@ -16,6 +16,7 @@
 using content::BrowserThread;
 
 namespace drive {
+namespace internal {
 
 namespace {
 
@@ -54,8 +55,7 @@ void CollectBacklog(std::vector<std::string>* to_fetch,
 
 }  // namespace
 
-SyncClient::SyncClient(FileSystemInterface* file_system,
-                       internal::FileCache* cache)
+SyncClient::SyncClient(FileSystemInterface* file_system, FileCache* cache)
     : file_system_(file_system),
       cache_(cache),
       delay_(base::TimeDelta::FromSeconds(kDelaySeconds)),
@@ -184,7 +184,7 @@ void SyncClient::StartTask(SyncType type, const std::string& resource_id) {
 
         file_system_->GetFileByResourceId(
             resource_id,
-            DriveClientContext(BACKGROUND),
+            ClientContext(BACKGROUND),
             base::Bind(&SyncClient::OnFetchFileComplete,
                        weak_ptr_factory_.GetWeakPtr(),
                        resource_id),
@@ -198,7 +198,7 @@ void SyncClient::StartTask(SyncType type, const std::string& resource_id) {
       DVLOG(1) << "Uploading " << resource_id;
       file_system_->UpdateFileByResourceId(
           resource_id,
-          DriveClientContext(BACKGROUND),
+          ClientContext(BACKGROUND),
           base::Bind(&SyncClient::OnUploadFileComplete,
                      weak_ptr_factory_.GetWeakPtr(),
                      resource_id));
@@ -339,4 +339,5 @@ void SyncClient::OnUploadFileComplete(const std::string& resource_id,
   }
 }
 
+}  // namespace internal
 }  // namespace drive

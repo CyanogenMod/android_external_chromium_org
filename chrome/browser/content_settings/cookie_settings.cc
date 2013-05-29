@@ -10,12 +10,12 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -50,7 +50,7 @@ scoped_refptr<CookieSettings> CookieSettings::Factory::GetForProfile(
     Profile* profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return static_cast<CookieSettings*>(
-      GetInstance()->GetServiceForProfile(profile, true).get());
+      GetInstance()->GetServiceForBrowserContext(profile, true).get());
 }
 
 // static
@@ -59,9 +59,9 @@ CookieSettings::Factory* CookieSettings::Factory::GetInstance() {
 }
 
 CookieSettings::Factory::Factory()
-    : RefcountedProfileKeyedServiceFactory(
+    : RefcountedBrowserContextKeyedServiceFactory(
         "CookieSettings",
-        ProfileDependencyManager::GetInstance()) {
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 CookieSettings::Factory::~Factory() {}
@@ -79,7 +79,7 @@ content::BrowserContext* CookieSettings::Factory::GetBrowserContextToUse(
   return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
-scoped_refptr<RefcountedProfileKeyedService>
+scoped_refptr<RefcountedBrowserContextKeyedService>
 CookieSettings::Factory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);

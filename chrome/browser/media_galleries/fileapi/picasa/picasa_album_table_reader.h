@@ -25,6 +25,7 @@ const uint32 kAlbumCategoryInvalid   = 0xffff;  // Sentinel value.
 const char kAlbumTokenPrefix[] = "]album:";
 
 struct AlbumInfo {
+  AlbumInfo();
   AlbumInfo(const std::string& name, const base::Time& timestamp,
             const std::string& uid, const base::FilePath& path);
 
@@ -46,8 +47,6 @@ class PicasaAlbumTableReader {
 
   const std::vector<AlbumInfo>& albums() const;
   const std::vector<AlbumInfo>& folders() const;
-
-  static base::FilePath PicasaDB3Dir();
 
  private:
   const base::FilePath directory_path_;

@@ -8,7 +8,9 @@
 #include <queue>
 
 #include "base/bind.h"
-#include "base/string_util.h"
+#include "base/i18n/string_search.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
@@ -16,10 +18,11 @@
 using content::BrowserThread;
 
 namespace drive {
+namespace internal {
 
 namespace {
 
-// Used to sort the result canididates per the last accessed/modified time. The
+// Used to sort the result candidates per the last accessed/modified time. The
 // recently accessed/modified files come first.
 bool CompareByTimestamp(const ResourceEntry& a, const ResourceEntry& b) {
   const PlatformFileInfoProto& a_file_info = a.file_info();
@@ -72,12 +75,16 @@ class ScopedPriorityQueue {
 };
 
 // Returns true if |entry| is eligible for the search |options| and should be
-// tested for the match with the query.
-// If SEARCH_METADATA_EXCLUDE_HOSTED_DOCUMENTS is requested, the hosted
-// documents are skipped. If SEARCH_METADATA_EXCLUDE_DIRECTORIES is requested,
-// the directories are skipped. If SEARCH_METADATA_SHARED_WITH_ME is requested,
-// only the entries with shared-with-me label will be tested.
-bool IsEligibleEntry(const ResourceEntry& entry, int options) {
+// tested for the match with the query.  If
+// SEARCH_METADATA_EXCLUDE_HOSTED_DOCUMENTS is requested, the hosted documents
+// are skipped. If SEARCH_METADATA_EXCLUDE_DIRECTORIES is requested, the
+// directories are skipped. If SEARCH_METADATA_SHARED_WITH_ME is requested, only
+// the entries with shared-with-me label will be tested. If
+// SEARCH_METADATA_OFFLINE is requested, only hosted documents and cached files
+// match with the query. This option can not be used with other options.
+bool IsEligibleEntry(const ResourceEntry& entry,
+                     internal::FileCache* cache,
+                     int options) {
   if ((options & SEARCH_METADATA_EXCLUDE_HOSTED_DOCUMENTS) &&
       entry.file_specific_info().is_hosted_document())
     return false;
@@ -88,6 +95,16 @@ bool IsEligibleEntry(const ResourceEntry& entry, int options) {
 
   if (options & SEARCH_METADATA_SHARED_WITH_ME)
     return entry.shared_with_me();
+
+  if (options & SEARCH_METADATA_OFFLINE) {
+    if (entry.file_specific_info().is_hosted_document())
+      return true;
+    FileCacheEntry cache_entry;
+    cache->GetCacheEntry(entry.resource_id(),
+                         std::string(),
+                         &cache_entry);
+    return cache_entry.is_present();
+  }
 
   // Exclude "drive", "drive/root", and "drive/other".
   if (entry.resource_id() == util::kDriveGrandRootSpecialResourceId ||
@@ -101,7 +118,8 @@ bool IsEligibleEntry(const ResourceEntry& entry, int options) {
 // Used to implement SearchMetadata.
 // Adds entry to the result when appropriate.
 void MaybeAddEntryToResult(
-    internal::ResourceMetadata* resource_metadata,
+    ResourceMetadata* resource_metadata,
+    FileCache* cache,
     const std::string& query,
     int options,
     size_t at_most_num_matches,
@@ -110,11 +128,18 @@ void MaybeAddEntryToResult(
     const ResourceEntry& entry) {
   DCHECK_GE(at_most_num_matches, result_candidates->size());
 
+  // If the candidate set is already full, and this |entry| is old, do nothing.
+  // We perform this check first in order to avoid the costly find-and-highlight
+  // or FilePath lookup as much as possible.
+  if (result_candidates->size() == at_most_num_matches &&
+      !CompareByTimestamp(entry, result_candidates->top()->entry))
+    return;
+
   // Add |entry| to the result if the entry is eligible for the given
   // |options| and matches the query. The base name of the entry must
-  // contains |query| to match the query.
+  // contain |query| to match the query.
   std::string highlighted;
-  if (!IsEligibleEntry(entry, options) ||
+  if (!IsEligibleEntry(entry, cache, options) ||
       !FindAndHighlight(entry.base_name(), query, &highlighted))
     return;
 
@@ -123,18 +148,15 @@ void MaybeAddEntryToResult(
     return;
 
   // Make space for |entry| when appropriate.
-  if (result_candidates->size() == at_most_num_matches &&
-      CompareByTimestamp(entry, result_candidates->top()->entry))
+  if (result_candidates->size() == at_most_num_matches)
     result_candidates->pop();
-
-  // Add |entry| to the result when appropriate.
-  if (result_candidates->size() < at_most_num_matches)
-    result_candidates->push(new MetadataSearchResult(path, entry, highlighted));
+  result_candidates->push(new MetadataSearchResult(path, entry, highlighted));
 }
 
 // Implements SearchMetadata().
 scoped_ptr<MetadataSearchResultVector> SearchMetadataOnBlockingPool(
-    internal::ResourceMetadata* resource_metadata,
+    ResourceMetadata* resource_metadata,
+    FileCache* cache,
     const std::string& query,
     int options,
     int at_most_num_matches) {
@@ -142,10 +164,9 @@ scoped_ptr<MetadataSearchResultVector> SearchMetadataOnBlockingPool(
                       MetadataSearchResultComparator> result_candidates;
 
   // Iterate over entries.
-  scoped_ptr<internal::ResourceMetadata::Iterator> it =
-      resource_metadata->GetIterator();
+  scoped_ptr<ResourceMetadata::Iterator> it = resource_metadata->GetIterator();
   for (; !it->IsAtEnd(); it->Advance()) {
-    MaybeAddEntryToResult(resource_metadata, query, options,
+    MaybeAddEntryToResult(resource_metadata, cache, query, options,
                           at_most_num_matches, &result_candidates, it->Get());
   }
 
@@ -161,12 +182,12 @@ scoped_ptr<MetadataSearchResultVector> SearchMetadataOnBlockingPool(
 
   return results.Pass();
 }
-
 }  // namespace
 
 void SearchMetadata(
     scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
-    internal::ResourceMetadata* resource_metadata,
+    ResourceMetadata* resource_metadata,
+    FileCache* cache,
     const std::string& query,
     int options,
     int at_most_num_matches,
@@ -182,6 +203,7 @@ void SearchMetadata(
       FROM_HERE,
       base::Bind(&SearchMetadataOnBlockingPool,
                  resource_metadata,
+                 cache,
                  query,
                  options,
                  at_most_num_matches),
@@ -198,37 +220,24 @@ bool FindAndHighlight(const std::string& text,
   if (query.empty())
     return true;
 
-  // TODO(satorux): Should support non-ASCII characters.
-  std::string lower_text = StringToLowerASCII(text);
-  std::string lower_query = StringToLowerASCII(query);
-
-  int num_matches = 0;
-  std::string::size_type cursor = 0;
-
-  while (cursor < text.size()) {
-    std::string::size_type matched_position =
-        lower_text.find(lower_query, cursor);
-    if (matched_position == std::string::npos)
-      break;
-    ++num_matches;
-
-    std::string skipped_piece =
-        net::EscapeForHTML(text.substr(cursor, matched_position - cursor));
-    std::string matched_piece =
-        net::EscapeForHTML(text.substr(matched_position, query.size()));
-
-    highlighted_text->append(skipped_piece);
-    highlighted_text->append("<b>" + matched_piece + "</b>");
-
-    cursor = matched_position + query.size();
-  }
-  if (num_matches == 0)
+  string16 text16 = base::UTF8ToUTF16(text);
+  string16 query16 = base::UTF8ToUTF16(query);
+  size_t match_start = 0;
+  size_t match_length = 0;
+  if (!base::i18n::StringSearchIgnoringCaseAndAccents(
+      query16, text16, &match_start, &match_length)) {
     return false;
-
-  std::string remaining_piece = text.substr(cursor);
-  highlighted_text->append(net::EscapeForHTML(remaining_piece));
-
+  }
+  string16 pre = text16.substr(0, match_start);
+  string16 match = text16.substr(match_start, match_length);
+  string16 post = text16.substr(match_start + match_length);
+  highlighted_text->append(net::EscapeForHTML(UTF16ToUTF8(pre)));
+  highlighted_text->append("<b>");
+  highlighted_text->append(net::EscapeForHTML(UTF16ToUTF8(match)));
+  highlighted_text->append("</b>");
+  highlighted_text->append(net::EscapeForHTML(UTF16ToUTF8(post)));
   return true;
 }
 
+}  // namespace internal
 }  // namespace drive

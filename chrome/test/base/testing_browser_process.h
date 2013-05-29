@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_process_platform_part.h"
 
 class BackgroundModeManager;
 class CRLSetFetcher;
@@ -75,7 +76,6 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual IntranetRedirectDetector* intranet_redirect_detector() OVERRIDE;
   virtual AutomationProviderList* GetAutomationProviderList() OVERRIDE;
   virtual void CreateDevToolsHttpProtocolHandler(
-      Profile* profile,
       chrome::HostDesktopType host_desktop_type,
       const std::string& ip,
       int port,
@@ -105,13 +105,7 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual BookmarkPromptController* bookmark_prompt_controller() OVERRIDE;
   virtual chrome::MediaFileSystemRegistry*
       media_file_system_registry() OVERRIDE;
-  virtual void PlatformSpecificCommandLineProcessing(
-      const CommandLine& command_line) OVERRIDE;
   virtual bool created_local_state() const OVERRIDE;
-
-#if defined(OS_WIN) && defined(USE_AURA)
-  virtual void OnMetroViewerProcessTerminated() OVERRIDE {}
-#endif
 
   // Set the local state for tests. Consumer is responsible for cleaning it up
   // afterwards (using ScopedTestingLocalState, for example).

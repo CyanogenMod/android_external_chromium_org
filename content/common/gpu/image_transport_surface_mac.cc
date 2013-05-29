@@ -59,8 +59,8 @@ class IOSurfaceImageTransportSurface : public gfx::NoOpGLSurfaceCGL,
   virtual void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
   virtual void OnResizeViewACK() OVERRIDE;
-  virtual void OnResize(gfx::Size size) OVERRIDE;
-  virtual void SetLatencyInfo(const cc::LatencyInfo&) OVERRIDE;
+  virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
+  virtual void SetLatencyInfo(const ui::LatencyInfo&) OVERRIDE;
 
  private:
   virtual ~IOSurfaceImageTransportSurface() OVERRIDE;
@@ -86,6 +86,7 @@ class IOSurfaceImageTransportSurface : public gfx::NoOpGLSurfaceCGL,
 
   gfx::Size size_;
   gfx::Size rounded_size_;
+  float scale_factor_;
 
   // Whether or not we've successfully made the surface current once.
   bool made_current_;
@@ -96,7 +97,7 @@ class IOSurfaceImageTransportSurface : public gfx::NoOpGLSurfaceCGL,
   // Whether we unscheduled command buffer because of pending SwapBuffers.
   bool did_unschedule_;
 
-  cc::LatencyInfo latency_info_;
+  ui::LatencyInfo latency_info_;
 
   scoped_ptr<ImageTransportHelper> helper_;
 
@@ -129,6 +130,7 @@ IOSurfaceImageTransportSurface::IOSurfaceImageTransportSurface(
       texture_id_(0),
       io_surface_handle_(0),
       context_(NULL),
+      scale_factor_(1.f),
       made_current_(false),
       is_swap_buffers_pending_(false),
       did_unschedule_(false) {
@@ -184,7 +186,7 @@ bool IOSurfaceImageTransportSurface::OnMakeCurrent(gfx::GLContext* context) {
   if (made_current_)
     return true;
 
-  OnResize(gfx::Size(1, 1));
+  OnResize(gfx::Size(1, 1), 1.f);
 
   made_current_ = true;
   return true;
@@ -231,6 +233,7 @@ bool IOSurfaceImageTransportSurface::SwapBuffers() {
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
   params.surface_handle = io_surface_handle_;
   params.size = GetSize();
+  params.scale_factor = scale_factor_;
   params.latency_info = latency_info_;
   helper_->SendAcceleratedSurfaceBuffersSwapped(params);
 
@@ -253,6 +256,7 @@ bool IOSurfaceImageTransportSurface::PostSubBuffer(
   params.width = width;
   params.height = height;
   params.surface_size = GetSize();
+  params.surface_scale_factor = scale_factor_;
   params.latency_info = latency_info_;
   helper_->SendAcceleratedSurfacePostSubBuffer(params);
 
@@ -289,7 +293,8 @@ void IOSurfaceImageTransportSurface::OnResizeViewACK() {
   NOTREACHED();
 }
 
-void IOSurfaceImageTransportSurface::OnResize(gfx::Size size) {
+void IOSurfaceImageTransportSurface::OnResize(gfx::Size size,
+                                              float scale_factor) {
   // This trace event is used in gpu_feature_browsertest.cc - the test will need
   // to be updated if this event is changed or moved.
   TRACE_EVENT2("gpu", "IOSurfaceImageTransportSurface::OnResize",
@@ -298,12 +303,13 @@ void IOSurfaceImageTransportSurface::OnResize(gfx::Size size) {
   DCHECK(context_->IsCurrent(this));
 
   size_ = size;
+  scale_factor_ = scale_factor;
 
   CreateIOSurface();
 }
 
 void IOSurfaceImageTransportSurface::SetLatencyInfo(
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   latency_info_ = latency_info;
 }
 

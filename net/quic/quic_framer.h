@@ -231,6 +231,9 @@ class NET_EXPORT_PRIVATE QuicFramer {
   static size_t GetMinConnectionCloseFrameSize();
   // Size in bytes of all GoAway frame fields without the reason phrase.
   static size_t GetMinGoAwayFrameSize();
+  // The maximum number of nacks which can be transmitted in a single ack packet
+  // without exceeding kMaxPacketSize.
+  static size_t GetMaxUnackedPackets(bool include_version);
   // Size in bytes required for a serialized version negotiation packet
   size_t GetVersionNegotiationPacketSize(size_t number_versions);
 
@@ -311,7 +314,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   const std::string& detailed_error() { return detailed_error_; }
 
-  // Read the guid from a packet header.
+  // Read the full 8 byte guid from a packet header.
   // Return true on success, else false.
   static bool ReadGuidFromPacket(const QuicEncryptedPacket& packet,
                                  QuicGuid* guid);

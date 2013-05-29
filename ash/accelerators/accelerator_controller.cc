@@ -37,6 +37,7 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
+#include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/web_notification/web_notification_tray.h"
 #include "ash/touch/touch_observer_hud.h"
 #include "ash/volume_control_delegate.h"
@@ -399,8 +400,11 @@ void AcceleratorController::Init() {
   RegisterAccelerators(kDesktopAcceleratorData, kDesktopAcceleratorDataLength);
 #endif
 
-  if (DebugShortcutsEnabled())
+  if (DebugShortcutsEnabled()) {
     RegisterAccelerators(kDebugAcceleratorData, kDebugAcceleratorDataLength);
+    for (size_t i = 0; i < kReservedDebugActionsLength; ++i)
+      reserved_actions_.insert(kReservedDebugActions[i]);
+  }
 
 #if defined(OS_CHROMEOS)
   keyboard_brightness_control_delegate_.reset(
@@ -525,8 +529,11 @@ bool AcceleratorController::PerformAction(int action,
       HandleCycleWindowLinear(CYCLE_FORWARD);
       return true;
 #if defined(OS_CHROMEOS)
-    case CYCLE_DISPLAY_MODE:
-      Shell::GetInstance()->display_controller()->CycleDisplayMode();
+    case ADD_REMOVE_DISPLAY:
+      Shell::GetInstance()->display_manager()->AddRemoveDisplay();
+      return true;
+    case TOGGLE_MIRROR_MODE:
+      Shell::GetInstance()->display_controller()->ToggleMirrorMode();
       return true;
     case LOCK_SCREEN:
       if (key_code == ui::VKEY_L)
@@ -547,7 +554,7 @@ bool AcceleratorController::PerformAction(int action,
     case TOGGLE_SPOKEN_FEEDBACK:
       return HandleToggleSpokenFeedback();
     case TOGGLE_WIFI:
-      Shell::GetInstance()->system_tray_delegate()->ToggleWifi();
+      Shell::GetInstance()->system_tray_notifier()->NotifyRequestToggleWifi();
       return true;
     case TOUCH_HUD_CLEAR: {
       internal::RootWindowController* controller =
@@ -575,7 +582,8 @@ bool AcceleratorController::PerformAction(int action,
       ash::Shell::GetInstance()->delegate()->OpenFeedbackPage();
       return true;
     case EXIT:
-      Shell::GetInstance()->delegate()->Exit();
+      // UMA metrics are recorded in the handler.
+      exit_warning_handler_.HandleAccelerator();
       return true;
     case NEW_INCOGNITO_WINDOW:
       Shell::GetInstance()->delegate()->NewWindow(true /* is_incognito */);
@@ -851,7 +859,7 @@ bool AcceleratorController::PerformAction(int action,
     case TOGGLE_ROOT_WINDOW_FULL_SCREEN:
       return HandleToggleRootWindowFullScreen();
     case DEBUG_TOGGLE_DEVICE_SCALE_FACTOR:
-      internal::DisplayManager::ToggleDisplayScaleFactor();
+      Shell::GetInstance()->display_manager()->ToggleDisplayScaleFactor();
       return true;
     case DEBUG_TOGGLE_SHOW_DEBUG_BORDERS:
       ash::debug::ToggleShowDebugBorders();

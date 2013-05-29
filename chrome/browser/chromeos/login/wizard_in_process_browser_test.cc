@@ -36,16 +36,16 @@ void WizardInProcessBrowserTest::SetUpCommandLine(CommandLine* command_line) {
 void WizardInProcessBrowserTest::SetUpOnMainThread() {
   SetUpWizard();
   if (!screen_name_.empty()) {
-    ShowLoginWizard(screen_name_, gfx::Size(1024, 600));
+    ShowLoginWizard(screen_name_);
     host_ = LoginDisplayHostImpl::default_host();
   }
 }
 
 void WizardInProcessBrowserTest::CleanUpOnMainThread() {
   // LoginDisplayHost owns controllers and all windows.
-  MessageLoopForUI::current()->DeleteSoon(FROM_HERE, host_);
+  base::MessageLoopForUI::current()->DeleteSoon(FROM_HERE, host_);
 
-  MessageLoopForUI::current()->RunUntilIdle();
+  base::MessageLoopForUI::current()->RunUntilIdle();
 }
 
 }  // namespace chromeos

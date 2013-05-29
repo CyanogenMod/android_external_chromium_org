@@ -67,6 +67,14 @@ namespace logging {
 
 DcheckState g_dcheck_state = DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
 
+DcheckState get_dcheck_state() {
+  return g_dcheck_state;
+}
+
+void set_dcheck_state(DcheckState state) {
+  g_dcheck_state = state;
+}
+
 namespace {
 
 VlogInfo* g_vlog_info = NULL;
@@ -581,7 +589,8 @@ LogMessage::~LogMessage() {
 #if defined(OS_WIN)
     OutputDebugStringA(str_newline.c_str());
 #elif defined(OS_ANDROID)
-    android_LogPriority priority = ANDROID_LOG_UNKNOWN;
+    android_LogPriority priority =
+        (severity_ < 0) ? ANDROID_LOG_VERBOSE : ANDROID_LOG_UNKNOWN;
     switch (severity_) {
       case LOG_INFO:
         priority = ANDROID_LOG_INFO;

@@ -142,8 +142,9 @@ void Eviction::TrimCache(bool empty) {
     }
     if (!empty && (deleted_entries > 20 ||
                    (TimeTicks::Now() - start).InMilliseconds() > 20)) {
-      MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-          &Eviction::TrimCache, ptr_factory_.GetWeakPtr(), false));
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&Eviction::TrimCache, ptr_factory_.GetWeakPtr(), false));
       break;
     }
   }
@@ -209,7 +210,8 @@ void Eviction::PostDelayedTrim() {
     return;
   delay_trim_ = true;
   trim_delays_++;
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
       base::Bind(&Eviction::DelayedTrim, ptr_factory_.GetWeakPtr()),
       base::TimeDelta::FromMilliseconds(1000));
 }
@@ -297,13 +299,9 @@ bool Eviction::EvictEntry(CacheRankingsBlock* node, bool empty,
     entry->entry()->Store();
     rankings_->Insert(entry->rankings(), true, Rankings::DELETED);
   }
-  if (!empty) {
+  if (!empty)
     backend_->OnEvent(Stats::TRIM_ENTRY);
 
-    static const char gajs[] = "http://www.google-analytics.com/ga.js";
-    if (!entry->GetKey().compare(gajs))
-      backend_->OnEvent(Stats::GAJS_EVICTED);
-  }
   entry->Release();
 
   return true;
@@ -365,8 +363,9 @@ void Eviction::TrimCacheV2(bool empty) {
       }
       if (!empty && (deleted_entries > 20 ||
                      (TimeTicks::Now() - start).InMilliseconds() > 20)) {
-        MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-            &Eviction::TrimCache, ptr_factory_.GetWeakPtr(), false));
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE,
+            base::Bind(&Eviction::TrimCache, ptr_factory_.GetWeakPtr(), false));
         break;
       }
     }
@@ -377,7 +376,8 @@ void Eviction::TrimCacheV2(bool empty) {
   if (empty) {
     TrimDeleted(true);
   } else if (ShouldTrimDeleted()) {
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
         base::Bind(&Eviction::TrimDeleted, ptr_factory_.GetWeakPtr(), empty));
   }
 
@@ -509,7 +509,8 @@ void Eviction::TrimDeleted(bool empty) {
   }
 
   if (deleted_entries && !empty && ShouldTrimDeleted()) {
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
         base::Bind(&Eviction::TrimDeleted, ptr_factory_.GetWeakPtr(), false));
   }
 

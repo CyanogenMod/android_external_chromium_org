@@ -10,7 +10,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/history/top_sites.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -19,6 +18,7 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
@@ -31,9 +31,8 @@ using content::DevToolsHttpHandlerDelegate;
 using content::RenderViewHost;
 
 BrowserListTabContentsProvider::BrowserListTabContentsProvider(
-    Profile* profile,
     chrome::HostDesktopType host_desktop_type)
-    : profile_(profile), host_desktop_type_(host_desktop_type) {
+    : host_desktop_type_(host_desktop_type) {
 }
 
 BrowserListTabContentsProvider::~BrowserListTabContentsProvider() {
@@ -91,15 +90,17 @@ RenderViewHost* BrowserListTabContentsProvider::CreateNewTarget() {
   const BrowserList* browser_list =
       BrowserList::GetInstance(host_desktop_type_);
 
-  if (browser_list->empty())
-    chrome::NewEmptyWindow(profile_, host_desktop_type_);
-
-  if (browser_list->empty())
-    return NULL;
+  if (browser_list->empty()) {
+    chrome::NewEmptyWindow(ProfileManager::GetLastUsedProfile(),
+        host_desktop_type_);
+    return browser_list->empty() ? NULL :
+           browser_list->get(0)->tab_strip_model()->GetActiveWebContents()->
+               GetRenderViewHost();
+  }
 
   content::WebContents* web_contents = chrome::AddSelectedTabWithURL(
       browser_list->get(0),
-      GURL(chrome::kAboutBlankURL),
+      GURL(content::kAboutBlankURL),
       content::PAGE_TRANSITION_LINK);
   return web_contents->GetRenderViewHost();
 }

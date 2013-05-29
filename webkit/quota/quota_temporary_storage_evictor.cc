@@ -163,13 +163,11 @@ void QuotaTemporaryStorageEvictor::ConsiderEviction() {
 
 void QuotaTemporaryStorageEvictor::OnGotUsageAndQuotaForEviction(
     QuotaStatusCode status,
-    const QuotaAndUsage& qau) {
+    const UsageAndQuota& qau) {
   DCHECK(CalledOnValidThread());
 
-  // unlimited_usage is a subset of usage
-  DCHECK_GE(qau.usage, qau.unlimited_usage);
-
-  int64 usage = qau.usage - qau.unlimited_usage;
+  int64 usage = qau.global_limited_usage;
+  DCHECK_GE(usage, 0);
 
   if (status != kQuotaStatusOk)
     ++statistics_.num_errors_on_getting_usage_and_quota;

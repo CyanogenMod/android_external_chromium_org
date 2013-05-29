@@ -62,6 +62,8 @@ enum UserMetricsAction {
   UMA_ACCEL_NEXTWINDOW_TAB,
   UMA_ACCEL_PREVWINDOW_F5,
   UMA_ACCEL_PREVWINDOW_TAB,
+  UMA_ACCEL_EXIT_FIRST_Q,
+  UMA_ACCEL_EXIT_SECOND_Q,
   UMA_ACCEL_SEARCH_LWIN,
   UMA_ACCEL_SHUT_DOWN_POWER_BUTTON,
   UMA_CLOSE_THROUGH_CONTEXT_MENU,
@@ -138,9 +140,6 @@ class ASH_EXPORT ShellDelegate {
 
   // Invoked when the user opens Crosh.
   virtual void OpenCrosh() = 0;
-
-  // Invoked when the user needs to set up mobile networking.
-  virtual void OpenMobileSetup(const std::string& service_path) = 0;
 
   // Invoked when the user uses Shift+Ctrl+T to restore the closed tab.
   virtual void RestoreTab() = 0;
@@ -230,7 +229,7 @@ class ASH_EXPORT ShellDelegate {
   virtual void HandleMediaPrevTrack() = 0;
 
   // Produces l10n-ed text of remaining time, e.g.: "13 minutes left" or
-  // "13 Minuten übrig".
+  // "13 Minuten links".
   // Used, for example, to display the remaining battery life.
   virtual base::string16 GetTimeRemainingString(base::TimeDelta delta) = 0;
 

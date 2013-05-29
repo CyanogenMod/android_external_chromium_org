@@ -33,9 +33,6 @@ const char kHomePageIsNewTabPage[] = "homepage_is_newtabpage";
 // This is the URL of the page to load when opening new tabs.
 const char kHomePage[] = "homepage";
 
-// Did the user change the home page after install?
-const char kHomePageChanged[] = "homepage_changed";
-
 // This preference is used to store the hash of a password of the custodian of
 // a managed user. It allows to unlock options which should be not available to
 // the managed user. The salt preference is used to derive the hash from the
@@ -1115,6 +1112,8 @@ const char kDefaultZoomLevel[] = "profile.default_zoom_level";
 // be displayed at the default zoom level.
 const char kPerHostZoomLevels[] = "profile.per_host_zoom_levels";
 
+const char kAutofillDialogAutofillDefault[] = "autofill.data_model_default";
+
 // Whether a user opted out of making purchases with Google Wallet; changed via
 // the autofill dialog's account chooser and set explicitly on dialog submission
 // (but not cancel). If this isn't set, the dialog assumes it's the first run.
@@ -1185,14 +1184,6 @@ const char kImportSearchEngine[] = "import_search_engine";
 // browser on first run.
 const char kImportSavedPasswords[] = "import_saved_passwords";
 
-// The URL of the enterprise web store, which is a site trusted by the
-// enterprise admin. Users can install apps & extensions from this site
-// without scary warnings.
-const char kEnterpriseWebStoreURL[] = "webstore.enterprise_store_url";
-
-// The name of the enterprise web store, to be shown to the user.
-const char kEnterpriseWebStoreName[] = "webstore.enterprise_store_name";
-
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
 // The local profile id for this profile.
 const char kLocalProfileId[] = "profile.local_profile_id";
@@ -1227,6 +1218,9 @@ const char kPrintPreviewDisabled[] = "printing.print_preview_disabled";
 // 2: Block.
 const char kDefaultManagedModeFilteringBehavior[] =
     "profile.managed.default_filtering_behavior";
+
+// List pref containing the users managed by this user.
+const char kManagedUsers[] = "profile.managed_users";
 
 // List pref containing the extension ids which are not allowed to send
 // notifications to the message center.
@@ -1339,6 +1333,18 @@ const char kProfileMetrics[] = "user_experience_metrics.profiles";
 // path kProfileMetrics. The individual metrics are placed under the path
 // kProfileMetrics.kProfilePrefix<hashed-profile-id>.
 const char kProfilePrefix[] = "profile-";
+
+// Reset Profile Data dialog preferences
+const char kResetDefaultSearchEngine[] =
+    "browser.reset_profile_settings.default_search_engine";
+const char kResetHomepage[] = "browser.reset_profile_settings.homepage";
+const char kResetContentSettings[] =
+    "browser.reset_profile_settings.content_settings";
+const char kResetCookiesAndSiteData[] =
+    "browser.reset_profile_settings.cookies_and_site_data";
+const char kResetExtensions[] = "browser.reset_profile_settings.extensions";
+const char kResetExtensionsHandling[] =
+    "browser.reset_profile_settings.extensions_handling";
 
 // True if the previous run of the program exited cleanly.
 const char kStabilityExitedCleanly[] =
@@ -1782,6 +1788,7 @@ const char kSyncFaviconImages[] = "sync.favicon_images";
 const char kSyncFaviconTracking[] = "sync.favicon_tracking";
 const char kSyncHistoryDeleteDirectives[] = "sync.history_delete_directives";
 const char kSyncManagedUserSettings[] = "sync.managed_user_settings";
+const char kSyncManagedUsers[] = "sync.managed_users";
 const char kSyncPasswords[] = "sync.passwords";
 const char kSyncPreferences[] = "sync.preferences";
 const char kSyncPriorityPreferences[] = "sync.priority_preferences";
@@ -2010,15 +2017,30 @@ const char kDailyHttpReceivedContentLength[] =
 // date of the last update to |kDailyHttp{Original,Received}ContentLength|.
 const char kDailyHttpContentLengthLastUpdateDate[] =
     "data_reduction.last_update_date";
-#endif
+#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
-// A pref holding the value of the policy used to disable capturing audio on
-// ChromeOS devices.
+// A pref holding the value of the policy used to explicitly allow or deny
+// access to audio capture devices.  When enabled or not set, the user is
+// prompted for device access.  When disabled, access to audio capture devices
+// is not allowed and no prompt will be shown.
+// See also kAudioCaptureAllowedUrls.
 const char kAudioCaptureAllowed[] = "hardware.audio_capture_enabled";
+// Holds URL patterns that specify URLs that will be granted access to audio
+// capture devices without prompt.  NOTE: This whitelist is currently only
+// supported when running in kiosk mode.
+// TODO(tommi): Update comment when this is supported for all modes.
+const char kAudioCaptureAllowedUrls[] = "hardware.audio_capture_allowed_urls";
 
-// A pref holding the value of the policy used to disable capturing audio on
-// ChromeOS devices.
+// A pref holding the value of the policy used to explicitly allow or deny
+// access to video capture devices.  When enabled or not set, the user is
+// prompted for device access.  When disabled, access to video capture devices
+// is not allowed and no prompt will be shown.
 const char kVideoCaptureAllowed[] = "hardware.video_capture_enabled";
+// Holds URL patterns that specify URLs that will be granted access to video
+// capture devices without prompt.  NOTE: This whitelist is currently only
+// supported when running in kiosk mode.
+// TODO(tommi): Update comment when this is supported for all modes.
+const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
 
 #if defined(OS_CHROMEOS)
 // Dictionary for transient storage of settings that should go into device
@@ -2290,6 +2312,13 @@ const char kShelfAlignmentLocal[] = "shelf_alignment_local";
 // String value corresponding to ash::Shell::ShelfAutoHideBehavior.
 const char kShelfAutoHideBehavior[] = "auto_hide_behavior";
 const char kShelfAutoHideBehaviorLocal[] = "auto_hide_behavior_local";
+// This value stores chrome icon's index in the launcher. This should be handled
+// separately with app shortcut's index because of LauncherModel's backward
+// compatability. If we add chrome icon index to |kPinnedLauncherApps|, its
+// index is also stored in the |kPinnedLauncherApp| pref. It may causes
+// creating two chrome icons.
+const char kShelfChromeIconIndex[] = "shelf_chrome_icon_index";
+
 const char kPinnedLauncherApps[] = "pinned_launcher_apps";
 // Boolean value indicating whether to show a logout button in the ash tray.
 const char kShowLogoutButtonInTray[] = "show_logout_button_in_tray";

@@ -79,6 +79,8 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
 
   // Returns the displayable name for the language at |index|.
   string16 language_name_at(size_t index) const {
+    if (index == kNoIndex)
+      return string16();
     DCHECK_LT(index, num_languages());
     return languages_[index].second;
   }
@@ -166,14 +168,20 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   static string16 GetLanguageDisplayableName(const std::string& language_code);
 
   // Adds the strings that should be displayed in the after translate infobar to
-  // |strings|. The text in that infobar is:
+  // |strings|. If |autodetermined_source_language| is false, the text in that
+  // infobar is:
   // "The page has been translated from <lang1> to <lang2>."
-  // Because <lang1> and <lang2> are displayed in menu buttons, the text is
-  // split in 3 chunks.  |swap_languages| is set to true if <lang1> and <lang2>
+  // Otherwise:
+  // "The page has been translated to <lang1>."
+  // Because <lang1>, or <lang1> and <lang2> are displayed in menu buttons, the
+  // text is split in 2 or 3 chunks. |swap_languages| is set to true if
+  // |autodetermined_source_language| is false, and <lang1> and <lang2>
   // should be inverted (some languages express the sentense as "The page has
-  // been translate to <lang2> from <lang1>.").
+  // been translate to <lang2> from <lang1>."). It is ignored if
+  // |autodetermined_source_language| is true.
   static void GetAfterTranslateStrings(std::vector<string16>* strings,
-                                       bool* swap_languages);
+                                       bool* swap_languages,
+                                       bool autodetermined_source_language);
 
  protected:
   // For testing.
@@ -192,7 +200,7 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   // InfoBarDelegate:
   virtual InfoBar* CreateInfoBar(InfoBarService* infobar_service) OVERRIDE;
   virtual void InfoBarDismissed() OVERRIDE;
-  virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual int GetIconID() const OVERRIDE;
   virtual InfoBarDelegate::Type GetInfoBarType() const OVERRIDE;
   virtual bool ShouldExpire(
        const content::LoadCommittedDetails& details) const OVERRIDE;

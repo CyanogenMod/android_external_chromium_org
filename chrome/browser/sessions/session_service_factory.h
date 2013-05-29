@@ -6,15 +6,14 @@
 #define CHROME_BROWSER_SESSIONS_SESSION_SERVICE_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_service.h"
-
-class Profile;
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 // Singleton that owns all SessionServices and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated SessionService.
-class SessionServiceFactory : public ProfileKeyedServiceFactory {
+class SessionServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the session service for |profile|. This may return NULL. If this
   // profile supports a session service (it isn't incognito), and the session
@@ -40,8 +39,8 @@ class SessionServiceFactory : public ProfileKeyedServiceFactory {
   // For test use: force setting of the session service for a given profile.
   // This will delete a previous session service for this profile if it exists.
   static void SetForTestProfile(Profile* profile, SessionService* service) {
-    GetInstance()->ProfileShutdown(profile);
-    GetInstance()->ProfileDestroyed(profile);
+    GetInstance()->BrowserContextShutdown(profile);
+    GetInstance()->BrowserContextDestroyed(profile);
     GetInstance()->Associate(profile, service);
   }
 #endif
@@ -50,14 +49,16 @@ class SessionServiceFactory : public ProfileKeyedServiceFactory {
 
  private:
   friend struct DefaultSingletonTraits<SessionServiceFactory>;
+  FRIEND_TEST_ALL_PREFIXES(SessionCrashedInfoBarDelegateUnitTest,
+                           DetachingTabWithCrashedInfoBar);
 
   SessionServiceFactory();
   virtual ~SessionServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };
 

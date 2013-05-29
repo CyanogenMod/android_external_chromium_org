@@ -7,13 +7,13 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class HistoryService;
 
 // Singleton that owns all HistoryService and associates them with
 // Profiles.
-class HistoryServiceFactory : public ProfileKeyedServiceFactory {
+class HistoryServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static HistoryService* GetForProfile(
       Profile* profile, Profile::ServiceAccessType sat);
@@ -38,8 +38,8 @@ class HistoryServiceFactory : public ProfileKeyedServiceFactory {
   HistoryServiceFactory();
   virtual ~HistoryServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;

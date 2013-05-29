@@ -33,7 +33,6 @@
 #include "content/common/edit_command.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
-#include "content/common/plugin_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/browser_thread.h"
@@ -553,6 +552,8 @@ void RenderWidgetHostViewMac::WasHidden() {
   // disableScreenUpdatesUntilFlush prevents the transparent flash by avoiding
   // screen updates until the next tab draws.
   [[cocoa_view_ window] disableScreenUpdatesUntilFlush];
+
+  web_contents_switch_paint_time_ = base::TimeTicks();
 }
 
 void RenderWidgetHostViewMac::SetSize(const gfx::Size& size) {
@@ -942,7 +943,6 @@ void RenderWidgetHostViewMac::CopyFromCompositingSurface(
   scoped_callback_runner.Release();
 
   compositing_iosurface_->CopyTo(GetScaledOpenGLPixelRect(src_subrect),
-                                 ScaleFactor(cocoa_view_),
                                  dst_pixel_size,
                                  callback);
 }
@@ -974,7 +974,6 @@ void RenderWidgetHostViewMac::CopyFromCompositingSurfaceToVideoFrame(
   scoped_callback_runner.Release();
   compositing_iosurface_->CopyToVideoFrame(
       GetScaledOpenGLPixelRect(src_subrect),
-      ScaleFactor(cocoa_view_),
       target,
       callback);
 }
@@ -1045,7 +1044,8 @@ void RenderWidgetHostViewMac::PluginImeCompositionCompleted(
 }
 
 bool RenderWidgetHostViewMac::CompositorSwapBuffers(uint64 surface_handle,
-                                                    const gfx::Size& size) {
+                                                    const gfx::Size& size,
+                                                    float scale_factor) {
   if (is_hidden_)
     return true;
 
@@ -1059,9 +1059,10 @@ bool RenderWidgetHostViewMac::CompositorSwapBuffers(uint64 surface_handle,
       RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
       if (frame_subscriber_->ShouldCaptureFrame(present_time,
                                                 &frame, &callback)) {
-        compositing_iosurface_->SetIOSurface(surface_handle, size);
+        compositing_iosurface_->SetIOSurface(
+            surface_handle, size, scale_factor);
         compositing_iosurface_->CopyToVideoFrame(
-            gfx::Rect(size), ScaleFactor(cocoa_view_), frame,
+            gfx::Rect(size), frame,
             base::Bind(callback, present_time));
         return true;
       }
@@ -1101,7 +1102,7 @@ bool RenderWidgetHostViewMac::CompositorSwapBuffers(uint64 surface_handle,
   if (!compositing_iosurface_)
     return true;
 
-  compositing_iosurface_->SetIOSurface(surface_handle, size);
+  compositing_iosurface_->SetIOSurface(surface_handle, size, scale_factor);
 
   GotAcceleratedFrame();
 
@@ -1311,7 +1312,9 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped(
   pending_swap_buffers_acks_.push_back(std::make_pair(params.route_id,
                                                       gpu_host_id));
 
-  if (CompositorSwapBuffers(params.surface_handle, params.size))
+  if (CompositorSwapBuffers(params.surface_handle,
+                            params.size,
+                            params.scale_factor))
     AckPendingSwapBuffers();
 }
 
@@ -1325,7 +1328,9 @@ void RenderWidgetHostViewMac::AcceleratedSurfacePostSubBuffer(
   pending_swap_buffers_acks_.push_back(std::make_pair(params.route_id,
                                                       gpu_host_id));
 
-  if (CompositorSwapBuffers(params.surface_handle, params.surface_size))
+  if (CompositorSwapBuffers(params.surface_handle,
+                            params.surface_size,
+                            params.surface_scale_factor))
     AckPendingSwapBuffers();
 }
 
@@ -1340,20 +1345,11 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
 
 bool RenderWidgetHostViewMac::HasAcceleratedSurface(
       const gfx::Size& desired_size) {
-  // Update device scale factor for the IOSurface before checking if there
-  // is a match. When initially created, the IOSurface is unaware of its
-  // scale factor, which can result in compatible IOSurfaces not being used
-  // http://crbug.com/237293
-  if (compositing_iosurface_.get() &&
-      compositing_iosurface_->HasIOSurface()) {
-    compositing_iosurface_->SetDeviceScaleFactor(ScaleFactor(cocoa_view_));
-  }
-
   return last_frame_was_accelerated_ &&
          compositing_iosurface_.get() &&
          compositing_iosurface_->HasIOSurface() &&
          (desired_size.IsEmpty() ||
-          compositing_iosurface_->io_surface_size() == desired_size);
+          compositing_iosurface_->dip_io_surface_size() == desired_size);
 }
 
 void RenderWidgetHostViewMac::AboutToWaitForBackingStoreMsg() {

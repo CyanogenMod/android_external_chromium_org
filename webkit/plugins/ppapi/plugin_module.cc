@@ -77,6 +77,7 @@
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_flash_clipboard.h"
 #include "ppapi/c/private/ppb_flash_device_id.h"
+#include "ppapi/c/private/ppb_flash_drm.h"
 #include "ppapi/c/private/ppb_flash_file.h"
 #include "ppapi/c/private/ppb_flash_font_file.h"
 #include "ppapi/c/private/ppb_flash_fullscreen.h"
@@ -149,6 +150,9 @@ namespace {
 // Note that we don't want a Singleton here since destroying this object will
 // try to free some stuff that requires WebKit, and Singletons are destroyed
 // after WebKit.
+// TODO(raymes): I'm not sure if it is completely necessary to leak the
+// HostGlobals. Figure out the shutdown sequence and find a way to do this
+// more elegantly.
 webkit::ppapi::HostGlobals* host_globals = NULL;
 
 // Maintains all currently loaded plugin libs for validating PP_Module
@@ -305,54 +309,13 @@ const void* InternalGetInterface(const char* name) {
   #undef UNPROXIED_API
   #undef PROXIED_IFACE
 
-  // Please keep alphabetized by interface macro name with "special" stuff at
-  // the bottom.
-  if (strcmp(name, PPB_AUDIO_TRUSTED_INTERFACE_0_6) == 0)
-    return ::ppapi::thunk::GetPPB_AudioTrusted_0_6_Thunk();
-  if (strcmp(name, PPB_BUFFER_TRUSTED_INTERFACE_0_1) == 0)
-    return ::ppapi::thunk::GetPPB_BufferTrusted_0_1_Thunk();
-  if (strcmp(name, PPB_CORE_INTERFACE_1_0) == 0)
-    return &core_interface;
-  if (strcmp(name, PPB_GPUBLACKLIST_PRIVATE_INTERFACE) == 0)
-    return PPB_GpuBlacklist_Private_Impl::GetInterface();
-  if (strcmp(name, PPB_GRAPHICS_3D_TRUSTED_INTERFACE_1_0) == 0)
-    return ::ppapi::thunk::GetPPB_Graphics3DTrusted_1_0_Thunk();
-  if (strcmp(name, PPB_IMAGEDATA_TRUSTED_INTERFACE_0_4) == 0)
-    return ::ppapi::thunk::GetPPB_ImageDataTrusted_0_4_Thunk();
-  if (strcmp(name, PPB_INPUT_EVENT_INTERFACE_1_0) == 0)
-    return ::ppapi::thunk::GetPPB_InputEvent_1_0_Thunk();
-  if (strcmp(name, PPB_INSTANCE_PRIVATE_INTERFACE_0_1) == 0)
-    return ::ppapi::thunk::GetPPB_Instance_Private_0_1_Thunk();
-  if (strcmp(name, PPB_OPENGLES2_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetInterface();
-  if (strcmp(name, PPB_OPENGLES2_INSTANCEDARRAYS_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetInstancedArraysInterface();
-  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERBLIT_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetFramebufferBlitInterface();
-  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERMULTISAMPLE_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetFramebufferMultisampleInterface();
-  if (strcmp(name, PPB_OPENGLES2_CHROMIUMENABLEFEATURE_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumEnableFeatureInterface();
-  if (strcmp(name, PPB_OPENGLES2_CHROMIUMMAPSUB_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumMapSubInterface();
-  if (strcmp(name, PPB_OPENGLES2_CHROMIUMMAPSUB_DEV_INTERFACE_1_0) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumMapSubInterface();
-  if (strcmp(name, PPB_OPENGLES2_QUERY_INTERFACE) == 0)
-    return ::ppapi::PPB_OpenGLES2_Shared::GetQueryInterface();
-  if (strcmp(name, PPB_PROXY_PRIVATE_INTERFACE) == 0)
-    return PPB_Proxy_Impl::GetInterface();
-  if (strcmp(name, PPB_UMA_PRIVATE_INTERFACE) == 0)
-    return PPB_UMA_Private_Impl::GetInterface();
-  if (strcmp(name, PPB_URLLOADERTRUSTED_INTERFACE_0_3) == 0)
-    return ::ppapi::thunk::GetPPB_URLLoaderTrusted_0_3_Thunk();
-  if (strcmp(name, PPB_VAR_DEPRECATED_INTERFACE) == 0)
-    return PPB_Var_Deprecated_Impl::GetVarDeprecatedInterface();
-  if (strcmp(name, PPB_VAR_INTERFACE_1_0) == 0)
-    return ::ppapi::PPB_Var_Shared::GetVarInterface1_0();
-  if (strcmp(name, PPB_VAR_INTERFACE_1_1) == 0)
-    return ::ppapi::PPB_Var_Shared::GetVarInterface1_1();
-  if (strcmp(name, PPB_VAR_ARRAY_BUFFER_INTERFACE_1_0) == 0)
-    return ::ppapi::PPB_Var_Shared::GetVarArrayBufferInterface1_0();
+  #define LEGACY_IFACE(iface_str, function_name) \
+      if (strcmp(name, iface_str) == 0) \
+        return function_name;
+
+  #include "ppapi/thunk/interfaces_legacy.h"
+
+  #undef LEGACY_IFACE
 
   // Only support the testing interface when the command line switch is
   // specified. This allows us to prevent people from (ab)using this interface
@@ -643,6 +606,12 @@ void PluginModule::SetBroker(PluginDelegate::Broker* broker) {
 
 PluginDelegate::Broker* PluginModule::GetBroker() {
   return broker_;
+}
+
+// static
+void PluginModule::ResetHostGlobalsForTest() {
+  delete host_globals;
+  host_globals = NULL;
 }
 
 bool PluginModule::InitializeModule(const EntryPoints& entry_points) {

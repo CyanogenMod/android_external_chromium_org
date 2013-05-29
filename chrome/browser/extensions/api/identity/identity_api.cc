@@ -6,10 +6,12 @@
 
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/lazy_instance.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
@@ -224,7 +226,6 @@ void IdentityGetAuthTokenFunction::StartMintToken(
       CompleteMintTokenFlow();
       CompleteFunctionWithResult(cache_entry.token());
     } else {
-      install_ui_.reset(new ExtensionInstallPrompt(GetAssociatedWebContents()));
       ShowOAuthApprovalDialog(issue_advice_);
     }
   }
@@ -291,15 +292,55 @@ void IdentityGetAuthTokenFunction::SigninFailed() {
   CompleteFunctionWithError(identity_constants::kUserNotSignedIn);
 }
 
-void IdentityGetAuthTokenFunction::InstallUIProceed() {
-  // The user has accepted the scopes, so we may now force (recording a grant
-  // and receiving a token).
-  StartGaiaRequest(OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE);
+void IdentityGetAuthTokenFunction::OnGaiaFlowFailure(
+    GaiaWebAuthFlow::Failure failure,
+    GoogleServiceAuthError service_error,
+    const std::string& oauth_error) {
+  CompleteMintTokenFlow();
+  std::string error;
+
+  switch (failure) {
+    case GaiaWebAuthFlow::WINDOW_CLOSED:
+      error = identity_constants::kUserRejected;
+      break;
+
+    case GaiaWebAuthFlow::INVALID_REDIRECT:
+      error = identity_constants::kInvalidRedirect;
+      break;
+
+    case GaiaWebAuthFlow::SERVICE_AUTH_ERROR:
+      error = std::string(identity_constants::kAuthFailure) +
+          service_error.ToString();
+      break;
+
+    case GaiaWebAuthFlow::OAUTH_ERROR:
+      error = MapOAuth2ErrorToDescription(oauth_error);
+      break;
+
+    default:
+      NOTREACHED() << "Unexpected error from gaia web auth flow: " << failure;
+      error = identity_constants::kInvalidRedirect;
+      break;
+  }
+
+  CompleteFunctionWithError(error);
 }
 
-void IdentityGetAuthTokenFunction::InstallUIAbort(bool user_initiated) {
+void IdentityGetAuthTokenFunction::OnGaiaFlowCompleted(
+    const std::string& access_token,
+    const std::string& expiration) {
+
+  int time_to_live;
+  if (!expiration.empty() && base::StringToInt(expiration, &time_to_live)) {
+    const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+    IdentityTokenCacheValue token_value(
+        access_token, base::TimeDelta::FromSeconds(time_to_live));
+    IdentityAPI::GetFactoryInstance()->GetForProfile(profile())
+        ->SetCachedToken(GetExtension()->id(), oauth2_info.scopes, token_value);
+  }
+
   CompleteMintTokenFlow();
-  CompleteFunctionWithError(identity_constants::kUserRejected);
+  CompleteFunctionWithResult(access_token);
 }
 
 void IdentityGetAuthTokenFunction::StartGaiaRequest(
@@ -315,7 +356,15 @@ void IdentityGetAuthTokenFunction::ShowLoginPopup() {
 
 void IdentityGetAuthTokenFunction::ShowOAuthApprovalDialog(
     const IssueAdviceInfo& issue_advice) {
-  install_ui_->ConfirmIssueAdvice(this, GetExtension(), issue_advice);
+  Browser* current_browser = this->GetCurrentBrowser();
+  chrome::HostDesktopType host_desktop_type =
+      current_browser ? current_browser->host_desktop_type()
+                      : chrome::GetActiveDesktop();
+  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
+
+  gaia_web_auth_flow_.reset(new GaiaWebAuthFlow(
+      this, profile(), host_desktop_type, GetExtension()->id(), oauth2_info));
+  gaia_web_auth_flow_->Start();
 }
 
 OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
@@ -350,6 +399,19 @@ bool IdentityGetAuthTokenFunction::HasLoginToken() const {
   return token_service->HasOAuthLoginToken();
 }
 
+std::string IdentityGetAuthTokenFunction::MapOAuth2ErrorToDescription(
+    const std::string& error) {
+  const char kOAuth2ErrorAccessDenied[] = "access_denied";
+  const char kOAuth2ErrorInvalidScope[] = "invalid_scope";
+
+  if (error == kOAuth2ErrorAccessDenied)
+    return std::string(identity_constants::kUserRejected);
+  else if (error == kOAuth2ErrorInvalidScope)
+    return std::string(identity_constants::kInvalidScopes);
+  else
+    return std::string(identity_constants::kAuthFailure) + error;
+}
+
 IdentityRemoveCachedAuthTokenFunction::IdentityRemoveCachedAuthTokenFunction() {
 }
 
@@ -372,7 +434,11 @@ bool IdentityRemoveCachedAuthTokenFunction::RunImpl() {
 }
 
 IdentityLaunchWebAuthFlowFunction::IdentityLaunchWebAuthFlowFunction() {}
-IdentityLaunchWebAuthFlowFunction::~IdentityLaunchWebAuthFlowFunction() {}
+
+IdentityLaunchWebAuthFlowFunction::~IdentityLaunchWebAuthFlowFunction() {
+  if (auth_flow_)
+    auth_flow_.release()->DetachDelegateAndDelete();
+}
 
 bool IdentityLaunchWebAuthFlowFunction::RunImpl() {
   if (profile()->IsOffTheRecord()) {
@@ -493,6 +559,10 @@ bool IdentityTokenCacheValue::is_expired() const {
       expiration_time_ < base::Time::Now();
 }
 
+const base::Time& IdentityTokenCacheValue::expiration_time() const {
+  return expiration_time_;
+}
+
 IdentityAPI::IdentityAPI(Profile* profile)
     : profile_(profile),
       signin_manager_(NULL),
@@ -522,8 +592,7 @@ void IdentityAPI::SetCachedToken(const std::string& extension_id,
   std::set<std::string> scopeset(scopes.begin(), scopes.end());
   TokenCacheKey key(extension_id, scopeset);
 
-  std::map<TokenCacheKey, IdentityTokenCacheValue>::iterator it =
-      token_cache_.find(key);
+  CachedTokens::iterator it = token_cache_.find(key);
   if (it != token_cache_.end() && it->second.status() <= token_data.status())
     token_cache_.erase(it);
 
@@ -532,7 +601,7 @@ void IdentityAPI::SetCachedToken(const std::string& extension_id,
 
 void IdentityAPI::EraseCachedToken(const std::string& extension_id,
                                    const std::string& token) {
-  std::map<TokenCacheKey, IdentityTokenCacheValue>::iterator it;
+  CachedTokens::iterator it;
   for (it = token_cache_.begin(); it != token_cache_.end(); ++it) {
     if (it->first.extension_id == extension_id &&
         it->second.status() == IdentityTokenCacheValue::CACHE_STATUS_TOKEN &&
@@ -552,6 +621,10 @@ const IdentityTokenCacheValue& IdentityAPI::GetCachedToken(
   std::set<std::string> scopeset(scopes.begin(), scopes.end());
   TokenCacheKey key(extension_id, scopeset);
   return token_cache_[key];
+}
+
+const IdentityAPI::CachedTokens& IdentityAPI::GetAllCachedTokens() {
+  return token_cache_;
 }
 
 void IdentityAPI::ReportAuthError(const GoogleServiceAuthError& error) {

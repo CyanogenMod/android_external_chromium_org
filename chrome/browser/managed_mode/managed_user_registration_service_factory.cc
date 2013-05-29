@@ -5,13 +5,13 @@
 #include "chrome/browser/managed_mode/managed_user_registration_service_factory.h"
 
 #include "chrome/browser/managed_mode/managed_user_registration_service.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 ManagedUserRegistrationService*
 ManagedUserRegistrationServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<ManagedUserRegistrationService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -21,20 +21,20 @@ ManagedUserRegistrationServiceFactory::GetInstance() {
 }
 
 // static
-ProfileKeyedService* ManagedUserRegistrationServiceFactory::BuildInstanceFor(
-    Profile* profile) {
-  return new ManagedUserRegistrationService();
+BrowserContextKeyedService*
+ManagedUserRegistrationServiceFactory::BuildInstanceFor(Profile* profile) {
+  return new ManagedUserRegistrationService(profile->GetPrefs());
 }
 
 ManagedUserRegistrationServiceFactory::ManagedUserRegistrationServiceFactory()
-    : ProfileKeyedServiceFactory("ManagedUserRegistrationService",
-                                 ProfileDependencyManager::GetInstance()) {
-}
+    : BrowserContextKeyedServiceFactory(
+          "ManagedUserRegistrationService",
+          BrowserContextDependencyManager::GetInstance()) {}
 
 ManagedUserRegistrationServiceFactory::
     ~ManagedUserRegistrationServiceFactory() {}
 
-ProfileKeyedService*
+BrowserContextKeyedService*
 ManagedUserRegistrationServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return BuildInstanceFor(static_cast<Profile*>(profile));

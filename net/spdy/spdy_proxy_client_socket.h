@@ -91,15 +91,12 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
 
   // SpdyStream::Delegate implementation.
-  virtual SpdySendStatus OnSendHeadersComplete() OVERRIDE;
-  virtual int OnSendBody() OVERRIDE;
-  virtual SpdySendStatus OnSendBodyComplete(size_t bytes_sent) OVERRIDE;
-  virtual int OnResponseReceived(const SpdyHeaderBlock& response,
-                                 base::Time response_time,
-                                 int status) OVERRIDE;
-  virtual void OnHeadersSent() OVERRIDE;
+  virtual void OnRequestHeadersSent() OVERRIDE;
+  virtual int OnResponseHeadersReceived(const SpdyHeaderBlock& response,
+                                        base::Time response_time,
+                                        int status) OVERRIDE;
   virtual int OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
-  virtual void OnDataSent(size_t bytes_sent) OVERRIDE;
+  virtual void OnDataSent() OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
@@ -158,8 +155,6 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
 
   // User specified number of bytes to be written.
   int write_buffer_len_;
-  // Number of bytes written which have not been confirmed
-  int write_bytes_outstanding_;
 
   // True if the transport socket has ever sent data.
   bool was_ever_used_;

@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/message_loop.h"
+#include "base/utf_string_conversions.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/view_messages.h"
@@ -173,6 +174,56 @@ TEST_F(RenderWidgetHostViewAuraTest, DestroyFullscreenOnBlur) {
   view_ = NULL;
 }
 
+// Checks that IME-composition-event state is maintained correctly.
+TEST_F(RenderWidgetHostViewAuraTest, SetCompositionText) {
+  view_->InitAsChild(NULL);
+  view_->Show();
+
+  ui::CompositionText composition_text;
+  composition_text.text = ASCIIToUTF16("|a|b");
+
+  // Focused segment
+  composition_text.underlines.push_back(
+      ui::CompositionUnderline(0, 3, 0xff000000, true));
+
+  // Non-focused segment
+  composition_text.underlines.push_back(
+      ui::CompositionUnderline(3, 4, 0xff000000, false));
+
+  const ui::CompositionUnderlines& underlines = composition_text.underlines;
+
+  // Caret is at the end. (This emulates Japanese MSIME 2007 and later)
+  composition_text.selection = ui::Range(4);
+
+  sink_->ClearMessages();
+  view_->SetCompositionText(composition_text);
+  EXPECT_TRUE(view_->has_composition_text_);
+  {
+    const IPC::Message* msg =
+      sink_->GetFirstMessageMatching(ViewMsg_ImeSetComposition::ID);
+    ASSERT_TRUE(msg != NULL);
+
+    ViewMsg_ImeSetComposition::Param params;
+    ViewMsg_ImeSetComposition::Read(msg, &params);
+    // composition text
+    EXPECT_EQ(composition_text.text, params.a);
+    // underlines
+    ASSERT_EQ(underlines.size(), params.b.size());
+    for (size_t i = 0; i < underlines.size(); ++i) {
+      EXPECT_EQ(underlines[i].start_offset, params.b[i].startOffset);
+      EXPECT_EQ(underlines[i].end_offset, params.b[i].endOffset);
+      EXPECT_EQ(underlines[i].color, params.b[i].color);
+      EXPECT_EQ(underlines[i].thick, params.b[i].thick);
+    }
+    // highlighted range
+    EXPECT_EQ(4, params.c) << "Should be the same to the caret pos";
+    EXPECT_EQ(4, params.d) << "Should be the same to the caret pos";
+  }
+
+  view_->ImeCancelComposition();
+  EXPECT_FALSE(view_->has_composition_text_);
+}
+
 // Checks that touch-event state is maintained correctly.
 TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   view_->InitAsChild(NULL);
@@ -332,8 +383,9 @@ TEST_F(RenderWidgetHostViewAuraTest, PhysicalBackingSizeWithScale) {
     EXPECT_EQ(ViewMsg_Resize::ID, msg->type());
     ViewMsg_Resize::Param params;
     ViewMsg_Resize::Read(msg, &params);
-    EXPECT_EQ("100x100", params.a.ToString());  // dip size
-    EXPECT_EQ("100x100", params.b.ToString());  // backing size
+    EXPECT_EQ("100x100", params.a.new_size.ToString());  // dip size
+    EXPECT_EQ("100x100",
+        params.a.physical_backing_size.ToString());  // backing size
   }
 
   widget_host_->ResetSizeAndRepaintPendingFlags();
@@ -342,22 +394,16 @@ TEST_F(RenderWidgetHostViewAuraTest, PhysicalBackingSizeWithScale) {
   aura_test_helper_->test_screen()->SetDeviceScaleFactor(2.0f);
   EXPECT_EQ("200x200", view_->GetPhysicalBackingSize().ToString());
   // Extra ScreenInfoChanged message for |parent_view_|.
-  EXPECT_EQ(3u, sink_->message_count());
-  EXPECT_EQ(ViewMsg_ScreenInfoChanged::ID, sink_->GetMessageAt(0)->type());
+  EXPECT_EQ(1u, sink_->message_count());
   {
-    const IPC::Message* msg = sink_->GetMessageAt(1);
-    EXPECT_EQ(ViewMsg_ScreenInfoChanged::ID, msg->type());
-    ViewMsg_ScreenInfoChanged::Param params;
-    ViewMsg_ScreenInfoChanged::Read(msg, &params);
-    EXPECT_EQ(2.0f, params.a.deviceScaleFactor);
-  }
-  {
-    const IPC::Message* msg = sink_->GetMessageAt(2);
+    const IPC::Message* msg = sink_->GetMessageAt(0);
     EXPECT_EQ(ViewMsg_Resize::ID, msg->type());
     ViewMsg_Resize::Param params;
     ViewMsg_Resize::Read(msg, &params);
-    EXPECT_EQ("100x100", params.a.ToString());  // dip size
-    EXPECT_EQ("200x200", params.b.ToString());  // backing size
+    EXPECT_EQ(2.0f, params.a.screen_info.deviceScaleFactor);
+    EXPECT_EQ("100x100", params.a.new_size.ToString());  // dip size
+    EXPECT_EQ("200x200",
+        params.a.physical_backing_size.ToString());  // backing size
   }
 
   widget_host_->ResetSizeAndRepaintPendingFlags();
@@ -365,23 +411,17 @@ TEST_F(RenderWidgetHostViewAuraTest, PhysicalBackingSizeWithScale) {
 
   aura_test_helper_->test_screen()->SetDeviceScaleFactor(1.0f);
   // Extra ScreenInfoChanged message for |parent_view_|.
-  EXPECT_EQ(3u, sink_->message_count());
+  EXPECT_EQ(1u, sink_->message_count());
   EXPECT_EQ("100x100", view_->GetPhysicalBackingSize().ToString());
-  EXPECT_EQ(ViewMsg_ScreenInfoChanged::ID, sink_->GetMessageAt(0)->type());
   {
-    const IPC::Message* msg = sink_->GetMessageAt(1);
-    EXPECT_EQ(ViewMsg_ScreenInfoChanged::ID, msg->type());
-    ViewMsg_ScreenInfoChanged::Param params;
-    ViewMsg_ScreenInfoChanged::Read(msg, &params);
-    EXPECT_EQ(1.0f, params.a.deviceScaleFactor);
-  }
-  {
-    const IPC::Message* msg = sink_->GetMessageAt(2);
+    const IPC::Message* msg = sink_->GetMessageAt(0);
     EXPECT_EQ(ViewMsg_Resize::ID, msg->type());
     ViewMsg_Resize::Param params;
     ViewMsg_Resize::Read(msg, &params);
-    EXPECT_EQ("100x100", params.a.ToString());  // dip size
-    EXPECT_EQ("100x100", params.b.ToString());  // backing size
+    EXPECT_EQ(1.0f, params.a.screen_info.deviceScaleFactor);
+    EXPECT_EQ("100x100", params.a.new_size.ToString());  // dip size
+    EXPECT_EQ("100x100",
+        params.a.physical_backing_size.ToString());  // backing size
   }
 }
 

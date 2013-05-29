@@ -99,7 +99,7 @@ class WebRequestActionWithThreadsTest : public testing::Test {
   scoped_refptr<ExtensionInfoMap> extension_info_map_;
 
  private:
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
   content::TestBrowserThread io_thread_;
 };
 
@@ -176,7 +176,7 @@ void WebRequestActionWithThreadsTest::CheckActionNeedsAllUrls(
 TEST(WebRequestActionTest, CreateAction) {
   std::string error;
   bool bad_message = false;
-  scoped_ptr<WebRequestAction> result;
+  scoped_refptr<const WebRequestAction> result;
 
   // Test wrong data type passed.
   error.clear();
@@ -542,12 +542,34 @@ TEST(WebRequestActionTest, GetName) {
       " \"lowerPriorityThan\": 123,"
       " \"hasTag\": \"some_tag\""
       "}]";
+  const char* kExpectedNames[] = {
+    "declarativeWebRequest.RedirectRequest",
+    "declarativeWebRequest.RedirectByRegEx",
+    "declarativeWebRequest.SetRequestHeader",
+    "declarativeWebRequest.RemoveRequestHeader",
+    "declarativeWebRequest.AddResponseHeader",
+    "declarativeWebRequest.RemoveResponseHeader",
+    "declarativeWebRequest.SendMessageToExtension",
+    "declarativeWebRequest.AddRequestCookie",
+    "declarativeWebRequest.AddResponseCookie",
+    "declarativeWebRequest.EditRequestCookie",
+    "declarativeWebRequest.EditResponseCookie",
+    "declarativeWebRequest.RemoveRequestCookie",
+    "declarativeWebRequest.RemoveResponseCookie",
+    "declarativeWebRequest.CancelRequest",
+    "declarativeWebRequest.RedirectToTransparentImage",
+    "declarativeWebRequest.RedirectToEmptyDocument",
+    "declarativeWebRequest.IgnoreRules",
+  };
   scoped_ptr<WebRequestActionSet> action_set(CreateSetOfActions(kActions));
+  ASSERT_EQ(arraysize(kExpectedNames), action_set->actions().size());
+  size_t index = 0;
   for (WebRequestActionSet::Actions::const_iterator it =
            action_set->actions().begin();
        it != action_set->actions().end();
        ++it) {
-    EXPECT_THAT((*it)->GetName(), HasSubstr("declarativeWebRequest."));
+    EXPECT_EQ(kExpectedNames[index], (*it)->GetName());
+    ++index;
   }
 }
 

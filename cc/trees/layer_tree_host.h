@@ -18,7 +18,9 @@
 #include "cc/animation/animation_events.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
-#include "cc/debug/latency_info.h"
+#include "cc/input/input_handler.h"
+#include "cc/input/scrollbar.h"
+#include "cc/input/top_controls_state.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/output/output_surface.h"
 #include "cc/scheduler/rate_limiter.h"
@@ -28,10 +30,12 @@
 #include "cc/trees/occlusion_tracker.h"
 #include "cc/trees/proxy.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebScrollbar.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "ui/base/latency_info.h"
 #include "ui/gfx/rect.h"
+
+namespace WebKit { class WebGraphicsContext3D; }
 
 #if defined(COMPILER_GCC)
 namespace BASE_HASH_NAMESPACE {
@@ -57,7 +61,6 @@ class Region;
 class RenderingStatsInstrumentation;
 class ResourceProvider;
 class ResourceUpdateQueue;
-class ScrollbarLayer;
 class TopControlsManager;
 struct RenderingStats;
 struct ScrollAndScaleSet;
@@ -70,7 +73,6 @@ struct CC_EXPORT RendererCapabilities {
 
   unsigned best_texture_format;
   bool using_partial_swap;
-  bool using_accelerated_painting;
   bool using_set_visibility;
   bool using_swap_complete_callback;
   bool using_gpu_memory_manager;
@@ -79,6 +81,7 @@ struct CC_EXPORT RendererCapabilities {
   bool using_offscreen_context3d;
   int max_texture_size;
   bool avoid_pow2_textures;
+  bool using_map_image;
 };
 
 class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
@@ -95,7 +98,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   void set_needs_filter_context() { needs_filter_context_ = true; }
   bool needs_offscreen_context() const {
-    return needs_filter_context_ || settings_.accelerate_painting;
+    return needs_filter_context_;
   }
 
   // LayerTreeHost interface to Proxy.
@@ -107,14 +110,9 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void Layout();
   void BeginCommitOnImplThread(LayerTreeHostImpl* host_impl);
   void FinishCommitOnImplThread(LayerTreeHostImpl* host_impl);
-  gfx::Size PinchZoomScrollbarSize(
-      WebKit::WebScrollbar::Orientation orientation) const;
-  void SetPinchZoomScrollbarsBoundsAndPosition();
-  void CreateAndAddPinchZoomScrollbars();
   void WillCommit();
   void CommitComplete();
   scoped_ptr<OutputSurface> CreateOutputSurface();
-  scoped_ptr<InputHandlerClient> CreateInputHandlerClient();
   virtual scoped_ptr<LayerTreeHostImpl> CreateLayerTreeHostImpl(
       LayerTreeHostImplClient* client);
   void DidLoseOutputSurface();
@@ -135,6 +133,9 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
                     size_t contents_memory_limit_bytes);
 
   LayerTreeHostClient* client() { return client_; }
+  const base::WeakPtr<InputHandler>& GetInputHandler() {
+    return input_handler_weak_ptr_;
+  }
 
   void Composite(base::TimeTicks frame_begin_time);
 
@@ -178,7 +179,6 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void SetRootLayer(scoped_refptr<Layer> root_layer);
   Layer* root_layer() { return root_layer_.get(); }
   const Layer* root_layer() const { return root_layer_.get(); }
-  const Layer* RootScrollLayer() const;
 
   const LayerTreeSettings& settings() const { return settings_; }
 
@@ -216,7 +216,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void ApplyScrollAndScale(const ScrollAndScaleSet& info);
 
   void SetImplTransform(const gfx::Transform& transform);
-  void SetLatencyInfo(const LatencyInfo& latency_info);
+  void SetLatencyInfo(const ui::LatencyInfo& latency_info);
 
   void StartRateLimiter(WebKit::WebGraphicsContext3D* context3d);
   void StopRateLimiter(WebKit::WebGraphicsContext3D* context3d);
@@ -233,8 +233,8 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void SetDeviceScaleFactor(float device_scale_factor);
   float device_scale_factor() const { return device_scale_factor_; }
 
-  void UpdateTopControlsState(bool enable_hiding,
-                              bool enable_showing,
+  void UpdateTopControlsState(TopControlsState constraints,
+                              TopControlsState current,
                               bool animate);
 
   HeadsUpDisplayLayer* hud_layer() const { return hud_layer_.get(); }
@@ -254,6 +254,10 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   bool in_paint_layer_contents() const { return in_paint_layer_contents_; }
 
+  void IncrementLCDTextMetrics(
+      bool update_total_num_cc_layers_can_use_lcd_text,
+      bool update_total_num_cc_layers_will_use_lcd_text);
+
  protected:
   LayerTreeHost(LayerTreeHostClient* client, const LayerTreeSettings& settings);
   bool Initialize(scoped_ptr<Thread> impl_thread);
@@ -267,10 +271,11 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   bool PaintMasksForRenderSurface(Layer* render_surface_layer,
                                   ResourceUpdateQueue* queue,
                                   RenderingStats* stats);
-
   void UpdateLayers(Layer* root_layer, ResourceUpdateQueue* queue);
   void UpdateHudLayer();
   void TriggerPrepaint();
+
+  void ReduceMemoryUsage();
 
   void PrioritizeTextures(const LayerList& render_surface_layer_list,
                           OverdrawMetrics* metrics);
@@ -298,12 +303,11 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   scoped_refptr<Layer> root_layer_;
   scoped_refptr<HeadsUpDisplayLayer> hud_layer_;
-  scoped_refptr<ScrollbarLayer> pinch_zoom_scrollbar_horizontal_;
-  scoped_refptr<ScrollbarLayer> pinch_zoom_scrollbar_vertical_;
 
   scoped_ptr<PrioritizedResourceManager> contents_texture_manager_;
   scoped_ptr<PrioritizedResource> surface_memory_placeholder_;
 
+  base::WeakPtr<InputHandler> input_handler_weak_ptr_;
   base::WeakPtr<TopControlsManager> top_controls_manager_weak_ptr_;
 
   LayerTreeSettings settings_;
@@ -343,7 +347,22 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   bool in_paint_layer_contents_;
 
-  LatencyInfo latency_info_;
+  ui::LatencyInfo latency_info_;
+
+  static const int kTotalFramesToUseForLCDTextMetrics = 50;
+  int total_frames_used_for_lcd_text_metrics_;
+
+  struct LCDTextMetrics {
+    LCDTextMetrics()
+        : total_num_cc_layers(0),
+          total_num_cc_layers_can_use_lcd_text(0),
+          total_num_cc_layers_will_use_lcd_text(0) {}
+
+    int64 total_num_cc_layers;
+    int64 total_num_cc_layers_can_use_lcd_text;
+    int64 total_num_cc_layers_will_use_lcd_text;
+  };
+  LCDTextMetrics lcd_text_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHost);
 };

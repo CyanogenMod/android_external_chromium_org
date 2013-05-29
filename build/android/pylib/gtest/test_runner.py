@@ -92,6 +92,7 @@ def _GetDataFilesForTestSuite(test_suite_basename):
         'net/data/proxy_resolver_v8_unittest',
         'net/data/proxy_script_fetcher_unittest',
         'net/data/ssl/certificates',
+        'net/data/test.html',
         'net/data/url_request_unittest/',
         ]
   elif test_suite_basename == 'ui_tests':
@@ -106,9 +107,6 @@ def _GetDataFilesForTestSuite(test_suite_basename):
     ]
   elif test_suite_basename == 'content_unittests':
     return [
-        'content/browser/gpu/gpu_driver_bug_list.json',
-        'content/browser/gpu/gpu_switching_list.json',
-        'content/browser/gpu/software_rendering_list.json',
         'content/test/data/gpu/webgl_conformance_test_expectations.txt',
         'net/data/ssl/certificates/',
         'third_party/hyphen/hyph_en_US.dic',
@@ -169,7 +167,6 @@ def _GetDataFilesForTestSuite(test_suite_basename):
         'content/test/data/webkit',
         'content/test/data/content-sniffer-test1.html',
         'content/test/data/download',
-        'content/test/data/rwhv_compositing_static.html',
         'content/test/data/content-sniffer-test2.html',
         'content/test/data/simple_page.html',
         'content/test/data/google.mht',
@@ -191,6 +188,7 @@ def _GetDataFilesForTestSuite(test_suite_basename):
         'content/test/data/click-noreferrer-links.html',
         'content/test/data/browser_plugin_focus.html',
         'content/test/data/media',
+        'third_party/webgl_conformance',
     ]
   return []
 

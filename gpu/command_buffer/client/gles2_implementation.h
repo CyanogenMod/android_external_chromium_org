@@ -14,18 +14,20 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "../client/buffer_tracker.h"
-#include "../client/client_context_state.h"
-#include "../client/gles2_cmd_helper.h"
-#include "../client/gles2_interface.h"
-#include "../client/query_tracker.h"
-#include "../client/ref_counted.h"
-#include "../client/ring_buffer.h"
-#include "../client/share_group.h"
-#include "../common/compiler_specific.h"
-#include "../common/debug_marker_manager.h"
-#include "../common/gles2_cmd_utils.h"
 #include "gles2_impl_export.h"
+#include "gpu/command_buffer/client/buffer_tracker.h"
+#include "gpu/command_buffer/client/client_context_state.h"
+#include "gpu/command_buffer/client/gles2_cmd_helper.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
+#include "gpu/command_buffer/client/gpu_memory_buffer_tracker.h"
+#include "gpu/command_buffer/client/image_factory.h"
+#include "gpu/command_buffer/client/query_tracker.h"
+#include "gpu/command_buffer/client/ref_counted.h"
+#include "gpu/command_buffer/client/ring_buffer.h"
+#include "gpu/command_buffer/client/share_group.h"
+#include "gpu/command_buffer/common/compiler_specific.h"
+#include "gpu/command_buffer/common/debug_marker_manager.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 
 #if !defined(NDEBUG) && !defined(__native_client__) && !defined(GLES2_CONFORMANCE_TESTS)  // NOLINT
   #if defined(GLES2_INLINE_OPTIMIZATION)
@@ -102,6 +104,7 @@ class TransferBufferInterface;
 
 namespace gles2 {
 
+class ImageFactory;
 class VertexArrayObjectManager;
 
 // This class emulates GLES2 over command buffers. It can be used by a client
@@ -174,7 +177,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
       ShareGroup* share_group,
       TransferBufferInterface* transfer_buffer,
       bool share_resources,
-      bool bind_generates_resource);
+      bool bind_generates_resource,
+      ImageFactory* image_factory);
 
   virtual ~GLES2Implementation();
 
@@ -193,7 +197,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in
   // this file instead of having to edit some template or the code generator.
-  #include "../client/gles2_implementation_autogen.h"
+  #include "gpu/command_buffer/client/gles2_implementation_autogen.h"
 
   virtual void DisableVertexAttribArray(GLuint index) OVERRIDE;
   virtual void EnableVertexAttribArray(GLuint index) OVERRIDE;
@@ -496,6 +500,14 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
       GLenum target, GLintptr offset, GLsizeiptr size, const void* data,
       ScopedTransferBufferPtr* buffer);
 
+  GLuint CreateImageCHROMIUMHelper(
+      GLsizei width, GLsizei height, GLenum internalformat);
+  void DestroyImageCHROMIUMHelper(GLuint image_id);
+  void* MapImageCHROMIUMHelper(GLuint image_id, GLenum access);
+  void UnmapImageCHROMIUMHelper(GLuint image_id);
+  void GetImageParameterivCHROMIUMHelper(
+      GLuint image_id, GLenum pname, GLint* params);
+
   // Helper for GetVertexAttrib
   bool GetVertexAttribHelper(GLuint index, GLenum pname, uint32* param);
 
@@ -654,9 +666,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation : public GLES2Interface {
 
   scoped_ptr<BufferTracker> buffer_tracker_;
 
+  scoped_ptr<GpuMemoryBufferTracker> gpu_memory_buffer_tracker_;
+
   ErrorMessageCallback* error_message_callback_;
 
   scoped_ptr<std::string> current_trace_name_;
+
+  ImageFactory* image_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Implementation);
 };

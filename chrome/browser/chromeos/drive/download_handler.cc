@@ -8,7 +8,7 @@
 #include "base/file_util.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_system_service.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/file_write_helper.h"
@@ -107,9 +107,9 @@ DownloadHandler::~DownloadHandler() {
 
 // static
 DownloadHandler* DownloadHandler::GetForProfile(Profile* profile) {
-  DriveSystemService* system_service =
-      DriveSystemServiceFactory::FindForProfile(profile);
-  return system_service ? system_service->download_handler() : NULL;
+  DriveIntegrationService* integration_service =
+      DriveIntegrationServiceFactory::FindForProfile(profile);
+  return integration_service ? integration_service->download_handler() : NULL;
 }
 
 void DownloadHandler::Initialize(
@@ -147,8 +147,8 @@ void DownloadHandler::SubstituteDriveDownloadPath(
     //     OnCreateDirectory calls SubstituteDriveDownloadPathInternal
     const base::FilePath drive_dir_path =
         util::ExtractDrivePath(drive_path.DirName());
-    // Ensure the directory exists. This also forces FileSystem to
-    // initialize DriveRootDirectory.
+    // Check if the directory exists, and create it if the directory does not
+    // exist.
     file_system_->GetResourceEntryByPath(
         drive_dir_path,
         base::Bind(&DownloadHandler::OnEntryFound,
@@ -188,7 +188,7 @@ base::FilePath DownloadHandler::GetTargetPath(
 
 bool DownloadHandler::IsDriveDownload(const DownloadItem* download) {
   // We use the existence of the DriveUserData object in download as a
-  // signal that this is a DriveDownload.
+  // signal that this is a download to Drive.
   return GetDriveUserData(download) != NULL;
 }
 

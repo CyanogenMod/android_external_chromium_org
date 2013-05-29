@@ -215,7 +215,7 @@
    ...
    fun:gfx::GLContextOSMesa::MakeCurrent
    ...
-   fun:webkit::gpu::GLInProcessContext::PumpCommands
+   fun:webkit::gpu::GLInProcessContext::*
 }
 {
    bug_148477_b
@@ -273,9 +273,9 @@
    ...
    fun:GtkThemeService::GtkThemeService
    fun:ThemeServiceFactory::BuildServiceInstanceFor
-   fun:ProfileKeyedServiceFactory::GetServiceForProfile
-   fun:ProfileKeyedServiceFactory::CreateServiceNow
-   fun:ProfileDependencyManager::CreateProfileServices
+   fun:BrowserContextKeyedServiceFactory::GetServiceForBrowserContext
+   fun:BrowserContextKeyedServiceFactory::CreateServiceNow
+   fun:BrowserContextDependencyManager::CreateBrowserContextServices
    fun:TestingProfile::Init
    fun:TestingProfile::TestingProfile
 }
@@ -991,8 +991,8 @@
    fun:Iterator
    fun:DownloadManager::Shutdown
    fun:DownloadService::Shutdown
-   fun:ProfileKeyedServiceFactory::ProfileShutdown
-   fun:ProfileDependencyManager::DestroyProfileServices
+   fun:BrowserContextKeyedServiceFactory::ProfileShutdown
+   fun:BrowserContextDependencyManager::DestroyBrowserContextServices
    fun:~OffTheRecordProfileImpl
    fun:~scoped_ptr
    fun:~ProfileImpl
@@ -1233,7 +1233,7 @@
    ...
    fun:ThemeServiceFactory::BuildServiceInstanceFor
    ...
-   fun:ProfileKeyedServiceFactory::GetServiceForProfile
+   fun:BrowserContextKeyedServiceFactory::GetServiceForBrowserContext
    fun:ThemeServiceFactory::GetForProfile
 }
 {
@@ -1314,8 +1314,8 @@
    Heapcheck:Leak
    ...
    fun:BuildWebDataService
-   fun:RefcountedProfileKeyedServiceFactory::GetServiceForProfile
-   fun:RefcountedProfileKeyedServiceFactory::SetTestingFactoryAndUse
+   fun:RefcountedBrowserContextKeyedServiceFactory::GetServiceForBrowserContext
+   fun:RefcountedBrowserContextKeyedServiceFactory::SetTestingFactoryAndUse
    fun:TestingProfile::CreateWebDataService
 }
 {
@@ -1707,12 +1707,6 @@
    fun:::LoadWhitelistsOnBlockingPoolThread
 }
 {
-   bug_171983
-   Heapcheck:Leak
-   ...
-   fun:chromeos::MagnificationManagerTest_MagnificationObserver_Test::TestBody
-}
-{
    bug_173597
    Heapcheck:Leak
    fun:FcConfigEvaluate
@@ -1861,4 +1855,30 @@
    fun:std::basic_string::_Rep::_S_create
    fun:GURL::GURL
    fun:TestBody
+}
+{
+   bug_243753
+   Heapcheck:Leak
+   fun:fileapi::SandboxMountPointProviderTest::GetRootPath
+}
+{
+   bug_243757
+   Heapcheck:Leak
+   ...
+   fun:base::WeakPtrDeathTest_NonOwnerThreadDeletesWeakPtrAfterReference_Test::TestBody
+}
+{
+   bug_244105
+   Heapcheck:Leak
+   fun:ash::internal::MirrorWindowController::UpdateWindow
+   fun:~MirrorWindowCreator
+   fun:~MirrorWindowCreator
+   fun:operator
+   fun:~scoped_ptr_impl
+   fun:~scoped_ptr
+   fun:ash::internal::DisplayManager::UpdateDisplays
+   fun:ash::internal::DisplayManager::OnNativeDisplaysChanged
+   fun:ash::test::DisplayManagerTestApi::UpdateDisplay
+   fun:ash::test::AshTestBase::UpdateDisplay
+   fun:ash::internal::MirrorWindowControllerTest_MirrorCursor_Test::TestBody
 }

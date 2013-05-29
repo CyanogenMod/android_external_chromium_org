@@ -20,6 +20,7 @@
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect_f.h"
+#include "ui/gfx/vector2d.h"
 
 class GURL;
 
@@ -33,6 +34,7 @@ class BrowserContext;
 class ColorChooser;
 class DownloadItem;
 class JavaScriptDialogManager;
+class PageState;
 class RenderViewHost;
 class WebContents;
 class WebContentsImpl;
@@ -239,7 +241,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Opens source view for the given subframe.
   virtual void ViewSourceForFrame(WebContents* source,
                                   const GURL& url,
-                                  const std::string& content_state);
+                                  const PageState& page_state);
 
   // Allows delegates to handle keyboard events before sending to the renderer.
   // Returns true if the |event| was handled. Otherwise, if the |event| would be
@@ -319,11 +321,8 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Called when color chooser should open. Returns the opened color chooser.
   // Ownership of the returned pointer is transferred to the caller.
-  virtual content::ColorChooser* OpenColorChooser(WebContents* web_contents,
-                                                  int color_chooser_id,
-                                                  SkColor color);
-
-  virtual void DidEndColorChooser() {}
+  virtual ColorChooser* OpenColorChooser(WebContents* web_contents,
+                                         SkColor color);
 
   // Called when a file selection is to be done.
   virtual void RunFileChooser(WebContents* web_contents,
@@ -341,6 +340,10 @@ class CONTENT_EXPORT WebContentsDelegate {
                                           bool enter_fullscreen) {}
   virtual bool IsFullscreenForTabOrPending(
       const WebContents* web_contents) const;
+
+  // Called when the renderer has scrolled programmatically.
+  virtual void DidProgrammaticallyScroll(WebContents* web_contents,
+                                         const gfx::Vector2d& scroll_point) {}
 
   // Called when a Javascript out of memory notification is received.
   virtual void JSOutOfMemory(WebContents* web_contents) {}

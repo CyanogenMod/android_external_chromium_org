@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_DRIVE_FILE_SYSTEM_PROXY_H_
 
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "webkit/fileapi/remote_file_system_proxy.h"
+#include "webkit/browser/fileapi/remote_file_system_proxy.h"
 
 namespace fileapi {
 class FileSystemURL;
@@ -19,12 +19,13 @@ class ResourceEntry;
 
 typedef std::vector<ResourceEntry> ResourceEntryVector;
 
-// Implementation of File API's remote file system proxy for Drive file system.
+// Implementation of File API's remote file system proxy for Drive-backed
+// file system.
 class FileSystemProxy : public fileapi::RemoteFileSystemProxyInterface {
  public:
   using fileapi::RemoteFileSystemProxyInterface::OpenFileCallback;
 
-  // |file_system| is the FileSystem instance owned by DriveSystemService.
+  // |file_system| is the FileSystem instance owned by DriveIntegrationService.
   explicit FileSystemProxy(FileSystemInterface* file_system);
 
   // Detaches this instance from |file_system_|.
@@ -104,7 +105,7 @@ class FileSystemProxy : public fileapi::RemoteFileSystemProxyInterface {
   static bool ValidateUrl(const fileapi::FileSystemURL& url,
                           base::FilePath* file_path);
 
-  // Helper method to call methods of DriveFilesSystem. This method aborts
+  // Helper method to call methods of FileSystem. This method aborts
   // method calls in case DetachFromFileSystem() has been called.
   void CallFileSystemMethodOnUIThread(const base::Closure& method_call);
 

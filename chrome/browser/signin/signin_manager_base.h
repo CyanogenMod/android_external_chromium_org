@@ -33,8 +33,8 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_member.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/signin/signin_internals_util.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 class CookieSettings;
 class ProfileIOData;
@@ -60,13 +60,13 @@ struct GoogleServiceSignoutDetails {
   std::string username;
 };
 
-class SigninManagerBase : public ProfileKeyedService {
+class SigninManagerBase : public BrowserContextKeyedService {
  public:
   SigninManagerBase();
   virtual ~SigninManagerBase();
 
   // If user was signed in, load tokens from DB if available.
-  virtual void Initialize(Profile* profile);
+  virtual void Initialize(Profile* profile, PrefService* local_state);
   bool IsInitialized() const;
 
   // Returns true if a signin to Chrome is allowed (by policy or pref).
@@ -99,7 +99,7 @@ class SigninManagerBase : public ProfileKeyedService {
     return signin_global_error_.get();
   }
 
-  // ProfileKeyedService implementation.
+  // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
     // Methods to register or remove SigninDiagnosticObservers

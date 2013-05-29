@@ -18,8 +18,8 @@ GYP_TARGET_DEPENDENCIES := \
 
 ### Rules for action "generate_x86_insn":
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: $(LOCAL_PATH)/third_party/yasm/source/patched-yasm/modules/arch/x86/gen_x86_insn.py $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: Running source/patched-yasm/modules/arch/x86/gen_x86_insn.py. ($@)"
@@ -30,8 +30,8 @@ $(gyp_shared_intermediate_dir)/third_party/yasm/x86insn_nasm.gperf: $(gyp_shared
 
 ### Rules for action "generate_version":
 $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: $(gyp_shared_intermediate_dir)/genversion $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: Generating yasm version file: $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac. ($@)"
@@ -43,8 +43,8 @@ $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: $(gyp_shared_interm
 ### Generated for rule "third_party_yasm_yasm_gyp_generate_files_host_generate_gperf":
 # "{'inputs': ['$(gyp_shared_intermediate_dir)/genperf'], 'extension': 'gperf', 'process_outputs_as_sources': '0', 'outputs': ['$(gyp_shared_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'rule_name': 'generate_gperf', 'rule_sources': ['source/patched-yasm/modules/arch/x86/x86cpu.gperf', 'source/patched-yasm/modules/arch/x86/x86regtmod.gperf'], 'action': ['$(gyp_shared_intermediate_dir)/genperf', '$(RULE_SOURCES)', '$(gyp_shared_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'message': 'yasm genperf for $(RULE_SOURCES).'}":
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: $(LOCAL_PATH)/third_party/yasm/source/patched-yasm/modules/arch/x86/x86cpu.gperf $(gyp_shared_intermediate_dir)/genperf $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/third_party/yasm; cd $(gyp_local_path)/third_party/yasm; "$(gyp_shared_intermediate_dir)/genperf" source/patched-yasm/modules/arch/x86/x86cpu.gperf "$(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c"
@@ -53,8 +53,8 @@ $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: $(LOCAL_PATH)/third_pa
 third_party_yasm_generate_files_host_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c
 
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c: $(LOCAL_PATH)/third_party/yasm/source/patched-yasm/modules/arch/x86/x86regtmod.gperf $(gyp_shared_intermediate_dir)/genperf $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/third_party/yasm; cd $(gyp_local_path)/third_party/yasm; "$(gyp_shared_intermediate_dir)/genperf" source/patched-yasm/modules/arch/x86/x86regtmod.gperf "$(gyp_shared_intermediate_dir)/third_party/yasm/x86regtmod.c"
@@ -110,6 +110,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \

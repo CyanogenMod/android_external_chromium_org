@@ -20,9 +20,18 @@
 #include "grit/theme_resources.h"
 #include "third_party/icu/public/i18n/unicode/coll.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 using content::NavigationEntry;
+
+namespace {
+
+const char kDeclineTranslate[] = "Translate.DeclineTranslate";
+const char kCloseInfobar[] = "Translate.DeclineTranslateCloseInfobar";
+const char kRevertTranslation[] = "Translate.RevertTranslation";
+const char kShowErrorInfobar[] = "Translate.ShowErrorInfobar";
+const char kPerformTranslate[] = "Translate.Translate";
+
+}  // namespace
 
 // static
 const size_t TranslateInfoBarDelegate::kNoIndex = static_cast<size_t>(-1);
@@ -43,7 +52,7 @@ void TranslateInfoBarDelegate::Create(
       // The original language can only be "unknown" for the "translating"
       // infobar, which is the case when the user started a translation from the
       // context menu.
-      DCHECK_EQ(TRANSLATING, infobar_type);
+      DCHECK(infobar_type == TRANSLATING || infobar_type == AFTER_TRANSLATE);
       DCHECK_EQ(chrome::kUnknownLanguageCode, original_language);
     }
   }
@@ -82,12 +91,14 @@ void TranslateInfoBarDelegate::Translate() {
                                                  original_language_code(),
                                                  target_language_code());
 
-  UMA_HISTOGRAM_COUNTS("Translate.Translate", 1);
+  UMA_HISTOGRAM_COUNTS(kPerformTranslate, 1);
 }
 
 void TranslateInfoBarDelegate::RevertTranslation() {
   TranslateManager::GetInstance()->RevertTranslation(web_contents());
   RemoveSelf();
+
+  UMA_HISTOGRAM_COUNTS(kRevertTranslation, 1);
 }
 
 void TranslateInfoBarDelegate::ReportLanguageDetectionError() {
@@ -110,7 +121,7 @@ void TranslateInfoBarDelegate::TranslationDeclined() {
       TranslateTabHelper::FromWebContents(web_contents());
   translate_tab_helper->language_state().set_translation_declined(true);
 
-  UMA_HISTOGRAM_COUNTS("Translate.DeclineTranslate", 1);
+  UMA_HISTOGRAM_COUNTS(kDeclineTranslate, 1);
 }
 
 bool TranslateInfoBarDelegate::InTranslateNavigation() {
@@ -189,6 +200,9 @@ string16 TranslateInfoBarDelegate::GetMessageInfoBarText() {
   }
 
   DCHECK_EQ(TRANSLATION_ERROR, infobar_type_);
+  UMA_HISTOGRAM_ENUMERATION(kShowErrorInfobar,
+                            error_type_,
+                            TranslateErrors::TRANSLATE_ERROR_MAX);
   switch (error_type_) {
     case TranslateErrors::NETWORK:
       return l10n_util::GetStringUTF16(
@@ -272,14 +286,27 @@ string16 TranslateInfoBarDelegate::GetLanguageDisplayableName(
 
 // static
 void TranslateInfoBarDelegate::GetAfterTranslateStrings(
-    std::vector<string16>* strings, bool* swap_languages) {
+    std::vector<string16>* strings,
+    bool* swap_languages,
+    bool autodetermined_source_language) {
   DCHECK(strings);
+
+  if (autodetermined_source_language) {
+    size_t offset;
+    string16 text = l10n_util::GetStringFUTF16(
+        IDS_TRANSLATE_INFOBAR_AFTER_MESSAGE_AUTODETERMINED_SOURCE_LANGUAGE,
+        string16(),
+        &offset);
+
+    strings->push_back(text.substr(0, offset));
+    strings->push_back(text.substr(offset));
+    return;
+  }
   DCHECK(swap_languages);
 
   std::vector<size_t> offsets;
-  string16 text =
-      l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_AFTER_MESSAGE,
-                                 string16(), string16(), &offsets);
+  string16 text = l10n_util::GetStringFUTF16(
+      IDS_TRANSLATE_INFOBAR_AFTER_MESSAGE, string16(), string16(), &offsets);
   DCHECK_EQ(2U, offsets.size());
 
   *swap_languages = (offsets[0] > offsets[1]);
@@ -366,12 +393,11 @@ void TranslateInfoBarDelegate::InfoBarDismissed() {
 
   // The user closed the infobar without clicking the translate button.
   TranslationDeclined();
-  UMA_HISTOGRAM_COUNTS("Translate.DeclineTranslateCloseInfobar", 1);
+  UMA_HISTOGRAM_COUNTS(kCloseInfobar, 1);
 }
 
-gfx::Image* TranslateInfoBarDelegate::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_TRANSLATE);
+int TranslateInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_TRANSLATE;
 }
 
 InfoBarDelegate::Type TranslateInfoBarDelegate::GetInfoBarType() const {

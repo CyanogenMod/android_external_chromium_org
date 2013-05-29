@@ -21,6 +21,7 @@
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -98,6 +99,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kEnableVsyncNotification,
       ::switches::kForceDeviceScaleFactor,
       ::switches::kGpuStartupDialog,
+      ::switches::kMultiProfiles,
       ::switches::kNoSandbox,
       ::switches::kPpapiFlashArgs,
       ::switches::kPpapiFlashInProcess,
@@ -105,6 +107,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kPpapiFlashVersion,
       ::switches::kPpapiInProcess,
       ::switches::kRendererStartupDialog,
+      ::switches::kEnableShareGroupAsyncTextureUpload,
 #if defined(USE_XI2_MT)
       ::switches::kTouchCalibration,
 #endif
@@ -124,7 +127,6 @@ std::string DeriveCommandLine(const GURL& start_url,
       ash::switches::kAshTouchHud,
       ash::switches::kAuraLegacyPowerButton,
       ash::switches::kAshDisableNewAudioHandler,
-      ash::switches::kAshDisableNewNetworkStatusArea,
       ash::switches::kAshEnableAudioDeviceMenu,
       // Please keep these in alphabetical order. Non-UI Compositor switches
       // here should also be added to
@@ -133,16 +135,15 @@ std::string DeriveCommandLine(const GURL& start_url,
       cc::switches::kCompositeToMailbox,
       cc::switches::kDisableColorEstimator,
       cc::switches::kDisableImplSidePainting,
-      cc::switches::kDisablePinchZoomScrollbars,
       cc::switches::kDisableThreadedAnimation,
       cc::switches::kEnableCompositorFrameMessage,
       cc::switches::kEnableImplSidePainting,
       cc::switches::kEnablePartialSwap,
       cc::switches::kEnablePerTilePainting,
-      cc::switches::kEnablePinchZoomScrollbars,
-      cc::switches::kEnablePredictionBenchmarking,
+      cc::switches::kEnablePinchVirtualViewport,
       cc::switches::kEnableRightAlignedScheduling,
       cc::switches::kEnableTopControlsPositionCalculation,
+      cc::switches::kForceDirectLayerDrawing,
       cc::switches::kLowResolutionContentsScaleFactor,
       cc::switches::kMaxTilesForInterestArea,
       cc::switches::kMaxUnusedResourceMemoryUsagePercentage,
@@ -157,10 +158,10 @@ std::string DeriveCommandLine(const GURL& start_url,
       cc::switches::kShowScreenSpaceRects,
       cc::switches::kShowSurfaceDamageRects,
       cc::switches::kSlowDownRasterScaleFactor,
-      cc::switches::kTraceAllRenderedFrames,
       cc::switches::kTraceOverdraw,
       cc::switches::kUIDisablePartialSwap,
       cc::switches::kUIEnablePerTilePainting,
+      cc::switches::kUseMapImage,
       chromeos::switches::kDbusStub,
       chromeos::switches::kDisableLoginAnimations,
       chromeos::switches::kDisableOobeAnimation,
@@ -168,6 +169,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       chromeos::switches::kHasChromeOSKeyboard,
       chromeos::switches::kLoginProfile,
       chromeos::switches::kNaturalScrollDefault,
+      chromeos::switches::kUseNewNetworkConfigurationHandlers,
       gfx::switches::kEnableBrowserTextSubpixelPositioning,
       gfx::switches::kEnableWebkitTextSubpixelPositioning,
       views::corewm::switches::kNoDropShadows,
@@ -310,7 +312,7 @@ std::string GetOffTheRecordCommandLine(
   otr_switches.SetString(switches::kGuestSession, std::string());
   otr_switches.SetString(::switches::kIncognito, std::string());
   otr_switches.SetString(::switches::kLoggingLevel, kGuestModeLoggingLevel);
-  otr_switches.SetString(switches::kLoginUser, kGuestUserName);
+  otr_switches.SetString(switches::kLoginUser, UserManager::kGuestUserName);
 
   // Override the home page.
   otr_switches.SetString(::switches::kHomePage,

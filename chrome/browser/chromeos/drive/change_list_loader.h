@@ -9,7 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "base/callback_forward.h"
+#include "base/callback.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
@@ -19,25 +20,27 @@
 
 class GURL;
 
+namespace base {
+class SequencedTaskRunner;
+}  // namespace base
+
 namespace google_apis {
 class AboutResource;
-class AppList;
 class ResourceList;
 }  // namespace google_apis
 
 namespace drive {
 
-class ChangeList;
-class ChangeListLoaderObserver;
-class ChangeListProcessor;
 class DirectoryFetchInfo;
-class DriveWebAppsRegistry;
 class JobScheduler;
 class ResourceEntry;
 
 namespace internal {
+
+class ChangeList;
+class ChangeListLoaderObserver;
+class ChangeListProcessor;
 class ResourceMetadata;
-}  // namespace internal
 
 // Callback run as a response to SearchFromServer.
 typedef base::Callback<void(ScopedVector<ChangeList> change_lists,
@@ -47,9 +50,9 @@ typedef base::Callback<void(ScopedVector<ChangeList> change_lists,
 // Documents List API) or Google Drive API and load the cached metadata.
 class ChangeListLoader {
  public:
-  ChangeListLoader(internal::ResourceMetadata* resource_metadata,
-                   JobScheduler* scheduler,
-                   DriveWebAppsRegistry* webapps_registry);
+  ChangeListLoader(base::SequencedTaskRunner* blocking_task_runner,
+                   ResourceMetadata* resource_metadata,
+                   JobScheduler* scheduler);
   ~ChangeListLoader();
 
   // Indicates whether there is a feed refreshing server request is in flight.
@@ -61,6 +64,8 @@ class ChangeListLoader {
 
   // Checks for updates on the server. Does nothing if the change list is now
   // being loaded or refreshed. |callback| must not be null.
+  // Note: |callback| will be called if the check for updates actually
+  // runs, i.e. it may NOT be called if the checking is ignored.
   void CheckForUpdates(const FileOperationCallback& callback);
 
   // Starts the change list loading first from the cache. If loading from the
@@ -247,26 +252,22 @@ class ChangeListLoader {
 
   // ================= Implementation for other stuff =================
 
-  // Callback for handling response from |DriveAPIService::GetAppList|.
-  // If the application list is successfully parsed, passes the list to
-  // Drive webapps registry.
-  void OnGetAppList(google_apis::GDataErrorCode status,
-                    scoped_ptr<google_apis::AppList> app_list);
-
   // Part of UpdateFromFeed().
   // Callback for ChangeListProcessor::ApplyFeeds.
-  void NotifyDirectoryChangedAfterApplyFeed(bool should_notify,
-                                            base::Time start_time,
-                                            const base::Closure& callback);
+  void NotifyDirectoryChangedAfterApplyFeed(
+      ChangeListProcessor* change_list_processor,
+      bool should_notify,
+      base::Time start_time,
+      const base::Closure& callback);
 
-  internal::ResourceMetadata* resource_metadata_;  // Not owned.
+  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+  ResourceMetadata* resource_metadata_;  // Not owned.
   JobScheduler* scheduler_;  // Not owned.
-  DriveWebAppsRegistry* webapps_registry_;  // Not owned.
   ObserverList<ChangeListLoaderObserver> observers_;
-  scoped_ptr<ChangeListProcessor> change_list_processor_;
   typedef std::map<std::string, std::vector<FileOperationCallback> >
       LoadCallbackMap;
   LoadCallbackMap pending_load_callback_;
+  FileOperationCallback pending_update_check_callback_;
 
   // Indicates whether there is a feed refreshing server request is in flight.
   int64 last_known_remote_changestamp_;
@@ -280,6 +281,7 @@ class ChangeListLoader {
   DISALLOW_COPY_AND_ASSIGN(ChangeListLoader);
 };
 
+}  // namespace internal
 }  // namespace drive
 
 #endif  // CHROME_BROWSER_CHROMEOS_DRIVE_CHANGE_LIST_LOADER_H_

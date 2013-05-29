@@ -6,12 +6,12 @@
 #define CHROME_BROWSER_USB_USB_SERVICE_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class Profile;
 class UsbService;
 
-class UsbServiceFactory : public ProfileKeyedServiceFactory {
+class UsbServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static UsbService* GetForProfile(Profile* profile);
   static bool HasUsbService(Profile* profile);
@@ -24,7 +24,7 @@ class UsbServiceFactory : public ProfileKeyedServiceFactory {
   UsbServiceFactory();
   virtual ~UsbServiceFactory();
 
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 };
 

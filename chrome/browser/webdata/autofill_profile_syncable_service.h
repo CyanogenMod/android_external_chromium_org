@@ -17,6 +17,7 @@
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/webdata/autofill_change.h"
 #include "components/autofill/browser/webdata/autofill_entry.h"
+#include "components/autofill/browser/webdata/autofill_webdata_backend.h"
 #include "components/autofill/browser/webdata/autofill_webdata_service_observer.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_data.h"
@@ -50,8 +51,9 @@ class AutofillProfileSyncableService
 
   // Creates a new AutofillProfileSyncableService and hangs it off of
   // |web_data_service|, which takes ownership.
-  static void CreateForWebDataService(
+  static void CreateForWebDataServiceAndBackend(
       autofill::AutofillWebDataService* web_data_service,
+      autofill::AutofillWebDataBackend* webdata_backend,
       const std::string& app_locale);
 
   // Retrieves the AutofillProfileSyncableService stored on |web_data_service|.
@@ -77,9 +79,14 @@ class AutofillProfileSyncableService
   virtual void AutofillProfileChanged(
       const autofill::AutofillProfileChange& change) OVERRIDE;
 
+  // Provides a StartSyncFlare to the SyncableService. See
+  // sync_start_util for more.
+  void InjectStartSyncFlare(
+      const syncer::SyncableService::StartSyncFlare& flare);
+
  protected:
   AutofillProfileSyncableService(
-      autofill::AutofillWebDataService* web_data_service,
+      autofill::AutofillWebDataBackend* webdata_backend,
       const std::string& app_locale);
 
   // A convenience wrapper of a bunch of state we pass around while
@@ -178,9 +185,9 @@ class AutofillProfileSyncableService
     sync_processor_.reset(sync_processor);
   }
 
-  autofill::AutofillWebDataService* web_data_service_;  // WEAK
+  autofill::AutofillWebDataBackend* webdata_backend_;  // WEAK
   std::string app_locale_;
-  ScopedObserver<autofill::AutofillWebDataService,
+  ScopedObserver<autofill::AutofillWebDataBackend,
                  AutofillProfileSyncableService> scoped_observer_;
 
   // Cached Autofill profiles. *Warning* deleted profiles are still in the
@@ -191,6 +198,8 @@ class AutofillProfileSyncableService
   scoped_ptr<syncer::SyncChangeProcessor> sync_processor_;
 
   scoped_ptr<syncer::SyncErrorFactory> sync_error_factory_;
+
+  syncer::SyncableService::StartSyncFlare flare_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillProfileSyncableService);
 };

@@ -20,8 +20,9 @@
 namespace net {
 
 class CryptoFramer;
-class QuicDataReader;
 class QuicData;
+class QuicDataReader;
+class QuicDataWriter;
 
 class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
  public:
@@ -58,7 +59,7 @@ class NET_EXPORT_PRIVATE CryptoFramer {
 
   QuicErrorCode error() const { return error_; }
 
-  // Processes input data, which must be delivered in order.  Returns
+  // Processes input data, which must be delivered in order. Returns
   // false if there was an error, and true otherwise.
   bool ProcessInput(base::StringPiece input);
 
@@ -74,6 +75,14 @@ class NET_EXPORT_PRIVATE CryptoFramer {
  private:
   // Clears per-message state.  Does not clear the visitor.
   void Clear();
+
+  // Process does does the work of |ProcessInput|, but returns an error code,
+  // doesn't set error_ and doesn't call |visitor_->OnError()|.
+  QuicErrorCode Process(base::StringPiece input);
+
+  static bool WritePadTag(QuicDataWriter* writer,
+                          size_t pad_length,
+                          uint32* end_offset);
 
   void set_error(QuicErrorCode error) { error_ = error; }
 

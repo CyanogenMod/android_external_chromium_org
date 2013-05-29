@@ -13,6 +13,7 @@
 #include "jni/MediaPlayer_jni.h"
 #include "media/base/android/media_player_manager.h"
 #include "media/base/android/media_resource_getter.h"
+#include "media/base/android/media_source_player.h"
 
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
@@ -37,30 +38,21 @@ MediaPlayerAndroid* MediaPlayerAndroid::Create(
     bool is_media_source,
     const GURL& first_party_for_cookies,
     bool hide_url_log,
-    MediaPlayerManager* manager,
-    const MediaErrorCB& media_error_cb,
-    const VideoSizeChangedCB& video_size_changed_cb,
-    const BufferingUpdateCB& buffering_update_cb,
-    const MediaMetadataChangedCB& media_prepared_cb,
-    const PlaybackCompleteCB& playback_complete_cb,
-    const SeekCompleteCB& seek_complete_cb,
-    const TimeUpdateCB& time_update_cb,
-    const MediaInterruptedCB& media_interrupted_cb) {
-  LOG_IF(WARNING, is_media_source) << "MSE is not supported";
-  return new MediaPlayerBridge(
-      player_id,
-      url,
-      first_party_for_cookies,
-      hide_url_log,
-      manager,
-      media_error_cb,
-      video_size_changed_cb,
-      buffering_update_cb,
-      media_prepared_cb,
-      playback_complete_cb,
-      seek_complete_cb,
-      time_update_cb,
-      media_interrupted_cb);
+    MediaPlayerManager* manager) {
+  if (!is_media_source) {
+    MediaPlayerBridge* media_player_bridge = new MediaPlayerBridge(
+        player_id,
+        url,
+        first_party_for_cookies,
+        hide_url_log,
+        manager);
+    media_player_bridge->Initialize();
+    return media_player_bridge;
+  } else {
+    return new MediaSourcePlayer(
+        player_id,
+        manager);
+  }
 }
 #endif
 
@@ -69,25 +61,9 @@ MediaPlayerBridge::MediaPlayerBridge(
     const GURL& url,
     const GURL& first_party_for_cookies,
     bool hide_url_log,
-    MediaPlayerManager* manager,
-    const MediaErrorCB& media_error_cb,
-    const VideoSizeChangedCB& video_size_changed_cb,
-    const BufferingUpdateCB& buffering_update_cb,
-    const MediaMetadataChangedCB& media_metadata_changed_cb,
-    const PlaybackCompleteCB& playback_complete_cb,
-    const SeekCompleteCB& seek_complete_cb,
-    const TimeUpdateCB& time_update_cb,
-    const MediaInterruptedCB& media_interrupted_cb)
+    MediaPlayerManager* manager)
     : MediaPlayerAndroid(player_id,
-                         manager,
-                         media_error_cb,
-                         video_size_changed_cb,
-                         buffering_update_cb,
-                         media_metadata_changed_cb,
-                         playback_complete_cb,
-                         seek_complete_cb,
-                         time_update_cb,
-                         media_interrupted_cb),
+                         manager),
       prepared_(false),
       pending_play_(false),
       url_(url),
@@ -102,7 +78,6 @@ MediaPlayerBridge::MediaPlayerBridge(
       weak_this_(this),
       listener_(base::MessageLoopProxy::current(),
                 weak_this_.GetWeakPtr()) {
-  Initialize();
 }
 
 MediaPlayerBridge::~MediaPlayerBridge() {
@@ -118,7 +93,6 @@ void MediaPlayerBridge::Initialize() {
 
   media::MediaResourceGetter* resource_getter =
       manager()->GetMediaResourceGetter();
-
   if (url_.SchemeIsFileSystem()) {
     cookies_.clear();
     resource_getter->GetPlatformPathFromFileSystemURL(url_, base::Bind(

@@ -391,7 +391,7 @@ IOThread::IOThread(
       NULL,
       local_state);
   ssl_config_service_manager_.reset(
-      SSLConfigServiceManager::CreateDefaultManager(local_state, NULL));
+      SSLConfigServiceManager::CreateDefaultManager(local_state));
 
   base::Value* dns_client_enabled_default = new base::FundamentalValue(
       chrome_browser_net::ConfigureAsyncDnsFieldTrial());
@@ -584,11 +584,6 @@ void IOThread::Init() {
                           FROM_HERE,
                           base::Bind(&IOThread::InitSystemRequestContext,
                                      weak_factory_.GetWeakPtr()));
-
-  // We constructed the weak pointer on the IO thread but it will be
-  // used on the UI thread.  Call this to avoid a thread checker
-  // error.
-  weak_factory_.DetachFromThread();
 }
 
 void IOThread::CleanUp() {
@@ -657,8 +652,6 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
     std::string spdy_mode =
         command_line.GetSwitchValueASCII(switches::kUseSpdy);
     EnableSpdy(spdy_mode);
-  } else if (command_line.HasSwitch(switches::kEnableSpdy4a1)) {
-    net::HttpStreamFactory::EnableNpnSpdy4a1();
   } else if (command_line.HasSwitch(switches::kDisableSpdy31)) {
     net::HttpStreamFactory::EnableNpnSpdy3();
   } else if (command_line.HasSwitch(switches::kEnableNpn)) {

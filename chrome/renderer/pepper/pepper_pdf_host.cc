@@ -299,7 +299,7 @@ int32_t PepperPDFHost::OnHostMsgGetResourceImage(
   pp_size.height = image_skia_rep.pixel_height();
 
   ppapi::HostResource host_resource;
-  std::string image_data_desc;
+  PP_ImageDataDesc image_data_desc;
   IPC::PlatformFileForTransit image_handle;
   uint32_t byte_count = 0;
   bool success = CreateImageData(
@@ -318,18 +318,18 @@ int32_t PepperPDFHost::OnHostMsgGetResourceImage(
 
   ppapi::host::ReplyMessageContext reply_context =
       context->MakeReplyMessageContext();
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_ANDROID)
+#if defined(TOOLKIT_GTK)
+  // For GTK, we pass the SysV shared memory key in the message.
+  PpapiPluginMsg_PDF_GetResourceImageReply reply_msg(host_resource,
+                                                     image_data_desc,
+                                                     image_handle.fd);
+#elif defined(OS_POSIX) || defined(OS_WIN)
   ppapi::proxy::SerializedHandle serialized_handle;
   PpapiPluginMsg_PDF_GetResourceImageReply reply_msg(host_resource,
                                                      image_data_desc,
                                                      0);
   serialized_handle.set_shmem(image_handle, byte_count);
   reply_context.params.AppendHandle(serialized_handle);
-#elif defined(OS_LINUX)
-  // For Linux, we pass the SysV shared memory key in the message.
-  PpapiPluginMsg_PDF_GetResourceImageReply reply_msg(host_resource,
-                                                     image_data_desc,
-                                                     image_handle.fd);
 #else
   // Not supported on the other platforms.
   // This is a stub reply_msg not to break the build.
@@ -358,22 +358,19 @@ bool PepperPDFHost::CreateImageData(
     const PP_Size& size,
     const SkBitmap& pixels_to_write,
     ppapi::HostResource* result,
-    std::string* out_image_data_desc,
+    PP_ImageDataDesc* out_image_data_desc,
     IPC::PlatformFileForTransit* out_image_handle,
     uint32_t* out_byte_count) {
-  PP_ImageDataDesc desc;
   PP_Resource resource = ppapi::proxy::PPB_ImageData_Proxy::CreateImageData(
       instance,
       format, size,
       false /* init_to_zero */,
       false /* is_nacl_plugin */,
-      &desc, out_image_handle, out_byte_count);
+      out_image_data_desc, out_image_handle, out_byte_count);
   if (!resource)
     return false;
 
   result->SetHostResource(instance, resource);
-  out_image_data_desc->resize(sizeof(PP_ImageDataDesc));
-  memcpy(&(*out_image_data_desc)[0], &desc, sizeof(PP_ImageDataDesc));
 
   // Write the image to the resource shared memory.
   ppapi::thunk::EnterResourceNoLock<ppapi::thunk::PPB_ImageData_API>

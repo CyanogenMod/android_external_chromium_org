@@ -108,6 +108,7 @@ class ChromotingInstance :
 
   // pp::Instance interface.
   virtual void DidChangeView(const pp::View& view) OVERRIDE;
+  virtual void DidChangeFocus(bool has_focus) OVERRIDE;
   virtual bool Init(uint32_t argc, const char* argn[],
                     const char* argv[]) OVERRIDE;
   virtual void HandleMessage(const pp::Var& message) OVERRIDE;
@@ -175,6 +176,7 @@ class ChromotingInstance :
   // Immediately calls |secret_fetched_callback| with |shared_secret|.
   static void FetchSecretFromString(
       const std::string& shared_secret,
+      bool pairing_supported,
       const protocol::SecretFetchedCallback& secret_fetched_callback);
 
   // Message handlers for messages that come from JavaScript. Called
@@ -217,6 +219,7 @@ class ChromotingInstance :
   // Used as the |FetchSecretCallback| for Me2Me connections.
   // Uses the PIN request dialog in the webapp to obtain the shared secret.
   void FetchSecretFromDialog(
+      bool pairing_supported,
       const protocol::SecretFetchedCallback& secret_fetched_callback);
 
   bool initialized_;

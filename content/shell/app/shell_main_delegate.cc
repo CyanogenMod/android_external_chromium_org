@@ -8,6 +8,7 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "cc/base/switches.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
@@ -103,6 +104,13 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 
   InitLogging();
   CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)) {
+    if (!CheckLayoutSystemDeps()) {
+      if (exit_code)
+        *exit_code = 1;
+      return true;
+    }
+  }
   if (command_line.HasSwitch(switches::kDumpRenderTree)) {
     command_line.AppendSwitch(switches::kProcessPerTab);
     command_line.AppendSwitch(switches::kAllowFileAccessFromFiles);
@@ -116,6 +124,9 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kEnableCssShaders);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
+    command_line.AppendSwitch(switches::kEnableGestureTapHighlight);
+    if (!command_line.HasSwitch(switches::kEnableThreadedCompositing))
+      command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
     if (command_line.HasSwitch(switches::kEnableSoftwareCompositing))
       command_line.AppendSwitch(switches::kEnableSoftwareCompositingGLAdapter);
 

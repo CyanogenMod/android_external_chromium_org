@@ -8,9 +8,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -35,11 +35,11 @@ void ChromeSpeechRecognitionPreferences::InitializeFactory() {
 scoped_refptr<ChromeSpeechRecognitionPreferences>
 ChromeSpeechRecognitionPreferences::Factory::GetForProfile(Profile* profile) {
   DCHECK(profile);
-  // GetServiceForProfile will let us instantiate a new (if not already cached
-  // for the profile) Service through BuildServiceInstanceFor method.
+  // GetServiceForBrowserContext will let us instantiate a new (if not already
+  // cached for the profile) Service through BuildServiceInstanceFor method.
   ChromeSpeechRecognitionPreferences::Service* service =
       static_cast<ChromeSpeechRecognitionPreferences::Service*>(
-          GetServiceForProfile(profile, true));
+          GetServiceForBrowserContext(profile, true));
 
   if (!service) {
     // Incognito won't have this service.
@@ -50,15 +50,15 @@ ChromeSpeechRecognitionPreferences::Factory::GetForProfile(Profile* profile) {
 }
 
 ChromeSpeechRecognitionPreferences::Factory::Factory()
-    : ProfileKeyedServiceFactory(
+    : BrowserContextKeyedServiceFactory(
         "ChromeSpeechRecognitionPreferences",
-        ProfileDependencyManager::GetInstance()) {
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 ChromeSpeechRecognitionPreferences::Factory::~Factory() {
 }
 
-ProfileKeyedService*
+BrowserContextKeyedService*
 ChromeSpeechRecognitionPreferences::Factory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   DCHECK(profile);
@@ -84,7 +84,7 @@ ServiceIsNULLWhileTesting() const {
 }
 
 bool ChromeSpeechRecognitionPreferences::Factory::
-ServiceIsCreatedWithProfile() const {
+ServiceIsCreatedWithBrowserContext() const {
   return false;
 }
 

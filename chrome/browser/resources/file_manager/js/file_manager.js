@@ -22,54 +22,10 @@ window.onerror = function() { window.JSErrorCount++ };
  * dialogs, as well as the full screen file manager application (though the
  * latter is not yet implemented).
  *
- * @param {HTMLElement} dialogDom The DOM node containing the prototypical
- *     dialog UI.
  * @constructor
  */
-function FileManager(dialogDom) {
-  this.dialogDom_ = dialogDom;
-  this.filesystem_ = null;
-
-  if (window.appState) {
-    this.params_ = window.appState.params || {};
-    this.defaultPath = window.appState.defaultPath;
-    util.saveAppState();
-  } else {
-    this.params_ = location.search ?
-                   JSON.parse(decodeURIComponent(location.search.substr(1))) :
-                   {};
-    this.defaultPath = this.params_.defaultPath;
-  }
-  this.listType_ = null;
-  this.showDelayTimeout_ = null;
-
-  this.filesystemObserverId_ = null;
-  this.driveObserverId_ = null;
-
-  this.document_ = dialogDom.ownerDocument;
-  this.dialogType = this.params_.type || DialogType.FULL_PAGE;
-  this.startupPrefName_ = 'file-manager-' + this.dialogType;
-
-  // Used to filter out focusing by mouse.
-  this.suppressFocus_ = false;
-
-  // Optional list of file types.
-  this.fileTypes_ = this.params_.typeList || [];
-  metrics.recordEnum('Create', this.dialogType,
-      [DialogType.SELECT_FOLDER,
-       DialogType.SELECT_SAVEAS_FILE,
-       DialogType.SELECT_OPEN_FILE,
-       DialogType.SELECT_OPEN_MULTI_FILE,
-       DialogType.FULL_PAGE]);
-
-  this.selectionHandler_ = null;
-  this.ctrlKeyPressed_ = false;
-
-  this.metadataCache_ = MetadataCache.createFull();
-  this.volumeManager_ = VolumeManager.getInstance();
-  this.initFileSystem_();
-  this.initDom_();
-  this.initDialogType_();
+function FileManager() {
+  this.initializeQueue_ = new AsyncUtil.Group();
 }
 
 /**
@@ -77,8 +33,20 @@ function FileManager(dialogDom) {
  * to mitigate flickering. If images load faster then the delay they replace
  * old images smoothly. On the other hand we don't want to keep old images
  * too long.
+ *
+ * @type {number}
+ * @const
  */
 FileManager.THUMBNAIL_SHOW_DELAY = 100;
+
+/**
+ * Delay for resizing the list and the grid view in milliseconds. Used to
+ * avoid janky window resize.
+ *
+ * @type {number}
+ * @const
+ */
+FileManager.LIST_GRID_RESIZE_DELAY = 100;
 
 FileManager.prototype = {
   __proto__: cr.EventTarget.prototype
@@ -107,6 +75,50 @@ var DialogType = {
   SELECT_OPEN_FILE: 'open-file',
   SELECT_OPEN_MULTI_FILE: 'open-multi-file',
   FULL_PAGE: 'full-page'
+};
+
+/**
+ * TextMeasure constructor.
+ *
+ * TextMeasure is a measure for text that returns the width of text.  This
+ * class has a dummy span element. When measuring the width of text, it sets
+ * the text to the element and obtains the element's size by
+ * getBoundingClientRect.
+ *
+ * @constructor
+ * @param {HTMLElement} element Element that has styles of measured text. The
+ *     width of text is mesures like as it is rendered in this element.
+ */
+var TextMeasure = function(element) {
+  var doc = element.ownerDocument;
+  this.dummySpan_ = doc.createElement('span');
+  this.dummySpan_ = doc.getElementsByTagName('body')[0].
+                        appendChild(this.dummySpan_);
+  this.dummySpan_.style.position = 'absolute';
+  this.dummySpan_.style.visibility = 'hidden';
+  var styles = window.getComputedStyle(element, '');
+  var stylesToBeCopied = [
+    'fontSize',
+    'fontStyle',
+    'fontWeight',
+    'fontFamily',
+    'letterSpacing'
+  ];
+  for (var i = 0; i < stylesToBeCopied.length; i++) {
+    this.dummySpan_.style[stylesToBeCopied[i]] = styles[stylesToBeCopied[i]];
+  }
+};
+
+/**
+ * Measures the widht of text.
+ *
+ * @param {string} text Text that is measured the width.
+ * @return {number} Width of the specified text.
+ */
+TextMeasure.prototype.getWidth = function(text) {
+  this.dummySpan_.innerText = text;
+  var rect = this.dummySpan_.getBoundingClientRect();
+  return rect ? rect.width : 0;
 };
 
 /**
@@ -286,17 +298,6 @@ DialogType.isModal = function(type) {
   };
 
   /**
-   * Load translated strings.
-   */
-  FileManager.initStrings = function(callback) {
-    chrome.fileBrowserPrivate.getStrings(function(strings) {
-      loadTimeData.data = strings;
-      if (callback)
-        callback();
-    });
-  };
-
-  /**
    * FileManager initially created hidden to prevent flickering.
    * When DOM is almost constructed it need to be shown. Cancels
    * delayed show.
@@ -331,65 +332,71 @@ DialogType.isModal = function(type) {
     }
   };
 
-  // Instance methods.
-
-  /**
-   * Request local file system, resolve roots and init_ after that.
-   * @private
-   */
-  FileManager.prototype.initFileSystem_ = function() {
-    util.installFileErrorToString();
-
-    metrics.startInterval('Load.FileSystem');
-
-    var downcount = 4;
-    var viewOptions = {};
-    var done = function() {
-      if (--downcount == 0)
-        this.init_(viewOptions);
-    }.bind(this);
-
-    chrome.fileBrowserPrivate.requestLocalFileSystem(function(filesystem) {
-      metrics.recordInterval('Load.FileSystem');
-      this.filesystem_ = filesystem;
-      done();
-    }.bind(this));
+  FileManager.prototype.initPreferences_ = function(callback) {
+    var group = new AsyncUtil.Group();
 
     // DRIVE preferences should be initialized before creating DirectoryModel
-    // to tot rebuild the roots list.
-    this.getPreferences_(done);
+    // to rebuild the roots list.
+    group.add(this.getPreferences_.bind(this));
 
-    util.platform.getPreference(this.startupPrefName_, function(value) {
-      // Load the global default options.
-      try {
-        viewOptions = JSON.parse(value);
-      } catch (ignore) {}
-      // Override with window-specific options.
-      if (window.appState && window.appState.viewOptions) {
-        for (var key in window.appState.viewOptions) {
-          if (window.appState.viewOptions.hasOwnProperty(key))
-            viewOptions[key] = window.appState.viewOptions[key];
+    // Get startup preferences.
+    this.viewOptions_ = {};
+    group.add(function(done) {
+      util.platform.getPreference(this.startupPrefName_, function(value) {
+        // Load the global default options.
+        try {
+          this.viewOptions_ = JSON.parse(value);
+        } catch (ignore) {}
+        // Override with window-specific options.
+        if (window.appState && window.appState.viewOptions) {
+          for (var key in window.appState.viewOptions) {
+            if (window.appState.viewOptions.hasOwnProperty(key))
+              this.viewOptions_[key] = window.appState.viewOptions[key];
+          }
         }
-      }
-      done();
+        done();
+      }.bind(this));
     }.bind(this));
 
-    // Mount Drive if enabled.
-    this.getPreferences_(function() {
-      if (this.isDriveEnabled())
-        this.volumeManager_.mountDrive(function() {}, function() {});
-      done();
-    }.bind(this));
+    group.run(callback);
   };
 
   /**
-   * Continue initializing the file manager after resolving roots.
+   * Request local file system, resolve roots and init_ after that.
+   * Warning, you can't use DOM nor any external scripts here, since it may not
+   * be loaded yet. Functions in util.* and metrics.* are available and can
+   * be used.
    *
-   * @param {Object} prefs Preferences.
+   * @param {function()} callback Completion callback.
    * @private
    */
-  FileManager.prototype.init_ = function(prefs) {
-    metrics.startInterval('Load.DOM');
+  FileManager.prototype.initFileSystem_ = function(callback) {
+    util.installFileErrorToString();
+
+    metrics.startInterval('Load.FileSystem');
+    chrome.fileBrowserPrivate.requestLocalFileSystem(function(filesystem) {
+      metrics.recordInterval('Load.FileSystem');
+      this.filesystem_ = filesystem;
+      callback();
+    }.bind(this));
+
+    // Mount Drive if enabled.
+    if (this.isDriveEnabled())
+      this.volumeManager_.mountDrive(function() {}, function() {});
+  };
+
+  /**
+   * One time initialization for the file system and related things.
+   *
+   * @param {function()} callback Completion callback.
+   * @private
+   */
+  FileManager.prototype.initFileSystemUI_ = function(callback) {
+    this.table_.startBatchUpdates();
+    this.grid_.startBatchUpdates();
+
+    this.initFileList_();
+    this.setupCurrentDirectory_(true /* page loading */);
 
     // PyAuto tests monitor this state by polling this variable
     this.__defineGetter__('workerInitialized_', function() {
@@ -397,12 +404,6 @@ DialogType.isModal = function(type) {
     }.bind(this));
 
     this.initDateTimeFormatters_();
-
-    this.table_.startBatchUpdates();
-    this.grid_.startBatchUpdates();
-
-    this.initFileList_(prefs);
-    this.initDialogs_();
 
     var self = this;
 
@@ -443,8 +444,58 @@ DialogType.isModal = function(type) {
                         this.refreshCurrentDirectoryMetadata_.bind(this));
 
     this.directoryModel_.sortFileList(
-        prefs.sortField || 'modificationTime',
-        prefs.sortDirection || 'desc');
+        this.viewOptions_.sortField || 'modificationTime',
+        this.viewOptions_.sortDirection || 'desc');
+
+    if (util.platform.newUI()) {
+      /**
+       * If |item| in |parentView| is behind the preview panel, scrolls up the
+       * parent view and make the item visible.
+       *
+       * @param {HTMLElement} item Item to be visible in the parent.
+       * @param {HTMLElement} parentView View contains |selectedItem|.
+       */
+      var ensureItemNotBehindPreviewPanel = function(item, parentView) {
+        var itemRect = item.getBoundingClientRect();
+        if (!itemRect)
+          return;
+        var itemBottom = itemRect.bottom;
+
+        var previewPanel = this.dialogDom_.querySelector('.preview-panel');
+        var previewPanelRects = previewPanel.getBoundingClientRect();
+        var panelHeight = previewPanelRects ? previewPanelRects.height : 0;
+
+        var listRect = parentView.getBoundingClientRect();
+        if (!listRect)
+          return;
+        var listBottom = listRect.bottom - panelHeight;
+
+        if (itemBottom > listBottom) {
+          var scrollOffset = itemBottom - listBottom;
+          parentView.scrollTop += scrollOffset;
+        }
+      }.bind(this);
+
+      var sm = this.directoryModel_.getFileListSelection();
+      sm.addEventListener('change', function() {
+        if (sm.selectedIndexes.length != 1)
+          return;
+        var view = (this.listType_ == FileManager.ListType.DETAIL) ?
+            this.table_.list : this.grid_;
+        var selectedItem = view.getListItemByIndex(sm.selectedIndex);
+        if (!selectedItem)
+          return;
+        ensureItemNotBehindPreviewPanel(selectedItem, view);
+      }.bind(this));
+
+      this.directoryTree_.addEventListener('change', function() {
+        var selectedSubTree = this.directoryTree_.selectedItem;
+        if (!selectedSubTree)
+          return;
+        var selectedItem = selectedSubTree.rowElement;
+        ensureItemNotBehindPreviewPanel(selectedItem, this.directoryTree_);
+      }.bind(this));
+    }
 
     var stateChangeHandler =
         this.onPreferencesChanged_.bind(this);
@@ -469,16 +520,14 @@ DialogType.isModal = function(type) {
 
     this.selectionHandler_.onFileSelectionChanged();
 
-    this.setupCurrentDirectory_(true /* page loading */);
+    // Show the page now unless it's already delayed.
+    if (!util.platform.newUI())
+      this.delayShow_(0);
 
     this.table_.endBatchUpdates();
     this.grid_.endBatchUpdates();
 
-    // Show the page now unless it's already delayed.
-    this.delayShow_(0);
-
-    metrics.recordInterval('Load.DOM');
-    metrics.recordInterval('Load.Total');
+    callback();
   };
 
   /**
@@ -719,6 +768,134 @@ DialogType.isModal = function(type) {
     });
   };
 
+  FileManager.prototype.initializeCore = function() {
+    this.initializeQueue_.add(this.initGeneral_.bind(this), [], 'initGeneral');
+    this.initializeQueue_.add(this.initStrings_.bind(this), [], 'initStrings');
+    this.initializeQueue_.add(
+        this.initPreferences_.bind(this), [], 'initPreferences');
+    this.initializeQueue_.add(
+        this.initFileSystem_.bind(this),
+        ['initGeneral', 'initPreferences'], 'initFileSystem');
+
+    this.initializeQueue_.run();
+  };
+
+  FileManager.prototype.initializeUI = function(dialogDom, callback) {
+    this.dialogDom_ = dialogDom;
+
+    this.initializeQueue_.add(
+        this.initEssentialUI_.bind(this),
+        ['initGeneral', 'initStrings'],
+        'initEssentialUI');
+    this.initializeQueue_.add(this.initAdditionalUI_.bind(this),
+        ['initEssentialUI'], 'initAdditionalUI');
+    this.initializeQueue_.add(
+        this.initFileSystemUI_.bind(this),
+        ['initFileSystem', 'initAdditionalUI'],
+        'initFileSystemUI');
+
+    // Run again just in case if all pending closures have completed and the
+    // queue has stopped and monitor the completion.
+    this.initializeQueue_.run(callback);
+  };
+
+  /**
+   * Initializes general purpose basic things, which are used by other
+   * initializing methods.
+   *
+   * @param {function()} callback Completion callback.
+   * @private
+   */
+  FileManager.prototype.initGeneral_ = function(callback) {
+    this.volumeManager_ = VolumeManager.getInstance();
+    if (window.appState) {
+      this.params_ = window.appState.params || {};
+      this.defaultPath = window.appState.defaultPath;
+      util.saveAppState();
+    } else {
+      this.params_ = location.search ?
+                     JSON.parse(decodeURIComponent(location.search.substr(1))) :
+                     {};
+      this.defaultPath = this.params_.defaultPath;
+    }
+    callback();
+  };
+
+  /**
+   * One time initialization of strings (mostly i18n).
+   *
+   * @param {function()} callback Completion callback.
+   * @private
+   */
+  FileManager.prototype.initStrings_ = function(callback) {
+    chrome.fileBrowserPrivate.getStrings(function(strings) {
+      loadTimeData.data = strings;
+      this.loadTimeDataAvailable = true;
+      callback();
+    });
+  };
+
+  /**
+   * One time initialization of the Files.app's essential UI elements. These
+   * elements will be shown to the user. Only visible elements should be
+   * initialized here. Any heavy operation should be avoided. Files.app's
+   * window is shown at the end of this routine.
+   *
+   * @param {function()} callback Completion callback.
+   * @private
+   */
+  FileManager.prototype.initEssentialUI_ = function(callback) {
+    this.listType_ = null;
+    this.showDelayTimeout_ = null;
+
+    this.filesystemObserverId_ = null;
+    this.driveObserverId_ = null;
+
+    this.document_ = this.dialogDom_.ownerDocument;
+    this.dialogType = this.params_.type || DialogType.FULL_PAGE;
+    this.startupPrefName_ = 'file-manager-' + this.dialogType;
+
+    // Used to filter out focusing by mouse.
+    this.suppressFocus_ = false;
+
+    // Optional list of file types.
+    this.fileTypes_ = this.params_.typeList || [];
+    metrics.recordEnum('Create', this.dialogType,
+        [DialogType.SELECT_FOLDER,
+         DialogType.SELECT_SAVEAS_FILE,
+         DialogType.SELECT_OPEN_FILE,
+         DialogType.SELECT_OPEN_MULTI_FILE,
+         DialogType.FULL_PAGE]);
+
+    this.selectionHandler_ = null;
+    this.ctrlKeyPressed_ = false;
+
+    this.metadataCache_ = MetadataCache.createFull();
+
+    this.okButton_ = this.dialogDom_.querySelector('.ok');
+    this.cancelButton_ = this.dialogDom_.querySelector('.cancel');
+
+    // Pre-populate the static localized strings.
+    i18nTemplate.process(this.document_, loadTimeData);
+
+    // Initialize the new header.
+    if (util.platform.newUI()) {
+      this.dialogDom_.querySelector('#app-name').innerText =
+          chrome.runtime.getManifest().name;
+    }
+
+    this.initDialogType_();
+
+    // Show the window as soon as the UI pre-initialization is done.
+    // Do not call show() when running via chrome://files in a browser.
+    if (this.dialogType == DialogType.FULL_PAGE && util.platform.v2()) {
+      chrome.app.window.current().show();
+      setTimeout(callback, 100);  // Wait until the animation is finished.
+    } else {
+      callback();
+    }
+  };
+
   /**
    * One-time initialization of dialogs.
    * @private
@@ -735,10 +912,16 @@ DialogType.isModal = function(type) {
   };
 
   /**
-   * One-time initialization of various DOM nodes.
+   * One-time initialization of various DOM nodes. Loads the additional DOM
+   * elements visible to the user. Initialize here elements, which are expensive
+   * or hidden in the beginning.
+   *
+   * @param {function()} callback Completion callback.
    * @private
    */
-  FileManager.prototype.initDom_ = function() {
+  FileManager.prototype.initAdditionalUI_ = function(callback) {
+    this.initDialogs_();
+
     this.dialogDom_.addEventListener('drop', function(e) {
       // Prevent opening an URL by dropping it onto the page.
       e.preventDefault();
@@ -751,8 +934,6 @@ DialogType.isModal = function(type) {
 
     this.filenameInput_ = dom.querySelector('#filename-input-box input');
     this.taskItems_ = dom.querySelector('#tasks');
-    this.okButton_ = dom.querySelector('.ok');
-    this.cancelButton_ = dom.querySelector('.cancel');
 
     this.table_ = dom.querySelector('.detail-table');
     this.grid_ = dom.querySelector('.thumbnail-grid');
@@ -868,6 +1049,23 @@ DialogType.isModal = function(type) {
     this.searchBox_ = this.dialogDom_.querySelector('#search-box');
     this.searchBox_.addEventListener(
         'input', this.onSearchBoxUpdate_.bind(this));
+    this.searchBox_.addEventListener(
+        'keydown', this.onSearchBoxKeyDown_.bind(this));
+    this.searchTextMeasure_ = new TextMeasure(this.searchBox_);
+    if (util.platform.newUI()) {
+      this.searchIcon_ = this.dialogDom_.querySelector('#search-icon');
+      this.searchIcon_.addEventListener(
+          'click',
+          function() { this.searchBox_.focus(); }.bind(this));
+      this.searchClearButton_ =
+          this.dialogDom_.querySelector('#search-clear-button');
+      this.searchClearButton_.addEventListener(
+          'click',
+          function() {
+            this.searchBox_.value = '';
+            this.onSearchBoxUpdate_();
+          }.bind(this));
+    }
     this.lastSearchQuery_ = '';
 
     var autocompleteList = new cr.ui.AutocompleteList();
@@ -947,13 +1145,13 @@ DialogType.isModal = function(type) {
     // Populate the static localized strings.
     i18nTemplate.process(this.document_, loadTimeData);
 
-    // Initialize the new header and arrange the file list.
+    // Arrange the file list.
     if (util.platform.newUI()) {
-      this.dialogDom_.querySelector('#app-name').innerText =
-          chrome.runtime.getManifest().name;
       this.table_.normalizeColumns();
       this.table_.redraw();
     }
+
+    callback();
   };
 
   /**
@@ -965,11 +1163,9 @@ DialogType.isModal = function(type) {
 
   /**
    * Constructs table and grid (heavy operation).
-   *
-   * @param {Object} prefs Preferences.
    * @private
    **/
-  FileManager.prototype.initFileList_ = function(prefs) {
+  FileManager.prototype.initFileList_ = function() {
     // Always sharing the data model between the detail/thumb views confuses
     // them.  Instead we maintain this bogus data model, and hook it up to the
     // view that is not in use.
@@ -1029,18 +1225,20 @@ DialogType.isModal = function(type) {
     this.table_.list.addEventListener('blur', fileListBlurBound);
     this.grid_.addEventListener('blur', fileListBlurBound);
 
+    // TODO(mtomasz, yoshiki): Create sidebar earlier, and here just attach
+    // the directory model.
     this.initSidebar_();
 
     this.table_.addEventListener('column-resize-end',
                                  this.updateStartupPrefs_.bind(this));
 
-    this.setListType(prefs.listType || FileManager.ListType.DETAIL);
+    this.setListType(this.viewOptions_.listType || FileManager.ListType.DETAIL);
 
-    if (!util.platform.newUI() && prefs.columns) {
+    if (!util.platform.newUI() && this.viewOptions_.columns) {
       var cm = this.table_.columnModel;
       for (var i = 0; i < cm.totalSize; i++) {
-        if (prefs.columns[i] > 0)
-          cm.setWidth(i, prefs.columns[i]);
+        if (this.viewOptions_.columns[i] > 0)
+          cm.setWidth(i, this.viewOptions_.columns[i]);
       }
     }
 
@@ -1317,7 +1515,8 @@ DialogType.isModal = function(type) {
               undefined,  // Media type.
               FileType.isOnDrive(url) ?
                   ThumbnailLoader.UseEmbedded.USE_EMBEDDED :
-                  ThumbnailLoader.UseEmbedded.NO_EMBEDDED);
+                  ThumbnailLoader.UseEmbedded.NO_EMBEDDED,
+              10);  // Very low priority.
               thumbnailLoader_.loadDetachedImage(function(success) {});
         });
       }
@@ -1423,24 +1622,41 @@ DialogType.isModal = function(type) {
   FileManager.prototype.onResize_ = function() {
     if (this.listType_ == FileManager.ListType.THUMBNAIL) {
       var g = this.grid_;
-      g.startBatchUpdates();
-      setTimeout(function() {
+      if (this.resizeGridTimer_) {
+        clearTimeout(this.resizeGridTimer_);
+        this.resizeGridTimer_ = null;
+      }
+      this.resizeGridTimer_ = setTimeout(function() {
+        g.startBatchUpdates();
         g.columns = 0;
         g.redraw();
         g.endBatchUpdates();
-      }, 0);
+        this.resizeGridTimer_ = null;
+      }.bind(this), FileManager.LIST_GRID_RESIZE_DELAY);
     } else {
-      if (util.platform.newUI()) {
-        if (this.table_.clientWidth > 0)
-          this.table_.normalizeColumns();
+      var t = this.table_;
+      if (this.resizeTableTimer_) {
+        clearTimeout(this.resizeTableTimer_);
+        this.resizeTableTimer_ = null;
       }
-      this.table_.redraw();
+      this.resizeTableTimer_ = setTimeout(function() {
+        if (util.platform.newUI()) {
+          if (t.clientWidth > 0)
+            t.normalizeColumns();
+        }
+        t.redraw();
+        this.resizeTableTimer_ = null;
+      }.bind(this), FileManager.LIST_GRID_RESIZE_DELAY);
     }
 
-    if (!util.platform.newUI())
+    if (!util.platform.newUI()) {
       this.breadcrumbs_.truncate();
-    else
-      this.volumeList_.redraw();
+    } else {
+      // TODO(mtomasz, yoshiki): Initialize volume list earlier, before
+      // file system is available.
+      if (this.volumeList_)
+        this.volumeList_.redraw();
+    }
 
     // Hide the search box if there is not enough space.
     if (util.platform.newUI())
@@ -2214,7 +2430,7 @@ DialogType.isModal = function(type) {
   FileManager.prototype.updateSearchBoxOnDirChange_ = function() {
     if (!this.searchBox_.disabled) {
       this.searchBox_.value = '';
-      this.updateSearchBoxClass_();
+      this.updateSearchBoxStyles_();
     }
   };
 
@@ -3284,13 +3500,13 @@ DialogType.isModal = function(type) {
   /**
    * Invoked when the search box is changed.
    *
-   * @param {Event} event The 'changed' event.
+   * @param {Event} event The changed event.
    * @private
    */
   FileManager.prototype.onSearchBoxUpdate_ = function(event) {
     var searchString = this.searchBox_.value;
 
-    this.updateSearchBoxClass_();
+    this.updateSearchBoxStyles_();
     if (this.isOnDrive()) {
       // When the search text is changed, finishes the search and showes back
       // the last directory by passing an empty string to
@@ -3309,13 +3525,39 @@ DialogType.isModal = function(type) {
   };
 
   /**
+   * Handles special keys such as Escape on the search box.
+   *
+   * @param {Event} event The keydown event.
+   * @private
+   */
+  FileManager.prototype.onSearchBoxKeyDown_ = function(event) {
+    // Handle only Esc key now.
+    if (event.keyCode != 27) return;
+    if (this.searchBox_.value) return;
+    var currentList = this.listType_ == FileManager.ListType.DETAIL ?
+        this.table_.list : this.grid_;
+    currentList.focus();
+    if (currentList.dataModel.length != 0 &&
+        currentList.selectionModel.selectedIndex == -1) {
+      currentList.selectionModel.selectedIndex = 0;
+    }
+  };
+
+  /**
    * Updates search box's CSS classes.
    * These classes are refered from CSS.
    *
    * @private
    */
-  FileManager.prototype.updateSearchBoxClass_ = function() {
-    this.searchBox_.classList.toggle('has-text', !!this.searchBox_.value);
+  FileManager.prototype.updateSearchBoxStyles_ = function() {
+    if (!util.platform.newUI())
+      return;
+    var TEXT_BOX_PADDING = 16; // in px.
+    this.searchBoxWrapper_.classList.toggle('has-text',
+                                            !!this.searchBox_.value);
+    var width = this.searchTextMeasure_.getWidth(this.searchBox_.value) +
+                TEXT_BOX_PADDING;
+    this.searchBox_.style.width = width + 'px';
   };
 
   /**

@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+class GURL;
+
 namespace chromeos {
 
 namespace input_method {
@@ -28,6 +30,7 @@ class InputMethodEngine {
     bool alt_key;
     bool ctrl_key;
     bool shift_key;
+    bool caps_lock;
   };
 
   enum {
@@ -143,9 +146,17 @@ class InputMethodEngine {
                                           const std::string& text,
                                           int cursor_pos,
                                           int anchor_pos) = 0;
+
+    // Called when Chrome terminates on-going text input session.
+    virtual void OnReset(const std::string& engine_id) = 0;
   };
 
   virtual ~InputMethodEngine() {}
+
+  // Called when the input metho initialization is done.
+  // This function is called from private API.
+  // TODO(nona): Remove this function.
+  virtual void StartIme() = 0;
 
   // Set the current composition and associated properties.
   virtual bool SetComposition(int context_id,
@@ -229,6 +240,7 @@ class InputMethodEngine {
       const char* description,
       const char* language,
       const std::vector<std::string>& layouts,
+      const GURL& options_page,
       std::string* error);
 };
 

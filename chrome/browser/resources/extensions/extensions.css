@@ -44,7 +44,8 @@ html.loading * {
   display: none;
 }
 
-.developer-extras > div {
+.developer-extras > div,
+.permanent-warnings > div {
   margin: 5px 0;
 }
 
@@ -138,6 +139,7 @@ html[dir='rtl'] .extension-list-item {
 
 .extension-description,
 .extension-list-item-wrapper.inactive-extension .extension-details,
+.location-text,
 .enable-checkbox input:disabled + .enable-checkbox-text {
   color: rgb(151, 156, 160);
 }
@@ -242,6 +244,11 @@ html[dir=rtl] .extension-commands-config {
   margin: 1em;
 }
 
+.location-text {
+  display: block;
+  width: 100px;
+}
+
 /* Trash */
 
 #extension-settings .trash {
@@ -281,21 +288,13 @@ html[dir='rtl'] #extension-settings .trash {
 
 /* Managed mode */
 
-.page:not(.managed-user-locked) .profile-is-managed-banner,
-.managed-user-locked .more-extensions-link,
-.page:not(.profile-is-managed) #managed-user-control-div,
-.page:not(.managed-user-locked) #unlock-button,
-.managed-user-locked #lock-button {
+.page:not(.profile-is-managed) .profile-is-managed-banner,
+.profile-is-managed .more-extensions-link {
   display: none;
 }
 
 .profile-is-managed-banner .page-banner-text {
   background-image: url('chrome://theme/IDR_WARNING');
-}
-
-#managed-user-control-div {
-  display: inline-block;
-  padding-left: 7px;
 }
 
 /* Sideload Wipeout */

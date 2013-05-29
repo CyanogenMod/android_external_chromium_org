@@ -29,6 +29,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/vector2d.h"
 #include "webkit/glue/resource_type.h"
 
 struct BrowserPluginHostMsg_ResizeGuest_Params;
@@ -275,16 +276,15 @@ class CONTENT_EXPORT WebContentsImpl
                              bool* enable_decrement) const OVERRIDE;
   virtual void ViewSource() OVERRIDE;
   virtual void ViewFrameSource(const GURL& url,
-                               const std::string& content_state) OVERRIDE;
+                               const PageState& page_state) OVERRIDE;
   virtual int GetMinimumZoomPercent() const OVERRIDE;
   virtual int GetMaximumZoomPercent() const OVERRIDE;
   virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual int GetContentRestrictions() const OVERRIDE;
   virtual bool GotResponseToLockMouseRequest(bool allowed) OVERRIDE;
   virtual bool HasOpener() const OVERRIDE;
-  virtual void DidChooseColorInColorChooser(int color_chooser_id,
-                                            SkColor color) OVERRIDE;
-  virtual void DidEndColorChooser(int color_chooser_id) OVERRIDE;
+  virtual void DidChooseColorInColorChooser(SkColor color) OVERRIDE;
+  virtual void DidEndColorChooser() OVERRIDE;
   virtual int DownloadImage(const GURL& url,
                             bool is_favicon,
                             int image_size,
@@ -304,6 +304,8 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message) OVERRIDE;
   virtual const GURL& GetURL() const OVERRIDE;
+  virtual const GURL& GetActiveURL() const OVERRIDE;
+  virtual const GURL& GetLastCommittedURL() const OVERRIDE;
   virtual WebContents* GetAsWebContents() OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
@@ -332,7 +334,7 @@ class CONTENT_EXPORT WebContentsImpl
       const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
   virtual void UpdateState(RenderViewHost* render_view_host,
                            int32 page_id,
-                           const std::string& state) OVERRIDE;
+                           const PageState& page_state) OVERRIDE;
   virtual void UpdateTitle(RenderViewHost* render_view_host,
                            int32 page_id,
                            const string16& title,
@@ -448,6 +450,7 @@ class CONTENT_EXPORT WebContentsImpl
       const NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool PreHandleWheelEvent(
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
+  virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) OVERRIDE;
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
 #endif
@@ -504,6 +507,8 @@ class CONTENT_EXPORT WebContentsImpl
   // TODO(brettw) TestWebContents shouldn't exist!
   friend class TestWebContents;
 
+  class DestructionObserver;
+
   // See WebContents::Create for a description of these parameters.
   WebContentsImpl(BrowserContext* browser_context,
                   WebContentsImpl* opener);
@@ -516,7 +521,15 @@ class CONTENT_EXPORT WebContentsImpl
   void RemoveObserver(WebContentsObserver* observer);
 
   // Clears this tab's opener if it has been closed.
-  void OnWebContentsDestroyed(WebContents* web_contents);
+  void OnWebContentsDestroyed(WebContentsImpl* web_contents);
+
+  // Creates and adds to the map a destruction observer watching |web_contents|.
+  // No-op if such an observer already exists.
+  void AddDestructionObserver(WebContentsImpl* web_contents);
+
+  // Deletes and removes from the map a destruction observer
+  // watching |web_contents|. No-op if there is no such observer.
+  void RemoveDestructionObserver(WebContentsImpl* web_contents);
 
   // Callback function when showing JS dialogs.
   void OnDialogClosed(RenderViewHost* rvh,
@@ -564,6 +577,7 @@ class CONTENT_EXPORT WebContentsImpl
                    const gfx::Rect& selection_rect,
                    int active_match_ordinal,
                    bool final_update);
+  void OnDidProgrammaticallyScroll(const gfx::Vector2d& scroll_point);
 #if defined(OS_ANDROID)
   void OnFindMatchRectsReply(int version,
                              const std::vector<gfx::RectF>& rects,
@@ -589,6 +603,7 @@ class CONTENT_EXPORT WebContentsImpl
                                       const base::FilePath& plugin_path);
   void OnBrowserPluginMessage(const IPC::Message& message);
   void OnDidDownloadImage(int id,
+                          int http_status_code,
                           const GURL& image_url,
                           int requested_size,
                           const std::vector<SkBitmap>& bitmaps);
@@ -737,6 +752,9 @@ class CONTENT_EXPORT WebContentsImpl
   typedef std::map<int, RenderWidgetHostView*> PendingWidgetViews;
   PendingWidgetViews pending_widget_views_;
 
+  typedef std::map<WebContentsImpl*, DestructionObserver*> DestructionObservers;
+  DestructionObservers destruction_observers_;
+
   // A list of observers notified when page state changes. Weak references.
   // This MUST be listed above render_manager_ since at destruction time the
   // latter might cause RenderViewHost's destructor to call us and we might use
@@ -882,7 +900,16 @@ class CONTENT_EXPORT WebContentsImpl
 #endif
 
   // Color chooser that was opened by this tab.
-  ColorChooser* color_chooser_;
+  scoped_ptr<ColorChooser> color_chooser_;
+
+  // A unique identifier for the current color chooser.  Identifiers are unique
+  // across a renderer process.  This avoids race conditions in synchronizing
+  // the browser and renderer processes.  For example, if a renderer closes one
+  // chooser and opens another, and simultaneously the user picks a color in the
+  // first chooser, the IDs can be used to drop the "chose a color" message
+  // rather than erroneously tell the renderer that the user picked a color in
+  // the second chooser.
+  int color_chooser_identifier_;
 
   // Manages the embedder state for browser plugins, if this WebContents is an
   // embedder; NULL otherwise.

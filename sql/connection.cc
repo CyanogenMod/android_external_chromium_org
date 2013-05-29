@@ -7,10 +7,13 @@
 #include <string.h>
 
 #include "base/files/file_path.h"
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
@@ -128,6 +131,20 @@ Connection::~Connection() {
 }
 
 bool Connection::Open(const base::FilePath& path) {
+  if (!histogram_tag_.empty()) {
+    int64 size_64 = 0;
+    if (file_util::GetFileSize(path, &size_64)) {
+      size_t sample = static_cast<size_t>(size_64 / 1024);
+      std::string full_histogram_name = "Sqlite.SizeKB." + histogram_tag_;
+      base::HistogramBase* histogram =
+          base::Histogram::FactoryGet(
+              full_histogram_name, 1, 1000000, 50,
+              base::HistogramBase::kUmaTargetedHistogramFlag);
+      if (histogram)
+        histogram->Add(sample);
+    }
+  }
+
 #if defined(OS_WIN)
   return OpenInternal(WideToUTF8(path.value()));
 #elif defined(OS_POSIX)
@@ -708,47 +725,64 @@ void Connection::StatementRefDeleted(StatementRef* ref) {
     open_statements_.erase(i);
 }
 
+void Connection::AddTaggedHistogram(const std::string& name,
+                                    size_t sample) const {
+  if (histogram_tag_.empty())
+    return;
+
+  // TODO(shess): The histogram macros create a bit of static storage
+  // for caching the histogram object.  This code shouldn't execute
+  // often enough for such caching to be crucial.  If it becomes an
+  // issue, the object could be cached alongside histogram_prefix_.
+  std::string full_histogram_name = name + "." + histogram_tag_;
+  base::HistogramBase* histogram =
+      base::SparseHistogram::FactoryGet(
+          full_histogram_name,
+          base::HistogramBase::kUmaTargetedHistogramFlag);
+  if (histogram)
+    histogram->Add(sample);
+}
+
 int Connection::OnSqliteError(int err, sql::Statement *stmt) {
-  // Strip extended error codes.
-  int base_err = err&0xff;
-
-  static size_t kSqliteErrorMax = 50;
-  UMA_HISTOGRAM_ENUMERATION("Sqlite.Error", base_err, kSqliteErrorMax);
-  if (base_err == SQLITE_IOERR) {
-    // TODO(shess): Consider folding the IOERR range into the main
-    // histogram directly.  Perhaps 30..49?  The downside risk would
-    // be that SQLite core adds a bunch of codes and this becomes a
-    // complicated mapping.
-    static size_t kSqliteIOErrorMax = 20;
-    UMA_HISTOGRAM_ENUMERATION("Sqlite.Error.IOERR", err>>8, kSqliteIOErrorMax);
-  }
-
-  if (!error_histogram_name_.empty()) {
-    // TODO(shess): The histogram macros create a bit of static
-    // storage for caching the histogram object.  Since SQLite is
-    // being used for I/O, generally without error, this code
-    // shouldn't execute often enough for such caching to be crucial.
-    // If it becomes an issue, the object could be cached alongside
-    // error_histogram_name_.
-    base::HistogramBase* histogram =
-        base::LinearHistogram::FactoryGet(
-            error_histogram_name_, 1, kSqliteErrorMax, kSqliteErrorMax + 1,
-            base::HistogramBase::kUmaTargetedHistogramFlag);
-    if (histogram)
-      histogram->Add(base_err);
-  }
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Sqlite.Error", err);
+  AddTaggedHistogram("Sqlite.Error", err);
 
   // Always log the error.
   LOG(ERROR) << "sqlite error " << err
              << ", errno " << GetLastErrno()
              << ": " << GetErrorMessage();
 
+  if (!error_callback_.is_null()) {
+    error_callback_.Run(err, stmt);
+    return err;
+  }
+
+  // TODO(shess): Remove |error_delegate_| once everything is
+  // converted to |error_callback_|.
   if (error_delegate_.get())
     return error_delegate_->OnError(err, this, stmt);
 
   // The default handling is to assert on debug and to ignore on release.
   DLOG(FATAL) << GetErrorMessage();
   return err;
+}
+
+// TODO(shess): Allow specifying integrity_check versus quick_check.
+// TODO(shess): Allow specifying maximum results (default 100 lines).
+bool Connection::IntegrityCheck(std::vector<std::string>* messages) {
+  const char kSql[] = "PRAGMA integrity_check";
+  sql::Statement stmt(GetUniqueStatement(kSql));
+
+  messages->clear();
+
+  // The pragma appears to return all results (up to 100 by default)
+  // as a single string.  This doesn't appear to be an API contract,
+  // it could return separate lines, so loop _and_ split.
+  while (stmt.Step()) {
+    std::string result(stmt.ColumnString(0));
+    base::SplitString(result, '\n', messages);
+  }
+  return stmt.Succeeded();
 }
 
 }  // namespace sql

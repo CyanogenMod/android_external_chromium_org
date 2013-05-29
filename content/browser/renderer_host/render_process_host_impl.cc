@@ -75,6 +75,7 @@
 #include "content/browser/renderer_host/media/media_stream_dispatcher_host.h"
 #include "content/browser/renderer_host/media/peer_connection_tracker_host.h"
 #include "content/browser/renderer_host/media/video_capture_host.h"
+#include "content/browser/renderer_host/memory_benchmark_message_filter.h"
 #include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/browser/renderer_host/quota_dispatcher_host.h"
@@ -123,7 +124,7 @@
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/glue/resource_type.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -697,6 +698,11 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #if defined(ENABLE_WEBRTC)
   channel_->AddFilter(new WebRtcLoggingHandlerHost());
 #endif
+#if defined(USE_TCMALLOC) && (defined(OS_LINUX) || defined(OS_ANDROID))
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableMemoryBenchmarking))
+    channel_->AddFilter(new MemoryBenchmarkMessageFilter());
+#endif
 }
 
 int RenderProcessHostImpl::GetNextRoutingID() {
@@ -840,6 +846,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #else
     switches::kDisableWebAudio,
 #endif
+#if defined(ENABLE_WEBRTC)
+    switches::kEnableSCTPDataChannels,
+#endif
     switches::kEnableWebMIDI,
     switches::kEnableExperimentalCanvasFeatures,
     switches::kEnableExperimentalWebSocket,
@@ -864,7 +873,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableTouchEditing,
     switches::kEnableVsyncNotification,
     switches::kEnableWebPInAcceptHeader,
+#if defined(ENABLE_WEBRTC)
+    switches::kEnableWebRtcAecRecordings,
+#endif
     switches::kDisableWebKitMediaSource,
+    switches::kEnableOverscrollNotifications,
     switches::kEnableStrictSiteIsolation,
     switches::kDisableFullScreen,
     switches::kEnableNewDialogStyle,
@@ -886,7 +899,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableCompositingForFixedPosition,
     switches::kEnableHighDpiCompositingForFixedPosition,
     switches::kDisableCompositingForFixedPosition,
-    switches::kEnableAcceleratedPainting,
+    switches::kEnableCompositingForTransition,
+    switches::kDisableCompositingForTransition,
     switches::kDisableThreadedCompositing,
     switches::kDisableTouchAdjustment,
     switches::kDefaultTileWidth,
@@ -917,6 +931,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #endif
     switches::kNoReferrers,
     switches::kNoSandbox,
+    switches::kEnableVtune,
     switches::kPpapiInProcess,
     switches::kRegisterPepperPlugins,
     switches::kRendererAssertTest,
@@ -949,15 +964,14 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kEnableImplSidePainting,
     cc::switches::kEnablePartialSwap,
     cc::switches::kEnablePerTilePainting,
-    cc::switches::kEnablePinchZoomScrollbars,
-    cc::switches::kDisablePinchZoomScrollbars,
-    cc::switches::kEnablePredictionBenchmarking,
+    cc::switches::kEnablePinchVirtualViewport,
     cc::switches::kEnableRightAlignedScheduling,
     cc::switches::kEnableTopControlsPositionCalculation,
+    cc::switches::kForceDirectLayerDrawing,
     cc::switches::kLowResolutionContentsScaleFactor,
+    cc::switches::kMaxTilesForInterestArea,
     cc::switches::kMaxUnusedResourceMemoryUsagePercentage,
     cc::switches::kNumRasterThreads,
-    cc::switches::kMaxTilesForInterestArea,
     cc::switches::kShowCompositedLayerBorders,
     cc::switches::kShowCompositedLayerTree,
     cc::switches::kShowFPSCounter,
@@ -972,8 +986,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kTopControlsHeight,
     cc::switches::kTopControlsHideThreshold,
     cc::switches::kTopControlsShowThreshold,
-    cc::switches::kTraceAllRenderedFrames,
     cc::switches::kTraceOverdraw,
+    cc::switches::kUseMapImage,
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
                                  arraysize(kSwitchNames));
@@ -1047,7 +1061,7 @@ TransportDIB* RenderProcessHostImpl::MapTransportDIB(
                   STANDARD_RIGHTS_REQUIRED | FILE_MAP_READ | FILE_MAP_WRITE,
                   FALSE, 0);
   return TransportDIB::Map(section);
-#elif defined(TOOLKIT_GTK) || (defined(OS_LINUX) && defined(USE_AURA))
+#elif defined(TOOLKIT_GTK)
   return TransportDIB::Map(dib_id.shmkey);
 #elif defined(OS_ANDROID)
   return TransportDIB::Map(dib_id);
@@ -1087,7 +1101,7 @@ TransportDIB* RenderProcessHostImpl::GetTransportDIB(
       }
     }
 
-#if defined(TOOLKIT_GTK) || (defined(OS_LINUX) && defined(USE_AURA))
+#if defined(TOOLKIT_GTK)
     smallest_iterator->second->Detach();
 #else
     delete smallest_iterator->second;
@@ -1101,7 +1115,7 @@ TransportDIB* RenderProcessHostImpl::GetTransportDIB(
 }
 
 void RenderProcessHostImpl::ClearTransportDIBCache() {
-#if defined(TOOLKIT_GTK) || (defined(OS_LINUX) && defined(USE_AURA))
+#if defined(TOOLKIT_GTK)
   std::map<TransportDIB::Id, TransportDIB*>::const_iterator dib =
       cached_dibs_.begin();
   for (; dib != cached_dibs_.end(); ++dib)
@@ -1749,17 +1763,13 @@ void RenderProcessHostImpl::OnSavedPageAsMHTML(int job_id, int64 data_size) {
 }
 
 void RenderProcessHostImpl::OnCompositorSurfaceBuffersSwappedNoHost(
-      int32 surface_id,
-      uint64 surface_handle,
-      int32 route_id,
-      const gfx::Size& size,
-      int32 gpu_process_host_id) {
+      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params) {
   TRACE_EVENT0("renderer_host",
                "RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwappedNoHost");
   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
   ack_params.sync_point = 0;
-  RenderWidgetHostImpl::AcknowledgeBufferPresent(route_id,
-                                                 gpu_process_host_id,
+  RenderWidgetHostImpl::AcknowledgeBufferPresent(params.route_id,
+                                                 params.gpu_process_host_id,
                                                  ack_params);
 }
 

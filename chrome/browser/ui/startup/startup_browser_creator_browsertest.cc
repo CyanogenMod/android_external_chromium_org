@@ -77,7 +77,7 @@ class StartupBrowserCreatorTest : public ExtensionBrowserTest {
     ExtensionBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnablePanels);
     command_line->AppendSwitchASCII(switches::kHomePage,
-                                    chrome::kAboutBlankURL);
+                                    content::kAboutBlankURL);
 #if defined(OS_CHROMEOS)
     // TODO(nkostylev): Investigate if we can remove this switch.
     command_line->AppendSwitch(switches::kCreateBrowserOnStartupForTests);
@@ -159,7 +159,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenURLsPopup) {
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, first_run);
   // This should create a new window, but re-use the profile from |popup|. If
   // it used a NULL or invalid profile, it would crash.
-  launch.OpenURLsInBrowser(popup, false, urls);
+  launch.OpenURLsInBrowser(popup, false, urls,
+                           chrome::HOST_DESKTOP_TYPE_NATIVE);
   ASSERT_NE(popup, observer.added_browser_);
   BrowserList::RemoveObserver(&observer);
 }
@@ -192,7 +193,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest,
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, first_run);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.  |browser()| is still
   // around at this point, even though we've closed its window.
@@ -236,7 +238,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest,
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, first_run);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.
   Browser* new_browser = FindOneOtherBrowser(browser());
@@ -260,7 +263,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutNoPref) {
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
   StartupBrowserCreatorImpl launch(base::FilePath(), command_line, first_run);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // No pref was set, so the app should have opened in a window.
   // The launch should have created a new browser.
@@ -289,7 +293,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutWindowPref) {
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
   StartupBrowserCreatorImpl launch(base::FilePath(), command_line, first_run);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // Pref was set to open in a window, so the app should have opened in a
   // window.  The launch should have created a new browser. Find the new
@@ -320,7 +325,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, OpenAppShortcutTabPref) {
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
   StartupBrowserCreatorImpl launch(base::FilePath(), command_line, first_run);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // When an app shortcut is open and the pref indicates a tab should
   // open, the tab is open in a new browser window.  Expect a new window.
@@ -377,7 +383,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, AddFirstRunTab) {
   CommandLine dummy(CommandLine::NO_PROGRAM);
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, &browser_creator,
                                    chrome::startup::IS_FIRST_RUN);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.
   Browser* new_browser = FindOneOtherBrowser(browser());
@@ -405,7 +412,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, AddCustomFirstRunTab) {
   CommandLine dummy(CommandLine::NO_PROGRAM);
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, &browser_creator,
                                    chrome::startup::IS_FIRST_RUN);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.
   Browser* new_browser = FindOneOtherBrowser(browser());
@@ -434,7 +442,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, SyncPromoNoWelcomePage) {
   CommandLine dummy(CommandLine::NO_PROGRAM);
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy,
                                    chrome::startup::IS_FIRST_RUN);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.
   Browser* new_browser = FindOneOtherBrowser(browser());
@@ -462,7 +471,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, SyncPromoWithWelcomePage) {
   CommandLine dummy(CommandLine::NO_PROGRAM);
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy,
                                    chrome::startup::IS_FIRST_RUN);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.
   Browser* new_browser = FindOneOtherBrowser(browser());
@@ -499,7 +509,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, SyncPromoWithFirstRunTabs) {
   CommandLine dummy(CommandLine::NO_PROGRAM);
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, &browser_creator,
                                    chrome::startup::IS_FIRST_RUN);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.
   Browser* new_browser = FindOneOtherBrowser(browser());
@@ -535,7 +546,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest,
   CommandLine dummy(CommandLine::NO_PROGRAM);
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, &browser_creator,
                                    chrome::startup::IS_FIRST_RUN);
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.
   Browser* new_browser = FindOneOtherBrowser(browser());
@@ -624,12 +636,8 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, StartupURLsForTwoProfiles) {
   EXPECT_EQ(urls2[0], tab_strip->GetWebContentsAt(0)->GetURL());
 }
 
-IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, UpdateWithTwoProfiles) {
-  // Make StartupBrowserCreator::WasRestarted() return true.
-  StartupBrowserCreator::was_restarted_read_ = false;
-  PrefService* pref_service = g_browser_process->local_state();
-  pref_service->SetBoolean(prefs::kWasRestarted, true);
-
+IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, PRE_UpdateWithTwoProfiles) {
+  // Simulate a browser restart by creating the profiles in the PRE_ part.
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 
   // Create two profiles.
@@ -661,6 +669,29 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, UpdateWithTwoProfiles) {
   pref2.urls = urls2;
   SessionStartupPref::SetStartupPref(profile2, pref2);
 
+  profile1->GetPrefs()->CommitPendingWrite();
+  profile2->GetPrefs()->CommitPendingWrite();
+}
+
+IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, UpdateWithTwoProfiles) {
+  // Make StartupBrowserCreator::WasRestarted() return true.
+  StartupBrowserCreator::was_restarted_read_ = false;
+  PrefService* pref_service = g_browser_process->local_state();
+  pref_service->SetBoolean(prefs::kWasRestarted, true);
+
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+
+  // Open the two profiles.
+  base::FilePath dest_path = profile_manager->user_data_dir();
+
+  Profile* profile1 = profile_manager->GetProfile(
+      dest_path.Append(FILE_PATH_LITERAL("New Profile 1")));
+  ASSERT_TRUE(profile1);
+
+  Profile* profile2 = profile_manager->GetProfile(
+      dest_path.Append(FILE_PATH_LITERAL("New Profile 2")));
+  ASSERT_TRUE(profile2);
+
   // Simulate a launch after a browser update.
   CommandLine dummy(CommandLine::NO_PROGRAM);
   int return_code;
@@ -687,7 +718,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, UpdateWithTwoProfiles) {
   ASSERT_TRUE(new_browser);
   TabStripModel* tab_strip = new_browser->tab_strip_model();
   ASSERT_EQ(1, tab_strip->count());
-  EXPECT_EQ(GURL(chrome::kAboutBlankURL),
+  EXPECT_EQ(GURL(content::kAboutBlankURL),
             tab_strip->GetWebContentsAt(0)->GetURL());
 
   ASSERT_EQ(1u, chrome::GetBrowserCount(profile2,
@@ -696,7 +727,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest, UpdateWithTwoProfiles) {
   ASSERT_TRUE(new_browser);
   tab_strip = new_browser->tab_strip_model();
   ASSERT_EQ(1, tab_strip->count());
-  EXPECT_EQ(GURL(chrome::kAboutBlankURL),
+  EXPECT_EQ(GURL(content::kAboutBlankURL),
             tab_strip->GetWebContentsAt(0)->GetURL());
 }
 
@@ -793,7 +824,7 @@ IN_PROC_BROWSER_TEST_F(StartupBrowserCreatorTest,
   ASSERT_TRUE(new_browser);
   tab_strip = new_browser->tab_strip_model();
   ASSERT_EQ(1, tab_strip->count());
-  EXPECT_EQ(GURL(chrome::kAboutBlankURL),
+  EXPECT_EQ(GURL(content::kAboutBlankURL),
             tab_strip->GetWebContentsAt(0)->GetURL());
 
   // profile_home2 was not launched since it would've only opened the home page.
@@ -926,7 +957,8 @@ IN_PROC_BROWSER_TEST_F(ManagedModeBrowserCreatorTest,
   content::WindowedNotificationObserver observer(
       content::NOTIFICATION_LOAD_STOP,
       content::NotificationService::AllSources());
-  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false));
+  ASSERT_TRUE(launch.Launch(browser()->profile(), std::vector<GURL>(), false,
+                            browser()->host_desktop_type()));
 
   // This should have created a new browser window.
   Browser* new_browser = FindOneOtherBrowser(browser());
@@ -935,18 +967,6 @@ IN_PROC_BROWSER_TEST_F(ManagedModeBrowserCreatorTest,
   TabStripModel* tab_strip = new_browser->tab_strip_model();
   // There should be only one tab.
   EXPECT_EQ(1, tab_strip->count());
-
-  // And it should point to the managed user settings page.
-  content::WebContents* web_contents = tab_strip->GetWebContentsAt(0);
-  GURL expected(GURL(std::string(chrome::kChromeUISettingsURL) +
-                     chrome::kManagedUserSettingsSubPage));
-  EXPECT_EQ(GURL(expected), web_contents->GetURL());
-  observer.Wait();
-
-  // Managed user should be in elevated state.
-  bool is_elevated = ManagedModeNavigationObserver::FromWebContents(
-      web_contents)->is_elevated();
-  EXPECT_TRUE(is_elevated);
 }
 
 #endif  // ENABLE_MANAGED_USERS

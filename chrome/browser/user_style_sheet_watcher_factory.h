@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_USER_STYLE_SHEET_WATCHER_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service_factory.h"
 
 class Profile;
 class UserStyleSheetWatcher;
@@ -14,7 +14,7 @@ class UserStyleSheetWatcher;
 // Singleton that owns all UserStyleSheetWatcher and associates them with
 // Profiles.
 class UserStyleSheetWatcherFactory
-    : public RefcountedProfileKeyedServiceFactory {
+    : public RefcountedBrowserContextKeyedServiceFactory {
  public:
   static scoped_refptr<UserStyleSheetWatcher> GetForProfile(Profile* profile);
 
@@ -26,9 +26,9 @@ class UserStyleSheetWatcherFactory
   UserStyleSheetWatcherFactory();
   virtual ~UserStyleSheetWatcherFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual scoped_refptr<RefcountedProfileKeyedService> BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual scoped_refptr<RefcountedBrowserContextKeyedService>
+      BuildServiceInstanceFor(content::BrowserContext* context) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;

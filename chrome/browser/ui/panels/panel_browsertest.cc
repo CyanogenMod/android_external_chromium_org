@@ -672,7 +672,13 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MinimizeRestoreButtonClick) {
   EXPECT_FALSE(panel3->IsMinimized());
 }
 
-IN_PROC_BROWSER_TEST_F(PanelBrowserTest, RestoreAllWithTitlebarClick) {
+// http://crbug.com/243891 flaky on Linux
+#if defined(OS_LINUX)
+#define MAYBE_RestoreAllWithTitlebarClick DISABLED_RestoreAllWithTitlebarClick
+#else
+#define MAYBE_RestoreAllWithTitlebarClick RestoreAllWithTitlebarClick
+#endif
+IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_RestoreAllWithTitlebarClick) {
   // Test with three panels.
   Panel* panel1 = CreatePanel("PanelTest1");
   Panel* panel2 = CreatePanel("PanelTest2");
@@ -1132,7 +1138,7 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest, MAYBE_DrawAttentionWhileMinimized) {
 }
 
 // http://crbug.com/175760; several panel tests failing regularly on mac.
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(OS_LINUX)
 #define MAYBE_StopDrawingAttentionWhileMinimized \
   DISABLED_StopDrawingAttentionWhileMinimized
 #else
@@ -1454,7 +1460,7 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
   DictionaryValue empty_value;
   scoped_refptr<extensions::Extension> extension =
       CreateExtension(FILE_PATH_LITERAL("TestExtension"),
-                      extensions::Manifest::INVALID_LOCATION, empty_value);
+                      extensions::Manifest::INTERNAL, empty_value);
   std::string extension_app_name =
       web_app::GenerateApplicationNameFromExtensionId(extension->id());
 
@@ -1473,14 +1479,14 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
 
   // Create a panel with a non-extension host.
   CreatePanelParams params1(extension_app_name, gfx::Rect(), SHOW_AS_INACTIVE);
-  params1.url = GURL(chrome::kAboutBlankURL);
+  params1.url = GURL(content::kAboutBlankURL);
   Panel* panel1 = CreatePanelWithParams(params1);
   EXPECT_EQ(2, panel_manager->num_panels());
 
   // Create another extension and a panel from that extension.
   scoped_refptr<extensions::Extension> extension_other =
       CreateExtension(FILE_PATH_LITERAL("TestExtensionOther"),
-                      extensions::Manifest::INVALID_LOCATION, empty_value);
+                      extensions::Manifest::INTERNAL, empty_value);
   std::string extension_app_name_other =
       web_app::GenerateApplicationNameFromExtensionId(extension_other->id());
   Panel* panel_other = CreatePanel(extension_app_name_other);

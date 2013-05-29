@@ -228,17 +228,17 @@ namespace chrome {
 
 void ShowCreateWebAppShortcutsDialog(gfx::NativeWindow parent_window,
                                      content::WebContents* web_contents) {
-  views::Widget::CreateWindowWithParent(
+  views::DialogDelegate::CreateDialogWidget(
       new CreateUrlApplicationShortcutView(web_contents),
-      parent_window)->Show();
+      NULL, parent_window)->Show();
 }
 
 void ShowCreateChromeAppShortcutsDialog(gfx::NativeWindow parent_window,
                                         Profile* profile,
                                         const extensions::Extension* app) {
-  views::Widget::CreateWindowWithParent(
+  views::DialogDelegate::CreateDialogWidget(
       new CreateChromeApplicationShortcutView(profile, app),
-      parent_window)->Show();
+      NULL, parent_window)->Show();
 }
 
 }  // namespace chrome
@@ -476,6 +476,7 @@ void CreateUrlApplicationShortcutView::FetchIcon() {
 
 void CreateUrlApplicationShortcutView::DidDownloadFavicon(
     int id,
+    int http_status_code,
     const GURL& image_url,
     int requested_size,
     const std::vector<SkBitmap>& bitmaps) {

@@ -179,8 +179,9 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     crypto_config_.SetDefaults();
     session_.reset(new QuicClientSession(connection_, socket, NULL,
                                          &crypto_client_stream_factory_,
-                                         "www.google.com", &crypto_config_,
-                                         NULL));
+                                         "www.google.com", QuicConfig(),
+                                         &crypto_config_, NULL));
+    session_->config()->SetDefaults();
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     QuicReliableClientStream* stream =
@@ -205,15 +206,12 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     headers[":status"] = status;
     headers[":version"] = "HTTP/1.1";
     headers["content-type"] = "text/plain";
-    response_data_ = session_->compressor()->CompressHeaders(headers) + body;
+    response_data_ = SerializeHeaderBlock(headers) + body;
   }
 
   std::string SerializeHeaderBlock(const SpdyHeaderBlock& headers) {
-    size_t len = SpdyFramer::GetSerializedLength(3, &headers);
-    SpdyFrameBuilder builder(len);
-    SpdyFramer::WriteHeaderBlock(&builder, 3, &headers);
-    scoped_ptr<SpdyFrame> frame(builder.take());
-    return std::string(frame->data(), len);
+    QuicSpdyCompressor compressor;
+    return compressor.CompressHeaders(headers);
   }
 
   // Returns a newly created packet to send kData on stream 1.
@@ -265,7 +263,6 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
   testing::StrictMock<MockConnectionVisitor> visitor_;
   scoped_ptr<QuicHttpStream> stream_;
   scoped_ptr<QuicClientSession> session_;
-  QuicConfig* config_;
   QuicCryptoClientConfig crypto_config_;
   TestCompletionCallback callback_;
   HttpRequestInfo request_;

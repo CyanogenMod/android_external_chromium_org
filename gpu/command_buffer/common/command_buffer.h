@@ -5,9 +5,9 @@
 #ifndef GPU_COMMAND_BUFFER_COMMON_COMMAND_BUFFER_H_
 #define GPU_COMMAND_BUFFER_COMMON_COMMAND_BUFFER_H_
 
-#include "../../gpu_export.h"
-#include "../common/buffer.h"
-#include "../common/constants.h"
+#include "gpu/command_buffer/common/buffer.h"
+#include "gpu/command_buffer/common/constants.h"
+#include "gpu/gpu_export.h"
 
 namespace base {
 class SharedMemory;
@@ -18,10 +18,6 @@ namespace gpu {
 // Common interface for CommandBuffer implementations.
 class GPU_EXPORT CommandBuffer {
  public:
-  enum {
-    kMaxCommandBufferSize = 4 * 1024 * 1024
-  };
-
   struct State {
     State()
         : num_entries(0),

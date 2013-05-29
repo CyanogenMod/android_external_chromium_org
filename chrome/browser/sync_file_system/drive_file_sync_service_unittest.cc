@@ -11,7 +11,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/fileapi/syncable/syncable_file_system_util.h"
+#include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 
 namespace sync_file_system {
 
@@ -80,14 +80,14 @@ class DriveFileSyncServiceTest : public testing::Test {
   }
 
  protected:
-  MessageLoop* message_loop() { return &message_loop_; }
+  base::MessageLoop* message_loop() { return &message_loop_; }
   drive::FakeAPIUtil* fake_api_util() { return fake_api_util_; }
   DriveMetadataStore* metadata_store() { return metadata_store_; }
   DriveFileSyncService* sync_service() { return sync_service_.get(); }
 
  private:
   base::ScopedTempDir scoped_base_dir_;
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 
@@ -115,8 +115,9 @@ TEST_F(DriveFileSyncServiceTest, DeleteOriginDirectory) {
 
   // Add meta_data entry so GURL->resourse_id mapping is there.
   const GURL origin_gurl("chrome-extension://uninstallme");
-  metadata_store()->AddBatchSyncOrigin(origin_gurl,
-                                       origin_dir_resource_id);
+  metadata_store()->AddIncrementalSyncOrigin(origin_gurl,
+                                             origin_dir_resource_id);
+
   // Delete the origin directory.
   bool done = false;
   sync_service()->UninstallOrigin(

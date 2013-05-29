@@ -14,7 +14,7 @@
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_handler.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 class Profile;
 class ServiceProcessControl;
@@ -27,7 +27,7 @@ struct CloudPrintProxyInfo;
 // running in the service process.
 class CloudPrintProxyService
     : public CloudPrintSetupHandlerDelegate,
-      public ProfileKeyedService {
+      public BrowserContextKeyedService {
  public:
   explicit CloudPrintProxyService(Profile* profile);
   virtual ~CloudPrintProxyService();

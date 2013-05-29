@@ -82,6 +82,10 @@ class FakeFileSystem : public FileSystemInterface {
   virtual void CreateFile(const base::FilePath& file_path,
                           bool is_exclusive,
                           const FileOperationCallback& callback) OVERRIDE;
+  virtual void TouchFile(const base::FilePath& file_path,
+                         const base::Time& last_access_time,
+                         const base::Time& last_modified_time,
+                         const FileOperationCallback& callback) OVERRIDE;
   virtual void Pin(const base::FilePath& file_path,
                    const FileOperationCallback& callback) OVERRIDE;
   virtual void Unpin(const base::FilePath& file_path,
@@ -90,7 +94,7 @@ class FakeFileSystem : public FileSystemInterface {
                              const GetFileCallback& callback) OVERRIDE;
   virtual void GetFileByResourceId(
       const std::string& resource_id,
-      const DriveClientContext& context,
+      const ClientContext& context,
       const GetFileCallback& get_file_callback,
       const google_apis::GetContentCallback& get_content_callback) OVERRIDE;
   virtual void GetFileContentByPath(
@@ -100,7 +104,7 @@ class FakeFileSystem : public FileSystemInterface {
       const FileOperationCallback& completion_callback) OVERRIDE;
   virtual void UpdateFileByResourceId(
       const std::string& resource_id,
-      const DriveClientContext& context,
+      const ClientContext& context,
       const FileOperationCallback& callback) OVERRIDE;
   virtual void GetResourceEntryByPath(
       const base::FilePath& file_path,

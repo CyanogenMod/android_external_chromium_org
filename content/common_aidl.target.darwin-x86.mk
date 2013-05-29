@@ -15,23 +15,23 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "content_content_gyp_common_aidl_target_compile_aidl":
-# "{'inputs': ['$(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/framework.aidl', 'public/android/java/src/org/chromium/content/common/common.aidl'], 'extension': 'aidl', 'rule_sources': ['public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl', 'public/android/java/src/org/chromium/content/common/IChildProcessService.aidl'], 'rule_name': 'compile_aidl', 'outputs': ['$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java'], 'action': ['$(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/tools/darwin/aidl', '-p$(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/framework.aidl', '-ppublic/android/java/src/org/chromium/content/common/common.aidl', '$(RULE_SOURCES)', '$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java']}":
+# "{'inputs': ['$(PWD)/prebuilts/sdk/17/framework.aidl', 'public/android/java/src/org/chromium/content/common/common.aidl'], 'extension': 'aidl', 'rule_sources': ['public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl', 'public/android/java/src/org/chromium/content/common/IChildProcessService.aidl'], 'rule_name': 'compile_aidl', 'outputs': ['$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java'], 'action': ['$(PWD)/prebuilts/sdk/tools/darwin/aidl', '-p$(PWD)/prebuilts/sdk/17/framework.aidl', '-ppublic/android/java/src/org/chromium/content/common/common.aidl', '$(RULE_SOURCES)', '$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java']}":
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl $(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/framework.aidl $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/common.aidl $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/tools/darwin/aidl" "-p$(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java"
+$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl $(PWD)/prebuilts/sdk/17/framework.aidl $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/common.aidl $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(PWD)/prebuilts/sdk/tools/darwin/aidl" "-p$(PWD)/prebuilts/sdk/17/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java"
 
 .PHONY: content_common_aidl_gyp_rule_trigger
 content_common_aidl_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java
 
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/IChildProcessService.aidl $(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/framework.aidl $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/common.aidl $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/tools/darwin/aidl" "-p$(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessService.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java"
+$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/IChildProcessService.aidl $(PWD)/prebuilts/sdk/17/framework.aidl $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/common/common.aidl $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/common_aidl/aidl; cd $(gyp_local_path)/content; "$(PWD)/prebuilts/sdk/tools/darwin/aidl" "-p$(PWD)/prebuilts/sdk/17/framework.aidl" -ppublic/android/java/src/org/chromium/content/common/common.aidl public/android/java/src/org/chromium/content/common/IChildProcessService.aidl "$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java"
 
 .PHONY: content_common_aidl_gyp_rule_trigger
 content_common_aidl_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java
@@ -97,6 +97,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -118,9 +119,9 @@ LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES := \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

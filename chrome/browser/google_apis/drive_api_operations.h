@@ -32,7 +32,7 @@ typedef base::Callback<void(GDataErrorCode error,
 // This class performs the operation for fetching About data.
 class GetAboutOperation : public GetDataOperation {
  public:
-  GetAboutOperation(OperationRegistry* registry,
+  GetAboutOperation(OperationRunner* runner,
                     net::URLRequestContextGetter* url_request_context_getter,
                     const DriveApiUrlGenerator& url_generator,
                     const GetAboutResourceCallback& callback);
@@ -53,7 +53,7 @@ class GetAboutOperation : public GetDataOperation {
 // This class performs the operation for fetching Applist.
 class GetApplistOperation : public GetDataOperation {
  public:
-  GetApplistOperation(OperationRegistry* registry,
+  GetApplistOperation(OperationRunner* runner,
                       net::URLRequestContextGetter* url_request_context_getter,
                       const DriveApiUrlGenerator& url_generator,
                       const GetDataCallback& callback);
@@ -83,7 +83,7 @@ class GetChangelistOperation : public GetDataOperation {
   // |max_results| specifies the max of the number of files resource in the
   // response.
   GetChangelistOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       bool include_deleted,
@@ -113,7 +113,7 @@ class GetChangelistOperation : public GetDataOperation {
 class GetFilelistOperation : public GetDataOperation {
  public:
   GetFilelistOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const std::string& search_string,
@@ -138,7 +138,7 @@ class GetFilelistOperation : public GetDataOperation {
 // This class performs the operation for fetching a file.
 class GetFileOperation : public GetDataOperation {
  public:
-  GetFileOperation(OperationRegistry* registry,
+  GetFileOperation(OperationRunner* runner,
                    net::URLRequestContextGetter* url_request_context_getter,
                    const DriveApiUrlGenerator& url_generator,
                    const std::string& file_id,
@@ -170,7 +170,7 @@ namespace drive {
 class ContinueGetFileListOperation : public GetDataOperation {
  public:
   ContinueGetFileListOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const GURL& url,
       const GetDataCallback& callback);
@@ -191,7 +191,7 @@ class ContinueGetFileListOperation : public GetDataOperation {
 class CreateDirectoryOperation : public GetDataOperation {
  public:
   CreateDirectoryOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const std::string& parent_resource_id,
@@ -221,7 +221,7 @@ class RenameResourceOperation : public EntryActionOperation {
  public:
   // |callback| must not be null.
   RenameResourceOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const std::string& resource_id,
@@ -246,34 +246,64 @@ class RenameResourceOperation : public EntryActionOperation {
   DISALLOW_COPY_AND_ASSIGN(RenameResourceOperation);
 };
 
+//=========================== TouchResourceOperation ===========================
+
+// This class performs the operation to touch a document/file/directory.
+// This uses "files.patch" of Drive API v2 rather than "files.touch". See also:
+// https://developers.google.com/drive/v2/reference/files/patch, and
+// https://developers.google.com/drive/v2/reference/files/touch
+class TouchResourceOperation : public GetDataOperation {
+ public:
+  // |callback| must not be null.
+  TouchResourceOperation(
+      OperationRunner* runner,
+      net::URLRequestContextGetter* url_request_context_getter,
+      const DriveApiUrlGenerator& url_generator,
+      const std::string& resource_id,
+      const base::Time& modified_date,
+      const base::Time& last_viewed_by_me_date,
+      const FileResourceCallback& callback);
+  virtual ~TouchResourceOperation();
+
+ protected:
+  // UrlFetchOperationBase overrides.
+  virtual net::URLFetcher::RequestType GetRequestType() const OVERRIDE;
+  virtual std::vector<std::string> GetExtraRequestHeaders() const OVERRIDE;
+  virtual GURL GetURL() const OVERRIDE;
+  virtual bool GetContentData(std::string* upload_content_type,
+                              std::string* upload_content) OVERRIDE;
+
+ private:
+  const DriveApiUrlGenerator url_generator_;
+
+  const std::string resource_id_;
+  const base::Time modified_date_;
+  const base::Time last_viewed_by_me_date_;
+
+  DISALLOW_COPY_AND_ASSIGN(TouchResourceOperation);
+};
+
 //=========================== CopyResourceOperation ============================
 
 // This class performs the operation for copying a resource.
 //
-// This class is designed to copy only the hosted documents at the moment,
-// but the operation (in server side) can work with regular files, too.
-// TODO(hidehiko): Extend this operation to adapt copy regular files on
-// server side (crbug.com/138273).
+// Copies the resource with |resource_id| into a directory with
+// |parent_resource_id|. The new resource will be named as |new_name|.
+// |parent_resource_id| can be empty. In the case, the copy will be created
+// directly under the default root directory (this is the default behavior
+// of Drive API v2's copy operation).
 //
-// Also, note that, at the moment, this operation copies the hosted document
-// to the root directory. However, the operation (in server side) supports
-// copying files into any directory on Drive API v2, while it is not supported
-// on GData WAPI. Now, we are on the way of migration from GData WAPI to
-// Drive API v2, so we drop the feature for now to reduce the migration
-// complexity.
-// TODO(hidehiko): Support the feature for the copy after the migration,
-// which should be somehow benficial (at least we can simplify
-// chromeos/drive/file_system/copy_operation).
+// This operation corresponds to "Files: copy" operation on Drive API v2. See
+// also: https://developers.google.com/drive/v2/reference/files/copy
 class CopyResourceOperation : public GetDataOperation {
  public:
-  // |resource_id| is the resource id of the file to be copied.
-  // |new_name| is the name of the copied (newly created) file.
-  // |callback| must not be null.
+  // Upon completion, |callback| will be called. |callback| must not be null.
   CopyResourceOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const std::string& resource_id,
+      const std::string& parent_resource_id,
       const std::string& new_name,
       const FileResourceCallback& callback);
   virtual ~CopyResourceOperation();
@@ -286,6 +316,7 @@ class CopyResourceOperation : public GetDataOperation {
  private:
   const DriveApiUrlGenerator url_generator_;
   const std::string resource_id_;
+  const std::string parent_resource_id_;
   const std::string new_name_;
 
   DISALLOW_COPY_AND_ASSIGN(CopyResourceOperation);
@@ -308,7 +339,7 @@ class TrashResourceOperation : public EntryActionOperation {
  public:
   // |callback| must not be null.
   TrashResourceOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const std::string& resource_id,
@@ -336,7 +367,7 @@ class InsertResourceOperation : public EntryActionOperation {
  public:
   // |callback| must not be null.
   InsertResourceOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const std::string& parent_resource_id,
@@ -371,7 +402,7 @@ class DeleteResourceOperation : public EntryActionOperation {
  public:
   // |callback| must not be null.
   DeleteResourceOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const std::string& parent_resource_id,
@@ -402,7 +433,7 @@ class InitiateUploadNewFileOperation : public InitiateUploadOperationBase {
   // See also the comments of InitiateUploadOperationBase for more details
   // about the other parameters.
   InitiateUploadNewFileOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const base::FilePath& drive_file_path,
@@ -441,7 +472,7 @@ class InitiateUploadExistingFileOperation
   // See also the comments of InitiateUploadOperationBase for more details
   // about the other parameters.
   InitiateUploadExistingFileOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
       const DriveApiUrlGenerator& url_generator,
       const base::FilePath& drive_file_path,
@@ -466,7 +497,7 @@ class InitiateUploadExistingFileOperation
   DISALLOW_COPY_AND_ASSIGN(InitiateUploadExistingFileOperation);
 };
 
-// Callback used for ResumeUpload() (and will be used for GetUploadStatus()).
+// Callback used for ResumeUpload() and GetUploadStatus().
 typedef base::Callback<void(
     const UploadRangeResponse& response,
     scoped_ptr<FileResource> new_resource)> UploadRangeCallback;
@@ -479,9 +510,8 @@ class ResumeUploadOperation : public ResumeUploadOperationBase {
   // See also ResumeUploadOperationBase's comment for parameters meaning.
   // |callback| must not be null. |progress_callback| may be null.
   ResumeUploadOperation(
-      OperationRegistry* registry,
+      OperationRunner* runner,
       net::URLRequestContextGetter* url_request_context_getter,
-      UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_location,
       int64 start_position,
@@ -508,6 +538,35 @@ class ResumeUploadOperation : public ResumeUploadOperationBase {
 
   DISALLOW_COPY_AND_ASSIGN(ResumeUploadOperation);
 };
+
+//========================== GetUploadStatusOperation ==========================
+
+// Performs the operation to request the current upload status of a file.
+class GetUploadStatusOperation : public GetUploadStatusOperationBase {
+ public:
+  // See also GetUploadStatusOperationBase's comment for parameters meaning.
+  // |callback| must not be null.
+  GetUploadStatusOperation(
+      OperationRunner* runner,
+      net::URLRequestContextGetter* url_request_context_getter,
+      const base::FilePath& drive_file_path,
+      const GURL& upload_url,
+      int64 content_length,
+      const UploadRangeCallback& callback);
+  virtual ~GetUploadStatusOperation();
+
+ protected:
+  // UploadRangeOperationBase overrides.
+  virtual void OnRangeOperationComplete(
+      const UploadRangeResponse& response,
+      scoped_ptr<base::Value> value) OVERRIDE;
+
+ private:
+  const UploadRangeCallback callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(GetUploadStatusOperation);
+};
+
 
 }  // namespace drive
 }  // namespace google_apis

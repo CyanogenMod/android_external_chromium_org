@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/time.h"
 #include "cc/base/cc_export.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebScrollbar.h"
+#include "cc/input/scrollbar.h"
 
 namespace gfx {
 class Point;
@@ -21,6 +21,27 @@ namespace cc {
 
 class LayerScrollOffsetDelegate;
 
+class CC_EXPORT InputHandlerClient {
+ public:
+  virtual ~InputHandlerClient() {}
+
+  virtual void WillShutdown() = 0;
+  virtual void Animate(base::TimeTicks time) = 0;
+  virtual void MainThreadHasStoppedFlinging() = 0;
+
+  // Called when scroll deltas reaching the root scrolling layer go unused.
+  // The accumulated overscroll is scoped by the most recent call to
+  // InputHandler::ScrollBegin.
+  virtual void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
+                             gfx::Vector2dF current_fling_velocity) = 0;
+
+ protected:
+  InputHandlerClient() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(InputHandlerClient);
+};
+
 // The InputHandler is a way for the embedders to interact with the impl thread
 // side of the compositor implementation. There is one InputHandler per
 // LayerTreeHost. To use the input handler, implement the InputHanderClient
@@ -29,6 +50,11 @@ class CC_EXPORT InputHandler {
  public:
   enum ScrollStatus { ScrollOnMainThread, ScrollStarted, ScrollIgnored };
   enum ScrollInputType { Gesture, Wheel, NonBubblingGesture };
+
+  // Binds a client to this handler to receive notifications. Only one client
+  // can be bound to an InputHandler. The client must live at least until the
+  // handler calls WillShutdown() on the client.
+  virtual void BindToClient(InputHandlerClient* client) = 0;
 
   // Selects a layer to be scrolled at a given point in viewport (logical
   // pixel) coordinates. Returns ScrollStarted if the layer at the coordinates
@@ -46,13 +72,16 @@ class CC_EXPORT InputHandler {
   // scrolled will be moved instead. If no layer can be moved in the requested
   // direction at all, then false is returned. If any layer is moved, then
   // true is returned.
+  // If the scroll delta hits the root layer, and the layer can no longer move,
+  // the root overscroll accumulated within this ScrollBegin() scope is reported
+  // to the client.
   // Should only be called if ScrollBegin() returned ScrollStarted.
   virtual bool ScrollBy(gfx::Point viewport_point,
                         gfx::Vector2dF scroll_delta) = 0;
 
   virtual bool ScrollVerticallyByPage(
       gfx::Point viewport_point,
-      WebKit::WebScrollbar::ScrollDirection direction) = 0;
+      ScrollDirection direction) = 0;
 
   // Returns ScrollStarted if a layer was being actively being scrolled,
   // ScrollIgnored if not.
@@ -89,7 +118,7 @@ class CC_EXPORT InputHandler {
 
   virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_point) = 0;
 
-  virtual void DidReceiveLastInputEventForVSync(
+  virtual void DidReceiveLastInputEventForBeginFrame(
       base::TimeTicks frame_time) = 0;
 
  protected:
@@ -98,21 +127,6 @@ class CC_EXPORT InputHandler {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InputHandler);
-};
-
-class CC_EXPORT InputHandlerClient {
- public:
-  virtual ~InputHandlerClient() {}
-
-  virtual void BindToHandler(InputHandler* handler) = 0;
-  virtual void Animate(base::TimeTicks time) = 0;
-  virtual void MainThreadHasStoppedFlinging() = 0;
-
- protected:
-  InputHandlerClient() {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(InputHandlerClient);
 };
 
 }  // namespace cc

@@ -161,7 +161,7 @@ class JobSchedulerTest : public testing::Test {
     ChangeConnectionType(net::NetworkChangeNotifier::CONNECTION_NONE);
   }
 
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<JobScheduler> scheduler_;
@@ -316,7 +316,7 @@ TEST_F(JobSchedulerTest, GetResourceEntry) {
 
   scheduler_->GetResourceEntry(
       "file:2_file_resource_id",  // resource ID
-      DriveClientContext(USER_INITIATED),
+      ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   google_apis::test_util::RunBlockingPoolTask();
 
@@ -335,6 +335,23 @@ TEST_F(JobSchedulerTest, DeleteResource) {
   google_apis::test_util::RunBlockingPoolTask();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
+}
+
+TEST_F(JobSchedulerTest, CopyResource) {
+  ConnectToWifi();
+
+  google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+  scoped_ptr<google_apis::ResourceEntry> entry;
+
+  scheduler_->CopyResource(
+      "file:2_file_resource_id",  // resource ID
+      "folder:1_folder_resource_id",  // parent resource ID
+      "New Document",  // new name
+      google_apis::test_util::CreateCopyResultCallback(&error, &entry));
+  google_apis::test_util::RunBlockingPoolTask();
+
+  ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
+  ASSERT_TRUE(entry);
 }
 
 TEST_F(JobSchedulerTest, CopyHostedDocument) {
@@ -423,25 +440,25 @@ TEST_F(JobSchedulerTest, GetResourceEntryPriority) {
 
   scheduler_->GetResourceEntry(
       resource_1,  // resource ID
-      DriveClientContext(USER_INITIATED),
+      ClientContext(USER_INITIATED),
       base::Bind(&CopyResourceIdFromGetResourceEntryCallback,
                  &resource_ids,
                  resource_1));
   scheduler_->GetResourceEntry(
       resource_2,  // resource ID
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       base::Bind(&CopyResourceIdFromGetResourceEntryCallback,
                  &resource_ids,
                  resource_2));
   scheduler_->GetResourceEntry(
       resource_3,  // resource ID
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       base::Bind(&CopyResourceIdFromGetResourceEntryCallback,
                  &resource_ids,
                  resource_3));
   scheduler_->GetResourceEntry(
       resource_4,  // resource ID
-      DriveClientContext(USER_INITIATED),
+      ClientContext(USER_INITIATED),
       base::Bind(&CopyResourceIdFromGetResourceEntryCallback,
                  &resource_ids,
                  resource_4));
@@ -465,7 +482,7 @@ TEST_F(JobSchedulerTest, GetResourceEntryNoConnection) {
 
   scheduler_->GetResourceEntry(
       resource,  // resource ID
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       base::Bind(&CopyResourceIdFromGetResourceEntryCallback,
                  &resource_ids,
                  resource));
@@ -501,7 +518,7 @@ TEST_F(JobSchedulerTest, DownloadFileCellularDisabled) {
       base::FilePath::FromUTF8Unsafe("drive/whatever.txt"),  // virtual path
       kOutputFilePath,
       kContentUrl,
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       google_apis::test_util::CreateCopyResultCallback(
           &download_error, &output_file_path),
       google_apis::GetContentCallback());
@@ -532,8 +549,7 @@ TEST_F(JobSchedulerTest, DownloadFileCellularDisabled) {
   std::string content;
   EXPECT_EQ(output_file_path, kOutputFilePath);
   ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
-  // The content is "x"s of the file size specified in root_feed.json.
-  EXPECT_EQ("xxxxxxxxxx", content);
+  EXPECT_EQ("This is some test content.", content);
 }
 
 TEST_F(JobSchedulerTest, DownloadFileWimaxDisabled) {
@@ -555,7 +571,7 @@ TEST_F(JobSchedulerTest, DownloadFileWimaxDisabled) {
       base::FilePath::FromUTF8Unsafe("drive/whatever.txt"),  // virtual path
       kOutputFilePath,
       kContentUrl,
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       google_apis::test_util::CreateCopyResultCallback(
           &download_error, &output_file_path),
       google_apis::GetContentCallback());
@@ -586,8 +602,7 @@ TEST_F(JobSchedulerTest, DownloadFileWimaxDisabled) {
   std::string content;
   EXPECT_EQ(output_file_path, kOutputFilePath);
   ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
-  // The content is "x"s of the file size specified in root_feed.json.
-  EXPECT_EQ("xxxxxxxxxx", content);
+  EXPECT_EQ("This is some test content.", content);
 }
 
 TEST_F(JobSchedulerTest, DownloadFileCellularEnabled) {
@@ -609,7 +624,7 @@ TEST_F(JobSchedulerTest, DownloadFileCellularEnabled) {
       base::FilePath::FromUTF8Unsafe("drive/whatever.txt"),  // virtual path
       kOutputFilePath,
       kContentUrl,
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       google_apis::test_util::CreateCopyResultCallback(
           &download_error, &output_file_path),
       google_apis::GetContentCallback());
@@ -632,8 +647,7 @@ TEST_F(JobSchedulerTest, DownloadFileCellularEnabled) {
   std::string content;
   EXPECT_EQ(output_file_path, kOutputFilePath);
   ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
-  // The content is "x"s of the file size specified in root_feed.json.
-  EXPECT_EQ("xxxxxxxxxx", content);
+  EXPECT_EQ("This is some test content.", content);
 }
 
 TEST_F(JobSchedulerTest, DownloadFileWimaxEnabled) {
@@ -655,7 +669,7 @@ TEST_F(JobSchedulerTest, DownloadFileWimaxEnabled) {
       base::FilePath::FromUTF8Unsafe("drive/whatever.txt"),  // virtual path
       kOutputFilePath,
       kContentUrl,
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       google_apis::test_util::CreateCopyResultCallback(
           &download_error, &output_file_path),
       google_apis::GetContentCallback());
@@ -678,8 +692,7 @@ TEST_F(JobSchedulerTest, DownloadFileWimaxEnabled) {
   std::string content;
   EXPECT_EQ(output_file_path, kOutputFilePath);
   ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
-  // The content is "x"s of the file size specified in root_feed.json.
-  EXPECT_EQ("xxxxxxxxxx", content);
+  EXPECT_EQ("This is some test content.", content);
 }
 
 TEST_F(JobSchedulerTest, JobInfo) {
@@ -720,7 +733,7 @@ TEST_F(JobSchedulerTest, JobInfo) {
       base::FilePath::FromUTF8Unsafe("drive/whatever.txt"),  // virtual path
       temp_dir.path().AppendASCII("whatever.txt"),
       GURL("https://file_content_url/"),
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       google_apis::test_util::CreateCopyResultCallback(&error, &path),
       google_apis::GetContentCallback());
 
@@ -815,7 +828,7 @@ TEST_F(JobSchedulerTest, JobInfoProgress) {
       base::FilePath::FromUTF8Unsafe("drive/whatever.txt"),  // virtual path
       temp_dir.path().AppendASCII("whatever.txt"),
       GURL("https://file_content_url/"),
-      DriveClientContext(BACKGROUND),
+      ClientContext(BACKGROUND),
       google_apis::test_util::CreateCopyResultCallback(&error, &path),
       google_apis::GetContentCallback());
   google_apis::test_util::RunBlockingPoolTask();
@@ -825,7 +838,7 @@ TEST_F(JobSchedulerTest, JobInfoProgress) {
   ASSERT_TRUE(!download_progress.empty());
   EXPECT_TRUE(base::STLIsSorted(download_progress));
   EXPECT_GE(download_progress.front(), 0);
-  EXPECT_LE(download_progress.back(), 10);
+  EXPECT_LE(download_progress.back(), 26);
 
   // Upload job.
   path = temp_dir.path().AppendASCII("new_file.txt");
@@ -840,9 +853,8 @@ TEST_F(JobSchedulerTest, JobInfoProgress) {
       path,
       "dummy title",
       "plain/plain",
-      DriveClientContext(BACKGROUND),
-      google_apis::test_util::CreateCopyResultCallback(
-          &upload_error, &path, &path, &entry));
+      ClientContext(BACKGROUND),
+      google_apis::test_util::CreateCopyResultCallback(&upload_error, &entry));
   google_apis::test_util::RunBlockingPoolTask();
 
   std::vector<int64> upload_progress;
@@ -850,7 +862,7 @@ TEST_F(JobSchedulerTest, JobInfoProgress) {
   ASSERT_TRUE(!upload_progress.empty());
   EXPECT_TRUE(base::STLIsSorted(upload_progress));
   EXPECT_GE(upload_progress.front(), 0);
-  EXPECT_LE(upload_progress.back(), 5);
+  EXPECT_LE(upload_progress.back(), 13);
 }
 
 }  // namespace drive

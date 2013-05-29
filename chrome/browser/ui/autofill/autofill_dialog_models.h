@@ -72,7 +72,16 @@ class SuggestionsMenuModel : public ui::SimpleMenuModel,
   void SetCheckedItem(const std::string& item_key);
   void SetCheckedIndex(size_t index);
 
-  int checked_item() { return checked_item_; }
+  // Sets the item to be checked to the |n|th item that has key |item_key|.
+  // If there are fewer than |n| items that share |item_key|, the last one
+  // becomes checked. If there is no item with |item_key|, nothing happens.
+  // |n| is 1-indexed.
+  void SetCheckedItemNthWithKey(const std::string& item_key, size_t n);
+
+  int checked_item() const { return checked_item_; }
+
+  // Enable/disable an item by key.
+  void SetEnabled(const std::string& item_key, bool enabled);
 
   // ui::SimpleMenuModel::Delegate implementation.
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
@@ -83,10 +92,17 @@ class SuggestionsMenuModel : public ui::SimpleMenuModel,
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
-  // The items this model represents, in presentation order. The first
-  // string is the "key" which identifies the item. The second is the
-  // display string for the item.
-  std::vector<std::pair<std::string, string16> > items_;
+  // Represents an item in this model.
+  struct Item {
+    std::string key;  //  The key of the item.
+    bool enabled;  // Whether the item is selectable.
+  };
+  // The items this model represents in presentation order.
+  // Note: the index in this vector is the |command_id| of the item.
+  std::vector<Item> items_;
+
+  // Returns the command id (and index) of the item by the |key|.
+  size_t GetItemIndex(const std::string& item_key);
 
   SuggestionsMenuModelDelegate* delegate_;
 

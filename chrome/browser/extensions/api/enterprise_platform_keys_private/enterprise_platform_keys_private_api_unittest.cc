@@ -157,6 +157,9 @@ class EPKPChallengeKeyTestBase : public BrowserWithTestWindowTest {
     // Set the user preferences.
     prefs_ = browser()->profile()->GetPrefs();
     prefs_->SetString(prefs::kGoogleServicesUsername, "test@google.com");
+    base::ListValue whitelist;
+    whitelist.AppendString(extension_->id());
+    prefs_->Set(prefs::kAttestationExtensionWhitelist, whitelist);
   }
 
   NiceMock<chromeos::MockCryptohomeClient> mock_cryptohome_client_;
@@ -200,11 +203,18 @@ TEST_F(EPKPChallengeMachineKeyTest, NonEnterpriseDevice) {
             utils::RunFunctionAndReturnError(func_.get(), kArgs, browser()));
 }
 
-TEST_F(EPKPChallengeMachineKeyTest, DomainsDontMatch) {
+TEST_F(EPKPChallengeMachineKeyTest, ExtensionNotWhitelisted) {
+  base::ListValue empty_whitelist;
+  prefs_->Set(prefs::kAttestationExtensionWhitelist, empty_whitelist);
+
+  EXPECT_EQ(EPKPChallengeKeyBase::kExtensionNotWhitelistedError,
+            utils::RunFunctionAndReturnError(func_.get(), kArgs, browser()));
+}
+
+TEST_F(EPKPChallengeMachineKeyTest, UserNotManaged) {
   prefs_->SetString(prefs::kGoogleServicesUsername, "test@chromium.org");
 
-  EXPECT_EQ(base::StringPrintf(EPKPChallengeKeyBase::kDomainsDontMatchError,
-                               "chromium.org", "google.com"),
+  EXPECT_EQ(EPKPChallengeKeyBase::kUserNotManaged,
             utils::RunFunctionAndReturnError(func_.get(), kArgs, browser()));
 }
 
@@ -292,9 +302,6 @@ class EPKPChallengeUserKeyTest : public EPKPChallengeKeyTestBase {
 
     // Set the user preferences.
     prefs_->SetBoolean(prefs::kAttestationEnabled, true);
-    base::ListValue whitelist;
-    whitelist.AppendString(extension_->id());
-    prefs_->Set(prefs::kAttestationExtensionWhitelist, whitelist);
   }
 
   scoped_refptr<EPKPChallengeUserKey> func_;
@@ -320,15 +327,14 @@ TEST_F(EPKPChallengeUserKeyTest, ExtensionNotWhitelisted) {
   base::ListValue empty_whitelist;
   prefs_->Set(prefs::kAttestationExtensionWhitelist, empty_whitelist);
 
-  EXPECT_EQ(EPKPChallengeUserKey::kExtensionNotWhitelistedError,
+  EXPECT_EQ(EPKPChallengeKeyBase::kExtensionNotWhitelistedError,
             utils::RunFunctionAndReturnError(func_.get(), kArgs, browser()));
 }
 
-TEST_F(EPKPChallengeUserKeyTest, DomainsDontMatch) {
+TEST_F(EPKPChallengeUserKeyTest, UserNotManaged) {
   prefs_->SetString(prefs::kGoogleServicesUsername, "test@chromium.org");
 
-  EXPECT_EQ(base::StringPrintf(EPKPChallengeKeyBase::kDomainsDontMatchError,
-                               "chromium.org", "google.com"),
+  EXPECT_EQ(EPKPChallengeKeyBase::kUserNotManaged,
             utils::RunFunctionAndReturnError(func_.get(), kArgs, browser()));
 }
 
@@ -412,7 +418,7 @@ TEST_F(EPKPChallengeUserKeyTest, Success) {
   EXPECT_CALL(mock_async_method_caller_,
               TpmAttestationSignEnterpriseChallenge(
                   chromeos::attestation::KEY_USER, "attest-ent-user",
-                  "google.com", "device_id", _, "challenge", _))
+                  "test@google.com", "device_id", _, "challenge", _))
       .Times(1);
   // RegisterKey must be called exactly once.
   EXPECT_CALL(mock_async_method_caller_,

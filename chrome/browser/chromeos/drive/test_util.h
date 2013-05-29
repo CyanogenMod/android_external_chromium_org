@@ -6,7 +6,9 @@
 #define CHROME_BROWSER_CHROMEOS_DRIVE_TEST_UTIL_H_
 
 #include <string>
+#include <vector>
 
+#include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
@@ -18,10 +20,14 @@ class IOBuffer;
 
 namespace drive {
 
-class FileCacheEntry;
+namespace internal {
 class ChangeListLoader;
+}  // namespace internal
 
 namespace test_util {
+
+// Disk space size used by FakeFreeDiskSpaceGetter.
+const int64 kLotsOfSpace = internal::kMinFreeSpace * 10;
 
 // This is a bitmask of cache states in FileCacheEntry. Used only in tests.
 enum TestFileCacheState {
@@ -33,6 +39,25 @@ enum TestFileCacheState {
   TEST_CACHE_STATE_PERSISTENT = 1 << 4,
 };
 
+// Test data type of file cache
+struct TestCacheResource {
+  TestCacheResource(const std::string& source_file,
+                    const std::string& resource_id,
+                    const std::string& md5,
+                    bool is_pinned,
+                    bool is_dirty);
+  ~TestCacheResource(){}
+
+  std::string source_file;
+  std::string resource_id;
+  std::string md5;
+  bool is_pinned;
+  bool is_dirty;
+};
+
+// Obtains default test data for FileCacheEntry.
+std::vector<TestCacheResource> GetDefaultTestCacheResources();
+
 // Converts |cache_state| which is a bit mask of TestFileCacheState, to a
 // FileCacheEntry.
 FileCacheEntry ToCacheEntry(int cache_state);
@@ -43,7 +68,7 @@ bool CacheStatesEqual(const FileCacheEntry& a, const FileCacheEntry& b);
 // Loads a test json file as root ("/drive") element from a test file stored
 // under chrome/test/data/chromeos. Returns true on success.
 bool LoadChangeFeed(const std::string& relative_path,
-                    ChangeListLoader* change_list_loader,
+                    internal::ChangeListLoader* change_list_loader,
                     bool is_delta_feed,
                     const std::string& root_resource_id,
                     int64 root_feed_changestamp);
@@ -78,6 +103,12 @@ int ReadAllData(Reader* reader, std::string* content) {
     content->append(buffer->data(), result);
   }
 }
+
+// Adds test cache |resources| to |cache|. Returnes whether the operation
+// succeeeded or not.
+bool PrepareTestCacheResources(
+    internal::FileCache* cache,
+    const std::vector<TestCacheResource>& resources);
 
 }  // namespace test_util
 }  // namespace drive

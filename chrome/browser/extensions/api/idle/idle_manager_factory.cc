@@ -8,7 +8,7 @@
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace extensions {
 
@@ -16,7 +16,7 @@ namespace extensions {
 IdleManager* IdleManagerFactory::GetForProfile(
     Profile* profile) {
   return static_cast<IdleManager*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -25,15 +25,16 @@ IdleManagerFactory* IdleManagerFactory::GetInstance() {
 }
 
 IdleManagerFactory::IdleManagerFactory()
-    : ProfileKeyedServiceFactory("IdleManager",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "IdleManager",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(ExtensionSystemFactory::GetInstance());
 }
 
 IdleManagerFactory::~IdleManagerFactory() {
 }
 
-ProfileKeyedService* IdleManagerFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* IdleManagerFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   IdleManager* idle_manager = new IdleManager(static_cast<Profile*>(profile));
   idle_manager->Init();
@@ -45,7 +46,7 @@ content::BrowserContext* IdleManagerFactory::GetBrowserContextToUse(
   return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
-bool IdleManagerFactory::ServiceIsCreatedWithProfile() const {
+bool IdleManagerFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

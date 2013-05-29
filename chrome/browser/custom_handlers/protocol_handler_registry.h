@@ -15,9 +15,9 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "net/url_request/url_request.h"
@@ -33,7 +33,7 @@ class PrefRegistrySyncable;
 // instance of this class, which is initialized on browser start through
 // Profile::InitRegisteredProtocolHandlers(), and they should be the only
 // instances of this class.
-class ProtocolHandlerRegistry : public ProfileKeyedService {
+class ProtocolHandlerRegistry : public BrowserContextKeyedService {
 
  public:
   // Provides notification of when the OS level user agent settings

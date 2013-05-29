@@ -44,19 +44,17 @@ class CC_EXPORT WorkerPoolClient {
 
 // A worker thread pool that runs rendering tasks and guarantees completion
 // of all pending tasks at shutdown.
-class WorkerPool {
+class CC_EXPORT WorkerPool {
  public:
   typedef base::Callback<void()> Callback;
 
   virtual ~WorkerPool();
 
   static scoped_ptr<WorkerPool> Create(
-      WorkerPoolClient* client,
       size_t num_threads,
       base::TimeDelta check_for_completed_tasks_delay,
       const std::string& thread_name_prefix) {
-    return make_scoped_ptr(new WorkerPool(client,
-                                          num_threads,
+    return make_scoped_ptr(new WorkerPool(num_threads,
                                           check_for_completed_tasks_delay,
                                           thread_name_prefix));
   }
@@ -69,9 +67,13 @@ class WorkerPool {
   // is posted to the thread that called PostTaskAndReply().
   void PostTaskAndReply(const Callback& task, const base::Closure& reply);
 
+  // Set a new client.
+  void SetClient(WorkerPoolClient* client) {
+    client_ = client;
+  }
+
  protected:
-  WorkerPool(WorkerPoolClient* client,
-             size_t num_threads,
+  WorkerPool(size_t num_threads,
              base::TimeDelta check_for_completed_tasks_delay,
              const std::string& thread_name_prefix);
 

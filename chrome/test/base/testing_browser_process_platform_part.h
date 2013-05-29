@@ -7,10 +7,18 @@
 
 #include "chrome/browser/browser_process_platform_part.h"
 
+// A TestingBrowserProcessPlatformPart is essentially a
+// BrowserProcessPlatformPart except it doesn't have an OomPriorityManager on
+// Chrome OS.
 class TestingBrowserProcessPlatformPart : public BrowserProcessPlatformPart {
  public:
   TestingBrowserProcessPlatformPart();
   virtual ~TestingBrowserProcessPlatformPart();
+
+#if defined(OS_CHROMEOS)
+  // Overridden from BrowserProcessPlatformPart:
+  virtual chromeos::OomPriorityManager* oom_priority_manager() OVERRIDE;
+#endif
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestingBrowserProcessPlatformPart);

@@ -13,13 +13,13 @@
 #include "base/memory/scoped_vector.h"
 #include "base/time.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/common/cancelable_task_tracker.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/ui_base_types.h"
@@ -55,7 +55,7 @@ class WebContents;
 // SessionService rebuilds the contents of the file from the open state of the
 // browser.
 class SessionService : public BaseSessionService,
-                       public ProfileKeyedService,
+                       public BrowserContextKeyedService,
                        public content::NotificationObserver,
                        public chrome::BrowserListObserver {
   friend class SessionServiceTestHelper;

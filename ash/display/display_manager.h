@@ -14,6 +14,11 @@
 #include "base/gtest_prod_util.h"
 #include "ui/aura/root_window_observer.h"
 #include "ui/aura/window.h"
+#include "ui/gfx/display.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/display/output_configurator.h"
+#endif
 
 namespace gfx {
 class Display;
@@ -34,15 +39,17 @@ namespace internal {
 // This is exported for unittest.
 //
 // TODO(oshima): Make this non internal.
-class ASH_EXPORT DisplayManager : public aura::RootWindowObserver {
+class ASH_EXPORT DisplayManager :
+#if defined(OS_CHROMEOS)
+      public chromeos::OutputConfigurator::SoftwareMirroringController,
+#endif
+      public aura::RootWindowObserver {
  public:
   DisplayManager();
   virtual ~DisplayManager();
 
-  // Used to emulate display change when run in a desktop environment instead
-  // of on a device.
-  static void CycleDisplay();
-  static void ToggleDisplayScaleFactor();
+  // Returns the list of possible UI scales for the display.
+  static std::vector<float> GetScalesForDisplay(const DisplayInfo& info);
 
   // Returns next valid UI scale.
   static float GetNextUIScale(const DisplayInfo& info, bool up);
@@ -136,7 +143,7 @@ class ASH_EXPORT DisplayManager : public aura::RootWindowObserver {
 
   // Returns the mirroring status.
   bool IsMirrored() const;
-  int64 mirrored_display_id() const { return mirrored_display_id_; }
+  int64 mirrored_display_id() const { return mirrored_display_.id(); }
 
   // Returns the display object nearest given |window|.
   const gfx::Display& GetDisplayNearestPoint(
@@ -162,9 +169,24 @@ class ASH_EXPORT DisplayManager : public aura::RootWindowObserver {
   // desktop, this returns the first display ID.
   int64 GetDisplayIdForUIScaling() const;
 
+  // Change the mirror mode.
+  void SetMirrorMode(bool mirrored);
+
+  // Used to emulate display change when run in a desktop environment instead
+  // of on a device.
+  void AddRemoveDisplay();
+  void ToggleDisplayScaleFactor();
+
   // RootWindowObserver overrides:
   virtual void OnRootWindowResized(const aura::RootWindow* root,
                                    const gfx::Size& new_size) OVERRIDE;
+
+  // SoftwareMirroringController override:
+#if defined(OS_CHROMEOS)
+  virtual void SetSoftwareMirroring(bool enabled) OVERRIDE;
+#else
+  void SetSoftwareMirroring(bool enabled);
+#endif
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ExtendedDesktopTest, ConvertPoint);
@@ -184,8 +206,6 @@ class ASH_EXPORT DisplayManager : public aura::RootWindowObserver {
   }
 
   void Init();
-  void CycleDisplayImpl();
-  void ScaleDisplayImpl();
 
   gfx::Display& FindDisplayForRootWindow(const aura::RootWindow* root);
   gfx::Display& FindDisplayForId(int64 id);
@@ -205,7 +225,7 @@ class ASH_EXPORT DisplayManager : public aura::RootWindowObserver {
 
   int64 first_display_id_;
 
-  int64 mirrored_display_id_;
+  gfx::Display mirrored_display_;
 
   // List of current active dispays.
   DisplayList displays_;
@@ -223,6 +243,8 @@ class ASH_EXPORT DisplayManager : public aura::RootWindowObserver {
   // window wil update the display properly. This is set to false
   // on device as well as during the unit tests.
   bool change_display_upon_host_resize_;
+
+  bool software_mirroring_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(DisplayManager);
 };

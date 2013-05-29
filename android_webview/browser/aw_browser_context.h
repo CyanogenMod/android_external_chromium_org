@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "android_webview/browser/aw_autofill_manager_delegate.h"
 #include "android_webview/browser/aw_download_manager_delegate.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -21,14 +22,14 @@
 
 class GURL;
 
-namespace components {
+namespace visitedlink {
 class VisitedLinkMaster;
-}  // namespace components
+}
 
 namespace content {
 class ResourceContext;
 class WebContents;
-}  // namespace content
+}
 
 namespace android_webview {
 
@@ -38,7 +39,7 @@ class AwURLRequestContextGetter;
 class JniDependencyFactory;
 
 class AwBrowserContext : public content::BrowserContext,
-                         public components::VisitedLinkDelegate {
+                         public visitedlink::VisitedLinkDelegate {
  public:
 
   AwBrowserContext(const base::FilePath path,
@@ -56,7 +57,7 @@ class AwBrowserContext : public content::BrowserContext,
   // Maps to BrowserMainParts::PreMainMessageLoopRun.
   void PreMainMessageLoopRun();
 
-  // These methods map to Add methods in components::VisitedLinkMaster.
+  // These methods map to Add methods in visitedlink::VisitedLinkMaster.
   void AddVisitedURLs(const std::vector<GURL>& urls);
 
   net::URLRequestContextGetter* CreateRequestContext(
@@ -69,6 +70,8 @@ class AwBrowserContext : public content::BrowserContext,
   AwQuotaManagerBridge* GetQuotaManagerBridge();
 
   AwFormDatabaseService* GetFormDatabaseService();
+  AwAutofillManagerDelegate* AutofillManagerDelegate();
+  AwAutofillManagerDelegate* CreateAutofillManagerDelegate(bool enabled);
 
   // content::BrowserContext implementation.
   virtual base::FilePath GetPath() OVERRIDE;
@@ -91,7 +94,7 @@ class AwBrowserContext : public content::BrowserContext,
       GetSpeechRecognitionPreferences() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
-  // components::VisitedLinkDelegate implementation.
+  // visitedlink::VisitedLinkDelegate implementation.
   virtual void RebuildTable(
       const scoped_refptr<URLEnumerator>& enumerator) OVERRIDE;
 
@@ -105,10 +108,11 @@ class AwBrowserContext : public content::BrowserContext,
       geolocation_permission_context_;
   scoped_ptr<AwQuotaManagerBridge> quota_manager_bridge_;
   scoped_ptr<AwFormDatabaseService> form_database_service_;
+  scoped_ptr<AwAutofillManagerDelegate> autofill_manager_delegate_;
 
   AwDownloadManagerDelegate download_manager_delegate_;
 
-  scoped_ptr<components::VisitedLinkMaster> visitedlink_master_;
+  scoped_ptr<visitedlink::VisitedLinkMaster> visitedlink_master_;
   scoped_ptr<content::ResourceContext> resource_context_;
 
   DISALLOW_COPY_AND_ASSIGN(AwBrowserContext);

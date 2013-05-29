@@ -8,7 +8,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "base/prefs/pref_service.h"
 #include "base/strings/string_tokenizer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
@@ -21,6 +20,7 @@
 #include "chrome/browser/extensions/extension_pref_store.h"
 #include "chrome/browser/extensions/extension_pref_value_map.h"
 #include "chrome/browser/extensions/extension_pref_value_map_factory.h"
+#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
@@ -29,7 +29,6 @@
 #include "chrome/browser/extensions/lazy_background_task_queue.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/navigation_observer.h"
-#include "chrome/browser/extensions/shell_window_geometry_cache.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
@@ -42,9 +41,9 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/manifest.h"
-#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/url_data_source.h"
+#include "extensions/common/constants.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/app_mode/app_mode_utils.h"
@@ -86,16 +85,8 @@ ExtensionSystemImpl::Shared::~Shared() {
 }
 
 void ExtensionSystemImpl::Shared::InitPrefs() {
-  bool extensions_disabled =
-      profile_->GetPrefs()->GetBoolean(prefs::kDisableExtensions) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableExtensions);
-  extension_prefs_ = ExtensionPrefs::Create(
-      profile_->GetPrefs(),
-      profile_->GetPath().AppendASCII(ExtensionService::kInstallDirectoryName),
-      ExtensionPrefValueMapFactory::GetForProfile(profile_),
-      extensions_disabled);
   lazy_background_task_queue_.reset(new LazyBackgroundTaskQueue(profile_));
-  event_router_.reset(new EventRouter(profile_, extension_prefs_.get()));
+  event_router_.reset(new EventRouter(profile_, ExtensionPrefs::Get(profile_)));
 
   // Two state stores. The latter, which contains declarative rules, must be
   // loaded immediately so that the rules are ready before we issue network
@@ -109,13 +100,10 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
       profile_->GetPath().AppendASCII(ExtensionService::kRulesStoreName),
       false));
 
-  shell_window_geometry_cache_.reset(new ShellWindowGeometryCache(
-      profile_, extension_prefs_.get()));
-
-  blacklist_.reset(new Blacklist(extension_prefs_.get()));
+  blacklist_.reset(new Blacklist(ExtensionPrefs::Get(profile_)));
 
   standard_management_policy_provider_.reset(
-      new StandardManagementPolicyProvider(extension_prefs_.get()));
+      new StandardManagementPolicyProvider(ExtensionPrefs::Get(profile_)));
 }
 
 void ExtensionSystemImpl::Shared::RegisterManagementPolicyProviders() {
@@ -145,11 +133,12 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   extension_service_.reset(new ExtensionService(
       profile_,
       CommandLine::ForCurrentProcess(),
-      profile_->GetPath().AppendASCII(ExtensionService::kInstallDirectoryName),
-      extension_prefs_.get(),
+      profile_->GetPath().AppendASCII(extensions::kInstallDirectoryName),
+      ExtensionPrefs::Get(profile_),
       blacklist_.get(),
       autoupdate_enabled,
-      extensions_enabled));
+      extensions_enabled,
+      &ready_));
 
   // These services must be registered before the ExtensionService tries to
   // load any extensions.
@@ -194,13 +183,9 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
     if (command_line->HasSwitch(switches::kLoadExtension)) {
       CommandLine::StringType path_list = command_line->GetSwitchValueNative(
           switches::kLoadExtension);
-      // Due to an issue with the dbus-send program, we cannot have
-      // commas inside an array of strings. We need to use dbus-send to set up
-      // the browser arguments on CrOS, so we work around this by delimiting
-      // the extension list with both commas and semicolons.
       base::StringTokenizerT<CommandLine::StringType,
           CommandLine::StringType::const_iterator> t(path_list,
-                                                     FILE_PATH_LITERAL(",;"));
+                                                     FILE_PATH_LITERAL(","));
       while (t.GetNext()) {
         UnpackedInstaller::Create(extension_service_.get())->
             LoadFromCommandLine(base::FilePath(t.token()), false);
@@ -222,7 +207,6 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   // If import is going to run in a separate process (the profile itself is on
   // the main process), wait for import to finish before initializing the
   // routers.
-  CHECK(!ProfileManager::IsImportProcess(*command_line));
   if (g_browser_process->profile_manager()->will_import()) {
     extension_service_->InitEventRoutersAfterImport();
   } else {
@@ -251,15 +235,6 @@ StateStore* ExtensionSystemImpl::Shared::state_store() {
 
 StateStore* ExtensionSystemImpl::Shared::rules_store() {
   return rules_store_.get();
-}
-
-ExtensionPrefs* ExtensionSystemImpl::Shared::extension_prefs() {
-  return extension_prefs_.get();
-}
-
-ShellWindowGeometryCache* ExtensionSystemImpl::Shared::
-    shell_window_geometry_cache() {
-  return shell_window_geometry_cache_.get();
 }
 
 ExtensionService* ExtensionSystemImpl::Shared::extension_service() {
@@ -319,10 +294,6 @@ ExtensionSystemImpl::~ExtensionSystemImpl() {
 
 void ExtensionSystemImpl::Shutdown() {
   extension_process_manager_.reset();
-
-  if (profile_->IsOffTheRecord() && extension_service() &&
-      extension_service()->extensions_enabled())
-    extension_prefs()->ClearIncognitoSessionOnlyContentSettings();
 }
 
 void ExtensionSystemImpl::InitForRegularProfile(bool extensions_enabled) {
@@ -383,14 +354,6 @@ StateStore* ExtensionSystemImpl::rules_store() {
   return shared_->rules_store();
 }
 
-ExtensionPrefs* ExtensionSystemImpl::extension_prefs() {
-  return shared_->extension_prefs();
-}
-
-ShellWindowGeometryCache* ExtensionSystemImpl::shell_window_geometry_cache() {
-  return shared_->shell_window_geometry_cache();
-}
-
 ExtensionInfoMap* ExtensionSystemImpl::info_map() {
   return shared_->info_map();
 }
@@ -429,11 +392,15 @@ Blacklist* ExtensionSystemImpl::blacklist() {
   return shared_->blacklist();
 }
 
+const OneShotEvent& ExtensionSystemImpl::ready() const {
+  return shared_->ready();
+}
+
 void ExtensionSystemImpl::RegisterExtensionWithRequestContexts(
     const Extension* extension) {
   base::Time install_time;
   if (extension->location() != Manifest::COMPONENT) {
-    install_time = extension_service()->extension_prefs()->
+    install_time = ExtensionPrefs::Get(profile_)->
         GetInstallTime(extension->id());
   }
   bool incognito_enabled =

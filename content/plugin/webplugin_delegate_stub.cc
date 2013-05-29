@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/string_number_conversions.h"
-#include "content/common/plugin_messages.h"
+#include "content/common_child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/plugin/webplugin_proxy.h"
@@ -21,9 +21,9 @@
 #include "skia/ext/platform_device.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
+#include "webkit/glue/webcursor.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
-#include "webkit/glue/webcursor.h"
 
 using WebKit::WebBindings;
 using WebKit::WebCursorInfo;
@@ -248,7 +248,7 @@ void WebPluginDelegateStub::OnHandleInputEvent(
     const WebKit::WebInputEvent *event,
     bool* handled,
     WebCursor* cursor) {
-  WebCursorInfo cursor_info;
+  WebCursor::CursorInfo cursor_info;
   *handled = delegate_->HandleInputEvent(*event, &cursor_info);
   cursor->InitFromCursorInfo(cursor_info);
 }

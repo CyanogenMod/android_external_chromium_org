@@ -24,6 +24,10 @@
 namespace net {
 namespace tools {
 
+namespace test {
+class QuicClientPeer;
+}  // namespace test
+
 class QuicClient : public EpollCallbackInterface {
  public:
   QuicClient(IPEndPoint server_address, const std::string& server_hostname);
@@ -107,7 +111,14 @@ class QuicClient : public EpollCallbackInterface {
 
   int fd() { return fd_; }
 
+  // This should only be set before the initial Connect()
+  void set_server_hostname(const string& hostname) {
+    server_hostname_ = hostname;
+  }
+
  private:
+  friend class net::tools::test::QuicClientPeer;
+
   // Read a UDP packet and hand it to the framer.
   bool ReadAndProcessPacket();
 
@@ -118,7 +129,7 @@ class QuicClient : public EpollCallbackInterface {
   const IPEndPoint server_address_;
 
   // Hostname of the server. This may be a DNS name or an IP address literal.
-  const std::string server_hostname_;
+  std::string server_hostname_;
 
   // config_ and crypto_config_ contain configuration and cached state about
   // servers.

@@ -292,7 +292,7 @@ void ProfileSyncServiceHarness::SignalStateCompleteWithNextState(
 
 void ProfileSyncServiceHarness::SignalStateComplete() {
   if (waiting_for_status_change_)
-    MessageLoop::current()->QuitWhenIdle();
+    base::MessageLoop::current()->QuitWhenIdle();
 }
 
 bool ProfileSyncServiceHarness::RunStateChangeMachine() {
@@ -549,27 +549,6 @@ bool ProfileSyncServiceHarness::AwaitBackendInitialized() {
                                       "Waiting for OnBackendInitialized().");
 }
 
-bool ProfileSyncServiceHarness::AwaitSyncRestart() {
-  DVLOG(1) << GetClientInfoString("AwaitSyncRestart");
-  if (service()->ShouldPushChanges()) {
-    // Sync has already been restarted; don't wait.
-    return true;
-  }
-
-  // Wait for the sync backend to be initialized.
-  if (!AwaitBackendInitialized()) {
-    LOG(ERROR) << "OnBackendInitialized() not seen after "
-               << kLiveSyncOperationTimeoutMs / 1000
-               << " seconds.";
-    return false;
-  }
-
-  // Wait for sync configuration to complete.
-  wait_state_ = WAITING_FOR_SYNC_CONFIGURATION;
-  return AwaitStatusChangeWithTimeout(kLiveSyncOperationTimeoutMs,
-                                      "Waiting for sync configuration.");
-}
-
 bool ProfileSyncServiceHarness::AwaitDataSyncCompletion(
     const std::string& reason) {
   DVLOG(1) << GetClientInfoString("AwaitDataSyncCompletion");
@@ -775,8 +754,8 @@ bool ProfileSyncServiceHarness::AwaitStatusChangeWithTimeout(
     // Set the flag to tell SignalStateComplete() that it's OK to quit out of
     // the MessageLoop if we hit a state transition.
     waiting_for_status_change_ = true;
-    MessageLoop* loop = MessageLoop::current();
-    MessageLoop::ScopedNestableTaskAllower allow(loop);
+    base::MessageLoop* loop = base::MessageLoop::current();
+    base::MessageLoop::ScopedNestableTaskAllower allow(loop);
     loop->PostDelayedTask(
         FROM_HERE,
         base::Bind(&StateChangeTimeoutEvent::Callback,

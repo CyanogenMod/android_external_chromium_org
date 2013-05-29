@@ -102,7 +102,7 @@ class UnitTestPrerenderManager : public PrerenderManager {
   virtual ~UnitTestPrerenderManager() {
   }
 
-  // From ProfileKeyedService, via PrererenderManager:
+  // From BrowserContextKeyedService, via PrererenderManager:
   virtual void Shutdown() OVERRIDE {
     if (next_prerender_contents())
       next_prerender_contents_->Destroy(FINAL_STATUS_MANAGER_SHUTDOWN);
@@ -349,7 +349,7 @@ class PrerenderTest : public testing::Test {
 
   // Needed to pass PrerenderManager's DCHECKs.
   TestingProfile profile_;
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   scoped_ptr<UnitTestPrerenderManager> prerender_manager_;
   scoped_ptr<PrerenderLinkManager> prerender_link_manager_;

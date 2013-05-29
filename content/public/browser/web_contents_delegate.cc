@@ -96,7 +96,7 @@ void WebContentsDelegate::ViewSourceForTab(WebContents* source,
 
 void WebContentsDelegate::ViewSourceForFrame(WebContents* source,
                                              const GURL& frame_url,
-                                             const std::string& content_state) {
+                                             const PageState& page_state) {
   // Same as ViewSourceForTab, but for given subframe.
   GURL url = GURL(chrome::kViewSourceScheme + std::string(":") +
                       frame_url.spec());
@@ -135,9 +135,7 @@ bool WebContentsDelegate::IsFullscreenForTabOrPending(
 }
 
 content::ColorChooser* WebContentsDelegate::OpenColorChooser(
-    WebContents* web_contents,
-    int color_chooser_id,
-    SkColor color) {
+    WebContents* web_contents, SkColor color) {
   return NULL;
 }
 

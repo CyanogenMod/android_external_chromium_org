@@ -17,13 +17,13 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/navigation_controller.h"
@@ -53,6 +53,7 @@ using content::NavigationController;
 using content::NavigationEntry;
 using content::SSLStatus;
 using content::WebContents;
+using web_modal::WebContentsModalDialogManager;
 
 const base::FilePath::CharType kDocRoot[] =
     FILE_PATH_LITERAL("chrome/test/data");
@@ -81,7 +82,7 @@ class ProvisionalLoadWaiter : public content::WebContentsObserver {
       content::RenderViewHost* render_view_host) OVERRIDE {
     seen_ = true;
     if (waiting_)
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
   }
 
  private:
@@ -190,9 +191,9 @@ class SSLUITest : public InProcessBrowserTest {
         break;
 
       // Wait a bit.
-      MessageLoop::current()->PostDelayedTask(
+      base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
-          MessageLoop::QuitClosure(),
+          base::MessageLoop::QuitClosure(),
           base::TimeDelta::FromMilliseconds(timeout_ms));
       content::RunMessageLoop();
     }
@@ -1156,8 +1157,10 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestCloseTabWithUnsafePopup) {
   for (int i = 0; i < 10; i++) {
     if (IsShowingWebContentsModalDialog())
       break;
-    MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, MessageLoop::QuitClosure(), base::TimeDelta::FromSeconds(1));
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::MessageLoop::QuitClosure(),
+        base::TimeDelta::FromSeconds(1));
     content::RunMessageLoop();
   }
   ASSERT_TRUE(IsShowingWebContentsModalDialog());

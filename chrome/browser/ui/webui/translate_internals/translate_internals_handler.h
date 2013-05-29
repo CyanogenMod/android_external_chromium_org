@@ -7,8 +7,12 @@
 
 #include <string>
 
+#include "chrome/browser/translate/translate_manager.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "webkit/plugins/webplugininfo.h"
+
+struct LanguageDetectionDetails;
+struct TranslateErrorDetails;
 
 namespace base {
 class DictionaryValue;
@@ -17,13 +21,20 @@ class Value;
 }
 
 // The handler class for TranslateInternals page operations.
-class TranslateInternalsHandler : public content::WebUIMessageHandler {
+class TranslateInternalsHandler : public content::WebUIMessageHandler,
+                                  public TranslateManager::Observer {
  public:
-  TranslateInternalsHandler() {}
-  virtual ~TranslateInternalsHandler() {}
+  TranslateInternalsHandler();
+  virtual ~TranslateInternalsHandler();
 
   // content::WebUIMessageHandler methods:
   virtual void RegisterMessages() OVERRIDE;
+
+  // TranslateManager::Observer methods:
+  virtual void OnLanguageDetection(
+      const LanguageDetectionDetails& details) OVERRIDE;
+  virtual void OnTranslateError(
+      const TranslateErrorDetails& details) OVERRIDE;
 
  private:
   // Handles the Javascript message 'removePrefItem'. This message is sent

@@ -8,9 +8,9 @@
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 namespace extensions {
 
@@ -19,12 +19,12 @@ class ProfileKeyedAPIFactory;
 
 // Instantiations of ProfileKeyedAPIFactory should use this base class
 // and also define a static const char* service_name() function (used in the
-// ProfileKeyedBaseFactory constructor). These fields should be accessible
-// to the ProfileKeyedAPIFactory for the service.
-class ProfileKeyedAPI : public ProfileKeyedService {
+// BrowserContextKeyedBaseFactory constructor). These fields should
+// be accessible to the ProfileKeyedAPIFactory for the service.
+class ProfileKeyedAPI : public BrowserContextKeyedService {
  protected:
   // Defaults for flags that control ProfileKeyedAPIFactory behavior.
-  // See ProfileKeyedBaseFactory for usage.
+  // See BrowserContextKeyedBaseFactory for usage.
   static const bool kServiceRedirectedInIncognito = false;
   static const bool kServiceIsNULLWhileTesting = false;
   static const bool kServiceHasOwnInstanceInIncognito = false;
@@ -52,15 +52,16 @@ class ProfileKeyedAPI : public ProfileKeyedService {
   //   }
 };
 
-// A template for factories for ProfileKeyedServices that manage extension APIs.
-// T is a ProfileKeyedService that uses this factory template instead of
-// its own separate factory definition to manage its per-profile instances.
+// A template for factories for BrowserContextKeyedServices that manage
+// extension APIs. T is a BrowserContextKeyedService that uses this factory
+// template instead of its own separate factory definition to manage its
+// per-profile instances.
 template <typename T>
-class ProfileKeyedAPIFactory : public ProfileKeyedServiceFactory {
+class ProfileKeyedAPIFactory : public BrowserContextKeyedServiceFactory {
  public:
   static T* GetForProfile(Profile* profile) {
     return static_cast<T*>(
-        T::GetFactoryInstance()->GetServiceForProfile(profile, true));
+        T::GetFactoryInstance()->GetServiceForBrowserContext(profile, true));
   }
 
   // Declare dependencies on other factories.
@@ -78,8 +79,9 @@ class ProfileKeyedAPIFactory : public ProfileKeyedServiceFactory {
   }
 
   ProfileKeyedAPIFactory()
-  : ProfileKeyedServiceFactory(T::service_name(),
-                               ProfileDependencyManager::GetInstance()) {
+      : BrowserContextKeyedServiceFactory(
+          T::service_name(),
+          BrowserContextDependencyManager::GetInstance()) {
     DeclareFactoryDependencies();
   }
 
@@ -87,13 +89,13 @@ class ProfileKeyedAPIFactory : public ProfileKeyedServiceFactory {
   }
 
  private:
-  // ProfileKeyedServiceFactory implementation.
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory implementation.
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE {
     return new T(static_cast<Profile*>(profile));
   }
 
-  // ProfileKeyedBaseFactory implementation.
+  // BrowserContextKeyedBaseFactory implementation.
   // These can be effectively overridden with template specializations.
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE {
@@ -103,10 +105,10 @@ class ProfileKeyedAPIFactory : public ProfileKeyedServiceFactory {
     if (T::kServiceHasOwnInstanceInIncognito)
       return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 
-    return ProfileKeyedServiceFactory::GetBrowserContextToUse(context);
+    return BrowserContextKeyedServiceFactory::GetBrowserContextToUse(context);
   }
 
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE {
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE {
     return true;
   }
 

@@ -158,6 +158,10 @@ class SYNC_EXPORT BaseNode {
   const sync_pb::ManagedUserSettingSpecifics&
       GetManagedUserSettingSpecifics() const;
 
+  // Getter specific to the MANAGED_USERS datatype.  Returns protobuf data.
+  // Can only be called if GetModelType() == MANAGED_USERS.
+  const sync_pb::ManagedUserSpecifics& GetManagedUserSpecifics() const;
+
   // Getter specific to the DEVICE_INFO datatype.  Returns protobuf
   // data.  Can only be called if GetModelType() == DEVICE_INFO.
   const sync_pb::DeviceInfoSpecifics& GetDeviceInfoSpecifics() const;
@@ -190,6 +194,11 @@ class SYNC_EXPORT BaseNode {
   // Return the ID of the first child of this node.  If this node has no
   // children, return 0.
   int64 GetFirstChildId() const;
+
+  // Returns the IDs of the children of this node.
+  // If this type supports user-defined positions the returned IDs will be in
+  // the correct order.
+  void GetChildIds(std::vector<int64>* result) const;
 
   // Returns the total number of nodes including and beneath this node.
   // Recursively iterates through all children.

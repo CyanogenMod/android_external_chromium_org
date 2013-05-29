@@ -150,7 +150,7 @@ class GDataContactsServiceTest : public testing::Test {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     download_was_successful_ = true;
     downloaded_contacts_.swap(contacts);
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   // Handles failure for Download().
@@ -158,7 +158,7 @@ class GDataContactsServiceTest : public testing::Test {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     download_was_successful_ = false;
     downloaded_contacts_.reset(new ScopedVector<contacts::Contact>());
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   // Handles a request for downloading a file. Reads a requested file and
@@ -167,14 +167,14 @@ class GDataContactsServiceTest : public testing::Test {
       const net::test_server::HttpRequest& request) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     // Requested url must not contain a query string.
-    scoped_ptr<net::test_server::HttpResponse> result =
+    scoped_ptr<net::test_server::BasicHttpResponse> result =
         google_apis::test_util::CreateHttpResponseFromFile(
             google_apis::test_util::GetTestFilePath(
                 std::string("chromeos/gdata/contacts") + request.relative_url));
-    return result.Pass();
+    return result.PassAs<net::test_server::HttpResponse>();
   }
 
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread io_thread_;
   scoped_ptr<TestingProfile> profile_;

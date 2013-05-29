@@ -7,13 +7,13 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 namespace notifier {
 
 class ChromeNotifierService;
 
-class ChromeNotifierServiceFactory : public ProfileKeyedServiceFactory {
+class ChromeNotifierServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static ChromeNotifierService* GetForProfile(
       Profile* profile, Profile::ServiceAccessType sat);
@@ -26,8 +26,8 @@ class ChromeNotifierServiceFactory : public ProfileKeyedServiceFactory {
   ChromeNotifierServiceFactory();
   virtual ~ChromeNotifierServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 };
 

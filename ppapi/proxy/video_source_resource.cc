@@ -103,20 +103,21 @@ void VideoSourceResource::OnPluginMsgGetFrameComplete(
   // The callback may have been aborted by Close().
   if (TrackedCallback::IsPending(get_frame_callback_)) {
     int32_t result = reply_params.result();
-    if (result == PP_OK) {
+    if (result == PP_OK &&
+        PPB_ImageData_Shared::IsImageDataDescValid(image_desc)) {
       frame->timestamp = timestamp;
 
 #if defined(OS_ANDROID)
       frame->image_data = 0;
-#elif defined(OS_WIN) || defined(OS_MACOSX)
+#elif defined(TOOLKIT_GTK)
+      frame->image_data =
+          (new ImageData(image_data, image_desc, fd))->GetReference();
+#elif defined(OS_LINUX) || defined(OS_WIN) || defined(OS_MACOSX)
       base::SharedMemoryHandle handle;
       if (!reply_params.TakeSharedMemoryHandleAtIndex(0, &handle))
         frame->image_data = 0;
       frame->image_data =
           (new ImageData(image_data, image_desc, handle))->GetReference();
-#elif defined(OS_LINUX)
-      frame->image_data =
-          (new ImageData(image_data, image_desc, fd))->GetReference();
 #else
 #error Not implemented.
 #endif

@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class DesktopNotificationService;
 class Profile;
@@ -15,7 +15,8 @@ class Profile;
 // Singleton that owns all DesktopNotificationServices and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated DesktopNotificationService.
-class DesktopNotificationServiceFactory : public ProfileKeyedServiceFactory {
+class DesktopNotificationServiceFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the DesktopNotificationService that provides desktop notifications
   // for |profile|.
@@ -29,8 +30,8 @@ class DesktopNotificationServiceFactory : public ProfileKeyedServiceFactory {
   DesktopNotificationServiceFactory();
   virtual ~DesktopNotificationServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;

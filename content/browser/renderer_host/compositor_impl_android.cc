@@ -33,8 +33,8 @@
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/android/java_bitmap.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_impl.h"
 #include "webkit/glue/webthread_impl.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 
 namespace gfx {
 class JavaBitmap;
@@ -48,9 +48,11 @@ class DirectOutputSurface : public cc::OutputSurface {
   DirectOutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D> context3d)
       : cc::OutputSurface(context3d.Pass()) {}
 
-  virtual void Reshape(gfx::Size size) OVERRIDE {}
-  virtual void PostSubBuffer(gfx::Rect rect, const cc::LatencyInfo&) OVERRIDE {}
-  virtual void SwapBuffers(const cc::LatencyInfo&) OVERRIDE {}
+  virtual void Reshape(gfx::Size size, float scale_factor) OVERRIDE {}
+  virtual void PostSubBuffer(gfx::Rect rect, const ui::LatencyInfo&) OVERRIDE {}
+  virtual void SwapBuffers(const ui::LatencyInfo&) OVERRIDE {
+    context3d()->shallowFlushCHROMIUM();
+  }
 };
 
 static bool g_initialized = false;
@@ -199,6 +201,7 @@ void CompositorImpl::SetVisible(bool visible) {
     host_.reset();
   } else if (!host_) {
     cc::LayerTreeSettings settings;
+    settings.compositor_name = "BrowserCompositor";
     settings.refresh_rate = 60.0;
     settings.impl_side_painting = false;
     settings.calculate_top_controls_position = false;
@@ -368,10 +371,6 @@ scoped_ptr<cc::OutputSurface> CompositorImpl::CreateOutputSurface() {
     return make_scoped_ptr(new cc::OutputSurface(
         context.PassAs<WebKit::WebGraphicsContext3D>()));
   }
-}
-
-scoped_ptr<cc::InputHandlerClient> CompositorImpl::CreateInputHandlerClient() {
-  return scoped_ptr<cc::InputHandlerClient>();
 }
 
 void CompositorImpl::DidCompleteSwapBuffers() {

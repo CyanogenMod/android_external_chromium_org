@@ -30,8 +30,8 @@ the affected histograms. For example, define the following:
   <histogram name="FileLoadLatency"/>
 
   <fieldtrial name="SuperHttpExperiment">
-    <group name="SuperHttpEnabled">
-    <group name="SuperHttpDisabled">
+    <group name="SuperHttpEnabled"/>
+    <group name="SuperHttpDisabled"/>
     <affected-histogram name="FileLoadLatency"/>
   </fieldtrial>
 
@@ -54,6 +54,358 @@ other types of suffix sets.
 <!-- Histogram definitions -->
 
 <histograms>
+
+<histogram name="AsyncDNS.ConfigChange" enum="BooleanSuccess">
+  <summary>
+    Whether DnsConfigService::OnConfigChange actually corresponded to a change
+    in DnsConfig.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ConfigNotifyInterval" units="milliseconds">
+  <summary>
+    Duration of time between calls to DnsConfigService::InvalidateConfig.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ConfigParseDuration" units="milliseconds">
+  <summary>Duration of time spent parsing DnsConfig.</summary>
+</histogram>
+
+<histogram name="AsyncDNS.ConfigParsePosix" enum="AsyncDNSConfigParsePosix">
+  <summary>
+    Counts of results of parsing DnsConfig in DnsConfigServicePosix.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ConfigParseResult" enum="BooleanSuccess">
+  <summary>Whether DnsConfig was parsed successfully.</summary>
+</histogram>
+
+<histogram name="AsyncDNS.ConfigParseWin" enum="AsyncDNSConfigParseWin">
+  <summary>
+    Counts of results of parsing DnsConfig in DnsConfigServiceWin.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.DNSChangerDetected" enum="BooleanSuccess">
+  <summary>
+    Whether the first valid DnsConfig included a rogue nameserver.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.DnsClientDisabledReason" enum="NetErrorCodes">
+  <summary>
+    Counts of specific error codes returned by DnsTask if a subsequent ProcTask
+    succeeded, at the end of a streak of failures after which the DnsClient was
+    disabled.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.DnsClientEnabled" enum="BooleanSuccess">
+  <summary>
+    TRUE counts the events when a valid DnsConfig is received and used to enable
+    DnsClient, while FALSE counts the events when DnsClient is disabled after a
+    series of successful fallbacks from DnsTask to ProcTask.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.FallbackFail" units="milliseconds">
+  <summary>
+    Duration of time spent by ProcTask in failing fallback resolutions.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.FallbackSuccess" units="milliseconds">
+  <summary>
+    Duration of time spent by ProcTask in successful fallback resolutions.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.HaveDnsConfig" enum="BooleanSuccess">
+  <summary>
+    Whether there was a valid DNS configuration at the start of a job which
+    eventually completed successfully.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.HostParseResult" enum="BooleanSuccess">
+  <summary>Whether DnsHosts were parsed successfully.</summary>
+</histogram>
+
+<histogram name="AsyncDNS.HostsChange" enum="BooleanSuccess">
+  <summary>
+    Whether DnsConfigService::OnHostsChange actually corresponded to a change in
+    DnsHosts.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.HostsNotifyInterval" units="milliseconds">
+  <summary>
+    Duration of time between calls to DnsConfigService::InvalidateHosts.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.HostsParseDuration" units="milliseconds">
+  <summary>Duration of time spent parsing DnsHosts.</summary>
+</histogram>
+
+<histogram name="AsyncDNS.HostsParseWin" enum="AsyncDNSHostsParseWin">
+  <summary>
+    Counts of results of parsing DnsHosts in DnsConfigServiceWin.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.HostsSize" units="bytes">
+  <summary>
+    The size of the HOSTS file observed before each attempt to parse it.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTime" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (using DnsClient).
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTime_HIGHEST" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (using DnsClient). Includes only Jobs which had
+    priority HIGHEST when started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTime_IDLE" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (using DnsClient). Includes only Jobs which had
+    priority IDLE when started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTime_LOW" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (using DnsClient). Includes only Jobs which had
+    priority LOW when started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTime_LOWEST" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (using DnsClient). Includes only Jobs which had
+    priority LOWEST when started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTime_MEDIUM" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (using DnsClient). Includes only Jobs which had
+    priority MEDIUM when started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTimeAfterChange" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (using DnsClient).
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTimeAfterChange_HIGHEST" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (using DnsClient). Includes only Jobs which had priority HIGHEST
+    when started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTimeAfterChange_IDLE" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (using DnsClient). Includes only Jobs which had priority IDLE when
+    started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTimeAfterChange_LOW" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (using DnsClient). Includes only Jobs which had priority LOW when
+    started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTimeAfterChange_LOWEST" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (using DnsClient). Includes only Jobs which had priority LOWEST when
+    started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.JobQueueTimeAfterChange_MEDIUM" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (using DnsClient). Includes only Jobs which had priority MEDIUM when
+    started.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ParseToAddressList" enum="AsyncDNSParseResult">
+  <summary>
+    Counts of results of parsing addresses out of DNS responses in successful
+    DnsTransactions.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ResolveError" enum="NetErrorCodes">
+  <summary>
+    Counts of specific error codes returned by DnsTask if a subsequent ProcTask
+    succeeded.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ResolveFail" units="milliseconds">
+  <summary>
+    Duration of time taken by DnsTask in resolutions that failed. Excludes time
+    spent in the subsequent fallback.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ResolveStatus" enum="AsyncDNSResolveStatus">
+  <summary>
+    Counts of the overall results of using asynchronous DNS in HostResolverImpl.
+    This only includes jobs started with valid DNS configuration and excludes
+    synchronous resolutions (as IP literals, from cache, and from HOSTS).
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ResolveSuccess" units="milliseconds">
+  <summary>
+    Duration of time taken by DnsTask in resolutions that succeeded.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ResolveSuccess_FAMILY_IPV4" units="milliseconds">
+  <summary>
+    Same as AsyncDNS.ResolveSuccess, but limited to pure IPv4 lookups.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ResolveSuccess_FAMILY_IPV6" units="milliseconds">
+  <summary>
+    Same as AsyncDNS.ResolveSuccess, but limited to pure IPv6 lookups.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ResolveSuccess_FAMILY_UNSPEC" units="milliseconds">
+  <summary>
+    Same as AsyncDNS.ResolveSuccess, but limited to IPv4/IPv6 lookups.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.SortFailure" units="milliseconds">
+  <summary>
+    Duration of time taken in failing calls to AddressSorter in dual-stack
+    resolutions using DnsTask.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.SortSuccess" units="milliseconds">
+  <summary>
+    Duration of time taken in successful calls to AddressSorter in dual-stack
+    resolutions using DnsTask.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TotalTime" units="milliseconds">
+  <summary>
+    Duration of time since a HostResolverImpl::Resolve request to the time a
+    result is posted. Excludes canceled, evicted, and aborted requests. Includes
+    cache hits (recorded as 0). Excludes speculative requests.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TotalTime_speculative" units="milliseconds">
+  <summary>
+    Duration of time since a HostResolverImpl::Resolve request to the time a
+    result is posted. Excludes canceled, evicted, and aborted requests. Includes
+    cache hits (recorded as 0). Speculative requests only.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TransactionFailure" units="milliseconds">
+  <summary>
+    Duration of time taken in failing DnsTransactions. This includes server
+    failures, timeouts and NXDOMAIN results.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TransactionSuccess" units="milliseconds">
+  <summary>
+    Duration of time taken in successful DnsTransactions. This includes all
+    NOERROR answers, even if they indicate the name has no addresses or they
+    cannot be parsed.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TransactionSuccess_A" units="milliseconds">
+  <summary>
+    Same as AsyncDNS.TransactionSuccess but limited to A query type.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TransactionSuccess_AAAA" units="milliseconds">
+  <summary>
+    Same as AsyncDNS.TransactionSuccess but limited to AAAA query type.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TTL" units="milliseconds">
+  <summary>
+    TTL of the resolved addresses, as in the response received from the server.
+    For results served from local cache, the TTL is from the original response.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.UDPAttemptFail" units="milliseconds">
+  <summary>
+    Duration of time taken by DnsUDPAttempt in failed attempts. Excludes
+    timeouts.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.UDPAttemptSuccess" units="milliseconds">
+  <summary>
+    Duration of time taken by DnsUDPAttempt in successful attempts. Includes
+    responses arriving after timeout, if multiple attempts are allowed.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.UnchangedConfigInterval" units="milliseconds">
+  <summary>
+    Duration of time since the last empty config result to the time a non-change
+    OnConfigChange is received.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.UnchangedHostsInterval" units="milliseconds">
+  <summary>
+    Duration of time since the last empty config result to the time a non-change
+    OnHostsChange is received.
+  </summary>
+</histogram>
 
 <histogram name="Autocheckout.Bubble" enum="AutocheckoutBubble">
   <summary>
@@ -494,6 +846,549 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="DNS.AttemptCancelled">
+  <summary>
+    The attempt which completed after the job was already cancelled.
+  </summary>
+</histogram>
+
+<histogram name="DNS.AttemptDiscarded">
+  <summary>
+    The attempt which completed after the job was already cancelled OR the
+    attempt that has finished after host resolution was already completed by an
+    earlier attempt.
+  </summary>
+</histogram>
+
+<histogram name="DNS.AttemptFailDuration" units="milliseconds">
+  <summary>
+    Duration of time taken in OS resolutions for actual navigations. These
+    attempts which completed after the job was already canceled OR after the job
+    was already completed by an earlier attempt. Note that cached resolutions
+    may provide low (0ms?) resolution times.
+  </summary>
+</histogram>
+
+<histogram name="DNS.AttemptFailure">
+  <summary>The attempt that has not resolved the host successfully.</summary>
+</histogram>
+
+<histogram name="DNS.AttemptFirstFailure">
+  <summary>
+    The attempt that resolved the host first and the resolution was not
+    successful.
+  </summary>
+</histogram>
+
+<histogram name="DNS.AttemptFirstSuccess">
+  <summary>
+    The attempt that resolved the host first and the resolution was successful.
+  </summary>
+</histogram>
+
+<histogram name="DNS.AttemptSuccess">
+  <summary>The attempt that has resolved the host successfully.</summary>
+</histogram>
+
+<histogram name="DNS.AttemptSuccessDuration" units="milliseconds">
+  <summary>
+    Duration of time taken in OS resolutions that succeeded and were requested
+    for actual navigations. These attempts which completed after the job was
+    already canceled OR after the job was already completed by an earlier
+    attempt. Note that cached resolutions may provide low (0ms?) resolution
+    times.
+  </summary>
+</histogram>
+
+<histogram name="DNS.AttemptTimeSavedByRetry" units="milliseconds">
+  <summary>
+    This histogram shows the time saved by having spawned an extra attempt, when
+    the first attempt didn't finish before retry attempt.
+  </summary>
+</histogram>
+
+<histogram name="DNS.CacheEvicted" units="milliseconds">
+  <summary>
+    The time left to expiration of an entry when it is removed while compacting
+    the HostCache.
+  </summary>
+</histogram>
+
+<histogram name="DNS.CacheExpired" units="milliseconds">
+  <summary>
+    The time since expiration of an entry when it is removed while compacting
+    the HostCache.
+  </summary>
+</histogram>
+
+<histogram name="DNS.CacheExpiredOnGet" units="milliseconds">
+  <summary>
+    The time since expiration of an entry when it is removed on lookup.
+  </summary>
+</histogram>
+
+<histogram name="DNS.EmptyAddressListAndNoError"
+    enum="DNSEmptyAddressListAndNoError">
+  <summary>
+    Error status when an empty address list was found in OnLookupComplete().
+  </summary>
+</histogram>
+
+<histogram name="DNS.IndependentFailedNavigation" units="milliseconds">
+  <summary>
+    When either a pre-resolution was not done recently enough to provide
+    benefit, or the the corresponding pre-resolution is still pending, this
+    histogram shows the duration of time used to resolve a hostname as not
+    existing during a failed attempt to navigate to (GET) a URL.  In newer
+    versions, if the hostname has never been found as a link during a page scan,
+    and it has a referring URL, then it is added to referrer list data structure
+    (hoping we'll do better next time).
+  </summary>
+</histogram>
+
+<histogram name="DNS.IndependentNavigation" units="milliseconds">
+  <summary>
+    When either a pre-resolution was not done recently enough to provide
+    benefit, or the the corresponding pre-resolution is still pending, this
+    histogram shows the duration of the duration of time used to resolve a
+    hostname to navigate to (GET) a URL.  In newer versions, if the hostname has
+    never been found as a link during a page scan, and it has a referring URL,
+    then it is added to referrer list data structure (hoping we'll do better
+    next time).
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTime" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (a getaddrinfo call was dispatched to the thread
+    pool).
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTime_HIGHEST" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (a getaddrinfo call was dispatched to the thread
+    pool). Includes only Jobs which had priority HIGHEST when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTime_IDLE" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (a getaddrinfo call was dispatched to the thread
+    pool). Includes only Jobs which had priority IDLE when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTime_LOW" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (a getaddrinfo call was dispatched to the thread
+    pool). Includes only Jobs which had priority LOW when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTime_LOWEST" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (a getaddrinfo call was dispatched to the thread
+    pool). Includes only Jobs which had priority LOWEST when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTime_MEDIUM" units="milliseconds">
+  <summary>
+    Time elapsed between the time the HostResolverImpl::Job was created and the
+    time the Job was started (a getaddrinfo call was dispatched to the thread
+    pool). Includes only Jobs which had priority MEDIUM when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTimeAfterChange" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (a getaddrinfo call was dispatched to the thread pool).
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTimeAfterChange_HIGHEST" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (a getaddrinfo call was dispatched to the thread pool). Includes
+    only Jobs which had priority HIGHEST when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTimeAfterChange_IDLE" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (a getaddrinfo call was dispatched to the thread pool). Includes
+    only Jobs which had priority IDLE when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTimeAfterChange_LOW" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (a getaddrinfo call was dispatched to the thread pool). Includes
+    only Jobs which had priority LOW when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTimeAfterChange_LOWEST" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (a getaddrinfo call was dispatched to the thread pool). Includes
+    only Jobs which had priority LOWEST when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.JobQueueTimeAfterChange_MEDIUM" units="milliseconds">
+  <summary>
+    Time elapsed between the last time the priority of a HostResolverImpl::Job
+    changed (when a Request was attached or detached) and the time the Job was
+    started (a getaddrinfo call was dispatched to the thread pool). Includes
+    only Jobs which had priority MEDIUM when started.
+  </summary>
+</histogram>
+
+<histogram name="DNS.PrefetchCacheEviction" units="milliseconds">
+  <summary>
+    The duration of time used (most recently) to pre-resolve a hostname, when
+    the prefetched resolution was apparently evicted from the cache.  The
+    included samples only list pre-resolution times when the later
+    navigations/fetches took in excess of 15ms.
+  </summary>
+</histogram>
+
+<histogram name="DNS.PrefetchCacheEvictionL" units="milliseconds">
+  <summary>
+    The duration of time used (most recently) to pre-resolve a hostname, when
+    the prefetched resolution was apparently evicted from the cache.  The
+    included samples only list pre-resolution times when the later
+    navigations/fetches took in excess of 15ms.
+  </summary>
+</histogram>
+
+<histogram name="DNS.PrefetchFoundName">
+  <summary>Replaced by DNS.PrefetchFoundNameL.</summary>
+</histogram>
+
+<histogram name="DNS.PrefetchFoundNameL" units="milliseconds">
+  <obsolete>
+    Deprecated 2/2010, and replaced by DNS.PrefetchResolution
+  </obsolete>
+  <summary>
+    The duration of time used by the DNS pre-resolving threads to resolve a host
+    name via the network.  Any resolutions that are faster than 15ms are
+    considered to be local cache hits, not requiring network access, and are not
+    included in this histogram. This histogram is most useful for estimating the
+    typical cost of a name resolution, but it also estimates the total number of
+    network-based resolutions induced by this feature.  Not all these
+    resolutions prove helpful (i.e., the user does not always actually visit the
+    resolved hostnames).
+  </summary>
+</histogram>
+
+<histogram name="DNS.PrefetchNegativeHit">
+  <summary>Replaced by DNS.PrefetchNegativeHitL.</summary>
+</histogram>
+
+<histogram name="DNS.PrefetchNegativeHitL" units="milliseconds">
+  <summary>
+    The duration of time saved due to DNS pre-resolving in the &quot;name not
+    found&quot; case.  Time &quot;savings&quot; shown in the histogram are
+    defined to be the difference between the DNS pre-resolution duration, and
+    the DNS resolution duration seen during a navigation.  These cache hits only
+    list events where the DNS pre-resolve duration for a host was in excess of
+    15ms (i.e., the network was consulted), and the actual DNS resolution (when
+    a user attempted to navigate to a link with the same host name) took less
+    than 15ms (i.e., the network was not consulted), which means the gain was a
+    result of a &quot;cache hit&quot; in the OS cache.  For some users with
+    LANs, all negative results (even when the DNS cache might otherwise help)
+    take about 2.5 seconds (due to timeouts for netbios broadcasts), and hence
+    no savings are possible (or shown) for such users in this category.
+  </summary>
+</histogram>
+
+<histogram name="DNS.PrefetchPositiveHit">
+  <summary>Replaced by DNS.PrefetchPositiveHitL.</summary>
+</histogram>
+
+<histogram name="DNS.PrefetchPositiveHitL" units="milliseconds">
+  <summary>
+    The duration of time saved due to DNS pre-resolving in the &quot;name was
+    found&quot; case, and induced by either a page scan for a link or an omnibox
+    entry by the user. Time &quot;savings&quot; shown in the histogram are
+    defined to be the difference between the DNS pre-resolution duration, and
+    the DNS resolution duration seen during a navigation.  These cache hits only
+    list events where the DNS pre-resolve duration for a host was in excess of
+    15ms (i.e., the network was consulted), and the actual DNS resolution (when
+    a user attempted to navigate to a link with the same host name) took less
+    than 15ms (i.e., the network was not consulted), which means the gain was a
+    result of a &quot;cache hit&quot; in the OS cache.
+  </summary>
+</histogram>
+
+<histogram name="DNS.PrefetchQueue" units="milliseconds">
+  <summary>
+    The duration of time spent by a proposed resolution waiting in the queue to
+    be resolved.  This number is in addition to any DNS resolution time that may
+    come later.
+  </summary>
+</histogram>
+
+<histogram name="DNS.PrefetchReferredPositiveHit" units="milliseconds">
+  <summary>
+    The duration of time saved due to DNS pre-resolving in the &quot;name was
+    found&quot; case, and induced by predicting (using referrer lists) that a
+    resolution was needed. Time &quot;savings&quot; shown in the histogram are
+    defined to be the difference between the DNS pre-resolution duration, and
+    the DNS resolution duration seen during a navigation.  These cache hits only
+    list events where the DNS pre-resolve duration for a host was in excess of
+    15ms (i.e., the network was consulted), and the actual DNS resolution (when
+    a user attempted to navigate to a link with the same host name) took less
+    than 15ms (i.e., the network was not consulted), which means the gain was a
+    result of a &quot;cache hit&quot; in the OS cache.
+  </summary>
+</histogram>
+
+<histogram name="DNS.PrefetchResolution" units="milliseconds">
+  <summary>
+    The duration of time used by the DNS pre-resolving threads to resolve a host
+    name via the network.  Any resolutions that are faster than 15ms are
+    considered to be local cache hits, not requiring network access, and are not
+    included in this histogram. This histogram is most useful for estimating the
+    typical cost of a name resolution, but it also estimates the total number of
+    network-based resolutions induced by this feature.  Not all these
+    resolutions prove helpful (i.e., the user does not always actually visit the
+    resolved hostnames).
+  </summary>
+</histogram>
+
+<histogram name="DNS.QueueRecycledDeltaOver2">
+  <summary>
+    When, due to congestion avoidance, a queued pre-resolution is abandoned
+    (recycled) without actually being resolved, this histograms records the age
+    in the queue of that entry.  Only times over 2 seconds are recorded in this
+    histogram.
+  </summary>
+</histogram>
+
+<histogram name="DNS.QueueRecycledUnder2">
+  <summary>
+    When, due to congestion avoidance, a queued pre-resolution is abandoned
+    (recycled) without actually being resolved, this histograms records the age
+    in the queue of that entry.  Only times less than or equal to 2 seconds are
+    recorded in this histogram.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveCategory" enum="ResolutionCategory">
+  <summary>
+    Counts of successes and failures of OS resolutions in various categories.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveFail" units="milliseconds">
+  <summary>
+    Duration of time taken in OS resolutions for actual navigations.  Note that
+    cached OS resolutions may provide low (0ms?) resolution times.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveFail_FAMILY_IPV4" units="milliseconds">
+  <summary>Same as DNS.ResolveFail, but limited to pure IPv4 lookups.</summary>
+</histogram>
+
+<histogram name="DNS.ResolveFail_FAMILY_IPV6" units="milliseconds">
+  <summary>Same as DNS.ResolveFail, but limited to pure IPv6 lookups.</summary>
+</histogram>
+
+<histogram name="DNS.ResolveFail_FAMILY_UNSPEC" units="milliseconds">
+  <summary>Same as DNS.ResolveFail, but limited to IPv4/IPv6 lookups.</summary>
+</histogram>
+
+<histogram name="DNS.ResolveSpeculativeFail" units="milliseconds">
+  <summary>
+    Duration of time taken in speculative OS resolutions.  Note that cached OS
+    resolutions may provide low (0ms?) resolution times.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveSpeculativeSuccess" units="milliseconds">
+  <summary>
+    Duration of time taken in speculative OS resolution that succeeded.  Note
+    that cached resolutions may provide low (0ms?) resolution times.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveSuccess" units="milliseconds">
+  <summary>
+    Duration of time taken in OS resolutions that succeeded and were requested
+    for actual navigations.  Note that cached resolutions may provide low (0ms?)
+    resolution times.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveSuccess_FAMILY_IPV4" units="milliseconds">
+  <summary>
+    Same as DNS.ResolveSuccess, but limited to pure IPv4 lookups.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveSuccess_FAMILY_IPV6" units="milliseconds">
+  <summary>
+    Same as DNS.ResolveSuccess, but limited to pure IPv6 lookups.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveSuccess_FAMILY_UNSPEC" units="milliseconds">
+  <summary>
+    Same as DNS.ResolveSuccess, but limited to IPv4/IPv6 lookups.
+  </summary>
+</histogram>
+
+<histogram name="DNS.ResolveUnspecWaste" enum="ResolutionUnspecWasteCategory">
+  <obsolete>
+    Deprecated as of 5/2013.
+  </obsolete>
+  <summary>
+    Counts of hits and misses in the DNS cache and DNS jobs pool of wasted
+    HostResolverImpl::Jobs that could be avoided by always resolving using
+    AF_UNSPEC.
+  </summary>
+</histogram>
+
+<histogram name="DNS.TotalTime" units="milliseconds">
+  <summary>
+    Duration of time since a HostResolverImpl::Resolve request to the time a
+    result is posted. Excludes canceled, evicted, and aborted requests. Includes
+    cache hits (recorded as 0). Excludes speculative requests.
+  </summary>
+</histogram>
+
+<histogram name="DNS.TotalTime_speculative" units="milliseconds">
+  <summary>
+    Duration of time since a HostResolverImpl::Resolve request to the time a
+    result is posted. Excludes canceled, evicted, and aborted requests. Includes
+    cache hits (recorded as 0). Speculative requests only.
+  </summary>
+</histogram>
+
+<histogram name="DNS.UnexpectedResolution">
+  <summary>
+    In some cases, such as when content arrives with embedded references to
+    other servers, the prefetch system can't (or doesn't) attempt to pre-resolve
+    the hostnames.  As an example, a visit to www.cnn.com will fetch content
+    with references to about 12 additional hostnames, none of which are
+    currently anticipated.  Such resolutions are termed &quot;Unexpected
+    Resolutions,&quot; and the durations associated with those DNS resolutions
+    are shown below.  Future features may attempt to learn (from prior
+    experience locally, or from server provided hints), what secondary hostname
+    resolutions should be done when a primary resolution (or navigation) takes
+    place.  This histogram shows what the potential savings are that
+    &quot;remain on the table&quot; until we employ some of these more advanced
+    features.
+  </summary>
+</histogram>
+
+<histogram name="DNS.UnexpectedResolutionL">
+  <summary>
+    In some cases, such as when content arrives with embedded references to
+    other servers, or when a page (such as one in SSL) preclude scanning and
+    prefetching, the prefetch system can't (or doesn't) attempt to pre-resolve
+    the hostnames.  As an example, a visit to www.cnn.com will fetch content
+    with references to about 12 additional hostnames, none of which might be
+    anticipated.  Similarly, clicking on a link in an SSL page won't be
+    anticipated (since scanning in not allowed by default). Such resolutions are
+    termed &quot;Unexpected Resolutions,&quot; and the durations associated with
+    those navigation induced DNS resolutions are shown below.  If a referring
+    URL is available for the navigation, the relationship to the referring URL
+    was recorded, and future navigations to the referring hostname would have
+    induced a pre-resolution of hostname that caused an entry below.  Such any
+    entry may facilitate future listing in the ReferredPositiveHit histogram.
+  </summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.Elapsed" units="ms">
+  <summary>Time between starting and finishing DNS probe.</summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.NcnOffline.Elapsed" units="ms">
+  <summary>
+    Time between starting and finishing DNS probe when NCN says we're offline.
+  </summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.NcnOffline.Result" enum="DnsProbe.Probe.Result">
+  <summary>
+    Result of DNS probes sent by the probe service when NCN says we're offline.
+  </summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.NcnOnline.Elapsed" units="ms">
+  <summary>
+    Time between starting and finishing DNS probe when NCN says we're online.
+  </summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.NcnOnline.Result" enum="DnsProbe.Probe.Result">
+  <summary>
+    Result of DNS probes sent by the probe service when NCN says we're online.
+  </summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.Result" enum="DnsProbe.Probe.Result">
+  <summary>Result of DNS probes sent by the probe service.</summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.ResultBadConfig.Elapsed" units="ms">
+  <summary>Elapsed time of DNS probes that return PROBE_BAD_CONFIG.</summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.ResultBadConfig.SystemIsLocalhost"
+    enum="DnsProbe.Probe.SystemIsLocalhost">
+  <summary>
+    Whether the only nameserver in the system DNS config was 127.0.0.1 when the
+    probe result was BAD_CONFIG.
+  </summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.ResultBadConfig.SystemJobResult"
+    enum="DnsProbe.Job.Result">
+  <summary>
+    The result of the system probe job when the overall probe result was
+    BAD_CONFIG.
+  </summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.ResultBadConfig.SystemNameserverCount">
+  <summary>
+    The number of nameservers in the system DNS config when the probe result was
+    BAD_CONFIG.
+  </summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.ResultNoInternet.Elapsed" units="ms">
+  <summary>Elapsed time of DNS probes that return PROBE_NO_INTERNET.</summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.ResultNxdomain.Elapsed" units="ms">
+  <summary>Elapsed time of DNS probes that return PROBE_NXDOMAIN.</summary>
+</histogram>
+
+<histogram name="DnsProbe.Probe.ResultUnknown.Elapsed" units="ms">
+  <summary>Elapsed time of DNS probes that return PROBE_UNKNOWN.</summary>
+</histogram>
+
 <histogram name="DomainBoundCerts.DBLoadedCount">
   <summary>Number of certs loaded from domain bound cert database.</summary>
 </histogram>
@@ -625,6 +1520,21 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Drive.PushNotificationInitiallyEnabled" enum="BooleanEnabled">
+  <summary>
+    Tracks whether the push notification is initially enabled for Drive.
+    Recorded when the first notification is processed. Notification is emulated
+    by polling if the push notication is disabled.
+  </summary>
+</histogram>
+
+<histogram name="Drive.PushNotificationRegistered" enum="BooleanRegistered">
+  <summary>
+    Tracks whether the push notification request is registered correctly for
+    Drive. Recorded when the push notification manager is initialized.
+  </summary>
+</histogram>
+
 <histogram name="Enterprise.AutoEnrollmentExtraTime" units="milliseconds">
   <summary>
     Time since the user logged in until the auto-enrollment protocol completed.
@@ -634,6 +1544,18 @@ other types of suffix sets.
 
 <histogram name="Enterprise.AutoEnrollmentProtocolTime" units="milliseconds">
   <summary>Total duration time of the auto-enrollment protocol.</summary>
+</histogram>
+
+<histogram name="Enterprise.AutoEnrollmentRequestNetworkErrorCode"
+    enum="NetErrorCodes">
+  <summary>
+    Network error code (if applicable) for auto-enrollment requests.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.AutoEnrollmentRequestStatus"
+    enum="EnterpriseDeviceManagementStatus">
+  <summary>URL fetcher status for auto-enrollment requests.</summary>
 </histogram>
 
 <histogram name="Enterprise.DMToken" enum="EnterpriseDMTokenType">
@@ -664,6 +1586,13 @@ other types of suffix sets.
   <summary>
     Events related to fetching, saving and loading user policies, and also
     device policies on ChromeOS.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.PolicyLoadStatus" enum="EnterprisePolicyLoadStatus">
+  <summary>
+    Load status from the policy loaders which pull policy settings from the
+    underlying platform, such as Windows Group Policy.
   </summary>
 </histogram>
 
@@ -899,6 +1828,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="HttpCache.ReadErrorNonRestartable" enum="NetErrorCodes">
+  <summary>Net error results from non-restartable cache read errors.</summary>
+</histogram>
+
+<histogram name="HttpCache.ReadErrorRestartable" enum="NetErrorCodes">
+  <summary>Net error results from restartable cache read errors.</summary>
+</histogram>
+
 <histogram name="Import.ImporterType.AutoImport" enum="ImporterType">
   <summary>The importer used on first run Auto Import.</summary>
 </histogram>
@@ -910,6 +1847,40 @@ other types of suffix sets.
 <histogram name="Import.ImporterType.ImportDataHandler" enum="ImporterType">
   <summary>
     The importer used on import from the chrome://settings/importData UI.
+  </summary>
+</histogram>
+
+<histogram name="Import.ShowDialog.FromBookmarkBarView" units="seconds">
+  <summary>
+    The amount of time from install time to time that user opens import dialog
+    from BookmarkBarView.
+  </summary>
+</histogram>
+
+<histogram name="Import.ShowDialog.FromFloatingBookmarkBarView" units="seconds">
+  <summary>
+    The amount of time from install time to time that user opens import dialog
+    from NTP floating BookmarkBarView.
+  </summary>
+</histogram>
+
+<histogram name="Import_ShowDlg.FromBookmarkBarView" units="seconds">
+  <obsolete>
+    Deprecated and replaced by Import.ShowDialog.FromBookmarkBarView
+  </obsolete>
+  <summary>
+    The amount of time from install time to time that user opens import dialog
+    from BookmarkBarView.
+  </summary>
+</histogram>
+
+<histogram name="Import_ShowDlg.FromFloatingBookmarkBarView" units="seconds">
+  <obsolete>
+    Deprecated and replaced by Import.ShowDialog.FromFloatingBookmarkBarView
+  </obsolete>
+  <summary>
+    The amount of time from install time to time that user opens import dialog
+    from NTP floating BookmarkBarView.
   </summary>
 </histogram>
 
@@ -1005,6 +1976,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="InstantExtended.FallbackToLocalOverlay"
+    enum="InstantExtended_FallbackCause">
+  <summary>
+    Records the cause for falling back to a local overlay at the time of
+    fallback.
+  </summary>
+</histogram>
+
 <histogram name="InstantExtended.InstantNavigation"
     enum="InstantExtended_InstantNavigation">
   <summary>
@@ -1026,6 +2005,14 @@ other types of suffix sets.
     provide Instant result&quot; preference setting for the first profile
     loaded.
   </summary>
+</histogram>
+
+<histogram name="LanguageUsage.AcceptLanguage" enum="LanguageCode">
+  <summary>Accept languages.</summary>
+</histogram>
+
+<histogram name="LanguageUsage.ApplicationLanguage" enum="LanguageCode">
+  <summary>Application languages used for UI.</summary>
 </histogram>
 
 <histogram name="LevelDBEnv.All.SafeThreadAccess" units="accesses">
@@ -1077,10 +2064,25 @@ other types of suffix sets.
   <summary>Errno of errors encountered in WritableFileFlush.</summary>
 </histogram>
 
+<histogram name="LevelDBEnv.IDB.LockFileAncestorsNotFound" units="directories">
+  <summary>
+    Number of directories missing when IDB LevelDBEnv tries to create a Lock
+    file.
+  </summary>
+</histogram>
+
 <histogram name="LevelDBEnv.IDB.MaxFDs" units="files">
   <summary>
     File descriptor limit recorded every time LevelDB calls NewRandomAccessFile
     for IndexedDB.
+  </summary>
+</histogram>
+
+<histogram name="LevelDBEnv.IDB.RetryRecoveredFromErrorIn"
+    enum="PlatformFileError">
+  <summary>
+    When IDB LevelDBEnv successfully retries an operation that had failed,
+    record the error from the most recent failed attempt.
   </summary>
 </histogram>
 
@@ -1134,10 +2136,24 @@ other types of suffix sets.
   <summary>Errno of errors encountered in WritableFileFlush.</summary>
 </histogram>
 
+<histogram name="LevelDBEnv.LockFileAncestorsNotFound" units="directories">
+  <summary>
+    Number of directories missing when Non-IDB LevelDBEnv tries to create a Lock
+    file.
+  </summary>
+</histogram>
+
 <histogram name="LevelDBEnv.MaxFDs" units="files">
   <summary>
     File descriptor limit recorded every time LevelDB calls NewRandomAccessFile
     for clients other than IndexedDB.
+  </summary>
+</histogram>
+
+<histogram name="LevelDBEnv.RetryRecoveredFromErrorIn" enum="PlatformFileError">
+  <summary>
+    When Non-IDB LevelDBEnv successfully retries an operation that had failed,
+    record the error from the most recent failed attempt.
   </summary>
 </histogram>
 
@@ -1162,12 +2178,31 @@ other types of suffix sets.
   <summary>The version of glibc used. (Linux only)</summary>
 </histogram>
 
+<histogram name="Media.AudioInputController" units="ms">
+  <summary>Measures the time taken for AudioInputController::</summary>
+</histogram>
+
+<histogram name="Media.AudioOutputController" units="ms">
+  <summary>Measures the time taken for AudioOutputController::</summary>
+</histogram>
+
+<histogram name="Media.AudioOutputControllerDataNotReady" units="ms">
+  <summary>
+    Time spent waiting in AudioOutputController::WaitTillDataReady() if the data
+    was not initially available.
+  </summary>
+</histogram>
+
 <histogram name="Media.AudioRendererEvents" enum="AudioRendererEvents">
   <summary>Captures statistics for various AudioRendererImpl events.</summary>
 </histogram>
 
 <histogram name="Media.DetectedAudioCodec" enum="FFmpegCodecs">
   <summary>Audio codec used in HTML5 media.</summary>
+</histogram>
+
+<histogram name="Media.DetectedContainer" enum="MediaContainers">
+  <summary>Container used for HTML5 media.</summary>
 </histogram>
 
 <histogram name="Media.DetectedVideoCodec" enum="FFmpegCodecs">
@@ -1287,6 +2322,14 @@ other types of suffix sets.
   <summary>
     The number of mouseover events detected at HTML anchor-tag links' default
     event handler.
+  </summary>
+</histogram>
+
+<histogram name="MouseEventPrefetch.PreTapEventsFollowedByClick"
+    enum="PreTapEvents">
+  <summary>
+    The tap gesture events detected before click at HTML anchor-tag links'
+    default event handler.
   </summary>
 </histogram>
 
@@ -4682,6 +5725,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Omnibox.ProviderTime" units="ms">
+  <summary>
+    The length of time taken by the named provider&quot;s synchronous pass.
+  </summary>
+</histogram>
+
 <histogram name="Omnibox.QueryBookmarksTime">
   <obsolete>
     Deprecated 2012-11-14. Replaced by Autocomplete.BookmarkProviderMatchTime.
@@ -4784,6 +5833,16 @@ other types of suffix sets.
 <histogram name="Platform.CompressedSwapSize" units="MB">
   <summary>
     Chrome OS size of allocated swap area in megabytes (before compression)
+  </summary>
+</histogram>
+
+<histogram name="Platform.CpuFrequencyThermalScaling" units="percent">
+  <summary>
+    CPU frequency as percent of the baseline frequency, sampled every 30s. This
+    may be throttled down from 100% due to power dissipation issues (too high
+    temperature).  It may also be throttled up (turbo), but the kernel does not
+    report the actual turbo frequency, so we put such samples in the 101%
+    bucket.
   </summary>
 </histogram>
 
@@ -5103,8 +6162,26 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="PlatformFile.UnknownCreateFileErrors" units="code">
+  <obsolete>
+    Deprecated as of 2013-05, replaced by
+    PlatformFile.UnknownCreateFileErrorsWin in chrome 29.
+  </obsolete>
   <summary>
     Errors returned by CreateFile on windows that PlatformFileError doesn't yet
+    support.
+  </summary>
+</histogram>
+
+<histogram name="PlatformFile.UnknownErrors.Posix" units="errno">
+  <summary>
+    Errors returned by CreateFile on POSIX that PlatformFileError doesn't yet
+    support.
+  </summary>
+</histogram>
+
+<histogram name="PlatformFile.UnknownErrors.Windows" units="GetLastError">
+  <summary>
+    Errors returned by CreateFile on Windows that PlatformFileError doesn't yet
     support.
   </summary>
 </histogram>
@@ -5240,13 +6317,15 @@ other types of suffix sets.
 
 <histogram name="Power.BacklightLevelOnAC" units="%">
   <summary>
-    The level of the backlight as a percentage when the user is on AC.
+    The level of the backlight as a percentage when the user is on AC. Sampled
+    every 30 seconds.
   </summary>
 </histogram>
 
 <histogram name="Power.BacklightLevelOnBattery" units="%">
   <summary>
     The level of the backlight as a percentage when the user is on battery.
+    Sampled every 30 seconds.
   </summary>
 </histogram>
 
@@ -5257,10 +6336,20 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Power.BatteryDischargeRate">
+<histogram name="Power.BatteryDischargeRate" units="mW">
   <summary>
-    Chrome OS battery discharge rate in mW sampled when the device runs on
-    battery.
+    Chrome OS battery discharge rate in mW sampled every 30 seconds while the
+    device runs on battery.
+  </summary>
+</histogram>
+
+<histogram name="Power.BatteryDischargeRateWhileSuspended" units="mW">
+  <summary>
+    Chrome OS battery discharge rate in mW while the system was suspended,
+    sampled at resume. Only reported if the system was on battery power both
+    before suspending and after resuming, if the energy level didn't increase
+    while suspended (which would indicate that an AC adapter was connected), and
+    if the system was suspended for at least a minute.
   </summary>
 </histogram>
 
@@ -5345,6 +6434,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Power.BrightnessAdjustOnAC" enum="PowerBrightnessAdjust">
+  <obsolete>
+    Deprecated as of 5/2013. See Accel_BrightnessDown_F6 and
+    Accel_BrightnessUp_F7 user actions instead.
+  </obsolete>
   <summary>
     Number of times the user has adjusted brightness up and down while running
     on battery power.
@@ -5352,6 +6445,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Power.BrightnessAdjustOnBattery" enum="PowerBrightnessAdjust">
+  <obsolete>
+    Deprecated as of 5/2013. See Accel_BrightnessDown_F6 and
+    Accel_BrightnessUp_F7 user actions instead.
+  </obsolete>
   <summary>
     Number of times the user has adjusted brightness up and down while running
     on AC power.
@@ -5439,6 +6536,13 @@ other types of suffix sets.
   <summary>
     The time that the kernel took to suspend-to-RAM the Chrome OS device when
     running on battery.
+  </summary>
+</histogram>
+
+<histogram name="Power.KeyboardBacklightLevel" units="%">
+  <summary>
+    The level of the keyboard backlight as a percentage. Sampled every 30
+    seconds.
   </summary>
 </histogram>
 
@@ -5568,6 +6672,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.Events" enum="PrerenderHoverEvent">
+  <obsolete>
+    deprecated May 10 2012
+  </obsolete>
+  <summary>Hover Event counts for prerendering.</summary>
+</histogram>
+
 <histogram name="Prerender.FinalStatus" enum="PrerenderFinalStatus">
   <summary>
     Final status for prerender pages - either success, or why it was canceled.
@@ -5590,6 +6701,29 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.HoverStats_TimeUntilClicked" units="milliseconds">
+  <obsolete>
+    deprecated May 10 2012
+  </obsolete>
+  <summary>
+    Duration that a user hovers a link before clicking on it.
+
+    This is recorded for all pages loaded in a session.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.HoverStats_TimeUntilDiscarded" units="milliseconds">
+  <obsolete>
+    deprecated May 10 2012
+  </obsolete>
+  <summary>
+    Duration that the mouse pointer hovers on a link before the mouse pointer
+    moves off of it.
+
+    This is recorded for all pages loaded in a session.
+  </summary>
+</histogram>
+
 <histogram name="Prerender.LocalPredictorEvent"
     enum="PrerenderLocalPredictorEvents">
   <summary>
@@ -5602,6 +6736,166 @@ other types of suffix sets.
     Time from when a prerendered page is started to when it is first used due to
     user navigation. If the page is never used, it is not included in this
     histogram.  This only refers to prerenders based on the local predictor.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.LocalVisitCoreTransition"
+    enum="PrerenderLocalVisitCoreTransition">
+  <obsolete>
+    deprecated Nov 16 2012
+  </obsolete>
+  <summary>
+    The transition type for each new visit as recorded in the local visits
+    database.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.LocalVisitDatabaseSize">
+  <obsolete>
+    deprecated Nov 16 2012
+  </obsolete>
+  <summary>Size of the local visits database (number of entries).</summary>
+</histogram>
+
+<histogram name="Prerender.LocalVisitEvents" enum="PrerenderLocalVisitEvents">
+  <obsolete>
+    deprecated Nov 16 2012
+  </obsolete>
+  <summary>
+    Enumeration of what events related to local visits have occurred
+  </summary>
+</histogram>
+
+<histogram name="Prerender.OmniboxNavigationsCouldPrerender">
+  <summary>
+    A boolean that indicates whether the Omnibox navigation being committed
+    could have been prerendered by the Omnibox Prerender system. This provides
+    an upper bound for Prerender.OmniboxNavigationsUsedPrerenderCount and allows
+    the potential for Omnibox Prerendering coverage to be understood. If Omnibox
+    Prerendering is disabled, this histogram will register a 'false' entry. The
+    total count is the equivalent of the deprecated
+    NetworkActionPredictor.NavigationCount histogram.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.OmniboxNavigationsUsedPrerenderCount">
+  <summary>
+    The number of navigations that use a prerender initiated from the Omnibox.
+    The count is incremented when the Prerendered tab is swapped in if the
+    Prerender was initiated by the Omnibox, which obviously requires
+    Prerendering from the Omnibox to be enabled.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.OmniboxPrerenderCount">
+  <summary>
+    The number of prerenders initiated from the Omnibox. This is incremented
+    when the NetworkActionPredictor suggests Prerendering as an optimal strategy
+    given the text the user has entered and the Autocomplete suggestion
+    currently selected. It is only incremented if Prerendering from the Omnibox
+    is enabled.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PageviewEvents" enum="PrerenderPageviewEvents">
+  <obsolete>
+    deprecated Nov 16 2012
+  </obsolete>
+  <summary>Types of pages rendered.</summary>
+</histogram>
+
+<histogram name="Prerender.PerceivedPageLoadTime_Control" units="milliseconds">
+  <obsolete>
+    Deprecated 03/24/11.  Replaced by
+    Prerender.PerceivedPLT_ContentPrefetchPrerenderControl.
+  </obsolete>
+  <summary>
+    Time from when a user navigates to a page to when it loads. Since the pages
+    may start loading before the user navigates to it, this does not include any
+    portion of load prior to navigation.
+
+    This particular histogram is for all page loads for users who do not have
+    prerendering enabled.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PerceivedPageLoadTime_PrerenderMatchControl"
+    units="milliseconds">
+  <obsolete>
+    Deprecated 03/24/11.   Replaced by
+    Prerender.PerceivedPLTMatched_ContentPrefetchPrerenderControl.
+  </obsolete>
+  <summary>
+    Time from when a user navigates to a page to when it loads. Since the pages
+    may start loading before the user navigates to it, this does not include any
+    portion of load prior to navigation.
+
+    This particular histogram is only for pages that would have been prerendered
+    if the user had prerender enabled.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PerceivedPageLoadTime_PrerenderMatchTreatment"
+    units="milliseconds">
+  <obsolete>
+    Deprecated 03/24/11.   Replaced by
+    Prerender.PerceivedPLTMatched_ContentPrefetchPrerender.
+  </obsolete>
+  <summary>
+    Time from when a user navigates to a page to when it loads. Since the pages
+    may start loading before the user navigates to it, this does not include any
+    portion of load prior to navigation.
+
+    This particular histogram is for all prerendered page loads for users who
+    have prerender enabled.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PerceivedPageLoadTime_Treatment"
+    units="milliseconds">
+  <obsolete>
+    Deprecated 03/24/11.   Replaced by
+    Prerender.PerceivedPLT_ContentPrefetchPrerender.
+  </obsolete>
+  <summary>
+    Time from when a user navigates to a page to when it loads. Since the pages
+    may start loading before the user navigates to it, this does not include any
+    portion of load prior to navigation.
+
+    This particular histogram is for all page loads for users who have
+    prerendering enabled.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PerceivedPageLoadTime_WindowControl"
+    units="milliseconds">
+  <obsolete>
+    Deprecated 03/24/11.   Replaced by
+    Prerender.PerceivedPLTWindowed_ContentPrefetchPrerenderControl.
+  </obsolete>
+  <summary>
+    Time from when a user navigates to a page to when it loads. Since the pages
+    may start loading before the user navigates to it, this does not include any
+    portion of load prior to navigation.
+
+    This particular histogram is for all page loads within 30 seconds after a
+    prefetch tag is seen for users who do not have prerendering enabled.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PerceivedPageLoadTime_WindowTreatment"
+    units="milliseconds">
+  <obsolete>
+    Deprecated 03/24/11.   Replaced by
+    Prerender.PerceivedPLTWindowed_ContentPrefetchPrerender.
+  </obsolete>
+  <summary>
+    Time from when a user navigates to a page to when it loads. Since the pages
+    may start loading before the user navigates to it, this does not include any
+    portion of load pre navigation.
+
+    This particular histogram is for all page loads within 30 seconds after a
+    prefetch tag is seen for users who have prerendering enabled.
   </summary>
 </histogram>
 
@@ -5805,6 +7099,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.Sessions" enum="PrerenderMode">
+  <obsolete>
+    deprecated Nov 16 2012
+  </obsolete>
+  <summary>Enumeration of how prerender was used per session.</summary>
+</histogram>
+
 <histogram name="Prerender.SimulatedLocalBrowsingBaselinePLT"
     units="milliseconds">
   <summary>
@@ -5820,6 +7121,19 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.TabContentsDeleterTimeout">
+  <summary>
+    A boolean that indicates how often we fail to delete an old prerendered tab
+    before the timeout.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.TabHelperEvent" enum="PrerenderTabHelperEvents">
+  <summary>
+    Enumeration of what events related to the TabHelper class have occurred.
+  </summary>
+</histogram>
+
 <histogram name="Prerender.TimeBetweenPrerenderRequests" units="milliseconds">
   <summary>Time between subsequent prerender requests.</summary>
 </histogram>
@@ -5829,6 +7143,25 @@ other types of suffix sets.
     The time elapsed between the most recent visit to a URL and when an
     attempted prerender of the same URL is cancelled with
     FINAL_STATUS_RECENTLY_VISITED.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.TimeToClick" units="milliseconds">
+  <obsolete>
+    deprecated Nov 16 2012
+  </obsolete>
+  <summary>Duration that a user hovers a link before clicking on it.</summary>
+</histogram>
+
+<histogram name="Prerender.TimeUntilUsed" units="milliseconds">
+  <obsolete>
+    deprecated Nov 16 2012.  See Prerender.TimeUntilUsed2, which has a larger
+    range.
+  </obsolete>
+  <summary>
+    Time from when a prerendered page is started to when it is first used due to
+    user navigation. If the page is never used, it is not included in this
+    histogram.
   </summary>
 </histogram>
 
@@ -5910,12 +7243,245 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Renderer4.AccelContentPaintDurationMS">
+  <summary>
+    Time spent by WebKit painting the page, in milliseconds, when the GPU
+    acceleration is active, for paints that affect non-root layers.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.AccelContentPaintMegapixPerSecond">
+  <summary>
+    WebKit paint throughput, measured in megapixels per second, when GPU
+    acceleration is active, for paints that affect non-root layers.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.AccelDoDeferredUpdateDelay">
+  <summary>Time between frames when GPU acceleration is active.</summary>
+</histogram>
+
+<histogram name="Renderer4.AccelRootPaintDurationMS">
+  <summary>
+    Time spent by WebKit painting the page, in milliseconds, when the GPU
+    acceleration is active, for paints that affect the root layer.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.AccelRootPaintMegapixPerSecond">
+  <summary>
+    WebKit paint throughput, measured in megapixels per second, when GPU
+    acceleration is active, for paints that affect the root layer.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.AnimationCallbackDelayTime" units="milliseconds">
+  <summary>
+    Time from when the animation callback was posted to when it ran.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.BeginToCommit" units="milliseconds">
+  <summary>
+    Time from &quot;begin&quot; to &quot;commit.&quot;   &quot;Begin&quot;==
+    &quot;request&quot; if user requested, and &quot;start&quot; otherwise.
+    &quot;Request&quot;== time when user requested document. &quot;Start&quot;==
+    time when renderer requested load of document, after any unload of last
+    document. &quot;Commit&quot;== time when renderer got first byte of
+    document.
+  </summary>
+</histogram>
+
 <histogram name="Renderer4.BeginToFinish">
   <summary>TBD</summary>
 </histogram>
 
 <histogram name="Renderer4.BeginToFinishDoc">
   <summary>TBD</summary>
+</histogram>
+
+<histogram name="Renderer4.BeginToFirstPaint" units="milliseconds">
+  <summary>
+    Time from &quot;begin&quot; to &quot;first paint.&quot;  &quot;Begin&quot;==
+    &quot;request&quot; if user requested, and &quot;start&quot; otherwise.
+    &quot;Request&quot;== time when user requested document. &quot;Start&quot;==
+    time when renderer requested load of document, after any unload of last
+    document. &quot;First paint&quot;== time when first paint operation was
+    performed.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.BeginToFirstPaintAfterLoad" units="milliseconds">
+  <summary>
+    Time from &quot;big&quot; to &quot;first paint after load.&quot;
+    &quot;Begin&quot;== &quot;request&quot; if user requested, and
+    &quot;start&quot; otherwise.  &quot;Request&quot;== time when user requested
+    document. &quot;Start&quot;== time when renderer requested load of document,
+    after any unload of last document. &quot;First paint after load&quot;== time
+    after onload() when first paint operation is performed.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.CommitToFinish" units="milliseconds">
+  <summary>
+    Time from &quot;commit&quot; to &quot;finish.&quot; &quot;Commit&quot;==
+    time when renderer got first byte of document.  &quot;Finish&quot;==after
+    onload() and all resources are loaded.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.CommitToFinishDoc" units="milliseconds">
+  <summary>
+    Time from &quot;commit&quot; to &quot;finish doc.&quot; &quot;Commit&quot;==
+    time when renderer got first byte of document. &quot;Finish doc&quot; ==
+    main document loaded, before onload(). &quot;Finish&quot;==after onload()
+    and all resources are loaded.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.CommitToFirstPaint" units="milliseconds">
+  <summary>
+    Time from &quot;commit&quot; to &quot;first paint.&quot;
+    &quot;Commit&quot;== time when renderer got first byte of document.
+    &quot;First paint&quot;== time when first paint operation was performed.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.CommitToFirstPaintAfterLoad" units="milliseconds">
+  <summary>
+    Time from &quot;commit&quot; to &quot;first paint after load.&quot;
+    &quot;Commit&quot;== time when renderer got first byte of document.
+    &quot;First paint after load&quot;== time after onload() when first paint
+    operation is performed.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.CompositorThreadImplDrawDelay" units="milliseconds">
+  <summary>
+    Time between frames, as measured on the compositor thread. This is collected
+    once per frame while it is being drawn to the screen in the compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.drawPixelCountCulled" units="NormalizedPixels">
+  <obsolete>
+    Renamed to Renderer4.pixelCountCulled_Draw.
+  </obsolete>
+  <summary>
+    Number of pixels that culling prevented being drawn to the screen,
+    normalized to the viewport size. This is collected once per frame while it
+    is being drawn to the screen in the compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.drawPixelCountOpaque" units="NormalizedPixels">
+  <obsolete>
+    Renamed to Renderer4.pixelCountOpaque_Draw.
+  </obsolete>
+  <summary>
+    Number of pixels drawn to the screen and known opaque, normalized to the
+    viewport size. This is collected once per frame while it is being drawn to
+    the screen in the compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.drawPixelCountTranslucent" units="NormalizedPixels">
+  <obsolete>
+    Renamed to Renderer4.pixelCountTranslucent_Draw.
+  </obsolete>
+  <summary>
+    Number of pixels drawn to the screen and not known opaque, normalized to the
+    viewport size. This is collected once per frame while it is being drawn to
+    the screen in the compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.FinishDocToFinish" units="milliseconds">
+  <summary>
+    Time from &quot;finish doc&quot; to &quot;finish.&quot; &quot;Finish
+    doc&quot;== main document loaded, before onload(). &quot;Finish&quot;==after
+    onload() and all resources are loaded.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.FinishToFirstPaintAfterLoad" units="milliseconds">
+  <summary>
+    Time from &quot;finish &quot; to &quot;first paint after load.&quot;
+    &quot;Finish&quot;==after onload() and all resources are loaded. &quot;First
+    paint after load&quot;== time after onload() when first paint operation is
+    performed.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.LanguageDetection" units="milliseconds">
+  <summary>
+    Time to determine the page language. This is done after the page has been
+    loaded.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.LCDText.PercentageOfAALayers" units="%">
+  <summary>
+    The ratio of LCDText CC Layers / candidate LCDText layers. Recorded in
+    LayerTreeHost, after LayerTreeHostCommon::CalculateDrawProperties() has
+    computed the properties we need. Only recorded for the first 50 frames of
+    every page.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.LCDText.PercentageOfCandidateLayers" units="%">
+  <summary>
+    The ratio of CC Layers which are candidates for LCDText AA / total picture
+    or content Layers.  Recorded in LayerTreeHost, after
+    LayerTreeHostCommon::CalculateDrawProperties() has computed the properties
+    we need. Only recorded for the first 50 frames of every page.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.LoadType" enum="LoadType">
+  <summary>
+    Probability distribution for enumerated varieties of page loads.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.pixelCountCulled_Draw" units="NormalizedPixels">
+  <summary>
+    Number of pixels that culling prevented being drawn to the screen, recorded
+    as 10 times the percentage of the viewport that these pixels cover. This is
+    collected once per frame while it is being drawn to the screen in the
+    compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.pixelCountOpaque" units="NormalizedPixels">
+  <summary>
+    Number of pixels known to be opaque, recorded as 10 times the percentage of
+    the viewport that these pixels cover.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.pixelCountPainted" units="NormalizedPixels">
+  <summary>
+    Number of pixels painted by WebKit into main memory, recorded as 10 times
+    the percentage of the viewport that these pixels cover. This is collected
+    once per commit from WebKit to the compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.pixelCountTranslucent" units="NormalizedPixels">
+  <summary>
+    Number of pixels not known to be opaque opaque, recorded as 10 times the
+    percentage of the viewport that these pixels cover.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.renderPassCount">
+  <summary>
+    The number of render passes (or render targets) in the renderer's frame. If
+    the value is more than one, then an intermediate rendering target must be
+    used during the rendering of the frame for each render pass greater than
+    one.
+  </summary>
 </histogram>
 
 <histogram name="Renderer4.RequestToFinish" units="milliseconds">
@@ -5926,11 +7492,103 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Renderer4.RequestToStart" units="milliseconds">
+  <summary>
+    Time from &quot;request&quot; to &quot;start.&quot; &quot;Request&quot;==
+    time when user requested document. &quot;Start&quot;== time when renderer
+    requested load of document, after any unload of last document.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.Snapshot">
+  <summary>Time to capture a renderer snapshot.</summary>
+</histogram>
+
+<histogram name="Renderer4.SoftwareDoDeferredUpdateDelay">
+  <summary>Time between frames when the page is not GPU accelerated.</summary>
+</histogram>
+
+<histogram name="Renderer4.SoftwarePaintDurationMS">
+  <summary>
+    Time spent by WebKit painting the page, in milliseconds, when the page is
+    not GPU accelerated.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.SoftwarePaintMegapixPerSecond">
+  <summary>
+    WebKit paint throughput, measured in megapixels per second, when the page is
+    not GPU accelerated.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.StartToCommit" units="milliseconds">
+  <summary>
+    Time from &quot;start&quot; to &quot;commit.&quot; &quot;Start&quot;== time
+    when renderer requested load of document, after any unload of last document.
+    &quot;Commit&quot;== time when renderer got first byte of document.
+  </summary>
+</histogram>
+
 <histogram name="Renderer4.StartToFinish" units="milliseconds">
   <summary>
     Time from &quot;start&quot; to &quot;finish.&quot; &quot;Start&quot;== time
     when renderer requested load of document, after any unload of last document.
     &quot;Finish&quot;==after onload() and all resources are loaded.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.TextureGpuUploadTimeUS">
+  <summary>
+    The number of microseconds it took to upload a tile's full texture as
+    measured on the GPU process.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.Thumbnail">
+  <summary>Time to capture a renderer thumbnail.</summary>
+</histogram>
+
+<histogram name="Renderer4.tileCountCulled_Upload" units="NormalizedTiles">
+  <summary>
+    Number of tiles that culling prevented being uploaded to texture memory.
+    This is an approximation and is recorded as a 100 times the percentage of
+    the number of tiles, of default size, needed to cover the viewport. This is
+    collected once per commit from WebKit to the compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.uploadPixelCountCulled" units="NormalizedPixels">
+  <obsolete>
+    Deprecated as of 04/2012, replaced with Renderer4.tileCountCulled_Upload.
+  </obsolete>
+  <summary>
+    Number of pixels that culling prevented being uploaded to texture memory,
+    normalized to the viewport size. This is collected once per commit from
+    WebKit to the compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.uploadPixelCountOpaque" units="NormalizedPixels">
+  <obsolete>
+    Renamed to Renderer4.pixelCountOpaque_Upload.
+  </obsolete>
+  <summary>
+    Number of pixels uploaded to texture memory and known to be opaque,
+    normalized to the viewport size. This is collected once per commit from
+    WebKit to the compositor.
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.uploadPixelCountTranslucent"
+    units="NormalizedPixels">
+  <obsolete>
+    Renamed to Renderer4.pixelCountTranslucent_Upload.
+  </obsolete>
+  <summary>
+    Number of pixels uploaded to texture memory and not known opaque, normalized
+    to the viewport size.  This is collected once per commit from WebKit to the
+    compositor.
   </summary>
 </histogram>
 
@@ -6701,6 +8359,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SBClientMalware.SentReports" enum="SBClientMalwareSentReports">
+  <summary>
+    Measures the success rate of sending malware reports.  Sending a report can
+    fail due to a client reaching the limit on the number of reports it can send
+    per day or due to the report failing to be serialized.
+  </summary>
+</histogram>
+
 <histogram name="SBClientPhishing.CancelClassificationReason"
     enum="SBClientPhishingCancelClassificationReason">
   <summary>
@@ -6962,7 +8628,7 @@ other types of suffix sets.
   <summary>Time spent selecting entries for eviction.</summary>
 </histogram>
 
-<histogram name="SimpleCache.IndexCorrupt" units="BooleanCorrupt">
+<histogram name="SimpleCache.IndexCorrupt" enum="BooleanCorrupt">
   <summary>For each index load, whether the index file was corrupt.</summary>
 </histogram>
 
@@ -6999,7 +8665,7 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="SimpleCache.IndexStale" units="BooleanStale">
+<histogram name="SimpleCache.IndexStale" enum="BooleanStale">
   <summary>For each index load, whether the index file was stale.</summary>
 </histogram>
 
@@ -7142,11 +8808,14 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Sqlite.Error" enum="SqliteErrorCode">
-  <summary>Error codes returned by sqlite for all databases.</summary>
+  <summary>SQLite extended error codes.</summary>
 </histogram>
 
 <histogram name="Sqlite.Error.IOERR" enum="SqliteIOERRCode">
-  <summary>Error codes returned by sqlite for all databases.</summary>
+  <obsolete>
+    Replaced 5/14/2013 by expanded Sqlite.Error histogram.
+  </obsolete>
+  <summary>SQLite extended SQLITE_IOERR codes for all databases.</summary>
 </histogram>
 
 <histogram name="Sqlite.History.Error" enum="SqliteErrorCode">
@@ -7157,12 +8826,20 @@ other types of suffix sets.
   <summary>Error codes returned by sqlite for the quota db.</summary>
 </histogram>
 
+<histogram name="Sqlite.SizeKB" units="Kb">
+  <summary>Size in kilobytes of pre-existing database at startup.</summary>
+</histogram>
+
 <histogram name="Sqlite.Text.Error" enum="SqliteErrorCode">
   <summary>Error codes returned by sqlite the full text db.</summary>
 </histogram>
 
 <histogram name="Sqlite.Thumbnail.Error" enum="SqliteErrorCode">
   <summary>Error codes returned by sqlite for the thumbnail db.</summary>
+</histogram>
+
+<histogram name="Sqlite.Version">
+  <summary>Version of pre-existing database at startup.</summary>
 </histogram>
 
 <histogram name="Sqlite.Web.Error" enum="SqliteErrorCode">
@@ -7273,10 +8950,17 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Translate.ContentLanguage" enum="TranslateContentLanguage">
+<histogram name="Translate.ContentLanguage" enum="TranslateLanguage">
   <summary>
     A page may provide a Content-Language HTTP header or a META tag. For each
     page load, measures whether the Content-Language header exists and is valid.
+  </summary>
+</histogram>
+
+<histogram name="Translate.HtmlLang" enum="TranslateLanguage">
+  <summary>
+    A page may provide a lang attribute in html tag. For each page load,
+    measures whether the lang attribute exists and is valid.
   </summary>
 </histogram>
 
@@ -7296,6 +8980,25 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Translate.PageScheme" enum="TranslateScheme">
+  <summary>Counts translation target page schemes.</summary>
+</histogram>
+
+<histogram name="Translate.RevertTranslation">
+  <summary>
+    The number of times the show original button was clicked in the translate
+    infobar.
+  </summary>
+</histogram>
+
+<histogram name="Translate.ShowErrorInfobar" enum="TranslateError">
+  <summary>
+    Chrome Translate shows an error infobar when an error happens on translation
+    and the infobar message depends on what kind of error happens. This metric
+    counts how often each error message is shown.
+  </summary>
+</histogram>
+
 <histogram name="Translate.TimeToBeReady" units="milliseconds">
   <summary>
     The time from injecting scripts for Chrome Translate to being ready to
@@ -7312,6 +9015,30 @@ other types of suffix sets.
 
 <histogram name="Translate.TimeToTranslate" units="milliseconds">
   <summary>The time from starting translation to the completion.</summary>
+</histogram>
+
+<histogram name="Translate.UnsupportedLanguageAtInitiation" enum="LanguageCode">
+  <summary>
+    Logs an unsupported source language detected during initiation of the
+    Translate feature.  This is reported when the language detector successfully
+    detects the language of the webpage, but the language is not supported by
+    the translation server because it is too minor.  This metric allows us to
+    assess how important the unsupported language is for Google translate.
+  </summary>
+</histogram>
+
+<histogram name="Translate.UserActionDuration" units="milliseconds">
+  <summary>
+    The time from a page content language being determined to user requesting
+    Chrome Translate.
+  </summary>
+</histogram>
+
+<histogram name="UMA.Perf.GetData" enum="GetPerfDataOutcome">
+  <summary>
+    A count of successes and various failure modes related to collecting and
+    processing performance data obtained through &quot;perf&quot; on ChromeOS.
+  </summary>
 </histogram>
 
 <histogram name="Variations.DisabledNoEntropyProvider" enum="BooleanHit">
@@ -7570,6 +9297,22 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebCore.WebSocket.HandshakeResult"
+    enum="WebSocketHandshakeResult">
+  <summary>
+    Count the number of WebSocket handshake for each result. Use this histogram
+    as a baseline for investigating feature usage counters.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.WebSocket.PerMessageDeflateContextTakeOverMode"
+    enum="WebSocketPerMessageDeflateContextTakeOverMode">
+  <summary>
+    Count the number of WebSockets that accepted permessage-deflate extension
+    for each context take over mode.
+  </summary>
+</histogram>
+
 <histogram name="WebCore.XHR.send.ArrayBufferOrView"
     enum="XMLHttpRequestSendArrayBufferOrView">
   <summary>
@@ -7624,6 +9367,31 @@ other types of suffix sets.
   <summary>
     Whether a locallly installed font is actually used when @font-face had local
     sources.
+  </summary>
+</histogram>
+
+<histogram name="WebHistory.LocalResultMissingOnServer" units="%">
+  <summary>
+    Percentage of results that are present locally but are not returned by the
+    web history API call. Recorded every time a signed-in user visits the
+    chrome://history page and the results from the web history are received.
+  </summary>
+</histogram>
+
+<histogram name="WebHistory.QueryCompletion" enum="WebHistoryStatus">
+  <summary>
+    Whether the web history API call was successful. Every time a signed-in user
+    visits the chrome://history page this query is executed to get the user's
+    synced web history. If successful, the local and remote results are merged
+    and shown in the history page.
+  </summary>
+</histogram>
+
+<histogram name="WebHistory.ResponseTime" units="milliseconds">
+  <summary>
+    Time it took for the web history to reply. Recorded when the web history API
+    call triggered by visiting chrome://history receives the data, measuring how
+    much time it took for the server to reply.
   </summary>
 </histogram>
 
@@ -7701,6 +9469,64 @@ other types of suffix sets.
   <int value="1" label="TrimMemoryRunningLow"/>
   <int value="2" label="TrimMemoryRunningCritical"/>
   <int value="3" label="LowMemory"/>
+</enum>
+
+<enum name="AsyncDNSConfigParsePosix" type="int">
+  <int value="0" label="OK"/>
+  <int value="1" label="RES_INIT_FAILED"/>
+  <int value="2" label="RES_INIT_UNSET"/>
+  <int value="3" label="BAD_ADDRESS"/>
+  <int value="4" label="BAD_EXT_STRUCT"/>
+  <int value="5" label="NULL_ADDRESS"/>
+  <int value="6" label="NO_NAMESERVERS"/>
+  <int value="7" label="MISSING_OPTIONS"/>
+  <int value="8" label="UNHANDLED_OPTIONS"/>
+</enum>
+
+<enum name="AsyncDNSConfigParseWin" type="int">
+  <int value="0" label="OK"/>
+  <int value="1" label="READ_IPHELPER"/>
+  <int value="2" label="READ_POLICY_SEARCHLIST"/>
+  <int value="3" label="READ_TCPIP_SEARCHLIST"/>
+  <int value="4" label="READ_DOMAIN"/>
+  <int value="5" label="READ_POLICY_DEVOLUTION"/>
+  <int value="6" label="READ_DNSCACHE_DEVOLUTION"/>
+  <int value="7" label="READ_TCPIP_DEVOLUTION"/>
+  <int value="8" label="READ_APPEND_MULTILABEL"/>
+  <int value="9" label="READ_PRIMARY_SUFFIX"/>
+  <int value="10" label="BAD_ADDRESS"/>
+  <int value="11" label="NO_NAMESERVERS"/>
+</enum>
+
+<enum name="AsyncDNSHostsParseWin" type="int">
+  <int value="0" label="OK"/>
+  <int value="1" label="UNREADABLE_HOSTS_FILE"/>
+  <int value="2" label="COMPUTER_NAME_FAILED"/>
+  <int value="3" label="IPHELPER_FAILED"/>
+  <int value="4" label="BAD_ADDRESS"/>
+</enum>
+
+<enum name="AsyncDNSParseResult" type="int">
+  <summary>Results of DnsResponse::ParseToAddressList.</summary>
+  <int value="0" label="SUCCESS"/>
+  <int value="1" label="MALFORMED_RESPONSE"/>
+  <int value="2" label="MALFORMED_CNAME"/>
+  <int value="3" label="NAME_MISMATCH"/>
+  <int value="4" label="SIZE_MISMATCH"/>
+  <int value="5" label="CNAME_AFTER_ADDRESS"/>
+  <int value="6" label="ADDRESS_TTL_MISMATCH"/>
+  <int value="7" label="NO_ADDRESSES"/>
+</enum>
+
+<enum name="AsyncDNSResolveStatus" type="int">
+  <int value="0" label="DNS_SUCCESS">Succeeded with async DNS.</int>
+  <int value="1" label="PROC_SUCCESS">
+    Succeeded with getaddrinfo after async DNS failed.
+  </int>
+  <int value="2" label="FAIL">Both async DNS and getaddrinfo failed.</int>
+  <int value="3" label="SUSPECT_NETBIOS">
+    Same as PROC_SUCCESS except the hostname fits NetBIOS name criteria.
+  </int>
 </enum>
 
 <enum name="AudioRendererEvents" type="int">
@@ -8000,6 +9826,11 @@ other types of suffix sets.
   <int value="1" label="Raced"/>
 </enum>
 
+<enum name="BooleanRegistered" type="int">
+  <int value="0" label="Not Registered"/>
+  <int value="1" label="Registered"/>
+</enum>
+
 <enum name="BooleanSelected" type="int">
   <int value="0" label="No selection"/>
   <int value="1" label="Selected"/>
@@ -8169,6 +10000,35 @@ other types of suffix sets.
   <int value="8" label="PlayMusic"/>
 </enum>
 
+<enum name="DNSEmptyAddressListAndNoError" type="int">
+  <int value="0" label="Error reported or Address List is not empty"/>
+  <int value="1" label="Success reported but Address List is empty"/>
+</enum>
+
+<enum name="DnsProbe.Job.Result" type="int">
+  <int value="0" label="SERVERS_UNKNOWN"/>
+  <int value="1" label="SERVERS_CORRECT"/>
+  <int value="2" label="SERVERS_INCORRECT"/>
+  <int value="3" label="SERVERS_FAILING"/>
+  <int value="4" label="SERVERS_UNREACHABLE"/>
+</enum>
+
+<enum name="DnsProbe.Probe.Result" type="int">
+  <int value="0" label="UNKNOWN"/>
+  <int value="1" label="NO_INTERNET"/>
+  <int value="2" label="BAD_CONFIG"/>
+  <int value="3" label="NXDOMAIN"/>
+</enum>
+
+<enum name="DnsProbe.Probe.SystemIsLocalhost" type="int">
+  <int value="0" label="Not just 127.0.0.1">
+    127.0.0.1 was not the only nameserver in the system DNS config.
+  </int>
+  <int value="1" label="Just 127.0.0.1">
+    127.0.0.1 was the only nameserver in the system DNS config.
+  </int>
+</enum>
+
 <enum name="DomainBoundCerts.GetCertResult" type="int">
   <int value="0" label="SYNC_SUCCESS"/>
   <int value="1" label="ASYNC_SUCCESS"/>
@@ -8284,6 +10144,27 @@ other types of suffix sets.
   <int value="2" label="PEAP"/>
   <int value="3" label="TLS"/>
   <int value="4" label="TTLS"/>
+</enum>
+
+<enum name="EnterpriseDeviceManagementStatus" type="int">
+  <summary>
+    Status codes produced by DeviceManagementService for requests made to the
+    device management server.
+  </summary>
+  <int value="0" label="SUCCESS"/>
+  <int value="1" label="REQUEST_INVALID"/>
+  <int value="2" label="REQUEST_FAILED"/>
+  <int value="3" label="TEMPORARY_UNAVAILABLE"/>
+  <int value="4" label="HTTP_STATUS_ERROR"/>
+  <int value="5" label="RESPONSE_DECODING_ERROR"/>
+  <int value="6" label="SERVICE_MANAGEMENT_NOT_SUPPORTED"/>
+  <int value="7" label="SERVICE_DEVICE_NOT_FOUND"/>
+  <int value="8" label="SERVICE_MANAGEMENT_TOKEN_INVALID"/>
+  <int value="9" label="SERVICE_ACTIVATION_PENDING"/>
+  <int value="10" label="SERVICE_INVALID_SERIAL_NUMBER"/>
+  <int value="11" label="SERVICE_DEVICE_ID_CONFLICT"/>
+  <int value="12" label="SERVICE_MISSING_LICENSES"/>
+  <int value="902" label="SERVICE_POLICY_NOT_FOUND"/>
 </enum>
 
 <enum name="EnterpriseDMTokenType" type="int">
@@ -8628,6 +10509,37 @@ other types of suffix sets.
       label="Set the restriction on the fetching of the Variations seed"/>
   <int value="197" label="Idle warning delay when running on AC power"/>
   <int value="198" label="Idle warning delay when running on battery power"/>
+</enum>
+
+<enum name="EnterprisePolicyLoadStatus" type="int">
+  <summary>
+    Status codes produced by the policy loaders that pull policy settings from
+    the platform-specific management infrastructure, such as Windows Group
+    Policy.
+  </summary>
+  <int value="0" label="STARTED">
+    Policy load attempt started. This gets logged for each policy load attempt
+    to get a baseline on the number of requests, and an arbitrary number of the
+    below status codes may get added in addition.
+  </int>
+  <int value="1" label="QUERY_FAILED">
+    System failed to determine whether there's policy.
+  </int>
+  <int value="2" label="NO_POLICY">No policy present.</int>
+  <int value="3" label="INACCCESSIBLE">
+    Data inaccessible, such as non-local policy file.
+  </int>
+  <int value="4" label="MISSING">
+    Data missing, such as policy file not present.
+  </int>
+  <int value="5" label="WOW64_REDIRECTION_DISABLED">
+    Trying with Wow64 redirection disabled.
+  </int>
+  <int value="6" label="READ_ERROR">
+    Data read error, for example file reading errors.
+  </int>
+  <int value="7" label="TOO_BIG">Data too large to process.</int>
+  <int value="8" label="PARSE_ERROR">Parse error.</int>
 </enum>
 
 <enum name="EnterprisePolicyType" type="int">
@@ -9728,6 +11640,33 @@ other types of suffix sets.
   <int value="32770" label="PDF"/>
 </enum>
 
+<enum name="GetPerfDataOutcome" type="int">
+  <int value="0" label="Success.">
+    Perf data was collected, parsed and attached to the UMA protobuf
+    successfully.
+  </int>
+  <int value="1" label="No perf data ready to be uploaded.">
+    Could not add perf data to the UMA protobuf because no perf data was ready
+    to be uploaded.
+  </int>
+  <int value="2" label="Collection timer triggered but have data already.">
+    Perf timer triggered but the perf provider already had a perf data proto to
+    be added to the UMA protobuf.
+  </int>
+  <int value="3"
+      label="Collection timer triggered but incognito window active.">
+    Perf timer triggered but an incognito window was open.
+  </int>
+  <int value="4" label="Incognito window launched during collection.">
+    Perf data was collected but an incognito window was opened during the
+    collection.
+  </int>
+  <int value="5" label="Protobuf returned by debugd not deserialized.">
+    Perf data was collected and sent to Chrome as a serialized protobuf but it
+    could be deserialized by Chrome.
+  </int>
+</enum>
+
 <enum name="GoogleNowEvent" type="int">
   <summary>
     Events in Google Now component extension. See var DiagnosticEvent.
@@ -9737,6 +11676,8 @@ other types of suffix sets.
   <int value="2" label="CARDS_PARSE_SUCCESS"/>
   <int value="3" label="DISMISS_REQUEST_TOTAL"/>
   <int value="4" label="DISMISS_REQUEST_SUCCESS"/>
+  <int value="5" label="LOCATION_REQUEST"/>
+  <int value="6" label="LOCATION_UPDATE"/>
 </enum>
 
 <enum name="HttpAuthCount" type="int">
@@ -9873,6 +11814,9 @@ other types of suffix sets.
     A database with non-ascii characters in its path was opened (with either
     success or failure).
   </int>
+  <int value="11" label="OpenAttemptDiskFull">
+    An open failed on a machine with a full disk. No cleanup was attempted.
+  </int>
 </enum>
 
 <enum name="ImporterType" type="int">
@@ -9899,6 +11843,15 @@ other types of suffix sets.
   <int value="0" label="URL_ADDED_TO_BLACKLIST"/>
   <int value="1" label="URL_REMOVED_FROM_BLACKLIST"/>
   <int value="2" label="URL_BLOCKED_BY_BLACKLIST"/>
+</enum>
+
+<enum name="InstantExtended_FallbackCause" type="int">
+  <int value="0" label="Fallback did not occur"/>
+  <int value="1" label="Page not current: unknown"/>
+  <int value="2" label="Page not current: empty instant url"/>
+  <int value="3" label="Page not current: origin/path mismatch"/>
+  <int value="4" label="Page not current: instant not supported"/>
+  <int value="5" label="No overlay"/>
 </enum>
 
 <enum name="InstantExtended_InstantNavigation" type="int">
@@ -9943,6 +11896,537 @@ other types of suffix sets.
   <int value="3" label="IPV6_GLOBAL_ADDRESS_MISSING"/>
   <int value="4" label="IPV6_GLOBAL_ADDRESS_PRESENT"/>
   <int value="5" label="IPV6_INTERFACE_ARRAY_TOO_SHORT"/>
+</enum>
+
+<enum name="LanguageCode" type="int">
+  <summary>ISO 639 Language Codes.</summary>
+  <int value="24929" label="Afar"/>
+  <int value="24930" label="Abkhazian"/>
+  <int value="24933" label="Avestan"/>
+  <int value="24934" label="Afrikaans"/>
+  <int value="24939" label="Akan"/>
+  <int value="24941" label="Amharic"/>
+  <int value="24942" label="Aragonese"/>
+  <int value="24946" label="Arabic"/>
+  <int value="24947" label="Assamese"/>
+  <int value="24950" label="Avaric"/>
+  <int value="24953" label="Aymara"/>
+  <int value="24954" label="Azerbaijani"/>
+  <int value="25185" label="Bashkir"/>
+  <int value="25189" label="Belarusian"/>
+  <int value="25191" label="Bulgarian"/>
+  <int value="25192" label="Bihari"/>
+  <int value="25193" label="Bislama"/>
+  <int value="25197" label="Bambara"/>
+  <int value="25198" label="Bengali"/>
+  <int value="25199" label="Tibetan"/>
+  <int value="25202" label="Breton"/>
+  <int value="25203" label="Bosnian"/>
+  <int value="25441" label="Catalan"/>
+  <int value="25445" label="Chechen"/>
+  <int value="25448" label="Chamorro"/>
+  <int value="25455" label="Corsican"/>
+  <int value="25458" label="Cree"/>
+  <int value="25459" label="Czech"/>
+  <int value="25461" label="Church Slavic"/>
+  <int value="25462" label="Chuvash"/>
+  <int value="25465" label="Welsh"/>
+  <int value="25697" label="Danish"/>
+  <int value="25701" label="German"/>
+  <int value="25718" label="Divehi"/>
+  <int value="25722" label="Dzongkha"/>
+  <int value="25957" label="Ewe"/>
+  <int value="25964" label="Greek"/>
+  <int value="25966" label="English"/>
+  <int value="25967" label="Esperanto"/>
+  <int value="25971" label="Spanish"/>
+  <int value="25972" label="Estonian"/>
+  <int value="25973" label="Basque"/>
+  <int value="26209" label="Persian"/>
+  <int value="26214" label="Fulah"/>
+  <int value="26217" label="Finnish"/>
+  <int value="26218" label="Fijian"/>
+  <int value="26223" label="Faroese"/>
+  <int value="26226" label="French"/>
+  <int value="26233" label="Western Frisian"/>
+  <int value="26465" label="Irish"/>
+  <int value="26468" label="Scottish Gaelic"/>
+  <int value="26476" label="Galician"/>
+  <int value="26478" label="Guarani"/>
+  <int value="26485" label="Gujarati"/>
+  <int value="26486" label="Manx"/>
+  <int value="26721" label="Hausa"/>
+  <int value="26725" label="Hebrew"/>
+  <int value="26729" label="Hindi"/>
+  <int value="26735" label="Hiri Motu"/>
+  <int value="26738" label="Croatian"/>
+  <int value="26740" label="Haitian"/>
+  <int value="26741" label="Hungarian"/>
+  <int value="26745" label="Armenian"/>
+  <int value="26746" label="Herero"/>
+  <int value="26977" label="Interlingua"/>
+  <int value="26980" label="Indonesian"/>
+  <int value="26981" label="Interlingue"/>
+  <int value="26983" label="Igbo"/>
+  <int value="26985" label="Sichuan Yi"/>
+  <int value="26987" label="Inupiaq"/>
+  <int value="26991" label="Ido"/>
+  <int value="26995" label="Icelandic"/>
+  <int value="26996" label="Italian"/>
+  <int value="26997" label="Inuktitut"/>
+  <int value="27233" label="Japanese"/>
+  <int value="27254" label="Javanese"/>
+  <int value="27489" label="Georgian"/>
+  <int value="27495" label="Kongo"/>
+  <int value="27497" label="Kikuyu"/>
+  <int value="27498" label="Kuanyama"/>
+  <int value="27499" label="Kazakh"/>
+  <int value="27500" label="Kalaallisut"/>
+  <int value="27501" label="Khmer"/>
+  <int value="27502" label="Kannada"/>
+  <int value="27503" label="Korean"/>
+  <int value="27506" label="Kanuri"/>
+  <int value="27507" label="Kashmiri"/>
+  <int value="27509" label="Kurdish"/>
+  <int value="27510" label="Komi"/>
+  <int value="27511" label="Cornish"/>
+  <int value="27513" label="Kirghiz"/>
+  <int value="27745" label="Latin"/>
+  <int value="27746" label="Luxembourgish"/>
+  <int value="27751" label="Ganda"/>
+  <int value="27753" label="Limburgish"/>
+  <int value="27758" label="Lingala"/>
+  <int value="27759" label="Lao"/>
+  <int value="27764" label="Lithuanian"/>
+  <int value="27765" label="Luba-Katanga"/>
+  <int value="27766" label="Latvian"/>
+  <int value="28007" label="Malagasy"/>
+  <int value="28008" label="Marshallese"/>
+  <int value="28009" label="Maori"/>
+  <int value="28011" label="Macedonian"/>
+  <int value="28012" label="Malayalam"/>
+  <int value="28014" label="Mongolian"/>
+  <int value="28015" label="Moldavian"/>
+  <int value="28018" label="Marathi"/>
+  <int value="28019" label="Malay"/>
+  <int value="28020" label="Maltese"/>
+  <int value="28025" label="Burmese"/>
+  <int value="28257" label="Nauru"/>
+  <int value="28258" label="Norwegian Bokmal"/>
+  <int value="28260" label="North Ndebele"/>
+  <int value="28261" label="Nepali"/>
+  <int value="28263" label="Ndonga"/>
+  <int value="28268" label="Dutch"/>
+  <int value="28270" label="Norwegian Nynorsk"/>
+  <int value="28271" label="Norwegian"/>
+  <int value="28274" label="South Ndebele"/>
+  <int value="28278" label="Navajo"/>
+  <int value="28281" label="Nyanja"/>
+  <int value="28515" label="Occitan"/>
+  <int value="28522" label="Ojibwa"/>
+  <int value="28525" label="Oromo"/>
+  <int value="28530" label="Oriya"/>
+  <int value="28531" label="Ossetic"/>
+  <int value="28769" label="Punjabi"/>
+  <int value="28777" label="Pali"/>
+  <int value="28780" label="Polish"/>
+  <int value="28787" label="Pashto"/>
+  <int value="28788" label="Portuguese"/>
+  <int value="29045" label="Quechua"/>
+  <int value="29293" label="Romansh"/>
+  <int value="29294" label="Rundi"/>
+  <int value="29295" label="Romanian"/>
+  <int value="29301" label="Russian"/>
+  <int value="29303" label="Kinyarwanda"/>
+  <int value="29537" label="Sanskrit"/>
+  <int value="29539" label="Sardinian"/>
+  <int value="29540" label="Sindhi"/>
+  <int value="29541" label="Northern Sami"/>
+  <int value="29543" label="Sango"/>
+  <int value="29544" label="Serbo-Croatian"/>
+  <int value="29545" label="Sinhala"/>
+  <int value="29547" label="Slovak"/>
+  <int value="29548" label="Slovenian"/>
+  <int value="29549" label="Samoan"/>
+  <int value="29550" label="Shona"/>
+  <int value="29551" label="Somali"/>
+  <int value="29553" label="Albanian"/>
+  <int value="29554" label="Serbian"/>
+  <int value="29555" label="Swati"/>
+  <int value="29556" label="Southern Sotho"/>
+  <int value="29557" label="Sundanese"/>
+  <int value="29558" label="Swedish"/>
+  <int value="29559" label="Swahili"/>
+  <int value="29793" label="Tamil"/>
+  <int value="29797" label="Telugu"/>
+  <int value="29799" label="Tajik"/>
+  <int value="29800" label="Thai"/>
+  <int value="29801" label="Tigrinya"/>
+  <int value="29803" label="Turkmen"/>
+  <int value="29804" label="Tagalog"/>
+  <int value="29806" label="Tswana"/>
+  <int value="29807" label="Tonga"/>
+  <int value="29810" label="Turkish"/>
+  <int value="29811" label="Tsonga"/>
+  <int value="29812" label="Tatar"/>
+  <int value="29815" label="Twi"/>
+  <int value="29817" label="Tahitian"/>
+  <int value="30055" label="Uighur"/>
+  <int value="30059" label="Ukrainian"/>
+  <int value="30066" label="Urdu"/>
+  <int value="30074" label="Uzbek"/>
+  <int value="30309" label="Venda"/>
+  <int value="30313" label="Vietnamese"/>
+  <int value="30319" label="Volapuk"/>
+  <int value="30561" label="Walloon"/>
+  <int value="30575" label="Wolof"/>
+  <int value="30824" label="Xhosa"/>
+  <int value="31081" label="Yiddish"/>
+  <int value="31087" label="Yoruba"/>
+  <int value="31329" label="Zhuang"/>
+  <int value="31336" label="Chinese"/>
+  <int value="31349" label="Zulu"/>
+  <int value="6382437" label="Achinese"/>
+  <int value="6382440" label="Acoli"/>
+  <int value="6382689" label="Adangme"/>
+  <int value="6382713" label="Adyghe"/>
+  <int value="6383201" label="Afro-Asiatic Language"/>
+  <int value="6383208" label="Afrihili"/>
+  <int value="6383982" label="Ainu"/>
+  <int value="6384491" label="Akkadian"/>
+  <int value="6384741" label="Aleut"/>
+  <int value="6384743" label="Algonquian Language"/>
+  <int value="6384756" label="Southern Altai"/>
+  <int value="6385255" label="Old English"/>
+  <int value="6385264" label="Angika"/>
+  <int value="6385761" label="Apache Language"/>
+  <int value="6386275" label="Aramaic"/>
+  <int value="6386286" label="Araucanian"/>
+  <int value="6386288" label="Arapaho"/>
+  <int value="6386292" label="Artificial Language"/>
+  <int value="6386295" label="Arawak"/>
+  <int value="6386529" label="Asu"/>
+  <int value="6386548" label="Asturian"/>
+  <int value="6386792" label="Athapascan Language"/>
+  <int value="6387059" label="Australian Language"/>
+  <int value="6387553" label="Awadhi"/>
+  <int value="6447460" label="Banda"/>
+  <int value="6447465" label="Bamileke Language"/>
+  <int value="6447468" label="Baluchi"/>
+  <int value="6447470" label="Balinese"/>
+  <int value="6447475" label="Basa"/>
+  <int value="6447476" label="Baltic Language"/>
+  <int value="6448490" label="Beja"/>
+  <int value="6448493" label="Bemba"/>
+  <int value="6448498" label="Berber"/>
+  <int value="6448506" label="Bena"/>
+  <int value="6449263" label="Bhojpuri"/>
+  <int value="6449515" label="Bikol"/>
+  <int value="6449518" label="Bini"/>
+  <int value="6450273" label="Siksika"/>
+  <int value="6450804" label="Bantu"/>
+  <int value="6451809" label="Braj"/>
+  <int value="6451832" label="Bodo"/>
+  <int value="6452331" label="Batak"/>
+  <int value="6452577" label="Buriat"/>
+  <int value="6452583" label="Buginese"/>
+  <int value="6453614" label="Blin"/>
+  <int value="6512996" label="Caddo"/>
+  <int value="6513001" label="Central American Indian Language"/>
+  <int value="6513010" label="Carib"/>
+  <int value="6513013" label="Caucasian Language"/>
+  <int value="6513017" label="Cayuga"/>
+  <int value="6513512" label="Atsam"/>
+  <int value="6514018" label="Cebuano"/>
+  <int value="6514028" label="Celtic Language"/>
+  <int value="6514535" label="Chiga"/>
+  <int value="6514786" label="Chibcha"/>
+  <int value="6514791" label="Chagatai"/>
+  <int value="6514795" label="Chuukese"/>
+  <int value="6514797" label="Mari"/>
+  <int value="6514798" label="Chinook Jargon"/>
+  <int value="6514799" label="Choctaw"/>
+  <int value="6514800" label="Chipewyan"/>
+  <int value="6514802" label="Cherokee"/>
+  <int value="6514809" label="Cheyenne"/>
+  <int value="6516067" label="Chamic Language"/>
+  <int value="6516592" label="Coptic"/>
+  <int value="6516837" label="English-based Creole or Pidgin"/>
+  <int value="6516838" label="French-based Creole or Pidgin"/>
+  <int value="6516848" label="Portuguese-based Creole or Pidgin"/>
+  <int value="6517352" label="Crimean Turkish"/>
+  <int value="6517360" label="Creole or Pidgin"/>
+  <int value="6517602" label="Kashubian"/>
+  <int value="6518131" label="Cushitic Language"/>
+  <int value="6578539" label="Dakota"/>
+  <int value="6578546" label="Dargwa"/>
+  <int value="6578550" label="Taita"/>
+  <int value="6578553" label="Dayak"/>
+  <int value="6579564" label="Delaware"/>
+  <int value="6579566" label="Slave"/>
+  <int value="6580082" label="Dogrib"/>
+  <int value="6580590" label="Dinka"/>
+  <int value="6580837" label="Zarma"/>
+  <int value="6582121" label="Dogri"/>
+  <int value="6582881" label="Dravidian Language"/>
+  <int value="6583138" label="Lower Sorbian"/>
+  <int value="6583649" label="Duala"/>
+  <int value="6583661" label="Middle Dutch"/>
+  <int value="6584693" label="Dyula"/>
+  <int value="6644341" label="Embu"/>
+  <int value="6645353" label="Efik"/>
+  <int value="6645625" label="Ancient Egyptian"/>
+  <int value="6646625" label="Ekajuk"/>
+  <int value="6646904" label="Elamite"/>
+  <int value="6647405" label="Middle English"/>
+  <int value="6649711" label="Ewondo"/>
+  <int value="6709614" label="Fang"/>
+  <int value="6709620" label="Fanti"/>
+  <int value="6711660" label="Filipino"/>
+  <int value="6711669" label="Finno-Ugrian Language"/>
+  <int value="6713198" label="Fon"/>
+  <int value="6713965" label="Middle French"/>
+  <int value="6713967" label="Old French"/>
+  <int value="6713970" label="Northern Frisian"/>
+  <int value="6713971" label="Eastern Frisian"/>
+  <int value="6714738" label="Friulian"/>
+  <int value="6775137" label="Ga"/>
+  <int value="6775161" label="Gayo"/>
+  <int value="6775393" label="Gbaya"/>
+  <int value="6776173" label="Germanic Language"/>
+  <int value="6776186" label="Geez"/>
+  <int value="6777196" label="Gilbertese"/>
+  <int value="6778216" label="Middle High German"/>
+  <int value="6778728" label="Old High German"/>
+  <int value="6778734" label="Gondi"/>
+  <int value="6778738" label="Gorontalo"/>
+  <int value="6778740" label="Gothic"/>
+  <int value="6779490" label="Grebo"/>
+  <int value="6779491" label="Ancient Greek"/>
+  <int value="6779767" label="Swiss German"/>
+  <int value="6780282" label="Gusii"/>
+  <int value="6780777" label="Gwich'in"/>
+  <int value="6840681" label="Haida"/>
+  <int value="6840695" label="Hawaiian"/>
+  <int value="6842732" label="Hiligaynon"/>
+  <int value="6842733" label="Himachali"/>
+  <int value="6842740" label="Hittite"/>
+  <int value="6843758" label="Hmong"/>
+  <int value="6845282" label="Upper Sorbian"/>
+  <int value="6845808" label="Hupa"/>
+  <int value="6906465" label="Iban"/>
+  <int value="6908527" label="Ijo"/>
+  <int value="6909039" label="Iloko"/>
+  <int value="6909539" label="Indic Language"/>
+  <int value="6909541" label="Indo-European Language"/>
+  <int value="6909544" label="Ingush"/>
+  <int value="6910561" label="Iranian Language"/>
+  <int value="6910575" label="Iroquoian Language"/>
+  <int value="6972015" label="Lojban"/>
+  <int value="6974819" label="Machame"/>
+  <int value="6975602" label="Judeo-Persian"/>
+  <int value="6976098" label="Judeo-Arabic"/>
+  <int value="7037281" label="Kara-Kalpak"/>
+  <int value="7037282" label="Kabyle"/>
+  <int value="7037283" label="Kachin"/>
+  <int value="7037290" label="Jju"/>
+  <int value="7037293" label="Kamba"/>
+  <int value="7037298" label="Karen"/>
+  <int value="7037303" label="Kawi"/>
+  <int value="7037540" label="Kabardian"/>
+  <int value="7037799" label="Tyap"/>
+  <int value="7038053" label="Makonde"/>
+  <int value="7038305" label="Kabuverdianu"/>
+  <int value="7038575" label="Koro"/>
+  <int value="7039073" label="Khasi"/>
+  <int value="7039081" label="Khoisan Language"/>
+  <int value="7039087" label="Khotanese"/>
+  <int value="7039089" label="Koyra Chiini"/>
+  <int value="7040110" label="Kalenjin"/>
+  <int value="7040354" label="Kimbundu"/>
+  <int value="7040875" label="Konkani"/>
+  <int value="7040883" label="Kosraean"/>
+  <int value="7041125" label="Kpelle"/>
+  <int value="7041635" label="Karachay-Balkar"/>
+  <int value="7041644" label="Karelian"/>
+  <int value="7041647" label="Kru"/>
+  <int value="7041653" label="Kurukh"/>
+  <int value="7041890" label="Shambala"/>
+  <int value="7041896" label="Colognian"/>
+  <int value="7042413" label="Kumyk"/>
+  <int value="7042420" label="Kutenai"/>
+  <int value="7102820" label="Ladino"/>
+  <int value="7102823" label="Langi"/>
+  <int value="7102824" label="Lahnda"/>
+  <int value="7102829" label="Lamba"/>
+  <int value="7103866" label="Lezghian"/>
+  <int value="7106412" label="Mongo"/>
+  <int value="7106426" label="Lozi"/>
+  <int value="7107937" label="Luba-Lulua"/>
+  <int value="7107945" label="Luiseno"/>
+  <int value="7107950" label="Lunda"/>
+  <int value="7107951" label="Luo"/>
+  <int value="7107955" label="Lushai"/>
+  <int value="7107961" label="Luyia"/>
+  <int value="7168356" label="Madurese"/>
+  <int value="7168359" label="Magahi"/>
+  <int value="7168361" label="Maithili"/>
+  <int value="7168363" label="Makasar"/>
+  <int value="7168366" label="Mandingo"/>
+  <int value="7168368" label="Austronesian Language"/>
+  <int value="7168371" label="Masai"/>
+  <int value="7169126" label="Moksha"/>
+  <int value="7169138" label="Mandar"/>
+  <int value="7169390" label="Mende"/>
+  <int value="7169394" label="Meru"/>
+  <int value="7169637" label="Morisyen"/>
+  <int value="7169889" label="Middle Irish"/>
+  <int value="7170403" label="Micmac"/>
+  <int value="7170414" label="Minangkabau"/>
+  <int value="7170419" label="Miscellaneous Language"/>
+  <int value="7170920" label="Mon-Khmer Language"/>
+  <int value="7171683" label="Manchu"/>
+  <int value="7171689" label="Manipuri"/>
+  <int value="7171695" label="Manobo Language"/>
+  <int value="7171944" label="Mohawk"/>
+  <int value="7171955" label="Mossi"/>
+  <int value="7173484" label="Multiple Languages"/>
+  <int value="7173486" label="Munda Language"/>
+  <int value="7173491" label="Creek"/>
+  <int value="7173996" label="Mirandese"/>
+  <int value="7174002" label="Marwari"/>
+  <int value="7174510" label="Mayan Language"/>
+  <int value="7174518" label="Erzya"/>
+  <int value="7233896" label="Nahuatl"/>
+  <int value="7233897" label="North American Indian Language"/>
+  <int value="7233904" label="Neapolitan"/>
+  <int value="7233905" label="Nama"/>
+  <int value="7234675" label="Low German"/>
+  <int value="7234935" label="Newari"/>
+  <int value="7235937" label="Nias"/>
+  <int value="7235939" label="Niger-Kordofanian Language"/>
+  <int value="7235957" label="Niuean"/>
+  <int value="7237479" label="Nogai"/>
+  <int value="7237486" label="Old Norse"/>
+  <int value="7237999" label="N'Ko"/>
+  <int value="7238511" label="Northern Sotho"/>
+  <int value="7239010" label="Nubian Language"/>
+  <int value="7239523" label="Classical Newari"/>
+  <int value="7240045" label="Nyamwezi"/>
+  <int value="7240046" label="Nyankole"/>
+  <int value="7240047" label="Nyoro"/>
+  <int value="7240297" label="Nzima"/>
+  <int value="7304033" label="Osage"/>
+  <int value="7304289" label="Ottoman Turkish"/>
+  <int value="7304303" label="Otomian Language"/>
+  <int value="7364961" label="Papuan Language"/>
+  <int value="7364967" label="Pangasinan"/>
+  <int value="7364972" label="Pahlavi"/>
+  <int value="7364973" label="Pampanga"/>
+  <int value="7364976" label="Papiamento"/>
+  <int value="7364981" label="Palauan"/>
+  <int value="7365999" label="Old Persian"/>
+  <int value="7366761" label="Philippine Language"/>
+  <int value="7366766" label="Phoenician"/>
+  <int value="7368558" label="Pohnpeian"/>
+  <int value="7369313" label="Prakrit Language"/>
+  <int value="7369327" label="Old Provencal"/>
+  <int value="7496042" label="Rajasthani"/>
+  <int value="7496048" label="Rapanui"/>
+  <int value="7496050" label="Rarotongan"/>
+  <int value="7499617" label="Romance Language"/>
+  <int value="7499622" label="Rombo"/>
+  <int value="7499629" label="Romany"/>
+  <int value="7501168" label="Aromanian"/>
+  <int value="7501675" label="Rwa"/>
+  <int value="7561572" label="Sandawe"/>
+  <int value="7561576" label="Yakut"/>
+  <int value="7561577" label="South American Indian Language"/>
+  <int value="7561580" label="Salishan Language"/>
+  <int value="7561581" label="Samaritan Aramaic"/>
+  <int value="7561585" label="Samburu"/>
+  <int value="7561587" label="Sasak"/>
+  <int value="7561588" label="Santali"/>
+  <int value="7562094" label="Sicilian"/>
+  <int value="7562095" label="Scots"/>
+  <int value="7562597" label="Seneca"/>
+  <int value="7562600" label="Sena"/>
+  <int value="7562604" label="Selkup"/>
+  <int value="7562605" label="Semitic Language"/>
+  <int value="7562611" label="Koyraboro Senni"/>
+  <int value="7563105" label="Old Irish"/>
+  <int value="7563118" label="Sign Language"/>
+  <int value="7563369" label="Tachelhit"/>
+  <int value="7563374" label="Shan"/>
+  <int value="7563620" label="Sidamo"/>
+  <int value="7563631" label="Siouan Language"/>
+  <int value="7563636" label="Sino-Tibetan Language"/>
+  <int value="7564385" label="Slavic Language"/>
+  <int value="7564641" label="Southern Sami"/>
+  <int value="7564649" label="Sami Language"/>
+  <int value="7564650" label="Lule Sami"/>
+  <int value="7564654" label="Inari Sami"/>
+  <int value="7564659" label="Skolt Sami"/>
+  <int value="7564907" label="Soninke"/>
+  <int value="7565159" label="Sogdien"/>
+  <int value="7565166" label="Songhai"/>
+  <int value="7565934" label="Sranan Tongo"/>
+  <int value="7565938" label="Serer"/>
+  <int value="7566177" label="Nilo-Saharan Language"/>
+  <int value="7566201" label="Saho"/>
+  <int value="7566699" label="Sukuma"/>
+  <int value="7566707" label="Susu"/>
+  <int value="7566712" label="Sumerian"/>
+  <int value="7567202" label="Comorian"/>
+  <int value="7567715" label="Classical Syriac"/>
+  <int value="7567730" label="Syriac"/>
+  <int value="7627113" label="Tai Language"/>
+  <int value="7628141" label="Timne"/>
+  <int value="7628143" label="Teso"/>
+  <int value="7628146" label="Tereno"/>
+  <int value="7628148" label="Tetum"/>
+  <int value="7629159" label="Tigre"/>
+  <int value="7629174" label="Tiv"/>
+  <int value="7629676" label="Tokelau"/>
+  <int value="7629928" label="Klingon"/>
+  <int value="7629929" label="Tlingit"/>
+  <int value="7630184" label="Tamashek"/>
+  <int value="7630695" label="Nyasa Tonga"/>
+  <int value="7630953" label="Tok Pisin"/>
+  <int value="7631478" label="Taroko"/>
+  <int value="7631721" label="Tsimshian"/>
+  <int value="7632237" label="Tumbuka"/>
+  <int value="7632240" label="Tupi Language"/>
+  <int value="7632244" label="Altaic Language"/>
+  <int value="7632492" label="Tuvalu"/>
+  <int value="7632753" label="Tasawaq"/>
+  <int value="7633270" label="Tuvinian"/>
+  <int value="7633517" label="Central Morocco Tamazight"/>
+  <int value="7693421" label="Udmurt"/>
+  <int value="7694177" label="Ugaritic"/>
+  <int value="7695714" label="Umbundu"/>
+  <int value="7695972" label="Unknown Language"/>
+  <int value="7758185" label="Vai"/>
+  <int value="7761780" label="Votic"/>
+  <int value="7763310" label="Vunjo"/>
+  <int value="7823723" label="Wakashan Language"/>
+  <int value="7823724" label="Walamo"/>
+  <int value="7823730" label="Waray"/>
+  <int value="7823731" label="Washo"/>
+  <int value="7824750" label="Sorbian Language"/>
+  <int value="7889260" label="Kalmyk"/>
+  <int value="7892839" label="Soga"/>
+  <int value="7954799" label="Yao"/>
+  <int value="7954800" label="Yapese"/>
+  <int value="7958635" label="Yupik Language"/>
+  <int value="7959909" label="Cantonese"/>
+  <int value="8020336" label="Zapotec"/>
+  <int value="8020588" label="Blissymbols"/>
+  <int value="8021358" label="Zenaga"/>
+  <int value="8023652" label="Zande"/>
+  <int value="8025454" label="Zuni"/>
+  <int value="8026232" label="No linguistic content"/>
+  <int value="8026721" label="Zaza"/>
 </enum>
 
 <enum name="LevelDBErrorCount" type="int">
@@ -10014,6 +12498,47 @@ other types of suffix sets.
     Allow stale data (avoid doing a re-post)
   </int>
   <int value="9" label="PRERENDER_LOAD">Speculative prerendering of a page</int>
+</enum>
+
+<enum name="MediaContainers" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="AAC (Advanced Audio Coding)"/>
+  <int value="2" label="AC-3"/>
+  <int value="3" label="AIFF (Audio Interchange File Format)"/>
+  <int value="4" label="AMR (Adaptive Multi-Rate Audio)"/>
+  <int value="5" label="APE (Monkey's Audio)"/>
+  <int value="6" label="ASF (Advanced / Active Streaming Format)"/>
+  <int value="7" label="SSA (SubStation Alpha) subtitle"/>
+  <int value="8" label="AVI (Audio Video Interleaved)"/>
+  <int value="9" label="Bink"/>
+  <int value="10" label="CAF (Apple Core Audio Format)"/>
+  <int value="11" label="DTS"/>
+  <int value="12" label="DTS-HD"/>
+  <int value="13" label="DV (Digital Video)"/>
+  <int value="14" label="DXA"/>
+  <int value="15" label="Enhanced AC-3"/>
+  <int value="16" label="FLAC (Free Lossless Audio Codec)"/>
+  <int value="17" label="FLV (Flash Video)"/>
+  <int value="18" label="GSM (Global System for Mobile Audio)"/>
+  <int value="19" label="H.261"/>
+  <int value="20" label="H.263"/>
+  <int value="21" label="H.264"/>
+  <int value="22" label="HLS (Apple HTTP Live Streaming PlayList)"/>
+  <int value="23" label="Berkeley/IRCAM/CARL Sound Format"/>
+  <int value="24" label="MJPEG video"/>
+  <int value="25" label="QuickTime / MOV / MPEG4"/>
+  <int value="26" label="MP3 (MPEG audio layer 2/3)"/>
+  <int value="27" label="MPEG-2 Program Stream"/>
+  <int value="28" label="MPEG-2 Transport Stream"/>
+  <int value="29" label="MPEG-4 Bitstream"/>
+  <int value="30" label="Ogg"/>
+  <int value="31" label="RM (RealMedia)"/>
+  <int value="32" label="SRT (SubRip subtitle)"/>
+  <int value="33" label="SWF (ShockWave Flash)"/>
+  <int value="34" label="VC-1"/>
+  <int value="35" label="WAV / WAVE (Waveform Audio)"/>
+  <int value="36" label="Matroska / WebM"/>
+  <int value="37" label="WTV (Windows Television)"/>
 </enum>
 
 <enum name="MouseEventFollowedByClick" type="int">
@@ -10208,6 +12733,8 @@ other types of suffix sets.
   <int value="404" label="CACHE_OPEN_FAILURE"/>
   <int value="405" label="CACHE_CREATE_FAILURE"/>
   <int value="406" label="CACHE_RACE"/>
+  <int value="407" label="CACHE_CACHE_CHECKSUM_READ_FAILURE"/>
+  <int value="408" label="CACHE_CACHE_CHECKSUM_MISMATCH"/>
   <int value="501" label="INSECURE_RESPONSE"/>
   <int value="502" label="NO_PRIVATE_KEY_FOR_CERT"/>
   <int value="503" label="ADD_USER_CERT_FAILED"/>
@@ -10641,6 +13168,7 @@ other types of suffix sets.
   <int value="13" label="NOT_A_FILE"/>
   <int value="14" label="NOT_EMPTY"/>
   <int value="15" label="INVALID_URL"/>
+  <int value="16" label="I/O"/>
 </enum>
 
 <enum name="PluginLoadResult" type="int">
@@ -10730,6 +13258,16 @@ other types of suffix sets.
   <int value="42" label="REGISTER_PROTOCOL_HANDLER"/>
 </enum>
 
+<enum name="PrerenderHoverEvent" type="int">
+  <obsolete>
+    deprecated May 10 2012
+  </obsolete>
+  <int value="0" label="HOVER_EVENT_START"/>
+  <int value="1" label="HOVER_EVENT_TOO_SHORT"/>
+  <int value="2" label="HOVER_EVENT_REPLACED"/>
+  <int value="3" label="HOVER_EVENT_CLICK"/>
+</enum>
+
 <enum name="PrerenderLocalPredictorEvents" type="int">
   <int value="0" label="Constructed"/>
   <int value="1" label="Init scheduled"/>
@@ -10768,15 +13306,89 @@ other types of suffix sets.
   <int value="34" label="Continue prerender check priority too low"/>
   <int value="35" label="Continue prerender check urls identical but fragemet"/>
   <int value="36" label="Continue prerender check https"/>
-  <int value="37" label="Continue prerender root page"/>
+  <int value="37" label="Continue prerender check root page"/>
   <int value="38" label="Continue prerender check logout url"/>
   <int value="39" label="Continue prerender check login url"/>
-  <int value="40" label="Continue prerender not logged in"/>
-  <int value="41" label="Continue prerender fallthrough no prerender"/>
-  <int value="42" label="Continue prerender issuing prerender"/>
+  <int value="40" label="Continue prerender check not logged in"/>
+  <int value="41" label="Continue prerender check fallthrough no prerender"/>
+  <int value="42" label="Continue prerender check issuing prerender"/>
   <int value="43" label="Issuing prerender"/>
   <int value="44" label="No prerender candidates"/>
   <int value="45" label="Got history issuing lookup"/>
+  <int value="46" label="Tab Helper URL seen"/>
+  <int value="47" label="Tab Helper URL seen match"/>
+  <int value="48" label="Tab Helper URL seen namespace match"/>
+  <int value="49" label="URL lookup multiple source webcontents"/>
+  <int value="50" label="Continue prerender check side-effect free whitelist"/>
+</enum>
+
+<enum name="PrerenderLocalVisitCoreTransition" type="int">
+  <int value="0" label="LINK"/>
+  <int value="1" label="TYPED"/>
+  <int value="2" label="AUTO_BOOKMARK"/>
+  <int value="3" label="AUTO_SUBFRAME"/>
+  <int value="4" label="MANUAL_SUBFRAME"/>
+  <int value="5" label="GENERATED"/>
+  <int value="6" label="START_PAGE"/>
+  <int value="7" label="FORM_SUBMIT"/>
+  <int value="8" label="RELOAD"/>
+  <int value="9" label="KEYWORD"/>
+  <int value="10" label="GENERATED"/>
+</enum>
+
+<enum name="PrerenderLocalVisitEvents" type="int">
+  <int value="0" label="V1_VISIT"/>
+  <int value="1" label="V1_PRERENDER_STARTED_1"/>
+  <int value="2" label="V1_PRERENDER_USED_1"/>
+  <int value="3" label="V1_PRERENDER_STARTED_3"/>
+  <int value="4" label="V1_PRERENDER_USED_3"/>
+  <int value="5" label="V1_PRERENDER_STARTED_5"/>
+  <int value="6" label="V1_PRERENDER_USED_5"/>
+  <int value="10" label="VISIT"/>
+  <int value="11" label="VISIT_EXCLUDE_BACK_FORWARD"/>
+  <int value="12" label="VISIT_EXCLUDE_HOME_PAGE"/>
+  <int value="13" label="VISIT_EXCLUDE_REDIRECT_CHAIN"/>
+  <int value="14" label="PRERENDER_STARTED_1"/>
+  <int value="15" label="PRERENDER_USED_1"/>
+  <int value="16" label="PRERENDER_STARTED_3"/>
+  <int value="17" label="PRERENDER_USED_3"/>
+  <int value="18" label="PRERENDER_STARTED_5"/>
+  <int value="19" label="PRERENDER_USED_5"/>
+</enum>
+
+<enum name="PrerenderMode" type="int">
+  <int value="0" label="PRERENDER_MODE_DISABLED"/>
+  <int value="1" label="PRERENDER_MODE_ENABLED"/>
+  <int value="2" label="PRERENDER_MODE_EXPERIMENT_CONTROL_GROUP"/>
+  <int value="3" label="PRERENDER_MODE_EXPERIMENT_PRERENDER_GROUP"/>
+  <int value="4" label="PRERENDER_MODE_EXPERIMENT_5MIN_TTL_GROUP"/>
+  <int value="5" label="PRERENDER_MODE_EXPERIMENT_NO_USE_GROUP"/>
+  <int value="6" label="PRERENDER_MODE_EXPERIMENT_MULTI_PRERENDER_GROUP"/>
+  <int value="7" label="PRERENDER_MODE_EXPERIMENT_15MIN_TTL_GROUP"/>
+</enum>
+
+<enum name="PrerenderPageviewEvents" type="int">
+  <int value="0" label="PAGEVIEW_EVENT_NEW_URL"/>
+  <int value="1" label="PAGEVIEW_EVENT_TOP_SITE_NEW_URL"/>
+  <int value="2" label="PAGEVIEW_EVENT_LOAD_START"/>
+  <int value="3" label="PAGEVIEW_EVENT_TOP_SITE_LOAD_START"/>
+</enum>
+
+<enum name="PrerenderTabHelperEvents" type="int">
+  <int value="0" label="Table requested"/>
+  <int value="1" label="Table present"/>
+  <int value="2" label="Mainframe change"/>
+  <int value="3" label="Mainframe change, logged in"/>
+  <int value="4" label="Mainframe commit"/>
+  <int value="5" label="Mainframe commit, logged in"/>
+  <int value="6" label="Login action added"/>
+</enum>
+
+<enum name="PreTapEvents" type="int">
+  <int value="0" label="no event"/>
+  <int value="1" label="tapdown"/>
+  <int value="2" label="tapunconfirmed"/>
+  <int value="3" label="tapdown + tapunconfirmed"/>
 </enum>
 
 <enum name="ProtocolVersion" type="int">
@@ -10820,6 +13432,37 @@ other types of suffix sets.
   <int value="20" label="DOMAIN_TWIMG_COM"/>
   <int value="21" label="DOMAIN_AKAMAIHD_NET"/>
   <int value="22" label="DOMAIN_NUM_EVENTS"/>
+</enum>
+
+<enum name="ResolutionCategory" type="int">
+  <int value="0" label="RESOLVE_SUCCESS"/>
+  <int value="1" label="RESOLVE_FAIL"/>
+  <int value="2" label="RESOLVE_SPECULATIVE_SUCCESS"/>
+  <int value="3" label="RESOLVE_SPECULATIVE_FAIL"/>
+</enum>
+
+<enum name="ResolutionUnspecWasteCategory" type="int">
+  <int value="0" label="AF_WASTE_IPV4_ONLY">
+    Running in a IPv4-only configuration.  No waste.
+  </int>
+  <int value="1" label="AF_WASTE_CACHE_IPV4">
+    Cache contained an UNSPEC result for this IPv4 lookup.  Waste.
+  </int>
+  <int value="2" label="AF_WASTE_CACHE_UNSPEC">
+    Cache contained an IPv4 result for this UNSPEC lookup.  Waste.
+  </int>
+  <int value="3" label="AF_WASTE_JOB_IPV4">
+    Job pool contained an UNSPEC job for this IPv4 lookup.  Waste.
+  </int>
+  <int value="4" label="AF_WASTE_JOB_UNSPEC">
+    Job pool contained an IPv4 job for this UNSPEC lookup.  Waste.
+  </int>
+  <int value="5" label="AF_WASTE_NONE_IPV4">
+    A new job was needed for this IPv4 lookup.  No waste.
+  </int>
+  <int value="6" label="AF_WASTE_NONE_UNSPEC">
+    A new job was needed for this UNSPEC lookup.  No waste.
+  </int>
 </enum>
 
 <enum name="SB2BloomFailure" type="int">
@@ -11007,6 +13650,12 @@ other types of suffix sets.
 <enum name="SBClientDownloadIsSignedBinary" type="int">
   <int value="0" label="Unsigned"/>
   <int value="1" label="Signed"/>
+</enum>
+
+<enum name="SBClientMalwareSentReports" type="int">
+  <int value="0" label="Sent"/>
+  <int value="1" label="Hit limit"/>
+  <int value="2" label="Failed serialization"/>
 </enum>
 
 <enum name="SBClientPhishingCancelClassificationReason" type="int">
@@ -11240,7 +13889,7 @@ other types of suffix sets.
 </enum>
 
 <enum name="SqliteErrorCode" type="int">
-  <summary>Error codes returned by SQLite - see sqlite.h</summary>
+  <summary>Error codes returned by SQLite - see sqlite3.h</summary>
   <int value="0" label="SQLITE_OK">Successful result</int>
   <int value="1" label="SQLITE_ERROR">SQL error or missing database</int>
   <int value="2" label="SQLITE_INTERNAL">
@@ -11287,7 +13936,7 @@ other types of suffix sets.
   <int value="23" label="SQLITE_AUTH">Authorization denied</int>
   <int value="24" label="SQLITE_FORMAT">Auxiliary database format error</int>
   <int value="25" label="SQLITE_RANGE">
-    2nd parameter to sqlite3_bind out of range
+    2nd parameter to sqlite3_bind() out of range
   </int>
   <int value="26" label="SQLITE_NOTADB">
     File opened that is not a database file
@@ -11296,10 +13945,50 @@ other types of suffix sets.
   <int value="101" label="SQLITE_DONE">
     sqlite3_step() has finished executing
   </int>
+  <int value="261" label="SQLITE_BUSY_RECOVERY">TBD</int>
+  <int value="262" label="SQLITE_LOCKED_SHAREDCACHE">TBD</int>
+  <int value="266" label="SQLITE_IOERR_READ">Error reading from file</int>
+  <int value="270" label="SQLITE_CANTOPEN_NOTEMPDIR">TBD</int>
+  <int value="522" label="SQLITE_IOERR_SHORT_READ">Short read from file</int>
+  <int value="778" label="SQLITE_IOERR_WRITE">
+    Error writing to file (other than SQLITE_FULL)
+  </int>
+  <int value="1034" label="SQLITE_IOERR_FSYNC">Error syncing to disk</int>
+  <int value="1290" label="SQLITE_IOERR_DIR_FSYNC">
+    Error syncing directory changes to disk
+  </int>
+  <int value="1546" label="SQLITE_IOERR_TRUNCATE">Error truncating file</int>
+  <int value="1802" label="SQLITE_IOERR_FSTAT">Error reading file metadata</int>
+  <int value="2058" label="SQLITE_IOERR_UNLOCK">Error unlocking file</int>
+  <int value="2314" label="SQLITE_IOERR_RDLOCK">
+    Error getting read lock - should not be possible
+  </int>
+  <int value="2570" label="SQLITE_IOERR_DELETE">Error deleting file</int>
+  <int value="2826" label="SQLITE_IOERR_BLOCKED">
+    Deadlock due to other process access to SQLite files
+  </int>
+  <int value="3082" label="SQLITE_IOERR_NOMEM">Error mapping shared memory</int>
+  <int value="3338" label="SQLITE_IOERR_ACCESS">
+    Error getting file attributes (other than not found)
+  </int>
+  <int value="3594" label="SQLITE_IOERR_CHECKRESERVEDLOCK">
+    Error while querying lock status
+  </int>
+  <int value="3850" label="SQLITE_IOERR_LOCK">Error acquiring lock</int>
+  <int value="4106" label="SQLITE_IOERR_CLOSE">Error closing file</int>
+  <int value="4362" label="SQLITE_IOERR_DIR_CLOSE">Unused</int>
+  <int value="4618" label="SQLITE_IOERR_SHMOPEN">Error mmapping file</int>
+  <int value="4874" label="SQLITE_IOERR_SHMSIZE">
+    Error in stat while mmapping file
+  </int>
+  <int value="5130" label="SQLITE_IOERR_SHMLOCK">Unused</int>
 </enum>
 
 <enum name="SqliteIOERRCode" type="int">
-  <summary>Extended error codes returned by SQLite - see sqlite.h</summary>
+  <obsolete>
+    Replaced 5/14/2013 by expanded Sqlite.Error histogram.
+  </obsolete>
+  <summary>Extended error codes returned by SQLite - see sqlite3.h</summary>
   <int value="0" label="SQLITE_IOERR">No extended code given</int>
   <int value="1" label="SQLITE_IOERR_READ">Error reading from file</int>
   <int value="2" label="SQLITE_IOERR_SHORT_READ">Short read from file</int>
@@ -11401,10 +14090,14 @@ other types of suffix sets.
   </int>
 </enum>
 
-<enum name="TranslateContentLanguage" type="int">
-  <int value="0" label="No Content-Language"/>
-  <int value="1" label="Valid Content-Language"/>
-  <int value="2" label="Invalid Content-Language"/>
+<enum name="TranslateError" type="int">
+  <int value="0" label="No error"/>
+  <int value="1" label="Network error"/>
+  <int value="2" label="Initialization error"/>
+  <int value="3" label="Unknown language"/>
+  <int value="4" label="Unsupported language"/>
+  <int value="5" label="Identical language"/>
+  <int value="6" label="Translation error"/>
 </enum>
 
 <enum name="TranslateInitiationStatus" type="int">
@@ -11420,12 +14113,24 @@ other types of suffix sets.
   <int value="9" label="Show infobar"/>
 </enum>
 
+<enum name="TranslateLanguage" type="int">
+  <int value="0" label="No language code"/>
+  <int value="1" label="Valid language code"/>
+  <int value="2" label="Invalid language code"/>
+</enum>
+
 <enum name="TranslateLanguageVerification" type="int">
   <int value="0" label="CLD is disabled"/>
   <int value="1" label="No Content-Language"/>
   <int value="2" label="CLD can not determine a language"/>
   <int value="3" label="CLD agrees with Content-Language"/>
   <int value="4" label="CLD disagrees with Content-Language"/>
+</enum>
+
+<enum name="TranslateScheme" type="int">
+  <int value="0" label="http"/>
+  <int value="1" label="https"/>
+  <int value="2" label="unexpected other schemes"/>
 </enum>
 
 <enum name="UniformityTrialGroupNotActive" type="int">
@@ -11598,6 +14303,24 @@ other types of suffix sets.
   <int value="9" label="Verify CVV"/>
   <int value="10" label="Invalid form field"/>
   <int value="11" label="Require phone number"/>
+</enum>
+
+<enum name="WebHistoryStatus" type="int">
+  <int value="0" label="WEB_HISTORY_QUERY_FAILED">Failed</int>
+  <int value="1" label="WEB_HISTORY_QUERY_SUCCEEDED">Succeeded</int>
+  <int value="2" label="WEB_HISTORY_QUERY_TIMED_OUT">Timed out</int>
+</enum>
+
+<enum name="WebSocketHandshakeResult" type="int">
+  <int value="0" label="Incomplete"/>
+  <int value="1" label="Normal"/>
+  <int value="2" label="Failed"/>
+  <int value="3" label="Connected"/>
+</enum>
+
+<enum name="WebSocketPerMessageDeflateContextTakeOverMode" type="int">
+  <int value="0" label="DoNotTakeOverContext"/>
+  <int value="1" label="TakeOverContext"/>
 </enum>
 
 <enum name="WiFiReasonCode" type="int">
@@ -11870,6 +14593,28 @@ other types of suffix sets.
   </affected-histogram>
 </fieldtrial>
 
+<fieldtrial name="DnsParallelism">
+  <group name="parallel_10"
+      label="with only 10 concurrent resolutions done in parallel"/>
+  <group name="parallel_14"
+      label="with only 14 concurrent resolutions done in parallel"/>
+  <group name="parallel_20"
+      label="with only 20 concurrent resolutions done in parallel"/>
+  <group name="parallel_6"
+      label="with only 6 concurrent resolutions done in parallel"/>
+  <group name="parallel_7"
+      label="with only 7 concurrent resolutions done in parallel"/>
+  <group name="parallel_8"
+      label="with only 8 concurrent resolutions done in parallel"/>
+  <group name="parallel_9"
+      label="with only 9 concurrent resolutions done in parallel"/>
+  <group name="parallel_default"
+      label="with the default number of concurrent resolutions done in
+             parallel"/>
+  <affected-histogram name="DNS.ResolveCategory"/>
+  <affected-histogram name="DNS.ResolveSuccess"/>
+</fieldtrial>
+
 <fieldtrial name="DomainGoogle" separator="">
   <group name="Google" label="only Google cookies are recorded."/>
   <group name="Other" label="only NON-Google cookies are recorded."/>
@@ -11930,6 +14675,14 @@ other types of suffix sets.
   <affected-histogram name="Instant.SessionsStorageNamespace"/>
 </fieldtrial>
 
+<fieldtrial name="IPv6_Probe">
+  <group name="IPv6_probe_skipped"
+      label="with IPv6 not probed, and default OS settings used"/>
+  <group name="IPv6_probe_done"
+      label="with IPv6 probed for and possibly disabled"/>
+  <affected-histogram name="DNS.PrefetchResolution"/>
+</fieldtrial>
+
 <fieldtrial name="LateBindingExperiment">
   <group name="disable_late_binding" label="socket late binding is disabled"/>
   <group name="enable_late_binding" label="socket late binding is enabled"/>
@@ -11953,13 +14706,6 @@ other types of suffix sets.
   <affected-histogram name="Renderer4.StartToFinish"/>
 </fieldtrial>
 
-<fieldtrial name="LevelDBEnvExponentialRetryTimes" separator="">
-  <group name="RenameFile" label="RenameFile"/>
-  <group name="LockFile" label="LockFile"/>
-  <affected-histogram name="LevelDBEnv.IDB.TimeUntilSuccessFor"/>
-  <affected-histogram name="LevelDBEnv.TimeUntilSuccessFor"/>
-</fieldtrial>
-
 <fieldtrial name="LevelDBEnvMaxFDs" separator=".">
   <group name="Success"
       label="This histogram shows the limit when open succeeded."/>
@@ -11981,14 +14727,42 @@ other types of suffix sets.
   <affected-histogram name="LevelDBEnv.IOError."/>
 </fieldtrial>
 
+<fieldtrial name="LevelDBEnvRetry" separator="">
+  <group name="RenameFile" label="RenameFile"/>
+  <group name="LockFile" label="LockFile"/>
+  <affected-histogram name="LevelDBEnv.IDB.RetryRecoveredFromErrorIn"/>
+  <affected-histogram name="LevelDBEnv.IDB.TimeUntilSuccessFor"/>
+  <affected-histogram name="LevelDBEnv.RetryRecoveredFromErrorIn"/>
+  <affected-histogram name="LevelDBEnv.TimeUntilSuccessFor"/>
+</fieldtrial>
+
 <fieldtrial name="LevelDBEnvRetryTimes" separator="">
   <obsolete>
-    Deprecated 2013-04 in favor of LevelDBEnvExponentialRetryTimes.
+    Deprecated 2013-04 in favor of LevelDBEnvRetry.
   </obsolete>
   <group name="Rename" label="RenameFile"/>
   <group name="LockFile" label="LockFile"/>
   <affected-histogram name="LevelDBEnv.IDB.TimeTo"/>
   <affected-histogram name="LevelDBEnv.TimeTo"/>
+</fieldtrial>
+
+<fieldtrial name="MediaAudioInputControllerTime" separator=".">
+  <group name="CloseTime" label="Measures the time taken for DoClose()."/>
+  <group name="CreateTime" label="Measures the time taken for DoCreate()."/>
+  <group name="RecordTime" label="Measures the time taken for DoRecord()."/>
+  <affected-histogram name="Media.AudioInputController"/>
+</fieldtrial>
+
+<fieldtrial name="MediaAudioOutputControllerTime" separator=".">
+  <group name="CloseTime" label="Measures the time taken for DoClose()."/>
+  <group name="CreateTime" label="Measures the time taken for DoCreate()."/>
+  <group name="DeviceChangeTime"
+      label="Measures the time taken for OnDeviceChange()."/>
+  <group name="PauseTime" label="Measures the time taken for DoPause()."/>
+  <group name="PlayTime"
+      label="Measures the time taken for DoPlay(). Technically only the
+             worker method AudioOutputController::PollAndStartIfDataReady()."/>
+  <affected-histogram name="Media.AudioOutputController"/>
 </fieldtrial>
 
 <fieldtrial name="NetConnectivity" separator=".">
@@ -12582,6 +15356,21 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity3.StartPacket.Send6.SeriesAcked"/>
 </fieldtrial>
 
+<fieldtrial name="OmniboxProviderTime" separator=".">
+  <group name="Bookmark"/>
+  <group name="Builtin"/>
+  <group name="Contact"/>
+  <group name="ExtensionApp"/>
+  <group name="HistoryContents"/>
+  <group name="HistoryQuick"/>
+  <group name="HistoryURL"/>
+  <group name="Keyword"/>
+  <group name="Search"/>
+  <group name="Shortcuts"/>
+  <group name="ZeroSuggest"/>
+  <affected-histogram name="Omnibox.ProviderTime"/>
+</fieldtrial>
+
 <fieldtrial name="OverlappedReadImpact">
   <group name="OverlappedReadDisabled" label="Non-blocking reads"/>
   <group name="OverlappedReadEnabled" label="Default, async reads"/>
@@ -12706,6 +15495,30 @@ other types of suffix sets.
   <affected-histogram name="Prerender.RendererTimeUntilDisplay"/>
   <affected-histogram name="Prerender.SimulatedLocalBrowsingBaselinePLT"/>
   <affected-histogram name="Prerender.SimulatedLocalBrowsingPLT"/>
+</fieldtrial>
+
+<fieldtrial name="PrerenderHoverType" ordering="prefix">
+  <obsolete>
+    deprecated May 10 2012
+  </obsolete>
+  <group name="HoverStats_50" label="Hover stats @ threshold 50 ms."/>
+  <group name="HoverStats_75" label="Hover stats @ threshold 75 ms."/>
+  <group name="HoverStats_100" label="Hover stats @ threshold 100 ms."/>
+  <group name="HoverStats_150" label="Hover stats @ threshold 150 ms."/>
+  <group name="HoverStats_200" label="Hover stats @ threshold 200 ms."/>
+  <group name="HoverStats_250" label="Hover stats @ threshold 250 ms."/>
+  <group name="HoverStats_300" label="Hover stats @ threshold 300 ms."/>
+  <group name="HoverStats_400" label="Hover stats @ threshold 400 ms."/>
+  <group name="HoverStats_500" label="Hover stats @ threshold 500 ms."/>
+  <group name="HoverStats_750" label="Hover stats @ threshold 750 ms."/>
+  <group name="HoverStats_1000" label="Hover stats @ threshold 1000 ms."/>
+  <group name="HoverStats_1500" label="Hover stats @ threshold 1500 ms."/>
+  <group name="HoverStats_2000" label="Hover stats @ threshold 2000 ms."/>
+  <group name="HoverStats_3000" label="Hover stats @ threshold 3000 ms."/>
+  <group name="HoverStats_4000" label="Hover stats @ threshold 4000 ms."/>
+  <group name="HoverStats_5000" label="Hover stats @ threshold 5000 ms."/>
+  <affected-histogram name="Prerender.Events"/>
+  <affected-histogram name="Prerender.TimeToClick"/>
 </fieldtrial>
 
 <fieldtrial name="PrerenderSource" ordering="prefix">
@@ -12986,6 +15799,23 @@ other types of suffix sets.
   <group name="50K" label="where at least 50KB was transferred."/>
   <group name="100K" label="where at least 100KB was transferred."/>
   <affected-histogram name="Net.SpdySettingsCwnd"/>
+</fieldtrial>
+
+<fieldtrial name="SqliteDatabases" separator=".">
+  <group name="AppCache" label="AppCache"/>
+  <group name="Cookie" label="Cookie"/>
+  <group name="DatabaseTracker" label="DatabaseTracker"/>
+  <group name="DomainBoundCerts" label="DomainBoundCerts"/>
+  <group name="DomStorageDatabase" label="DomStorageDatabase"/>
+  <group name="History" label="History"/>
+  <group name="Quota" label="Quota"/>
+  <group name="Text" label="Text"/>
+  <group name="Thumbnail" label="Thumbnail"/>
+  <group name="TopSites" label="TopSites"/>
+  <group name="Web" label="Web"/>
+  <affected-histogram name="Sqlite.Error"/>
+  <affected-histogram name="Sqlite.SizeKB"/>
+  <affected-histogram name="Sqlite.Version"/>
 </fieldtrial>
 
 <fieldtrial name="SSLFalseStart">

@@ -49,6 +49,10 @@ WimaxConfigView::WimaxConfigView(NetworkConfigView* parent, WimaxNetwork* wimax)
 WimaxConfigView::~WimaxConfigView() {
 }
 
+string16 WimaxConfigView::GetTitle() const {
+  return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS);
+}
+
 views::View* WimaxConfigView::GetInitiallyFocusedView() {
   if (identity_textfield_ && identity_textfield_->enabled())
     return identity_textfield_;
@@ -208,16 +212,7 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
   column_set->AddColumn(views::GridLayout::CENTER, views::GridLayout::FILL, 1,
                         views::GridLayout::USE_PREF, 0, kPasswordVisibleWidth);
 
-  // Title
-  layout->StartRow(0, column_view_set_id);
-  views::Label* title = new views::Label(l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS));
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  title->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
-  layout->AddView(title, 5, 1);
-  layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
-
-  // Netowrk name
+  // Network name
   layout->StartRow(0, column_view_set_id);
   layout->AddView(new views::Label(l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_INTERNET_TAB_NETWORK)));
@@ -238,7 +233,7 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
   identity_textfield_->SetController(this);
   const std::string& eap_identity = wimax->eap_identity();
   identity_textfield_->SetText(UTF8ToUTF16(eap_identity));
-  identity_textfield_->SetEnabled(identity_ui_data_.editable());
+  identity_textfield_->SetEnabled(identity_ui_data_.IsEditable());
   layout->AddView(identity_textfield_);
   layout->AddView(new ControlledSettingIndicatorView(identity_ui_data_));
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
@@ -253,11 +248,11 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
       views::Textfield::STYLE_OBSCURED);
   passphrase_textfield_->SetController(this);
   passphrase_label_->SetEnabled(true);
-  passphrase_textfield_->SetEnabled(passphrase_ui_data_.editable());
+  passphrase_textfield_->SetEnabled(passphrase_ui_data_.IsEditable());
   passphrase_textfield_->SetAccessibleName(passphrase_label_text);
   layout->AddView(passphrase_textfield_);
 
-  if (passphrase_ui_data_.managed()) {
+  if (passphrase_ui_data_.IsManaged()) {
     layout->AddView(new ControlledSettingIndicatorView(passphrase_ui_data_));
   } else {
     // Password visible button.
@@ -301,7 +296,7 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_SAVE_CREDENTIALS));
     save_credentials_checkbox_->SetEnabled(
-        save_credentials_ui_data_.editable());
+        save_credentials_ui_data_.IsEditable());
     save_credentials_checkbox_->SetChecked(wimax->save_credentials());
     layout->SkipColumns(1);
     layout->AddView(save_credentials_checkbox_);

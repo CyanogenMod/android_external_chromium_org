@@ -19,26 +19,26 @@ GYP_TARGET_DEPENDENCIES := \
 ### Generated for rule "third_party_libphonenumber_libphonenumber_gyp_libphonenumber_without_metadata_target_genproto":
 # "{'inputs': ['../../tools/protoc_wrapper/protoc_wrapper.py', '$(gyp_shared_intermediate_dir)/protoc'], 'msvs_cygwin_shell': '0', 'extension': 'proto', 'outputs': ['$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s_pb2.py', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.cc', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.h'], 'rule_name': 'genproto', 'rule_sources': ['src/resources/phonemetadata.proto', 'src/resources/phonenumber.proto'], 'action': ['python', '../../tools/protoc_wrapper/protoc_wrapper.py', '--include', '', '--protobuf', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.h', '--proto-in-dir', 'src/resources', '--proto-in-file', '%(INPUT_ROOT)s$(suffix $<)', '--use-system-protobuf=0', '--', '$(gyp_shared_intermediate_dir)/protoc', '--cpp_out', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers', '--python_out', '$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers'], 'message': 'Generating C++ and Python code from $(RULE_SOURCES)', 'process_outputs_as_sources': '1'}":
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: $(LOCAL_PATH)/third_party/libphonenumber/src/resources/phonemetadata.proto $(LOCAL_PATH)/tools/protoc_wrapper/protoc_wrapper.py $(gyp_shared_intermediate_dir)/protoc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers $(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers; cd $(gyp_local_path)/third_party/libphonenumber; python ../../tools/protoc_wrapper/protoc_wrapper.py --include "" --protobuf "$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonemetadata.pb.h" --proto-in-dir src/resources --proto-in-file "phonemetadata$(suffix $<)" "--use-system-protobuf=0" -- "$(gyp_shared_intermediate_dir)/protoc" --cpp_out "$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers" --python_out "$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers"
 
-$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonemetadata.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py
-$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonemetadata.pb.h: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py
+$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonemetadata.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py ;
+$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonemetadata.pb.h: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py ;
 .PHONY: third_party_libphonenumber_libphonenumber_without_metadata_gyp_rule_trigger
 third_party_libphonenumber_libphonenumber_without_metadata_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py
 
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: $(LOCAL_PATH)/third_party/libphonenumber/src/resources/phonenumber.proto $(LOCAL_PATH)/tools/protoc_wrapper/protoc_wrapper.py $(gyp_shared_intermediate_dir)/protoc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers $(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers; cd $(gyp_local_path)/third_party/libphonenumber; python ../../tools/protoc_wrapper/protoc_wrapper.py --include "" --protobuf "$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonenumber.pb.h" --proto-in-dir src/resources --proto-in-file "phonenumber$(suffix $<)" "--use-system-protobuf=0" -- "$(gyp_shared_intermediate_dir)/protoc" --cpp_out "$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers" --python_out "$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers"
 
-$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonenumber.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py
-$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonenumber.pb.h: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py
+$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonenumber.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py ;
+$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonenumber.pb.h: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py ;
 .PHONY: third_party_libphonenumber_libphonenumber_without_metadata_gyp_rule_trigger
 third_party_libphonenumber_libphonenumber_without_metadata_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py
 
@@ -137,6 +137,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -168,13 +169,13 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

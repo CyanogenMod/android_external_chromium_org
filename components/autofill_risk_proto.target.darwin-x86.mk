@@ -17,14 +17,14 @@ GYP_TARGET_DEPENDENCIES := \
 ### Generated for rule "components_components_gyp_autofill_risk_proto_target_genproto":
 # "{'inputs': ['../tools/protoc_wrapper/protoc_wrapper.py', '$(gyp_shared_intermediate_dir)/protoc'], 'msvs_cygwin_shell': '0', 'extension': 'proto', 'outputs': ['$(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/%(INPUT_ROOT)s_pb2.py', '$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto/%(INPUT_ROOT)s.pb.cc', '$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto/%(INPUT_ROOT)s.pb.h'], 'rule_name': 'genproto', 'rule_sources': ['autofill/browser/risk/proto/fingerprint.proto'], 'action': ['python', '../tools/protoc_wrapper/protoc_wrapper.py', '--include', '', '--protobuf', '$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto/%(INPUT_ROOT)s.pb.h', '--proto-in-dir', 'autofill/browser/risk/proto', '--proto-in-file', '%(INPUT_ROOT)s$(suffix $<)', '--use-system-protobuf=0', '--', '$(gyp_shared_intermediate_dir)/protoc', '--cpp_out', '$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto', '--python_out', '$(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto'], 'message': 'Generating C++ and Python code from $(RULE_SOURCES)', 'process_outputs_as_sources': '1'}":
 $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py: $(LOCAL_PATH)/components/autofill/browser/risk/proto/fingerprint.proto $(LOCAL_PATH)/tools/protoc_wrapper/protoc_wrapper.py $(gyp_shared_intermediate_dir)/protoc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto; cd $(gyp_local_path)/components; python ../tools/protoc_wrapper/protoc_wrapper.py --include "" --protobuf "$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto/fingerprint.pb.h" --proto-in-dir autofill/browser/risk/proto --proto-in-file "fingerprint$(suffix $<)" "--use-system-protobuf=0" -- "$(gyp_shared_intermediate_dir)/protoc" --cpp_out "$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto" --python_out "$(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto"
 
-$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto/fingerprint.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py
-$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto/fingerprint.pb.h: $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py
+$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto/fingerprint.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py ;
+$(gyp_shared_intermediate_dir)/protoc_out/components/autofill/browser/risk/proto/fingerprint.pb.h: $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py ;
 .PHONY: components_autofill_risk_proto_gyp_rule_trigger
 components_autofill_risk_proto_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/pyproto/components/autofill/browser/risk/proto/fingerprint_pb2.py
 
@@ -96,6 +96,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -124,9 +125,9 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

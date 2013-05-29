@@ -47,6 +47,7 @@
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/downloads.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_save_info.h"
@@ -374,7 +375,9 @@ DownloadItem* GetDownloadIfInProgress(
     bool include_incognito,
     int id) {
   DownloadItem* download_item = GetDownload(profile, include_incognito, id);
-  return download_item && download_item->IsInProgress() ? download_item : NULL;
+  if (download_item && (download_item->GetState() == DownloadItem::IN_PROGRESS))
+    return download_item;
+  return NULL;
 }
 
 enum DownloadsFunctionName {
@@ -678,7 +681,7 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
     // determiners_ doesn't keep hogging memory.
     weak_ptr_factory_.reset(
         new base::WeakPtrFactory<ExtensionDownloadsEventRouterData>(this));
-    MessageLoopForUI::current()->PostDelayedTask(
+    base::MessageLoopForUI::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&ExtensionDownloadsEventRouterData::ClearPendingDeterminers,
                    weak_ptr_factory_->GetWeakPtr()),
@@ -806,7 +809,8 @@ bool DownloadsDownloadFunction::RunImpl() {
   if (!download_url.is_valid() ||
       (!download_url.SchemeIs("data") &&
        download_url.GetOrigin() != GetExtension()->url().GetOrigin() &&
-       !GetExtension()->HasHostPermission(download_url))) {
+       !extensions::PermissionsData::HasHostPermission(GetExtension(),
+                                                       download_url))) {
     error_ = download_extension_errors::kInvalidURLError;
     return false;
   }
@@ -1103,7 +1107,7 @@ bool DownloadsOpenFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
   DownloadItem* download_item = GetDownload(
       profile(), include_incognito(), params->download_id);
-  if (!download_item || !download_item->IsComplete()) {
+  if (!download_item || download_item->GetState() != DownloadItem::COMPLETE) {
     error_ = download_extension_errors::kInvalidOperationError;
     return false;
   }
@@ -1130,11 +1134,12 @@ bool DownloadsDragFunction::RunImpl() {
   }
   RecordApiFunctions(DOWNLOADS_FUNCTION_DRAG);
   gfx::Image* icon = g_browser_process->icon_manager()->LookupIconFromFilepath(
-      download_item->GetUserVerifiedFilePath(), IconLoader::NORMAL);
+      download_item->GetTargetFilePath(), IconLoader::NORMAL);
   gfx::NativeView view = web_contents->GetView()->GetNativeView();
   {
     // Enable nested tasks during DnD, while |DragDownload()| blocks.
-    MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+    base::MessageLoop::ScopedNestableTaskAllower allow(
+        base::MessageLoop::current());
     download_util::DragDownload(download_item, icon, view);
   }
   return true;
@@ -1294,7 +1299,7 @@ bool ExtensionDownloadsEventRouter::DetermineFilename(
     *error = download_extension_errors::kTooManyListenersError;
     return false;
   }
-  if (!item->IsInProgress()) {
+  if (item->GetState() != DownloadItem::IN_PROGRESS) {
     *error = download_extension_errors::kInvalidOperationError;
     return false;
   }

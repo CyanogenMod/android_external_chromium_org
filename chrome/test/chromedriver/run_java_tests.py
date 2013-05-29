@@ -17,14 +17,9 @@ import shutil
 import sys
 import xml.dom.minidom as minidom
 
-_THIS_DIR = os.path.abspath(os.path.dirname(__file__))
-
-sys.path.insert(0, os.path.join(_THIS_DIR, os.pardir, 'pylib'))
-
-from common import chrome_paths
-from common import util
-
+import chrome_paths
 import test_environment
+import util
 
 
 class TestResult(object):
@@ -108,7 +103,7 @@ def _Run(java_tests_src_dir, test_filter,
   jvm_args = []
   if debug:
     jvm_args += ['-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,'
-                     'address=33081']
+                 'address=33081']
     # Unpack the sources into the test directory and add to the class path
     # for ease of debugging, particularly with jdb.
     util.Unzip(os.path.join(java_tests_src_dir, 'test-nodeps-srcs.jar'),
@@ -198,31 +193,32 @@ def _RunAntTest(test_dir, test_class, class_path, sys_props, jvm_args, verbose):
 def PrintTestResults(results):
   """Prints the given results in a format recognized by the buildbot."""
   failures = []
-  failureNames = []
+  failure_names = []
   for result in results:
     if not result.IsPass():
       failures += [result]
-      failureNames += ['.'.join(result.GetName().split('.')[-2:])]
+      failure_names += ['.'.join(result.GetName().split('.')[-2:])]
 
   print 'Ran %s tests' % len(results)
   print 'Failed %s:' % len(failures)
+  util.AddBuildStepText('failed %s/%s' % (len(failures), len(results)))
   for result in failures:
     print '=' * 80
     print '=' * 10, result.GetName(), '(%ss)' % result.GetTime()
     print result.GetFailureMessage()
-  if failures:
-    print '@@@STEP_TEXT@Failed %s tests@@@' % len(failures)
-  print 'Rerun failing tests with filter:', ':'.join(failureNames)
+    if len(failures) < 10:
+      util.AddBuildStepText('.'.join(result.GetName().split('.')[-2:]))
+  print 'Rerun failing tests with filter:', ':'.join(failure_names)
   return len(failures)
 
 
 def main():
   parser = optparse.OptionParser()
   parser.add_option(
-      '', '--verbose', action="store_true", default=False,
+      '', '--verbose', action='store_true', default=False,
       help='Whether output should be verbose')
   parser.add_option(
-      '', '--debug', action="store_true", default=False,
+      '', '--debug', action='store_true', default=False,
       help='Whether to wait to be attached by a debugger')
   parser.add_option(
       '', '--chromedriver', type='string', default=None,
@@ -241,9 +237,12 @@ def main():
       help='Filter for specifying what tests to run, "*" will run all. E.g., '
            '*testShouldReturnTitleOfPageIfSet')
   parser.add_option(
+      '', '--also-run-disabled-tests', action='store_true', default=False,
+      help='Include disabled tests while running the tests')
+  parser.add_option(
       '', '--isolate-tests', action='store_true', default=False,
       help='Relaunch the jar test harness after each test')
-  options, args = parser.parse_args()
+  options, _ = parser.parse_args()
 
   if options.chromedriver is None or not os.path.exists(options.chromedriver):
     parser.error('chromedriver is required or the given path is invalid.' +
@@ -260,13 +259,20 @@ def main():
   try:
     environment.GlobalSetUp()
     # Run passed tests when filter is not provided.
-    if options.filter:
-      test_filters = [options.filter]
+    if options.isolate_tests:
+      test_filters = environment.GetPassedJavaTests()
     else:
-      if options.isolate_tests:
-        test_filters = environment.GetPassedJavaTests()
+      if options.filter:
+        test_filter = options.filter
       else:
-        test_filters = [environment.GetPassedJavaTestFilter()]
+        test_filter = '*'
+      if not options.also_run_disabled_tests:
+        if '-' in test_filter:
+          test_filter += ':'
+        else:
+          test_filter += '-'
+        test_filter += ':'.join(environment.GetDisabledJavaTestMatchers())
+      test_filters = [test_filter]
 
     java_tests_src_dir = os.path.join(chrome_paths.GetSrc(), 'chrome', 'test',
                                       'chromedriver', 'third_party',
@@ -274,7 +280,7 @@ def main():
     if (not os.path.exists(java_tests_src_dir) or
         not os.listdir(java_tests_src_dir)):
       print ('"%s" is empty or it doesn\'t exist.' % java_tests_src_dir +
-          'Should add "deps/third_party/webdriver" to source checkout config')
+             'Should add deps/third_party/webdriver to source checkout config')
       return 1
 
     results = []

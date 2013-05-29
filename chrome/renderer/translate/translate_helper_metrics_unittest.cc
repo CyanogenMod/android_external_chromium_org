@@ -33,23 +33,20 @@ class MetricsRecorder {
       base_samples_ = histogram->SnapshotSamples();
   }
 
-  void CheckContentLanguage(int expected_not_provided,
-                            int expected_valid,
-                            int expected_invalid) {
-    ASSERT_EQ(TranslateHelperMetrics::GetMetricsName(
-        TranslateHelperMetrics::UMA_CONTENT_LANGUAGE), key_);
+  void CheckLanguage(TranslateHelperMetrics::MetricsNameIndex index,
+                     int expected_not_provided,
+                     int expected_valid,
+                     int expected_invalid) {
+    ASSERT_EQ(TranslateHelperMetrics::GetMetricsName(index), key_);
 
     Snapshot();
 
-    EXPECT_EQ(
-        expected_not_provided,
-        GetCount(TranslateHelperMetrics::CONTENT_LANGUAGE_NOT_PROVIDED));
-    EXPECT_EQ(
-        expected_valid,
-        GetCount(TranslateHelperMetrics::CONTENT_LANGUAGE_VALID));
-    EXPECT_EQ(
-        expected_invalid,
-        GetCount(TranslateHelperMetrics::CONTENT_LANGUAGE_INVALID));
+    EXPECT_EQ(expected_not_provided,
+              GetCount(TranslateHelperMetrics::LANGUAGE_NOT_PROVIDED));
+    EXPECT_EQ(expected_valid,
+              GetCount(TranslateHelperMetrics::LANGUAGE_VALID));
+    EXPECT_EQ(expected_invalid,
+              GetCount(TranslateHelperMetrics::LANGUAGE_INVALID));
   }
 
   void CheckLanguageVerification(int expected_cld_disabled,
@@ -77,6 +74,17 @@ class MetricsRecorder {
     EXPECT_EQ(
         expected_cld_disagree,
         GetCount(TranslateHelperMetrics::LANGUAGE_VERIFICATION_CLD_DISAGREE));
+  }
+
+  void CheckScheme(int expected_http, int expected_https, int expected_others) {
+    ASSERT_EQ(TranslateHelperMetrics::GetMetricsName(
+        TranslateHelperMetrics::UMA_PAGE_SCHEME), key_);
+
+    Snapshot();
+
+    EXPECT_EQ(expected_http, GetCount(TranslateHelperMetrics::SCHEME_HTTP));
+    EXPECT_EQ(expected_https, GetCount(TranslateHelperMetrics::SCHEME_HTTPS));
+    EXPECT_EQ(expected_others, GetCount(TranslateHelperMetrics::SCHEME_OTHERS));
   }
 
   void CheckTotalCount(int count) {
@@ -139,13 +147,26 @@ TEST(TranslateHelperMetricsTest, ReportContentLanguage) {
   MetricsRecorder recorder(TranslateHelperMetrics::GetMetricsName(
       TranslateHelperMetrics::UMA_CONTENT_LANGUAGE));
 
-  recorder.CheckContentLanguage(0, 0, 0);
+  recorder.CheckLanguage(TranslateHelperMetrics::UMA_CONTENT_LANGUAGE, 0, 0, 0);
   TranslateHelperMetrics::ReportContentLanguage(std::string(), std::string());
-  recorder.CheckContentLanguage(1, 0, 0);
+  recorder.CheckLanguage(TranslateHelperMetrics::UMA_CONTENT_LANGUAGE, 1, 0, 0);
   TranslateHelperMetrics::ReportContentLanguage("ja_JP", "ja-JP");
-  recorder.CheckContentLanguage(1, 0, 1);
+  recorder.CheckLanguage(TranslateHelperMetrics::UMA_CONTENT_LANGUAGE, 1, 0, 1);
   TranslateHelperMetrics::ReportContentLanguage("en", "en");
-  recorder.CheckContentLanguage(1, 1, 1);
+  recorder.CheckLanguage(TranslateHelperMetrics::UMA_CONTENT_LANGUAGE, 1, 1, 1);
+}
+
+TEST(TranslateHelperMetricsTest, ReportHtmlLang) {
+  MetricsRecorder recorder(TranslateHelperMetrics::GetMetricsName(
+      TranslateHelperMetrics::UMA_HTML_LANG));
+
+  recorder.CheckLanguage(TranslateHelperMetrics::UMA_HTML_LANG, 0, 0, 0);
+  TranslateHelperMetrics::ReportHtmlLang(std::string(), std::string());
+  recorder.CheckLanguage(TranslateHelperMetrics::UMA_HTML_LANG, 1, 0, 0);
+  TranslateHelperMetrics::ReportHtmlLang("ja_JP", "ja-JP");
+  recorder.CheckLanguage(TranslateHelperMetrics::UMA_HTML_LANG, 1, 0, 1);
+  TranslateHelperMetrics::ReportHtmlLang("en", "en");
+  recorder.CheckLanguage(TranslateHelperMetrics::UMA_HTML_LANG, 1, 1, 1);
 }
 
 TEST(TranslateHelperMetricsTest, ReportLanguageVerification) {
@@ -197,6 +218,29 @@ TEST(TranslateHelperMetricsTest, ReportTimeToTranslate) {
   recorder.CheckTotalCount(1);
 }
 
+TEST(TranslateHelperMetricsTest, ReportUserActionDuration) {
+  MetricsRecorder recorder(TranslateHelperMetrics::GetMetricsName(
+      TranslateHelperMetrics::UMA_USER_ACTION_DURATION));
+  recorder.CheckTotalCount(0);
+  TimeTicks begin = TimeTicks::Now();
+  TimeTicks end = begin + base::TimeDelta::FromSeconds(3776);
+  TranslateHelperMetrics::ReportUserActionDuration(begin, end);
+  recorder.CheckValueInLogs(3776000.0);
+  recorder.CheckTotalCount(1);
+}
+
+TEST(TranslateHelperMetricsTest, ReportPageScheme) {
+  MetricsRecorder recorder(TranslateHelperMetrics::GetMetricsName(
+      TranslateHelperMetrics::UMA_PAGE_SCHEME));
+  recorder.CheckScheme(0, 0, 0);
+  TranslateHelperMetrics::ReportPageScheme("http");
+  recorder.CheckScheme(1, 0, 0);
+  TranslateHelperMetrics::ReportPageScheme("https");
+  recorder.CheckScheme(1, 1, 0);
+  TranslateHelperMetrics::ReportPageScheme("ftp");
+  recorder.CheckScheme(1, 1, 1);
+}
+
 #if defined(ENABLE_LANGUAGE_DETECTION)
 
 TEST(TranslateHelperMetricsTest, ReportLanguageDetectionTime) {
@@ -204,7 +248,7 @@ TEST(TranslateHelperMetricsTest, ReportLanguageDetectionTime) {
       TranslateHelperMetrics::UMA_LANGUAGE_DETECTION));
   recorder.CheckTotalCount(0);
   TimeTicks begin = TimeTicks::Now();
-  TimeTicks end = begin + base::TimeDelta::FromMicroseconds(9009.0);
+  TimeTicks end = begin + base::TimeDelta::FromMicroseconds(9009);
   TranslateHelperMetrics::ReportLanguageDetectionTime(begin, end);
   recorder.CheckValueInLogs(9.009);
   recorder.CheckTotalCount(1);

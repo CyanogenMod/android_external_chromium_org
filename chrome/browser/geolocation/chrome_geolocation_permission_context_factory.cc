@@ -6,8 +6,8 @@
 
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #if defined(OS_ANDROID)
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_android.h"
@@ -17,7 +17,7 @@
 
 namespace {
 
-class Service : public ProfileKeyedService {
+class Service : public BrowserContextKeyedService {
  public:
   explicit Service(Profile* profile) {
 #if defined(OS_ANDROID)
@@ -47,7 +47,7 @@ class Service : public ProfileKeyedService {
 ChromeGeolocationPermissionContext*
 ChromeGeolocationPermissionContextFactory::GetForProfile(Profile* profile) {
   return static_cast<Service*>(
-      GetInstance()->GetServiceForProfile(profile, true))->context();
+      GetInstance()->GetServiceForBrowserContext(profile, true))->context();
 }
 
 // static
@@ -58,16 +58,16 @@ ChromeGeolocationPermissionContextFactory::GetInstance() {
 
 ChromeGeolocationPermissionContextFactory::
 ChromeGeolocationPermissionContextFactory()
-    : ProfileKeyedServiceFactory(
+    : BrowserContextKeyedServiceFactory(
           "ChromeGeolocationPermissionContext",
-          ProfileDependencyManager::GetInstance()) {
+          BrowserContextDependencyManager::GetInstance()) {
 }
 
 ChromeGeolocationPermissionContextFactory::
 ~ChromeGeolocationPermissionContextFactory() {
 }
 
-ProfileKeyedService*
+BrowserContextKeyedService*
 ChromeGeolocationPermissionContextFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new Service(static_cast<Profile*>(profile));

@@ -15,7 +15,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
-	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
@@ -36,14 +35,14 @@ LOCAL_SRC_FILES := \
 	content/public/common/content_constants.cc \
 	content/public/common/content_switches.cc \
 	content/public/common/context_menu_params.cc \
-	content/public/common/dx_diag_node.cc \
 	content/public/common/favicon_url.cc \
 	content/public/common/file_chooser_params.cc \
 	content/public/common/frame_navigate_params.cc \
 	content/public/common/geoposition.cc \
-	content/public/common/gpu_info.cc \
 	content/public/common/gpu_memory_stats.cc \
 	content/public/common/media_stream_request.cc \
+	content/public/common/page_state.cc \
+	content/public/common/page_state_webkit.cc \
 	content/public/common/page_transition_types.cc \
 	content/public/common/password_form.cc \
 	content/public/common/pepper_plugin_info.cc \
@@ -52,6 +51,7 @@ LOCAL_SRC_FILES := \
 	content/public/common/speech_recognition_result.cc \
 	content/public/common/ssl_status.cc \
 	content/public/common/url_constants.cc \
+	content/public/common/url_utils.cc \
 	content/common/accessibility_node_data.cc \
 	content/common/android/address_parser.cc \
 	content/common/android/address_parser_internal.cc \
@@ -78,10 +78,6 @@ LOCAL_SRC_FILES := \
 	content/common/database_util.cc \
 	content/common/db_message_filter.cc \
 	content/common/fileapi/file_system_dispatcher.cc \
-	content/common/fileapi/webblobregistry_impl.cc \
-	content/common/fileapi/webfilesystem_callback_dispatcher.cc \
-	content/common/fileapi/webfilesystem_impl.cc \
-	content/common/fileapi/webfilewriter_impl.cc \
 	content/common/find_match_rect_android.cc \
 	content/common/font_list.cc \
 	content/common/font_list_android.cc \
@@ -90,6 +86,7 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/command_buffer_proxy_impl.cc \
 	content/common/gpu/client/context_provider_command_buffer.cc \
 	content/common/gpu/client/gl_helper.cc \
+	content/common/gpu/client/gl_helper_scaling.cc \
 	content/common/gpu/client/gpu_channel_host.cc \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
 	content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.cc \
@@ -113,21 +110,12 @@ LOCAL_SRC_FILES := \
 	content/common/indexed_db/indexed_db_key_path.cc \
 	content/common/indexed_db/indexed_db_key_range.cc \
 	content/common/indexed_db/indexed_db_param_traits.cc \
-	content/common/indexed_db/indexed_db_dispatcher.cc \
-	content/common/indexed_db/indexed_db_message_filter.cc \
-	content/common/indexed_db/proxy_webidbcursor_impl.cc \
-	content/common/indexed_db/proxy_webidbdatabase_impl.cc \
-	content/common/indexed_db/proxy_webidbfactory_impl.cc \
 	content/common/inter_process_time_ticks_converter.cc \
 	content/common/media/media_param_traits.cc \
 	content/common/media/media_stream_options.cc \
 	content/common/message_router.cc \
 	content/common/net/url_fetcher.cc \
 	content/common/net/url_request_user_data.cc \
-	content/common/np_channel_base.cc \
-	content/common/npobject_proxy.cc \
-	content/common/npobject_stub.cc \
-	content/common/npobject_util.cc \
 	content/common/page_zoom.cc \
 	content/common/partial_circular_buffer.cc \
 	content/common/pepper_renderer_instance_data.cc \
@@ -145,7 +133,6 @@ LOCAL_SRC_FILES := \
 	content/common/swapped_out_messages.cc \
 	content/common/thread_safe_sender.cc \
 	content/common/url_schemes.cc \
-	content/common/web_database_observer_impl.cc \
 	content/common/webkitplatformsupport_impl.cc \
 	content/common/webmessageportchannel_impl.cc \
 	content/public/common/common_param_traits.cc \
@@ -196,12 +183,14 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DENABLE_LANGUAGE_DETECTION=1' \
+	'-DENABLE_JAVA_BRIDGE' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_BUILD_NO_IMAGE_ENCODE' \
@@ -246,19 +235,19 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/v8/include \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
+	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

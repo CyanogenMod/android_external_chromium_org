@@ -31,12 +31,12 @@
 #include "chrome/browser/ui/extensions/native_app_window.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/user_prefs/pref_registry_syncable.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -45,6 +45,7 @@
 #include "googleurl/src/gurl.h"
 
 using content::WebContents;
+using web_modal::WebContentsModalDialogManager;
 
 namespace extensions {
 
@@ -151,8 +152,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, EmptyContextMenu) {
   // only include the developer tools.
   WebContents* web_contents = GetFirstShellWindowWebContents();
   ASSERT_TRUE(web_contents);
-  WebKit::WebContextMenuData data;
-  content::ContextMenuParams params(data);
+  content::ContextMenuParams params;
   scoped_ptr<PlatformAppContextMenu> menu;
   menu.reset(new PlatformAppContextMenu(web_contents, params));
   menu->Init();
@@ -176,8 +176,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenu) {
   // separator and the developer tools, is all that should be in the menu.
   WebContents* web_contents = GetFirstShellWindowWebContents();
   ASSERT_TRUE(web_contents);
-  WebKit::WebContextMenuData data;
-  content::ContextMenuParams params(data);
+  content::ContextMenuParams params;
   scoped_ptr<PlatformAppContextMenu> menu;
   menu.reset(new PlatformAppContextMenu(web_contents, params));
   menu->Init();
@@ -204,8 +203,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, InstalledAppWithContextMenu) {
   // these are all that should be in the menu.
   WebContents* web_contents = GetFirstShellWindowWebContents();
   ASSERT_TRUE(web_contents);
-  WebKit::WebContextMenuData data;
-  content::ContextMenuParams params(data);
+  content::ContextMenuParams params;
   scoped_ptr<PlatformAppContextMenu> menu;
   menu.reset(new PlatformAppContextMenu(web_contents, params));
   menu->Init();
@@ -232,8 +230,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuTextField) {
   // separator and the developer tools, is all that should be in the menu.
   WebContents* web_contents = GetFirstShellWindowWebContents();
   ASSERT_TRUE(web_contents);
-  WebKit::WebContextMenuData data;
-  content::ContextMenuParams params(data);
+  content::ContextMenuParams params;
   params.is_editable = true;
   scoped_ptr<PlatformAppContextMenu> menu;
   menu.reset(new PlatformAppContextMenu(web_contents, params));
@@ -261,8 +258,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuSelection) {
   // separator and the developer tools, is all that should be in the menu.
   WebContents* web_contents = GetFirstShellWindowWebContents();
   ASSERT_TRUE(web_contents);
-  WebKit::WebContextMenuData data;
-  content::ContextMenuParams params(data);
+  content::ContextMenuParams params;
   params.selection_text = ASCIIToUTF16("Hello World");
   scoped_ptr<PlatformAppContextMenu> menu;
   menu.reset(new PlatformAppContextMenu(web_contents, params));
@@ -289,8 +285,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuClicked) {
   // Test that the menu item shows up
   WebContents* web_contents = GetFirstShellWindowWebContents();
   ASSERT_TRUE(web_contents);
-  WebKit::WebContextMenuData data;
-  content::ContextMenuParams params(data);
+  content::ContextMenuParams params;
   params.page_url = GURL("http://foo.bar");
   scoped_ptr<PlatformAppContextMenu> menu;
   menu.reset(new PlatformAppContextMenu(web_contents, params));
@@ -391,7 +386,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ExtensionWindowingApis) {
   LoadAndLaunchPlatformApp("minimal");
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
   ASSERT_EQ(1U, GetShellWindowCount());
-  ShellWindowRegistry::ShellWindowSet shell_windows =
+  ShellWindowRegistry::ShellWindowList shell_windows =
       ShellWindowRegistry::Get(browser()->profile())->shell_windows();
   int shell_window_id = (*shell_windows.begin())->session_id().id();
 
@@ -855,8 +850,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
       extension_service()->extension_prefs();
 
   // Clear the registered events to ensure they are updated.
-  extension_prefs->SetRegisteredEvents(extension->id(),
-                                       std::set<std::string>());
+  extensions::ExtensionSystem::Get(browser()->profile())->event_router()->
+      SetRegisteredEvents(extension->id(), std::set<std::string>());
 
   const base::StringValue old_version("1");
   std::string pref_path("extensions.settings.");
@@ -924,7 +919,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
   EXPECT_EQ(1LU, GetShellWindowCount());
-  ShellWindowRegistry::ShellWindowSet shell_windows = ShellWindowRegistry::Get(
+  ShellWindowRegistry::ShellWindowList shell_windows = ShellWindowRegistry::Get(
       browser()->profile())->shell_windows();
   EXPECT_TRUE((*shell_windows.begin())->web_contents()->
       GetRenderWidgetHostView()->HasFocus());

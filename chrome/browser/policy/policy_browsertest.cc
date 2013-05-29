@@ -32,6 +32,8 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
+#include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
@@ -39,6 +41,7 @@
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/cloud/test_request_interceptor.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
 #include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -65,6 +68,7 @@
 #include "chrome/common/chrome_process_type.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings.h"
+#include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
@@ -153,6 +157,14 @@ const char kHostedAppCrxId[] = "kbmnembihfiondgfjekmnmcbddelicoi";
 
 const base::FilePath::CharType kGoodCrxManifestName[] =
     FILE_PATH_LITERAL("good_update_manifest.xml");
+const base::FilePath::CharType kGood2CrxManifestName[] =
+    FILE_PATH_LITERAL("good2_update_manifest.xml");
+const base::FilePath::CharType kGoodV1CrxManifestName[] =
+    FILE_PATH_LITERAL("good_v1_update_manifest.xml");
+const base::FilePath::CharType kGoodUnpackedExt[] =
+    FILE_PATH_LITERAL("good_unpacked");
+const base::FilePath::CharType kAppUnpackedExt[] =
+    FILE_PATH_LITERAL("app");
 
 // Filters requests to the hosts in |urls| and redirects them to the test data
 // dir through URLRequestMockHTTPJobs.
@@ -197,14 +209,14 @@ class MakeRequestFail {
     BrowserThread::PostTaskAndReply(
         BrowserThread::IO, FROM_HERE,
         base::Bind(MakeRequestFailOnIO, host_),
-        MessageLoop::QuitClosure());
+        base::MessageLoop::QuitClosure());
     content::RunMessageLoop();
   }
   ~MakeRequestFail() {
     BrowserThread::PostTaskAndReply(
         BrowserThread::IO, FROM_HERE,
         base::Bind(UndoMakeRequestFailOnIO, host_),
-        MessageLoop::QuitClosure());
+        base::MessageLoop::QuitClosure());
     content::RunMessageLoop();
   }
 
@@ -321,13 +333,13 @@ bool IsJavascriptEnabled(content::WebContents* contents) {
 void CopyPluginListAndQuit(std::vector<webkit::WebPluginInfo>* out,
                            const std::vector<webkit::WebPluginInfo>& in) {
   *out = in;
-  MessageLoop::current()->QuitWhenIdle();
+  base::MessageLoop::current()->QuitWhenIdle();
 }
 
 template<typename T>
 void CopyValueAndQuit(T* out, T in) {
   *out = in;
-  MessageLoop::current()->QuitWhenIdle();
+  base::MessageLoop::current()->QuitWhenIdle();
 }
 
 void GetPluginList(std::vector<webkit::WebPluginInfo>* plugins) {
@@ -429,9 +441,10 @@ class PolicyTest : public InProcessBrowserTest {
   virtual ~PolicyTest() {}
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    CommandLine::ForCurrentProcess()->AppendSwitch("noerrdialogs");
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
-    EXPECT_CALL(provider_, RegisterPolicyDomain(_, _)).Times(AnyNumber());
+    EXPECT_CALL(provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
     BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
   }
 
@@ -449,7 +462,7 @@ class PolicyTest : public InProcessBrowserTest {
     BrowserThread::PostTaskAndReply(
         BrowserThread::IO, FROM_HERE,
         base::Bind(URLRequestMockHTTPJob::AddUrlHandler, root_http),
-        MessageLoop::current()->QuitWhenIdleClosure());
+        base::MessageLoop::current()->QuitWhenIdleClosure());
     content::RunMessageLoop();
   }
 
@@ -518,7 +531,7 @@ class PolicyTest : public InProcessBrowserTest {
         BrowserThread::IO,
         FROM_HERE,
         base::Bind(base::DoNothing),
-        MessageLoop::QuitClosure());
+        base::MessageLoop::QuitClosure());
     content::RunMessageLoop();
   }
 #endif
@@ -548,6 +561,20 @@ class PolicyTest : public InProcessBrowserTest {
     return details.ptr();
   }
 
+  void LoadUnpackedExtension(
+      const base::FilePath::StringType& name, bool expect_success) {
+    base::FilePath extension_path(ui_test_utils::GetTestFilePath(
+        base::FilePath(kTestExtensionsDir), base::FilePath(name)));
+    scoped_refptr<extensions::UnpackedInstaller> installer =
+        extensions::UnpackedInstaller::Create(extension_service());
+    content::WindowedNotificationObserver observer(
+        expect_success ? chrome::NOTIFICATION_EXTENSION_LOADED
+                       : chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
+        content::NotificationService::AllSources());
+    installer->Load(extension_path);
+    observer.Wait();
+  }
+
   void UninstallExtension(const std::string& id, bool expect_success) {
     content::WindowedNotificationObserver observer(
         expect_success ? chrome::NOTIFICATION_EXTENSION_UNINSTALLED
@@ -559,7 +586,7 @@ class PolicyTest : public InProcessBrowserTest {
 
   void UpdateProviderPolicy(const PolicyMap& policy) {
     provider_.UpdateChromePolicy(policy);
-    DCHECK(MessageLoop::current());
+    DCHECK(base::MessageLoop::current());
     base::RunLoop loop;
     loop.RunUntilIdle();
   }
@@ -660,7 +687,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, BookmarkBarEnabled) {
   EXPECT_EQ(BookmarkBar::DETACHED, browser()->bookmark_bar_state());
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_PRE_ClearSiteDataOnExit) {
+IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_PRE_DefaultCookiesSetting) {
   // Verifies that cookies are deleted on shutdown. This test is split in 3
   // parts because it spans 2 browser restarts.
 
@@ -675,17 +702,17 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_PRE_ClearSiteDataOnExit) {
   EXPECT_EQ(kCookieValue, GetCookies(profile, url));
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_ClearSiteDataOnExit) {
+IN_PROC_BROWSER_TEST_F(PolicyTest, PRE_DefaultCookiesSetting) {
   // Verify that the cookie persists across restarts.
   EXPECT_EQ(kCookieValue, GetCookies(browser()->profile(), GURL(kURL)));
   // Now set the policy and the cookie should be gone after another restart.
   PolicyMap policies;
-  policies.Set(key::kClearSiteDataOnExit, POLICY_LEVEL_MANDATORY,
-               POLICY_SCOPE_USER, base::Value::CreateBooleanValue(true));
+  policies.Set(key::kDefaultCookiesSetting, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER, base::Value::CreateIntegerValue(4));
   UpdateProviderPolicy(policies);
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, ClearSiteDataOnExit) {
+IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultCookiesSetting) {
   // Verify that the cookie is gone.
   EXPECT_TRUE(GetCookies(browser()->profile(), GURL(kURL)).empty());
 }
@@ -755,7 +782,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   EXPECT_EQ(expected, web_contents->GetURL());
 
   // Verify that searching from the omnibox can be disabled.
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   policies.Set(key::kDefaultSearchProviderEnabled, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(false));
   EXPECT_TRUE(service->GetDefaultSearchProvider());
@@ -764,7 +791,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "should not work");
   // This means that submitting won't trigger any action.
   EXPECT_FALSE(model->CurrentMatch().destination_url.is_valid());
-  EXPECT_EQ(GURL(chrome::kAboutBlankURL), web_contents->GetURL());
+  EXPECT_EQ(GURL(content::kAboutBlankURL), web_contents->GetURL());
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
@@ -887,51 +914,55 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   LocationBar* location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/?espv=1#q=foobar");
-  OmniboxEditModel* model = location_bar->GetLocationEntry()->model();
-  EXPECT_TRUE(model->CurrentMatch().destination_url.is_valid());
-  EXPECT_EQ(ASCIIToUTF16("foobar"), model->CurrentMatch().contents);
+  EXPECT_NE(ToolbarModel::NO_SEARCH_TERMS,
+            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_EQ(ASCIIToUTF16("foobar"),
+            location_bar->GetLocationEntry()->GetText());
 
   // Verify that not using espv=1 does not do search term replacement.
   chrome::FocusLocationBar(browser());
   location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/?q=foobar");
-  model = location_bar->GetLocationEntry()->model();
-  EXPECT_TRUE(model->CurrentMatch().destination_url.is_valid());
+  EXPECT_EQ(ToolbarModel::NO_SEARCH_TERMS,
+            browser()->toolbar_model()->GetSearchTermsType());
   EXPECT_EQ(ASCIIToUTF16("https://www.google.com/?q=foobar"),
-            model->CurrentMatch().contents);
+            location_bar->GetLocationEntry()->GetText());
 
   // Verify that searching from the omnibox does search term replacement with
   // second URL pattern.
   chrome::FocusLocationBar(browser());
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?espv=1#q=banana");
-  model = location_bar->GetLocationEntry()->model();
-  EXPECT_TRUE(model->CurrentMatch().destination_url.is_valid());
-  EXPECT_EQ(ASCIIToUTF16("banana"), model->CurrentMatch().contents);
+  EXPECT_NE(ToolbarModel::NO_SEARCH_TERMS,
+            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_EQ(ASCIIToUTF16("banana"),
+            location_bar->GetLocationEntry()->GetText());
 
   // Verify that searching from the omnibox does search term replacement with
   // standard search URL pattern.
   chrome::FocusLocationBar(browser());
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?q=tractor+parts&espv=1");
-  model = location_bar->GetLocationEntry()->model();
-  EXPECT_TRUE(model->CurrentMatch().destination_url.is_valid());
-  EXPECT_EQ(ASCIIToUTF16("tractor parts"), model->CurrentMatch().contents);
+  EXPECT_NE(ToolbarModel::NO_SEARCH_TERMS,
+            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_EQ(ASCIIToUTF16("tractor parts"),
+            location_bar->GetLocationEntry()->GetText());
 
   // Verify that searching from the omnibox prioritizes hash over query.
   chrome::FocusLocationBar(browser());
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?q=tractor+parts&espv=1#q=foobar");
-  model = location_bar->GetLocationEntry()->model();
-  EXPECT_TRUE(model->CurrentMatch().destination_url.is_valid());
-  EXPECT_EQ(ASCIIToUTF16("foobar"), model->CurrentMatch().contents);
+  EXPECT_NE(ToolbarModel::NO_SEARCH_TERMS,
+            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_EQ(ASCIIToUTF16("foobar"),
+            location_bar->GetLocationEntry()->GetText());
 }
 
 // The linux and win  bots can't create a GL context. http://crbug.com/103379
 #if defined(OS_MACOSX)
 IN_PROC_BROWSER_TEST_F(PolicyTest, Disable3DAPIs) {
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   // WebGL is enabled by default.
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
@@ -1280,12 +1311,12 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
 
   // Extensions that are force-installed come from an update URL, which defaults
   // to the webstore. Use a mock URL for this test with an update manifest
-  // that includes "good.crx".
+  // that includes "good_v1.crx".
   base::FilePath path =
-      base::FilePath(kTestExtensionsDir).Append(kGoodCrxManifestName);
+      base::FilePath(kTestExtensionsDir).Append(kGoodV1CrxManifestName);
   GURL url(URLRequestMockHTTPJob::GetMockUrl(path));
 
-  // Setting the forcelist extension should install "good.crx".
+  // Setting the forcelist extension should install "good_v1.crx".
   base::ListValue forcelist;
   forcelist.Append(base::Value::CreateStringValue(base::StringPrintf(
       "%s;%s", kGoodCrxId, url.spec().c_str())));
@@ -1305,6 +1336,44 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
 
   // The user is not allowed to uninstall force-installed extensions.
   UninstallExtension(kGoodCrxId, false);
+
+  // The user is not allowed to load an unpacked extension with the
+  // same ID as a force-installed extension.
+  LoadUnpackedExtension(kGoodUnpackedExt, false);
+
+  // Loading other unpacked extensions are not blocked.
+  LoadUnpackedExtension(kAppUnpackedExt, true);
+
+  const std::string old_version_number =
+      service->GetExtensionById(kGoodCrxId, true)->version()->GetString();
+
+  base::FilePath test_path;
+  ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_path));
+
+  TestRequestInterceptor interceptor("update.extension");
+  interceptor.PushJobCallback(
+      TestRequestInterceptor::FileJob(
+          test_path.Append(kTestExtensionsDir).Append(kGood2CrxManifestName)));
+
+  // Updating the force-installed extension.
+  extensions::ExtensionUpdater* updater = service->updater();
+  extensions::ExtensionUpdater::CheckParams params;
+  params.install_immediately = true;
+  content::WindowedNotificationObserver update_observer(
+      chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      content::NotificationService::AllSources());
+  updater->CheckNow(params);
+  update_observer.Wait();
+
+  const base::Version* new_version =
+      service->GetExtensionById(kGoodCrxId, true)->version();
+  ASSERT_TRUE(new_version->IsValid());
+  base::Version old_version(old_version_number);
+  ASSERT_TRUE(old_version.IsValid());
+
+  EXPECT_EQ(1, new_version->CompareTo(old_version));
+
+  EXPECT_EQ(0u, interceptor.GetPendingSize());
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionAllowedTypes) {
@@ -1392,7 +1461,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, HomepageLocation) {
             browser()->profile()->GetHomePage());
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_EQ(GURL(chrome::kAboutBlankURL), contents->GetURL());
+  EXPECT_EQ(GURL(content::kAboutBlankURL), contents->GetURL());
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_HOME));
   EXPECT_EQ(GURL(chrome::kChromeUIPolicyURL), contents->GetURL());
 
@@ -1456,7 +1525,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, Javascript) {
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(false));
   UpdateProviderPolicy(policies);
   // Reload the page.
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   EXPECT_FALSE(IsJavascriptEnabled(contents));
   // Developer tools still work when javascript is disabled.
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_DEV_TOOLS));
@@ -1466,13 +1535,13 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, Javascript) {
   EXPECT_TRUE(IsJavascriptEnabled(contents));
 
   // The javascript content setting policy overrides the javascript policy.
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   EXPECT_FALSE(IsJavascriptEnabled(contents));
   policies.Set(key::kDefaultJavaScriptSetting, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER,
                base::Value::CreateIntegerValue(CONTENT_SETTING_ALLOW));
   UpdateProviderPolicy(policies);
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   EXPECT_TRUE(IsJavascriptEnabled(contents));
 }
 
@@ -1501,7 +1570,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, SavingBrowserHistoryDisabled) {
   EXPECT_EQ(url, enumerator2.urls()[0]);
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, TranslateEnabled) {
+// http://crbug.com/241691 PolicyTest.TranslateEnabled is failing regularly.
+IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_TranslateEnabled) {
   // Verifies that translate can be forced enabled or disabled by policy.
 
   // Get the InfoBarService, and verify that there are no infobars on startup.
@@ -1537,7 +1607,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, TranslateEnabled) {
   ASSERT_TRUE(translate_tab_helper);
   LanguageState& language_state = translate_tab_helper->language_state();
   EXPECT_EQ("fr", language_state.original_language());
-  EXPECT_TRUE(language_state.page_translatable());
+  EXPECT_TRUE(language_state.page_needs_translation());
   EXPECT_FALSE(language_state.translation_pending());
   EXPECT_FALSE(language_state.translation_declined());
   EXPECT_FALSE(language_state.IsPageTranslated());
@@ -1960,14 +2030,53 @@ class MediaStreamDevicesControllerBrowserTest
     : public PolicyTest,
       public testing::WithParamInterface<bool> {
  public:
-  MediaStreamDevicesControllerBrowserTest() {
+  MediaStreamDevicesControllerBrowserTest()
+      : request_url_allowed_via_whitelist_(false) {
     policy_value_ = GetParam();
   }
   virtual ~MediaStreamDevicesControllerBrowserTest() {}
 
+  // Configure a given policy map.
+  // The |policy_name| is the name of either the audio or video capture allow
+  // policy and must never be NULL.
+  // |whitelist_policy| and |allow_rule| are optional.  If NULL, no whitelist
+  // policy is set.  If non-NULL, the request_url_ will be set to be non empty
+  // and the whitelist policy is set to contain either the |allow_rule| (if
+  // non-NULL) or an "allow all" wildcard.
+  void ConfigurePolicyMap(PolicyMap* policies, const char* policy_name,
+                          const char* whitelist_policy,
+                          const char* allow_rule) {
+    policies->Set(policy_name, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+        base::Value::CreateBooleanValue(policy_value_));
+
+    if (whitelist_policy) {
+      // TODO(tommi): Remove the kiosk mode flag when the whitelist is visible
+      // in the media exceptions UI.
+      // See discussion here: https://codereview.chromium.org/15738004/
+      CommandLine::ForCurrentProcess()->AppendSwitch(switches::kKioskMode);
+
+      // Add an entry to the whitelist that allows the specified URL regardless
+      // of the setting of kAudioCapturedAllowed.
+      request_url_ = GURL("http://www.example.com/foo");
+      base::ListValue* list = new base::ListValue();
+      if (allow_rule) {
+        list->AppendString(allow_rule);
+        request_url_allowed_via_whitelist_ = true;
+      } else {
+        list->AppendString(ContentSettingsPattern::Wildcard().ToString());
+        // We should ignore all wildcard entries in the whitelist, so even
+        // though we've added an entry, it should be ignored and our expectation
+        // is that the request has not been allowed via the whitelist.
+        request_url_allowed_via_whitelist_ = false;
+      }
+      policies->Set(whitelist_policy, POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_USER, list);
+    }
+  }
+
   void Accept(const content::MediaStreamDevices& devices,
               scoped_ptr<content::MediaStreamUI> ui) {
-    if (policy_value_) {
+    if (policy_value_ || request_url_allowed_via_whitelist_) {
       ASSERT_EQ(1U, devices.size());
       ASSERT_EQ("fake_dev", devices[0].id);
     } else {
@@ -1976,7 +2085,7 @@ class MediaStreamDevicesControllerBrowserTest
   }
 
   void FinishAudioTest() {
-    content::MediaStreamRequest request(0, 0, GURL(),
+    content::MediaStreamRequest request(0, 0, request_url_.GetOrigin(),
                                         content::MEDIA_OPEN_DEVICE, "fake_dev",
                                         content::MEDIA_DEVICE_AUDIO_CAPTURE,
                                         content::MEDIA_NO_SERVICE);
@@ -1985,11 +2094,11 @@ class MediaStreamDevicesControllerBrowserTest
         base::Bind(&MediaStreamDevicesControllerBrowserTest::Accept, this));
     controller.DismissInfoBarAndTakeActionOnSettings();
 
-    MessageLoop::current()->QuitWhenIdle();
+    base::MessageLoop::current()->QuitWhenIdle();
   }
 
   void FinishVideoTest() {
-    content::MediaStreamRequest request(0, 0, GURL(),
+    content::MediaStreamRequest request(0, 0, request_url_.GetOrigin(),
                                         content::MEDIA_OPEN_DEVICE, "fake_dev",
                                         content::MEDIA_NO_SERVICE,
                                         content::MEDIA_DEVICE_VIDEO_CAPTURE);
@@ -1998,11 +2107,18 @@ class MediaStreamDevicesControllerBrowserTest
         base::Bind(&MediaStreamDevicesControllerBrowserTest::Accept, this));
     controller.DismissInfoBarAndTakeActionOnSettings();
 
-    MessageLoop::current()->QuitWhenIdle();
+    base::MessageLoop::current()->QuitWhenIdle();
   }
 
   bool policy_value_;
+  bool request_url_allowed_via_whitelist_;
+  GURL request_url_;
+  static const char kExampleRequestPattern[];
 };
+
+// static
+const char MediaStreamDevicesControllerBrowserTest::kExampleRequestPattern[] =
+    "http://[*.]example.com/";
 
 IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
                        AudioCaptureAllowed) {
@@ -2012,9 +2128,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
   audio_devices.push_back(fake_audio_device);
 
   PolicyMap policies;
-  policies.Set(key::kAudioCaptureAllowed, POLICY_LEVEL_MANDATORY,
-               POLICY_SCOPE_USER,
-               base::Value::CreateBooleanValue(policy_value_));
+  ConfigurePolicyMap(&policies, key::kAudioCaptureAllowed, NULL, NULL);
   UpdateProviderPolicy(policies);
 
   content::BrowserThread::PostTaskAndReply(
@@ -2025,7 +2139,42 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
       base::Bind(&MediaStreamDevicesControllerBrowserTest::FinishAudioTest,
                  this));
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
+}
+
+IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
+                       AudioCaptureAllowedUrls) {
+  content::MediaStreamDevices audio_devices;
+  content::MediaStreamDevice fake_audio_device(
+      content::MEDIA_DEVICE_AUDIO_CAPTURE, "fake_dev", "Fake Audio Device");
+  audio_devices.push_back(fake_audio_device);
+
+  const char* allow_pattern[] = {
+    kExampleRequestPattern,
+    // This will set an allow-all policy whitelist.  Since we do not allow
+    // setting an allow-all entry in the whitelist, this entry should be ignored
+    // and therefore the request should be denied.
+    NULL,
+  };
+
+  for (size_t i = 0; i < arraysize(allow_pattern); ++i) {
+    PolicyMap policies;
+    ConfigurePolicyMap(&policies, key::kAudioCaptureAllowed,
+                       key::kAudioCaptureAllowedUrls, allow_pattern[i]);
+    UpdateProviderPolicy(policies);
+
+    content::BrowserThread::PostTaskAndReply(
+        content::BrowserThread::IO, FROM_HERE,
+        base::Bind(
+            &MediaCaptureDevicesDispatcher::OnAudioCaptureDevicesChanged,
+            base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
+            audio_devices),
+        base::Bind(
+            &MediaStreamDevicesControllerBrowserTest::FinishAudioTest,
+            this));
+
+    MessageLoop::current()->Run();
+  }
 }
 
 IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
@@ -2036,9 +2185,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
   video_devices.push_back(fake_video_device);
 
   PolicyMap policies;
-  policies.Set(key::kVideoCaptureAllowed, POLICY_LEVEL_MANDATORY,
-               POLICY_SCOPE_USER,
-               base::Value::CreateBooleanValue(policy_value_));
+  ConfigurePolicyMap(&policies, key::kVideoCaptureAllowed, NULL, NULL);
   UpdateProviderPolicy(policies);
 
   content::BrowserThread::PostTaskAndReply(
@@ -2049,7 +2196,42 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
       base::Bind(&MediaStreamDevicesControllerBrowserTest::FinishVideoTest,
                  this));
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
+}
+
+IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
+                       VideoCaptureAllowedUrls) {
+  content::MediaStreamDevices video_devices;
+  content::MediaStreamDevice fake_video_device(
+      content::MEDIA_DEVICE_VIDEO_CAPTURE, "fake_dev", "Fake Video Device");
+  video_devices.push_back(fake_video_device);
+
+  const char* allow_pattern[] = {
+    kExampleRequestPattern,
+    // This will set an allow-all policy whitelist.  Since we do not allow
+    // setting an allow-all entry in the whitelist, this entry should be ignored
+    // and therefore the request should be denied.
+    NULL,
+  };
+
+  for (size_t i = 0; i < arraysize(allow_pattern); ++i) {
+    PolicyMap policies;
+    ConfigurePolicyMap(&policies, key::kVideoCaptureAllowed,
+                       key::kVideoCaptureAllowedUrls, allow_pattern[i]);
+    UpdateProviderPolicy(policies);
+
+    content::BrowserThread::PostTaskAndReply(
+        content::BrowserThread::IO, FROM_HERE,
+        base::Bind(
+            &MediaCaptureDevicesDispatcher::OnVideoCaptureDevicesChanged,
+            base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
+            video_devices),
+        base::Bind(
+            &MediaStreamDevicesControllerBrowserTest::FinishVideoTest,
+            this));
+
+    MessageLoop::current()->Run();
+  }
 }
 
 INSTANTIATE_TEST_CASE_P(MediaStreamDevicesControllerBrowserTestInstance,

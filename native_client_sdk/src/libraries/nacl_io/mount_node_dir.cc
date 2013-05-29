@@ -27,7 +27,7 @@ int MountNodeDir::Read(size_t offs, void *buf, size_t count) {
   return -1;
 }
 
-int MountNodeDir::Truncate(size_t size) {
+int MountNodeDir::FTruncate(off_t size) {
   errno = EISDIR;
   return -1;
 }
@@ -129,6 +129,7 @@ void MountNodeDir::BuildCache() {
       MountNode* node = it->second;
       size_t len = it->first.length();
       cache_[index].d_ino = node->stat_.st_ino;
+      cache_[index].d_off = sizeof(struct dirent);
       cache_[index].d_reclen = sizeof(struct dirent);
       cache_[index].d_name[len] = 0;
       strncpy(cache_[index].d_name, &it->first[0], len);

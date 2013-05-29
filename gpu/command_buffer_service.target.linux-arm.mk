@@ -30,6 +30,7 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/async_pixel_transfer_delegate.cc \
 	gpu/command_buffer/service/async_pixel_transfer_delegate_android.cc \
 	gpu/command_buffer/service/async_pixel_transfer_delegate_idle.cc \
+	gpu/command_buffer/service/async_pixel_transfer_delegate_share_group.cc \
 	gpu/command_buffer/service/async_pixel_transfer_delegate_stub.cc \
 	gpu/command_buffer/service/async_pixel_transfer_delegate_sync.cc \
 	gpu/command_buffer/service/buffer_manager.cc \
@@ -112,6 +113,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -147,14 +149,14 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(LOCAL_PATH)/third_party/re2 \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

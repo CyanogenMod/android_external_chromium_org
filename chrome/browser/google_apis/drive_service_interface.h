@@ -95,6 +95,10 @@ class DriveServiceInterface {
   // the operation was found and canceled.
   virtual bool CancelForFilePath(const base::FilePath& file_path) = 0;
 
+  // Converts the given resource ID into the desired format.
+  virtual std::string CanonicalizeResourceId(
+      const std::string& resource_id) const = 0;
+
   // Authentication service:
 
   // True if OAuth2 access token is retrieved and believed to be fresh.
@@ -209,12 +213,26 @@ class DriveServiceInterface {
                               const std::string& etag,
                               const EntryActionCallback& callback) = 0;
 
+  // Makes a copy of a resource with |resource_id|.
+  // The new resource will be put under a directory with |parent_resource_id|,
+  // and it'll be named |new_name|.
+  // This operation is supported only on DriveAPIService, because GData WAPI
+  // doesn't support the function unfortunately.
+  // Upon completion, invokes |callback| with results on the calling thread.
+  // |callback| must not be null.
+  virtual void CopyResource(const std::string& resource_id,
+                            const std::string& parent_resource_id,
+                            const std::string& new_name,
+                            const GetResourceEntryCallback& callback) = 0;
+
   // Makes a copy of a hosted document identified by its |resource_id|.
   // The copy is named as the UTF-8 encoded |new_name| and is not added to any
   // collection. Use AddResourceToDirectory() to add the copy to a collection
   // when needed. Upon completion, invokes |callback| with results on the
   // calling thread.
   // |callback| must not be null.
+  // TODO(hidehiko): After the migration to Drive API v2, remove this method,
+  // because we can use CopyResource instead.
   virtual void CopyHostedDocument(
       const std::string& resource_id,
       const std::string& new_name,
@@ -227,6 +245,16 @@ class DriveServiceInterface {
   virtual void RenameResource(const std::string& resource_id,
                               const std::string& new_name,
                               const EntryActionCallback& callback) = 0;
+
+  // Touches the resource with |resource_id|.
+  // Its modifiedDate and lastViewedByMeDate fields on the server will be
+  // updated to |modified_date| and |last_viewed_by_me_date| respectively.
+  // Upon completion, invokes |callback| with the updated resource data.
+  // |modified_date|, |last_viewed_by_me_date| and |callback| must not be null.
+  virtual void TouchResource(const std::string& resource_id,
+                             const base::Time& modified_date,
+                             const base::Time& last_viewed_by_me_date,
+                             const GetResourceEntryCallback& callback) = 0;
 
   // Adds a resource (document, file, or collection) identified by its
   // |resource_id| to a collection represented by the |parent_resource_id|.
@@ -303,7 +331,6 @@ class DriveServiceInterface {
   // Resumes uploading of a document/file on the calling thread.
   // |callback| must not be null. |progress_callback| may be null.
   virtual void ResumeUpload(
-      UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_url,
       int64 start_position,
@@ -315,11 +342,10 @@ class DriveServiceInterface {
       const ProgressCallback& progress_callback) = 0;
 
   // Gets the current status of the uploading to |upload_url| from the server.
-  // |upload_mode|, |drive_file_path| and |content_length| should be set to
-  // the same value which is used for ResumeUpload.
+  // |drive_file_path| and |content_length| should be set to the same value
+  // which is used for ResumeUpload.
   // |callback| must not be null.
   virtual void GetUploadStatus(
-      UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_url,
       int64 content_length,

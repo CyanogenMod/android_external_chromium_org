@@ -76,16 +76,16 @@ class QuicNetworkTransactionTest : public PlatformTest {
 
   virtual void SetUp() {
     NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   virtual void TearDown() {
     NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
     // Empty the current queue.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     PlatformTest::TearDown();
     NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     HttpStreamFactory::set_use_alternate_protocols(false);
     HttpStreamFactory::SetNextProtos(std::vector<std::string>());
   }
@@ -180,11 +180,8 @@ class QuicNetworkTransactionTest : public PlatformTest {
   }
 
   std::string SerializeHeaderBlock(const SpdyHeaderBlock& headers) {
-    size_t len = SpdyFramer::GetSerializedLength(3, &headers);
-    SpdyFrameBuilder builder(len);
-    SpdyFramer::WriteHeaderBlock(&builder, 3, &headers);
-    scoped_ptr<SpdyFrame> frame(builder.take());
-    return std::string(frame->data(), len);
+    QuicSpdyCompressor compressor;
+    return compressor.CompressHeaders(headers);
   }
 
   // Returns a newly created packet to send kData on stream 1.
@@ -404,6 +401,26 @@ TEST_F(QuicNetworkTransactionTest, ForceQuic) {
   int log_stream_id;
   ASSERT_TRUE(entries[pos].GetIntegerValue("stream_id", &log_stream_id));
   EXPECT_EQ(stream_id, static_cast<QuicStreamId>(log_stream_id));
+}
+
+TEST_F(QuicNetworkTransactionTest, ForceQuicWithErrorConnecting) {
+  params_.origin_port_to_force_quic_on = 80;
+
+  MockRead quic_reads[] = {
+    MockRead(ASYNC, ERR_SOCKET_NOT_CONNECTED),
+  };
+  StaticSocketDataProvider quic_data(quic_reads, arraysize(quic_reads),
+                                     NULL, 0);
+  socket_factory_.AddSocketDataProvider(&quic_data);
+
+  CreateSession();
+
+  scoped_ptr<HttpNetworkTransaction> trans(
+      new HttpNetworkTransaction(DEFAULT_PRIORITY, session_));
+  TestCompletionCallback callback;
+  int rv = trans->Start(&request_, callback.callback(), net_log_.bound());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(ERR_SOCKET_NOT_CONNECTED, callback.WaitForResult());
 }
 
 TEST_F(QuicNetworkTransactionTest, DoNotForceQuicForHttps) {

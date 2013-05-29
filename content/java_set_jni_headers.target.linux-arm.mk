@@ -15,12 +15,12 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "generate_jni_headers_from_jar_file":
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/android.jar $(GYP_TARGET_DEPENDENCIES)
-	@echo "Gyp action: Generating JNI bindings from  $(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/android.jar/java/util/HashSet.class ($@)"
-	$(hide)cd $(gyp_local_path)/content; mkdir -p $(gyp_shared_intermediate_dir)/content/jni; ../base/android/jni_generator/jni_generator.py -j "$(GYP_ABS_ANDROID_TOP_DIR)/prebuilts/sdk/17/android.jar" --input_file java/util/HashSet.class --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0
+$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(PWD)/prebuilts/sdk/17/android.jar $(GYP_TARGET_DEPENDENCIES)
+	@echo "Gyp action: Generating JNI bindings from  $(PWD)/prebuilts/sdk/17/android.jar/java/util/HashSet.class ($@)"
+	$(hide)cd $(gyp_local_path)/content; mkdir -p $(gyp_shared_intermediate_dir)/content/jni; ../base/android/jni_generator/jni_generator.py -j "$(PWD)/prebuilts/sdk/17/android.jar" --input_file java/util/HashSet.class --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0
 
 
 
@@ -80,6 +80,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -101,9 +102,9 @@ LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES := \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

@@ -10,11 +10,12 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
+#include "chrome/browser/ui/autofill/autofill_dialog_sign_in_delegate.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager_delegate.h"
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/wallet/wallet_service_url.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
+#include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
@@ -32,6 +33,7 @@
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/combobox/combobox.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
@@ -47,6 +49,8 @@
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
+
+using web_modal::WebContentsModalDialogManager;
 
 namespace autofill {
 
@@ -420,8 +424,6 @@ AutofillDialogViews::AccountChooser::~AccountChooser() {}
 void AutofillDialogViews::AccountChooser::Update() {
   gfx::Image icon = controller_->AccountChooserImage();
   image_->SetImage(icon.AsImageSkia());
-  // Hack around http://crbug.com/239932
-  image_->SetVisible(!icon.IsEmpty());
   label_->SetText(controller_->AccountChooserText());
 
   bool show_link = !controller_->MenuModelForAccountChooser();
@@ -502,18 +504,20 @@ void AutofillDialogViews::NotificationArea::SetNotifications(
       checkbox_ = checkbox.get();
       // We have to do this instead of using set_border() because a border
       // is being used to draw the check square.
-      static_cast<views::CheckboxNativeThemeBorder*>(checkbox->border())->
-          SetCustomInsets(gfx::Insets(kNotificationPadding,
-                                      kNotificationPadding,
-                                      kNotificationPadding,
-                                      kNotificationPadding));
+      static_cast<views::LabelButtonBorder*>(checkbox->border())->
+          set_insets(gfx::Insets(kNotificationPadding,
+                                 kNotificationPadding,
+                                 kNotificationPadding,
+                                 kNotificationPadding));
       if (!notification.interactive())
         checkbox->SetState(views::Button::STATE_DISABLED);
       checkbox->SetText(notification.display_text());
-      checkbox->SetMultiLine(true);
-      checkbox->set_alignment(views::TextButtonBase::ALIGN_LEFT);
-      checkbox->SetEnabledColor(notification.GetTextColor());
-      checkbox->SetHoverColor(notification.GetTextColor());
+      checkbox->SetTextMultiLine(true);
+      checkbox->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+      checkbox->SetTextColor(views::Button::STATE_NORMAL,
+                             notification.GetTextColor());
+      checkbox->SetTextColor(views::Button::STATE_HOVERED,
+                             notification.GetTextColor());
       checkbox->SetChecked(notification.checked());
       checkbox->set_listener(this);
       view.reset(checkbox.release());
@@ -848,6 +852,16 @@ void AutofillDialogViews::Show() {
   focus_manager_ = window_->GetFocusManager();
   focus_manager_->AddFocusChangeListener(this);
 
+#if defined(OS_WIN) && !defined(USE_AURA)
+  // On non-Aura Windows a standard accelerator gets registered that will
+  // navigate on a backspace. Override that here.
+  // TODO(abodenha): Remove this when no longer needed. See
+  // http://crbug.com/242584.
+  ui::Accelerator backspace(ui::VKEY_BACK, ui::EF_NONE);
+  focus_manager_->RegisterAccelerator(
+      backspace, ui::AcceleratorManager::kNormalPriority, this);
+#endif
+
   // Listen for size changes on the browser.
   views::Widget* browser_widget =
       views::Widget::GetTopLevelWidgetForNativeView(
@@ -965,9 +979,7 @@ const content::NavigationController* AutofillDialogViews::ShowSignIn() {
   // to navigate instead of LoadInitialURL.  Figure out why it doesn't work.
 
   sign_in_webview_->LoadInitialURL(wallet::GetSignInUrl());
-  // TODO(abodenha) Resize the dialog to avoid the need for a scroll bar on
-  // sign in. See http://crbug.com/169286
-  sign_in_webview_->SetPreferredSize(contents_->GetPreferredSize());
+
   main_container_->SetVisible(false);
   sign_in_webview_->SetVisible(true);
   UpdateButtonStrip();
@@ -1049,6 +1061,23 @@ void AutofillDialogViews::ActivateInput(const DetailInput& input) {
   TextfieldEditedOrActivated(TextfieldForInput(input), false);
 }
 
+void AutofillDialogViews::OnSignInResize(const gfx::Size& pref_size) {
+  sign_in_webview_->SetPreferredSize(pref_size);
+  ContentsPreferredSizeChanged();
+}
+
+bool AutofillDialogViews::AcceleratorPressed(
+    const ui::Accelerator& accelerator) {
+  ui::KeyboardCode key = accelerator.key_code();
+  if (key == ui::VKEY_BACK)
+    return true;
+  return false;
+}
+
+bool AutofillDialogViews::CanHandleAccelerators() const {
+  return true;
+}
+
 string16 AutofillDialogViews::GetWindowTitle() const {
   return controller_->DialogTitle();
 }
@@ -1079,7 +1108,7 @@ int AutofillDialogViews::GetDialogButtons() const {
   if (sign_in_webview_->visible())
     return ui::DIALOG_BUTTON_NONE;
 
-  return ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL;
+  return controller_->GetDialogButtons();
 }
 
 string16 AutofillDialogViews::GetDialogButtonLabel(ui::DialogButton button)
@@ -1256,6 +1285,7 @@ void AutofillDialogViews::InitChildViews() {
 
   save_in_chrome_checkbox_ =
       new views::Checkbox(controller_->SaveLocallyText());
+  save_in_chrome_checkbox_->SetChecked(true);
   button_strip_extra_view_->AddChildView(save_in_chrome_checkbox_);
 
   autocheckout_progress_bar_view_ = new views::View();
@@ -1280,6 +1310,9 @@ void AutofillDialogViews::InitChildViews() {
   sign_in_webview_ = new views::WebView(controller_->profile());
   sign_in_webview_->SetVisible(false);
   contents_->AddChildView(sign_in_webview_);
+  sign_in_delegate_.reset(
+      new AutofillDialogSignInDelegate(this,
+                                       sign_in_webview_->GetWebContents()));
 }
 
 views::View* AutofillDialogViews::CreateMainContainer() {
@@ -1473,6 +1506,7 @@ void AutofillDialogViews::UpdateSectionImpl(
 
     if (text_mapping != group->textfields.end()) {
       views::Textfield* textfield = text_mapping->second->textfield();
+      textfield->SetEnabled(input.editable);
       if (textfield->text().empty() || clobber_inputs) {
         textfield->SetText(iter->initial_value);
         textfield->SetIcon(controller_->IconForField(
@@ -1483,6 +1517,7 @@ void AutofillDialogViews::UpdateSectionImpl(
     ComboboxMap::iterator combo_mapping = group->comboboxes.find(&input);
     if (combo_mapping != group->comboboxes.end()) {
       views::Combobox* combobox = combo_mapping->second;
+      combobox->SetEnabled(input.editable);
       if (combobox->selected_index() == combobox->model()->GetDefaultIndex() ||
           clobber_inputs) {
         for (int i = 0; i < combobox->model()->GetItemCount(); ++i) {
@@ -1586,6 +1621,9 @@ bool AutofillDialogViews::ValidateGroup(
   if (group.manual_input->visible()) {
     for (TextfieldMap::const_iterator iter = group.textfields.begin();
          iter != group.textfields.end(); ++iter) {
+      if (!iter->first->editable)
+        continue;
+
       detail_outputs[iter->first] = iter->second->textfield()->text();
       field_map[iter->first->type] = base::Bind(
           &AutofillDialogViews::SetValidityForInput<DecoratedTextfield>,
@@ -1594,6 +1632,9 @@ bool AutofillDialogViews::ValidateGroup(
     }
     for (ComboboxMap::const_iterator iter = group.comboboxes.begin();
          iter != group.comboboxes.end(); ++iter) {
+      if (!iter->first->editable)
+        continue;
+
       views::Combobox* combobox = iter->second;
       string16 item =
           combobox->model()->GetItemAt(combobox->selected_index());

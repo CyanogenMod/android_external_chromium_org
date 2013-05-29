@@ -10,21 +10,21 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/startup_task_runner_service.h"
 #include "chrome/browser/profiles/startup_task_runner_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 // static
 BookmarkModel* BookmarkModelFactory::GetForProfile(Profile* profile) {
   return static_cast<BookmarkModel*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 BookmarkModel* BookmarkModelFactory::GetForProfileIfExists(Profile* profile) {
   return static_cast<BookmarkModel*>(
-      GetInstance()->GetServiceForProfile(profile, false));
+      GetInstance()->GetServiceForBrowserContext(profile, false));
 }
 
 // static
@@ -33,13 +33,14 @@ BookmarkModelFactory* BookmarkModelFactory::GetInstance() {
 }
 
 BookmarkModelFactory::BookmarkModelFactory()
-    : ProfileKeyedServiceFactory("BookmarkModel",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "BookmarkModel",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 BookmarkModelFactory::~BookmarkModelFactory() {}
 
-ProfileKeyedService* BookmarkModelFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* BookmarkModelFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
   BookmarkModel* bookmark_model = new BookmarkModel(profile);

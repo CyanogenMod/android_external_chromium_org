@@ -117,9 +117,7 @@
         <button id="keyboard-settings-button"
             i18n-content="keyboardSettingsButtonTitle">
         </button>
-        <!-- By default, the display settings are hidden.  They are only visible
-             if more than one display is found. -->
-        <span id="display-options-section" hidden>
+        <span id="display-options-section">
           <button id="display-options" i18n-content="displayOptions">
           </button>
         </span>
@@ -440,6 +438,8 @@
             </option>
           </select>
         </label>
+        <span id="font-size-indicator"
+            class="controlled-setting-indicator"></span>
         <button id="fontSettingsCustomizeFontsButton"
             i18n-content="fontSettingsCustomizeFontsButton"></button>
       </div>
@@ -717,11 +717,14 @@
     </div>
   </section>
 </if>
-  <section id="managed-user-settings-section" hidden>
-    <h3 i18n-content="managedUsersSectionTitle"></h3>
-    <button id="open-managed-user-settings-button"
-        i18n-content="manageProfilesManagedUserSettings">
-    </button>
+  <section id="reset-profile-settings-section" hidden>
+    <h3 i18n-content="resetProfileSettingsSectionTitle"></h3>
+    <div>
+      <span class="settings-row" i18n-content="resetProfileSettingsDescription">
+      </span>
+      <button id="reset-profile-settings" i18n-content="resetProfileSettings">
+      </button>
+    </div>
   </section>
   </div>  <!-- advanced-settings-container -->
   </div>  <!-- advanced-settings -->

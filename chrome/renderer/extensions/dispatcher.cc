@@ -24,6 +24,7 @@
 #include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/api_activity_logger.h"
@@ -621,8 +622,12 @@ void Dispatcher::OnLoaded(
       extension_load_errors_[i->id] = error;
       continue;
     }
-    extensions_.Insert(extension);
+    OnLoadedInternal(extension);
   }
+}
+
+void Dispatcher::OnLoadedInternal(scoped_refptr<const Extension> extension) {
+  extensions_.Insert(extension);
 }
 
 void Dispatcher::OnUnloaded(const std::string& id) {
@@ -1275,7 +1280,7 @@ void Dispatcher::OnUpdatePermissions(int reason_id,
       break;
   }
 
-  extension->SetActivePermissions(new_active);
+  PermissionsData::SetActivePermissions(extension, new_active);
   AddOrRemoveOriginPermissions(reason, extension, explicit_hosts);
 }
 
@@ -1297,7 +1302,8 @@ void Dispatcher::OnUpdateTabSpecificPermissions(
   if (!extension)
     return;
 
-  extension->UpdateTabSpecificPermissions(
+  PermissionsData::UpdateTabSpecificPermissions(
+      extension,
       tab_id,
       new PermissionSet(APIPermissionSet(), origin_set, URLPatternSet()));
 }
@@ -1309,7 +1315,7 @@ void Dispatcher::OnClearTabSpecificPermissions(
        it != extension_ids.end(); ++it) {
     const Extension* extension = extensions_.GetByID(*it);
     if (extension)
-      extension->ClearTabSpecificPermissions(tab_id);
+      PermissionsData::ClearTabSpecificPermissions(extension, tab_id);
   }
 }
 
@@ -1425,6 +1431,8 @@ bool Dispatcher::CheckContextAccessToExtensionAPI(
         "You do not have permission to use '%s'. Be sure to declare"
         " in your manifest what permissions you need.";
     std::string error_msg = base::StringPrintf(kMessage, function_name.c_str());
+    APIActivityLogger::LogBlockedCall(context->extension()->id(),
+                                      function_name);
     v8::ThrowException(
         v8::Exception::Error(v8::String::New(error_msg.c_str())));
     return false;

@@ -8,15 +8,11 @@ include_rules = [
   "+chrome/browser/signin",
 
   # TODO(joi): Get this list to zero.
-  "!chrome/browser/browser_process.h",
   "!chrome/browser/policy/cloud/user_policy_signin_service.h",
   "!chrome/browser/policy/cloud/user_policy_signin_service_factory.h",
   "!chrome/browser/profiles/profile.h",
-  "!chrome/browser/profiles/profile_dependency_manager.h",
   "!chrome/browser/profiles/profile_info_cache.h",
   "!chrome/browser/profiles/profile_io_data.h",
-  "!chrome/browser/profiles/profile_keyed_service.h",
-  "!chrome/browser/profiles/profile_keyed_service_factory.h",
   "!chrome/browser/profiles/profile_manager.h",
   "!chrome/browser/sync/profile_sync_service.h",
   "!chrome/browser/sync/profile_sync_service_android.h",
@@ -34,7 +30,7 @@ include_rules = [
   "!chrome/browser/ui/webui/signin/login_ui_service_factory.h",
   "!chrome/browser/ui/webui/signin/profile_signin_confirmation_dialog.h",
   "!chrome/browser/ui/webui/signin_internals_ui.h",
-  "!chrome/browser/webdata/web_data_service.h",
+  "!chrome/browser/webdata/token_web_data.h",
   "!chrome/browser/webdata/web_data_service_factory.h",
   "!chrome/common/chrome_notification_types.h",
   "!chrome/common/chrome_switches.h",
@@ -47,6 +43,7 @@ include_rules = [
 specific_include_rules = {
   r".*_[a-z]*test\.cc": [
     # TODO(joi): Get this list to zero.
+    "!chrome/browser/browser_process.h",
     "!chrome/browser/prefs/browser_prefs.h",
     "!chrome/browser/sync/profile_sync_service_mock.h",
     "!chrome/browser/ui/browser.h",
@@ -56,7 +53,10 @@ specific_include_rules = {
   ],
 
   # These files are staying in //chrome so no need to limit.
-  r"chrome_signin_manager_delegate\.(h|cc)": [
+  r"(chrome_signin_manager_delegate|"
+  r"signin_names_io_thread.*|"
+  r"signin_manager_factory)"
+  r"\.(h|cc)": [
     "+chrome/browser",
     "+chrome/common",
   ],

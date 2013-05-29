@@ -99,9 +99,6 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "ui/views/focus/view_storage.h"
-#if defined(USE_AURA)
-#include "chrome/browser/metro_viewer/metro_viewer_process_host_win.h"
-#endif
 #elif defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_main_mac.h"
 #endif
@@ -109,12 +106,6 @@
 #if defined(USE_AURA)
 #include "ui/aura/env.h"
 #endif
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/browser_process_platform_part_chromeos.h"
-#else
-#include "chrome/browser/browser_process_platform_part.h"
-#endif  // defined(OS_CHROMEOS)
 
 #if !defined(OS_ANDROID)
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
@@ -126,6 +117,7 @@
 
 #if defined(OS_MACOSX)
 #include "apps/app_shim/app_shim_host_manager_mac.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
 #endif
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
@@ -300,9 +292,9 @@ void BrowserProcessImpl::PostDestroyThreads() {
 // our (other) recent requests (to save preferences).
 // Change the boolean so that the receiving thread will know that we did indeed
 // send the QuitTask that terminated the message loop.
-static void PostQuit(MessageLoop* message_loop) {
+static void PostQuit(base::MessageLoop* message_loop) {
   g_end_session_file_thread_has_completed = true;
-  message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 #elif defined(USE_X11)
 static void Signal(base::WaitableEvent* event) {
@@ -342,14 +334,14 @@ unsigned int BrowserProcessImpl::ReleaseModule() {
     print_job_manager_.reset();
 #endif
 
-    CHECK(MessageLoop::current()->is_running());
+    CHECK(base::MessageLoop::current()->is_running());
 
 #if defined(OS_MACOSX)
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(ChromeBrowserMainPartsMac::DidEndMainMessageLoop));
 #endif
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
   return module_ref_count_;
 }
@@ -391,15 +383,17 @@ void BrowserProcessImpl::EndSession() {
 
 #elif defined(OS_WIN)
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-      base::Bind(PostQuit, MessageLoop::current()));
+      base::Bind(PostQuit, base::MessageLoop::current()));
   int quits_received = 0;
   do {
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
     ++quits_received;
   } while (!g_end_session_file_thread_has_completed);
   // If we did get extra quits, then we should re-post them to the message loop.
-  while (--quits_received > 0)
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  while (--quits_received > 0) {
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
+  }
 #else
   NOTIMPLEMENTED();
 #endif
@@ -536,7 +530,6 @@ AutomationProviderList* BrowserProcessImpl::GetAutomationProviderList() {
 }
 
 void BrowserProcessImpl::CreateDevToolsHttpProtocolHandler(
-    Profile* profile,
     chrome::HostDesktopType host_desktop_type,
     const std::string& ip,
     int port,
@@ -547,7 +540,7 @@ void BrowserProcessImpl::CreateDevToolsHttpProtocolHandler(
   // is started with several profiles or existing browser process is reused.
   if (!remote_debugging_server_.get()) {
     remote_debugging_server_.reset(
-        new RemoteDebuggingServer(profile, host_desktop_type, ip, port,
+        new RemoteDebuggingServer(host_desktop_type, ip, port,
                                   frontend_url));
   }
 #endif
@@ -633,12 +626,6 @@ BrowserProcessImpl::media_file_system_registry() {
   return media_file_system_registry_.get();
 #endif
 }
-
-#if !defined(OS_WIN)
-void BrowserProcessImpl::PlatformSpecificCommandLineProcessing(
-    const CommandLine& command_line) {
-}
-#endif
 
 bool BrowserProcessImpl::created_local_state() const {
     return created_local_state_;
@@ -916,6 +903,7 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
 
 #if defined(OS_MACOSX)
   app_shim_host_manager_.reset(new AppShimHostManager);
+  AppListService::InitAll(NULL);
 #endif
 }
 

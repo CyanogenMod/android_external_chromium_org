@@ -38,7 +38,7 @@ bool TestHooks::PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
   return true;
 }
 
-bool TestHooks::CanActivatePendingTree() {
+bool TestHooks::CanActivatePendingTree(LayerTreeHostImpl* host_impl) {
   return true;
 }
 
@@ -113,7 +113,7 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     if (!pending_tree())
       return false;
 
-    if (!test_hooks_->CanActivatePendingTree())
+    if (!test_hooks_->CanActivatePendingTree(this))
       return false;
 
     bool activated = LayerTreeHostImpl::ActivatePendingTreeIfNeeded();
@@ -249,10 +249,6 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient {
 
   virtual void DidFailToInitializeOutputSurface() OVERRIDE {
     test_hooks_->DidFailToInitializeOutputSurface();
-  }
-
-  virtual scoped_ptr<InputHandlerClient> CreateInputHandlerClient() OVERRIDE {
-    return scoped_ptr<InputHandlerClient>();
   }
 
   virtual void WillCommit() OVERRIDE {}
@@ -548,7 +544,8 @@ void LayerTreeTest::RunTest(bool threaded,
 
   delegating_renderer_ = delegating_renderer;
 
-  // Spend less time waiting for vsync because the output is mocked out.
+  // Spend less time waiting for BeginFrame because the output is
+  // mocked out.
   settings_.refresh_rate = 200.0;
   if (impl_side_painting) {
     DCHECK(threaded) <<

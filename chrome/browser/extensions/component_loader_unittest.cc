@@ -92,16 +92,6 @@ class ComponentLoaderTest : public testing::Test {
         extension_path_.Append(kManifestFilename),
         &manifest_contents_));
 
-    // Register the user prefs that ComponentLoader will read.
-    prefs_.registry()->RegisterStringPref(
-        prefs::kEnterpriseWebStoreURL,
-        std::string(),
-        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-    prefs_.registry()->RegisterStringPref(
-        prefs::kEnterpriseWebStoreName,
-        std::string(),
-        user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
     // Register the local state prefs.
 #if defined(OS_CHROMEOS)
     local_state_.registry()->RegisterBooleanPref(
@@ -260,31 +250,6 @@ TEST_F(ComponentLoaderTest, RemoveAll) {
   EXPECT_EQ(0u, extension_service_.extensions()->size());
 }
 
-TEST_F(ComponentLoaderTest, EnterpriseWebStore) {
-  component_loader_.AddDefaultComponentExtensions(false);
-  component_loader_.LoadAll();
-  unsigned int default_count = extension_service_.extensions()->size();
-
-  // Set the pref, and it should get loaded automatically.
-  extension_service_.set_ready(true);
-  prefs_.SetUserPref(prefs::kEnterpriseWebStoreURL,
-                     Value::CreateStringValue("http://www.google.com"));
-  EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-
-  // Now that the pref is set, check if it's added by default.
-  extension_service_.set_ready(false);
-  extension_service_.clear_extensions();
-  component_loader_.ClearAllRegistered();
-  component_loader_.AddDefaultComponentExtensions(false);
-  component_loader_.LoadAll();
-  EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-
-  // Number of loaded extensions should be the same after changing the pref.
-  prefs_.SetUserPref(prefs::kEnterpriseWebStoreURL,
-                     Value::CreateStringValue("http://www.google.de"));
-  EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-}
-
 TEST_F(ComponentLoaderTest, AddOrReplace) {
   EXPECT_EQ(0u, component_loader_.registered_extensions_count());
   component_loader_.AddDefaultComponentExtensions(false);
@@ -292,6 +257,7 @@ TEST_F(ComponentLoaderTest, AddOrReplace) {
   base::FilePath known_extension = GetBasePath()
       .AppendASCII("override_component_extension");
   base::FilePath unknow_extension = extension_path_;
+  base::FilePath invalid_extension = GetBasePath().AppendASCII("bad");
 
   // Replace a default component extension.
   component_loader_.AddOrReplace(known_extension);
@@ -313,6 +279,10 @@ TEST_F(ComponentLoaderTest, AddOrReplace) {
   component_loader_.AddOrReplace(known_extension);
   EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
   EXPECT_EQ(1u, extension_service_.unloaded_count());
+
+  // Add an invalid component extension.
+  std::string extension_id = component_loader_.AddOrReplace(invalid_extension);
+  EXPECT_TRUE(extension_id.empty());
 }
 
 }  // namespace extensions

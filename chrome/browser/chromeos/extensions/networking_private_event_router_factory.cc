@@ -8,7 +8,7 @@
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace chromeos {
 
@@ -16,7 +16,7 @@ namespace chromeos {
 NetworkingPrivateEventRouter*
 NetworkingPrivateEventRouterFactory::GetForProfile(Profile* profile) {
   return static_cast<NetworkingPrivateEventRouter*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -26,16 +26,16 @@ NetworkingPrivateEventRouterFactory::GetInstance() {
 }
 
 NetworkingPrivateEventRouterFactory::NetworkingPrivateEventRouterFactory()
-    : ProfileKeyedServiceFactory(
+    : BrowserContextKeyedServiceFactory(
           "NetworkingPrivateEventRouter",
-          ProfileDependencyManager::GetInstance()) {
+          BrowserContextDependencyManager::GetInstance()) {
   DependsOn(extensions::ExtensionSystemFactory::GetInstance());
 }
 
 NetworkingPrivateEventRouterFactory::~NetworkingPrivateEventRouterFactory() {
 }
 
-ProfileKeyedService*
+BrowserContextKeyedService*
 NetworkingPrivateEventRouterFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new NetworkingPrivateEventRouter(static_cast<Profile*>(profile));
@@ -47,7 +47,8 @@ NetworkingPrivateEventRouterFactory::GetBrowserContextToUse(
   return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
-bool NetworkingPrivateEventRouterFactory::ServiceIsCreatedWithProfile() const {
+bool NetworkingPrivateEventRouterFactory::
+ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

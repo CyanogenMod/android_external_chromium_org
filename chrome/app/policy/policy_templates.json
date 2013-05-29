@@ -112,7 +112,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 207
+#   For your editing convenience: highest ID currently used: 209
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -661,7 +661,7 @@
 
       If you disable this setting, Safe Browsing is never active.
 
-      If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
+      If you enable or disable this setting, users cannot change or override the "Enable phishing and malware protection" setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
       If this policy is left not set, this will be enabled but the user will be able to change it.''',
     },
@@ -873,7 +873,7 @@
       'name': 'SigninAllowed',
       'type': 'main',
       'schema': { 'type': 'boolean' },
-      'supported_on': ['chrome.*:26-'],
+      'supported_on': ['chrome.*:27-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -995,7 +995,7 @@
       'name': 'ClearSiteDataOnExit',
       'type': 'main',
       'schema': { 'type': 'boolean' },
-      'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
+      'supported_on': ['chrome.*:11-29', 'chrome_os:0.11-0.29'],
       'features': {
         'can_be_recommended': True,
         'dynamic_refresh': True,
@@ -1005,13 +1005,7 @@
       'example_value': True,
       'id': 65,
       'caption': '''Clear site data on browser shutdown (deprecated)''',
-      'desc': '''This policy is an override for the "Clear cookies and other site data when I close my browser" content settings option that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> supported prior to version 21.
-
-      This policy exists only for backward-compatibility and will go away in the future. The recommended way to clear site data on exit on version 21 and later is to configure the DefaultCookiesSetting policy to session-only.
-
-      If this policy is enabled it will be translated to the appropriate policy setting for the DefaultCookiesSetting policy, setting it to session-only if the DefaultCookiesSetting policy is not configured or set to Allow.
-
-      If this policy is disabled or left unconfigured the policy for storing site data is determined by the DefaultCookiesSetting policy.''',
+      'desc': '''This policy has been retired as of <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> version 29.''',
       'label': '''Clear site data on browser shutdown (deprecated)''',
     },
     {
@@ -3011,7 +3005,7 @@
       'name': 'EnterpriseWebStoreURL',
       'type': 'string',
       'schema': { 'type': 'string' },
-      'supported_on': ['chrome.*:17-', 'chrome_os:0.17-'],
+      'supported_on': ['chrome.*:17-29', 'chrome_os:0.17-0.29'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -3019,18 +3013,14 @@
       'deprecated': True,
       'example_value': 'http://company-intranet/chromeapps',
       'id': 112,
-      'caption': '''Enterprise web store URL''',
-      'desc': '''Specifies the URL for the enterprise web store. When this setting is enabled, an app will appear on the new tab page which, when clicked, will take the user to the specified URL. To actually allow extension installation from the configured website, the ExtensionInstallSources policy must be configured to allow installation from the appropriate extension download URLs. If this policy is set, the EnterpriseWebStoreName setting should also be set.
-
-      If this setting is disabled, no enterprise web store app will appear on the new tab page.
-
-      This setting is deprecated as of version 27 and will be removed for future versions. The recommended way to set up organization-hosted extension/app collections is to include the site hosting the CRX packages in ExtensionInstallSources and put direct download links to the packages on a web page. A launcher for that web page can be created using the ExtensionInstallForcelist policy.''',
+      'caption': '''Enterprise web store URL (deprecated)''',
+      'desc': '''This setting has been retired as of <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> version 29. The recommended way to set up organization-hosted extension/app collections is to include the site hosting the CRX packages in ExtensionInstallSources and put direct download links to the packages on a web page. A launcher for that web page can be created using the ExtensionInstallForcelist policy.''',
     },
     {
       'name': 'EnterpriseWebStoreName',
       'type': 'string',
       'schema': { 'type': 'string' },
-      'supported_on': ['chrome.*:17-', 'chrome_os:0.17-'],
+      'supported_on': ['chrome.*:17-29', 'chrome_os:0.17-0.29'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -3038,12 +3028,8 @@
       'deprecated': True,
       'example_value': 'WidgCo Chrome Apps',
       'id': 113,
-      'caption': '''Enterprise web store name''',
-      'desc': '''The name of the enterprise web store, which will appear underneath the app icon on the new tab page. This setting has no effect if EnterpriseWebStoreURL is not set.
-
-      If this setting is disabled, the enterprise web store app (if it exists) will be labeled with its URL.
-
-      This setting is deprecated as of version 27 and will be removed for future versions. The recommended way to set up organization-hosted extension/app collections is to include the site hosting the CRX packages in ExtensionInstallSources and put direct download links to the packages on a web page. A launcher for that web page can be created using the ExtensionInstallForcelist policy.''',
+      'caption': '''Enterprise web store name (deprecated)''',
+      'desc': '''This setting has been retired as of <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> version 29. The recommended way to set up organization-hosted extension/app collections is to include the site hosting the CRX packages in ExtensionInstallSources and put direct download links to the packages on a web page. A launcher for that web page can be created using the ExtensionInstallForcelist policy.''',
     },
     {
       'name': 'EnableOriginBoundCerts',
@@ -3793,17 +3779,42 @@
       'supported_on': ['chrome.*:25-', 'chrome_os:0.23-'],
       'features': {
         'dynamic_refresh': True,
-        'per_profile': False,
+        'per_profile': True,
       },
       'example_value': False,
       'id': 160,
       'caption': '''Allow or deny audio capture''',
       'desc': '''Allow or deny audio capture.
 
-      When this policy is disabled, audio capture will not be available.  If enabled, audio capture will always be allowed.
-      If the policy is not configured (default), the user will be prompted for audio capture device access.
+      If enabled or not configured (default), the user will be prompted for
+      audio capture access except for URLs configured in the
+      AudioCaptureAllowedUrls list which will be granted access without prompting.
+
+      When this policy is disabled, the user will never be prompted and audio
+      capture only be available to URLs configured in AudioCaptureAllowedUrls.
 
       This policy affects all types of audio inputs and not only the built-in microphone.''',
+    },
+    {
+      'name': 'AudioCaptureAllowedUrls',
+      'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
+      'supported_on': ['chrome.*:29-', 'chrome_os:0.29-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': ['http://www.example.com/', 'http://[*.]example.edu/'],
+      'id': 208,
+      'caption': '''URLs that will be granted access to audio capture devices without prompt.''',
+      'desc': '''Patterns in this list will be matched against the security
+      origin of the requesting URL.  If a match is found, access to audio
+      capture devices will be granted without prompt.
+
+      NOTE: This policy is currently only supported when running in Kiosk mode.''',
     },
     {
       'name': 'VideoCaptureAllowed',
@@ -3812,17 +3823,42 @@
       'supported_on': ['chrome.*:25-', 'chrome_os:0.25-'],
       'features': {
         'dynamic_refresh': True,
-        'per_profile': False,
+        'per_profile': True,
       },
       'example_value': False,
       'id': 167,
       'caption': '''Allow or deny video capture''',
       'desc': '''Allow or deny video capture.
 
-      When this policy is disabled, video capture devices will not be available.  If enabled, video capture will always be allowed.
-      If the policy is not configured (default), the user will be prompted for video device access.
+      If enabled or not configured (default), the user will be prompted for
+      video capture access except for URLs configured in the
+      VideoCaptureAllowedUrls list which will be granted access without prompting.
+
+      When this policy is disabled, the user will never be prompted and video
+      capture only be available to URLs configured in VideoCaptureAllowedUrls.
 
       This policy affects all types of video inputs and not only the built-in camera.''',
+    },
+    {
+      'name': 'VideoCaptureAllowedUrls',
+      'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
+      'supported_on': ['chrome.*:29-', 'chrome_os:0.29-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': ['http://www.example.com/', 'http://[*.]example.edu/'],
+      'id': 209,
+      'caption': '''URLs that will be granted access to video capture devices without prompt.''',
+      'desc': '''Patterns in this list will be matched against the security
+      origin of the requesting URL.  If a match is found, access to audio
+      capture devices will be granted without prompt.
+
+      NOTE: This policy is currently only supported when running in Kiosk mode.''',
     },
     {
       'name': 'DisableScreenshots',

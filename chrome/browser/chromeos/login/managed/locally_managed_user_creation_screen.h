@@ -9,18 +9,22 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/login/managed/locally_managed_user_controller.h"
+#include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_controller.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/ui/webui/chromeos/login/locally_managed_user_creation_screen_handler.h"
 
+class Profile;
+
 namespace chromeos {
+
+class NetworkState;
 
 // Class that controls screen showing ui for locally managed user creation.
 class LocallyManagedUserCreationScreen
     : public WizardScreen,
       public LocallyManagedUserCreationScreenHandler::Delegate,
-      public LocallyManagedUserController::StatusConsumer,
+      public LocallyManagedUserCreationController::StatusConsumer,
       public NetworkPortalDetector::Observer {
  public:
   LocallyManagedUserCreationScreen(
@@ -40,7 +44,7 @@ class LocallyManagedUserCreationScreen
 
   // Called when manager is successfully authenticated and account is in
   // consistent state.
-  void OnManagerFullyAuthenticated();
+  void OnManagerFullyAuthenticated(Profile* manager_profile);
 
   // Called when manager is successfully authenticated against cryptohome, but
   // OAUTH token validation hasn't completed yet.
@@ -72,18 +76,18 @@ class LocallyManagedUserCreationScreen
   virtual void SelectPicture() OVERRIDE;
 
   // LocallyManagedUserController::StatusConsumer overrides.
-  virtual void OnCreationError(LocallyManagedUserController::ErrorCode code,
-                               bool recoverable) OVERRIDE;
+  virtual void OnCreationError(
+      LocallyManagedUserCreationController::ErrorCode code) OVERRIDE;
   virtual void OnCreationSuccess() OVERRIDE;
 
-  // ConnectivityStateHelperObserver implementation:
+  // NetworkPortalDetector::Observer implementation:
   virtual void OnPortalDetectionCompleted(
-          const Network* network,
+          const NetworkState* network,
           const NetworkPortalDetector::CaptivePortalState& state) OVERRIDE;
  private:
   LocallyManagedUserCreationScreenHandler* actor_;
 
-  scoped_ptr<LocallyManagedUserController> controller_;
+  scoped_ptr<LocallyManagedUserCreationController> controller_;
 
   bool on_error_screen_;
   bool on_image_screen_;

@@ -18,8 +18,6 @@
 
 #if defined(OS_ANDROID)
 #include "base/debug/debugger.h"
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_ANDROID)
@@ -27,25 +25,15 @@ static void SigUSR1Handler(int signal) { }
 #endif
 
 namespace content {
-
-ChildProcess* ChildProcess::child_process_;
-
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-namespace {
-void SetHighThreadPriority() {
-  int nice_value = -6; // High priority.
-  setpriority(PRIO_PROCESS, base::PlatformThread::CurrentId(), nice_value);
-}
-}
-#endif
+// The singleton instance for this process.
+ChildProcess* child_process = NULL;
 
 ChildProcess::ChildProcess()
     : ref_count_(0),
       shutdown_event_(true, false),
       io_thread_("Chrome_ChildIOThread") {
-  DCHECK(!child_process_);
-  child_process_ = this;
+  DCHECK(!child_process);
+  child_process = this;
 
   base::StatisticsRecorder::Initialize();
 
@@ -54,14 +42,12 @@ ChildProcess::ChildProcess()
       base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
 
 #if defined(OS_ANDROID)
-  // TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-  io_thread_.message_loop()->PostTask(FROM_HERE,
-                                      base::Bind(&SetHighThreadPriority));
+  io_thread_.SetPriority(base::kThreadPriority_Display);
 #endif
 }
 
 ChildProcess::~ChildProcess() {
-  DCHECK(child_process_ == this);
+  DCHECK(child_process == this);
 
   // Signal this event before destroying the child process.  That way all
   // background threads can cleanup.
@@ -69,14 +55,14 @@ ChildProcess::~ChildProcess() {
   // notice shutdown before the render process begins waiting for them to exit.
   shutdown_event_.Signal();
 
-  // Kill the main thread object before nulling child_process_, since
+  // Kill the main thread object before nulling child_process, since
   // destruction code might depend on it.
   if (main_thread_) {  // null in unittests.
     main_thread_->Shutdown();
     main_thread_.reset();
   }
 
-  child_process_ = NULL;
+  child_process = NULL;
 }
 
 ChildThread* ChildProcess::main_thread() {
@@ -97,7 +83,7 @@ void ChildProcess::ReleaseProcess() {
   DCHECK(!main_thread_.get() ||  // null in unittests.
          base::MessageLoop::current() == main_thread_->message_loop());
   DCHECK(ref_count_);
-  DCHECK(child_process_);
+  DCHECK(child_process);
   if (--ref_count_)
     return;
 
@@ -105,9 +91,13 @@ void ChildProcess::ReleaseProcess() {
     main_thread_->OnProcessFinalRelease();
 }
 
+ChildProcess* ChildProcess::current() {
+  return child_process;
+}
+
 base::WaitableEvent* ChildProcess::GetShutDownEvent() {
-  DCHECK(child_process_);
-  return &child_process_->shutdown_event_;
+  DCHECK(child_process);
+  return &child_process->shutdown_event_;
 }
 
 void ChildProcess::WaitForDebugger(const std::string& label) {

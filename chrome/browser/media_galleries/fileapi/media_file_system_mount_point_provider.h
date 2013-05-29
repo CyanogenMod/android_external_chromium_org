@@ -6,8 +6,7 @@
 #define CHROME_BROWSER_MEDIA_GALLERIES_FILEAPI_MEDIA_FILE_SYSTEM_MOUNT_POINT_PROVIDER_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/media_galleries/fileapi/mtp_device_file_system_config.h"
-#include "webkit/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 
 namespace fileapi {
 class AsyncFileUtilAdapter;
@@ -17,9 +16,7 @@ namespace chrome {
 
 class MediaPathFilter;
 
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
 class DeviceMediaAsyncFileUtil;
-#endif
 
 class MediaFileSystemMountPointProvider
     : public fileapi::FileSystemMountPointProvider {
@@ -33,14 +30,11 @@ class MediaFileSystemMountPointProvider
 
   // FileSystemMountPointProvider implementation.
   virtual bool CanHandleType(fileapi::FileSystemType type) const OVERRIDE;
-  virtual void ValidateFileSystemRoot(
+  virtual void OpenFileSystem(
       const GURL& origin_url,
       fileapi::FileSystemType type,
-      bool create,
-      const ValidateFileSystemCallback& callback) OVERRIDE;
-  virtual base::FilePath GetFileSystemRootPathOnFileThread(
-      const fileapi::FileSystemURL& url,
-      bool create) OVERRIDE;
+      fileapi::OpenFileSystemMode mode,
+      const OpenFileSystemCallback& callback) OVERRIDE;
   virtual fileapi::FileSystemFileUtil* GetFileUtil(
       fileapi::FileSystemType type) OVERRIDE;
   virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
@@ -49,9 +43,6 @@ class MediaFileSystemMountPointProvider
   GetCopyOrMoveFileValidatorFactory(
       fileapi::FileSystemType type,
       base::PlatformFileError* error_code) OVERRIDE;
-  virtual void InitializeCopyOrMoveFileValidatorFactory(
-      fileapi::FileSystemType type,
-      scoped_ptr<fileapi::CopyOrMoveFileValidatorFactory> factory) OVERRIDE;
   virtual fileapi::FilePermissionPolicy GetPermissionPolicy(
       const fileapi::FileSystemURL& url, int permissions) const OVERRIDE;
   virtual fileapi::FileSystemOperation* CreateFileSystemOperation(
@@ -83,9 +74,8 @@ class MediaFileSystemMountPointProvider
       media_copy_or_move_file_validator_factory_;
 
   scoped_ptr<fileapi::AsyncFileUtilAdapter> native_media_file_util_;
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
   scoped_ptr<DeviceMediaAsyncFileUtil> device_media_async_file_util_;
-#endif
+  scoped_ptr<fileapi::AsyncFileUtil> picasa_file_util_;
   scoped_ptr<fileapi::AsyncFileUtil> itunes_file_util_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaFileSystemMountPointProvider);

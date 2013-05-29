@@ -16,7 +16,7 @@ namespace webkit_glue {
 // Base class for Chrome's implementation of the "extra data" stored in each
 // ResourceRequest.
 class WEBKIT_GLUE_EXPORT WebURLRequestExtraDataImpl :
-    NON_EXPORTED_BASE(public WebKit::WebURLRequest::ExtraData) {
+    public NON_EXPORTED_BASE(WebKit::WebURLRequest::ExtraData) {
  public:
   // |custom_user_agent| is used to communicate an overriding custom user agent
   // to |RenderViewImpl::willSendRequest()|; set to a null string to indicate no

@@ -14,12 +14,18 @@
 
 #include "base/compiler_specific.h"
 #include "base/callback_forward.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/one_shot_event.h"
 
 class Profile;
+
+namespace base {
+class Value;
+}  // namespace base
 
 namespace extensions {
 
@@ -37,6 +43,10 @@ class RulesRegistryWithCache : public RulesRegistry {
   // registering rules on initialization will be logged with UMA.
   class RuleStorageOnUI : public content::NotificationObserver {
    public:
+    // This key is used to store in preferences whether there are some
+    // declarative rules stored in the rule store.
+    static const char kRulesStoredKey[];
+
     RuleStorageOnUI(Profile* profile,
                     const std::string& storage_key,
                     content::BrowserThread::ID rules_registry_thread,
@@ -57,11 +67,8 @@ class RulesRegistryWithCache : public RulesRegistry {
     }
 
    private:
-    enum ReadyState {    // Our increasing states of readiness.
-      NOT_READY,         // Waiting for NOTIFICATION_EXTENSIONS_READY.
-      EXTENSIONS_READY,  // Observed NOTIFICATION_EXTENSIONS_READY.
-      NOTIFIED_READY     // We notified that the rules are loaded.
-    };
+    FRIEND_TEST_ALL_PREFIXES(RulesRegistryWithCacheTest,
+                             DeclarativeRulesStored);
 
     // NotificationObserver
     virtual void Observe(int type,
@@ -77,6 +84,14 @@ class RulesRegistryWithCache : public RulesRegistry {
     void ReadFromStorage(const std::string& extension_id);
     void ReadFromStorageCallback(const std::string& extension_id,
                                  scoped_ptr<base::Value> value);
+
+    // Check the preferences whether the extension with |extension_id| has some
+    // rules stored on disk. If this information is not in the preferences, true
+    // is returned as a safe default value.
+    bool GetDeclarativeRulesStored(const std::string& extension_id) const;
+    // Modify the preference to |rules_stored|.
+    void SetDeclarativeRulesStored(const std::string& extension_id,
+                                   bool rules_stored);
 
     content::NotificationRegistrar registrar_;
 
@@ -99,7 +114,8 @@ class RulesRegistryWithCache : public RulesRegistry {
     // The thread |registry_| lives on.
     const content::BrowserThread::ID rules_registry_thread_;
 
-    ReadyState ready_state_;
+    // We notified the RulesRegistry that the rules are loaded.
+    bool notified_registry_;
 
     // Use this factory to generate weak pointers bound to the UI thread.
     base::WeakPtrFactory<RuleStorageOnUI> weak_ptr_factory_;
@@ -118,14 +134,9 @@ class RulesRegistryWithCache : public RulesRegistry {
                          bool log_storage_init_delay,
                          scoped_ptr<RuleStorageOnUI>* ui_part);
 
-  // Returns true if we are ready to process rules.
-  bool IsReady() {
-    DCHECK(content::BrowserThread::CurrentlyOn(owner_thread()));
+  const OneShotEvent& ready() const {
     return ready_;
   }
-
-  // Add a callback to call when we transition to Ready.
-  void AddReadyCallback(const base::Closure& callback);
 
   // RulesRegistry implementation:
   virtual std::string AddRules(
@@ -170,7 +181,7 @@ class RulesRegistryWithCache : public RulesRegistry {
   void ProcessChangedRules(const std::string& extension_id);
 
   // Process the callbacks once the registry gets ready.
-  void OnReady(base::Time storage_init_time);
+  void MarkReady(base::Time storage_init_time);
 
   // Deserialize the rules from the given Value object and add them to the
   // RulesRegistry.
@@ -180,11 +191,9 @@ class RulesRegistryWithCache : public RulesRegistry {
 
   RulesDictionary rules_;
 
-  std::vector<base::Closure> ready_callbacks_;
-
-  // True when we have finished reading from storage for all extensions that
+  // Signaled when we have finished reading from storage for all extensions that
   // are loaded on startup.
-  bool ready_;
+  OneShotEvent ready_;
 
   // The factory needs to be declared before |storage_on_ui_|, so that it can
   // produce a pointer as a construction argument for |storage_on_ui_|.

@@ -6,18 +6,19 @@
 #define CHROME_BROWSER_MANAGED_MODE_MANAGED_USER_SERVICE_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class ManagedUserService;
+class Profile;
 
-class ManagedUserServiceFactory : public ProfileKeyedServiceFactory {
+class ManagedUserServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static ManagedUserService* GetForProfile(Profile* profile);
 
   static ManagedUserServiceFactory* GetInstance();
 
   // Used to create instances for testing.
-  static ProfileKeyedService* BuildInstanceFor(Profile* profile);
+  static BrowserContextKeyedService* BuildInstanceFor(Profile* profile);
 
  private:
   friend struct DefaultSingletonTraits<ManagedUserServiceFactory>;
@@ -25,10 +26,10 @@ class ManagedUserServiceFactory : public ProfileKeyedServiceFactory {
   ManagedUserServiceFactory();
   virtual ~ManagedUserServiceFactory();
 
-  // ProfileKeyedServiceFactory:
+  // BrowserContextKeyedServiceFactory:
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 };
 

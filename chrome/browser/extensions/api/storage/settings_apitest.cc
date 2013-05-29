@@ -92,8 +92,7 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
 #if defined(ENABLE_CONFIGURATION_POLICY)
     EXPECT_CALL(policy_provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
-    EXPECT_CALL(policy_provider_,
-                RegisterPolicyDomain(_, _)).Times(AnyNumber());
+    EXPECT_CALL(policy_provider_, RegisterPolicyDomain(_)).Times(AnyNumber());
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(
         &policy_provider_);
 #endif
@@ -129,7 +128,7 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
   }
 
   void InitSync(syncer::SyncChangeProcessor* sync_processor) {
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     InitSyncWithSyncableService(
         sync_processor,
         browser()->profile()->GetExtensionService()->settings_frontend()->
@@ -137,7 +136,7 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
   }
 
   void SendChanges(const syncer::SyncChangeList& change_list) {
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     SendChangesToSyncableService(
         change_list,
         browser()->profile()->GetExtensionService()->settings_frontend()->

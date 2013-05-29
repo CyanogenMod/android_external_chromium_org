@@ -8,13 +8,13 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class AppSyncUIState;
 class Profile;
 
 // Singleton that owns all AppSyncUIStates and associates them with profiles.
-class AppSyncUIStateFactory : public ProfileKeyedServiceFactory {
+class AppSyncUIStateFactory : public BrowserContextKeyedServiceFactory {
  public:
   static AppSyncUIState* GetForProfile(Profile* profile);
 
@@ -26,8 +26,8 @@ class AppSyncUIStateFactory : public ProfileKeyedServiceFactory {
   AppSyncUIStateFactory();
   virtual ~AppSyncUIStateFactory();
 
-  // ProfileKeyedServiceFactory overrides:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory overrides:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(AppSyncUIStateFactory);

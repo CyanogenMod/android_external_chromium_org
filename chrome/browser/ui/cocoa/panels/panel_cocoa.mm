@@ -30,14 +30,18 @@ const int kMinimumWindowSize = 1;
 // Overall chain of ownership is:
 // PanelWindowControllerCocoa -> PanelCocoa -> Panel.
 // static
-NativePanel* Panel::CreateNativePanel(Panel* panel, const gfx::Rect& bounds) {
-  return new PanelCocoa(panel, bounds);
+NativePanel* Panel::CreateNativePanel(Panel* panel,
+                                      const gfx::Rect& bounds,
+                                      bool always_on_top) {
+  return new PanelCocoa(panel, bounds, always_on_top);
 }
 
-PanelCocoa::PanelCocoa(Panel* panel, const gfx::Rect& bounds)
+PanelCocoa::PanelCocoa(Panel* panel,
+                       const gfx::Rect& bounds,
+                       bool always_on_top)
     : panel_(panel),
       bounds_(bounds),
-      always_on_top_(false),
+      always_on_top_(always_on_top),
       is_shown_(false),
       attention_request_id_(0),
       corner_style_(panel::ALL_ROUNDED) {
@@ -47,7 +51,7 @@ PanelCocoa::PanelCocoa(Panel* panel, const gfx::Rect& bounds)
 PanelCocoa::~PanelCocoa() {
 }
 
-bool PanelCocoa::isClosed() {
+bool PanelCocoa::IsClosed() const {
   return !controller_;
 }
 
@@ -63,7 +67,7 @@ void PanelCocoa::ShowPanel() {
 }
 
 void PanelCocoa::ShowPanelInactive() {
-  if (isClosed())
+  if (IsClosed())
     return;
 
   // This method may be called several times, meaning 'ensure it's shown'.
@@ -112,7 +116,7 @@ void PanelCocoa::setBoundsInternal(const gfx::Rect& bounds, bool animate) {
 }
 
 void PanelCocoa::ClosePanel() {
-  if (isClosed())
+  if (IsClosed())
       return;
 
   NSWindow* window = [controller_ window];
@@ -122,6 +126,13 @@ void PanelCocoa::ClosePanel() {
   // spin a nested loop.
   // TODO(dimich): refactor similar method from BWC and reuse here.
   if ([controller_ windowShouldClose:window]) {
+    // Make sure that the panel window is not associated with the underlying
+    // stack window because otherwise hiding the panel window could cause all
+    // other panel windows in the same stack to disappear.
+    NSWindow* stackWindow = [window parentWindow];
+    if (stackWindow)
+      [stackWindow removeChildWindow:window];
+
     [window orderOut:nil];
     [window close];
   }
@@ -313,9 +324,9 @@ Panel* PanelCocoa::panel() const {
 }
 
 void PanelCocoa::DidCloseNativeWindow() {
-  DCHECK(!isClosed());
-  panel_->OnNativePanelClosed();
+  DCHECK(!IsClosed());
   controller_ = NULL;
+  panel_->OnNativePanelClosed();
 }
 
 // NativePanelTesting implementation.

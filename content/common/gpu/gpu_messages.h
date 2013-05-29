@@ -9,21 +9,21 @@
 #include <vector>
 
 #include "base/shared_memory.h"
-#include "cc/debug/latency_info.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/gpu/gpu_rendering_stats.h"
 #include "content/public/common/common_param_traits.h"
-#include "content/public/common/gpu_info.h"
 #include "content/public/common/gpu_memory_stats.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
+#include "gpu/config/gpu_info.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "media/video/video_decode_accelerator.h"
+#include "ui/base/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gpu_preference.h"
@@ -51,7 +51,8 @@ IPC_STRUCT_BEGIN(GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params)
   IPC_STRUCT_MEMBER(int32, route_id)
   IPC_STRUCT_MEMBER(std::string, mailbox_name)
   IPC_STRUCT_MEMBER(gfx::Size, size)
-  IPC_STRUCT_MEMBER(cc::LatencyInfo, latency_info)
+  IPC_STRUCT_MEMBER(float, scale_factor)
+  IPC_STRUCT_MEMBER(ui::LatencyInfo, latency_info)
 IPC_STRUCT_END()
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT
@@ -66,7 +67,8 @@ IPC_STRUCT_BEGIN(GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params)
   IPC_STRUCT_MEMBER(int, height)
   IPC_STRUCT_MEMBER(std::string, mailbox_name)
   IPC_STRUCT_MEMBER(gfx::Size, surface_size)
-  IPC_STRUCT_MEMBER(cc::LatencyInfo, latency_info)
+  IPC_STRUCT_MEMBER(float, surface_scale_factor)
+  IPC_STRUCT_MEMBER(ui::LatencyInfo, latency_info)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(GpuHostMsg_AcceleratedSurfaceRelease_Params)
@@ -108,25 +110,25 @@ IPC_STRUCT_BEGIN(GpuStreamTextureMsg_MatrixChanged_Params)
 IPC_STRUCT_END()
 #endif
 
-IPC_STRUCT_TRAITS_BEGIN(content::DxDiagNode)
+  IPC_STRUCT_TRAITS_BEGIN(gpu::DxDiagNode)
   IPC_STRUCT_TRAITS_MEMBER(values)
   IPC_STRUCT_TRAITS_MEMBER(children)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::GpuPerformanceStats)
+IPC_STRUCT_TRAITS_BEGIN(gpu::GpuPerformanceStats)
   IPC_STRUCT_TRAITS_MEMBER(graphics)
   IPC_STRUCT_TRAITS_MEMBER(gaming)
   IPC_STRUCT_TRAITS_MEMBER(overall)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::GPUInfo::GPUDevice)
+IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo::GPUDevice)
   IPC_STRUCT_TRAITS_MEMBER(vendor_id)
   IPC_STRUCT_TRAITS_MEMBER(device_id)
   IPC_STRUCT_TRAITS_MEMBER(vendor_string)
   IPC_STRUCT_TRAITS_MEMBER(device_string)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::GPUInfo)
+IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(finalized)
   IPC_STRUCT_TRAITS_MEMBER(initialization_time)
   IPC_STRUCT_TRAITS_MEMBER(optimus)
@@ -134,6 +136,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(lenovo_dcute)
   IPC_STRUCT_TRAITS_MEMBER(gpu)
   IPC_STRUCT_TRAITS_MEMBER(secondary_gpus)
+  IPC_STRUCT_TRAITS_MEMBER(adapter_luid)
   IPC_STRUCT_TRAITS_MEMBER(driver_vendor)
   IPC_STRUCT_TRAITS_MEMBER(driver_version)
   IPC_STRUCT_TRAITS_MEMBER(driver_date)
@@ -299,7 +302,7 @@ IPC_SYNC_MESSAGE_CONTROL1_3(GpuHostMsg_EstablishGpuChannel,
                             content::CauseForGpuLaunch,
                             int /* client id */,
                             IPC::ChannelHandle /* handle to channel */,
-                            content::GPUInfo /* stats about GPU process*/)
+                            gpu::GPUInfo /* stats about GPU process*/)
 
 // A renderer sends this to the browser process when it wants to
 // create a GL context associated with the given view_id.
@@ -309,8 +312,9 @@ IPC_SYNC_MESSAGE_CONTROL2_1(GpuHostMsg_CreateViewCommandBuffer,
                             int32 /* route_id */)
 
 // Response from GPU to a GputMsg_Initialize message.
-IPC_MESSAGE_CONTROL1(GpuHostMsg_Initialized,
-                     bool /* result */)
+IPC_MESSAGE_CONTROL2(GpuHostMsg_Initialized,
+                     bool /* result */,
+                     ::gpu::GPUInfo /* gpu_info */)
 
 // Response from GPU to a GpuHostMsg_EstablishChannel message.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_ChannelEstablished,
@@ -345,7 +349,7 @@ IPC_MESSAGE_CONTROL1(GpuHostMsg_ImageCreated,
 
 // Response from GPU to a GpuMsg_CollectGraphicsInfo.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_GraphicsInfoCollected,
-                     content::GPUInfo /* GPU logging stats */)
+                     gpu::GPUInfo /* GPU logging stats */)
 
 // Response from GPU to a GpuMsg_GetVideoMemory.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_VideoMemoryUsageStats,
@@ -367,7 +371,7 @@ IPC_MESSAGE_CONTROL3(GpuHostMsg_ResizeView,
 // Tells the browser that a frame with the specific latency info was drawn to
 // the screen
 IPC_MESSAGE_CONTROL1(GpuHostMsg_FrameDrawn,
-                     cc::LatencyInfo /* latency_info */)
+                     ui::LatencyInfo /* latency_info */)
 
 // Same as above with a rect of the part of the surface that changed.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_AcceleratedSurfaceBuffersSwapped,
@@ -513,7 +517,7 @@ IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_AsyncFlush,
 // Sends information about the latency of the current frame to the GPU
 // process.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetLatencyInfo,
-                    cc::LatencyInfo /* latency_info */)
+                    ui::LatencyInfo /* latency_info */)
 
 // Asynchronously process any commands known to the GPU process. This is only
 // used in the event that a channel is unscheduled and needs to be flushed

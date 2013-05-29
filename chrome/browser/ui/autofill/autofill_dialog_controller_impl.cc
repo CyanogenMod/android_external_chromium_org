@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/base64.h"
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
@@ -18,10 +19,10 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
+#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
-#include "chrome/browser/ui/base_window.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
@@ -31,10 +32,12 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autofill/browser/autofill_country.h"
 #include "components/autofill/browser/autofill_data_model.h"
 #include "components/autofill/browser/autofill_manager.h"
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/personal_data_manager.h"
+#include "components/autofill/browser/phone_number_i18n.h"
 #include "components/autofill/browser/risk/fingerprint.h"
 #include "components/autofill/browser/risk/proto/fingerprint.pb.h"
 #include "components/autofill/browser/validation.h"
@@ -47,6 +50,8 @@
 #include "components/autofill/browser/wallet/wallet_signin_helper.h"
 #include "components/autofill/common/form_data.h"
 #include "components/user_prefs/pref_registry_syncable.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/geolocation_provider.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -61,6 +66,7 @@
 #include "grit/theme_resources.h"
 #include "grit/webkit_resources.h"
 #include "net/cert/cert_status_flags.h"
+#include "ui/base/base_window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -85,6 +91,19 @@ const char kCartCurrency[] = "USD";
 const char kAddNewItemKey[] = "add-new-item";
 const char kManageItemsKey[] = "manage-items";
 const char kSameAsBillingKey[] = "same-as-billing";
+
+// Keys for the kAutofillDialogAutofillDefault pref dictionary (do not change
+// these values).
+const char kGuidPrefKey[] = "guid";
+const char kVariantPrefKey[] = "variant";
+
+// This string is stored along with saved addresses and credit cards in the
+// WebDB, and hence should not be modified, so that it remains consistent over
+// time.
+const char kAutofillDialogOrigin[] = "Chrome Autofill dialog";
+
+// HSL shift to gray out an image.
+const color_utils::HSL kGrayImageShift = {-1, 0, 0.8};
 
 // Returns true if |input| should be shown when |field_type| has been requested.
 bool InputTypeMatchesFieldType(const DetailInput& input,
@@ -200,7 +219,7 @@ void GetBillingInfoFromOutputs(const DetailOutputMap& output,
 // Returns the containing window for the given |web_contents|. The containing
 // window might be a browser window for a Chrome tab, or it might be a shell
 // window for a platform app.
-BaseWindow* GetBaseWindowForWebContents(
+ui::BaseWindow* GetBaseWindowForWebContents(
     const content::WebContents* web_contents) {
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
   if (browser)
@@ -227,6 +246,89 @@ string16 GetValueForType(const DetailOutputMap& output,
   return string16();
 }
 
+// Returns a string descriptor for a DialogSection, for use with prefs (do not
+// change these values).
+std::string SectionToPrefString(DialogSection section) {
+  switch (section) {
+    case SECTION_CC:
+      return "cc";
+
+    case SECTION_BILLING:
+      return "billing";
+
+    case SECTION_CC_BILLING:
+      // The SECTION_CC_BILLING section isn't active when using Autofill.
+      NOTREACHED();
+      return std::string();
+
+    case SECTION_SHIPPING:
+      return "shipping";
+
+    case SECTION_EMAIL:
+      return "email";
+  }
+
+  NOTREACHED();
+  return std::string();
+}
+
+// Check if a given MaskedInstrument is allowed for the purchase.
+bool IsInstrumentAllowed(
+    const wallet::WalletItems::MaskedInstrument& instrument) {
+  return (instrument.status() == wallet::WalletItems::MaskedInstrument::VALID ||
+      instrument.status() == wallet::WalletItems::MaskedInstrument::PENDING) &&
+      instrument.type() != wallet::WalletItems::MaskedInstrument::AMEX &&
+      instrument.type() != wallet::WalletItems::MaskedInstrument::UNKNOWN;
+}
+
+// Signals that the user has opted in to geolocation services.  Factored out
+// into a separate method because all interaction with the geolocation provider
+// needs to happen on the IO thread, which is not the thread
+// AutofillDialogController lives on.
+void UserDidOptIntoLocationServices() {
+  content::GeolocationProvider::GetInstance()->UserDidOptIntoLocationServices();
+}
+
+// Returns whether |data_model| is complete, i.e. can fill out all the
+// |requested_fields|, and verified, i.e. not just automatically aggregated.
+// Incomplete or unverifed data will not be displayed in the dropdown menu.
+bool HasCompleteAndVerifiedData(const AutofillDataModel& data_model,
+                                const DetailInputs& requested_fields) {
+  if (!data_model.IsVerified())
+    return false;
+
+  const std::string app_locale = g_browser_process->GetApplicationLocale();
+  for (size_t i = 0; i < requested_fields.size(); ++i) {
+    AutofillFieldType type = requested_fields[i].type;
+    if (type != ADDRESS_HOME_LINE2 &&
+        type != CREDIT_CARD_VERIFICATION_CODE &&
+        data_model.GetInfo(type, app_locale).empty()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Loops through |addresses_| comparing to |address| ignoring ID. If a match
+// is not found, NULL is returned.
+const wallet::Address* FindDuplicateAddress(
+    const std::vector<wallet::Address*>& addresses,
+    const wallet::Address& address) {
+  for (size_t i = 0; i < addresses.size(); ++i) {
+    if (addresses[i]->EqualsIgnoreID(address))
+      return addresses[i];
+  }
+  return NULL;
+}
+
+bool IsCardHolderNameValidForWallet(const string16& name) {
+  base::string16 whitespace_collapsed_name = CollapseWhitespace(name, true);
+  std::vector<base::string16> split_name;
+  base::SplitString(whitespace_collapsed_name, ' ', &split_name);
+  return split_name.size() >= 2;
+}
+
 }  // namespace
 
 AutofillDialogController::~AutofillDialogController() {}
@@ -236,7 +338,7 @@ AutofillDialogControllerImpl::~AutofillDialogControllerImpl() {
     popup_controller_->Hide();
 
   GetMetricLogger().LogDialogInitialUserState(
-      dialog_type_, initial_user_state_);
+      GetDialogType(), initial_user_state_);
 }
 
 // static
@@ -265,6 +367,9 @@ void AutofillDialogControllerImpl::RegisterUserPrefs(
       ::prefs::kAutofillDialogPayWithoutWallet,
       kPayWithoutWalletDefault,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      ::prefs::kAutofillDialogAutofillDefault,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 void AutofillDialogControllerImpl::Show() {
@@ -276,20 +381,20 @@ void AutofillDialogControllerImpl::Show() {
 
   // Log any relevant UI metrics and security exceptions.
   GetMetricLogger().LogDialogUiEvent(
-      dialog_type_, AutofillMetrics::DIALOG_UI_SHOWN);
+      GetDialogType(), AutofillMetrics::DIALOG_UI_SHOWN);
 
   GetMetricLogger().LogDialogSecurityMetric(
-      dialog_type_, AutofillMetrics::SECURITY_METRIC_DIALOG_SHOWN);
+      GetDialogType(), AutofillMetrics::SECURITY_METRIC_DIALOG_SHOWN);
 
   if (RequestingCreditCardInfo() && !TransmissionWillBeSecure()) {
     GetMetricLogger().LogDialogSecurityMetric(
-        dialog_type_,
+        GetDialogType(),
         AutofillMetrics::SECURITY_METRIC_CREDIT_CARD_OVER_HTTP);
   }
 
   if (!invoked_from_same_origin_) {
     GetMetricLogger().LogDialogSecurityMetric(
-        dialog_type_,
+        GetDialogType(),
         AutofillMetrics::SECURITY_METRIC_CROSS_ORIGIN_FRAME);
   }
 
@@ -382,10 +487,10 @@ void AutofillDialogControllerImpl::Show() {
   // If signed-in, fetch the user's Wallet data.
   // Otherwise, see if the user could be signed in passively.
   // TODO(aruslan): UMA metrics for sign-in.
-  if (account_chooser_model_.WalletIsSelected())
-    GetWalletItems();
-  else
-    LogDialogLatencyToShow();
+  GetWalletItems();
+
+  if (!account_chooser_model_.WalletIsSelected())
+   LogDialogLatencyToShow();
 }
 
 void AutofillDialogControllerImpl::Hide() {
@@ -398,19 +503,30 @@ void AutofillDialogControllerImpl::UpdateProgressBar(double value) {
 }
 
 bool AutofillDialogControllerImpl::AutocheckoutIsRunning() const {
-  return !autocheckout_started_timestamp_.is_null();
-}
-
-bool AutofillDialogControllerImpl::HadAutocheckoutError() const {
-  return had_autocheckout_error_;
+  return autocheckout_state_ == AUTOCHECKOUT_IN_PROGRESS;
 }
 
 void AutofillDialogControllerImpl::OnAutocheckoutError() {
-  had_autocheckout_error_ = true;
+  DCHECK_EQ(AUTOCHECKOUT_IN_PROGRESS, autocheckout_state_);
+  GetMetricLogger().LogAutocheckoutDuration(
+      base::Time::Now() - autocheckout_started_timestamp_,
+      AutofillMetrics::AUTOCHECKOUT_FAILED);
+  autocheckout_state_ = AUTOCHECKOUT_ERROR;
   autocheckout_started_timestamp_ = base::Time();
   view_->UpdateNotificationArea();
   view_->UpdateButtonStrip();
   view_->UpdateDetailArea();
+}
+
+void AutofillDialogControllerImpl::OnAutocheckoutSuccess() {
+  DCHECK_EQ(AUTOCHECKOUT_IN_PROGRESS, autocheckout_state_);
+  GetMetricLogger().LogAutocheckoutDuration(
+      base::Time::Now() - autocheckout_started_timestamp_,
+      AutofillMetrics::AUTOCHECKOUT_SUCCEEDED);
+  autocheckout_state_ = AUTOCHECKOUT_SUCCESS;
+  autocheckout_started_timestamp_ = base::Time();
+  view_->UpdateNotificationArea();
+  view_->UpdateButtonStrip();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -425,6 +541,10 @@ string16 AutofillDialogControllerImpl::EditSuggestionText() const {
 }
 
 string16 AutofillDialogControllerImpl::CancelButtonText() const {
+  if (autocheckout_state_ == AUTOCHECKOUT_ERROR)
+    return l10n_util::GetStringUTF16(IDS_OK);
+  if (autocheckout_state_ == AUTOCHECKOUT_SUCCESS)
+    return l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_CONTINUE_BUTTON);
   return l10n_util::GetStringUTF16(IDS_CANCEL);
 }
 
@@ -497,7 +617,13 @@ bool AutofillDialogControllerImpl::ShouldOfferToSaveInChrome() const {
       !profile_->IsOffTheRecord() &&
       IsManuallyEditingAnySection() &&
       !ShouldShowProgressBar() &&
-      !HadAutocheckoutError();
+      autocheckout_state_ != AUTOCHECKOUT_ERROR;
+}
+
+int AutofillDialogControllerImpl::GetDialogButtons() const {
+  if (autocheckout_state_ != AUTOCHECKOUT_NOT_STARTED)
+    return ui::DIALOG_BUTTON_CANCEL;
+  return ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL;
 }
 
 bool AutofillDialogControllerImpl::IsDialogButtonEnabled(
@@ -513,7 +639,8 @@ bool AutofillDialogControllerImpl::IsDialogButtonEnabled(
   DCHECK_EQ(ui::DIALOG_BUTTON_CANCEL, button);
   // TODO(ahutter): Make it possible for the user to cancel out of the dialog
   // while Autocheckout is in progress.
-  return had_autocheckout_error_ || !callback_.is_null();
+  return autocheckout_state_ != AUTOCHECKOUT_IN_PROGRESS ||
+         !callback_.is_null();
 }
 
 const std::vector<ui::Range>& AutofillDialogControllerImpl::
@@ -555,9 +682,6 @@ void AutofillDialogControllerImpl::HideSignIn() {
 }
 
 void AutofillDialogControllerImpl::SignedInStateUpdated() {
-  if (!account_chooser_model_.WalletIsSelected())
-    return;
-
   switch (SignedInState()) {
     case SIGNED_IN:
       // Start fetching the user name if we don't know it yet.
@@ -654,22 +778,26 @@ void AutofillDialogControllerImpl::EnsureLegalDocumentsText() {
 
 void AutofillDialogControllerImpl::PrepareDetailInputsForSection(
     DialogSection section) {
-  // Reset all previously entered data and stop editing |section|.
-  DetailInputs* inputs = MutableRequestedFieldsForSection(section);
-  for (size_t i = 0; i < inputs->size(); ++i) {
-    (*inputs)[i].initial_value.clear();
-  }
   section_editing_state_[section] = false;
+  scoped_ptr<DataModelWrapper> wrapper = CreateWrapper(section);
 
   // If the chosen item in |model| yields an empty suggestion text, it is
   // invalid. In this case, show the editing UI with invalid fields highlighted.
   SuggestionsMenuModel* model = SuggestionsMenuModelForSection(section);
   if (IsASuggestionItemKey(model->GetItemKeyForCheckedItem()) &&
       SuggestionTextForSection(section).empty()) {
-    scoped_ptr<DataModelWrapper> wrapper = CreateWrapper(section);
-    wrapper->FillInputs(MutableRequestedFieldsForSection(section));
     section_editing_state_[section] = true;
   }
+
+  // Reset all previously entered data and stop editing |section|.
+  DetailInputs* inputs = MutableRequestedFieldsForSection(section);
+  for (DetailInputs::iterator it = inputs->begin(); it != inputs->end(); ++it) {
+    it->initial_value.clear();
+    it->editable = InputIsEditable(*it, section);
+  }
+
+  if (wrapper && section_editing_state_[section])
+    wrapper->FillInputs(inputs);
 
   if (view_)
     view_->UpdateSection(section);
@@ -768,13 +896,13 @@ gfx::Image AutofillDialogControllerImpl::AccountChooserImage() {
 bool AutofillDialogControllerImpl::ShouldShowDetailArea() const {
   // Hide the detail area when Autocheckout is running or there was an error (as
   // there's nothing they can do after an error but cancel).
-  return !(AutocheckoutIsRunning() || HadAutocheckoutError());
+  return autocheckout_state_ == AUTOCHECKOUT_NOT_STARTED;
 }
 
 bool AutofillDialogControllerImpl::ShouldShowProgressBar() const {
   // Show the progress bar while Autocheckout is running but hide it on errors,
   // as there's no use leaving it up if the flow has failed.
-  return AutocheckoutIsRunning() && !HadAutocheckoutError();
+  return autocheckout_state_ == AUTOCHECKOUT_IN_PROGRESS;
 }
 
 string16 AutofillDialogControllerImpl::LabelForSection(DialogSection section)
@@ -916,18 +1044,9 @@ scoped_ptr<DataModelWrapper> AutofillDialogControllerImpl::CreateWrapper(
     return scoped_ptr<DataModelWrapper>(new AutofillCreditCardWrapper(card));
   }
 
-  // Calculate the variant by looking at how many items come from the same
-  // data model.
-  size_t variant = 0;
-  for (int i = model->checked_item() - 1; i >= 0; --i) {
-    if (model->GetItemKeyAt(i) == item_key)
-      variant++;
-    else
-      break;
-  }
-
   AutofillProfile* profile = GetManager()->GetProfileByGUID(item_key);
   DCHECK(profile);
+  size_t variant = GetSelectedVariantForModel(*model);
   return scoped_ptr<DataModelWrapper>(
       new AutofillProfileWrapper(profile, variant));
 }
@@ -965,12 +1084,18 @@ bool AutofillDialogControllerImpl::EditEnabledForSection(
 void AutofillDialogControllerImpl::EditClickedForSection(
     DialogSection section) {
   scoped_ptr<DataModelWrapper> model = CreateWrapper(section);
-  model->FillInputs(MutableRequestedFieldsForSection(section));
   section_editing_state_[section] = true;
+
+  DetailInputs* inputs = MutableRequestedFieldsForSection(section);
+  for (DetailInputs::iterator it = inputs->begin(); it != inputs->end(); ++it) {
+    it->editable = InputIsEditable(*it, section);
+  }
+  model->FillInputs(inputs);
+
   view_->UpdateSection(section);
 
   GetMetricLogger().LogDialogUiEvent(
-      dialog_type_, DialogSectionToUiEditEvent(section));
+      GetDialogType(), DialogSectionToUiEditEvent(section));
 }
 
 void AutofillDialogControllerImpl::EditCancelledForSection(
@@ -1011,10 +1136,9 @@ gfx::Image AutofillDialogControllerImpl::IconForField(
       int idr = card_idrs[i];
       gfx::ImageSkia card_image = *rb.GetImageSkiaNamed(idr);
       if (card.IconResourceId() != idr) {
-        color_utils::HSL shift = {-1, 0, 0.8};
         SkBitmap disabled_bitmap =
             SkBitmapOperations::CreateHSLShiftedBitmap(*card_image.bitmap(),
-                                                       shift);
+                                                       kGrayImageShift);
         card_image = gfx::ImageSkia::CreateFrom1xBitmap(disabled_bitmap);
       }
 
@@ -1033,13 +1157,59 @@ gfx::Image AutofillDialogControllerImpl::IconForField(
 string16 AutofillDialogControllerImpl::InputValidityMessage(
     AutofillFieldType type,
     const string16& value) const {
-  if (InputIsValid(type, value))
-    return string16();
+  switch (AutofillType::GetEquivalentFieldType(type)) {
+    case EMAIL_ADDRESS:
+      if (!value.empty() && !IsValidEmailAddress(value))
+        return ASCIIToUTF16("Are you sure this is right?");
+      break;
 
-  if (value.empty())
-    return ASCIIToUTF16("You forgot one");
+    case CREDIT_CARD_NUMBER:
+      if (!value.empty() && !autofill::IsValidCreditCardNumber(value))
+        return ASCIIToUTF16("Are you sure this is right?");
+      break;
 
-  return ASCIIToUTF16("Are you sure this is right?");
+    case CREDIT_CARD_NAME:
+      // Wallet requires a first and last name.
+      if (!value.empty() && IsPayingWithWallet() &&
+          !IsCardHolderNameValidForWallet(value)) {
+        return l10n_util::GetStringUTF16(
+            IDS_AUTOFILL_DIALOG_VALIDATION_WALLET_REQUIRES_TWO_NAMES);
+      }
+      break;
+
+    case CREDIT_CARD_EXP_MONTH:
+    case CREDIT_CARD_EXP_4_DIGIT_YEAR:
+      break;
+
+    case CREDIT_CARD_VERIFICATION_CODE:
+      if (!value.empty() && !autofill::IsValidCreditCardSecurityCode(value))
+          return ASCIIToUTF16("Are you sure this is right?");
+      break;
+
+    case ADDRESS_HOME_LINE1:
+      break;
+
+    case ADDRESS_HOME_LINE2:
+      return base::string16();  // Line 2 is optional - always valid.
+
+    case ADDRESS_HOME_CITY:
+    case ADDRESS_HOME_STATE:
+    case ADDRESS_HOME_ZIP:
+    case ADDRESS_HOME_COUNTRY:
+      break;
+
+    case NAME_FULL:  // Used for shipping.
+      break;
+
+    case PHONE_HOME_WHOLE_NUMBER:  // Used in billing section.
+      break;
+
+    default:
+      NOTREACHED();  // Trying to validate unknown field.
+      break;
+  }
+
+  return !value.empty() ? base::string16() : ASCIIToUTF16("You forgot one");
 }
 
 // TODO(estade): Replace all the error messages here with more helpful and
@@ -1080,12 +1250,27 @@ ValidityData AutofillDialogControllerImpl::InputsAreValid(
   // If there is a credit card number and a CVC, validate them together.
   if (field_values.count(CREDIT_CARD_NUMBER) &&
       field_values.count(CREDIT_CARD_VERIFICATION_CODE) &&
-      InputIsValid(CREDIT_CARD_NUMBER, field_values[CREDIT_CARD_NUMBER])) {
+      InputValidityMessage(CREDIT_CARD_NUMBER,
+                           field_values[CREDIT_CARD_NUMBER]).empty()) {
     if (!autofill::IsValidCreditCardSecurityCode(
             field_values[CREDIT_CARD_VERIFICATION_CODE],
             field_values[CREDIT_CARD_NUMBER])) {
       invalid_messages[CREDIT_CARD_VERIFICATION_CODE] =
           ASCIIToUTF16("CVC doesn't match card type!");
+    }
+  }
+
+  // Validate the phone number against the country code of the address.
+  if (field_values.count(ADDRESS_HOME_COUNTRY) &&
+      field_values.count(PHONE_HOME_WHOLE_NUMBER)) {
+    i18n::PhoneObject phone_object(
+        field_values[PHONE_HOME_WHOLE_NUMBER],
+        AutofillCountry::GetCountryCode(
+            field_values[ADDRESS_HOME_COUNTRY],
+            g_browser_process->GetApplicationLocale()));
+    if (!phone_object.IsValidNumber()) {
+      invalid_messages[PHONE_HOME_WHOLE_NUMBER] =
+          ASCIIToUTF16("Invalid phone number");
     }
   }
 
@@ -1167,15 +1352,8 @@ void AutofillDialogControllerImpl::FocusMoved() {
 void AutofillDialogControllerImpl::ViewClosed() {
   GetManager()->RemoveObserver(this);
 
-  if (AutocheckoutIsRunning() || had_autocheckout_error_) {
-    AutofillMetrics::AutocheckoutCompletionStatus metric =
-        AutocheckoutIsRunning() ?
-            AutofillMetrics::AUTOCHECKOUT_SUCCEEDED :
-            AutofillMetrics::AUTOCHECKOUT_FAILED;
-    GetMetricLogger().LogAutocheckoutDuration(
-        base::Time::Now() - autocheckout_started_timestamp_,
-        metric);
-  }
+  // TODO(ahutter): Once a user can cancel Autocheckout mid-flow, log that
+  // metric here.
 
   delete this;
 }
@@ -1250,10 +1428,16 @@ std::vector<DialogNotification>
             l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_VERIFY_CVV)));
   }
 
-  if (had_autocheckout_error_) {
+  if (autocheckout_state_ == AUTOCHECKOUT_ERROR) {
     notifications.push_back(DialogNotification(
         DialogNotification::AUTOCHECKOUT_ERROR,
         l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_AUTOCHECKOUT_ERROR)));
+  }
+
+  if (autocheckout_state_ == AUTOCHECKOUT_SUCCESS) {
+    notifications.push_back(DialogNotification(
+        DialogNotification::AUTOCHECKOUT_SUCCESS,
+        l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_AUTOCHECKOUT_SUCCESS)));
   }
 
   if (wallet_server_validation_error_) {
@@ -1277,7 +1461,7 @@ void AutofillDialogControllerImpl::SignInLinkClicked() {
     view_->UpdateAccountChooser();
 
     GetMetricLogger().LogDialogUiEvent(
-        dialog_type_, AutofillMetrics::DIALOG_UI_SIGNIN_SHOWN);
+        GetDialogType(), AutofillMetrics::DIALOG_UI_SIGNIN_SHOWN);
   } else {
     HideSignIn();
   }
@@ -1351,7 +1535,7 @@ content::WebContents* AutofillDialogControllerImpl::web_contents() {
 void AutofillDialogControllerImpl::OnPopupShown(
     content::KeyboardListener* listener) {
   GetMetricLogger().LogDialogPopupEvent(
-      dialog_type_, AutofillMetrics::DIALOG_POPUP_SHOWN);
+      GetDialogType(), AutofillMetrics::DIALOG_POPUP_SHOWN);
 }
 
 void AutofillDialogControllerImpl::OnPopupHidden(
@@ -1381,7 +1565,7 @@ void AutofillDialogControllerImpl::DidAcceptSuggestion(const string16& value,
   }
 
   GetMetricLogger().LogDialogPopupEvent(
-      dialog_type_, AutofillMetrics::DIALOG_POPUP_FORM_FILLED);
+      GetDialogType(), AutofillMetrics::DIALOG_POPUP_FORM_FILLED);
 
   // TODO(estade): not sure why it's necessary to do this explicitly.
   HidePopup();
@@ -1420,8 +1604,15 @@ void AutofillDialogControllerImpl::SuggestionItemSelected(
     SuggestionsMenuModel* model,
     size_t index) {
   if (model->GetItemKeyAt(index) == kManageItemsKey) {
-    GURL url = IsPayingWithWallet() ? wallet::GetManageItemsUrl() :
-        GURL(chrome::kChromeUISettingsURL).Resolve(chrome::kAutofillSubPage);
+    GURL url;
+    if (!IsPayingWithWallet()) {
+      GURL settings_url(chrome::kChromeUISettingsURL);
+      url = settings_url.Resolve(chrome::kAutofillSubPage);
+    } else {
+      url = SectionForSuggestionsMenuModel(*model) == SECTION_SHIPPING ?
+          wallet::GetManageAddressesUrl() : wallet::GetManageInstrumentsUrl();
+    }
+
     OpenTabWithUrl(url);
     return;
   }
@@ -1444,13 +1635,14 @@ DialogType AutofillDialogControllerImpl::GetDialogType() const {
 }
 
 std::string AutofillDialogControllerImpl::GetRiskData() const {
-  // TODO(dbeam): Implement this.
-  return "risky business";
+  return risk_data_;
 }
 
 void AutofillDialogControllerImpl::OnDidAcceptLegalDocuments() {
-  // TODO(dbeam): Don't send risk params until legal documents are accepted:
-  // http://crbug.com/173505
+  DCHECK(is_submitting_ && IsPayingWithWallet());
+
+  has_accepted_legal_documents_ = true;
+  LoadRiskFingerprintData();
 }
 
 void AutofillDialogControllerImpl::OnDidAuthenticateInstrument(bool success) {
@@ -1523,10 +1715,9 @@ void AutofillDialogControllerImpl::OnAutomaticSigninFailure(
 
 void AutofillDialogControllerImpl::OnDidGetWalletItems(
     scoped_ptr<wallet::WalletItems> wallet_items) {
-  DCHECK(account_chooser_model_.WalletIsSelected());
-
   legal_documents_text_.clear();
   legal_document_link_ranges_.clear();
+  has_accepted_legal_documents_ = false;
 
   // TODO(dbeam): verify items support kCartCurrency? http://crbug.com/232952
   wallet_items_ = wallet_items.Pass();
@@ -1540,8 +1731,7 @@ void AutofillDialogControllerImpl::OnDidSaveAddress(
 
   if (required_actions.empty()) {
     active_address_id_ = address_id;
-    if (!active_instrument_id_.empty())
-      GetFullWallet();
+    GetFullWalletIfReady();
   } else {
     HandleSaveOrUpdateRequiredActions(required_actions);
   }
@@ -1554,8 +1744,7 @@ void AutofillDialogControllerImpl::OnDidSaveInstrument(
 
   if (required_actions.empty()) {
     active_instrument_id_ = instrument_id;
-    if (!active_address_id_.empty())
-      GetFullWallet();
+    GetFullWalletIfReady();
   } else {
     HandleSaveOrUpdateRequiredActions(required_actions);
   }
@@ -1566,7 +1755,9 @@ void AutofillDialogControllerImpl::OnDidSaveInstrumentAndAddress(
     const std::string& address_id,
     const std::vector<wallet::RequiredAction>& required_actions) {
   OnDidSaveInstrument(instrument_id, required_actions);
-  OnDidSaveAddress(address_id, required_actions);
+  // |is_submitting_| can change while in |OnDidSaveInstrument()|.
+  if (is_submitting_)
+    OnDidSaveAddress(address_id, required_actions);
 }
 
 void AutofillDialogControllerImpl::OnDidUpdateAddress(
@@ -1599,6 +1790,9 @@ void AutofillDialogControllerImpl::OnNetworkError(int response_code) {
 // PersonalDataManagerObserver implementation.
 
 void AutofillDialogControllerImpl::OnPersonalDataChanged() {
+  if (is_submitting_)
+    return;
+
   SuggestionsUpdated();
 }
 
@@ -1677,9 +1871,10 @@ AutofillDialogControllerImpl::AutofillDialogControllerImpl(
       weak_ptr_factory_(this),
       is_first_run_(!profile_->GetPrefs()->HasPrefPath(
           ::prefs::kAutofillDialogPayWithoutWallet)),
+      has_accepted_legal_documents_(false),
       is_submitting_(false),
       wallet_server_validation_error_(false),
-      had_autocheckout_error_(false),
+      autocheckout_state_(AUTOCHECKOUT_NOT_STARTED),
       was_ui_latency_logged_(false) {
   // TODO(estade): remove duplicates from |form_structure|?
   DCHECK(!callback_.is_null());
@@ -1706,6 +1901,53 @@ bool AutofillDialogControllerImpl::IsFirstRun() const {
   return is_first_run_;
 }
 
+void AutofillDialogControllerImpl::LoadRiskFingerprintData() {
+  DCHECK(AreLegalDocumentsCurrent());
+
+  // Clear potential stale data to ensure |GetFullWalletIfReady()| triggers only
+  // when a new fingerprint is loaded.
+  risk_data_.clear();
+
+  uint64 obfuscated_gaia_id = 0;
+  bool success = base::StringToUint64(wallet_items_->obfuscated_gaia_id(),
+                                      &obfuscated_gaia_id);
+  DCHECK(success);
+
+  gfx::Rect window_bounds;
+#if !defined(OS_ANDROID)
+  window_bounds = GetBaseWindowForWebContents(web_contents())->GetBounds();
+#else
+  // TODO(dbeam): figure out the correct browser window size to pass along for
+  // android.
+#endif
+
+  PrefService* user_prefs = profile_->GetPrefs();
+  std::string charset = user_prefs->GetString(::prefs::kDefaultCharset);
+  std::string accept_languages =
+      user_prefs->GetString(::prefs::kAcceptLanguages);
+  base::Time install_time = base::Time::FromTimeT(
+      g_browser_process->local_state()->GetInt64(::prefs::kInstallDate));
+
+  risk::GetFingerprint(
+      obfuscated_gaia_id, window_bounds, *web_contents(),
+      chrome::VersionInfo().Version(), charset, accept_languages, install_time,
+      dialog_type_, g_browser_process->GetApplicationLocale(),
+      base::Bind(&AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData(
+    scoped_ptr<risk::Fingerprint> fingerprint) {
+  DCHECK(AreLegalDocumentsCurrent());
+
+  std::string proto_data;
+  fingerprint->SerializeToString(&proto_data);
+  bool success = base::Base64Encode(proto_data, &risk_data_);
+  DCHECK(success);
+
+  GetFullWalletIfReady();
+}
+
 void AutofillDialogControllerImpl::OpenTabWithUrl(const GURL& url) {
 #if !defined(OS_ANDROID)
   chrome::NavigateParams params(
@@ -1721,11 +1963,10 @@ void AutofillDialogControllerImpl::OpenTabWithUrl(const GURL& url) {
 
 void AutofillDialogControllerImpl::DisableWallet() {
   signin_helper_.reset();
-  account_chooser_model_.SetHadWalletError();
-  GetWalletClient()->CancelRequests();
   wallet_items_.reset();
-  full_wallet_.reset();
+  GetWalletClient()->CancelRequests();
   SetIsSubmitting(false);
+  account_chooser_model_.SetHadWalletError();
 }
 
 void AutofillDialogControllerImpl::SuggestionsUpdated() {
@@ -1765,17 +2006,33 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
     if (!IsSubmitPausedOn(wallet::VERIFY_CVV)) {
       const std::vector<wallet::WalletItems::MaskedInstrument*>& instruments =
           wallet_items_->instruments();
+      std::string first_active_instrument_key;
+      std::string default_instrument_key;
       for (size_t i = 0; i < instruments.size(); ++i) {
+        bool allowed = IsInstrumentAllowed(*instruments[i]);
+        gfx::Image icon = instruments[i]->CardIcon();
+        if (!allowed && !icon.IsEmpty()) {
+          // Create a grayed disabled icon.
+          SkBitmap disabled_bitmap = SkBitmapOperations::CreateHSLShiftedBitmap(
+              *icon.ToSkBitmap(), kGrayImageShift);
+          icon = gfx::Image(
+              gfx::ImageSkia::CreateFrom1xBitmap(disabled_bitmap));
+        }
         std::string key = base::IntToString(i);
         suggested_cc_billing_.AddKeyedItemWithSublabelAndIcon(
             key,
             instruments[i]->DisplayName(),
             instruments[i]->DisplayNameDetail(),
-            instruments[i]->CardIcon());
+            icon);
+        suggested_cc_billing_.SetEnabled(key, allowed);
 
-        if (instruments[i]->object_id() ==
-                wallet_items_->default_instrument_id()) {
-          suggested_cc_billing_.SetCheckedItem(key);
+        if (allowed) {
+          if (first_active_instrument_key.empty())
+            first_active_instrument_key = key;
+          if (instruments[i]->object_id() ==
+              wallet_items_->default_instrument_id()) {
+            default_instrument_key = key;
+          }
         }
       }
 
@@ -1783,16 +2040,29 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
       suggested_cc_billing_.AddKeyedItem(
           kAddNewItemKey,
           l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_ADD_BILLING_DETAILS));
-      suggested_cc_billing_.AddKeyedItem(
-          kManageItemsKey,
-          l10n_util::GetStringUTF16(
-              IDS_AUTOFILL_DIALOG_MANAGE_BILLING_DETAILS));
+      if (!wallet_items_->HasRequiredAction(wallet::SETUP_WALLET)) {
+        suggested_cc_billing_.AddKeyedItem(
+            kManageItemsKey,
+            l10n_util::GetStringUTF16(
+                IDS_AUTOFILL_DIALOG_MANAGE_BILLING_DETAILS));
+      }
+
+      // Determine which instrument item should be selected.
+      if (!default_instrument_key.empty())
+        suggested_cc_billing_.SetCheckedItem(default_instrument_key);
+      else if (!first_active_instrument_key.empty())
+        suggested_cc_billing_.SetCheckedItem(first_active_instrument_key);
+      else
+        suggested_cc_billing_.SetCheckedItem(kAddNewItemKey);
     }
   } else {
     PersonalDataManager* manager = GetManager();
     const std::vector<CreditCard*>& cards = manager->GetCreditCards();
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     for (size_t i = 0; i < cards.size(); ++i) {
+      if (!HasCompleteAndVerifiedData(*cards[i], requested_cc_fields_))
+        continue;
+
       suggested_cc_.AddKeyedItemWithIcon(
           cards[i]->guid(),
           cards[i]->Label(),
@@ -1802,7 +2072,7 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
     const std::vector<AutofillProfile*>& profiles = manager->GetProfiles();
     const std::string app_locale = g_browser_process->GetApplicationLocale();
     for (size_t i = 0; i < profiles.size(); ++i) {
-      if (!IsCompleteProfile(*profiles[i]))
+      if (!HasCompleteAndVerifiedData(*profiles[i], requested_shipping_fields_))
         continue;
 
       // Add all email addresses.
@@ -1848,17 +2118,29 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
   suggested_shipping_.AddKeyedItem(
       kAddNewItemKey,
       l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_ADD_SHIPPING_ADDRESS));
-  suggested_shipping_.AddKeyedItem(
-      kManageItemsKey,
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_MANAGE_SHIPPING_ADDRESS));
+  if (!IsPayingWithWallet() ||
+      !wallet_items_->HasRequiredAction(wallet::SETUP_WALLET)) {
+    suggested_shipping_.AddKeyedItem(
+        kManageItemsKey,
+        l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_MANAGE_SHIPPING_ADDRESS));
+  }
 
   if (!IsPayingWithWallet()) {
-    // When using Autofill, the default option is the first suggestion, if
-    // one exists. Otherwise it's the "Use shipping for billing" item.
-    const std::string& first_real_suggestion_item_key =
-        suggested_shipping_.GetItemKeyAt(1);
-    if (IsASuggestionItemKey(first_real_suggestion_item_key))
-      suggested_shipping_.SetCheckedItem(first_real_suggestion_item_key);
+    for (size_t i = SECTION_MIN; i <= SECTION_MAX; ++i) {
+      DialogSection section = static_cast<DialogSection>(i);
+      if (!SectionIsActive(section))
+        continue;
+
+      // Set the starting choice for the menu. First set to the default in case
+      // the GUID saved in prefs refers to a profile that no longer exists.
+      std::string guid;
+      int variant;
+      GetDefaultAutofillChoice(section, &guid, &variant);
+      SuggestionsMenuModel* model = SuggestionsMenuModelForSection(section);
+      model->SetCheckedItemNthWithKey(guid, variant + 1);
+      if (GetAutofillChoice(section, &guid, &variant))
+        model->SetCheckedItemNthWithKey(guid, variant + 1);
+    }
   }
 
   if (view_)
@@ -1867,20 +2149,6 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
   for (size_t section = SECTION_MIN; section <= SECTION_MAX; ++section) {
     PrepareDetailInputsForSection(static_cast<DialogSection>(section));
   }
-}
-
-bool AutofillDialogControllerImpl::IsCompleteProfile(
-    const AutofillProfile& profile) {
-  const std::string app_locale = g_browser_process->GetApplicationLocale();
-  for (size_t i = 0; i < requested_shipping_fields_.size(); ++i) {
-    AutofillFieldType type = requested_shipping_fields_[i].type;
-    if (type != ADDRESS_HOME_LINE2 &&
-        profile.GetInfo(type, app_locale).empty()) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 void AutofillDialogControllerImpl::FillOutputForSectionWithComparator(
@@ -1917,6 +2185,7 @@ void AutofillDialogControllerImpl::FillOutputForSectionWithComparator(
 
     if (section == SECTION_CC) {
       CreditCard card;
+      card.set_origin(kAutofillDialogOrigin);
       FillFormGroupFromOutputs(output, &card);
 
       if (ShouldSaveDetailsLocally())
@@ -1928,14 +2197,19 @@ void AutofillDialogControllerImpl::FillOutputForSectionWithComparator(
       SetCvcResult(GetValueForType(output, CREDIT_CARD_VERIFICATION_CODE));
     } else {
       AutofillProfile profile;
+      profile.set_origin(kAutofillDialogOrigin);
       FillFormGroupFromOutputs(output, &profile);
 
       // For billing, the profile name has to come from the CC section.
-      if (section == SECTION_BILLING)
-        profile.SetRawInfo(NAME_FULL, GetCcName());
+      if (section == SECTION_BILLING) {
+        profile.SetRawInfo(NAME_FULL,
+                           GetValueFromSection(SECTION_CC, CREDIT_CARD_NAME));
+        profile.SetRawInfo(EMAIL_ADDRESS,
+                           GetValueFromSection(SECTION_EMAIL, EMAIL_ADDRESS));
+      }
 
       if (ShouldSaveDetailsLocally())
-        GetManager()->SaveImportedProfile(profile);
+        SaveProfileGleanedFromSection(profile, section);
 
       FillFormStructureForSection(profile, 0, section, compare);
     }
@@ -1976,19 +2250,46 @@ void AutofillDialogControllerImpl::SetCvcResult(const string16& cvc) {
   }
 }
 
-string16 AutofillDialogControllerImpl::GetCcName() {
-  DCHECK(SectionIsActive(SECTION_CC));
+string16 AutofillDialogControllerImpl::GetValueFromSection(
+    DialogSection section,
+    AutofillFieldType type) {
+  DCHECK(SectionIsActive(section));
 
-  CreditCard card;
-  scoped_ptr<DataModelWrapper> wrapper = CreateWrapper(SECTION_CC);
-  if (!wrapper) {
-    DetailOutputMap output;
-    view_->GetUserInput(SECTION_CC, &output);
-    FillFormGroupFromOutputs(output, &card);
-    wrapper.reset(new AutofillCreditCardWrapper(&card));
+  scoped_ptr<DataModelWrapper> wrapper = CreateWrapper(section);
+  if (wrapper)
+    return wrapper->GetInfo(type);
+
+  DetailOutputMap output;
+  view_->GetUserInput(section, &output);
+  for (DetailOutputMap::iterator iter = output.begin(); iter != output.end();
+       ++iter) {
+    if (iter->first->type == type)
+      return iter->second;
   }
 
-  return wrapper->GetInfo(CREDIT_CARD_NAME);
+  return string16();
+}
+
+void AutofillDialogControllerImpl::SaveProfileGleanedFromSection(
+    const AutofillProfile& profile,
+    DialogSection section) {
+  if (section == SECTION_EMAIL) {
+    // Save the email address to the existing (suggested) billing profile. If
+    // there is no existing profile, the newly created one will pick up this
+    // email, so in that case do nothing.
+    scoped_ptr<DataModelWrapper> wrapper = CreateWrapper(SECTION_BILLING);
+    if (wrapper) {
+      std::string item_key = SuggestionsMenuModelForSection(SECTION_BILLING)->
+          GetItemKeyForCheckedItem();
+      AutofillProfile* billing_profile =
+          GetManager()->GetProfileByGUID(item_key);
+      billing_profile->OverwriteWithOrAddTo(
+          profile,
+          g_browser_process->GetApplicationLocale());
+    }
+  } else {
+    GetManager()->SaveImportedProfile(profile);
+  }
 }
 
 SuggestionsMenuModel* AutofillDialogControllerImpl::
@@ -2045,40 +2346,6 @@ void AutofillDialogControllerImpl::HidePopup() {
   input_showing_popup_ = NULL;
 }
 
-void AutofillDialogControllerImpl::LoadRiskFingerprintData() {
-  // TODO(dbeam): Add a CHECK or otherwise strong guarantee that the ToS have
-  // been accepted prior to calling into this method. Also, ensure that the UI
-  // contains a clear indication to the user as to what data will be collected.
-  // Until then, this code should not be called. http://crbug.com/173505
-
-  int64 gaia_id = 0;
-  bool success =
-      base::StringToInt64(wallet_items_->obfuscated_gaia_id(), &gaia_id);
-  DCHECK(success);
-
-  gfx::Rect window_bounds =
-      GetBaseWindowForWebContents(web_contents())->GetBounds();
-
-  PrefService* user_prefs = profile_->GetPrefs();
-  std::string charset = user_prefs->GetString(::prefs::kDefaultCharset);
-  std::string accept_languages =
-      user_prefs->GetString(::prefs::kAcceptLanguages);
-  base::Time install_time = base::Time::FromTimeT(
-      g_browser_process->local_state()->GetInt64(::prefs::kInstallDate));
-
-  risk::GetFingerprint(
-      gaia_id, window_bounds, *web_contents(), chrome::VersionInfo().Version(),
-      charset, accept_languages, install_time, dialog_type_,
-      g_browser_process->GetApplicationLocale(),
-      base::Bind(&AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData,
-                 weak_ptr_factory_.GetWeakPtr()));
-}
-
-void AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData(
-    scoped_ptr<risk::Fingerprint> fingerprint) {
-  NOTIMPLEMENTED();
-}
-
 bool AutofillDialogControllerImpl::IsManuallyEditingSection(
     DialogSection section) const {
   std::map<DialogSection, bool>::const_iterator it =
@@ -2104,45 +2371,18 @@ bool AutofillDialogControllerImpl::IsManuallyEditingAnySection() const {
   return false;
 }
 
-bool AutofillDialogControllerImpl::InputIsValid(AutofillFieldType type,
-                                                const string16& value) const {
-  switch (AutofillType::GetEquivalentFieldType(type)) {
-    case EMAIL_ADDRESS:
-      return IsValidEmailAddress(value);
+bool AutofillDialogControllerImpl::InputIsEditable(
+    const DetailInput& input,
+    DialogSection section) const {
+  if (input.type != CREDIT_CARD_NUMBER || !IsPayingWithWallet())
+    return true;
 
-    case CREDIT_CARD_NUMBER:
-      return autofill::IsValidCreditCardNumber(value);
-    case CREDIT_CARD_NAME:
-      break;
-    case CREDIT_CARD_EXP_MONTH:
-    case CREDIT_CARD_EXP_4_DIGIT_YEAR:
-      break;
-    case CREDIT_CARD_VERIFICATION_CODE:
-      return autofill::IsValidCreditCardSecurityCode(value);
+  std::map<DialogSection, bool>::const_iterator it =
+      section_editing_state_.find(section);
+  if (it != section_editing_state_.end() && it->second)
+    return false;
 
-    case ADDRESS_HOME_LINE1:
-      break;
-    case ADDRESS_HOME_LINE2:
-      return true;  // Line 2 is optional - always valid.
-    case ADDRESS_HOME_CITY:
-    case ADDRESS_HOME_STATE:
-    case ADDRESS_HOME_ZIP:
-    case ADDRESS_HOME_COUNTRY:
-      break;
-
-    case NAME_FULL:  // Used for shipping.
-      break;
-
-    case PHONE_HOME_WHOLE_NUMBER:  // Used in billing section.
-      // TODO(dbeam): validate with libphonenumber.
-      break;
-
-    default:
-      NOTREACHED();  // Trying to validate unknown field.
-      break;
-  }
-
-  return !value.empty();
+  return true;
 }
 
 bool AutofillDialogControllerImpl::AllSectionsAreValid() const {
@@ -2179,10 +2419,18 @@ bool AutofillDialogControllerImpl::ShouldSaveDetailsLocally() {
 void AutofillDialogControllerImpl::SetIsSubmitting(bool submitting) {
   is_submitting_ = submitting;
 
+  if (!submitting)
+    full_wallet_.reset();
+
   if (view_) {
     view_->UpdateButtonStrip();
     view_->UpdateNotificationArea();
   }
+}
+
+bool AutofillDialogControllerImpl::AreLegalDocumentsCurrent() const {
+  return has_accepted_legal_documents_ ||
+      (wallet_items_ && wallet_items_->legal_documents().empty());
 }
 
 void AutofillDialogControllerImpl::SubmitWithWallet() {
@@ -2193,10 +2441,17 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
   active_address_id_.clear();
   full_wallet_.reset();
 
+  content::BrowserThread::PostTask(
+     content::BrowserThread::IO, FROM_HERE,
+     base::Bind(&UserDidOptIntoLocationServices));
+
   GetWalletClient()->AcceptLegalDocuments(
       wallet_items_->legal_documents(),
       wallet_items_->google_transaction_id(),
       source_url_);
+
+  if (AreLegalDocumentsCurrent())
+    LoadRiskFingerprintData();
 
   SuggestionsMenuModel* billing =
       SuggestionsMenuModelForSection(SECTION_CC_BILLING);
@@ -2215,15 +2470,10 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
   base::StringToInt(shipping->GetItemKeyForCheckedItem(), &address_index);
 
   if (!IsManuallyEditingSection(SECTION_SHIPPING) &&
-      shipping->GetItemKeyForCheckedItem() != kSameAsBillingKey) {
+      !ShouldUseBillingForShipping()) {
     active_address_id_ =
         wallet_items_->addresses()[address_index]->object_id();
     DCHECK(!active_address_id_.empty());
-  }
-
-  if (!active_instrument_id_.empty() && !active_address_id_.empty()) {
-    GetFullWallet();
-    return;
   }
 
   scoped_ptr<wallet::Instrument> inputted_instrument =
@@ -2237,10 +2487,20 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
   scoped_ptr<wallet::Address> inputted_address;
   if (active_address_id_.empty()) {
     if (ShouldUseBillingForShipping()) {
-      inputted_address.reset(new wallet::Address(inputted_instrument ?
+      const wallet::Address& address = inputted_instrument ?
           inputted_instrument->address() :
-          wallet_items_->instruments()[instrument_index]->address()));
-      DCHECK(inputted_address->object_id().empty());
+          wallet_items_->instruments()[instrument_index]->address();
+      // Try to find an exact matched shipping address and use it for shipping,
+      // otherwise save it as a new shipping address. http://crbug.com/225442
+      const wallet::Address* duplicated_address =
+          FindDuplicateAddress(wallet_items_->addresses(), address);
+      if (duplicated_address) {
+        active_address_id_ = duplicated_address->object_id();
+        DCHECK(!active_address_id_.empty());
+      } else {
+        inputted_address.reset(new wallet::Address(address));
+        DCHECK(inputted_address->object_id().empty());
+      }
     } else {
       inputted_address = CreateTransientAddress();
       if (section_editing_state_[SECTION_SHIPPING]) {
@@ -2250,6 +2510,11 @@ void AutofillDialogControllerImpl::SubmitWithWallet() {
       }
     }
   }
+
+  // If there's neither an address nor instrument to save, |GetFullWallet()|
+  // is called when the risk fingerprint is loaded.
+  if (!active_instrument_id_.empty() && !active_address_id_.empty())
+    return;
 
   // If instrument and address aren't based off of any existing data, save both.
   if (inputted_instrument && inputted_address && !update_request &&
@@ -2349,6 +2614,16 @@ void AutofillDialogControllerImpl::GetFullWallet() {
       capabilities));
 }
 
+void AutofillDialogControllerImpl::GetFullWalletIfReady() {
+  DCHECK(is_submitting_);
+  DCHECK(IsPayingWithWallet());
+
+  if (!active_instrument_id_.empty() && !active_address_id_.empty() &&
+      !risk_data_.empty()) {
+    GetFullWallet();
+  }
+}
+
 void AutofillDialogControllerImpl::HandleSaveOrUpdateRequiredActions(
     const std::vector<wallet::RequiredAction>& required_actions) {
   DCHECK(!required_actions.empty());
@@ -2387,6 +2662,21 @@ void AutofillDialogControllerImpl::FinishSubmit() {
     FillOutputForSection(SECTION_SHIPPING);
   }
 
+  if (!IsPayingWithWallet()) {
+    for (size_t i = SECTION_MIN; i <= SECTION_MAX; ++i) {
+      DialogSection section = static_cast<DialogSection>(i);
+      if (!SectionIsActive(section))
+        continue;
+
+      SuggestionsMenuModel* model = SuggestionsMenuModelForSection(section);
+      std::string item_key = model->GetItemKeyForCheckedItem();
+      if (IsASuggestionItemKey(item_key) || item_key == kSameAsBillingKey) {
+        int variant = GetSelectedVariantForModel(*model);
+        PersistAutofillChoice(section, item_key, variant);
+      }
+    }
+  }
+
   callback_.Run(&form_structure_, !wallet_items_ ? std::string() :
       wallet_items_->google_transaction_id());
   callback_ = base::Callback<void(const FormStructure*, const std::string&)>();
@@ -2401,14 +2691,17 @@ void AutofillDialogControllerImpl::FinishSubmit() {
   profile_->GetPrefs()->SetBoolean(::prefs::kAutofillDialogPayWithoutWallet,
                                    manually_selected_pay_without_wallet);
 
-  switch (dialog_type_) {
+  switch (GetDialogType()) {
     case DIALOG_TYPE_AUTOCHECKOUT:
       // Stop observing PersonalDataManager to avoid the dialog redrawing while
       // in an Autocheckout flow.
       GetManager()->RemoveObserver(this);
       autocheckout_started_timestamp_ = base::Time::Now();
+      DCHECK_EQ(AUTOCHECKOUT_NOT_STARTED, autocheckout_state_);
+      autocheckout_state_ = AUTOCHECKOUT_IN_PROGRESS;
       view_->UpdateButtonStrip();
       view_->UpdateDetailArea();
+      view_->UpdateNotificationArea();
       break;
 
     case DIALOG_TYPE_REQUEST_AUTOCOMPLETE:
@@ -2418,14 +2711,78 @@ void AutofillDialogControllerImpl::FinishSubmit() {
   }
 }
 
+void AutofillDialogControllerImpl::PersistAutofillChoice(
+    DialogSection section,
+    const std::string& guid,
+    int variant) {
+  DCHECK(!IsPayingWithWallet());
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
+  value->SetString(kGuidPrefKey, guid);
+  value->SetInteger(kVariantPrefKey, variant);
+
+  DictionaryPrefUpdate updater(profile()->GetPrefs(),
+                               ::prefs::kAutofillDialogAutofillDefault);
+  base::DictionaryValue* autofill_choice = updater.Get();
+  autofill_choice->Set(SectionToPrefString(section), value.release());
+}
+
+void AutofillDialogControllerImpl::GetDefaultAutofillChoice(
+    DialogSection section,
+    std::string* guid,
+    int* variant) {
+  DCHECK(!IsPayingWithWallet());
+  // The default choice is the first thing in the menu that is a suggestion
+  // item.
+  *variant = 0;
+  SuggestionsMenuModel* model = SuggestionsMenuModelForSection(section);
+  for (int i = 0; i < model->GetItemCount(); ++i) {
+    if (IsASuggestionItemKey(model->GetItemKeyAt(i))) {
+      *guid = model->GetItemKeyAt(i);
+      break;
+    }
+  }
+}
+
+bool AutofillDialogControllerImpl::GetAutofillChoice(DialogSection section,
+                                                     std::string* guid,
+                                                     int* variant) {
+  DCHECK(!IsPayingWithWallet());
+  const base::DictionaryValue* choices = profile()->GetPrefs()->GetDictionary(
+      ::prefs::kAutofillDialogAutofillDefault);
+  if (!choices)
+    return false;
+
+  const base::DictionaryValue* choice = NULL;
+  if (!choices->GetDictionary(SectionToPrefString(section), &choice))
+    return false;
+
+  choice->GetString(kGuidPrefKey, guid);
+  choice->GetInteger(kVariantPrefKey, variant);
+  return true;
+}
+
+size_t AutofillDialogControllerImpl::GetSelectedVariantForModel(
+    const SuggestionsMenuModel& model) {
+  size_t variant = 0;
+  // Calculate the variant by looking at how many items come from the same
+  // data model.
+  for (int i = model.checked_item() - 1; i >= 0; --i) {
+    if (model.GetItemKeyAt(i) == model.GetItemKeyForCheckedItem())
+      variant++;
+    else
+      break;
+  }
+  return variant;
+}
+
 void AutofillDialogControllerImpl::LogOnFinishSubmitMetrics() {
   GetMetricLogger().LogDialogUiDuration(
       base::Time::Now() - dialog_shown_timestamp_,
-      dialog_type_,
+      GetDialogType(),
       AutofillMetrics::DIALOG_ACCEPTED);
 
   GetMetricLogger().LogDialogUiEvent(
-      dialog_type_, AutofillMetrics::DIALOG_UI_ACCEPTED);
+      GetDialogType(), AutofillMetrics::DIALOG_UI_ACCEPTED);
 
   AutofillMetrics::DialogDismissalState dismissal_state;
   if (!IsManuallyEditingAnySection())
@@ -2437,12 +2794,12 @@ void AutofillDialogControllerImpl::LogOnFinishSubmitMetrics() {
   else
     dismissal_state = AutofillMetrics::DIALOG_ACCEPTED_NO_SAVE;
 
-  GetMetricLogger().LogDialogDismissalState(dialog_type_, dismissal_state);
+  GetMetricLogger().LogDialogDismissalState(GetDialogType(), dismissal_state);
 }
 
 void AutofillDialogControllerImpl::LogOnCancelMetrics() {
   GetMetricLogger().LogDialogUiEvent(
-      dialog_type_, AutofillMetrics::DIALOG_UI_CANCELED);
+      GetDialogType(), AutofillMetrics::DIALOG_UI_CANCELED);
 
   AutofillMetrics::DialogDismissalState dismissal_state;
   if (!IsManuallyEditingAnySection())
@@ -2452,11 +2809,11 @@ void AutofillDialogControllerImpl::LogOnCancelMetrics() {
   else
     dismissal_state = AutofillMetrics::DIALOG_CANCELED_WITH_INVALID_FIELDS;
 
-  GetMetricLogger().LogDialogDismissalState(dialog_type_, dismissal_state);
+  GetMetricLogger().LogDialogDismissalState(GetDialogType(), dismissal_state);
 
   GetMetricLogger().LogDialogUiDuration(
       base::Time::Now() - dialog_shown_timestamp_,
-      dialog_type_,
+      GetDialogType(),
       AutofillMetrics::DIALOG_CANCELED);
 }
 
@@ -2477,7 +2834,7 @@ void AutofillDialogControllerImpl::LogSuggestionItemSelectedMetric(
     return;
   }
 
-  GetMetricLogger().LogDialogUiEvent(dialog_type_, dialog_ui_event);
+  GetMetricLogger().LogDialogUiEvent(GetDialogType(), dialog_ui_event);
 }
 
 void AutofillDialogControllerImpl::LogDialogLatencyToShow() {
@@ -2485,7 +2842,7 @@ void AutofillDialogControllerImpl::LogDialogLatencyToShow() {
     return;
 
   GetMetricLogger().LogDialogLatencyToShow(
-      dialog_type_,
+      GetDialogType(),
       base::Time::Now() - dialog_shown_timestamp_);
   was_ui_latency_logged_ = true;
 }

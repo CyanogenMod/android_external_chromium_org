@@ -8,7 +8,6 @@
 #include <list>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/stringprintf.h"
@@ -31,14 +30,13 @@ SpdyHttpStream::SpdyHttpStream(SpdySession* spdy_session,
     : weak_factory_(this),
       spdy_session_(spdy_session),
       stream_closed_(false),
-      closed_stream_pushed_(false),
       closed_stream_status_(ERR_FAILED),
       closed_stream_id_(0),
       request_info_(NULL),
-      has_upload_data_(false),
       response_info_(NULL),
       response_headers_received_(false),
       user_buffer_len_(0),
+      request_body_buf_size_(0),
       buffered_read_callback_pending_(false),
       more_read_data_pending_(false),
       direct_(direct) {}
@@ -74,14 +72,15 @@ int SpdyHttpStream::InitializeStream(const HttpRequestInfo* request_info,
 
     // |stream_| may be NULL even if OK was returned.
     if (stream_) {
+      DCHECK_EQ(stream_->type(), SPDY_PUSH_STREAM);
       stream_->SetDelegate(this);
       return OK;
     }
   }
 
   int rv = stream_request_.StartRequest(
-      spdy_session_, request_info_->url, priority,
-      stream_net_log,
+      SPDY_REQUEST_RESPONSE_STREAM, spdy_session_, request_info_->url,
+      priority, stream_net_log,
       base::Bind(&SpdyHttpStream::OnStreamCreated,
                  weak_factory_.GetWeakPtr(), callback));
 
@@ -98,7 +97,7 @@ const HttpResponseInfo* SpdyHttpStream::GetResponseInfo() const {
 }
 
 UploadProgress SpdyHttpStream::GetUploadProgress() const {
-  if (!request_info_ || !request_info_->upload_data_stream)
+  if (!HasUploadData())
     return UploadProgress();
 
   return UploadProgress(request_info_->upload_data_stream->position(),
@@ -203,7 +202,7 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
                                 HttpResponseInfo* response,
                                 const CompletionCallback& callback) {
   if (stream_closed_) {
-    if (stream_->pushed())
+    if (stream_->type() == SPDY_PUSH_STREAM)
       return closed_stream_status_;
 
     return (closed_stream_status_ == OK) ? ERR_FAILED : closed_stream_status_;
@@ -212,15 +211,6 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   base::Time request_time = base::Time::Now();
   CHECK(stream_.get());
 
-  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock);
-  CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
-                                   headers.get(), stream_->GetProtocolVersion(),
-                                   direct_);
-  stream_->net_log().AddEvent(
-      NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS,
-      base::Bind(&SpdyHeaderBlockNetLogCallback, headers.get()));
-  stream_->set_spdy_headers(headers.Pass());
-
   stream_->SetRequestTime(request_time);
   // This should only get called in the case of a request occurring
   // during server push that has already begun but hasn't finished,
@@ -228,16 +218,13 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   if (response_info_)
     response_info_->request_time = request_time;
 
-  CHECK(!has_upload_data_);
-  has_upload_data_ = request_info_->upload_data_stream &&
-      (request_info_->upload_data_stream->size() ||
-       request_info_->upload_data_stream->is_chunked());
-  if (has_upload_data_) {
+  CHECK(!request_body_buf_);
+  if (HasUploadData()) {
     // Use kMaxSpdyFrameChunkSize as the buffer size, since the request
     // body data is written with this size at a time.
-    raw_request_body_buf_ = new IOBufferWithSize(kMaxSpdyFrameChunkSize);
+    request_body_buf_ = new IOBufferWithSize(kMaxSpdyFrameChunkSize);
     // The request body buffer is empty at first.
-    request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_, 0);
+    request_body_buf_size_ = 0;
   }
 
   CHECK(!callback.is_null());
@@ -265,7 +252,27 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
     return result;
   response_info_->socket_address = HostPortPair::FromIPEndPoint(address);
 
-  result = stream_->SendRequest(has_upload_data_);
+  if (stream_->type() == SPDY_PUSH_STREAM) {
+    // Pushed streams do not send any data, and should always be
+    // idle. However, we still want to return ERR_IO_PENDING to mimic
+    // non-push behavior. The callback will be called when the
+    // response is received.
+    result = ERR_IO_PENDING;
+  } else {
+    scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock);
+    CreateSpdyHeadersFromHttpRequest(
+        *request_info_, request_headers,
+        headers.get(), stream_->GetProtocolVersion(),
+        direct_);
+    stream_->net_log().AddEvent(
+        NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS,
+        base::Bind(&SpdyHeaderBlockNetLogCallback, headers.get()));
+    result =
+        stream_->SendRequestHeaders(
+            headers.Pass(),
+            HasUploadData() ? MORE_DATA_TO_SEND : NO_MORE_DATA_TO_SEND);
+  }
+
   if (result == ERR_IO_PENDING) {
     CHECK(callback_.is_null());
     callback_ = callback;
@@ -281,79 +288,21 @@ void SpdyHttpStream::Cancel() {
   }
 }
 
-void SpdyHttpStream::OnStreamCreated(
-    const CompletionCallback& callback,
-    int rv) {
-  if (rv == OK) {
-    stream_ = stream_request_.ReleaseStream();
-    stream_->SetDelegate(this);
-  }
-  callback.Run(rv);
-}
-
-int SpdyHttpStream::SendData() {
-  CHECK(request_info_ && request_info_->upload_data_stream);
-  CHECK_EQ(0, request_body_buf_->BytesRemaining());
-
-  // Read the data from the request body stream.
-  const int bytes_read = request_info_->upload_data_stream->Read(
-      raw_request_body_buf_, raw_request_body_buf_->size(),
-      base::Bind(
-          base::IgnoreResult(&SpdyHttpStream::OnRequestBodyReadCompleted),
-          weak_factory_.GetWeakPtr()));
-
-  if (bytes_read == ERR_IO_PENDING)
-    return ERR_IO_PENDING;
-  // ERR_IO_PENDING is the only possible error.
-  DCHECK_GE(bytes_read, 0);
-  return OnRequestBodyReadCompleted(bytes_read);
-}
-
-SpdySendStatus SpdyHttpStream::OnSendHeadersComplete() {
+void SpdyHttpStream::OnRequestHeadersSent() {
   if (!callback_.is_null())
     DoCallback(OK);
-  return has_upload_data_ ? MORE_DATA_TO_SEND : NO_MORE_DATA_TO_SEND;
+
+  // TODO(akalin): Do this immediately after sending the request
+  // headers.
+  if (HasUploadData())
+    ReadAndSendRequestBodyData();
 }
 
-int SpdyHttpStream::OnSendBody() {
-  CHECK(request_info_ && request_info_->upload_data_stream);
-  const bool eof = request_info_->upload_data_stream->IsEOF();
-  if (request_body_buf_->BytesRemaining() > 0) {
-    stream_->QueueStreamData(
-        request_body_buf_,
-        request_body_buf_->BytesRemaining(),
-        eof ? DATA_FLAG_FIN : DATA_FLAG_NONE);
-    return ERR_IO_PENDING;
-  }
-
-  // The entire body data has been sent.
-  if (eof)
-    return OK;
-
-  return SendData();
-}
-
-SpdySendStatus SpdyHttpStream::OnSendBodyComplete(size_t bytes_sent) {
-  // |status| is the number of bytes written to the SPDY stream.
-  CHECK(request_info_ && request_info_->upload_data_stream);
-  DCHECK_GE(static_cast<int>(bytes_sent), 0);
-  DCHECK_LE(static_cast<int>(bytes_sent), request_body_buf_->BytesRemaining());
-
-  request_body_buf_->DidConsume(static_cast<int>(bytes_sent));
-
-  // Check for more data to send.
-  if (!request_info_->upload_data_stream->IsEOF() ||
-      (request_body_buf_->BytesRemaining() > 0))
-    return MORE_DATA_TO_SEND;
-
-  return NO_MORE_DATA_TO_SEND;
-}
-
-int SpdyHttpStream::OnResponseReceived(const SpdyHeaderBlock& response,
-                                       base::Time response_time,
-                                       int status) {
+int SpdyHttpStream::OnResponseHeadersReceived(const SpdyHeaderBlock& response,
+                                              base::Time response_time,
+                                              int status) {
   if (!response_info_) {
-    DCHECK(stream_->pushed());
+    DCHECK_EQ(stream_->type(), SPDY_PUSH_STREAM);
     push_response_info_.reset(new HttpResponseInfo);
     response_info_ = push_response_info_.get();
   }
@@ -386,13 +335,13 @@ int SpdyHttpStream::OnResponseReceived(const SpdyHeaderBlock& response,
       SSLClientSocket::NextProtoToString(protocol_negotiated);
   response_info_->request_time = stream_->GetRequestTime();
   switch (spdy_session_->GetProtocolVersion()) {
-    case kSpdyVersion2:
+    case SPDY2:
       response_info_->connection_info = HttpResponseInfo::CONNECTION_INFO_SPDY2;
       break;
-    case kSpdyVersion3:
+    case SPDY3:
       response_info_->connection_info = HttpResponseInfo::CONNECTION_INFO_SPDY3;
       break;
-    case kSpdyVersion4:
+    case SPDY4:
       response_info_->connection_info = HttpResponseInfo::CONNECTION_INFO_SPDY4;
       break;
     default:
@@ -409,11 +358,6 @@ int SpdyHttpStream::OnResponseReceived(const SpdyHeaderBlock& response,
   return status;
 }
 
-void SpdyHttpStream::OnHeadersSent() {
-  // For HTTP streams, no HEADERS frame is sent from the client.
-  NOTREACHED();
-}
-
 int SpdyHttpStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   // SpdyStream won't call us with data if the header block didn't contain a
   // valid set of headers.  So we don't expect to not have headers received
@@ -425,7 +369,7 @@ int SpdyHttpStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   // ReadResponseBody(), therefore user_buffer_ may be NULL.  This may often
   // happen for server initiated streams.
   DCHECK(stream_.get());
-  DCHECK(!stream_->closed() || stream_->pushed());
+  DCHECK(!stream_->closed() || stream_->type() == SPDY_PUSH_STREAM);
   if (buffer) {
     response_body_queue_.Enqueue(buffer.Pass());
 
@@ -438,16 +382,14 @@ int SpdyHttpStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   return OK;
 }
 
-void SpdyHttpStream::OnDataSent(size_t /*bytes_sent*/) {
-  // For HTTP streams, no data is sent from the client while in the OPEN state,
-  // so it is never called.
-  NOTREACHED();
+void SpdyHttpStream::OnDataSent() {
+  request_body_buf_size_ = 0;
+  ReadAndSendRequestBodyData();
 }
 
 void SpdyHttpStream::OnClose(int status) {
   if (stream_) {
     stream_closed_ = true;
-    closed_stream_pushed_ = stream_->pushed();
     closed_stream_status_ = status;
     closed_stream_id_ = stream_->stream_id();
   }
@@ -461,6 +403,59 @@ void SpdyHttpStream::OnClose(int status) {
     DoCallback(status);
 }
 
+bool SpdyHttpStream::HasUploadData() const {
+  CHECK(request_info_);
+  return
+      request_info_->upload_data_stream &&
+      ((request_info_->upload_data_stream->size() > 0) ||
+       request_info_->upload_data_stream->is_chunked());
+}
+
+void SpdyHttpStream::OnStreamCreated(
+    const CompletionCallback& callback,
+    int rv) {
+  if (rv == OK) {
+    stream_ = stream_request_.ReleaseStream();
+    stream_->SetDelegate(this);
+  }
+  callback.Run(rv);
+}
+
+void SpdyHttpStream::ReadAndSendRequestBodyData() {
+  CHECK(HasUploadData());
+  CHECK_EQ(request_body_buf_size_, 0);
+
+  if (request_info_->upload_data_stream->IsEOF())
+    return;
+
+  // Read the data from the request body stream.
+  const int rv = request_info_->upload_data_stream->Read(
+      request_body_buf_, request_body_buf_->size(),
+      base::Bind(
+          &SpdyHttpStream::OnRequestBodyReadCompleted,
+          weak_factory_.GetWeakPtr()));
+
+  if (rv != ERR_IO_PENDING) {
+    // ERR_IO_PENDING is the only possible error.
+    CHECK_GE(rv, 0);
+    OnRequestBodyReadCompleted(rv);
+  }
+}
+
+void SpdyHttpStream::OnRequestBodyReadCompleted(int status) {
+  CHECK_GE(status, 0);
+  request_body_buf_size_ = status;
+  const bool eof = request_info_->upload_data_stream->IsEOF();
+  if (eof) {
+    CHECK_GE(request_body_buf_size_, 0);
+  } else {
+    CHECK_GT(request_body_buf_size_, 0);
+  }
+  stream_->SendData(request_body_buf_,
+                    request_body_buf_size_,
+                    eof ? NO_MORE_DATA_TO_SEND : MORE_DATA_TO_SEND);
+}
+
 void SpdyHttpStream::ScheduleBufferedReadCallback() {
   // If there is already a scheduled DoBufferedReadCallback, don't issue
   // another one.  Mark that we have received more data and return.
@@ -472,7 +467,7 @@ void SpdyHttpStream::ScheduleBufferedReadCallback() {
   more_read_data_pending_ = false;
   buffered_read_callback_pending_ = true;
   const base::TimeDelta kBufferTime = base::TimeDelta::FromMilliseconds(1);
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(base::IgnoreResult(&SpdyHttpStream::DoBufferedReadCallback),
                  weak_factory_.GetWeakPtr()),
@@ -532,18 +527,6 @@ void SpdyHttpStream::DoCallback(int rv) {
   CompletionCallback c = callback_;
   callback_.Reset();
   c.Run(rv);
-}
-
-int SpdyHttpStream::OnRequestBodyReadCompleted(int status) {
-  DCHECK_GE(status, 0);
-
-  request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_, status);
-
-  const bool eof = request_info_->upload_data_stream->IsEOF();
-  stream_->QueueStreamData(request_body_buf_,
-                           request_body_buf_->BytesRemaining(),
-                           eof ? DATA_FLAG_FIN : DATA_FLAG_NONE);
-  return ERR_IO_PENDING;
 }
 
 void SpdyHttpStream::GetSSLInfo(SSLInfo* ssl_info) {

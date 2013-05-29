@@ -16,10 +16,10 @@
 #include "base/time.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/predictors/resource_prefetcher.h"
 #include "chrome/browser/predictors/resource_prefetch_common.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor_tables.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "chrome/browser/predictors/resource_prefetcher.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
@@ -70,7 +70,7 @@ class ResourcePrefetcherManager;
 // TODO(shishir): Do speculative prefetching for https resources and/or https
 // main frame urls.
 class ResourcePrefetchPredictor
-    : public ProfileKeyedService,
+    : public BrowserContextKeyedService,
       public content::NotificationObserver,
       public base::SupportsWeakPtr<ResourcePrefetchPredictor> {
  public:
@@ -182,7 +182,7 @@ class ResourcePrefetchPredictor
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // ProfileKeyedService methods OVERRIDE.
+  // BrowserContextKeyedService methods OVERRIDE.
   virtual void Shutdown() OVERRIDE;
 
   // Functions called on different network events pertaining to the loading of

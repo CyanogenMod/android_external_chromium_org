@@ -18,6 +18,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/string_util.h"
@@ -596,7 +597,7 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
     UMA_HISTOGRAM_COUNTS("Cookie.DBSizeInKB", db_size / 1024 );
 
   db_.reset(new sql::Connection);
-  db_->set_error_histogram_name("Sqlite.Cookie.Error");
+  db_->set_histogram_tag("Cookie");
   db_->set_error_delegate(new KillDatabaseErrorDelegate(this));
 
   if (!db_->Open(path_)) {
@@ -1219,7 +1220,15 @@ net::CookieStore* CreatePersistentCookieStore(
               BrowserThread::GetBlockingPool()->GetSequenceToken()),
           restore_old_session_cookies,
           storage_policy);
-  return new net::CookieMonster(persistent_store, cookie_monster_delegate);
+  net::CookieMonster* cookie_monster =
+      new net::CookieMonster(persistent_store, cookie_monster_delegate);
+
+  const std::string cookie_priority_experiment_group =
+      base::FieldTrialList::FindFullName("CookieRetentionPriorityStudy");
+  cookie_monster->SetPriorityAwareGarbageCollection(
+      cookie_priority_experiment_group == "ExperimentOn");
+
+  return cookie_monster;
 }
 
 }  // namespace content

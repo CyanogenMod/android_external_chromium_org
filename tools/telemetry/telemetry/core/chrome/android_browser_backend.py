@@ -1,7 +1,7 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import json
+
 import logging
 import os
 import subprocess
@@ -33,9 +33,6 @@ class AndroidBrowserBackendSettings(object):
     logging.critical('Profiles cannot be overriden with current configuration')
     sys.exit(1)
 
-  def SetDevToolsPreferences(self):
-    pass
-
   @property
   def is_content_shell(self):
     return False
@@ -63,61 +60,6 @@ class ChromeBackendSettings(AndroidBrowserBackendSettings):
   def PushProfile(self, new_profile_dir):
     self.adb.Push(new_profile_dir, self._profile_dir)
 
-  def SetDevToolsPreferences(self):
-    # TODO(bulach): Once --enable-remote-debugging flag makes its way to the
-    # oldest version under test (m27 goes to stable), remove this function.
-    if (not self.adb.Adb().CanAccessProtectedFileContents()):
-      return
-
-    prefs_file = self._profile_dir + 'Default/Preferences'
-    # Reuse the previous preferences if available, otherwise take the slow path
-    # (launch chrome and wait for it to be created).
-    if ChromeBackendSettings._default_preferences_file:
-      self.adb.Adb().SetProtectedFileContents(
-          prefs_file,
-          ChromeBackendSettings._default_preferences_file)
-      return
-
-    # Make sure we can find the apps' prefs file
-    if not self.adb.FileExistsOnDevice(prefs_file):
-      # Start it up the first time so we can tweak the prefs.
-      self.adb.StartActivity(self.package,
-                              self.activity,
-                              True,
-                              None,
-                              None)
-      retries = 0
-      timeout = 3
-      time.sleep(timeout)
-      while not self.adb.Adb().GetProtectedFileContents(prefs_file):
-        time.sleep(timeout)
-        retries += 1
-        timeout *= 2
-        if retries == 3:
-          logging.critical('android_browser_backend: Could not find '
-                           'preferences file %s for %s',
-                           prefs_file, self.package)
-          raise exceptions.BrowserGoneException('Missing preferences file.')
-      self.adb.CloseApplication(self.package)
-
-    preferences = json.loads(''.join(
-        self.adb.Adb().GetProtectedFileContents(prefs_file)))
-    changed = False
-    if 'devtools' not in preferences:
-      preferences['devtools'] = {}
-      changed = True
-    if not preferences['devtools'].get('remote_enabled'):
-      preferences['devtools']['remote_enabled'] = True
-      changed = True
-    ChromeBackendSettings._default_preferences_file = json.dumps(
-        preferences, indent=2)
-    if changed:
-      logging.warning('Manually enabled devtools protocol on %s' %
-                      self.package)
-      self.adb.Adb().SetProtectedFileContents(
-          prefs_file,
-          ChromeBackendSettings._default_preferences_file)
-
   @property
   def _profile_dir(self):
     return '/data/data/%s/app_chrome/' % self.package
@@ -142,6 +84,27 @@ class ContentShellBackendSettings(AndroidBrowserBackendSettings):
   @property
   def _profile_dir(self):
     return '/data/data/%s/app_content_shell/' % self.package
+
+
+class ChromiumTestShellBackendSettings(AndroidBrowserBackendSettings):
+  def __init__(self, adb, package):
+    super(ChromiumTestShellBackendSettings, self).__init__(
+          adb=adb,
+          activity='org.chromium.chrome.testshell.ChromiumTestShellActivity',
+          cmdline_file='/data/local/tmp/chromium-testshell-command-line',
+          package=package,
+          pseudo_exec_name='chromium_testshell')
+
+  def GetDevtoolsRemotePort(self):
+    return 'localabstract:chromium_testshell_devtools_remote'
+
+  @property
+  def is_content_shell(self):
+    return True
+
+  @property
+  def _profile_dir(self):
+    return '/data/data/%s/app_chromiumtestshell/' % self.package
 
 
 class WebviewBackendSettings(AndroidBrowserBackendSettings):
@@ -231,8 +194,6 @@ class AndroidBrowserBackend(browser_backend.BrowserBackend):
     self._adb.Adb().SetProtectedFileContents(
         self._backend_settings.cmdline_file, ' '.join(args))
 
-    backend_settings.SetDevToolsPreferences()
-
     # Start it up with a fresh log.
     self._adb.RunShellCommand('logcat -c')
     self._adb.StartActivity(self._backend_settings.package,
@@ -265,6 +226,10 @@ class AndroidBrowserBackend(browser_backend.BrowserBackend):
     args.append('--enable-remote-debugging')
     args.append('--disable-fre')
     return args
+
+  @property
+  def adb(self):
+    return self._adb
 
   @property
   def pid(self):

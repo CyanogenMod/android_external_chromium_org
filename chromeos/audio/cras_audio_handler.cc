@@ -103,8 +103,20 @@ bool CrasAudioHandler::IsOutputMuted() {
   return output_mute_on_;
 }
 
+bool CrasAudioHandler::IsOutputMutedForDevice(uint64 device_id) {
+  return audio_pref_handler_->GetMuteValue(device_id);
+}
+
+bool CrasAudioHandler::IsOutputVolumeBelowDefaultMuteLvel() {
+  return output_volume_ <= kMuteThresholdPercent;
+}
+
 bool CrasAudioHandler::IsInputMuted() {
   return input_mute_on_;
+}
+
+bool CrasAudioHandler::IsInputMutedForDevice(uint64 device_id) {
+  return audio_pref_handler_->GetMuteValue(device_id);
 }
 
 int CrasAudioHandler::GetOutputVolumePercent() {
@@ -164,24 +176,21 @@ void CrasAudioHandler::SetOutputVolumePercent(int volume_percent) {
   volume_percent = min(max(volume_percent, 0), 100);
   if (volume_percent <= kMuteThresholdPercent)
     volume_percent = 0;
-  SetOutputVolumeInternal(volume_percent);
-
-  if (IsOutputMuted() && volume_percent > 0)
-    SetOutputMute(false);
-  if (!IsOutputMuted() && volume_percent == 0)
-    SetOutputMute(true);
+  output_volume_ = volume_percent;
+  audio_pref_handler_->SetVolumeGainValue(active_output_node_id_,
+                                          output_volume_);
+  SetOutputVolumeInternal(output_volume_);
+  FOR_EACH_OBSERVER(AudioObserver, observers_, OnOutputVolumeChanged());
 }
 
 void CrasAudioHandler::SetInputGainPercent(int gain_percent) {
   gain_percent = min(max(gain_percent, 0), 100);
   if (gain_percent <= kMuteThresholdPercent)
     gain_percent = 0;
-  SetInputGainInternal(gain_percent);
-
-  if (IsInputMuted() && gain_percent > 0)
-    SetInputMute(false);
-  if (!IsInputMuted() && gain_percent == 0)
-    SetInputMute(true);
+  input_gain_ = gain_percent;
+  audio_pref_handler_->SetVolumeGainValue(active_input_node_id_, input_gain_);
+  SetInputGainInternal(input_gain_);
+  FOR_EACH_OBSERVER(AudioObserver, observers_, OnInputGainChanged());
 }
 
 void CrasAudioHandler::AdjustOutputVolumeByPercent(int adjust_by_percent) {
@@ -189,29 +198,29 @@ void CrasAudioHandler::AdjustOutputVolumeByPercent(int adjust_by_percent) {
 }
 
 void CrasAudioHandler::SetOutputMute(bool mute_on) {
-  if (output_mute_locked_)
+  if (!SetOutputMuteInternal(mute_on))
     return;
 
-  audio_pref_handler_->SetMuteValue(active_output_node_id_, mute_on);
-  chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->
-      SetOutputMute(mute_on);
+  output_mute_on_ = mute_on;
+  audio_pref_handler_->SetMuteValue(active_output_node_id_, output_mute_on_);
+  FOR_EACH_OBSERVER(AudioObserver, observers_, OnOutputMuteChanged());
+}
 
-  if (!mute_on) {
-    if (output_volume_ <= kMuteThresholdPercent) {
-      // Avoid the situation when sound has been unmuted, but the volume
-      // is set to a very low value, so user still can't hear any sound.
-      SetOutputVolumeInternal(kDefaultUnmuteVolumePercent);
-    }
+void CrasAudioHandler::AdjustOutputVolumeToAudibleLevel() {
+  if (output_volume_ <= kMuteThresholdPercent) {
+    // Avoid the situation when sound has been unmuted, but the volume
+    // is set to a very low value, so user still can't hear any sound.
+    SetOutputVolumePercent(kDefaultUnmuteVolumePercent);
   }
 }
 
 void CrasAudioHandler::SetInputMute(bool mute_on) {
-  if (input_mute_locked_)
+  if (!SetInputMuteInternal(mute_on))
     return;
 
-  audio_pref_handler_->SetMuteValue(active_input_node_id_, mute_on);
-  chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->
-      SetInputMute(mute_on);
+  input_mute_on_ = mute_on;
+  audio_pref_handler_->SetMuteValue(active_input_node_id_, input_mute_on_);
+  FOR_EACH_OBSERVER(AudioObserver, observers_, OnInputMuteChanged());
 }
 
 void CrasAudioHandler::SetActiveOutputNode(uint64 node_id) {
@@ -276,7 +285,7 @@ CrasAudioHandler::CrasAudioHandler(
     return;
   chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->AddObserver(this);
   audio_pref_handler_->AddAudioPrefObserver(this);
-  GetNodes();
+  InitializeAudioState();
 }
 
 CrasAudioHandler::~CrasAudioHandler() {
@@ -292,45 +301,36 @@ CrasAudioHandler::~CrasAudioHandler() {
 }
 
 void CrasAudioHandler::AudioClientRestarted() {
-  GetNodes();
+  InitializeAudioState();
 }
 
 void CrasAudioHandler::OutputVolumeChanged(int volume) {
-  if (output_volume_ == volume)
+  if (output_volume_ != volume) {
+    LOG(WARNING) << "Output volume state inconsistent, internal volume="
+        << output_volume_ << ", dbus signal volume=" << volume;
     return;
-
-  output_volume_ = volume;
-  audio_pref_handler_->SetVolumeGainValue(active_output_node_id_, volume);
-  FOR_EACH_OBSERVER(AudioObserver, observers_, OnOutputVolumeChanged());
+  }
 }
 
 void CrasAudioHandler::InputGainChanged(int gain) {
-  if (input_gain_ == gain)
-    return;
-
-  input_gain_ = gain;
-  audio_pref_handler_->SetVolumeGainValue(active_input_node_id_, gain);
-  FOR_EACH_OBSERVER(AudioObserver, observers_, OnInputGainChanged());
+  if (input_gain_ != gain) {
+    LOG(WARNING) << "input gain state inconsistent, internal gain="
+        << input_gain_  << ", dbus signal gain=" << gain;
+  }
 }
 
 void CrasAudioHandler::OutputMuteChanged(bool mute_on) {
-  if (output_mute_on_ == mute_on)
-    return;
-
-  output_mute_on_ = mute_on;
-  // TODO(rkc,jennyz): We need to save the mute preferences here. See
-  // crbug.com/239646.
-  FOR_EACH_OBSERVER(AudioObserver, observers_, OnOutputMuteChanged());
+  if (output_mute_on_ != mute_on) {
+    LOG(WARNING) << "output mute state inconsistent, internal mute="
+        << output_mute_on_  << ", dbus signal mute=" << mute_on;
+  }
 }
 
 void CrasAudioHandler::InputMuteChanged(bool mute_on) {
-  if (input_mute_on_ == mute_on)
-    return;
-
-  input_mute_on_ = mute_on;
-  // TODO(rkc,jennyz): Fix this also when fixing the output mute. See
-  // crbug.com/239646.
-  FOR_EACH_OBSERVER(AudioObserver, observers_, OnInputMuteChanged());
+  if (input_mute_on_ != mute_on) {
+    LOG(WARNING) << "input mute state inconsistent, internal mute="
+        << input_mute_on_  << ", dbus signal mute=" << mute_on;
+  }
 }
 
 void CrasAudioHandler::NodesChanged() {
@@ -361,34 +361,37 @@ void CrasAudioHandler::OnAudioPolicyPrefChanged() {
 }
 
 void CrasAudioHandler::SetupAudioInputState() {
-  ApplyAudioPolicy();
-
   // Set the initial audio state to the ones read from audio prefs.
   if (active_input_node_id_) {
     input_mute_on_ = audio_pref_handler_->GetMuteValue(active_input_node_id_);
     input_gain_ = audio_pref_handler_->GetVolumeGainValue(
         active_input_node_id_);
-    SetInputMute(input_mute_on_);
-    SetInputGainInternal(input_gain_);
   } else {
-    SetInputMute(kPrefMuteOff);
-    SetInputGainInternal(kDefaultVolumeGainPercent);
+    input_mute_on_ = kPrefMuteOff;
+    input_gain_ = kDefaultVolumeGainPercent;
   }
+
+  SetInputMuteInternal(input_mute_on_);
+  SetInputGainInternal(input_gain_);
 }
 
 void CrasAudioHandler::SetupAudioOutputState() {
-  ApplyAudioPolicy();
-
   if (active_output_node_id_) {
     output_mute_on_ = audio_pref_handler_->GetMuteValue(active_output_node_id_);
     output_volume_ = audio_pref_handler_->GetVolumeGainValue(
         active_output_node_id_);
-    SetOutputMute(output_mute_on_);
-    SetOutputVolumeInternal(output_volume_);
   } else {
-    SetOutputMute(kPrefMuteOff);
-    SetOutputVolumeInternal(kDefaultVolumeGainPercent);
+    output_mute_on_ = kPrefMuteOff;
+    output_volume_ = kDefaultVolumeGainPercent;
   }
+
+  SetOutputMuteInternal(output_mute_on_);
+  SetOutputVolumeInternal(output_volume_);
+}
+
+void CrasAudioHandler::InitializeAudioState() {
+  ApplyAudioPolicy();
+  GetNodes();
 }
 
 void CrasAudioHandler::ApplyAudioPolicy() {
@@ -412,9 +415,27 @@ void CrasAudioHandler::SetOutputVolumeInternal(int volume) {
       SetOutputVolume(volume);
 }
 
+bool  CrasAudioHandler::SetOutputMuteInternal(bool mute_on) {
+  if (output_mute_locked_)
+    return false;
+
+  chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->
+      SetOutputMute(mute_on);
+  return true;
+}
+
 void CrasAudioHandler::SetInputGainInternal(int gain) {
   chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->
       SetInputGain(gain);
+}
+
+bool CrasAudioHandler::SetInputMuteInternal(bool mute_on) {
+  if (input_mute_locked_)
+    return false;
+
+  chromeos::DBusThreadManager::Get()->GetCrasAudioClient()->
+      SetInputMute(mute_on);
+  return true;
 }
 
 void CrasAudioHandler::GetNodes() {
@@ -438,11 +459,11 @@ void CrasAudioHandler::SwitchToDevice(const AudioDevice& device) {
   // to hear the wrong volume for a device.
   LOG(INFO) << "Switching active device to: " << device.ToString();
   if (device.is_input) {
-    DBusThreadManager::Get()->GetCrasAudioClient()->SetInputMute(true);
+    SetInputMuteInternal(true);
     DBusThreadManager::Get()->GetCrasAudioClient()->SetActiveInputNode(
         device.id);
   } else {
-    DBusThreadManager::Get()->GetCrasAudioClient()->SetOutputMute(true);
+    SetOutputMuteInternal(true);
     DBusThreadManager::Get()->GetCrasAudioClient()->SetActiveOutputNode(
         device.id);
   }

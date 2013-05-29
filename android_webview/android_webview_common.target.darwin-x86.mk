@@ -27,6 +27,7 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	android_webview/browser/aw_autofill_manager_delegate.cc \
 	android_webview/browser/aw_browser_context.cc \
 	android_webview/browser/aw_browser_main_parts.cc \
 	android_webview/browser/aw_contents_client_bridge_base.cc \
@@ -40,10 +41,10 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_login_delegate.cc \
 	android_webview/browser/aw_quota_manager_bridge.cc \
 	android_webview/browser/aw_quota_permission_context.cc \
+	android_webview/browser/aw_pref_store.cc \
 	android_webview/browser/aw_request_interceptor.cc \
 	android_webview/browser/browser_view_renderer_impl.cc \
 	android_webview/browser/find_helper.cc \
-	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
 	android_webview/browser/gpu_memory_buffer_impl.cc \
 	android_webview/browser/in_process_renderer/in_process_renderer_client.cc \
 	android_webview/browser/in_process_renderer/in_process_view_renderer.cc \
@@ -115,6 +116,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -165,9 +167,9 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/skia/ext \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

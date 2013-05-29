@@ -13,12 +13,11 @@
 namespace cc {
 
 LayerTreeSettings::LayerTreeSettings()
-    : accelerate_painting(false),
-      compositor_frame_message(false),
+    : compositor_frame_message(false),
       impl_side_painting(false),
-      render_vsync_enabled(true),
-      render_vsync_notification_enabled(false),
-      synchronously_disable_vsync(false),
+      throttle_frame_production(true),
+      render_parent_drives_begin_frame_(false),
+      using_synchronous_renderer_compositor(false),
       per_tile_painting_enabled(false),
       partial_swap_enabled(false),
       cache_render_pass_contents(true),
@@ -35,7 +34,6 @@ LayerTreeSettings::LayerTreeSettings()
       calculate_top_controls_position(false),
       use_color_estimator(false),
       use_memory_management(true),
-      prediction_benchmarking(false),
       timeout_and_draw_when_animation_checkerboards(true),
       layer_transforms_should_scale_layer_contents(false),
       minimum_contents_scale(0.0625f),
@@ -50,11 +48,15 @@ LayerTreeSettings::LayerTreeSettings()
       max_untiled_layer_size(gfx::Size(512, 512)),
       minimum_occlusion_tracking_size(gfx::Size(160, 160)),
       use_pinch_zoom_scrollbars(false),
+      use_pinch_virtual_viewport(false),
       // At 256x256 tiles, 128 tiles cover an area of 2048x4096 pixels.
       max_tiles_for_interest_area(128),
       max_unused_resource_memory_percentage(100),
       highp_threshold_min(0),
-      strict_layer_property_change_checking(false) {
+      force_direct_layer_drawing(false),
+      strict_layer_property_change_checking(false),
+      use_map_image(false),
+      compositor_name("ChromiumCompositor") {
   // TODO(danakj): Renable surface caching when we can do it more realiably.
   // crbug.com/170713
   cache_render_pass_contents = false;

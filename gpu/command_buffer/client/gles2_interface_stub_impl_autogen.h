@@ -527,6 +527,12 @@ void* GLES2InterfaceStub::MapBufferCHROMIUM(
 GLboolean GLES2InterfaceStub::UnmapBufferCHROMIUM(GLuint /* target */) {
   return 0;
 }
+void* GLES2InterfaceStub::MapImageCHROMIUM(
+    GLuint /* image_id */, GLenum /* access */) {
+  return 0;
+}
+void GLES2InterfaceStub::UnmapImageCHROMIUM(GLuint /* image_id */) {
+}
 void* GLES2InterfaceStub::MapBufferSubDataCHROMIUM(
     GLuint /* target */, GLintptr /* offset */, GLsizeiptr /* size */,
     GLenum /* access */) {
@@ -543,7 +549,7 @@ void* GLES2InterfaceStub::MapTexSubImage2DCHROMIUM(
 void GLES2InterfaceStub::UnmapTexSubImage2DCHROMIUM(const void* /* mem */) {
 }
 void GLES2InterfaceStub::ResizeCHROMIUM(
-    GLuint /* width */, GLuint /* height */) {
+    GLuint /* width */, GLuint /* height */, GLfloat /* scale_factor */) {
 }
 const GLchar* GLES2InterfaceStub::GetRequestableExtensionsCHROMIUM() {
   return 0;
@@ -565,6 +571,15 @@ GLuint GLES2InterfaceStub::CreateStreamTextureCHROMIUM(GLuint /* texture */) {
   return 0;
 }
 void GLES2InterfaceStub::DestroyStreamTextureCHROMIUM(GLuint /* texture */) {
+}
+GLuint GLES2InterfaceStub::CreateImageCHROMIUM(
+    GLsizei /* width */, GLsizei /* height */, GLenum /* internalformat */) {
+  return 0;
+}
+void GLES2InterfaceStub::DestroyImageCHROMIUM(GLuint /* image_id */) {
+}
+void GLES2InterfaceStub::GetImageParameterivCHROMIUM(
+    GLuint /* image_id */, GLenum /* pname */, GLint* /* params */) {
 }
 void GLES2InterfaceStub::GetTranslatedShaderSourceANGLE(
     GLuint /* shader */, GLsizei /* bufsize */, GLsizei* /* length */,

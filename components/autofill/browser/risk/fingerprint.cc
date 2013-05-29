@@ -14,7 +14,9 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "components/autofill/browser/risk/proto/fingerprint.pb.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/font_list_async.h"
+#include "content/public/browser/geolocation_provider.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/plugin_service.h"
@@ -23,7 +25,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/gpu_info.h"
+#include "content/public/common/geoposition.h"
+#include "gpu/config/gpu_info.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebScreenInfo.h"
 #include "ui/gfx/rect.h"
@@ -156,7 +159,7 @@ void AddCpuInfoToFingerprint(Fingerprint_MachineCharacteristics* machine) {
 
 // Writes info about the machine's GPU into the |machine|.
 void AddGpuInfoToFingerprint(Fingerprint_MachineCharacteristics* machine) {
-  const content::GPUInfo& gpu_info =
+  const gpu::GPUInfo& gpu_info =
       content::GpuDataManager::GetInstance()->GetGPUInfo();
   DCHECK(gpu_info.finalized);
 
@@ -179,7 +182,7 @@ void AddGpuInfoToFingerprint(Fingerprint_MachineCharacteristics* machine) {
 class FingerprintDataLoader : public content::GpuDataManagerObserver {
  public:
   FingerprintDataLoader(
-      int64 gaia_id,
+      uint64 obfuscated_gaia_id,
       const gfx::Rect& window_bounds,
       const gfx::Rect& content_bounds,
       const WebScreenInfo& screen_info,
@@ -200,6 +203,12 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   // Callbacks for asynchronously loaded data.
   void OnGotFonts(scoped_ptr<base::ListValue> fonts);
   void OnGotPlugins(const std::vector<webkit::WebPluginInfo>& plugins);
+  void OnGotGeoposition(const content::Geoposition& geoposition);
+
+  // Methods that run on the IO thread to communicate with the
+  // GeolocationProvider.
+  void LoadGeoposition();
+  void OnGotGeopositionOnIOThread(const content::Geoposition& geoposition);
 
   // If all of the asynchronous data has been loaded, calls |callback_| with
   // the fingerprint data.
@@ -211,8 +220,12 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   // The GPU data provider.
   content::GpuDataManager* const gpu_data_manager_;
 
+  // The callback used as an "observer" of the GeolocationProvider.  Accessed
+  // only on the IO thread.
+  content::GeolocationProvider::LocationUpdateCallback geolocation_callback_;
+
   // Data that will be passed on to the next loading phase.
-  const int64 gaia_id_;
+  const uint64 obfuscated_gaia_id_;
   const gfx::Rect window_bounds_;
   const gfx::Rect content_bounds_;
   const WebScreenInfo screen_info_;
@@ -225,7 +238,8 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   // Data that will be loaded asynchronously.
   scoped_ptr<base::ListValue> fonts_;
   std::vector<webkit::WebPluginInfo> plugins_;
-  bool has_loaded_plugins_;
+  bool waiting_on_plugins_;
+  content::Geoposition geoposition_;
 
   // The current application locale.
   std::string app_locale_;
@@ -237,7 +251,7 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
 };
 
 FingerprintDataLoader::FingerprintDataLoader(
-    int64 gaia_id,
+    uint64 obfuscated_gaia_id,
     const gfx::Rect& window_bounds,
     const gfx::Rect& content_bounds,
     const WebScreenInfo& screen_info,
@@ -249,7 +263,7 @@ FingerprintDataLoader::FingerprintDataLoader(
     const std::string& app_locale,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback)
     : gpu_data_manager_(content::GpuDataManager::GetInstance()),
-      gaia_id_(gaia_id),
+      obfuscated_gaia_id_(obfuscated_gaia_id),
       window_bounds_(window_bounds),
       content_bounds_(content_bounds),
       screen_info_(screen_info),
@@ -258,7 +272,7 @@ FingerprintDataLoader::FingerprintDataLoader(
       accept_languages_(accept_languages),
       install_time_(install_time),
       dialog_type_(dialog_type),
-      has_loaded_plugins_(false),
+      waiting_on_plugins_(true),
       callback_(callback) {
   DCHECK(!install_time_.is_null());
 
@@ -268,13 +282,23 @@ FingerprintDataLoader::FingerprintDataLoader(
     gpu_data_manager_->RequestCompleteGpuInfoIfNeeded();
   }
 
+#if defined(ENABLE_PLUGINS)
   // Load plugin data.
   content::PluginService::GetInstance()->GetPlugins(
       base::Bind(&FingerprintDataLoader::OnGotPlugins, base::Unretained(this)));
+#else
+  waiting_on_plugins_ = false;
+#endif
 
   // Load font data.
   content::GetFontListAsync(
       base::Bind(&FingerprintDataLoader::OnGotFonts, base::Unretained(this)));
+
+  // Load geolocation data.
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO, FROM_HERE,
+      base::Bind(&FingerprintDataLoader::LoadGeoposition,
+                 base::Unretained(this)));
 }
 
 FingerprintDataLoader::~FingerprintDataLoader() {
@@ -296,17 +320,55 @@ void FingerprintDataLoader::OnGotFonts(scoped_ptr<base::ListValue> fonts) {
 
 void FingerprintDataLoader::OnGotPlugins(
     const std::vector<webkit::WebPluginInfo>& plugins) {
-  DCHECK(!has_loaded_plugins_);
-  has_loaded_plugins_ = true;
+  DCHECK(waiting_on_plugins_);
+  waiting_on_plugins_ = false;
   plugins_ = plugins;
   MaybeFillFingerprint();
+}
+
+void FingerprintDataLoader::OnGotGeoposition(
+    const content::Geoposition& geoposition) {
+  DCHECK(!geoposition_.Validate());
+
+  geoposition_ = geoposition;
+  DCHECK(geoposition_.Validate() ||
+         geoposition_.error_code != content::Geoposition::ERROR_CODE_NONE);
+
+  MaybeFillFingerprint();
+}
+
+void FingerprintDataLoader::LoadGeoposition() {
+  geolocation_callback_ =
+      base::Bind(&FingerprintDataLoader::OnGotGeopositionOnIOThread,
+                 base::Unretained(this));
+  content::GeolocationProvider::GetInstance()->AddLocationUpdateCallback(
+      geolocation_callback_, false);
+}
+
+void FingerprintDataLoader::OnGotGeopositionOnIOThread(
+    const content::Geoposition& geoposition) {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::UI, FROM_HERE,
+      base::Bind(&FingerprintDataLoader::OnGotGeoposition,
+                 base::Unretained(this), geoposition));
+
+  // Unregister as an observer, since this class instance might be destroyed
+  // after this callback.  Note: It's important to unregister *after* posting
+  // the task above.  Unregistering as an observer can have the side-effect of
+  // modifying the value of |geoposition|.
+  bool removed =
+      content::GeolocationProvider::GetInstance()->RemoveLocationUpdateCallback(
+          geolocation_callback_);
+  DCHECK(removed);
 }
 
 void FingerprintDataLoader::MaybeFillFingerprint() {
   // If all of the data has been loaded, fill the fingerprint and clean up.
   if (gpu_data_manager_->IsCompleteGpuInfoAvailable() &&
       fonts_ &&
-      has_loaded_plugins_) {
+      !waiting_on_plugins_ &&
+      (geoposition_.Validate() ||
+       geoposition_.error_code != content::Geoposition::ERROR_CODE_NONE)) {
     FillFingerprint();
     delete this;
   }
@@ -352,12 +414,22 @@ void FingerprintDataLoader::FillFingerprint() {
   // TODO(isherman): Record network performance data, which is theoretically
   // available to JS.
 
-  // TODO(isherman): Record user behavior data.
+  // TODO(isherman): Record more user behavior data.
+  if (geoposition_.error_code == content::Geoposition::ERROR_CODE_NONE) {
+    Fingerprint_UserCharacteristics_Location* location =
+        fingerprint->mutable_user_characteristics()->mutable_location();
+    location->set_altitude(geoposition_.altitude);
+    location->set_latitude(geoposition_.latitude);
+    location->set_longitude(geoposition_.longitude);
+    location->set_accuracy(geoposition_.accuracy);
+    location->set_time_in_ms(
+        (geoposition_.timestamp - base::Time::UnixEpoch()).InMilliseconds());
+  }
 
   Fingerprint_Metadata* metadata = fingerprint->mutable_metadata();
   metadata->set_timestamp_ms(
       (base::Time::Now() - base::Time::UnixEpoch()).InMilliseconds());
-  metadata->set_gaia_id(gaia_id_);
+  metadata->set_obfuscated_gaia_id(obfuscated_gaia_id_);
   metadata->set_fingerprinter_version(kFingerprinterVersion);
 
   callback_.Run(fingerprint.Pass());
@@ -366,7 +438,7 @@ void FingerprintDataLoader::FillFingerprint() {
 }  // namespace
 
 void GetFingerprint(
-    int64 gaia_id,
+    uint64 obfuscated_gaia_id,
     const gfx::Rect& window_bounds,
     const content::WebContents& web_contents,
     const std::string& version,
@@ -386,14 +458,15 @@ void GetFingerprint(
     host_view->GetRenderWidgetHost()->GetWebScreenInfo(&screen_info);
 
   internal::GetFingerprintInternal(
-      gaia_id, window_bounds, content_bounds, screen_info, version, charset,
-      accept_languages, install_time, dialog_type, app_locale, callback);
+      obfuscated_gaia_id, window_bounds, content_bounds, screen_info, version,
+      charset, accept_languages, install_time, dialog_type, app_locale,
+      callback);
 }
 
 namespace internal {
 
 void GetFingerprintInternal(
-    int64 gaia_id,
+    uint64 obfuscated_gaia_id,
     const gfx::Rect& window_bounds,
     const gfx::Rect& content_bounds,
     const WebKit::WebScreenInfo& screen_info,
@@ -406,9 +479,9 @@ void GetFingerprintInternal(
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback) {
   // Begin loading all of the data that we need to load asynchronously.
   // This class is responsible for freeing its own memory.
-  new FingerprintDataLoader(gaia_id, window_bounds, content_bounds, screen_info,
-                            version, charset, accept_languages, install_time,
-                            dialog_type, app_locale, callback);
+  new FingerprintDataLoader(obfuscated_gaia_id, window_bounds, content_bounds,
+                            screen_info, version, charset, accept_languages,
+                            install_time, dialog_type, app_locale, callback);
 }
 
 }  // namespace internal

@@ -25,9 +25,11 @@ class DriveServiceInterface;
 struct UploadRangeResponse;
 
 // Callback to be invoked once the upload has completed.
+// |upload_location| will be returned when the uploading process is started but
+// terminated before the completion due to some errors. It can be used to
+// resume it.
 typedef base::Callback<void(GDataErrorCode error,
-                            const base::FilePath& drive_path,
-                            const base::FilePath& file_path,
+                            const GURL& upload_location,
                             scoped_ptr<ResourceEntry> resource_entry)>
     UploadCompletionCallback;
 
@@ -87,6 +89,20 @@ class DriveUploaderInterface {
       const std::string& etag,
       const UploadCompletionCallback& callback,
       const ProgressCallback& progress_callback) = 0;
+
+  // Resumes the uploading process termineted before the completion.
+  // |upload_location| should be the one returned via UploadCompletionCallback
+  // for previous invocation. |drive_file_path|, |local_file_path| and
+  // |content_type| must be set to the same ones for previous invocation.
+  //
+  // See comments for UploadNewFile() about common parameters.
+  virtual void ResumeUploadFile(
+      const GURL& upload_location,
+      const base::FilePath& drive_file_path,
+      const base::FilePath& local_file_path,
+      const std::string& content_type,
+      const UploadCompletionCallback& callback,
+      const ProgressCallback& progress_callback) = 0;
 };
 
 class DriveUploader : public DriveUploaderInterface {
@@ -109,6 +125,13 @@ class DriveUploader : public DriveUploaderInterface {
       const base::FilePath& local_file_path,
       const std::string& content_type,
       const std::string& etag,
+      const UploadCompletionCallback& callback,
+      const ProgressCallback& progress_callback) OVERRIDE;
+  virtual void ResumeUploadFile(
+      const GURL& upload_location,
+      const base::FilePath& drive_file_path,
+      const base::FilePath& local_file_path,
+      const std::string& content_type,
       const UploadCompletionCallback& callback,
       const ProgressCallback& progress_callback) OVERRIDE;
 
@@ -145,6 +168,10 @@ class DriveUploader : public DriveUploaderInterface {
                                 GDataErrorCode code,
                                 const GURL& upload_location);
 
+  // Starts to get the current upload status for the file uploading.
+  // Upon completion, OnUploadRangeResponseReceived should be called.
+  void StartGetUploadStatus(scoped_ptr<UploadFileInfo> upload_file_info);
+
   // Uploads the next chunk of data from the file.
   void UploadNextChunk(scoped_ptr<UploadFileInfo> upload_file_info,
                        int64 start_position);
@@ -164,10 +191,9 @@ class DriveUploader : public DriveUploaderInterface {
   void UploadFailed(scoped_ptr<UploadFileInfo> upload_file_info,
                     GDataErrorCode error);
 
-  // Pointers to DriveServiceInterface object owned by DriveSystemService.
-  // The lifetime of this object is guaranteed to exceed that of the
+  // The lifetime of this object should be guaranteed to exceed that of the
   // DriveUploader instance.
-  DriveServiceInterface* drive_service_;
+  DriveServiceInterface* drive_service_;  // Not owned by this class.
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

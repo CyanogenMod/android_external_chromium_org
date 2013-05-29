@@ -4,8 +4,8 @@
 
 #include "net/disk_cache/disk_cache_test_util.h"
 
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/file_util.h"
 #include "base/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "net/base/net_errors.h"
@@ -97,7 +97,7 @@ bool MessageLoopHelper::WaitUntilCacheIoFinished(int num_callbacks) {
   if (!timer_.IsRunning())
     timer_.Start(FROM_HERE, TimeDelta::FromMilliseconds(50), this,
                  &MessageLoopHelper::TimerExpired);
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
   return completed_;
 }
 
@@ -107,7 +107,7 @@ void MessageLoopHelper::TimerExpired() {
   CHECK_LE(callbacks_called_, num_callbacks_);
   if (callbacks_called_ == num_callbacks_) {
     completed_ = true;
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   } else {
     // Not finished yet. See if we have to abort.
     if (last_ == callbacks_called_)
@@ -115,7 +115,7 @@ void MessageLoopHelper::TimerExpired() {
     else
       last_ = callbacks_called_;
     if (40 == num_iterations_)
-      MessageLoop::current()->Quit();
+      base::MessageLoop::current()->Quit();
   }
 }
 

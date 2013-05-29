@@ -42,9 +42,10 @@ class EPKPChallengeKeyBase : public AsyncExtensionFunction {
  public:
   static const char kChallengeBadBase64Error[];
   static const char kDevicePolicyDisabledError[];
-  static const char kDomainsDontMatchError[];
+  static const char kExtensionNotWhitelistedError[];
   static const char kResponseBadBase64Error[];
   static const char kSignChallengeFailedError[];
+  static const char kUserNotManaged[];
 
  protected:
   enum PrepareKeyResult {
@@ -70,11 +71,17 @@ class EPKPChallengeKeyBase : public AsyncExtensionFunction {
   // Returns true if the device is enterprise managed.
   bool IsEnterpriseDevice() const;
 
+  // Returns true if the extension is white-listed in the user policy.
+  bool IsExtensionWhitelisted() const;
+
+  // Returns true if the user is enterprise managed.
+  bool IsUserManaged() const;
+
   // Returns the enterprise domain the device is enrolled to.
   std::string GetEnterpriseDomain() const;
 
-  // Returns the user domain.
-  std::string GetUserDomain() const;
+  // Returns the user email.
+  std::string GetUserEmail() const;
 
   // Returns the enterprise virtual device ID.
   std::string GetDeviceId() const;
@@ -151,7 +158,6 @@ typedef EPKPChallengeMachineKey
 
 class EPKPChallengeUserKey : public EPKPChallengeKeyBase {
  public:
-  static const char kExtensionNotWhitelistedError[];
   static const char kGetCertificateFailedError[];
   static const char kKeyRegistrationFailedError[];
   static const char kUserPolicyDisabledError[];
@@ -175,12 +181,10 @@ class EPKPChallengeUserKey : public EPKPChallengeKeyBase {
 
   void GetDeviceAttestationEnabledCallback(const std::string& challenge,
                                            bool register_key,
-                                           const std::string& domain,
                                            bool require_user_consent,
                                            bool enabled);
   void PrepareKeyCallback(const std::string& challenge,
                           bool register_key,
-                          const std::string& domain,
                           PrepareKeyResult result);
   void SignChallengeCallback(bool register_key,
                              bool success,
@@ -189,7 +193,6 @@ class EPKPChallengeUserKey : public EPKPChallengeKeyBase {
                            bool success,
                            cryptohome::MountError return_code);
 
-  bool IsExtensionWhitelisted() const;
   bool IsRemoteAttestationEnabledForUser() const;
 
   DECLARE_EXTENSION_FUNCTION(

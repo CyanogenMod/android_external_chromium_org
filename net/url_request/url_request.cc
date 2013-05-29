@@ -225,10 +225,12 @@ URLRequest::URLRequest(const GURL& url,
   SIMPLE_STATS_COUNTER("URLRequestCount");
 
   // Sanity check out environment.
-  DCHECK(MessageLoop::current()) << "The current MessageLoop must exist";
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
 
-  DCHECK(MessageLoop::current()->IsType(MessageLoop::TYPE_IO)) << ""
-      "The current MessageLoop must be TYPE_IO";
+  DCHECK(base::MessageLoop::current()->IsType(base::MessageLoop::TYPE_IO))
+      << ""
+         "The current base::MessageLoop must be TYPE_IO";
 
   CHECK(context);
   context->url_requests()->insert(this);
@@ -263,10 +265,12 @@ URLRequest::URLRequest(const GURL& url,
   SIMPLE_STATS_COUNTER("URLRequestCount");
 
   // Sanity check out environment.
-  DCHECK(MessageLoop::current()) << "The current MessageLoop must exist";
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
 
-  DCHECK(MessageLoop::current()->IsType(MessageLoop::TYPE_IO)) << ""
-      "The current MessageLoop must be TYPE_IO";
+  DCHECK(base::MessageLoop::current()->IsType(base::MessageLoop::TYPE_IO))
+      << ""
+         "The current base::MessageLoop must be TYPE_IO";
 
   CHECK(context);
   context->url_requests()->insert(this);
@@ -1010,6 +1014,14 @@ bool URLRequest::CanSetCookie(const std::string& cookie_line,
   return g_default_can_use_cookies;
 }
 
+bool URLRequest::CanEnablePrivacyMode() const {
+  if (network_delegate_) {
+    return network_delegate_->CanEnablePrivacyMode(url(),
+                                                   first_party_for_cookies_);
+  }
+  return !g_default_can_use_cookies;
+}
+
 
 void URLRequest::NotifyReadCompleted(int bytes_read) {
   // Notify in case the entire URL Request has been finished.
@@ -1034,7 +1046,18 @@ void URLRequest::OnHeadersComplete() {
   // socket is closed and the ClientSocketHandle is Reset, which will happen
   // once the body is complete.  The start times should already be populated.
   if (job_) {
+    // Keep a copy of the two times the URLRequest sets.
+    base::TimeTicks request_start = load_timing_info_.request_start;
+    base::Time request_start_time = load_timing_info_.request_start_time;
+
+    // Clear load times.  Shouldn't be neded, but gives the GetLoadTimingInfo a
+    // consistent place to start from.
+    load_timing_info_ = LoadTimingInfo();
     job_->GetLoadTimingInfo(&load_timing_info_);
+
+    load_timing_info_.request_start = request_start;
+    load_timing_info_.request_start_time = request_start_time;
+
     ConvertRealLoadTimesToBlockingTimes(&load_timing_info_);
   }
 }

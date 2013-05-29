@@ -13,7 +13,6 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/history/history_tab_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
 #include "chrome/browser/net/load_time_stats.h"
 #include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/omnibox_search_hint.h"
@@ -42,25 +41,21 @@
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper.h"
 #include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/autofill/browser/autofill_external_delegate.h"
 #include "components/autofill/browser/autofill_manager.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
-
-#if defined(ENABLE_AUTOMATION)
-#include "chrome/browser/automation/automation_tab_helper.h"
-#endif
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
 #include "chrome/browser/captive_portal/captive_portal_tab_helper.h"
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #endif
 
 #if defined(ENABLE_PRINTING)
@@ -80,6 +75,7 @@ using autofill::AutofillExternalDelegate;
 using autofill::AutofillManager;
 using autofill::TabAutofillManagerDelegate;
 using content::WebContents;
+using web_modal::WebContentsModalDialogManager;
 
 namespace {
 
@@ -163,18 +159,12 @@ void BrowserTabContents::AttachTabHelpers(WebContents* web_contents) {
   TranslateTabHelper::CreateForWebContents(web_contents);
   ZoomController::CreateForWebContents(web_contents);
 
-#if defined(ENABLE_AUTOMATION)
-  AutomationTabHelper::CreateForWebContents(web_contents);
-#endif
-
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   captive_portal::CaptivePortalTabHelper::CreateForWebContents(web_contents);
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-  ManagedUserService* service =
-      ManagedUserServiceFactory::GetForProfile(profile);
-  if (service->ProfileIsManaged())
+  if (ManagedUserService::ProfileIsManaged(profile))
     ManagedModeNavigationObserver::CreateForWebContents(web_contents);
 #endif
 

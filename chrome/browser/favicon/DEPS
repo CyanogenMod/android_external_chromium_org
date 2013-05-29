@@ -3,7 +3,6 @@
   # three basic rules followed by temporary exceptions.  Please don't
   # add to the list of exceptions!
   "-chrome/browser",
-  "+chrome/browser/api",
   "+chrome/browser/common",
   "+chrome/browser/favicon",
 
@@ -18,14 +17,11 @@
   # and please do not introduce more #includes of these files.
   "!chrome/browser/bookmarks/bookmark_service.h",
   "!chrome/browser/history/history_backend.h",
+  "!chrome/browser/history/history_details.h",
   "!chrome/browser/history/history_service.h",
   "!chrome/browser/history/history_service_factory.h",
-  "!chrome/browser/history/history_types.h",
   "!chrome/browser/history/select_favicon_frames.h",
   "!chrome/browser/profiles/profile.h",
-  "!chrome/browser/profiles/profile_dependency_manager.h",
-  "!chrome/browser/profiles/profile_keyed_service.h",
-  "!chrome/browser/profiles/profile_keyed_service_factory.h",
   "!chrome/browser/ui/webui/chrome_web_ui_controller_factory.h",
   # Do not add to the list of temporarily-allowed dependencies above,
   # and please do not introduce more #includes of these files.
@@ -36,6 +32,7 @@ specific_include_rules = {
   'favicon_util\.(h|cc)': [
     "-chrome",
     "-chrome/browser",
+    "+chrome/browser/favicon/favicon_types.h",
     "+chrome/browser/favicon/favicon_util.h",
     "+chrome/common/icon_messages.h",
     "!chrome/browser/history/history_types.h",

@@ -27,18 +27,19 @@
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_DND_JS" file="bookmark_manager/js/dnd.js" type="BINDATA" />
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_BMM_JS" file="bookmark_manager/js/bmm.js" type="BINDATA" />
       <include name="IDR_BOOKMARK_MANAGER_BOOKMARK_CSS_JS" file="bookmark_manager/css/bmm.css.js" type="BINDATA" />
+      <!-- Gaia auth extension -->
+      <include name="IDR_GAIA_AUTH_KEYBOARD_UI_CSS" file="gaia_auth/keyboard_ui.css" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_MAIN" file="gaia_auth/main.html" allowexternalscript="true" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_MAIN_JS" file="gaia_auth/main.js" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_MAIN_CSS" file="gaia_auth/main.css" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_OFFLINE" file="gaia_auth/offline.html" allowexternalscript="true" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_OFFLINE_JS" file="gaia_auth/offline.js" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_OFFLINE_CSS" file="gaia_auth/offline.css" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_SUCCESS" file="gaia_auth/success.html" allowexternalscript="true" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_SUCCESS_JS" file="gaia_auth/success.js" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_UTIL_JS" file="gaia_auth/util.js" type="BINDATA" />
+      <include name="IDR_GAIA_AUTH_TEST_CONTENT_JS" file="gaia_auth/test/content.js" type="BINDATA" />
       <if expr="pp_ifdef('chromeos')">
-        <include name="IDR_GAIA_AUTH_KEYBOARD_UI_CSS" file="gaia_auth/keyboard_ui.css" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_MAIN" file="gaia_auth/main.html" allowexternalscript="true" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_MAIN_JS" file="gaia_auth/main.js" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_MAIN_CSS" file="gaia_auth/main.css" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_OFFLINE" file="gaia_auth/offline.html" allowexternalscript="true" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_OFFLINE_JS" file="gaia_auth/offline.js" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_OFFLINE_CSS" file="gaia_auth/offline.css" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_SUCCESS" file="gaia_auth/success.html" allowexternalscript="true" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_SUCCESS_JS" file="gaia_auth/success.js" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_UTIL_JS" file="gaia_auth/util.js" type="BINDATA" />
-        <include name="IDR_GAIA_AUTH_TEST_CONTENT_JS" file="gaia_auth/test/content.js" type="BINDATA" />
         <!-- Background page loader  -->
         <include name="IDR_BACKLOADER_BACKGROUND_HTML" file="backloader/background.html" type="BINDATA" />
         <include name="IDR_BACKLOADER_BACKGROUND_JS" file="backloader/scripts/background.js" type="BINDATA" />
@@ -67,6 +68,7 @@
 
         <!-- Scripts working in background page. -->
         <include name="IDR_FILE_MANAGER_FILE_COPY_MANAGER_JS" file="file_manager/js/file_copy_manager.js" flattenhtml="false" type="BINDATA" />
+        <include name="IDR_FILE_MANAGER_ASYNC_UTIL_JS" file="file_manager/js/async_util.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_PATH_UTIL_JS" file="file_manager/js/path_util.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_UTIL_JS" file="file_manager/js/util.js" flattenhtml="false" type="BINDATA" />
         <include name="IDR_FILE_MANAGER_TEST_UTIL_JS" file="file_manager/js/test_util.js" flattenhtml="false" type="BINDATA" />
@@ -117,6 +119,10 @@
         <include name="IDR_GOOGLE_NOW_BACKGROUND_JS" file="google_now/background.js" type="BINDATA" />
         <include name="IDR_GOOGLE_NOW_UTILITY_JS" file="google_now/utility.js" type="BINDATA" />
       </if>
+      <include name="IDR_IDENTITY_API_SCOPE_APPROVAL_BACKGROUND_JS" file="identity_scope_approval_dialog/background.js" type="BINDATA" />
+      <include name="IDR_IDENTITY_API_SCOPE_APPROVAL_DIALOG_CSS" file="identity_scope_approval_dialog/scope_approval_dialog.css" type="BINDATA" />
+      <include name="IDR_IDENTITY_API_SCOPE_APPROVAL_DIALOG" file="identity_scope_approval_dialog/scope_approval_dialog.html" type="BINDATA" />
+      <include name="IDR_IDENTITY_API_SCOPE_APPROVAL_DIALOG_JS" file="identity_scope_approval_dialog/scope_approval_dialog.js" type="BINDATA" />
       <include name="IDR_APPS_DEBUGGER_MAIN" file="apps_debugger/main.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_APPS_DEBUGGER_BACKGROUND_JS" file="apps_debugger/background.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_APPS_DEBUGGER_MAIN_JS" file="apps_debugger/js/main_scripts.js" flattenhtml="true" type="BINDATA" />

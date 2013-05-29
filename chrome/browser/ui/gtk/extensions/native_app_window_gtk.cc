@@ -307,12 +307,12 @@ gfx::Point NativeAppWindowGtk::GetDialogPosition(const gfx::Size& size) {
 }
 
 void NativeAppWindowGtk::AddObserver(
-    WebContentsModalDialogHostObserver* observer) {
+    web_modal::WebContentsModalDialogHostObserver* observer) {
   observer_list_.AddObserver(observer);
 }
 
 void NativeAppWindowGtk::RemoveObserver(
-    WebContentsModalDialogHostObserver* observer) {
+    web_modal::WebContentsModalDialogHostObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
@@ -322,6 +322,8 @@ void NativeAppWindowGtk::ActiveWindowChanged(GdkWindow* active_window) {
     return;
 
   is_active_ = gtk_widget_get_window(GTK_WIDGET(window_)) == active_window;
+  if (is_active_)
+    shell_window_->OnNativeWindowActivated();
 }
 
 // Callback for the delete event.  This event is fired when the user tries to
@@ -366,7 +368,7 @@ void NativeAppWindowGtk::OnDebouncedBoundsChanged() {
   gtk_window_util::UpdateWindowPosition(this, &bounds_, &restored_bounds_);
   shell_window_->OnNativeWindowChanged();
 
-  FOR_EACH_OBSERVER(WebContentsModalDialogHostObserver,
+  FOR_EACH_OBSERVER(web_modal::WebContentsModalDialogHostObserver,
                     observer_list_,
                     OnPositionRequiresUpdate());
 }

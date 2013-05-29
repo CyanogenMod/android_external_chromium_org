@@ -40,6 +40,7 @@
 #include "base/win/windows_version.h"
 #endif
 
+using content::BrowserThread;
 using content::PluginService;
 using content::UserMetricsAction;
 using content::WebUIMessageHandler;
@@ -62,15 +63,44 @@ content::WebUIDataSource* CreateNaClUIHTMLSource() {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// NaClDOMHandler
+// NaClDomHandler
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-// The handler for JavaScript messages for the about:flags page.
-class NaClDOMHandler : public WebUIMessageHandler {
+class NaClDomHandler;
+
+// This class performs a check that the PNaCl path which was returned by
+// PathService is valid. One class instance is created per NaClDomHandler
+// and it is destroyed after the check is completed.
+class NaClDomHandlerProxy
+    : public base::RefCountedThreadSafe<NaClDomHandlerProxy> {
  public:
-  NaClDOMHandler();
-  virtual ~NaClDOMHandler();
+  explicit NaClDomHandlerProxy(NaClDomHandler* handler);
+
+  // A helper to check if PNaCl path exists.
+  void ValidatePnaclPath();
+
+  void set_handler(NaClDomHandler* handler) { handler_ = handler; }
+
+ private:
+  friend class base::RefCountedThreadSafe<NaClDomHandlerProxy>;
+  virtual ~NaClDomHandlerProxy() {}
+
+  // A helper callback that receives the result of checking if PNaCl path
+  // exists.
+  void ValidatePnaclPathCallback(bool is_valid);
+
+  // The handler that requested checking PNaCl file path.
+  NaClDomHandler* handler_;  // weak
+
+  DISALLOW_COPY_AND_ASSIGN(NaClDomHandlerProxy);
+};
+
+// The handler for JavaScript messages for the about:flags page.
+class NaClDomHandler : public WebUIMessageHandler {
+ public:
+  NaClDomHandler();
+  virtual ~NaClDomHandler();
 
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
@@ -81,6 +111,11 @@ class NaClDOMHandler : public WebUIMessageHandler {
   // Callback for the NaCl plugin information.
   void OnGotPlugins(const std::vector<webkit::WebPluginInfo>& plugins);
 
+  // A helper callback that receives the result of checking if PNaCl path
+  // exists. |is_valid| is true if the PNaCl path that was returned by
+  // PathService is valid, and false otherwise.
+  void DidValidatePnaclPath(bool is_valid);
+
  private:
   // Called when enough information is gathered to return data back to the page.
   void MaybeRespondToPage();
@@ -90,7 +125,7 @@ class NaClDOMHandler : public WebUIMessageHandler {
   void PopulatePageInformation(DictionaryValue* naclInfo);
 
   // Factory for the creating refs in callbacks.
-  base::WeakPtrFactory<NaClDOMHandler> weak_ptr_factory_;
+  base::WeakPtrFactory<NaClDomHandler> weak_ptr_factory_;
 
   // Whether the page has requested data.
   bool page_has_requested_data_;
@@ -98,24 +133,73 @@ class NaClDOMHandler : public WebUIMessageHandler {
   // Whether the plugin information is ready.
   bool has_plugin_info_;
 
-  DISALLOW_COPY_AND_ASSIGN(NaClDOMHandler);
+  // Whether PNaCl path was validated. PathService can return a path
+  // that does not exists, so it needs to be validated.
+  bool pnacl_path_validated_;
+  bool pnacl_path_exists_;
+
+  // A proxy for handling cross threads messages.
+  scoped_refptr<NaClDomHandlerProxy> proxy_;
+
+  DISALLOW_COPY_AND_ASSIGN(NaClDomHandler);
 };
 
-NaClDOMHandler::NaClDOMHandler()
+NaClDomHandlerProxy::NaClDomHandlerProxy(NaClDomHandler* handler)
+    : handler_(handler) {
+}
+
+void NaClDomHandlerProxy::ValidatePnaclPath() {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::FILE)) {
+    BrowserThread::PostTask(
+        BrowserThread::FILE, FROM_HERE,
+        base::Bind(&NaClDomHandlerProxy::ValidatePnaclPath, this));
+    return;
+  }
+
+  base::FilePath pnacl_path;
+  bool got_path = PathService::Get(chrome::DIR_PNACL_COMPONENT, &pnacl_path);
+  // The PathService may return an empty string if PNaCl is not yet installed.
+  // However, do not trust that the path returned by the PathService exists.
+  // Check for existence here.
+  ValidatePnaclPathCallback(
+    got_path && !pnacl_path.empty() && file_util::PathExists(pnacl_path));
+}
+
+void NaClDomHandlerProxy::ValidatePnaclPathCallback(bool is_valid) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&NaClDomHandlerProxy::ValidatePnaclPathCallback,
+        this, is_valid));
+    return;
+  }
+
+  // Check that handler_ is still valid, it could be set to NULL if navigation
+  // happened while checking that the PNaCl file exists.
+  if (handler_)
+    handler_->DidValidatePnaclPath(is_valid);
+}
+
+NaClDomHandler::NaClDomHandler()
     : weak_ptr_factory_(this),
       page_has_requested_data_(false),
-      has_plugin_info_(false) {
+      has_plugin_info_(false),
+      pnacl_path_validated_(false),
+      pnacl_path_exists_(false),
+      proxy_(new NaClDomHandlerProxy(this)) {
   PluginService::GetInstance()->GetPlugins(base::Bind(
-      &NaClDOMHandler::OnGotPlugins, weak_ptr_factory_.GetWeakPtr()));
+      &NaClDomHandler::OnGotPlugins, weak_ptr_factory_.GetWeakPtr()));
 }
 
-NaClDOMHandler::~NaClDOMHandler() {
+NaClDomHandler::~NaClDomHandler() {
+  if (proxy_)
+    proxy_->set_handler(NULL);
 }
 
-void NaClDOMHandler::RegisterMessages() {
+void NaClDomHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "requestNaClInfo",
-      base::Bind(&NaClDOMHandler::HandleRequestNaClInfo,
+      base::Bind(&NaClDomHandler::HandleRequestNaClInfo,
                  base::Unretained(this)));
 }
 
@@ -142,18 +226,19 @@ void ListFlagStatus(ListValue* list, const std::string& flag_label,
     AddPair(list, ASCIIToUTF16(flag_label), ASCIIToUTF16("Off"));
 }
 
-void NaClDOMHandler::HandleRequestNaClInfo(const ListValue* args) {
+void NaClDomHandler::HandleRequestNaClInfo(const ListValue* args) {
   page_has_requested_data_ = true;
   MaybeRespondToPage();
 }
 
-void NaClDOMHandler::OnGotPlugins(
+void NaClDomHandler::OnGotPlugins(
     const std::vector<webkit::WebPluginInfo>& plugins) {
   has_plugin_info_ = true;
   MaybeRespondToPage();
 }
 
-void NaClDOMHandler::PopulatePageInformation(DictionaryValue* naclInfo) {
+void NaClDomHandler::PopulatePageInformation(DictionaryValue* naclInfo) {
+  DCHECK(pnacl_path_validated_);
   // Store Key-Value pairs of about-information.
   scoped_ptr<ListValue> list(new ListValue());
 
@@ -233,10 +318,7 @@ void NaClDOMHandler::PopulatePageInformation(DictionaryValue* naclInfo) {
   // Obtain the version of the PNaCl translator.
   base::FilePath pnacl_path;
   bool got_path = PathService::Get(chrome::DIR_PNACL_COMPONENT, &pnacl_path);
-  // The PathService may return an empty string if PNaCl is not yet installed.
-  // However, do not trust that the path returned by the PathService exists.
-  // Check for existence here.
-  if (!got_path || pnacl_path.empty() || !file_util::PathExists(pnacl_path)) {
+  if (!got_path || pnacl_path.empty() || !pnacl_path_exists_) {
     AddPair(list.get(),
             ASCIIToUTF16("PNaCl translator"),
             ASCIIToUTF16("Not installed"));
@@ -254,11 +336,23 @@ void NaClDOMHandler::PopulatePageInformation(DictionaryValue* naclInfo) {
   naclInfo->Set("naclInfo", list.release());
 }
 
-void NaClDOMHandler::MaybeRespondToPage() {
+void NaClDomHandler::DidValidatePnaclPath(bool is_valid) {
+  pnacl_path_validated_ = true;
+  pnacl_path_exists_ = is_valid;
+  MaybeRespondToPage();
+}
+
+void NaClDomHandler::MaybeRespondToPage() {
   // Don't reply until everything is ready.  The page will show a 'loading'
   // message until then.
   if (!page_has_requested_data_ || !has_plugin_info_)
     return;
+
+  if (!pnacl_path_validated_) {
+    DCHECK(proxy_);
+    proxy_->ValidatePnaclPath();
+    return;
+  }
 
   DictionaryValue naclInfo;
   PopulatePageInformation(&naclInfo);
@@ -276,7 +370,7 @@ void NaClDOMHandler::MaybeRespondToPage() {
 NaClUI::NaClUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   content::RecordAction(UserMetricsAction("ViewAboutNaCl"));
 
-  web_ui->AddMessageHandler(new NaClDOMHandler());
+  web_ui->AddMessageHandler(new NaClDomHandler());
 
   // Set up the about:nacl source.
   Profile* profile = Profile::FromWebUI(web_ui);

@@ -89,7 +89,7 @@ class DownloadPersistedObserver : public DownloadHistory::Observer {
                                 const history::DownloadRow& info) OVERRIDE {
     persisted_ = filter_.Run(item, info);
     if (persisted_ && waiting_)
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
   }
 
  private:
@@ -129,7 +129,7 @@ class DownloadRemovedObserver : public DownloadPersistedObserver {
   virtual void OnDownloadsRemoved(const DownloadHistory::IdSet& ids) OVERRIDE {
     removed_ = ids.find(download_id_) != ids.end();
     if (removed_ && waiting_)
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
   }
 
  private:
@@ -230,14 +230,14 @@ class DownloadItemCreatedObserver : public DownloadManager::Observer {
     items_seen_.push_back(item);
 
     if (waiting_)
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
   }
 
   virtual void ManagerGoingDown(DownloadManager* manager) OVERRIDE {
     manager_->RemoveObserver(this);
     manager_ = NULL;
     if (waiting_)
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
   }
 
   bool waiting_;
@@ -468,7 +468,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveHTMLOnlyTabDestroy) {
 
   // Close the tab; does this cancel the download?
   GetCurrentTab(browser())->Close();
-  EXPECT_TRUE(items[0]->IsCancelled());
+  EXPECT_EQ(DownloadItem::CANCELLED, items[0]->GetState());
 
   EXPECT_FALSE(file_util::PathExists(full_file_name));
   EXPECT_FALSE(file_util::PathExists(dir));
@@ -605,7 +605,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, NoSave) {
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   EXPECT_FALSE(chrome::CanSavePage(browser()));
 }
 

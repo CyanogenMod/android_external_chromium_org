@@ -7,19 +7,20 @@
 
 import optparse
 import os
-import subprocess
+import platform
 import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import urllib2
 import zipfile
 
+import archive
+import chrome_paths
+import util
+
 _THIS_DIR = os.path.abspath(os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(_THIS_DIR, os.pardir, 'pylib'))
-
-from common import chrome_paths
-from common import util
-
 GS_BUCKET = 'gs://chromedriver-prebuilts'
 GS_ZIP_PREFIX = 'chromedriver2_prebuilts'
 SLAVE_SCRIPT_DIR = os.path.join(_THIS_DIR, os.pardir, os.pardir, os.pardir,
@@ -30,7 +31,7 @@ DOWNLOAD_SCRIPT = os.path.join(SLAVE_SCRIPT_DIR, 'gsutil_download.py')
 
 
 def Archive(revision):
-  print '@@@BUILD_STEP archive@@@'
+  util.MarkBuildStepStart('archive')
   prebuilts = ['libchromedriver2.so', 'chromedriver2_server',
                'chromedriver2_unittests', 'chromedriver2_tests']
   build_dir = chrome_paths.GetBuildDir(prebuilts[0:1])
@@ -44,29 +45,29 @@ def Archive(revision):
   f.close()
 
   cmd = [
-    sys.executable,
-    UPLOAD_SCRIPT,
-    '--source_filepath=%s' % zip_path,
-    '--dest_gsbase=%s' % GS_BUCKET
+      sys.executable,
+      UPLOAD_SCRIPT,
+      '--source_filepath=%s' % zip_path,
+      '--dest_gsbase=%s' % GS_BUCKET
   ]
   if util.RunCommand(cmd):
-    print '@@@STEP_FAILURE@@@'
+    util.MarkBuildStepError()
 
 
 def Download():
-  print '@@@BUILD_STEP Download chromedriver prebuilts@@@'
+  util.MarkBuildStepStart('Download chromedriver prebuilts')
 
   temp_dir = util.MakeTempDir()
   zip_path = os.path.join(temp_dir, 'chromedriver2_prebuilts.zip')
   cmd = [
-    sys.executable,
-    DOWNLOAD_SCRIPT,
-    '--url=%s' % GS_BUCKET,
-    '--partial-name=%s' % GS_ZIP_PREFIX,
-    '--dst=%s' % zip_path
+      sys.executable,
+      DOWNLOAD_SCRIPT,
+      '--url=%s' % GS_BUCKET,
+      '--partial-name=%s' % GS_ZIP_PREFIX,
+      '--dst=%s' % zip_path
   ]
   if util.RunCommand(cmd):
-    print '@@@STEP_FAILURE@@@'
+    util.MarkBuildStepError()
 
   build_dir = chrome_paths.GetBuildDir(['host_forwarder'])
   print 'Unzipping prebuilts %s to %s' % (zip_path, build_dir)
@@ -84,7 +85,7 @@ def MaybeRelease(revision):
   version = version_line[0].split('"')[1]
 
   bitness = '32'
-  if util.IsLinux():
+  if util.IsLinux() and platform.architecture()[0] == '64bit':
     bitness = '64'
   zip_name = 'chromedriver2_%s%s_%s.zip' % (
       util.GetPlatformName(), bitness, version)
@@ -97,7 +98,7 @@ def MaybeRelease(revision):
   if zip_name in downloads:
     return 0
 
-  print '@@@BUILD_STEP releasing %s@@@' % zip_name
+  util.MarkBuildStepStart('releasing %s' % zip_name)
   if util.IsWindows():
     server_orig_name = 'chromedriver2_server.exe'
     server_name = 'chromedriver.exe'
@@ -112,24 +113,20 @@ def MaybeRelease(revision):
   zip_path = os.path.join(temp_dir, zip_name)
   f = zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED)
   f.write(server, server_name)
-  if util.IsLinux() or util.IsMac():
-    adb_commands = os.path.join(_THIS_DIR, 'chrome', 'adb_commands.py')
-    f.write(adb_commands, 'adb_commands.py')
   f.close()
 
   cmd = [
-    sys.executable,
-    os.path.join(_THIS_DIR, 'third_party', 'googlecode',
-                 'googlecode_upload.py'),
-    '--summary', 'version of ChromeDriver2 r%s' % revision,
-    '--project', 'chromedriver',
-    '--user', 'chromedriver.bot@gmail.com',
-    '--label', 'Release',
-    zip_path
+      sys.executable,
+      os.path.join(_THIS_DIR, 'third_party', 'googlecode',
+                   'googlecode_upload.py'),
+      '--summary', 'version of ChromeDriver2 r%s' % revision,
+      '--project', 'chromedriver',
+      '--user', 'chromedriver.bot@gmail.com',
+      zip_path
   ]
   with open(os.devnull, 'wb') as no_output:
     if subprocess.Popen(cmd, stdout=no_output, stderr=no_output).wait():
-      print '@@@STEP_FAILURE@@@'
+      util.MarkBuildStepError()
 
 
 def KillChromes():
@@ -155,6 +152,18 @@ def CleanTmpDir():
       shutil.rmtree(os.path.join(tmp_dir, file_name), True)
 
 
+def WaitForLatestSnapshot(revision):
+  util.MarkBuildStepStart('wait_for_snapshot')
+  while True:
+    snapshot_revision = archive.GetLatestRevision(archive.Site.SNAPSHOT)
+    if snapshot_revision >= revision:
+      break
+    util.PrintAndFlush('Waiting for snapshot >= %s, found %s' %
+                       (revision, snapshot_revision))
+    time.sleep(60)
+  util.PrintAndFlush('Got snapshot revision %s' % snapshot_revision)
+
+
 def main():
   parser = optparse.OptionParser()
   parser.add_option(
@@ -172,16 +181,17 @@ def main():
   if options.android_package:
     Download()
   else:
-    if options.revision is None:
+    if not options.revision:
       parser.error('Must supply a --revision')
 
-    platform = util.GetPlatformName()
-    if 'linux' in platform:
+    if util.IsLinux() and platform.architecture()[0] == '64bit':
       Archive(options.revision)
 
+    WaitForLatestSnapshot(options.revision)
+
   cmd = [
-    sys.executable,
-    os.path.join(_THIS_DIR, 'run_all_tests.py'),
+      sys.executable,
+      os.path.join(_THIS_DIR, 'run_all_tests.py'),
   ]
   if options.android_package:
     cmd.append('--android-package=' + options.android_package)

@@ -19,8 +19,8 @@
 #include "base/threading/non_thread_safe.h"
 #include "content/common/content_export.h"
 #include "content/common/message_router.h"
-#include "content/public/common/gpu_info.h"
 #include "content/public/common/gpu_memory_stats.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 
@@ -28,7 +28,7 @@ struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
 struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
 
-namespace cc {
+namespace ui {
 struct LatencyInfo;
 }
 
@@ -93,7 +93,7 @@ class GpuProcessHostUIShim : public IPC::Listener,
                     gfx::Size size);
 #endif
 
-  void OnGraphicsInfoCollected(const GPUInfo& gpu_info);
+  void OnGraphicsInfoCollected(const gpu::GPUInfo& gpu_info);
 
   void OnAcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
@@ -107,7 +107,7 @@ class GpuProcessHostUIShim : public IPC::Listener,
   void OnUpdateVSyncParameters(int surface_id,
                                base::TimeTicks timebase,
                                base::TimeDelta interval);
-  void OnFrameDrawn(const cc::LatencyInfo& latency_info);
+  void OnFrameDrawn(const ui::LatencyInfo& latency_info);
 
   // The serial number of the GpuProcessHost / GpuProcessHostUIShim pair.
   int host_id_;

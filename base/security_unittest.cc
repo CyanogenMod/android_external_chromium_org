@@ -46,8 +46,9 @@ Type HideValueFromCompiler(volatile Type value) {
 // - ADDRESS_SANITIZER because it has its own memory allocator
 // - IOS does not use tcmalloc
 // - OS_MACOSX does not use tcmalloc
+// - OS_WIN does not use tcmalloc crbug.com/242304
 #if !defined(NO_TCMALLOC) && !defined(ADDRESS_SANITIZER) && \
-    !defined(OS_IOS) && !defined(OS_MACOSX)
+    !defined(OS_IOS) && !defined(OS_MACOSX) && !defined(OS_WIN)
   #define TCMALLOC_TEST(function) function
 #else
   #define TCMALLOC_TEST(function) DISABLED_##function
@@ -150,12 +151,6 @@ TEST(SecurityTest, TCMALLOC_TEST(MemoryAllocationRestrictionsNewArray)) {
   #define DISABLE_ON_IOS_AND_WIN(function) function
 #endif
 
-#if defined(ADDRESS_SANITIZER) && defined(OS_MACOSX)
-  #define DISABLE_ON_MAC_WITH_ASAN(function) DISABLED_##function
-#else
-  #define DISABLE_ON_MAC_WITH_ASAN(function) function
-#endif
-
 // There are platforms where these tests are known to fail. We would like to
 // be able to easily check the status on the bots, but marking tests as
 // FAILS_ is too clunky.
@@ -216,7 +211,7 @@ bool CallocReturnsNull(size_t nmemb, size_t size) {
 }
 
 // Test if calloc() can overflow.
-TEST(SecurityTest, DISABLE_ON_MAC_WITH_ASAN(CallocOverflow)) {
+TEST(SecurityTest, CallocOverflow) {
   const size_t kArraySize = 4096;
   const size_t kMaxSizeT = numeric_limits<size_t>::max();
   const size_t kArraySize2 = kMaxSizeT / kArraySize + 10;

@@ -23,17 +23,8 @@
 // TODO(vadimt): Honor the flag the enables Google Now integration.
 // TODO(vadimt): Figure out the final values of the constants.
 // TODO(vadimt): Remove 'console' calls.
-// TODO(vadimt): Consider sending JS stacks for unexpected exceptions (including
-// ones from verify()), unfinished and infinite tasks, chrome.* API errors and
+// TODO(vadimt): Consider sending JS stacks for chrome.* API errors and
 // malformed server responses.
-
-// TODO(vadimt): Figure out the server name. Use it in the manifest and for
-// NOTIFICATION_CARDS_URL. Meanwhile, to use the feature, you need to manually
-// set the server name via local storage.
-/**
- * URL to retrieve notification cards.
- */
-var NOTIFICATION_CARDS_URL = localStorage['server_url'];
 
 /**
  * Standard response code for successful HTTP requests. This is the only success
@@ -53,21 +44,20 @@ var INITIAL_POLLING_PERIOD_SECONDS = 5 * 60;  // 5 minutes
  */
 var MAXIMUM_POLLING_PERIOD_SECONDS = 60 * 60;  // 1 hour
 
-var UPDATE_NOTIFICATIONS_ALARM_NAME = 'UPDATE';
+/**
+ * Initial period for retrying the server request for dismissing cards.
+ */
+var INITIAL_RETRY_DISMISS_PERIOD_SECONDS = 60;  // 1 minute
 
 /**
- * Period for retrying the server request for dismissing cards.
+ * Maximum period for retrying the server request for dismissing cards.
  */
-var RETRY_DISMISS_PERIOD_SECONDS = 60;  // 1 minute
-
-var RETRY_DISMISS_ALARM_NAME = 'RETRY_DISMISS';
+var MAXIMUM_RETRY_DISMISS_PERIOD_SECONDS = 60 * 60;  // 1 hour
 
 /**
  * Time we keep dismissals after successful server dismiss requests.
  */
 var DISMISS_RETENTION_TIME_MS = 20 * 60 * 1000;  // 20 minutes
-
-var storage = chrome.storage.local;
 
 /**
  * Names for tasks that can be created by the extension.
@@ -121,6 +111,17 @@ tasks.instrumentApiFunction(chrome.runtime.onStartup, 'addListener', 0);
 tasks.instrumentApiFunction(chrome.tabs, 'create', 1);
 tasks.instrumentApiFunction(storage, 'get', 1);
 
+var updateCardsAttempts = buildAttemptManager(
+    'cards-update',
+    requestLocation,
+    INITIAL_POLLING_PERIOD_SECONDS,
+    MAXIMUM_POLLING_PERIOD_SECONDS);
+var dismissalAttempts = buildAttemptManager(
+    'dismiss',
+    retryPendingDismissals,
+    INITIAL_RETRY_DISMISS_PERIOD_SECONDS,
+    MAXIMUM_RETRY_DISMISS_PERIOD_SECONDS);
+
 /**
  * Diagnostic event identifier.
  * @enum {number}
@@ -131,7 +132,9 @@ var DiagnosticEvent = {
   CARDS_PARSE_SUCCESS: 2,
   DISMISS_REQUEST_TOTAL: 3,
   DISMISS_REQUEST_SUCCESS: 4,
-  EVENTS_TOTAL: 5  // EVENTS_TOTAL is not an event; all new events need to be
+  LOCATION_REQUEST: 5,
+  LOCATION_UPDATE: 6,
+  EVENTS_TOTAL: 7  // EVENTS_TOTAL is not an event; all new events need to be
                    // added before it.
 };
 
@@ -244,6 +247,8 @@ function parseAndShowNotificationCards(response, callback) {
   tasks.debugSetStepName('parseAndShowNotificationCards-storage-get');
   storage.get(['activeNotifications', 'recentDismissals'], function(items) {
     console.log('parseAndShowNotificationCards-get ' + JSON.stringify(items));
+    items.activeNotifications = items.activeNotifications || {};
+    items.recentDismissals = items.recentDismissals || {};
 
     // Build a set of non-expired recent dismissals. It will be used for
     // client-side filtering of cards.
@@ -293,13 +298,9 @@ function parseAndShowNotificationCards(response, callback) {
       }
     }
 
-    scheduleNextUpdate(parsedResponse.expiration_timestamp_seconds);
+    updateCardsAttempts.start(parsedResponse.expiration_timestamp_seconds);
 
-    // Now that we got a valid response from the server, reset the retry period
-    // to the initial value. This retry period will be used the next time we
-    // fail to get the server-provided period.
     storage.set({
-      retryDelaySeconds: INITIAL_POLLING_PERIOD_SECONDS,
       activeNotifications: notificationsData,
       recentDismissals: updatedRecentDismissals
     });
@@ -330,9 +331,8 @@ function requestNotificationCards(position, callback) {
       ',' + position.coords.accuracy;
 
   // TODO(vadimt): Figure out how to send user's identity to the server.
-  var request = new XMLHttpRequest();
+  var request = buildServerRequest('notifications');
 
-  request.responseType = 'text';
   request.onloadend = tasks.wrapCallback(function(event) {
     console.log('requestNotificationCards-onloadend ' + request.status);
     if (request.status == HTTP_OK) {
@@ -343,11 +343,6 @@ function requestNotificationCards(position, callback) {
     }
   });
 
-  request.open(
-      'POST',
-      NOTIFICATION_CARDS_URL + '/notifications',
-      true);
-  request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
   tasks.debugSetStepName('requestNotificationCards-send-request');
   request.send(requestParameters);
 }
@@ -357,6 +352,7 @@ function requestNotificationCards(position, callback) {
  */
 function requestLocation() {
   console.log('requestLocation');
+  recordEvent(DiagnosticEvent.LOCATION_REQUEST);
   // TODO(vadimt): Figure out location request options.
   chrome.location.watchLocation(LOCATION_WATCH_NAME, {});
 }
@@ -372,23 +368,7 @@ function updateNotificationsCards(position) {
       ' @' + new Date());
   tasks.add(UPDATE_CARDS_TASK_NAME, function(callback) {
     console.log('updateNotificationsCards-task-begin');
-    tasks.debugSetStepName('updateNotificationsCards-get-retryDelaySeconds');
-    storage.get('retryDelaySeconds', function(items) {
-      console.log('updateNotificationsCards-get-retryDelaySeconds ' +
-                  JSON.stringify(items));
-      // Immediately schedule the update after the current retry period. Then,
-      // we'll use update time from the server if available.
-      scheduleNextUpdate(items.retryDelaySeconds);
-
-      // TODO(vadimt): Consider interrupting waiting for the next update if we
-      // detect that the network conditions have changed. Also, decide whether
-      // the exponential backoff is needed both when we are offline and when
-      // there are failures on the server side.
-      var newRetryDelaySeconds =
-          Math.min(items.retryDelaySeconds * 2 * (1 + 0.2 * Math.random()),
-                   MAXIMUM_POLLING_PERIOD_SECONDS);
-      storage.set({retryDelaySeconds: newRetryDelaySeconds});
-
+    updateCardsAttempts.planForNext(function() {
       processPendingDismissals(function(success) {
         if (success) {
           // The cards are requested only if there are no unsent dismissals.
@@ -417,8 +397,7 @@ function requestCardDismissal(
   // Send a dismiss request to the server.
   var requestParameters = 'id=' + notificationId +
                           '&dismissalAge=' + (Date.now() - dismissalTimeMs);
-  var request = new XMLHttpRequest();
-  request.responseType = 'text';
+  var request = buildServerRequest('dismiss');
   request.onloadend = tasks.wrapCallback(function(event) {
     console.log('requestDismissingCard-onloadend ' + request.status);
     if (request.status == HTTP_OK)
@@ -427,11 +406,6 @@ function requestCardDismissal(
     callbackBoolean(request.status == HTTP_OK);
   });
 
-  request.open(
-      'POST',
-      NOTIFICATION_CARDS_URL + '/dismiss',
-      true);
-  request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
   tasks.debugSetStepName('requestCardDismissal-send-request');
   request.send(requestParameters);
 }
@@ -446,6 +420,9 @@ function processPendingDismissals(callbackBoolean) {
   storage.get(['pendingDismissals', 'recentDismissals'], function(items) {
     console.log('processPendingDismissals-storage-get ' +
                 JSON.stringify(items));
+    items.pendingDismissals = items.pendingDismissals || [];
+    items.recentDismissals = items.recentDismissals || {};
+
     var dismissalsChanged = false;
 
     function onFinish(success) {
@@ -460,7 +437,7 @@ function processPendingDismissals(callbackBoolean) {
 
     function doProcessDismissals() {
       if (items.pendingDismissals.length == 0) {
-        chrome.alarms.clear(RETRY_DISMISS_ALARM_NAME);
+        dismissalAttempts.stop();
         onFinish(true);
         return;
       }
@@ -490,7 +467,9 @@ function processPendingDismissals(callbackBoolean) {
  */
 function retryPendingDismissals() {
   tasks.add(RETRY_DISMISS_TASK_NAME, function(callback) {
-    processPendingDismissals(function(success) { callback(); });
+    dismissalAttempts.planForNext(function() {
+      processPendingDismissals(function(success) { callback(); });
+     });
   });
 }
 
@@ -504,6 +483,8 @@ function onNotificationClicked(notificationId, selector) {
   tasks.add(CARD_CLICKED_TASK_NAME, function(callback) {
     tasks.debugSetStepName('onNotificationClicked-get-activeNotifications');
     storage.get('activeNotifications', function(items) {
+      items.activeNotifications = items.activeNotifications || {};
+
       var actionUrls = items.activeNotifications[notificationId].actionUrls;
       if (typeof actionUrls != 'object') {
         callback();
@@ -538,15 +519,7 @@ function onNotificationClosed(notificationId, byUser) {
   chrome.metricsPrivate.recordUserAction('GoogleNow.Dismissed');
 
   tasks.add(DISMISS_CARD_TASK_NAME, function(callback) {
-    // Schedule retrying dismissing until all dismissals go through.
-    // TODO(vadimt): Implement exponential backoff and unify it with getting
-    // cards.
-    var alarmInfo = {
-      delayInMinutes: RETRY_DISMISS_PERIOD_SECONDS / 60,
-      periodInMinutes: RETRY_DISMISS_PERIOD_SECONDS / 60
-    };
-
-    chrome.alarms.create(RETRY_DISMISS_ALARM_NAME, alarmInfo);
+    dismissalAttempts.start();
 
     // Deleting the notification in case it was re-added while this task was
     // scheduled, waiting for execution.
@@ -556,6 +529,8 @@ function onNotificationClosed(notificationId, byUser) {
 
     tasks.debugSetStepName('onNotificationClosed-get-pendingDismissals');
     storage.get('pendingDismissals', function(items) {
+      items.pendingDismissals = items.pendingDismissals || [];
+
       var dismissal = {
         notificationId: notificationId,
         time: Date.now()
@@ -568,36 +543,17 @@ function onNotificationClosed(notificationId, byUser) {
 }
 
 /**
- * Schedules next update for notification cards.
- * @param {int} delaySeconds Length of time in seconds after which the alarm
- *     event should fire.
- */
-function scheduleNextUpdate(delaySeconds) {
-  console.log('scheduleNextUpdate ' + delaySeconds);
-  // Schedule an alarm after the specified delay. 'periodInMinutes' is for the
-  // case when we fail to re-register the alarm.
-  var alarmInfo = {
-    delayInMinutes: delaySeconds / 60,
-    periodInMinutes: MAXIMUM_POLLING_PERIOD_SECONDS / 60
-  };
-
-  chrome.alarms.create(UPDATE_NOTIFICATIONS_ALARM_NAME, alarmInfo);
-}
-
-/**
  * Initializes the event page on install or on browser startup.
  */
 function initialize() {
-  var initialStorage = {
-    activeNotifications: {},
-    recentDismissals: {},
-    retryDelaySeconds: INITIAL_POLLING_PERIOD_SECONDS
-  };
-  storage.set(initialStorage);
-
   // Create an update timer for a case when for some reason location request
   // gets stuck.
-  scheduleNextUpdate(MAXIMUM_POLLING_PERIOD_SECONDS);
+  updateCardsAttempts.start(MAXIMUM_POLLING_PERIOD_SECONDS);
+
+  var initialStorage = {
+    activeNotifications: {}
+  };
+  storage.set(initialStorage);
 
   requestLocation();
 }
@@ -605,7 +561,6 @@ function initialize() {
 chrome.runtime.onInstalled.addListener(function(details) {
   console.log('onInstalled ' + JSON.stringify(details));
   if (details.reason != 'chrome_update') {
-    storage.set({pendingDismissals: []});
     initialize();
   }
 });
@@ -613,13 +568,6 @@ chrome.runtime.onInstalled.addListener(function(details) {
 chrome.runtime.onStartup.addListener(function() {
   console.log('onStartup');
   initialize();
-});
-
-chrome.alarms.onAlarm.addListener(function(alarm) {
-  if (alarm.name == UPDATE_NOTIFICATIONS_ALARM_NAME)
-    requestLocation();
-  else if (alarm.name == RETRY_DISMISS_ALARM_NAME)
-    retryPendingDismissals();
 });
 
 chrome.notifications.onClicked.addListener(
@@ -644,4 +592,12 @@ chrome.notifications.onButtonClicked.addListener(
 
 chrome.notifications.onClosed.addListener(onNotificationClosed);
 
-chrome.location.onLocationUpdate.addListener(updateNotificationsCards);
+chrome.location.onLocationUpdate.addListener(function(position) {
+  recordEvent(DiagnosticEvent.LOCATION_UPDATE);
+  updateNotificationsCards(position);
+});
+
+chrome.omnibox.onInputEntered.addListener(function(text) {
+  localStorage['server_url'] = NOTIFICATION_CARDS_URL = text;
+  initialize();
+});

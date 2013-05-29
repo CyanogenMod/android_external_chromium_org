@@ -6,26 +6,18 @@
 
 #include <windows.h>
 
-#include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/scoped_native_library.h"
-#include "base/stl_util.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
-#include "base/win/scoped_gdi_object.h"
-#include "base/win/scoped_hdc.h"
 #include "media/video/capture/screen/differ.h"
 #include "media/video/capture/screen/mouse_cursor_shape.h"
-#include "media/video/capture/screen/screen_capture_data.h"
-#include "media/video/capture/screen/screen_capture_frame.h"
 #include "media/video/capture/screen/screen_capture_frame_queue.h"
 #include "media/video/capture/screen/screen_capturer_helper.h"
 #include "media/video/capture/screen/win/desktop.h"
 #include "media/video/capture/screen/win/scoped_thread_desktop.h"
-#include "third_party/skia/include/core/SkColorPriv.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_frame_win.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_region.h"
 
 namespace media {
 
@@ -37,38 +29,16 @@ const UINT DWM_EC_ENABLECOMPOSITION = 1;
 
 typedef HRESULT (WINAPI * DwmEnableCompositionFunc)(UINT);
 
-const char kDwmapiLibraryName[] = "dwmapi";
+const wchar_t kDwmapiLibraryName[] = L"dwmapi.dll";
 
 // Pixel colors used when generating cursor outlines.
 const uint32 kPixelBgraBlack = 0xff000000;
 const uint32 kPixelBgraWhite = 0xffffffff;
 const uint32 kPixelBgraTransparent = 0x00000000;
 
-// A class representing a full-frame pixel buffer.
-class ScreenCaptureFrameWin : public ScreenCaptureFrame {
- public:
-  ScreenCaptureFrameWin(HDC desktop_dc, const SkISize& size,
-                        ScreenCapturer::Delegate* delegate);
-  virtual ~ScreenCaptureFrameWin();
-
-  // Returns handle of the device independent bitmap representing this frame
-  // buffer to GDI.
-  HBITMAP GetBitmap();
-
- private:
-  // Allocates a device independent bitmap representing this frame buffer to
-  // GDI.
-  void AllocateBitmap(HDC desktop_dc, const SkISize& size);
-
-  // Handle of the device independent bitmap representing this frame buffer to
-  // GDI.
-  base::win::ScopedBitmap bitmap_;
-
-  // Used to work with shared memory buffers.
-  ScreenCapturer::Delegate* delegate_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScreenCaptureFrameWin);
-};
+uint8_t AlphaMul(uint8_t v, uint8_t alpha) {
+  return (static_cast<uint16_t>(v) * alpha) >> 8;
+}
 
 // ScreenCapturerWin captures 32bit RGB using GDI.
 //
@@ -79,17 +49,14 @@ class ScreenCapturerWin : public ScreenCapturer {
   virtual ~ScreenCapturerWin();
 
   // Overridden from ScreenCapturer:
-  virtual void Start(Delegate* delegate) OVERRIDE;
-  virtual void CaptureFrame() OVERRIDE;
+  virtual void Start(Callback* callback) OVERRIDE;
+  virtual void Capture(const webrtc::DesktopRegion& region) OVERRIDE;
+  virtual void SetMouseShapeObserver(
+      MouseShapeObserver* mouse_shape_observer) OVERRIDE;
 
  private:
   // Make sure that the device contexts match the screen configuration.
   void PrepareCaptureResources();
-
-  // Creates a ScreenCaptureData instance wrapping the current framebuffer and
-  // notifies |delegate_|.
-  void CaptureRegion(const SkRegion& region,
-                     const base::Time& capture_start_time);
 
   // Captures the current screen contents into the current buffer.
   void CaptureImage();
@@ -101,7 +68,8 @@ class ScreenCapturerWin : public ScreenCapturer {
   // Capture the current cursor shape.
   void CaptureCursor();
 
-  Delegate* delegate_;
+  Callback* callback_;
+  MouseShapeObserver* mouse_shape_observer_;
 
   // A thread-safe list of invalid rectangles, and the size of the most
   // recently captured screen.
@@ -115,19 +83,19 @@ class ScreenCapturerWin : public ScreenCapturer {
   ScopedThreadDesktop desktop_;
 
   // GDI resources used for screen capture.
-  scoped_ptr<base::win::ScopedGetDC> desktop_dc_;
-  base::win::ScopedCreateDC memory_dc_;
+  HDC desktop_dc_;
+  HDC memory_dc_;
 
   // Queue of the frames buffers.
   ScreenCaptureFrameQueue queue_;
 
   // Rectangle describing the bounds of the desktop device context.
-  SkIRect desktop_dc_rect_;
+  webrtc::DesktopRect desktop_dc_rect_;
 
   // Class to calculate the difference between two screen bitmaps.
   scoped_ptr<Differ> differ_;
 
-  base::ScopedNativeLibrary dwmapi_library_;
+  HMODULE dwmapi_library_;
   DwmEnableCompositionFunc composition_func_;
 
   // Used to suppress duplicate logging of SetThreadExecutionState errors.
@@ -136,102 +104,44 @@ class ScreenCapturerWin : public ScreenCapturer {
   DISALLOW_COPY_AND_ASSIGN(ScreenCapturerWin);
 };
 
-// 3780 pixels per meter is equivalent to 96 DPI, typical on desktop monitors.
-static const int kPixelsPerMeter = 3780;
-
-ScreenCaptureFrameWin::ScreenCaptureFrameWin(
-    HDC desktop_dc,
-    const SkISize& size,
-    ScreenCapturer::Delegate* delegate)
-    : delegate_(delegate) {
-  // Try to allocate a shared memory buffer.
-  uint32 buffer_size =
-    size.width() * size.height() * ScreenCaptureData::kBytesPerPixel;
-  scoped_refptr<SharedBuffer> shared_buffer =
-      delegate_->CreateSharedBuffer(buffer_size);
-  if (shared_buffer) {
-    CHECK(shared_buffer->ptr() != NULL);
-    set_shared_buffer(shared_buffer);
-  }
-
-  AllocateBitmap(desktop_dc, size);
-}
-
-ScreenCaptureFrameWin::~ScreenCaptureFrameWin() {
-  if (shared_buffer())
-    delegate_->ReleaseSharedBuffer(shared_buffer());
-}
-
-HBITMAP ScreenCaptureFrameWin::GetBitmap() {
-  return bitmap_;
-}
-
-void ScreenCaptureFrameWin::AllocateBitmap(HDC desktop_dc,
-                                           const SkISize& size) {
-  int bytes_per_row = size.width() * ScreenCaptureData::kBytesPerPixel;
-
-  // Describe a device independent bitmap (DIB) that is the size of the desktop.
-  BITMAPINFO bmi;
-  memset(&bmi, 0, sizeof(bmi));
-  bmi.bmiHeader.biHeight = -size.height();
-  bmi.bmiHeader.biWidth = size.width();
-  bmi.bmiHeader.biPlanes = 1;
-  bmi.bmiHeader.biBitCount = ScreenCaptureData::kBytesPerPixel * 8;
-  bmi.bmiHeader.biSize = sizeof(bmi.bmiHeader);
-  bmi.bmiHeader.biSizeImage = bytes_per_row * size.height();
-  bmi.bmiHeader.biXPelsPerMeter = kPixelsPerMeter;
-  bmi.bmiHeader.biYPelsPerMeter = kPixelsPerMeter;
-
-  // Create the DIB, and store a pointer to its pixel buffer.
-  HANDLE section_handle = NULL;
-  if (shared_buffer())
-    section_handle = shared_buffer()->handle();
-  void* data = NULL;
-  bitmap_ = CreateDIBSection(desktop_dc, &bmi, DIB_RGB_COLORS, &data,
-                             section_handle, 0);
-
-  // TODO(wez): Cope gracefully with failure (crbug.com/157170).
-  CHECK(bitmap_ != NULL);
-  CHECK(data != NULL);
-
-  set_pixels(reinterpret_cast<uint8*>(data));
-  set_dimensions(SkISize::Make(bmi.bmiHeader.biWidth,
-                               std::abs(bmi.bmiHeader.biHeight)));
-  set_bytes_per_row(
-      bmi.bmiHeader.biSizeImage / std::abs(bmi.bmiHeader.biHeight));
-}
-
 ScreenCapturerWin::ScreenCapturerWin(bool disable_aero)
-    : delegate_(NULL),
-      desktop_dc_rect_(SkIRect::MakeEmpty()),
+    : callback_(NULL),
+      mouse_shape_observer_(NULL),
+      desktop_dc_(NULL),
+      memory_dc_(NULL),
+      dwmapi_library_(NULL),
       composition_func_(NULL),
       set_thread_execution_state_failed_(false) {
   if (disable_aero) {
     // Load dwmapi.dll dynamically since it is not available on XP.
-    if (!dwmapi_library_.is_valid()) {
-      base::FilePath path(base::GetNativeLibraryName(
-          UTF8ToUTF16(kDwmapiLibraryName)));
-      dwmapi_library_.Reset(base::LoadNativeLibrary(path, NULL));
-    }
+    if (!dwmapi_library_)
+      dwmapi_library_ = LoadLibrary(kDwmapiLibraryName);
 
-    if (dwmapi_library_.is_valid() && composition_func_ == NULL) {
+    if (dwmapi_library_) {
       composition_func_ = reinterpret_cast<DwmEnableCompositionFunc>(
-          dwmapi_library_.GetFunctionPointer("DwmEnableComposition"));
+          GetProcAddress(dwmapi_library_, "DwmEnableComposition"));
     }
   }
 }
 
 ScreenCapturerWin::~ScreenCapturerWin() {
-  // Restore Aero.
-  if (composition_func_ != NULL) {
-    (*composition_func_)(DWM_EC_ENABLECOMPOSITION);
-  }
+  if (desktop_dc_)
+    ReleaseDC(NULL, desktop_dc_);
+  if (memory_dc_)
+    DeleteDC(memory_dc_);
 
-  delegate_ = NULL;
+  // Restore Aero.
+  if (composition_func_)
+    (*composition_func_)(DWM_EC_ENABLECOMPOSITION);
+
+  if (dwmapi_library_)
+    FreeLibrary(dwmapi_library_);
 }
 
-void ScreenCapturerWin::CaptureFrame() {
+void ScreenCapturerWin::Capture(const webrtc::DesktopRegion& region) {
   base::Time capture_start_time = base::Time::Now();
+
+  queue_.MoveToNextFrame();
 
   // Request that the system not power-down the system, or the display hardware.
   if (!SetThreadExecutionState(ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)) {
@@ -248,52 +158,67 @@ void ScreenCapturerWin::CaptureFrame() {
   // Copy screen bits to the current buffer.
   CaptureImage();
 
-  const ScreenCaptureFrame* current_buffer = queue_.current_frame();
-  const ScreenCaptureFrame* last_buffer = queue_.previous_frame();
-  if (last_buffer) {
+  const webrtc::DesktopFrame* current_frame = queue_.current_frame();
+  const webrtc::DesktopFrame* last_frame = queue_.previous_frame();
+  if (last_frame) {
     // Make sure the differencer is set up correctly for these previous and
     // current screens.
     if (!differ_.get() ||
-        (differ_->width() != current_buffer->dimensions().width()) ||
-        (differ_->height() != current_buffer->dimensions().height()) ||
-        (differ_->bytes_per_row() != current_buffer->bytes_per_row())) {
-      differ_.reset(new Differ(current_buffer->dimensions().width(),
-                               current_buffer->dimensions().height(),
-                               ScreenCaptureData::kBytesPerPixel,
-                               current_buffer->bytes_per_row()));
+        (differ_->width() != current_frame->size().width()) ||
+        (differ_->height() != current_frame->size().height()) ||
+        (differ_->bytes_per_row() != current_frame->stride())) {
+      differ_.reset(new Differ(current_frame->size().width(),
+                               current_frame->size().height(),
+                               webrtc::DesktopFrame::kBytesPerPixel,
+                               current_frame->stride()));
     }
 
     // Calculate difference between the two last captured frames.
-    SkRegion region;
-    differ_->CalcDirtyRegion(last_buffer->pixels(), current_buffer->pixels(),
+    webrtc::DesktopRegion region;
+    differ_->CalcDirtyRegion(last_frame->data(), current_frame->data(),
                              &region);
     helper_.InvalidateRegion(region);
   } else {
     // No previous frame is available. Invalidate the whole screen.
-    helper_.InvalidateScreen(current_buffer->dimensions());
+    helper_.InvalidateScreen(current_frame->size());
   }
 
-  // Wrap the captured frame into ScreenCaptureData structure and invoke
-  // the completion callback.
-  SkRegion invalid_region;
-  helper_.SwapInvalidRegion(&invalid_region);
-  CaptureRegion(invalid_region, capture_start_time);
+  helper_.set_size_most_recent(current_frame->size());
+
+  // Emit the current frame.
+  webrtc::DesktopFrame* frame = queue_.current_frame()->Share();
+  frame->set_dpi(webrtc::DesktopVector(
+      GetDeviceCaps(desktop_dc_, LOGPIXELSX),
+      GetDeviceCaps(desktop_dc_, LOGPIXELSY)));
+  frame->mutable_updated_region()->Clear();
+  helper_.TakeInvalidRegion(frame->mutable_updated_region());
+  frame->set_capture_time_ms(
+      (base::Time::Now() - capture_start_time).InMillisecondsRoundedUp());
+  callback_->OnCaptureCompleted(frame);
 
   // Check for cursor shape update.
   CaptureCursor();
 }
 
-void ScreenCapturerWin::Start(Delegate* delegate) {
-  DCHECK(delegate_ == NULL);
+void ScreenCapturerWin::SetMouseShapeObserver(
+      MouseShapeObserver* mouse_shape_observer) {
+  DCHECK(!mouse_shape_observer_);
+  DCHECK(mouse_shape_observer);
 
-  delegate_ = delegate;
+  mouse_shape_observer_ = mouse_shape_observer;
+}
+
+void ScreenCapturerWin::Start(Callback* callback) {
+  DCHECK(!callback_);
+  DCHECK(callback);
+
+  callback_ = callback;
 
   // Vote to disable Aero composited desktop effects while capturing. Windows
   // will restore Aero automatically if the process exits. This has no effect
   // under Windows 8 or higher.  See crbug.com/124018.
-  if (composition_func_ != NULL) {
+  if (composition_func_)
     (*composition_func_)(DWM_EC_DISABLECOMPOSITION);
-  }
 }
 
 void ScreenCapturerWin::PrepareCaptureResources() {
@@ -302,8 +227,15 @@ void ScreenCapturerWin::PrepareCaptureResources() {
   scoped_ptr<Desktop> input_desktop = Desktop::GetInputDesktop();
   if (input_desktop.get() != NULL && !desktop_.IsSame(*input_desktop)) {
     // Release GDI resources otherwise SetThreadDesktop will fail.
-    desktop_dc_.reset();
-    memory_dc_.Set(NULL);
+    if (desktop_dc_) {
+      ReleaseDC(NULL, desktop_dc_);
+      desktop_dc_ = NULL;
+    }
+
+    if (memory_dc_) {
+      DeleteDC(memory_dc_);
+      memory_dc_ = NULL;
+    }
 
     // If SetThreadDesktop() fails, the thread is still assigned a desktop.
     // So we can continue capture screen bits, just from the wrong desktop.
@@ -318,82 +250,70 @@ void ScreenCapturerWin::PrepareCaptureResources() {
 
   // If the display bounds have changed then recreate GDI resources.
   // TODO(wez): Also check for pixel format changes.
-  SkIRect screen_rect(SkIRect::MakeXYWH(
+  webrtc::DesktopRect screen_rect(webrtc::DesktopRect::MakeXYWH(
       GetSystemMetrics(SM_XVIRTUALSCREEN),
       GetSystemMetrics(SM_YVIRTUALSCREEN),
       GetSystemMetrics(SM_CXVIRTUALSCREEN),
       GetSystemMetrics(SM_CYVIRTUALSCREEN)));
-  if (screen_rect != desktop_dc_rect_) {
-    desktop_dc_.reset();
-    memory_dc_.Set(NULL);
-    desktop_dc_rect_.setEmpty();
+  if (!screen_rect.equals(desktop_dc_rect_)) {
+    if (desktop_dc_) {
+      ReleaseDC(NULL, desktop_dc_);
+      desktop_dc_ = NULL;
+    }
+    if (memory_dc_) {
+      DeleteDC(memory_dc_);
+      memory_dc_ = NULL;
+    }
+    desktop_dc_rect_ = webrtc::DesktopRect();
   }
 
-  if (desktop_dc_.get() == NULL) {
-    DCHECK(memory_dc_.Get() == NULL);
+  if (desktop_dc_ == NULL) {
+    DCHECK(memory_dc_ == NULL);
 
     // Create GDI device contexts to capture from the desktop into memory.
-    desktop_dc_.reset(new base::win::ScopedGetDC(NULL));
-    memory_dc_.Set(CreateCompatibleDC(*desktop_dc_));
+    desktop_dc_ = GetDC(NULL);
+    CHECK(desktop_dc_);
+    memory_dc_ = CreateCompatibleDC(desktop_dc_);
+    CHECK(memory_dc_);
     desktop_dc_rect_ = screen_rect;
 
     // Make sure the frame buffers will be reallocated.
-    queue_.SetAllFramesNeedUpdate();
+    queue_.Reset();
 
     helper_.ClearInvalidRegion();
   }
-}
-
-void ScreenCapturerWin::CaptureRegion(
-    const SkRegion& region,
-    const base::Time& capture_start_time) {
-  const ScreenCaptureFrame* current_buffer = queue_.current_frame();
-
-  scoped_refptr<ScreenCaptureData> data(new ScreenCaptureData(
-      current_buffer->pixels(), current_buffer->bytes_per_row(),
-      current_buffer->dimensions()));
-  data->mutable_dirty_region() = region;
-  data->set_shared_buffer(current_buffer->shared_buffer());
-
-  SkIPoint dpi = SkIPoint::Make(
-      GetDeviceCaps(*desktop_dc_, LOGPIXELSX),
-      GetDeviceCaps(*desktop_dc_, LOGPIXELSY));
-  data->set_dpi(dpi);
-
-  helper_.set_size_most_recent(data->size());
-
-  queue_.DoneWithCurrentFrame();
-
-  data->set_capture_time_ms(
-      (base::Time::Now() - capture_start_time).InMillisecondsRoundedUp());
-  delegate_->OnCaptureCompleted(data);
 }
 
 void ScreenCapturerWin::CaptureImage() {
   // If the current buffer is from an older generation then allocate a new one.
   // Note that we can't reallocate other buffers at this point, since the caller
   // may still be reading from them.
-  if (queue_.current_frame_needs_update()) {
-    DCHECK(desktop_dc_.get() != NULL);
-    DCHECK(memory_dc_.Get() != NULL);
+  if (!queue_.current_frame()) {
+    DCHECK(desktop_dc_ != NULL);
+    DCHECK(memory_dc_ != NULL);
 
-    SkISize size = SkISize::Make(desktop_dc_rect_.width(),
-                                 desktop_dc_rect_.height());
-    scoped_ptr<ScreenCaptureFrameWin> buffer(
-        new ScreenCaptureFrameWin(*desktop_dc_, size, delegate_));
-    queue_.ReplaceCurrentFrame(buffer.PassAs<ScreenCaptureFrame>());
+    webrtc::DesktopSize size = webrtc::DesktopSize(
+        desktop_dc_rect_.width(), desktop_dc_rect_.height());
+
+    size_t buffer_size = size.width() * size.height() *
+        webrtc::DesktopFrame::kBytesPerPixel;
+    webrtc::SharedMemory* shared_memory =
+        callback_->CreateSharedMemory(buffer_size);
+    scoped_ptr<webrtc::DesktopFrameWin> buffer(
+        webrtc::DesktopFrameWin::Create(size, shared_memory, desktop_dc_));
+    queue_.ReplaceCurrentFrame(buffer.PassAs<webrtc::DesktopFrame>());
   }
 
   // Select the target bitmap into the memory dc and copy the rect from desktop
   // to memory.
-  ScreenCaptureFrameWin* current = static_cast<ScreenCaptureFrameWin*>(
-      queue_.current_frame());
-  HGDIOBJ previous_object = SelectObject(memory_dc_, current->GetBitmap());
+  webrtc::DesktopFrameWin* current = static_cast<webrtc::DesktopFrameWin*>(
+      queue_.current_frame()->GetUnderlyingFrame());
+  HGDIOBJ previous_object = SelectObject(memory_dc_, current->bitmap());
   if (previous_object != NULL) {
     BitBlt(memory_dc_,
            0, 0, desktop_dc_rect_.width(), desktop_dc_rect_.height(),
-           *desktop_dc_,
-           desktop_dc_rect_.x(), desktop_dc_rect_.y(),
+           desktop_dc_,
+           desktop_dc_rect_.left(), desktop_dc_rect_.top(),
            SRCCOPY | CAPTUREBLT);
 
     // Select back the previously selected object to that the device contect
@@ -443,15 +363,15 @@ void ScreenCapturerWin::CaptureCursor() {
   int hotspot_y = iinfo.yHotspot;
 
   // Get the cursor bitmap.
-  base::win::ScopedBitmap hbitmap;
+  HBITMAP hbitmap;
   BITMAP bitmap;
   bool color_bitmap;
   if (iinfo.hbmColor) {
     // Color cursor bitmap.
     color_bitmap = true;
-    hbitmap.Set((HBITMAP)CopyImage(iinfo.hbmColor, IMAGE_BITMAP, 0, 0,
-                                   LR_CREATEDIBSECTION));
-    if (!hbitmap.Get()) {
+    hbitmap = reinterpret_cast<HBITMAP>(
+        CopyImage(iinfo.hbmColor, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION));
+    if (!hbitmap) {
       VLOG(3) << "Unable to copy color cursor image. Error = "
               << GetLastError();
       return;
@@ -463,11 +383,12 @@ void ScreenCapturerWin::CaptureCursor() {
   } else {
     // Black and white (xor) cursor.
     color_bitmap = false;
-    hbitmap.Set(iinfo.hbmMask);
+    hbitmap = iinfo.hbmMask;
   }
 
-  if (!GetObject(hbitmap.Get(), sizeof(BITMAP), &bitmap)) {
+  if (!GetObject(hbitmap, sizeof(BITMAP), &bitmap)) {
     VLOG(3) << "Unable to get cursor bitmap. Error = " << GetLastError();
+    DeleteObject(hbitmap);
     return;
   }
 
@@ -479,18 +400,19 @@ void ScreenCapturerWin::CaptureCursor() {
   if (!color_bitmap) {
     height /= 2;
   }
-  int data_size = height * width * ScreenCaptureData::kBytesPerPixel;
+  int data_size = height * width * webrtc::DesktopFrame::kBytesPerPixel;
 
   scoped_ptr<MouseCursorShape> cursor(new MouseCursorShape());
   cursor->data.resize(data_size);
   uint8* cursor_dst_data =
-      reinterpret_cast<uint8*>(string_as_array(&cursor->data));
+      reinterpret_cast<uint8*>(&*(cursor->data.begin()));
 
   // Copy/convert cursor bitmap into format needed by chromotocol.
   int row_bytes = bitmap.bmWidthBytes;
   if (color_bitmap) {
     if (bitmap.bmPlanes != 1 || bitmap.bmBitsPixel != 32) {
       VLOG(3) << "Unsupported color cursor format. Error = " << GetLastError();
+      DeleteObject(hbitmap);
       return;
     }
 
@@ -503,26 +425,28 @@ void ScreenCapturerWin::CaptureCursor() {
     uint8* dst = cursor_dst_data;
     for (int row = 0; row < height; ++row) {
       for (int column = 0; column < width; ++column) {
-        dst[0] = SkAlphaMul(src[0], src[3]);
-        dst[1] = SkAlphaMul(src[1], src[3]);
-        dst[2] = SkAlphaMul(src[2], src[3]);
+        dst[0] = AlphaMul(src[0], src[3]);
+        dst[1] = AlphaMul(src[1], src[3]);
+        dst[2] = AlphaMul(src[2], src[3]);
         dst[3] = src[3];
-        dst += ScreenCaptureData::kBytesPerPixel;
-        src += ScreenCaptureData::kBytesPerPixel;
+        dst += webrtc::DesktopFrame::kBytesPerPixel;
+        src += webrtc::DesktopFrame::kBytesPerPixel;
       }
-      src -= row_bytes + (width * ScreenCaptureData::kBytesPerPixel);
+      src -= row_bytes + (width * webrtc::DesktopFrame::kBytesPerPixel);
     }
   } else {
     if (bitmap.bmPlanes != 1 || bitmap.bmBitsPixel != 1) {
       VLOG(3) << "Unsupported cursor mask format. Error = " << GetLastError();
+      DeleteObject(hbitmap);
       return;
     }
 
     // x2 because there are 2 masks in the bitmap: AND and XOR.
     int mask_bytes = height * row_bytes * 2;
     scoped_ptr<uint8[]> mask(new uint8[mask_bytes]);
-    if (!GetBitmapBits(hbitmap.Get(), mask_bytes, mask.get())) {
+    if (!GetBitmapBits(hbitmap, mask_bytes, mask.get())) {
       VLOG(3) << "Unable to get cursor mask bits. Error = " << GetLastError();
+      DeleteObject(hbitmap);
       return;
     }
     uint8* and_mask = mask.get();
@@ -562,13 +486,15 @@ void ScreenCapturerWin::CaptureCursor() {
     }
   }
 
+  DeleteObject(hbitmap);
+
   cursor->size.set(width, height);
   cursor->hotspot.set(hotspot_x, hotspot_y);
 
   // Compare the current cursor with the last one we sent to the client. If
   // they're the same, then don't bother sending the cursor again.
-  if (last_cursor_.size == cursor->size &&
-      last_cursor_.hotspot == cursor->hotspot &&
+  if (last_cursor_.size.equals(cursor->size) &&
+      last_cursor_.hotspot.equals(cursor->hotspot) &&
       last_cursor_.data == cursor->data) {
     return;
   }
@@ -578,19 +504,11 @@ void ScreenCapturerWin::CaptureCursor() {
   // Record the last cursor image that we sent to the client.
   last_cursor_ = *cursor;
 
-  delegate_->OnCursorShapeChanged(cursor.Pass());
+  if (mouse_shape_observer_)
+    mouse_shape_observer_->OnCursorShapeChanged(cursor.Pass());
 }
 
 }  // namespace
-
-scoped_refptr<SharedBuffer> ScreenCapturer::Delegate::CreateSharedBuffer(
-    uint32 size) {
-  return scoped_refptr<SharedBuffer>();
-}
-
-void ScreenCapturer::Delegate::ReleaseSharedBuffer(
-    scoped_refptr<SharedBuffer> buffer) {
-}
 
 // static
 scoped_ptr<ScreenCapturer> ScreenCapturer::Create() {

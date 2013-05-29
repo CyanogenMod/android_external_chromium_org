@@ -18,11 +18,11 @@
 #include "chrome/browser/policy/cloud/device_management_service.h"
 #include "chrome/browser/policy/cloud/resource_cache.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "net/url_request/url_request_context_getter.h"
 
 namespace policy {
@@ -66,8 +66,9 @@ scoped_ptr<UserCloudPolicyManagerChromeOS>
 }
 
 UserCloudPolicyManagerFactoryChromeOS::UserCloudPolicyManagerFactoryChromeOS()
-    : ProfileKeyedBaseFactory("UserCloudPolicyManagerChromeOS",
-                              ProfileDependencyManager::GetInstance()) {}
+    : BrowserContextKeyedBaseFactory(
+        "UserCloudPolicyManagerChromeOS",
+        BrowserContextDependencyManager::GetInstance()) {}
 
 UserCloudPolicyManagerFactoryChromeOS::
     ~UserCloudPolicyManagerFactoryChromeOS() {}
@@ -156,7 +157,7 @@ scoped_ptr<UserCloudPolicyManagerChromeOS>
   return manager.Pass();
 }
 
-void UserCloudPolicyManagerFactoryChromeOS::ProfileShutdown(
+void UserCloudPolicyManagerFactoryChromeOS::BrowserContextShutdown(
     content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
   if (profile->IsOffTheRecord())
@@ -166,11 +167,11 @@ void UserCloudPolicyManagerFactoryChromeOS::ProfileShutdown(
     manager->Shutdown();
 }
 
-void UserCloudPolicyManagerFactoryChromeOS::ProfileDestroyed(
+void UserCloudPolicyManagerFactoryChromeOS::BrowserContextDestroyed(
     content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
   managers_.erase(profile);
-  ProfileKeyedBaseFactory::ProfileDestroyed(context);
+  BrowserContextKeyedBaseFactory::BrowserContextDestroyed(context);
 }
 
 void UserCloudPolicyManagerFactoryChromeOS::SetEmptyTestingFactory(

@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/spellcheck_marker.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
@@ -48,10 +49,11 @@ SpellCheckProvider::~SpellCheckProvider() {
 }
 
 void SpellCheckProvider::RequestTextChecking(
-    const WebString& text,
-    WebTextCheckingCompletion* completion) {
+    const string16& text,
+    WebTextCheckingCompletion* completion,
+    const std::vector<SpellCheckMarker>& markers) {
   // Ignore invalid requests.
-  if (text.isEmpty() || !HasWordCharacters(text, 0)) {
+  if (text.empty() || !HasWordCharacters(text, 0)) {
     completion->didCancelCheckingText();
     return;
   }
@@ -78,7 +80,8 @@ void SpellCheckProvider::RequestTextChecking(
   Send(new SpellCheckHostMsg_CallSpellingService(
       routing_id(),
       text_check_completions_.Add(completion),
-      string16(text)));
+      string16(text),
+      markers));
 #endif  // !OS_MACOSX
 }
 
@@ -152,7 +155,7 @@ void SpellCheckProvider::checkTextOfParagraph(
   // TODO(groby): As far as I can tell, this method is never invoked.
   // UMA results seem to support that. Investigate, clean up if true.
   NOTREACHED();
-  spellcheck_->SpellCheckParagraph(string16(text), results);
+  spellcheck_->SpellCheckParagraph(text, results);
   UMA_HISTOGRAM_COUNTS("SpellCheck.api.paragraph", text.length());
 }
 
@@ -161,7 +164,12 @@ void SpellCheckProvider::requestCheckingOfText(
     const WebVector<uint32>& markers,
     const WebVector<unsigned>& marker_offsets,
     WebTextCheckingCompletion* completion) {
-  RequestTextChecking(text, completion);
+  std::vector<SpellCheckMarker> spellcheck_markers;
+  for (size_t i = 0; i < markers.size(); ++i) {
+    spellcheck_markers.push_back(
+        SpellCheckMarker(markers[i], marker_offsets[i]));
+  }
+  RequestTextChecking(text, completion, spellcheck_markers);
   UMA_HISTOGRAM_COUNTS("SpellCheck.api.async", text.length());
 }
 
@@ -228,7 +236,7 @@ void SpellCheckProvider::OnRespondSpellingService(
 #endif
 
 bool SpellCheckProvider::HasWordCharacters(
-    const WebKit::WebString& text,
+    const string16& text,
     int index) const {
   const char16* data = text.data();
   int length = text.length();
@@ -295,7 +303,7 @@ void SpellCheckProvider::EnableSpellcheck(bool enable) {
 }
 
 bool SpellCheckProvider::SatisfyRequestFromCache(
-    const WebString& text,
+    const string16& text,
     WebTextCheckingCompletion* completion) {
   size_t last_length = last_request_.length();
 

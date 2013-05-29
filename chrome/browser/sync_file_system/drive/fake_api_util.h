@@ -12,7 +12,7 @@
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/sync_file_system/drive/api_util_interface.h"
-#include "webkit/fileapi/syncable/sync_file_type.h"
+#include "webkit/browser/fileapi/syncable/sync_file_type.h"
 
 class GURL;
 class Profile;
@@ -99,7 +99,7 @@ class FakeAPIUtil : public APIUtilInterface {
   virtual GURL ResourceIdToResourceLink(
       const std::string& resource_id) const OVERRIDE;
   virtual void EnsureSyncRootIsNotInMyDrive(
-      const std::string& sync_root_resource_id) const OVERRIDE;
+      const std::string& sync_root_resource_id) OVERRIDE;
 
   void PushRemoteChange(const std::string& parent_resource_id,
                         const std::string& parent_title,

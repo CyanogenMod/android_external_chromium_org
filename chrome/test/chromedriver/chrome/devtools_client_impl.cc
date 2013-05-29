@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/devtools_event_listener.h"
+#include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/net/sync_websocket.h"
 #include "chrome/test/chromedriver/net/url_request_context_getter.h"
@@ -63,11 +64,13 @@ DevToolsClientImpl::DevToolsClientImpl(
     const SyncWebSocketFactory& factory,
     const std::string& url,
     const std::string& id,
-    const FrontendCloserFunc& frontend_closer_func)
+    const FrontendCloserFunc& frontend_closer_func,
+    Log* log)
     : socket_(factory.Run().Pass()),
       url_(url),
       id_(id),
       frontend_closer_func_(frontend_closer_func),
+      log_(log),
       parser_func_(base::Bind(&internal::ParseInspectorMessage)),
       unnotified_event_(NULL),
       next_id_(1),
@@ -78,23 +81,19 @@ DevToolsClientImpl::DevToolsClientImpl(
     const std::string& url,
     const std::string& id,
     const FrontendCloserFunc& frontend_closer_func,
+    Log* log,
     const ParserFunc& parser_func)
     : socket_(factory.Run().Pass()),
       url_(url),
       id_(id),
       frontend_closer_func_(frontend_closer_func),
+      log_(log),
       parser_func_(parser_func),
       unnotified_event_(NULL),
       next_id_(1),
       stack_count_(0) {}
 
-DevToolsClientImpl::~DevToolsClientImpl() {
-  for (ResponseMap::iterator iter = cmd_response_map_.begin();
-       iter != cmd_response_map_.end(); ++iter) {
-    LOG(WARNING) << "Finished with no response for command " << iter->first;
-    delete iter->second;
-  }
-}
+DevToolsClientImpl::~DevToolsClientImpl() {}
 
 void DevToolsClientImpl::SetParserFuncForTesting(
     const ParserFunc& parser_func) {
@@ -122,6 +121,9 @@ Status DevToolsClientImpl::ConnectIfNecessary() {
   }
 
   unnotified_connect_listeners_ = listeners_;
+  unnotified_event_listeners_.clear();
+  response_info_map_.clear();
+
   // Notify all listeners of the new connection. Do this now so that any errors
   // that occur are reported now instead of later during some unrelated call.
   // Also gives listeners a chance to send commands before other clients.
@@ -169,12 +171,17 @@ Status DevToolsClientImpl::HandleEventsUntil(
         return Status(kOk);
     }
 
-    Status status = ReceiveNextMessage(-1);
+    Status status = ProcessNextMessage(-1);
     if (status.IsError())
       return status;
   }
   return Status(kOk);
 }
+
+DevToolsClientImpl::ResponseInfo::ResponseInfo(const std::string& method)
+    : state(kWaiting), method(method) {}
+
+DevToolsClientImpl::ResponseInfo::~ResponseInfo() {}
 
 Status DevToolsClientImpl::SendCommandInternal(
     const std::string& method,
@@ -190,21 +197,34 @@ Status DevToolsClientImpl::SendCommandInternal(
   command.Set("params", params.DeepCopy());
   std::string message;
   base::JSONWriter::Write(&command, &message);
+  log_->AddEntry(Log::kDebug, "sending Inspector command " + message);
   if (!socket_->Send(message))
     return Status(kDisconnected, "unable to send message to renderer");
 
-  cmd_response_map_[command_id] = NULL;
-  while (!HasReceivedCommandResponse(command_id)) {
-    Status status = ReceiveNextMessage(command_id);
-    if (status.IsError())
+  linked_ptr<ResponseInfo> response_info =
+      make_linked_ptr(new ResponseInfo(method));
+  response_info_map_[command_id] = response_info;
+  while (response_info->state == kWaiting) {
+    Status status = ProcessNextMessage(command_id);
+    if (status.IsError()) {
+      if (response_info->state == kReceived)
+        response_info_map_.erase(command_id);
       return status;
+    }
   }
-  result->reset(cmd_response_map_[command_id]);
-  cmd_response_map_.erase(command_id);
+  if (response_info->state == kBlocked) {
+    response_info->state = kIgnored;
+    return Status(kUnexpectedAlertOpen);
+  }
+  CHECK_EQ(response_info->state, kReceived);
+  internal::InspectorCommandResponse& response = response_info->response;
+  if (!response.result)
+    return ParseInspectorError(response.error);
+  *result = response.result.Pass();
   return Status(kOk);
 }
 
-Status DevToolsClientImpl::ReceiveNextMessage(int expected_id) {
+Status DevToolsClientImpl::ProcessNextMessage(int expected_id) {
   ScopedIncrementer increment_stack_count(&stack_count_);
 
   Status status = EnsureListenersNotifiedOfConnect();
@@ -213,46 +233,98 @@ Status DevToolsClientImpl::ReceiveNextMessage(int expected_id) {
   status = EnsureListenersNotifiedOfEvent();
   if (status.IsError())
     return status;
+  status = EnsureListenersNotifiedOfCommandResponse();
+  if (status.IsError())
+    return status;
 
-  // The command response may have already been received while notifying
-  // listeners.
-  if (HasReceivedCommandResponse(expected_id))
+  // The command response may have already been received or blocked while
+  // notifying listeners.
+  if (expected_id != -1 && response_info_map_[expected_id]->state != kWaiting)
     return Status(kOk);
 
   std::string message;
   if (!socket_->ReceiveNextMessage(&message))
     return Status(kDisconnected, "unable to receive message from renderer");
+  log_->AddEntry(Log::kDebug, "received Inspector response " + message);
 
   internal::InspectorMessageType type;
   internal::InspectorEvent event;
   internal::InspectorCommandResponse response;
   if (!parser_func_.Run(message, expected_id, &type, &event, &response))
     return Status(kUnknownError, "bad inspector message: " + message);
-  if (type == internal::kEventMessageType) {
-    unnotified_event_listeners_ = listeners_;
-    unnotified_event_ = &event;
-    Status status = EnsureListenersNotifiedOfEvent();
-    unnotified_event_ = NULL;
-    if (status.IsError())
-      return status;
-    if (event.method == "Inspector.detached")
-      return Status(kDisconnected, "received Inspector.detached event");
-  } else if (type == internal::kCommandResponseMessageType) {
-    if (cmd_response_map_.count(response.id) == 0) {
-      return Status(kUnknownError, "unexpected command message");
-    } else if (response.result) {
-      cmd_response_map_[response.id] = response.result.release();
-    } else {
-      cmd_response_map_.erase(response.id);
-      return ParseInspectorError(response.error);
+
+  if (type == internal::kEventMessageType)
+    return ProcessEvent(event);
+  CHECK_EQ(type, internal::kCommandResponseMessageType);
+  return ProcessCommandResponse(response);
+}
+
+Status DevToolsClientImpl::ProcessEvent(const internal::InspectorEvent& event) {
+  unnotified_event_listeners_ = listeners_;
+  unnotified_event_ = &event;
+  Status status = EnsureListenersNotifiedOfEvent();
+  unnotified_event_ = NULL;
+  if (status.IsError())
+    return status;
+  if (event.method == "Inspector.detached")
+    return Status(kDisconnected, "received Inspector.detached event");
+  if (event.method == "Inspector.targetCrashed")
+    return Status(kDisconnected, "page crashed");
+  if (event.method == "Page.javascriptDialogOpening") {
+    // A command may have opened the dialog, which will block the response.
+    // To find out which one (if any), do a round trip with a simple command
+    // to the renderer and afterwards see if any of the commands still haven't
+    // received a response.
+    // This relies on the fact that DevTools commands are processed
+    // sequentially. This may break if any of the commands are asynchronous.
+    // If for some reason the round trip command fails, mark all the waiting
+    // commands as blocked and return the error. This is better than risking
+    // a hang.
+    int max_id = next_id_;
+    base::DictionaryValue enable_params;
+    enable_params.SetString("purpose", "detect if alert blocked any cmds");
+    Status enable_status = SendCommand("Inspector.enable", enable_params);
+    for (ResponseInfoMap::const_iterator iter = response_info_map_.begin();
+         iter != response_info_map_.end(); ++iter) {
+      if (iter->first > max_id)
+        continue;
+      if (iter->second->state == kWaiting)
+        iter->second->state = kBlocked;
     }
+    if (enable_status.IsError())
+      return status;
   }
   return Status(kOk);
 }
 
-bool DevToolsClientImpl::HasReceivedCommandResponse(int cmd_id) {
-  return cmd_response_map_.find(cmd_id) != cmd_response_map_.end()
-      && cmd_response_map_[cmd_id] != NULL;
+Status DevToolsClientImpl::ProcessCommandResponse(
+    const internal::InspectorCommandResponse& response) {
+  if (response_info_map_.count(response.id) == 0)
+    return Status(kUnknownError, "unexpected command response");
+
+  linked_ptr<ResponseInfo> response_info = response_info_map_[response.id];
+  if (response_info->state == kReceived)
+    return Status(kUnknownError, "received multiple command responses");
+
+  if (response_info->state == kIgnored) {
+    response_info_map_.erase(response.id);
+  } else {
+    response_info->state = kReceived;
+    response_info->response.id = response.id;
+    response_info->response.error = response.error;
+    if (response.result)
+      response_info->response.result.reset(response.result->DeepCopy());
+  }
+
+  if (response.result) {
+    unnotified_cmd_response_listeners_ = listeners_;
+    unnotified_cmd_response_info_ = response_info;
+    Status status = EnsureListenersNotifiedOfCommandResponse();
+    unnotified_cmd_response_info_.reset();
+    if (status.IsError())
+      return status;
+  }
+  return Status(kOk);
 }
 
 Status DevToolsClientImpl::EnsureListenersNotifiedOfConnect() {
@@ -272,6 +344,19 @@ Status DevToolsClientImpl::EnsureListenersNotifiedOfEvent() {
     unnotified_event_listeners_.pop_front();
     listener->OnEvent(this,
                       unnotified_event_->method, *unnotified_event_->params);
+  }
+  return Status(kOk);
+}
+
+Status DevToolsClientImpl::EnsureListenersNotifiedOfCommandResponse() {
+  while (unnotified_cmd_response_listeners_.size()) {
+    DevToolsEventListener* listener =
+        unnotified_cmd_response_listeners_.front();
+    unnotified_cmd_response_listeners_.pop_front();
+    Status status =
+        listener->OnCommandSuccess(this, unnotified_cmd_response_info_->method);
+    if (status.IsError())
+      return status;
   }
   return Status(kOk);
 }

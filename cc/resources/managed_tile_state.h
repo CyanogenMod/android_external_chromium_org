@@ -14,7 +14,7 @@
 
 namespace cc {
 
-enum DrawingInfoMemoryState {
+enum TileVersionMemoryState {
   NOT_ALLOWED_TO_USE_MEMORY,
   CAN_USE_MEMORY,
   USING_UNRELEASABLE_MEMORY,
@@ -25,7 +25,7 @@ enum DrawingInfoMemoryState {
 // managed by the TileManager.
 class CC_EXPORT ManagedTileState {
  public:
-  class CC_EXPORT DrawingInfo {
+  class CC_EXPORT TileVersion {
     public:
       enum Mode {
         RESOURCE_MODE,
@@ -34,8 +34,8 @@ class CC_EXPORT ManagedTileState {
         NUM_MODES
       };
 
-      DrawingInfo();
-      ~DrawingInfo();
+      TileVersion();
+      ~TileVersion();
 
       Mode mode() const {
         return mode_;
@@ -65,11 +65,13 @@ class CC_EXPORT ManagedTileState {
                mode_ == PICTURE_PILE_MODE;
       }
 
+      size_t GPUMemoryUsageInBytes() const;
+
       scoped_ptr<ResourcePool::Resource>& GetResourceForTesting() {
         return resource_;
       }
 
-      void SetMemoryStateForTesting(DrawingInfoMemoryState state) {
+      void SetMemoryStateForTesting(TileVersionMemoryState state) {
         memory_state_ = state;
       }
 
@@ -100,19 +102,20 @@ class CC_EXPORT ManagedTileState {
 
       scoped_ptr<ResourcePool::Resource> resource_;
       GLenum resource_format_;
-      DrawingInfoMemoryState memory_state_;
+      TileVersionMemoryState memory_state_;
       bool forced_upload_;
   };
 
 
   ManagedTileState();
   ~ManagedTileState();
+
   scoped_ptr<base::Value> AsValue() const;
 
   // Persisted state: valid all the time.
   typedef base::hash_set<uint32_t> PixelRefSet;
   PixelRefSet decoded_pixel_refs;
-  DrawingInfo drawing_info;
+  TileVersion tile_version;
   PicturePileImpl::Analysis picture_pile_analysis;
   bool picture_pile_analyzed;
 
@@ -134,6 +137,7 @@ class CC_EXPORT ManagedTileState {
   // to determine policy.
   TileManagerBin gpu_memmgr_stats_bin;
   TileResolution resolution;
+  bool required_for_activation;
   float time_to_needed_in_seconds;
   float distance_to_visible_in_pixels;
 };

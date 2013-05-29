@@ -7,18 +7,18 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
-#include "base/platform_file.h"
 #include "base/message_loop.h"
+#include "base/platform_file.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browsing_data/browsing_data_file_system_helper.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_thread.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/file_system_usage_cache.h"
-#include "webkit/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/file_system_usage_cache.h"
+#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/common/fileapi/file_system_types.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -90,35 +90,36 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
 
   // Blocks on the current MessageLoop until Notify() is called.
   void BlockUntilNotified() {
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 
   // Unblocks the current MessageLoop. Should be called in response to some sort
   // of async activity in a callback method.
   void Notify() {
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   // Callback that should be executed in response to
-  // fileapi::SandboxMountPointProvider::ValidateFileSystemRoot
-  void ValidateFileSystemCallback(base::PlatformFileError error) {
-    validate_file_system_result_ = error;
+  // fileapi::SandboxMountPointProvider::OpenFileSystem.
+  void OpenFileSystemCallback(base::PlatformFileError error) {
+    open_file_system_result_ = error;
     Notify();
   }
 
-  // Calls fileapi::SandboxMountPointProvider::ValidateFileSystemRootAndGetURL
+  // Calls fileapi::SandboxMountPointProvider::OpenFileSystem
   // to verify the existence of a file system for a specified type and origin,
   // blocks until a response is available, then returns the result
   // synchronously to it's caller.
   bool FileSystemContainsOriginAndType(const GURL& origin,
                                        fileapi::FileSystemType type) {
-    sandbox_->ValidateFileSystemRoot(
-        origin, type, false,
+    sandbox_->OpenFileSystem(
+        origin, type,
+        fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
         base::Bind(
-            &BrowsingDataFileSystemHelperTest::ValidateFileSystemCallback,
+            &BrowsingDataFileSystemHelperTest::OpenFileSystemCallback,
             base::Unretained(this)));
     BlockUntilNotified();
-    return validate_file_system_result_ == base::PLATFORM_FILE_OK;
+    return open_file_system_result_ == base::PLATFORM_FILE_OK;
   }
 
   // Callback that should be executed in response to StartFetching(), and stores
@@ -173,9 +174,8 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
   // specified origin.
   void CreateDirectoryForOriginAndType(const GURL& origin,
                                        fileapi::FileSystemType type) {
-    base::FilePath target = sandbox_->GetFileSystemRootPathOnFileThread(
-        fileapi::FileSystemURL::CreateForTest(origin, type, base::FilePath()),
-        true);
+    base::FilePath target = sandbox_->GetBaseDirectoryForOriginAndType(
+        origin, type, true /* create */);
     EXPECT_TRUE(file_util::DirectoryExists(target));
   }
 
@@ -187,7 +187,7 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
 
 
   // Temporary storage to pass information back from callbacks.
-  base::PlatformFileError validate_file_system_result_;
+  base::PlatformFileError open_file_system_result_;
   ScopedFileSystemInfoList file_system_info_list_;
 
   scoped_refptr<BrowsingDataFileSystemHelper> helper_;
@@ -197,7 +197,7 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
   // message_loop_, as well as all the threads associated with it must be
   // defined before profile_ to prevent explosions. The threads also must be
   // defined in the order they're listed here. Oh how I love C++.
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread webkit_thread_;

@@ -18,6 +18,7 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "content/browser/android/content_view_core_impl.h"
+#include "content/browser/android/overscroll_glow.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
@@ -75,7 +76,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
     RenderWidgetHostImpl* widget_host,
     ContentViewCoreImpl* content_view_core)
     : host_(widget_host),
-      is_layer_attached_(true),
+      are_layers_attached_(true),
       content_view_core_(NULL),
       ime_adapter_android_(this),
       cached_background_color_(SK_ColorWHITE),
@@ -97,6 +98,11 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
   }
 
   layer_->SetContentsOpaque(true);
+
+  if (!CommandLine::ForCurrentProcess()->
+          HasSwitch(switches::kDisableOverscrollEdgeEffect)) {
+    overscroll_effect_ = OverscrollGlow::Create();
+  }
 
   host_->SetView(this);
   SetContentViewCore(content_view_core);
@@ -133,8 +139,8 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ViewHostMsg_StartContentIntent, OnStartContentIntent)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeBodyBackgroundColor,
                         OnDidChangeBodyBackgroundColor)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SetVSyncNotificationEnabled,
-                        OnSetVSyncNotificationEnabled)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SetNeedsBeginFrame,
+                        OnSetNeedsBeginFrame)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -218,7 +224,8 @@ WebKit::WebGLId RenderWidgetHostViewAndroid::GetScaledContentTexture(
   return helper->CopyAndScaleTexture(texture_id_in_layer_,
                                      texture_size_in_layer_,
                                      size,
-                                     true);
+                                     true,
+                                     GLHelper::SCALER_QUALITY_FAST);
 }
 
 bool RenderWidgetHostViewAndroid::PopulateBitmapWithContents(jobject jbitmap) {
@@ -234,10 +241,12 @@ bool RenderWidgetHostViewAndroid::PopulateBitmapWithContents(jobject jbitmap) {
 
   GLHelper* helper = ImageTransportFactoryAndroid::GetInstance()->GetGLHelper();
 
-  WebKit::WebGLId texture = helper->CopyAndScaleTexture(texture_id_in_layer_,
-                                                        texture_size_in_layer_,
-                                                        bitmap.size(),
-                                                        true);
+  WebKit::WebGLId texture = helper->CopyAndScaleTexture(
+      texture_id_in_layer_,
+      texture_size_in_layer_,
+      bitmap.size(),
+      true,
+      GLHelper::SCALER_QUALITY_FAST);
   if (texture == 0)
     return false;
 
@@ -292,6 +301,9 @@ void RenderWidgetHostViewAndroid::Blur() {
       host_->GetRoutingID(), "Unselect", ""));
   host_->SetInputMethodActive(false);
   host_->Blur();
+
+  if (overscroll_effect_)
+    overscroll_effect_->Finish();
 }
 
 bool RenderWidgetHostViewAndroid::HasFocus() const {
@@ -307,38 +319,30 @@ bool RenderWidgetHostViewAndroid::IsSurfaceAvailableForCopy() const {
 }
 
 void RenderWidgetHostViewAndroid::Show() {
-  if (is_layer_attached_)
+  if (are_layers_attached_)
     return;
 
-  is_layer_attached_ = true;
-  if (content_view_core_)
-    content_view_core_->AttachLayer(layer_);
+  are_layers_attached_ = true;
+  AttachLayers();
 }
 
 void RenderWidgetHostViewAndroid::Hide() {
-  if (!is_layer_attached_)
+  if (!are_layers_attached_)
     return;
 
-  is_layer_attached_ = false;
-  if (content_view_core_)
-    content_view_core_->RemoveLayer(layer_);
+  are_layers_attached_ = false;
+  RemoveLayers();
 }
 
 bool RenderWidgetHostViewAndroid::IsShowing() {
   // ContentViewCoreImpl represents the native side of the Java
   // ContentViewCore.  It being NULL means that it is not attached
   // to the View system yet, so we treat this RWHVA as hidden.
-  return is_layer_attached_ && content_view_core_;
+  return are_layers_attached_ && content_view_core_;
 }
 
 gfx::Rect RenderWidgetHostViewAndroid::GetViewBounds() const {
   if (!content_view_core_)
-    return gfx::Rect();
-
-  // If the backing hasn't been initialized yet, report empty view bounds
-  // as well. Otherwise, we may end up stuck in a white-screen state because
-  // the resize ack is sent after swapbuffers.
-  if (GetPhysicalBackingSize().IsEmpty())
     return gfx::Rect();
 
   gfx::Size size = content_view_core_->GetViewportSizeDip();
@@ -403,11 +407,15 @@ void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
     content_view_core_->OnBackgroundColorChanged(color);
 }
 
-void RenderWidgetHostViewAndroid::SendVSync(base::TimeTicks frame_time) {
-  host_->Send(new ViewMsg_DidVSync(host_->GetRoutingID(), frame_time));
+void RenderWidgetHostViewAndroid::SendBeginFrame(
+    base::TimeTicks frame_time) {
+  if (host_)
+    host_->Send(new ViewMsg_BeginFrame(host_->GetRoutingID(),
+                                       frame_time));
 }
 
-void RenderWidgetHostViewAndroid::OnSetVSyncNotificationEnabled(bool enabled) {
+void RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame(
+    bool enabled) {
   if (content_view_core_)
     content_view_core_->SetVSyncNotificationEnabled(enabled);
 }
@@ -440,10 +448,8 @@ void RenderWidgetHostViewAndroid::RenderViewGone(
 }
 
 void RenderWidgetHostViewAndroid::Destroy() {
-  if (content_view_core_) {
-    content_view_core_->RemoveLayer(layer_);
-    content_view_core_ = NULL;
-  }
+  RemoveLayers();
+  content_view_core_ = NULL;
 
   // The RenderWidgetHost's destruction led here, so don't call it.
   host_ = NULL;
@@ -580,6 +586,8 @@ void RenderWidgetHostViewAndroid::ComputeContentsSize(
   content_size_in_layer_ =
       gfx::Size(texture_size_in_layer_.width() - offset.x(),
                 texture_size_in_layer_.height() - offset.y());
+  // Content size changes should be reflected in associated animation effects.
+  UpdateAnimationSize(frame);
 }
 
 void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
@@ -691,6 +699,53 @@ void RenderWidgetHostViewAndroid::BuffersSwapped(
     ack_callback.Run();
   else
     ack_callbacks_.push(ack_callback);
+}
+
+void RenderWidgetHostViewAndroid::AttachLayers() {
+  if (!content_view_core_)
+    return;
+
+  content_view_core_->AttachLayer(layer_);
+
+  if (overscroll_effect_)
+    content_view_core_->AttachLayer(overscroll_effect_->root_layer());
+}
+
+void RenderWidgetHostViewAndroid::RemoveLayers() {
+  if (!content_view_core_)
+    return;
+
+  if (overscroll_effect_)
+    content_view_core_->RemoveLayer(overscroll_effect_->root_layer());
+
+  content_view_core_->RemoveLayer(layer_);
+}
+
+bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
+  if (!overscroll_effect_ || !HasFocus())
+    return false;
+  return overscroll_effect_->Animate(frame_time);
+}
+
+void RenderWidgetHostViewAndroid::UpdateAnimationSize(
+    const cc::CompositorFrame* frame) {
+  if (!overscroll_effect_)
+    return;
+  // Disable edge effects for axes on which scrolling is impossible.
+  const cc::CompositorFrameMetadata& metadata = frame->metadata;
+  gfx::SizeF ceiled_viewport_size = gfx::ToCeiledSize(metadata.viewport_size);
+  overscroll_effect_->set_horizontal_overscroll_enabled(
+      ceiled_viewport_size.width() < metadata.root_layer_size.width());
+  overscroll_effect_->set_vertical_overscroll_enabled(
+      ceiled_viewport_size.height() < metadata.root_layer_size.height());
+  overscroll_effect_->set_size(content_size_in_layer_);
+}
+
+void RenderWidgetHostViewAndroid::ScheduleAnimationIfNecessary() {
+  if (!content_view_core_)
+    return;
+  if (overscroll_effect_ && overscroll_effect_->IsActive())
+    content_view_core_->SetNeedsAnimate();
 }
 
 void RenderWidgetHostViewAndroid::AcceleratedSurfacePostSubBuffer(
@@ -875,16 +930,28 @@ SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
   return cached_background_color_;
 }
 
+void RenderWidgetHostViewAndroid::OnOverscrolled(
+    gfx::Vector2dF accumulated_overscroll,
+    gfx::Vector2dF current_fling_velocity) {
+  if (!overscroll_effect_ || !HasFocus())
+    return;
+  overscroll_effect_->OnOverscrolled(base::TimeTicks::Now(),
+                                     accumulated_overscroll,
+                                     current_fling_velocity);
+  ScheduleAnimationIfNecessary();
+}
+
 void RenderWidgetHostViewAndroid::SetContentViewCore(
     ContentViewCoreImpl* content_view_core) {
   RunAckCallbacks();
 
-  if (content_view_core_ && is_layer_attached_)
-    content_view_core_->RemoveLayer(layer_);
+  if (are_layers_attached_)
+    RemoveLayers();
 
   content_view_core_ = content_view_core;
-  if (content_view_core_ && is_layer_attached_)
-    content_view_core_->AttachLayer(layer_);
+
+  if (are_layers_attached_)
+    AttachLayers();
 }
 
 void RenderWidgetHostViewAndroid::RunAckCallbacks() {

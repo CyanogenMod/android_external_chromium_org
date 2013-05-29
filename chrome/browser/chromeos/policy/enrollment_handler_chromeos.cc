@@ -36,6 +36,7 @@ EnrollmentHandlerChromeOS::EnrollmentHandlerChromeOS(
     const std::string& auth_token,
     const std::string& client_id,
     bool is_auto_enrollment,
+    const std::string& requisition,
     const AllowedDeviceModes& allowed_device_modes,
     const EnrollmentCallback& completion_callback)
     : store_(store),
@@ -44,6 +45,7 @@ EnrollmentHandlerChromeOS::EnrollmentHandlerChromeOS(
       auth_token_(auth_token),
       client_id_(client_id),
       is_auto_enrollment_(is_auto_enrollment),
+      requisition_(requisition),
       allowed_device_modes_(allowed_device_modes),
       completion_callback_(completion_callback),
       device_mode_(DEVICE_MODE_NOT_SET),
@@ -179,7 +181,8 @@ void EnrollmentHandlerChromeOS::AttemptRegistration() {
   if (store_->is_initialized()) {
     enrollment_step_ = STEP_REGISTRATION;
     client_->Register(em::DeviceRegisterRequest::DEVICE,
-                      auth_token_, client_id_, is_auto_enrollment_);
+                      auth_token_, client_id_, is_auto_enrollment_,
+                      requisition_);
   }
 }
 
@@ -295,7 +298,7 @@ void EnrollmentHandlerChromeOS::HandleLockDeviceResult(
         // InstallAttributes not ready yet, retry later.
         LOG(WARNING) << "Install Attributes not ready yet will retry in "
                      << kLockRetryIntervalMs << "ms.";
-        MessageLoop::current()->PostDelayedTask(
+        base::MessageLoop::current()->PostDelayedTask(
             FROM_HERE,
             base::Bind(&EnrollmentHandlerChromeOS::StartLockDevice,
                        weak_factory_.GetWeakPtr(),

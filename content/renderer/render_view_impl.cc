@@ -33,7 +33,6 @@
 #include "content/common/database_messages.h"
 #include "content/common/drag_messages.h"
 #include "content/common/fileapi/file_system_dispatcher.h"
-#include "content/common/fileapi/webfilesystem_callback_dispatcher.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input_messages.h"
 #include "content/common/java_bridge_messages.h"
@@ -45,6 +44,7 @@
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/common/webmessageportchannel_impl.h"
+#include "content/common_child/fileapi/webfilesystem_callback_adapters.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
@@ -55,9 +55,11 @@
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/three_d_api_types.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/context_menu_client.h"
 #include "content/public/renderer/document_state.h"
+#include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/password_form_conversion_utils.h"
 #include "content/public/renderer/render_view_observer.h"
@@ -68,6 +70,7 @@
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager_impl.h"
+#include "content/renderer/context_menu_params_builder.h"
 #include "content/renderer/device_orientation_dispatcher.h"
 #include "content/renderer/devtools/devtools_agent.h"
 #include "content/renderer/disambiguation_popup_helper.h"
@@ -80,6 +83,7 @@
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/idle_user_detector.h"
 #include "content/renderer/image_loading_helper.h"
+#include "content/renderer/ime_event_guard.h"
 #include "content/renderer/input_tag_speech_dispatcher.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/java/java_bridge_dispatcher.h"
@@ -105,6 +109,7 @@
 #include "content/renderer/renderer_date_time_picker.h"
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
 #include "content/renderer/renderer_webcolorchooser_impl.h"
+#include "content/renderer/savable_resources.h"
 #include "content/renderer/speech_recognition_dispatcher.h"
 #include "content/renderer/text_input_client_observer.h"
 #include "content/renderer/v8_value_converter_impl.h"
@@ -194,8 +199,6 @@
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/dom_storage/dom_storage_types.h"
-#include "webkit/glue/dom_operations.h"
-#include "webkit/glue/glue_serialize.h"
 #include "webkit/glue/webdropdata.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/weburlresponse_extradata_impl.h"
@@ -374,7 +377,7 @@ static RenderViewImpl* (*g_create_render_view_impl)(RenderViewImplParams*) =
 
 static void GetRedirectChain(WebDataSource* ds, std::vector<GURL>* result) {
   // Replace any occurrences of swappedout:// with about:blank.
-  const WebURL& blank_url = GURL(chrome::kAboutBlankURL);
+  const WebURL& blank_url = GURL(kAboutBlankURL);
   WebVector<WebURL> urls;
   ds->redirectChain(urls);
   result->reserve(urls.size());
@@ -515,10 +518,21 @@ static WindowOpenDisposition NavigationPolicyToDisposition(
   }
 }
 
+// Returns true if the device scale is high enough that losing subpixel
+// antialiasing won't have a noticeable effect on text quality.
+static bool DeviceScaleEnsuresTextQuality(float device_scale_factor) {
+#if defined(OS_ANDROID)
+  // On Android, we never have subpixel antialiasing.
+  return true;
+#else
+  return device_scale_factor > 1.5f;
+#endif
+
+}
+
 static bool ShouldUseFixedPositionCompositing(float device_scale_factor) {
   // Compositing for fixed-position elements is dependent on
-  // device_scale_factor if high-DPI flag is set, with no other
-  // overriding switch. http://crbug.com/172738
+  // device_scale_factor if no flag is set. http://crbug.com/172738
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
   if (command_line.HasSwitch(switches::kDisableCompositingForFixedPosition))
@@ -527,13 +541,19 @@ static bool ShouldUseFixedPositionCompositing(float device_scale_factor) {
   if (command_line.HasSwitch(switches::kEnableCompositingForFixedPosition))
     return true;
 
-  if (device_scale_factor > 1.0f &&
-      command_line.HasSwitch(
-          switches::kEnableHighDpiCompositingForFixedPosition))
+  return DeviceScaleEnsuresTextQuality(device_scale_factor);
+}
+
+static bool ShouldUseTransitionCompositing(float device_scale_factor) {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  if (command_line.HasSwitch(switches::kDisableCompositingForTransition))
+    return false;
+
+  if (command_line.HasSwitch(switches::kEnableCompositingForTransition))
     return true;
 
-  // Default, when no switch is specified, is to be enabled only for high-DPI.
-  return device_scale_factor > 1.0f;
+  return DeviceScaleEnsuresTextQuality(device_scale_factor);
 }
 
 static FaviconURL::IconType ToFaviconType(WebKit::WebIconURL::Type type) {
@@ -736,6 +756,8 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   webview()->setDeviceScaleFactor(device_scale_factor_);
   webview()->settings()->setAcceleratedCompositingForFixedPositionEnabled(
       ShouldUseFixedPositionCompositing(device_scale_factor_));
+  webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
+      ShouldUseTransitionCompositing(device_scale_factor_));
 
   webkit_glue::ApplyWebPreferences(webkit_preferences_, webview());
   webview()->initializeMainFrame(this);
@@ -1088,7 +1110,9 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetHistoryLengthAndPrune,
                         OnSetHistoryLengthAndPrune)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableViewSourceMode, OnEnableViewSourceMode)
+#if defined(ENABLE_JAVA_BRIDGE)
     IPC_MESSAGE_HANDLER(JavaBridgeMsg_Init, OnJavaBridgeInit)
+#endif
     IPC_MESSAGE_HANDLER(ViewMsg_SetAccessibilityMode, OnSetAccessibilityMode)
     IPC_MESSAGE_HANDLER(ViewMsg_DisownOpener, OnDisownOpener)
 #if defined(OS_ANDROID)
@@ -1203,10 +1227,10 @@ void RenderViewImpl::OnNavigate(const ViewMsg_Navigate_Params& params) {
       frame->reloadWithOverrideURL(params.url, true);
     else
       frame->reload(ignore_cache);
-  } else if (!params.state.empty()) {
+  } else if (params.page_state.IsValid()) {
     // We must know the page ID of the page we are navigating back to.
     DCHECK_NE(params.page_id, -1);
-    WebHistoryItem item = webkit_glue::HistoryItemFromString(params.state);
+    WebHistoryItem item = PageStateToHistoryItem(params.page_state);
     if (!item.isNull()) {
       // Ensure we didn't save the swapped out URL in UpdateState, since the
       // browser should never be telling us to navigate to swappedout://.
@@ -1297,7 +1321,7 @@ bool RenderViewImpl::IsBackForwardToStaleEntry(
   // Make sure this isn't a back/forward to an entry we have already cropped
   // or replaced from our history, before the browser knew about it.  If so,
   // a new navigation has committed in the mean time, and we can ignore this.
-  bool is_back_forward = !is_reload && !params.state.empty();
+  bool is_back_forward = !is_reload && params.page_state.IsValid();
 
   // Note: if the history_list_length_ is 0 for a back/forward, we must be
   // restoring from a previous session.  We'll update our state in OnNavigate.
@@ -1538,11 +1562,8 @@ void RenderViewImpl::OnSetName(const std::string& name) {
 
 void RenderViewImpl::OnSetEditableSelectionOffsets(int start, int end) {
   base::AutoReset<bool> handling_select_range(&handling_select_range_, true);
-  DCHECK(!handling_ime_event_);
-  handling_ime_event_ = true;
+  ImeEventGuard guard(this);
   webview()->setEditableSelectionOffsets(start, end);
-  handling_ime_event_ = false;
-  UpdateTextInputState(DO_NOT_SHOW_IME);
 }
 
 void RenderViewImpl::OnSetCompositionFromExistingText(
@@ -1550,21 +1571,15 @@ void RenderViewImpl::OnSetCompositionFromExistingText(
     const std::vector<WebKit::WebCompositionUnderline>& underlines) {
   if (!webview())
     return;
-  DCHECK(!handling_ime_event_);
-  handling_ime_event_ = true;
+  ImeEventGuard guard(this);
   webview()->setCompositionFromExistingText(start, end, underlines);
-  handling_ime_event_ = false;
-  UpdateTextInputState(DO_NOT_SHOW_IME);
 }
 
 void RenderViewImpl::OnExtendSelectionAndDelete(int before, int after) {
   if (!webview())
     return;
-  DCHECK(!handling_ime_event_);
-  handling_ime_event_ = true;
+  ImeEventGuard guard(this);
   webview()->extendSelectionAndDelete(before, after);
-  handling_ime_event_ = false;
-  UpdateTextInputState(DO_NOT_SHOW_IME);
 }
 
 void RenderViewImpl::OnSetHistoryLengthAndPrune(int history_length,
@@ -1667,13 +1682,12 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
 
   // Make navigation state a part of the FrameNavigate message so that commited
   // entry had it at all times.
-  const WebHistoryItem& item = frame->currentHistoryItem();
-  if (!item.isNull()) {
-    params.content_state = webkit_glue::HistoryItemToString(item);
-  } else {
-    params.content_state =
-        webkit_glue::CreateHistoryStateForURL(GURL(request.url()));
+  WebHistoryItem item = frame->currentHistoryItem();
+  if (item.isNull()) {
+    item.initialize();
+    item.setURLString(request.url().spec().utf16());
   }
+  params.page_state = HistoryItemToPageState(item);
 
   if (!frame->parent()) {
     // Top-level navigation.
@@ -1838,7 +1852,7 @@ void RenderViewImpl::SendUpdateState(const WebHistoryItem& item) {
     return;
 
   Send(new ViewHostMsg_UpdateState(
-      routing_id_, page_id_, webkit_glue::HistoryItemToString(item)));
+      routing_id_, page_id_, HistoryItemToPageState(item)));
 }
 
 void RenderViewImpl::OpenURL(WebFrame* frame,
@@ -2299,7 +2313,7 @@ bool RenderViewImpl::runModalBeforeUnloadDialog(
 
 void RenderViewImpl::showContextMenu(
     WebFrame* frame, const WebContextMenuData& data) {
-  ContextMenuParams params(data);
+  ContextMenuParams params = ContextMenuParamsBuilder::Build(data);
 
   // Plugins, e.g. PDF, don't currently update the render view when their
   // selected text changes, but the context menu params do contain the updated
@@ -2527,13 +2541,10 @@ void RenderViewImpl::didBlur() {
 //
 void RenderViewImpl::show(WebNavigationPolicy policy) {
   if (did_show_) {
-#if defined(OS_ANDROID)
     // When supports_multiple_windows is disabled, popups are reusing
     // the same view. In some scenarios, this makes WebKit to call show() twice.
-    if (!webkit_preferences_.supports_multiple_windows)
-      return;
-#endif
-    NOTREACHED() << "received extraneous Show call";
+    if (webkit_preferences_.supports_multiple_windows)
+      NOTREACHED() << "received extraneous Show call";
     return;
   }
   did_show_ = true;
@@ -2604,15 +2615,15 @@ void RenderViewImpl::didActivateCompositor(int input_handler_identifier) {
 #if !defined(OS_MACOSX)  // many events are unhandled - http://crbug.com/138003
   InputHandlerManager* input_handler_manager =
       RenderThreadImpl::current()->input_handler_manager();
-  if (input_handler_manager)
-    input_handler_manager->AddInputHandler(
-        routing_id_, input_handler_identifier, AsWeakPtr());
+  if (input_handler_manager) {
+     input_handler_manager->AddInputHandler(
+        routing_id_,
+        compositor_->GetInputHandler(),
+        AsWeakPtr());
+  }
 #endif
 
   RenderWidget::didActivateCompositor(input_handler_identifier);
-
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_,
-                    DidActivateCompositor(input_handler_identifier));
 }
 
 void RenderViewImpl::didHandleGestureEvent(
@@ -3035,7 +3046,7 @@ WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
   // (see below).
   bool is_fork =
       // Must start from a tab showing about:blank, which is later redirected.
-      old_url == GURL(chrome::kAboutBlankURL) &&
+      old_url == GURL(kAboutBlankURL) &&
       // Must be the first real navigation of the tab.
       historyBackListCount() < 1 &&
       historyForwardListCount() < 1 &&
@@ -3150,7 +3161,7 @@ void RenderViewImpl::willPerformClientRedirect(
     WebFrame* frame, const WebURL& from, const WebURL& to, double interval,
     double fire_time) {
   // Replace any occurrences of swappedout:// with about:blank.
-  const WebURL& blank_url = GURL(chrome::kAboutBlankURL);
+  const WebURL& blank_url = GURL(kAboutBlankURL);
 
   FOR_EACH_OBSERVER(
       RenderViewObserver, observers_,
@@ -3167,7 +3178,7 @@ void RenderViewImpl::didCancelClientRedirect(WebFrame* frame) {
 void RenderViewImpl::didCompleteClientRedirect(
     WebFrame* frame, const WebURL& from) {
   // Replace any occurrences of swappedout:// with about:blank.
-  const WebURL& blank_url = GURL(chrome::kAboutBlankURL);
+  const WebURL& blank_url = GURL(kAboutBlankURL);
   if (!frame->parent()) {
     WebDataSource* ds = frame->provisionalDataSource();
     // If there's no provisional data source, it's a reference fragment
@@ -3288,7 +3299,7 @@ void RenderViewImpl::PopulateDocumentStateFromPending(
 
   if (IsReload(params))
     document_state->set_load_type(DocumentState::RELOAD);
-  else if (!params.state.empty())
+  else if (params.page_state.IsValid())
     document_state->set_load_type(DocumentState::HISTORY_LOAD);
   else
     document_state->set_load_type(DocumentState::NORMAL_LOAD);
@@ -3333,7 +3344,6 @@ void RenderViewImpl::ProcessViewLayoutFlags(const CommandLine& command_line) {
       command_line.HasSwitch(switches::kEnableFixedLayout);
 
   webview()->enableFixedLayoutMode(enable_fixed_layout || enable_viewport);
-  webview()->settings()->setFixedElementsLayoutRelativeToFrame(true);
 
   // If viewport tag is enabled, then the WebKit side will take care
   // of setting the fixed layout size and page scale limits.
@@ -3649,7 +3659,7 @@ void RenderViewImpl::didClearWindowObject(WebFrame* frame) {
 void RenderViewImpl::didCreateDocumentElement(WebFrame* frame) {
   // Notify the browser about non-blank documents loading in the top frame.
   GURL url = frame->document().url();
-  if (url.is_valid() && url.spec() != chrome::kAboutBlankURL) {
+  if (url.is_valid() && url.spec() != kAboutBlankURL) {
     if (frame == webview()->mainFrame())
       Send(new ViewHostMsg_DocumentAvailableInMainFrame(routing_id_));
   }
@@ -4229,7 +4239,9 @@ void RenderViewImpl::openFileSystem(
 
   ChildThread::current()->file_system_dispatcher()->OpenFileSystem(
       GURL(origin.toString()), static_cast<fileapi::FileSystemType>(type),
-      size, create, new WebFileSystemCallbackDispatcher(callbacks));
+      size, create,
+      base::Bind(&OpenFileSystemCallbackAdapter, callbacks),
+      base::Bind(&FileStatusCallbackAdapter, callbacks));
 }
 
 void RenderViewImpl::deleteFileSystem(
@@ -4248,7 +4260,7 @@ void RenderViewImpl::deleteFileSystem(
   ChildThread::current()->file_system_dispatcher()->DeleteFileSystem(
       GURL(origin.toString()),
       static_cast<fileapi::FileSystemType>(type),
-      new WebFileSystemCallbackDispatcher(callbacks));
+      base::Bind(&FileStatusCallbackAdapter, callbacks));
 }
 
 void RenderViewImpl::queryStorageUsageAndQuota(
@@ -5286,8 +5298,14 @@ void RenderViewImpl::OnDisableAutoResize(const gfx::Size& new_size) {
   auto_resize_mode_ = false;
   webview()->disableAutoResizeMode();
 
-  Resize(new_size, physical_backing_size_, overdraw_bottom_height_,
-         resizer_rect_, is_fullscreen_, NO_RESIZE_ACK);
+  if (!new_size.IsEmpty()) {
+    Resize(new_size,
+           physical_backing_size_,
+           overdraw_bottom_height_,
+           resizer_rect_,
+           is_fullscreen_,
+           NO_RESIZE_ACK);
+  }
 }
 
 void RenderViewImpl::OnEnablePreferredSizeChangedMode() {
@@ -5379,13 +5397,13 @@ void RenderViewImpl::OnGetAllSavableResourceLinksForCurrentPage(
   std::vector<GURL> referrer_urls_list;
   std::vector<WebKit::WebReferrerPolicy> referrer_policies_list;
   std::vector<GURL> frames_list;
-  webkit_glue::SavableResourcesResult result(&resources_list,
-                                             &referrer_urls_list,
-                                             &referrer_policies_list,
-                                             &frames_list);
+  SavableResourcesResult result(&resources_list,
+                                &referrer_urls_list,
+                                &referrer_policies_list,
+                                &frames_list);
 
   // webkit/ doesn't know about Referrer.
-  if (!webkit_glue::GetAllSavableResourceLinksForCurrentPage(
+  if (!GetAllSavableResourceLinksForCurrentPage(
           webview(),
           page_url,
           &result,
@@ -5585,22 +5603,18 @@ void RenderViewImpl::OnMoveOrResizeStarted() {
     webview()->hidePopups();
 }
 
-void RenderViewImpl::OnResize(const gfx::Size& new_size,
-                              const gfx::Size& physical_backing_size,
-                              float overdraw_bottom_height,
-                              const gfx::Rect& resizer_rect,
-                              bool is_fullscreen) {
+void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
   if (webview()) {
     webview()->hidePopups();
     if (send_preferred_size_changes_) {
       webview()->mainFrame()->setCanHaveScrollbars(
-          ShouldDisplayScrollbars(new_size.width(), new_size.height()));
+          ShouldDisplayScrollbars(params.new_size.width(),
+                                  params.new_size.height()));
     }
     UpdateScrollState(webview()->mainFrame());
   }
 
-  RenderWidget::OnResize(new_size, physical_backing_size,
-                         overdraw_bottom_height, resizer_rect, is_fullscreen);
+  RenderWidget::OnResize(params);
 }
 
 void RenderViewImpl::WillInitiatePaint() {
@@ -6019,6 +6033,8 @@ void RenderViewImpl::SetDeviceScaleFactor(float device_scale_factor) {
     webview()->setDeviceScaleFactor(device_scale_factor);
     webview()->settings()->setAcceleratedCompositingForFixedPositionEnabled(
         ShouldUseFixedPositionCompositing(device_scale_factor_));
+    webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
+        ShouldUseTransitionCompositing(device_scale_factor_));
   }
   if (auto_resize_mode_)
     AutoResizeCompositor();
@@ -6407,12 +6423,12 @@ void RenderViewImpl::OnEnableViewSourceMode() {
   main_frame->enableViewSourceMode(true);
 }
 
+#if defined(ENABLE_JAVA_BRIDGE)
 void RenderViewImpl::OnJavaBridgeInit() {
   DCHECK(!java_bridge_dispatcher_);
-#if defined(ENABLE_JAVA_BRIDGE)
   java_bridge_dispatcher_ = new JavaBridgeDispatcher(this);
-#endif
 }
+#endif
 
 void RenderViewImpl::OnDisownOpener() {
   if (!webview())
@@ -6500,6 +6516,15 @@ void RenderViewImpl::SetDeviceScaleFactorForTesting(float factor) {
   SetDeviceScaleFactor(factor);
   if (!auto_resize_mode_)
     AutoResizeCompositor();
+}
+
+void RenderViewImpl::EnableAutoResizeForTesting(const gfx::Size& min_size,
+                                                const gfx::Size& max_size) {
+  OnEnableAutoResize(min_size, max_size);
+}
+
+void RenderViewImpl::DisableAutoResizeForTesting(const gfx::Size& new_size) {
+  OnDisableAutoResize(new_size);
 }
 
 void RenderViewImpl::OnReleaseDisambiguationPopupDIB(

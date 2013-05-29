@@ -31,10 +31,10 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_member.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/signin/signin_internals_util.h"
 #include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/ubertoken_fetcher.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -119,7 +119,7 @@ class SigninManager : public SigninManagerBase,
   // On platforms where SigninManager is responsible for dealing with
   // invalid username policy updates, we need to check this during
   // initialization and sign the user out.
-  virtual void Initialize(Profile* profile) OVERRIDE;
+  virtual void Initialize(Profile* profile, PrefService* local_state) OVERRIDE;
 
   // Invoked from an OAuthTokenFetchedCallback to complete user signin.
   virtual void CompletePendingSignin();

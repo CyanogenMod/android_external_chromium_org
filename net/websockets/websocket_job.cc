@@ -80,6 +80,8 @@ WebSocketJob::WebSocketJob(SocketStream::Delegate* delegate)
       handshake_request_sent_(0),
       response_cookies_save_index_(0),
       spdy_protocol_version_(0),
+      save_next_cookie_running_(false),
+      callback_pending_(false),
       weak_ptr_factory_(this),
       weak_ptr_factory_for_send_pending_(this) {
 }
@@ -218,7 +220,7 @@ void WebSocketJob::OnSentData(SocketStream* socket, int amount_sent) {
     DCHECK_GT(amount_sent, 0);
     current_send_buffer_ = NULL;
     if (!weak_ptr_factory_for_send_pending_.HasWeakPtrs()) {
-      MessageLoopForIO::current()->PostTask(
+      base::MessageLoopForIO::current()->PostTask(
           FROM_HERE,
           base::Bind(&WebSocketJob::SendPending,
                      weak_ptr_factory_for_send_pending_.GetWeakPtr()));
@@ -388,6 +390,10 @@ void WebSocketJob::AddCookieHeaderAndSend() {
 
 void WebSocketJob::LoadCookieCallback(const std::string& cookie) {
   if (!cookie.empty())
+    // TODO(tyoshino): Sending cookie means that connection doesn't need
+    // kPrivacyModeEnabled as cookies may be server-bound and channel id
+    // wouldn't negatively affect privacy anyway. Need to restart connection
+    // or refactor to determine cookie status prior to connecting.
     handshake_request_->AppendHeaderIfMissing("Cookie", cookie);
   DoSendData();
 }
@@ -498,37 +504,63 @@ void WebSocketJob::NotifyHeadersComplete() {
 }
 
 void WebSocketJob::SaveNextCookie() {
-  if (response_cookies_save_index_ == response_cookies_.size()) {
-    response_cookies_.clear();
-    response_cookies_save_index_ = 0;
-
-    NotifyHeadersComplete();
-
-    return;
-  }
-
   if (!socket_ || !delegate_ || state_ != CONNECTING)
     return;
 
-  CookieOptions options;
-  GURL url = GetURLForCookies();
-  std::string cookie = response_cookies_[response_cookies_save_index_];
-  response_cookies_save_index_++;
+  callback_pending_ = false;
+  save_next_cookie_running_ = true;
 
-  // TODO(tyoshino): Use loop. See URLRequestHttpJob::SaveNextCookie().
-  if (delegate_->CanSetCookie(socket_, url, cookie, &options) &&
-      socket_->context()->cookie_store()) {
+  if (socket_->context()->cookie_store()) {
+    GURL url_for_cookies = GetURLForCookies();
+
+    CookieOptions options;
     options.set_include_httponly();
-    socket_->context()->cookie_store()->SetCookieWithOptionsAsync(
-        url, cookie, options,
-        base::Bind(&WebSocketJob::SaveCookieCallback,
-                   weak_ptr_factory_.GetWeakPtr()));
-  } else {
-    SaveNextCookie();
+
+    // Loop as long as SetCookieWithOptionsAsync completes synchronously. Since
+    // CookieMonster's asynchronous operation APIs queue the callback to run it
+    // on the thread where the API was called, there won't be race. I.e. unless
+    // the callback is run synchronously, it won't be run in parallel with this
+    // method.
+    while (!callback_pending_ &&
+           response_cookies_save_index_ < response_cookies_.size()) {
+      std::string cookie = response_cookies_[response_cookies_save_index_];
+      response_cookies_save_index_++;
+
+      if (!delegate_->CanSetCookie(socket_, url_for_cookies, cookie, &options))
+        continue;
+
+      callback_pending_ = true;
+      socket_->context()->cookie_store()->SetCookieWithOptionsAsync(
+          url_for_cookies, cookie, options,
+          base::Bind(&WebSocketJob::OnCookieSaved,
+                     weak_ptr_factory_.GetWeakPtr()));
+    }
   }
+
+  save_next_cookie_running_ = false;
+
+  if (callback_pending_)
+    return;
+
+  response_cookies_.clear();
+  response_cookies_save_index_ = 0;
+
+  NotifyHeadersComplete();
 }
 
-void WebSocketJob::SaveCookieCallback(bool cookie_status) {
+void WebSocketJob::OnCookieSaved(bool cookie_status) {
+  // Tell the caller of SetCookieWithOptionsAsync() that this completion
+  // callback is invoked.
+  // - If the caller checks callback_pending earlier than this callback, the
+  //   caller exits to let this method continue iteration.
+  // - Otherwise, the caller continues iteration.
+  callback_pending_ = false;
+
+  // Resume SaveNextCookie if the caller of SetCookieWithOptionsAsync() exited
+  // the loop. Otherwise, return.
+  if (save_next_cookie_running_)
+    return;
+
   SaveNextCookie();
 }
 
@@ -561,15 +593,16 @@ int WebSocketJob::TrySpdyStream() {
   if (!session.get())
     return OK;
   SpdySessionPool* spdy_pool = session->spdy_session_pool();
-  const HostPortProxyPair pair(HostPortPair::FromURL(socket_->url()),
-                               socket_->proxy_server());
-  if (!spdy_pool->HasSession(pair))
+  PrivacyMode privacy_mode = socket_->privacy_mode();
+  const SpdySessionKey key(HostPortPair::FromURL(socket_->url()),
+                               socket_->proxy_server(), privacy_mode);
+  if (!spdy_pool->HasSession(key))
     return OK;
 
   // Forbid wss downgrade to SPDY without SSL.
   // TODO(toyoshim): Does it realize the same policy with HTTP?
   scoped_refptr<SpdySession> spdy_session =
-      spdy_pool->Get(pair, *socket_->net_log());
+      spdy_pool->Get(key, *socket_->net_log());
   SSLInfo ssl_info;
   bool was_npn_negotiated;
   NextProto protocol_negotiated = kProtoUnknown;
@@ -609,7 +642,7 @@ void WebSocketJob::Wakeup() {
     return;
   waiting_ = false;
   DCHECK(!callback_.is_null());
-  MessageLoopForIO::current()->PostTask(
+  base::MessageLoopForIO::current()->PostTask(
       FROM_HERE,
       base::Bind(&WebSocketJob::RetryPendingIO,
                  weak_ptr_factory_.GetWeakPtr()));

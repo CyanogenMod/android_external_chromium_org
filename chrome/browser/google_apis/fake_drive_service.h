@@ -83,6 +83,8 @@ class FakeDriveService : public DriveServiceInterface {
   virtual bool CanStartOperation() const OVERRIDE;
   virtual void CancelAll() OVERRIDE;
   virtual bool CancelForFilePath(const base::FilePath& file_path) OVERRIDE;
+  virtual std::string CanonicalizeResourceId(
+      const std::string& resource_id) const OVERRIDE;
   virtual std::string GetRootResourceId() const OVERRIDE;
   virtual bool HasAccessToken() const OVERRIDE;
   virtual bool HasRefreshToken() const OVERRIDE;
@@ -124,6 +126,11 @@ class FakeDriveService : public DriveServiceInterface {
       const DownloadActionCallback& download_action_callback,
       const GetContentCallback& get_content_callback,
       const ProgressCallback& progress_callback) OVERRIDE;
+  virtual void CopyResource(
+      const std::string& resource_id,
+      const std::string& parent_resource_id,
+      const std::string& new_name,
+      const GetResourceEntryCallback& callback) OVERRIDE;
   // The new resource ID for the copied document will look like
   // |resource_id| + "_copied".
   virtual void CopyHostedDocument(
@@ -133,6 +140,11 @@ class FakeDriveService : public DriveServiceInterface {
   virtual void RenameResource(const std::string& resource_id,
                               const std::string& new_name,
                               const EntryActionCallback& callback) OVERRIDE;
+  virtual void TouchResource(
+      const std::string& resource_id,
+      const base::Time& modified_date,
+      const base::Time& last_viewed_by_me_date,
+      const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void AddResourceToDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
@@ -160,7 +172,6 @@ class FakeDriveService : public DriveServiceInterface {
       const std::string& etag,
       const InitiateUploadCallback& callback) OVERRIDE;
   virtual void ResumeUpload(
-      UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_url,
       int64 start_position,
@@ -171,7 +182,6 @@ class FakeDriveService : public DriveServiceInterface {
       const UploadRangeCallback& callback,
       const ProgressCallback& progress_callback) OVERRIDE;
   virtual void GetUploadStatus(
-      UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_url,
       int64 content_length,
@@ -184,7 +194,7 @@ class FakeDriveService : public DriveServiceInterface {
   // HTTP_CREATED with the parsed entry.
   // |callback| must not be null.
   void AddNewFile(const std::string& content_type,
-                  int64 content_length,
+                  const std::string& content_data,
                   const std::string& parent_resource_id,
                   const std::string& title,
                   bool shared_with_me,
@@ -222,7 +232,7 @@ class FakeDriveService : public DriveServiceInterface {
   // if failed.
   const base::DictionaryValue* AddNewEntry(
     const std::string& content_type,
-    int64 content_length,
+    const std::string& content_data,
     const std::string& parent_resource_id,
     const std::string& title,
     bool shared_with_me,

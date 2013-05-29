@@ -9,10 +9,10 @@
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 // static
@@ -24,24 +24,24 @@ PluginPrefsFactory* PluginPrefsFactory::GetInstance() {
 scoped_refptr<PluginPrefs> PluginPrefsFactory::GetPrefsForProfile(
     Profile* profile) {
   return static_cast<PluginPrefs*>(
-      GetInstance()->GetServiceForProfile(profile, true).get());
+      GetInstance()->GetServiceForBrowserContext(profile, true).get());
 }
 
 // static
-scoped_refptr<RefcountedProfileKeyedService>
+scoped_refptr<RefcountedBrowserContextKeyedService>
 PluginPrefsFactory::CreateForTestingProfile(content::BrowserContext* profile) {
   return static_cast<PluginPrefs*>(
       GetInstance()->BuildServiceInstanceFor(profile).get());
 }
 
 PluginPrefsFactory::PluginPrefsFactory()
-    : RefcountedProfileKeyedServiceFactory(
-          "PluginPrefs", ProfileDependencyManager::GetInstance()) {
+    : RefcountedBrowserContextKeyedServiceFactory(
+          "PluginPrefs", BrowserContextDependencyManager::GetInstance()) {
 }
 
 PluginPrefsFactory::~PluginPrefsFactory() {}
 
-scoped_refptr<RefcountedProfileKeyedService>
+scoped_refptr<RefcountedBrowserContextKeyedService>
 PluginPrefsFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
@@ -94,6 +94,6 @@ bool PluginPrefsFactory::ServiceIsNULLWhileTesting() const {
   return true;
 }
 
-bool PluginPrefsFactory::ServiceIsCreatedWithProfile() const {
+bool PluginPrefsFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }

@@ -63,7 +63,9 @@ class OmniboxViewWin
                  LocationBarView* parent_view,
                  CommandUpdater* command_updater,
                  bool popup_window_mode,
-                 views::View* location_bar);
+                 views::View* location_bar,
+                 const gfx::Font& font,
+                 int font_y_offset);
   ~OmniboxViewWin();
 
   // Gets the relative window for the specified native view.
@@ -116,7 +118,6 @@ class OmniboxViewWin
   virtual int GetMaxEditWidth(int entry_width) const OVERRIDE;
   virtual views::View* AddToView(views::View* parent) OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual gfx::Font GetFont() OVERRIDE;
 
   int GetPopupMaxYCoordinate();
 
@@ -396,8 +397,8 @@ class OmniboxViewWin
   void CopyURL();
 
   // The handle to the RichEdit DLL.  In the rare case where the user's system
-  // is missing this DLL (due to some kind of system corruption), we show an
-  // error dialog; see missing_system_file_dialog_win.h.
+  // is missing this DLL (due to some kind of system corruption), the similar
+  // OmniboxViewViews is used instead; see Textfield::IsViewsTextfieldEnabled().
   static HMODULE loaded_library_module_;
 
   scoped_ptr<OmniboxPopupView> popup_view_;

@@ -47,15 +47,26 @@
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
-        '../../testing/gtest.gyp:gtest',
-        '../../testing/gmock.gyp:gmock',
+        '../../base/base.gyp:test_support_base',
         '../../testing/gtest.gyp:gtest',
         '../ui.gyp:ui',
         'snapshot'
       ],
       'sources': [
+        'snapshot_aura_unittest.cc',
         'snapshot_mac_unittest.mm',
-      ]
+        'test/run_all_unittests.cc',
+      ],
+      'conditions': [
+        ['use_aura==1', {
+          'dependencies': [
+            '../../base/base.gyp:test_support_base',
+            '../aura/aura.gyp:aura_test_support',
+            '../compositor/compositor.gyp:compositor',
+            '../compositor/compositor.gyp:compositor_test_support',
+          ],
+        }],
+      ],
     },
   ],
   'conditions': [

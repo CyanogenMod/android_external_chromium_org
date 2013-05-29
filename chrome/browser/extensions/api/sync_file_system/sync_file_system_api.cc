@@ -22,11 +22,11 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_client.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/file_system_util.h"
-#include "webkit/fileapi/syncable/sync_file_status.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/syncable/sync_file_status.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/quota/quota_manager.h"
 
 using content::BrowserContext;
@@ -160,7 +160,7 @@ void SyncFileSystemRequestFileSystemFunction::DidInitializeFileSystemContext(
            service_name,
            source_url().GetOrigin(),
            fileapi::kFileSystemTypeSyncable,
-           true, /* create */
+           fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
            base::Bind(&self::DidOpenFileSystem, this)));
 }
 

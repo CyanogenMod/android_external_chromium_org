@@ -7,6 +7,8 @@
 
 #include <string>
 
+class GURL;
+
 namespace google_apis {
 namespace util {
 
@@ -32,6 +34,13 @@ std::string EscapeQueryStringValue(const std::string& str);
 //   Quoted query (e.g. "dog cat" => fullText contains 'dog cat').
 // See also: https://developers.google.com/drive/search-parameters
 std::string TranslateQuery(const std::string& original_query);
+
+// Extracts resource_id out of edit url.
+std::string ExtractResourceIdFromUrl(const GURL& url);
+
+// If |resource_id| is in the old resource ID format used by WAPI, converts it
+// into the new format.
+std::string CanonicalizeResourceId(const std::string& resource_id);
 
 }  // namespace util
 }  // namespace drive

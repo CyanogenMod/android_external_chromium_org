@@ -11,6 +11,10 @@ namespace content {
 class NavigationController;
 }
 
+namespace gfx {
+class Size;
+}
+
 namespace autofill {
 
 class TestableAutofillDialogView;
@@ -24,7 +28,7 @@ class AutofillDialogView {
   // Shows the dialog.
   virtual void Show() = 0;
 
-  // Hides the dialog as if a user pressed cancel.
+  // Closes the dialog window. May self-delete.
   virtual void Hide() = 0;
 
   // Called when a different notification is available.
@@ -64,7 +68,7 @@ class AutofillDialogView {
   // Returns a NotificationSource to be used to monitor for sign-in completion.
   virtual const content::NavigationController* ShowSignIn() = 0;
 
-  // Closes out any signin UI and returns to normal operation.
+  // Closes out any sign-in UI and returns to normal operation.
   virtual void HideSignIn() = 0;
 
   // Updates the progress bar based on the Autocheckout progress. |value| should
@@ -78,6 +82,10 @@ class AutofillDialogView {
   // expected. This should be implemented on all platforms, but for now returns
   // NULL on everything but Views.
   virtual TestableAutofillDialogView* GetTestableView();
+
+  // Called by AutofillDialogSignInDelegate when the sign-in page experiences a
+  // resize. |pref_size| is the new preferred size of the sign-in page.
+  virtual void OnSignInResize(const gfx::Size& pref_size) = 0;
 
   // Factory function to create the dialog (implemented once per view
   // implementation). |controller| will own the created dialog.

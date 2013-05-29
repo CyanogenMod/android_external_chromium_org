@@ -137,6 +137,9 @@ public class AwContents {
     private int mLastGlobalVisibleWidth;
     private int mLastGlobalVisibleHeight;
 
+    private boolean mContainerViewFocused;
+    private boolean mWindowFocused;
+
     private static final class DestroyRunnable implements Runnable {
         private int mNativeAwContents;
         private DestroyRunnable(int nativeAwContents) {
@@ -1119,13 +1122,16 @@ public class AwContents {
      * @see android.view.View#onWindowFocusChanged()
      */
     public void onWindowFocusChanged(boolean hasWindowFocus) {
+        mWindowFocused = hasWindowFocus;
+        mContentViewCore.onFocusChanged(mContainerViewFocused && mWindowFocused);
     }
 
     /**
      * @see android.view.View#onFocusChanged()
      */
     public void onFocusChanged(boolean focused, int direction, Rect previouslyFocusedRect) {
-        mContentViewCore.onFocusChanged(focused, direction, previouslyFocusedRect);
+        mContainerViewFocused = focused;
+        mContentViewCore.onFocusChanged(mContainerViewFocused && mWindowFocused);
     }
 
     /**
@@ -1234,6 +1240,10 @@ public class AwContents {
      */
     public void onInitializeAccessibilityEvent(AccessibilityEvent event) {
         mContentViewCore.onInitializeAccessibilityEvent(event);
+    }
+
+    public boolean supportsAccessibilityAction(int action) {
+        return mContentViewCore.supportsAccessibilityAction(action);
     }
 
     /**

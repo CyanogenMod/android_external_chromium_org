@@ -24,6 +24,11 @@
 #include "net/base/net_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+#if defined(ENABLE_PLUGINS)
+#include "content/public/browser/plugin_service.h"
+#include "content/shell/shell_plugin_service_filter.h"
+#endif
+
 #if defined(OS_ANDROID)
 #include "net/android/network_change_notifier_factory_android.h"
 #include "net/base/network_change_notifier.h"
@@ -75,7 +80,12 @@ ShellBrowserMainParts::ShellBrowserMainParts(
     : BrowserMainParts(),
       parameters_(parameters),
       run_message_loop_(true),
-      devtools_delegate_(NULL) {
+      devtools_delegate_(NULL)
+#if defined(ENABLE_PLUGINS)
+      ,
+      plugin_service_filter_(NULL)
+#endif
+{
 }
 
 ShellBrowserMainParts::~ShellBrowserMainParts() {
@@ -121,6 +131,14 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
                            MSG_ROUTING_NONE,
                            gfx::Size());
   }
+
+#if defined(ENABLE_PLUGINS)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
+    PluginService* plugin_service = PluginService::GetInstance();
+    plugin_service_filter_.reset(new ShellPluginServiceFilter);
+    plugin_service->SetFilter(plugin_service_filter_.get());
+  }
+#endif
 
   if (parameters_.ui_task) {
     parameters_.ui_task->Run();

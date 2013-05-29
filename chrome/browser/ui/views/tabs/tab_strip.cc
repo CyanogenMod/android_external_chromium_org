@@ -31,6 +31,7 @@
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/animation_container.h"
 #include "ui/base/animation/throb_animation.h"
+#include "ui/base/default_theme_provider.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
@@ -45,7 +46,6 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/mouse_watcher_view_host.h"
 #include "ui/views/view_model_utils.h"
-#include "ui/views/widget/default_theme_provider.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
@@ -327,15 +327,21 @@ class NewTabButton : public views::ImageButton {
   // The offset used to paint the background image.
   gfx::Point background_offset_;
 
+  // were we destroyed?
+  bool* destroyed_;
+
   DISALLOW_COPY_AND_ASSIGN(NewTabButton);
 };
 
 NewTabButton::NewTabButton(TabStrip* tab_strip, views::ButtonListener* listener)
     : views::ImageButton(listener),
-      tab_strip_(tab_strip) {
+      tab_strip_(tab_strip),
+      destroyed_(NULL) {
 }
 
 NewTabButton::~NewTabButton() {
+  if (destroyed_)
+    *destroyed_ = true;
 }
 
 bool NewTabButton::HasHitTestMask() const {
@@ -371,8 +377,13 @@ void NewTabButton::OnMouseReleased(const ui::MouseEvent& event) {
   if (event.IsOnlyRightMouseButton()) {
     gfx::Point point = event.location();
     views::View::ConvertPointToScreen(this, &point);
+    bool destroyed = false;
+    destroyed_ = &destroyed;
     ui::ShowSystemMenuAtPoint(GetWidget()->GetNativeView(), point);
-    SetState(views::CustomButton::STATE_NORMAL);
+    if (!destroyed_) {
+      SetState(views::CustomButton::STATE_NORMAL);
+      destroyed_ = NULL;
+    }
     return;
   }
   views::ImageButton::OnMouseReleased(event);
@@ -1046,6 +1057,11 @@ void TabStrip::MaybeStartDrag(
       controller_->HasAvailableDragActions() == 0) {
     return;
   }
+
+  // Do not do any dragging of tabs when using the super short immersive style.
+  if (IsImmersiveStyle())
+    return;
+
   int model_index = GetModelIndexOfTab(tab);
   if (!IsValidModelIndex(model_index)) {
     CHECK(false);
@@ -1099,13 +1115,14 @@ void TabStrip::MaybeStartDrag(
 
   views::Widget* widget = GetWidget();
 
-  // Don't allow detaching from maximized windows (in ash) when all the tabs are
-  // selected and only one display. Since the window is maximized we know there
-  // are no other tabbed browsers the user can drag to.
+  // Don't allow detaching from maximized or fullscreen windows (in ash) when
+  // all the tabs are selected and there is only one display. Since the window
+  // is maximized or fullscreen, we know there are no other tabbed browsers the
+  // user can drag to.
   const chrome::HostDesktopType host_desktop_type =
       chrome::GetHostDesktopTypeForNativeView(widget->GetNativeView());
   if (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH &&
-      widget->IsMaximized() &&
+      (widget->IsMaximized() || widget->IsFullscreen()) &&
       static_cast<int>(tabs.size()) == tab_count() &&
       gfx::Screen::GetScreenFor(widget->GetNativeView())->GetNumDisplays() == 1)
     detach_behavior = TabDragController::NOT_DETACHABLE;

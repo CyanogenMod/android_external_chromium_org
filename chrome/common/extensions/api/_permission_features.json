@@ -176,7 +176,7 @@
     ]
   },
   "identity": {
-    "channel": "trunk",
+    "channel": "dev",
     "extension_types": ["extension", "platform_app"]
   },
   "enterprise.platformKeysPrivate": {
@@ -208,6 +208,10 @@
     "extension_types": ["extension"],
     "whitelist": [ "2FC374607C2DF285634B67C64A2E356C607091C3" ]
   }],
+  "fileSystem.retainFiles": [{
+    "channel": "trunk",
+    "extension_types": ["platform_app"]
+  }],
   "fileSystem.write": [{
     "channel": "stable",
     "extension_types": ["platform_app"]
@@ -234,6 +238,13 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
   },
+  "identityPrivate": {
+    "channel": "stable",
+    "extension_types": [
+      "packaged_app"
+    ],
+    "location": "component"
+  },
   "idle": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"]
@@ -251,7 +262,8 @@
       "gnedhmakppccajfpfiihfcdlnpgomkcf",  // Citrix Receiver Beta
       "fjcibdnjlbfnbfdjneajpipnlcppleek",  // Citrix Receiver Dev
       "pnhechapfaindjhompbnflcldabbghjo",  // HTerm
-      "okddffdblfhhnmhodogpojmfkjmhinfp"   // HTerm dev
+      "okddffdblfhhnmhodogpojmfkjmhinfp",  // HTerm dev
+      "fpfbhcjppmaeaijcidgiibchfbnhbelj"  // Google Japanese Input
     ]
   },
   "location": [

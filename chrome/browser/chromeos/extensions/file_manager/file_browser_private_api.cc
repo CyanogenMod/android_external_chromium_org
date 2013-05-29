@@ -8,11 +8,13 @@
 #include <sys/statvfs.h>
 #include <sys/types.h>
 #include <utime.h>
-#include <utility>
+
+#include <map>
 
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/files/file_path.h"
+#include "base/format_macros.h"
 #include "base/i18n/case_conversion.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
@@ -21,15 +23,17 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/stl_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_system_service.h"
-#include "chrome/browser/chromeos/drive/drive_webapps_registry.h"
+#include "chrome/browser/chromeos/drive/drive_app_registry.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/chromeos/drive/search_metadata.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_handler.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api_factory.h"
@@ -76,13 +80,13 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/webui/web_ui_util.h"
-#include "webkit/chromeos/fileapi/cros_mount_point_provider.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_file_util.h"
-#include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/file_system_util.h"
+#include "webkit/browser/chromeos/fileapi/cros_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_file_util.h"
+#include "webkit/browser/fileapi/file_system_operation_context.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 using extensions::app_file_handler_util::FindFileHandlersForFiles;
 using extensions::app_file_handler_util::PathAndMimeTypeSet;
@@ -126,6 +130,8 @@ const char kDriveConnectionTypeOnline[] = "online";
 const char kDriveConnectionReasonNotReady[] = "not_ready";
 const char kDriveConnectionReasonNoNetwork[] = "no_network";
 const char kDriveConnectionReasonNoService[] = "no_service";
+
+const int kSlowOperationThresholdMs = 500;  // In ms.
 
 // Unescape rules used for parsing query parameters.
 const net::UnescapeRule::Type kUnescapeRuleForQueryParameters =
@@ -373,7 +379,7 @@ void FillDriveEntryPropertiesValue(
   if (!entry_proto.has_file_specific_info())
     return;
 
-  const drive::DriveFileSpecificInfo& file_specific_info =
+  const drive::FileSpecificInfo& file_specific_info =
       entry_proto.file_specific_info();
 
   property_dict->SetString("thumbnailUrl", file_specific_info.thumbnail_url());
@@ -573,7 +579,6 @@ FileBrowserPrivateAPI::FileBrowserPrivateAPI(Profile* profile)
   registry->RegisterFunction<ViewFilesFunction>();
   registry->RegisterFunction<GetDriveEntryPropertiesFunction>();
   registry->RegisterFunction<PinDriveFileFunction>();
-  registry->RegisterFunction<GetFileLocationsFunction>();
   registry->RegisterFunction<GetDriveFilesFunction>();
   registry->RegisterFunction<CancelFileTransfersFunction>();
   registry->RegisterFunction<TransferFileFunction>();
@@ -611,7 +616,8 @@ void RequestLocalFileSystemFunction::RequestOnFileThread(
     int child_id) {
   GURL origin_url = source_url.GetOrigin();
   file_system_context->OpenFileSystem(
-      origin_url, fileapi::kFileSystemTypeExternal, false,  // create
+      origin_url, fileapi::kFileSystemTypeExternal,
+      fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
       LocalFileSystemCallbackDispatcher::CreateCallback(
           this,
           file_system_context,
@@ -627,6 +633,8 @@ bool LogoutUserFunction::RunImpl() {
 bool RequestLocalFileSystemFunction::RunImpl() {
   if (!dispatcher() || !render_view_host() || !render_view_host()->GetProcess())
     return false;
+
+  set_log_on_completion(true);
 
   content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
   scoped_refptr<fileapi::FileSystemContext> file_system_context =
@@ -650,9 +658,9 @@ void RequestLocalFileSystemFunction::RespondSuccessOnUIThread(
   // Add drive mount point immediately when we kick of first instance of file
   // manager. The actual mount event will be sent to UI only when we perform
   // proper authentication.
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  if (system_service)
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  if (integration_service)
     SetDriveMountPointPermissions(profile_, extension_id(), render_view_host());
   DictionaryValue* dict = new DictionaryValue();
   SetResult(dict);
@@ -748,7 +756,7 @@ struct GetFileTasksFileBrowserFunction::TaskInfo {
 
 // static
 void GetFileTasksFileBrowserFunction::GetAvailableDriveTasks(
-    drive::DriveWebAppsRegistry* registry,
+    drive::DriveAppRegistry* registry,
     const FileInfoList& file_info_list,
     TaskInfoMap* task_info_map) {
   DCHECK(registry);
@@ -761,14 +769,14 @@ void GetFileTasksFileBrowserFunction::GetAvailableDriveTasks(
     if (file_info.file_path.empty())
       continue;
 
-    ScopedVector<drive::DriveWebAppInfo> app_info_list;
-    registry->GetWebAppsForFile(
+    ScopedVector<drive::DriveAppInfo> app_info_list;
+    registry->GetAppsForFile(
         file_info.file_path, file_info.mime_type, &app_info_list);
 
     if (is_first) {
       // For the first file, we store all the info.
       for (size_t j = 0; j < app_info_list.size(); ++j) {
-        const drive::DriveWebAppInfo& app_info = *app_info_list[j];
+        const drive::DriveAppInfo& app_info = *app_info_list[j];
         GURL icon_url =
             FindPreferredIcon(app_info.app_icons, kPreferredIconSize);
         task_info_map->insert(std::pair<std::string, TaskInfo>(
@@ -858,15 +866,16 @@ bool GetFileTasksFileBrowserFunction::FindDriveAppTasks(
   if (file_info_list.empty())
     return true;
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled. We return true in this
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled. We return true in this
   // case because there might be other extension tasks, even if we don't have
   // any to add.
-  if (!system_service || !system_service->webapps_registry())
+  if (!integration_service || !integration_service->drive_app_registry())
     return true;
 
-  drive::DriveWebAppsRegistry* registry = system_service->webapps_registry();
+  drive::DriveAppRegistry* registry =
+      integration_service->drive_app_registry();
   DCHECK(registry);
 
   // Map of task_id to TaskInfo of available tasks.
@@ -977,6 +986,7 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
   FileInfoList info_list;
   std::vector<GURL> file_urls;
   std::vector<base::FilePath> file_paths;
+  bool has_google_document = false;
   for (size_t i = 0; i < files_list->GetSize(); ++i) {
     FileInfo info;
     std::string file_url_str;
@@ -999,6 +1009,12 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
     info.file_url = file_url;
     info.file_path = file_system_url.path();
     info_list.push_back(info);
+
+    if (google_apis::ResourceEntry::ClassifyEntryKindByFileExtension(
+            info.file_path) &
+        google_apis::ResourceEntry::KIND_OF_GOOGLE_DOCUMENT) {
+      has_google_document = true;
+    }
   }
 
   ListValue* result_list = new ListValue();
@@ -1007,8 +1023,11 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
   // Find the Drive apps first, because we want them to take precedence
   // when setting the default app.
   bool default_already_set = false;
-  if (!FindDriveAppTasks(info_list, result_list, &default_already_set))
-    return false;
+  // Google document are not opened by drive apps but file manager.
+  if (!has_google_document) {
+    if (!FindDriveAppTasks(info_list, result_list, &default_already_set))
+      return false;
+  }
 
   // Take the union of platform app file handlers, and all previous Drive
   // and extension tasks. As above, we know there aren't duplicates because
@@ -1023,8 +1042,8 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
   // the extension tasks to the Drive task list. We know there aren't duplicates
   // because they're entirely different kinds of tasks, but there could be both
   // kinds of tasks for a file type (an image file, for instance).
-  std::set<const FileBrowserHandler*> common_tasks;
-  std::set<const FileBrowserHandler*> default_tasks;
+  file_handler_util::FileBrowserHandlerList common_tasks;
+  file_handler_util::FileBrowserHandlerList default_tasks;
   if (!file_handler_util::FindCommonTasks(profile_, file_urls, &common_tasks))
     return false;
   file_handler_util::FindDefaultTasks(profile_, file_paths,
@@ -1032,7 +1051,7 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
 
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile_)->extension_service();
-  for (std::set<const FileBrowserHandler*>::const_iterator iter =
+  for (file_handler_util::FileBrowserHandlerList::const_iterator iter =
            common_tasks.begin();
        iter != common_tasks.end();
        ++iter) {
@@ -1056,7 +1075,8 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
 
     // Only set the default if there isn't already a default set.
     if (!default_already_set &&
-        default_tasks.find(*iter) != default_tasks.end()) {
+        std::find(default_tasks.begin(), default_tasks.end(), *iter) !=
+            default_tasks.end()) {
       task->SetBoolean("isDefault", true);
       default_already_set = true;
     } else {
@@ -1203,13 +1223,8 @@ bool SetDefaultTaskFileBrowserFunction::RunImpl() {
     return true;
   }
 
-  BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(
-            &file_handler_util::UpdateDefaultTask,
-            profile_, task_id, suffixes, mime_types));
+  file_handler_util::UpdateDefaultTask(profile_, task_id, suffixes, mime_types);
 
-  SetResult(new base::FundamentalValue(true));
   return true;
 }
 
@@ -1220,7 +1235,8 @@ struct FileBrowserFunction::GetSelectedFileInfoParams {
   SelectedFileInfoList selected_files;
 };
 
-FileBrowserFunction::FileBrowserFunction() {
+FileBrowserFunction::FileBrowserFunction() : log_on_completion_(false) {
+  start_time_  = base::Time::Now();
 }
 
 FileBrowserFunction::~FileBrowserFunction() {
@@ -1292,17 +1308,17 @@ void FileBrowserFunction::GetSelectedFileInfoInternal(
     // When opening a drive file, we should get local file path.
     if (params->for_opening &&
         drive::util::IsUnderDriveMountPoint(file_path)) {
-      drive::DriveSystemService* system_service =
-          drive::DriveSystemServiceFactory::GetForProfile(profile_);
-      // |system_service| is NULL if Drive is disabled.
-      if (!system_service) {
+      drive::DriveIntegrationService* integration_service =
+          drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+      // |integration_service| is NULL if Drive is disabled.
+      if (!integration_service) {
         ContinueGetSelectedFileInfo(params.Pass(),
                                     drive::FILE_ERROR_FAILED,
                                     base::FilePath(),
                                     scoped_ptr<drive::ResourceEntry>());
         return;
       }
-      system_service->file_system()->GetFileByPath(
+      integration_service->file_system()->GetFileByPath(
           drive::util::ExtractDrivePath(file_path),
           base::Bind(&FileBrowserFunction::ContinueGetSelectedFileInfo,
                      this,
@@ -1350,6 +1366,29 @@ bool SelectFileFunction::RunImpl() {
       for_opening,
       base::Bind(&SelectFileFunction::GetSelectedFileInfoResponse, this));
   return true;
+}
+
+void FileBrowserFunction::SendResponse(bool success) {
+  int64 elapsed = GetElapsedTime().InMilliseconds();
+  if (log_on_completion_) {
+    drive::util::Log("%s[%d] %s. (elapsed time: %sms)",
+                     name().c_str(),
+                     request_id(),
+                     success ? "succeeded" : "failed",
+                     base::Int64ToString(elapsed).c_str());
+  } else if (elapsed >= kSlowOperationThresholdMs) {
+    drive::util::Log(
+        "PEFORMANCE WARNING: %s[%d] was slow. (elapsed time: %sms)",
+        name().c_str(),
+        request_id(),
+        base::Int64ToString(elapsed).c_str());
+  }
+
+  AsyncExtensionFunction::SendResponse(success);
+}
+
+base::TimeDelta FileBrowserFunction::GetElapsedTime() {
+  return base::Time::Now() - start_time_;
 }
 
 void SelectFileFunction::GetSelectedFileInfoResponse(
@@ -1481,6 +1520,13 @@ bool AddMountFunction::RunImpl() {
     return false;
   }
 
+  drive::util::Log("%s[%d] called. (source: '%s', type:'%s')",
+                   name().c_str(),
+                   request_id(),
+                   file_url.empty() ? "(none)" : file_url.c_str(),
+                   mount_type_str.c_str());
+  set_log_on_completion(true);
+
   // Set default return source path to the empty string.
   SetResult(new base::StringValue(""));
 
@@ -1516,10 +1562,10 @@ bool AddMountFunction::RunImpl() {
 
       // Check if the source path is under Drive cache directory.
       if (drive::util::IsUnderDriveMountPoint(path)) {
-        drive::DriveSystemService* system_service =
-            drive::DriveSystemServiceFactory::GetForProfile(profile_);
+        drive::DriveIntegrationService* integration_service =
+            drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
         drive::FileSystemInterface* file_system =
-            system_service ? system_service->file_system() : NULL;
+            integration_service ? integration_service->file_system() : NULL;
         if (!file_system) {
           SendResponse(false);
           break;
@@ -1577,6 +1623,12 @@ bool RemoveMountFunction::RunImpl() {
     return false;
   }
 
+  drive::util::Log("%s[%d] called. (mount_path: '%s')",
+                   name().c_str(),
+                   request_id(),
+                   mount_path.c_str());
+  set_log_on_completion(true);
+
   UrlList file_paths;
   file_paths.push_back(GURL(mount_path));
   GetSelectedFileInfo(
@@ -1622,13 +1674,25 @@ bool GetMountPointsFunction::RunImpl() {
   DiskMountManager::MountPointMap mount_points =
       disk_mount_manager->mount_points();
 
+  std::string log_string = "[";
+  const char *separator = "";
   for (DiskMountManager::MountPointMap::const_iterator it =
            mount_points.begin();
        it != mount_points.end();
        ++it) {
     mounts->Append(CreateValueFromMountPoint(profile_, it->second,
         extension_->id(), source_url_));
+    log_string += separator + it->first;
+    separator = ", ";
   }
+
+  log_string += "]";
+
+  drive::util::Log("%s[%d] succeeded. (results: '%s', %"PRIuS" mount points)",
+                   name().c_str(),
+                   request_id(),
+                   log_string.c_str(),
+                   mount_points.size());
 
   SendResponse(true);
   return true;
@@ -1688,10 +1752,10 @@ bool GetSizeStatsFunction::RunImpl() {
     return false;
 
   if (file_path == drive::util::GetDriveMountPointPath()) {
-    drive::DriveSystemService* system_service =
-        drive::DriveSystemServiceFactory::GetForProfile(profile_);
-    // |system_service| is NULL if Drive is disabled.
-    if (!system_service) {
+    drive::DriveIntegrationService* integration_service =
+        drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+    // |integration_service| is NULL if Drive is disabled.
+    if (!integration_service) {
       // If stats couldn't be gotten for drive, result should be left
       // undefined. See comments in GetDriveAvailableSpaceCallback().
       SendResponse(true);
@@ -1699,7 +1763,7 @@ bool GetSizeStatsFunction::RunImpl() {
     }
 
     drive::FileSystemInterface* file_system =
-        system_service->file_system();
+        integration_service->file_system();
 
     file_system->GetAvailableSpace(
         base::Bind(&GetSizeStatsFunction::GetDriveAvailableSpaceCallback,
@@ -2286,9 +2350,9 @@ bool FileDialogStringsFunction::RunImpl() {
 
   webui::SetFontAndTextDirection(dict);
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  dict->SetBoolean("ENABLE_GDATA", system_service != NULL);
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  dict->SetBoolean("ENABLE_GDATA", integration_service != NULL);
 
 #if defined(USE_ASH)
   dict->SetBoolean("ASH", true);
@@ -2327,15 +2391,15 @@ bool GetDriveEntryPropertiesFunction::RunImpl() {
   properties_->SetString("fileUrl", file_url.spec());
 
   // Start getting the file info.
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service) {
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service) {
     CompleteGetFileProperties(drive::FILE_ERROR_FAILED);
     return true;
   }
 
-  system_service->file_system()->GetResourceEntryByPath(
+  integration_service->file_system()->GetResourceEntryByPath(
       file_path_,
       base::Bind(&GetDriveEntryPropertiesFunction::OnGetFileInfo, this));
   return true;
@@ -2354,10 +2418,10 @@ void GetDriveEntryPropertiesFunction::OnGetFileInfo(
 
   FillDriveEntryPropertiesValue(*entry, properties_.get());
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service) {
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service) {
     CompleteGetFileProperties(drive::FILE_ERROR_FAILED);
     return;
   }
@@ -2369,14 +2433,14 @@ void GetDriveEntryPropertiesFunction::OnGetFileInfo(
     return;
   }
 
-  const drive::DriveFileSpecificInfo& file_specific_info =
+  const drive::FileSpecificInfo& file_specific_info =
       entry->file_specific_info();
 
   // Get drive WebApps that can accept this file.
-  ScopedVector<drive::DriveWebAppInfo> web_apps;
-  system_service->webapps_registry()->GetWebAppsForFile(
-      file_path_, file_specific_info.content_mime_type(), &web_apps);
-  if (!web_apps.empty()) {
+  ScopedVector<drive::DriveAppInfo> drive_apps;
+  integration_service->drive_app_registry()->GetAppsForFile(
+      file_path_, file_specific_info.content_mime_type(), &drive_apps);
+  if (!drive_apps.empty()) {
     std::string default_task_id = file_handler_util::GetDefaultTaskIdFromPrefs(
         profile_,
         file_specific_info.content_mime_type(),
@@ -2387,28 +2451,28 @@ void GetDriveEntryPropertiesFunction::OnGetFileInfo(
 
     ListValue* apps = new ListValue();
     properties_->Set("driveApps", apps);
-    for (ScopedVector<drive::DriveWebAppInfo>::const_iterator it =
-             web_apps.begin();
-         it != web_apps.end(); ++it) {
-      const drive::DriveWebAppInfo* webapp_info = *it;
+    for (ScopedVector<drive::DriveAppInfo>::const_iterator it =
+             drive_apps.begin();
+         it != drive_apps.end(); ++it) {
+      const drive::DriveAppInfo* app_info = *it;
       DictionaryValue* app = new DictionaryValue();
-      app->SetString("appId", webapp_info->app_id);
-      app->SetString("appName", webapp_info->app_name);
-      GURL app_icon = FindPreferredIcon(webapp_info->app_icons,
+      app->SetString("appId", app_info->app_id);
+      app->SetString("appName", app_info->app_name);
+      GURL app_icon = FindPreferredIcon(app_info->app_icons,
                                         kPreferredIconSize);
       if (!app_icon.is_empty())
         app->SetString("appIcon", app_icon.spec());
-      GURL doc_icon = FindPreferredIcon(webapp_info->document_icons,
+      GURL doc_icon = FindPreferredIcon(app_info->document_icons,
                                         kPreferredIconSize);
       if (!doc_icon.is_empty())
         app->SetString("docIcon", doc_icon.spec());
-      app->SetString("objectType", webapp_info->object_type);
-      app->SetBoolean("isPrimary", default_app_id == webapp_info->app_id);
+      app->SetString("objectType", app_info->object_type);
+      app->SetBoolean("isPrimary", default_app_id == app_info->app_id);
       apps->Append(app);
     }
   }
 
-  system_service->file_system()->GetCacheEntryByResourceId(
+  integration_service->file_system()->GetCacheEntryByResourceId(
       entry->resource_id(),
       file_specific_info.file_md5(),
       base::Bind(&GetDriveEntryPropertiesFunction::CacheStateReceived, this));
@@ -2449,10 +2513,10 @@ bool PinDriveFileFunction::RunImpl() {
       !args_->GetBoolean(1, &set_pin))
     return false;
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
   drive::FileSystemInterface* file_system =
-      system_service ? system_service->file_system() : NULL;
+      integration_service ? integration_service->file_system() : NULL;
   if (!file_system)  // |file_system| is NULL if Drive is disabled.
     return false;
 
@@ -2477,42 +2541,6 @@ void PinDriveFileFunction::OnPinStateSet(drive::FileError error) {
     error_ = drive::FileErrorToString(error);
     SendResponse(false);
   }
-}
-
-GetFileLocationsFunction::GetFileLocationsFunction() {
-}
-
-GetFileLocationsFunction::~GetFileLocationsFunction() {
-}
-
-bool GetFileLocationsFunction::RunImpl() {
-  ListValue* file_urls_as_strings = NULL;
-  if (!args_->GetList(0, &file_urls_as_strings))
-    return false;
-
-  content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
-  scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      BrowserContext::GetStoragePartition(profile(), site_instance)->
-          GetFileSystemContext();
-
-  // Convert the list of strings to a list of GURLs.
-  scoped_ptr<ListValue> locations(new ListValue);
-  for (size_t i = 0; i < file_urls_as_strings->GetSize(); ++i) {
-    std::string file_url_as_string;
-    if (!file_urls_as_strings->GetString(i, &file_url_as_string))
-      return false;
-
-    fileapi::FileSystemURL url(
-        file_system_context->CrackURL(GURL(file_url_as_string)));
-    if (url.type() == fileapi::kFileSystemTypeDrive)
-      locations->Append(new base::StringValue("drive"));
-    else
-      locations->Append(new base::StringValue("local"));
-  }
-
-  SetResult(locations.release());
-  SendResponse(true);
-  return true;
 }
 
 GetDriveFilesFunction::GetDriveFilesFunction()
@@ -2554,16 +2582,16 @@ void GetDriveFilesFunction::GetFileOrSendResponse() {
   // Get the file on the top of the queue.
   base::FilePath drive_path = remaining_drive_paths_.front();
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service) {
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service) {
     OnFileReady(drive::FILE_ERROR_FAILED, drive_path,
                 scoped_ptr<drive::ResourceEntry>());
     return;
   }
 
-  system_service->file_system()->GetFileByPath(
+  integration_service->file_system()->GetFileByPath(
       drive_path,
       base::Bind(&GetDriveFilesFunction::OnFileReady, this));
 }
@@ -2605,12 +2633,25 @@ bool CancelFileTransfersFunction::RunImpl() {
   if (!args_->GetList(0, &url_list))
     return false;
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service)
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service)
     return false;
 
+  // Create the mapping from file path to job ID.
+  drive::JobListInterface* job_list = integration_service->job_list();
+  DCHECK(job_list);
+  std::vector<drive::JobInfo> jobs = job_list->GetJobInfoList();
+
+  typedef std::map<base::FilePath, std::vector<drive::JobID> > PathToIdMap;
+  PathToIdMap path_to_id_map;
+  for (size_t i = 0; i < jobs.size(); ++i) {
+    if (drive::IsActiveFileTransferJobInfo(jobs[i]))
+      path_to_id_map[jobs[i].file_path].push_back(jobs[i].job_id);
+  }
+
+  // Cancel by Job ID.
   scoped_ptr<ListValue> responses(new ListValue());
   for (size_t i = 0; i < url_list->GetSize(); ++i) {
     std::string url_as_string;
@@ -2623,9 +2664,14 @@ bool CancelFileTransfersFunction::RunImpl() {
     DCHECK(drive::util::IsUnderDriveMountPoint(file_path));
     file_path = drive::util::ExtractDrivePath(file_path);
     scoped_ptr<DictionaryValue> result(new DictionaryValue());
-    result->SetBoolean(
-        "canceled",
-        system_service->drive_service()->CancelForFilePath(file_path));
+
+    // Cancel all the jobs for the file.
+    PathToIdMap::iterator it = path_to_id_map.find(file_path);
+    if (it != path_to_id_map.end()) {
+      for (size_t i = 0; i < it->second.size(); ++i)
+        job_list->CancelJob(it->second[i]);
+    }
+    result->SetBoolean("canceled", it != path_to_id_map.end());
     GURL file_url;
     if (file_manager_util::ConvertFileToFileSystemUrl(profile_,
             drive::util::GetSpecialRemoteRootPath().Append(file_path),
@@ -2652,10 +2698,10 @@ bool TransferFileFunction::RunImpl() {
     return false;
   }
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service)
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service)
     return false;
 
   base::FilePath source_file = GetLocalPathFromURL(GURL(source_file_url));
@@ -2672,14 +2718,14 @@ bool TransferFileFunction::RunImpl() {
   if (source_file_under_drive && !destination_file_under_drive) {
     // Transfer a file from gdata to local file system.
     source_file = drive::util::ExtractDrivePath(source_file);
-    system_service->file_system()->TransferFileFromRemoteToLocal(
+    integration_service->file_system()->TransferFileFromRemoteToLocal(
         source_file,
         destination_file,
         base::Bind(&TransferFileFunction::OnTransferCompleted, this));
   } else if (!source_file_under_drive && destination_file_under_drive) {
     // Transfer a file from local to Drive file system
     destination_file = drive::util::ExtractDrivePath(destination_file);
-    system_service->file_system()->TransferFileFromLocalToRemote(
+    integration_service->file_system()->TransferFileFromLocalToRemote(
         source_file,
         destination_file,
         base::Bind(&TransferFileFunction::OnTransferCompleted, this));
@@ -2709,9 +2755,9 @@ bool GetPreferencesFunction::RunImpl() {
 
   const PrefService* service = profile_->GetPrefs();
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  bool drive_enabled = (system_service != NULL);
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  bool drive_enabled = (integration_service != NULL);
 
   if (drive_enabled)
     SetDriveMountPointPermissions(profile_, extension_id(), render_view_host());
@@ -2737,6 +2783,8 @@ bool GetPreferencesFunction::RunImpl() {
   }
 
   SetResult(value.release());
+
+  drive::util::Log("%s succeeded.", name().c_str());
   return true;
 }
 
@@ -2757,6 +2805,7 @@ bool SetPreferencesFunction::RunImpl() {
   if (value->GetBoolean("hostedFilesDisabled", &tmp))
     service->SetBoolean(prefs::kDisableDriveHostedFiles, tmp);
 
+  drive::util::Log("%s succeeded.", name().c_str());
   return true;
 }
 
@@ -2769,43 +2818,24 @@ bool SearchDriveFunction::RunImpl() {
   if (!args_->GetDictionary(0, &search_params))
     return false;
 
-  if (!search_params->GetString("query", &query_))
+  std::string query;
+  if (!search_params->GetString("query", &query))
     return false;
 
-  if (!search_params->GetString("nextFeed", &next_feed_))
+  std::string next_feed;
+  if (!search_params->GetString("nextFeed", &next_feed))
     return false;
 
-  content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
-  BrowserContext::GetStoragePartition(profile(), site_instance)->
-      GetFileSystemContext()->OpenFileSystem(
-          source_url_.GetOrigin(), fileapi::kFileSystemTypeExternal, false,
-          base::Bind(&SearchDriveFunction::OnFileSystemOpened, this));
-  return true;
-}
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service || !integration_service->file_system())
+    return false;
 
-void SearchDriveFunction::OnFileSystemOpened(
-    base::PlatformFileError result,
-    const std::string& file_system_name,
-    const GURL& file_system_url) {
-  if (result != base::PLATFORM_FILE_OK) {
-    SendResponse(false);
-    return;
-  }
-
-  file_system_name_ = file_system_name;
-  file_system_url_ = file_system_url;
-
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service || !system_service->file_system()) {
-    SendResponse(false);
-    return;
-  }
-
-  system_service->file_system()->Search(
-      query_, GURL(next_feed_),
+  integration_service->file_system()->Search(
+      query, GURL(next_feed),
       base::Bind(&SearchDriveFunction::OnSearch, this));
+  return true;
 }
 
 void SearchDriveFunction::OnSearch(
@@ -2822,10 +2852,16 @@ void SearchDriveFunction::OnSearch(
   base::ListValue* entries = new ListValue();
 
   // Convert Drive files to something File API stack can understand.
+  GURL origin_url = source_url_.GetOrigin();
+  fileapi::FileSystemType file_system_type = fileapi::kFileSystemTypeExternal;
+  GURL file_system_root_url =
+      fileapi::GetFileSystemRootURI(origin_url, file_system_type);
+  std::string file_system_name =
+      fileapi::GetFileSystemName(origin_url, file_system_type);
   for (size_t i = 0; i < results->size(); ++i) {
     DictionaryValue* entry = new DictionaryValue();
-    entry->SetString("fileSystemName", file_system_name_);
-    entry->SetString("fileSystemRoot", file_system_url_.spec());
+    entry->SetString("fileSystemName", file_system_name);
+    entry->SetString("fileSystemRoot", file_system_root_url.spec());
     entry->SetString("fileFullPath", "/" + results->at(i).path.value());
     entry->SetBoolean("fileIsDirectory",
                       results->at(i).entry.file_info().is_directory());
@@ -2840,8 +2876,7 @@ void SearchDriveFunction::OnSearch(
   SendResponse(true);
 }
 
-SearchDriveMetadataFunction::SearchDriveMetadataFunction()
-    : max_results_(0) {}
+SearchDriveMetadataFunction::SearchDriveMetadataFunction() {}
 
 SearchDriveMetadataFunction::~SearchDriveMetadataFunction() {}
 
@@ -2850,56 +2885,48 @@ bool SearchDriveMetadataFunction::RunImpl() {
   if (!args_->GetDictionary(0, &search_params))
     return false;
 
-  if (!search_params->GetString("query", &query_))
+  std::string query;
+  if (!search_params->GetString("query", &query))
     return false;
 
-  if (!search_params->GetString("types", &types_))
+  std::string types;
+  if (!search_params->GetString("types", &types))
     return false;
 
-  if (!search_params->GetInteger("maxResults", &max_results_))
+  int max_results = 0;
+  if (!search_params->GetInteger("maxResults", &max_results))
     return false;
 
-  content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
-  BrowserContext::GetStoragePartition(profile(), site_instance)->
-      GetFileSystemContext()->OpenFileSystem(
-          source_url_.GetOrigin(), fileapi::kFileSystemTypeExternal, false,
-          base::Bind(&SearchDriveMetadataFunction::OnFileSystemOpened, this));
-  return true;
-}
+  drive::util::Log("%s[%d] called. (types: '%s', maxResults: '%d')",
+                   name().c_str(),
+                   request_id(),
+                   types.c_str(),
+                   max_results);
+  set_log_on_completion(true);
 
-void SearchDriveMetadataFunction::OnFileSystemOpened(
-    base::PlatformFileError result,
-    const std::string& file_system_name,
-    const GURL& file_system_url) {
-  if (result != base::PLATFORM_FILE_OK) {
-    SendResponse(false);
-    return;
-  }
-
-  file_system_name_ = file_system_name;
-  file_system_url_ = file_system_url;
-
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service || !system_service->file_system()) {
-    SendResponse(false);
-    return;
-  }
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service || !integration_service->file_system())
+    return false;
 
   int options = drive::SEARCH_METADATA_ALL;
-  if (types_ == "EXCLUDE_DIRECTORIES")
+  // TODO(hirono): Switch to the JSON scheme compiler. http://crbug.com/241693
+  if (types == "EXCLUDE_DIRECTORIES")
     options = drive::SEARCH_METADATA_EXCLUDE_DIRECTORIES;
-  else if (types_ == "SHARED_WITH_ME")
+  else if (types == "SHARED_WITH_ME")
     options = drive::SEARCH_METADATA_SHARED_WITH_ME;
+  else if (types == "OFFLINE")
+    options = drive::SEARCH_METADATA_OFFLINE;
   else
-    DCHECK_EQ("ALL", types_);
+    DCHECK_EQ("ALL", types);
 
-  system_service->file_system()->SearchMetadata(
-      query_,
+  integration_service->file_system()->SearchMetadata(
+      query,
       options,
-      max_results_,
+      max_results,
       base::Bind(&SearchDriveMetadataFunction::OnSearchMetadata, this));
+  return true;
 }
 
 void SearchDriveMetadataFunction::OnSearchMetadata(
@@ -2918,13 +2945,19 @@ void SearchDriveMetadataFunction::OnSearchMetadata(
   // file_browser_handler_custom_bindings.cc and
   // file_browser_private_custom_bindings.js for how this is magically
   // converted to a FileEntry.
+  GURL origin_url = source_url_.GetOrigin();
+  fileapi::FileSystemType file_system_type = fileapi::kFileSystemTypeExternal;
+  GURL file_system_root_url =
+      fileapi::GetFileSystemRootURI(origin_url, file_system_type);
+  std::string file_system_name =
+      fileapi::GetFileSystemName(origin_url, file_system_type);
   for (size_t i = 0; i < results->size(); ++i) {
     DictionaryValue* result_dict = new DictionaryValue();
 
     // FileEntry fields.
     DictionaryValue* entry = new DictionaryValue();
-    entry->SetString("fileSystemName", file_system_name_);
-    entry->SetString("fileSystemRoot", file_system_url_.spec());
+    entry->SetString("fileSystemName", file_system_name);
+    entry->SetString("fileSystemRoot", file_system_root_url.spec());
     entry->SetString("fileFullPath", "/" + results->at(i).path.value());
     entry->SetBoolean("fileIsDirectory",
                       results->at(i).entry.file_info().is_directory());
@@ -2940,15 +2973,15 @@ void SearchDriveMetadataFunction::OnSearchMetadata(
 }
 
 bool ClearDriveCacheFunction::RunImpl() {
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service || !system_service->file_system())
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service || !integration_service->file_system())
     return false;
 
   // TODO(yoshiki): Receive a callback from JS-side and pass it to
   // ClearCacheAndRemountFileSystem(). http://crbug.com/140511
-  system_service->ClearCacheAndRemountFileSystem(
+  integration_service->ClearCacheAndRemountFileSystem(
       base::Bind(&DoNothingWithBool));
 
   SendResponse(true);
@@ -2956,13 +2989,13 @@ bool ClearDriveCacheFunction::RunImpl() {
 }
 
 bool ReloadDriveFunction::RunImpl() {
-  // |system_service| is NULL if Drive is disabled.
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  if (!system_service)
+  // |integration_service| is NULL if Drive is disabled.
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  if (!integration_service)
     return false;
 
-  system_service->ReloadAndRemountFileSystem();
+  integration_service->ReloadAndRemountFileSystem();
 
   SendResponse(true);
   return true;
@@ -2973,11 +3006,11 @@ bool GetDriveConnectionStateFunction::RunImpl() {
   scoped_ptr<ListValue> reasons(new ListValue());
 
   std::string type_string;
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
 
-  bool ready = system_service &&
-      system_service->drive_service()->CanStartOperation();
+  bool ready = integration_service &&
+      integration_service->drive_service()->CanStartOperation();
   bool is_connection_cellular =
       net::NetworkChangeNotifier::IsConnectionCellular(
           net::NetworkChangeNotifier::GetConnectionType());
@@ -2988,7 +3021,7 @@ bool GetDriveConnectionStateFunction::RunImpl() {
       reasons->AppendString(kDriveConnectionReasonNoNetwork);
     if (!ready)
       reasons->AppendString(kDriveConnectionReasonNotReady);
-    if (!system_service)
+    if (!integration_service)
       reasons->AppendString(kDriveConnectionReasonNoService);
   } else if (
       is_connection_cellular &&
@@ -3002,6 +3035,7 @@ bool GetDriveConnectionStateFunction::RunImpl() {
   value->Set("reasons", reasons.release());
   SetResult(value.release());
 
+  drive::util::Log("%s succeeded.", name().c_str());
   return true;
 }
 
@@ -3010,10 +3044,10 @@ bool RequestDirectoryRefreshFunction::RunImpl() {
   if (!args_->GetString(0, &file_url_as_string))
     return false;
 
-  drive::DriveSystemService* system_service =
-      drive::DriveSystemServiceFactory::GetForProfile(profile_);
-  // |system_service| is NULL if Drive is disabled.
-  if (!system_service || !system_service->file_system())
+  drive::DriveIntegrationService* integration_service =
+      drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
+  // |integration_service| is NULL if Drive is disabled.
+  if (!integration_service || !integration_service->file_system())
     return false;
 
   content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
@@ -3023,7 +3057,7 @@ bool RequestDirectoryRefreshFunction::RunImpl() {
 
   base::FilePath directory_path = GetVirtualPathFromURL(file_system_context,
                                                   GURL(file_url_as_string));
-  system_service->file_system()->RefreshDirectory(
+  integration_service->file_system()->RefreshDirectory(
       directory_path,
       base::Bind(&drive::util::EmptyFileOperationCallback));
 

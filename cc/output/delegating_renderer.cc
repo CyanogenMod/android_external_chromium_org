@@ -80,31 +80,27 @@ bool DelegatingRenderer::Initialize() {
 
   // TODO(danakj): We need non-GPU-specific paths for these things. This
   // renderer shouldn't need to use context3d extensions directly.
-  bool has_read_bgra = true;
-  bool has_set_visibility = true;
-  bool has_io_surface = true;
-  bool has_arb_texture_rect = true;
-  bool has_egl_image = true;
+  bool has_set_visibility = false;
+  bool has_io_surface = false;
+  bool has_arb_texture_rect = false;
+  bool has_egl_image = false;
+  bool has_map_image = false;
   for (size_t i = 0; i < extensions.size(); ++i) {
-    if (extensions[i] == "GL_EXT_read_format_bgra")
-      has_read_bgra = true;
-    else if (extensions[i] == "GL_CHROMIUM_set_visibility")
+    if (extensions[i] == "GL_CHROMIUM_set_visibility") {
       has_set_visibility = true;
-    else if (extensions[i] == "GL_CHROMIUM_iosurface")
+    } else if (extensions[i] == "GL_CHROMIUM_iosurface") {
       has_io_surface = true;
-    else if (extensions[i] == "GL_ARB_texture_rectangle")
-      has_arb_texture_rect = true;
-    else if (extensions[i] == "GL_OES_EGL_image_external")
-      has_egl_image = true;
+    } else if (extensions[i] == "GL_ARB_texture_rectangle") {
+        has_arb_texture_rect = true;
+    } else if (extensions[i] == "GL_OES_EGL_image_external") {
+        has_egl_image = true;
+    } else if (extensions[i] == "GL_CHROMIUM_map_image") {
+      has_map_image = true;
+    }
   }
 
   if (has_io_surface)
     DCHECK(has_arb_texture_rect);
-
-  capabilities_.using_accelerated_painting =
-      Settings().accelerate_painting &&
-      capabilities_.best_texture_format == GL_BGRA_EXT &&
-      has_read_bgra;
 
   // TODO(piman): loop visibility to GPU process?
   capabilities_.using_set_visibility = has_set_visibility;
@@ -113,6 +109,8 @@ bool DelegatingRenderer::Initialize() {
   capabilities_.using_gpu_memory_manager = false;
 
   capabilities_.using_egl_image = has_egl_image;
+
+  capabilities_.using_map_image = has_map_image;
 
   return true;
 }
@@ -158,7 +156,7 @@ void DelegatingRenderer::DrawFrame(
   resource_provider_->PrepareSendToParent(resources, &out_data.resource_list);
 }
 
-void DelegatingRenderer::SwapBuffers(const LatencyInfo& latency_info) {
+void DelegatingRenderer::SwapBuffers(const ui::LatencyInfo& latency_info) {
   TRACE_EVENT0("cc", "DelegatingRenderer::SwapBuffers");
 
   output_surface_->SendFrameToParentCompositor(&frame_for_swap_buffers_);

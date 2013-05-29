@@ -10,6 +10,7 @@
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/immersive_fullscreen_configuration.h"
 #include "chrome/browser/ui/views/avatar_menu_button.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -182,7 +183,7 @@ void BrowserNonClientFrameViewAsh::GetWindowMask(const gfx::Size& size,
 }
 
 void BrowserNonClientFrameViewAsh::ResetWindowControls() {
-  if (chrome::UseImmersiveFullscreen()) {
+  if (ImmersiveFullscreenConfiguration::UseImmersiveFullscreen()) {
     // Hide the caption buttons in immersive mode because it's confusing when
     // the user hovers or clicks in the top-right of the screen and hits one.
     // Only show them during a reveal.
@@ -220,13 +221,27 @@ void BrowserNonClientFrameViewAsh::OnPaint(gfx::Canvas* canvas) {
     return;
   // The primary header image changes based on window activation state and
   // theme, so we look it up for each paint.
+  int theme_frame_image_id = GetThemeFrameImageId();
+  int theme_frame_overlay_image_id = GetThemeFrameOverlayImageId();
+
+  ui::ThemeProvider* theme_provider = GetThemeProvider();
+  ash::FramePainter::Themed header_themed = ash::FramePainter::THEMED_NO;
+  if (theme_provider->HasCustomImage(theme_frame_image_id) ||
+      (theme_frame_overlay_image_id != 0 &&
+       theme_provider->HasCustomImage(theme_frame_overlay_image_id))) {
+    header_themed = ash::FramePainter::THEMED_YES;
+  }
+
+  if (frame_painter_->ShouldUseMinimalHeaderStyle(header_themed))
+    theme_frame_image_id = IDR_AURA_WINDOW_HEADER_BASE_MINIMAL;
+
   frame_painter_->PaintHeader(
       this,
       canvas,
       ShouldPaintAsActive() ?
           ash::FramePainter::ACTIVE : ash::FramePainter::INACTIVE,
-      GetThemeFrameImageId(),
-      GetThemeFrameOverlayImage());
+      theme_frame_image_id,
+      theme_frame_overlay_image_id);
   if (browser_view()->ShouldShowWindowTitle())
     frame_painter_->PaintTitleBar(this, canvas, BrowserFrame::GetTitleFont());
   if (browser_view()->IsToolbarVisible())
@@ -518,14 +533,13 @@ int BrowserNonClientFrameViewAsh::GetThemeFrameImageId() const {
       IDR_AURA_WINDOW_HEADER_BASE_INACTIVE;
 }
 
-const gfx::ImageSkia*
-BrowserNonClientFrameViewAsh::GetThemeFrameOverlayImage() const {
+int BrowserNonClientFrameViewAsh::GetThemeFrameOverlayImageId() const {
   ui::ThemeProvider* tp = GetThemeProvider();
   if (tp->HasCustomImage(IDR_THEME_FRAME_OVERLAY) &&
       browser_view()->IsBrowserTypeNormal() &&
       !browser_view()->IsOffTheRecord()) {
-    return tp->GetImageSkiaNamed(ShouldPaintAsActive() ?
-        IDR_THEME_FRAME_OVERLAY : IDR_THEME_FRAME_OVERLAY_INACTIVE);
+    return ShouldPaintAsActive() ?
+        IDR_THEME_FRAME_OVERLAY : IDR_THEME_FRAME_OVERLAY_INACTIVE;
   }
-  return NULL;
+  return 0;
 }

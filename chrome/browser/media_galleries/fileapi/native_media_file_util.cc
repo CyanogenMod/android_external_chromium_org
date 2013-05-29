@@ -5,17 +5,16 @@
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
 
 #include "base/file_util.h"
-#include "base/memory/scoped_generic_obj.h"
 #include "base/string_util.h"
 #include "chrome/browser/media_galleries/fileapi/filtering_file_enumerator.h"
 #include "chrome/browser/media_galleries/fileapi/media_file_system_mount_point_provider.h"
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/mime_sniffer.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/native_file_util.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_operation_context.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/fileapi/native_file_util.h"
 
 using base::PlatformFile;
 using base::PlatformFileError;
@@ -29,16 +28,15 @@ namespace chrome {
 namespace {
 
 // Modelled after ScopedFILEClose.
-class ScopedPlatformFileClose {
- public:
-  void operator()(base::PlatformFile file) const {
-    if (file != base::kInvalidPlatformFileValue)
-      base::ClosePlatformFile(file);
+struct ScopedPlatformFileClose {
+  void operator()(base::PlatformFile* file) {
+    if (file && *file != base::kInvalidPlatformFileValue)
+      base::ClosePlatformFile(*file);
   }
 };
 
-typedef ScopedGenericObj<base::PlatformFile,
-                         ScopedPlatformFileClose> ScopedPlatformFile;
+typedef scoped_ptr<base::PlatformFile, ScopedPlatformFileClose>
+    ScopedPlatformFile;
 
 // Returns true if the current thread is capable of doing IO.
 bool IsOnTaskRunnerThread(fileapi::FileSystemOperationContext* context) {
@@ -263,48 +261,44 @@ webkit_blob::ScopedFile NativeMediaFileUtil::CreateSnapshotFile(
       context, url, error, file_info, platform_path);
   if (*error != base::PLATFORM_FILE_OK)
     return file.Pass();
-  IsMediaFile(*platform_path, error);
+  *error = IsMediaFile(*platform_path);
   if (*error == base::PLATFORM_FILE_OK)
     return file.Pass();
   return webkit_blob::ScopedFile();
 }
 
-void NativeMediaFileUtil::IsMediaFile(
-    const base::FilePath& path,
-    base::PlatformFileError* error) {
+// static
+base::PlatformFileError NativeMediaFileUtil::IsMediaFile(
+    const base::FilePath& path) {
   base::PlatformFile file_handle;
-  bool created;
-  *error = NativeFileUtil::CreateOrOpen(path,
-      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ, &file_handle,
-      &created);
-  if (*error != base::PLATFORM_FILE_OK)
-    return;
-  ScopedPlatformFile scoped_platform_file(file_handle);
+  const int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
+  base::PlatformFileError error =
+      NativeFileUtil::CreateOrOpen(path, flags, &file_handle, NULL);
+  if (error != base::PLATFORM_FILE_OK)
+    return error;
+
+  ScopedPlatformFile scoped_platform_file(&file_handle);
   char buffer[net::kMaxBytesToSniff];
-  int64 len;
-  // Read as much as IdentifyExtraMimeType() will bother looking at.
-  len = base::ReadPlatformFile(file_handle, 0, buffer, net::kMaxBytesToSniff);
-  if (len < 0) {
-    *error = base::PLATFORM_FILE_ERROR_FAILED;
-    return;
-  }
-  if (len == 0) {
-    *error = base::PLATFORM_FILE_ERROR_SECURITY;
-    return;
-  }
+
+  // Read as much as net::SniffMimeTypeFromLocalData() will bother looking at.
+  int64 len =
+      base::ReadPlatformFile(file_handle, 0, buffer, net::kMaxBytesToSniff);
+  if (len < 0)
+    return base::PLATFORM_FILE_ERROR_FAILED;
+  if (len == 0)
+    return base::PLATFORM_FILE_ERROR_SECURITY;
+
   std::string mime_type;
-  if (!net::SniffMimeTypeFromLocalData(buffer, len, &mime_type)) {
-    *error = base::PLATFORM_FILE_ERROR_SECURITY;
-    return;
-  }
+  if (!net::SniffMimeTypeFromLocalData(buffer, len, &mime_type))
+    return base::PLATFORM_FILE_ERROR_SECURITY;
+
   if (StartsWithASCII(mime_type, "image/", true) ||
       StartsWithASCII(mime_type, "audio/", true) ||
       StartsWithASCII(mime_type, "video/", true) ||
       mime_type == "application/x-shockwave-flash") {
-    *error = base::PLATFORM_FILE_OK;
-  } else {
-    *error = base::PLATFORM_FILE_ERROR_SECURITY;
+    return base::PLATFORM_FILE_OK;
   }
+  return base::PLATFORM_FILE_ERROR_SECURITY;
 }
 
 }  // namespace chrome

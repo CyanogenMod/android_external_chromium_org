@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 import logging
 
+from telemetry.core import util
 from telemetry.page.actions import all_page_actions
 from telemetry.page.actions import page_action
 
@@ -38,25 +39,6 @@ class Failure(Exception):
   """Exception that can be thrown from PageMeasurement to indicate an
   undesired but designed-for problem."""
   pass
-
-class PageTestResults(object):
-  def __init__(self):
-    self.page_successes = []
-    self.page_failures = []
-    self.skipped_pages = []
-
-  def AddSuccess(self, page):
-    self.page_successes.append({'page': page})
-
-  def AddFailure(self, page, message, details):
-    self.page_failures.append({'page': page,
-                               'message': message,
-                               'details': details})
-
-  def AddSkippedPage(self, page, message, details):
-    self.skipped_pages.append({'page': page,
-                               'message': message,
-                               'details': details})
 
 class PageTest(object):
   """A class styled on unittest.TestCase for creating page-specific tests."""
@@ -141,7 +123,7 @@ class PageTest(object):
     """Override to do operations after running the action on the page."""
     pass
 
-  def CreatePageSet(self, options):  # pylint: disable=W0613
+  def CreatePageSet(self, args, options):  # pylint: disable=W0613
     """Override to make this test generate its own page set instead of
     allowing arbitrary page sets entered from the command-line."""
     return None
@@ -172,6 +154,10 @@ class PageTest(object):
           action.RunAction(page, tab, prev_action)
         finally:
           self.DidRunAction(page, tab, action)
+
+      # Closing the connections periodically is needed; otherwise we won't be
+      # able to open enough sockets, and the pages will time out.
+      util.CloseConnections(tab)
 
   @property
   def action_name_to_run(self):

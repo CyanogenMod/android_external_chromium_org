@@ -17,8 +17,8 @@ GYP_TARGET_DEPENDENCIES :=
 ### Generated for rule "components_components_gyp_web_contents_delegate_android_jni_headers_target_generate_jni_headers":
 # "{'inputs': ['../base/android/jni_generator/jni_generator.py'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ColorChooserAndroid.java', 'web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/WebContentsDelegateAndroid.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni', '--optimize_generation', '0'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h: $(LOCAL_PATH)/components/web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ColorChooserAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/ColorChooserAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni" --optimize_generation 0
@@ -27,8 +27,8 @@ $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAnd
 components_web_contents_delegate_android_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/ColorChooserAndroid_jni.h
 
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni/WebContentsDelegateAndroid_jni.h: $(LOCAL_PATH)/components/web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/WebContentsDelegateAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file web_contents_delegate_android/android/java/src/org/chromium/components/web_contents_delegate_android/WebContentsDelegateAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/web_contents_delegate_android/jni" --optimize_generation 0
@@ -96,6 +96,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -117,9 +118,9 @@ LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES := \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

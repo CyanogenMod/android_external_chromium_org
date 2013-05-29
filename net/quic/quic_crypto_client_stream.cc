@@ -15,13 +15,11 @@ namespace net {
 
 QuicCryptoClientStream::QuicCryptoClientStream(
     const string& server_hostname,
-    const QuicConfig& config,
     QuicSession* session,
     QuicCryptoClientConfig* crypto_config)
     : QuicCryptoStream(session),
       next_state_(STATE_IDLE),
       num_client_hellos_(0),
-      config_(config),
       crypto_config_(crypto_config),
       server_hostname_(server_hostname) {
 }
@@ -82,8 +80,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           SendHandshakeMessage(out);
           return;
         }
-        const CryptoHandshakeMessage* scfg = cached->GetServerConfig();
-        config_.ToHandshakeMessage(&out);
+        session()->config()->ToHandshakeMessage(&out);
         error = crypto_config_->FillClientHello(
             server_hostname_,
             session()->connection()->guid(),
@@ -92,13 +89,6 @@ void QuicCryptoClientStream::DoHandshakeLoop(
             session()->connection()->random_generator(),
             &crypto_negotiated_params_,
             &out,
-            &error_details);
-        if (error != QUIC_NO_ERROR) {
-          CloseConnectionWithDetails(error, error_details);
-          return;
-        }
-        error = config_.ProcessFinalPeerHandshake(
-            *scfg, CryptoUtils::PEER_PRIORITY, &negotiated_params_,
             &error_details);
         if (error != QUIC_NO_ERROR) {
           CloseConnectionWithDetails(error, error_details);
@@ -125,9 +115,9 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           // the packets dropped when the client hello is dropped cause the
           // congestion control to be too conservative and the server times
           // out.
+          //   encryption_established_ = true;
           //   session()->OnCryptoHandshakeEvent(
           //       QuicSession::ENCRYPTION_FIRST_ESTABLISHED);
-          //   encryption_established_ = true;
         } else {
           session()->OnCryptoHandshakeEvent(
               QuicSession::ENCRYPTION_REESTABLISHED);
@@ -214,6 +204,12 @@ void QuicCryptoClientStream::DoHandshakeLoop(
               error, "Server hello invalid: " + error_details);
           return;
         }
+        error = session()->config()->ProcessServerHello(*in, &error_details);
+        if (error != QUIC_NO_ERROR) {
+          CloseConnectionWithDetails(
+              error, "Server hello invalid: " + error_details);
+          return;
+        }
         CrypterPair* crypters =
             &crypto_negotiated_params_.forward_secure_crypters;
         // TODO(agl): we don't currently latch this decrypter because the idea
@@ -229,9 +225,9 @@ void QuicCryptoClientStream::DoHandshakeLoop(
 
         // TODO(agl): this code shouldn't be here. See the TODO further up
         // about it.
+        encryption_established_ = true;
         session()->OnCryptoHandshakeEvent(
             QuicSession::ENCRYPTION_FIRST_ESTABLISHED);
-        encryption_established_ = true;
 
         handshake_confirmed_ = true;
         session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);

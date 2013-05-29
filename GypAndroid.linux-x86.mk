@@ -2,7 +2,6 @@
 
 
 LOCAL_PATH := $(call my-dir)
-GYP_ABS_ANDROID_TOP_DIR := $(shell pwd)
 GYP_DEFAULT_CONFIGURATION := Debug
 
 include $(LOCAL_PATH)/android_webview/All.target.linux-x86.mk
@@ -17,6 +16,7 @@ include $(LOCAL_PATH)/base/base.target.linux-x86.mk
 include $(LOCAL_PATH)/base/base_i18n.target.linux-x86.mk
 include $(LOCAL_PATH)/base/base_java_activity_state.target.linux-x86.mk
 include $(LOCAL_PATH)/base/base_jni_headers.target.linux-x86.mk
+include $(LOCAL_PATH)/base/base_prefs.target.linux-x86.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-x86.mk
 include $(LOCAL_PATH)/base/symbolize.target.linux-x86.mk
 include $(LOCAL_PATH)/base/third_party/dynamic_annotations/dynamic_annotations.target.linux-x86.mk
@@ -33,6 +33,7 @@ include $(LOCAL_PATH)/components/encryptor.target.linux-x86.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.linux-x86.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/components/tracing.target.linux-x86.mk
+include $(LOCAL_PATH)/components/user_prefs.target.linux-x86.mk
 include $(LOCAL_PATH)/components/visitedlink_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/components/visitedlink_common.target.linux-x86.mk
 include $(LOCAL_PATH)/components/visitedlink_renderer.target.linux-x86.mk
@@ -46,6 +47,7 @@ include $(LOCAL_PATH)/content/content.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_app.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_browser.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_common.target.linux-x86.mk
+include $(LOCAL_PATH)/content/content_common_child.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_gpu.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/content/content_plugin.target.linux-x86.mk
@@ -69,20 +71,21 @@ include $(LOCAL_PATH)/gpu/gles2_c_lib.target.linux-x86.mk
 include $(LOCAL_PATH)/gpu/gles2_cmd_helper.target.linux-x86.mk
 include $(LOCAL_PATH)/gpu/gles2_implementation.target.linux-x86.mk
 include $(LOCAL_PATH)/gpu/gpu.target.linux-x86.mk
+include $(LOCAL_PATH)/gpu/gpu_config.target.linux-x86.mk
 include $(LOCAL_PATH)/gpu/gpu_ipc.target.linux-x86.mk
 include $(LOCAL_PATH)/ipc/ipc.target.linux-x86.mk
 include $(LOCAL_PATH)/jingle/jingle_glue.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_android_jni_headers.target.linux-x86.mk
-include $(LOCAL_PATH)/media/media_codec_jni_headers.target.linux-x86.mk
-include $(LOCAL_PATH)/media/media_format_jni_headers.target.linux-x86.mk
+include $(LOCAL_PATH)/media/media_asm.target.linux-x86.mk
+include $(LOCAL_PATH)/media/media_mmx.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_player_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_sse.target.linux-x86.mk
+include $(LOCAL_PATH)/media/media_sse2.target.linux-x86.mk
 include $(LOCAL_PATH)/media/player_android.target.linux-x86.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.linux-x86.mk
+include $(LOCAL_PATH)/media/shared_memory_support_sse.target.linux-x86.mk
 include $(LOCAL_PATH)/media/video_capture_android_jni_headers.target.linux-x86.mk
-include $(LOCAL_PATH)/media/yuv_convert.target.linux-x86.mk
-include $(LOCAL_PATH)/media/yuv_convert_simd_x86.target.linux-x86.mk
 include $(LOCAL_PATH)/net/cert_verify_result_android_java.target.linux-x86.mk
 include $(LOCAL_PATH)/net/certificate_mime_types_java.target.linux-x86.mk
 include $(LOCAL_PATH)/net/http_server.target.linux-x86.mk
@@ -106,7 +109,6 @@ include $(LOCAL_PATH)/testing/gtest_prod.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/Platform/Platform.gyp/webkit_platform.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit_wtf_support.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/supplemental_dependencies.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.linux-x86.mk
@@ -227,11 +229,14 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.ia32.host.linux-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.ia32.target.linux-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.ia32.host.linux-x86.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.linux-x86.mk
-include $(LOCAL_PATH)/webkit/compositor_bindings/webkit_compositor_bindings.target.linux-x86.mk
-include $(LOCAL_PATH)/webkit/compositor_bindings/webkit_compositor_support.target.linux-x86.mk
-include $(LOCAL_PATH)/webkit/gpu/webkit_gpu.target.linux-x86.mk
+include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-x86.mk
+include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-x86.mk
+include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.linux-x86.mk
+include $(LOCAL_PATH)/webkit/support/glue_common.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.linux-x86.mk
+include $(LOCAL_PATH)/webkit/support/plugins.target.linux-x86.mk
+include $(LOCAL_PATH)/webkit/support/plugins_common.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/support/user_agent.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/support/webkit_base.target.linux-x86.mk
 include $(LOCAL_PATH)/webkit/support/webkit_media.target.linux-x86.mk

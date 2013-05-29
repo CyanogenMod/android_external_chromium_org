@@ -4,13 +4,12 @@
 
 #include "android_webview/browser/gpu_memory_buffer_impl.h"
 
-#include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/bind.h"
 #include "base/logging.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer.h"
-#include "gpu/command_buffer/client/gpu_memory_buffer_factory.h"
 #include "ui/gfx/size.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace android_webview {
 
@@ -25,22 +24,34 @@ GpuMemoryBufferImpl::GpuMemoryBufferImpl(gfx::Size size)
 }
 
 GpuMemoryBufferImpl::~GpuMemoryBufferImpl() {
-  DCHECK(buffer_id_ != 0);
   g_gl_draw_functions->release_graphic_buffer(buffer_id_);
-  buffer_id_ = 0;
 }
 
 void GpuMemoryBufferImpl::Map(gpu::GpuMemoryBuffer::AccessMode mode,
     void** vaddr) {
   DCHECK(buffer_id_ != 0);
-  int err = g_gl_draw_functions->lock(buffer_id_, mode, vaddr);
+  AwMapMode map_mode = MAP_READ_ONLY;
+  switch (mode) {
+    case GpuMemoryBuffer::READ_ONLY:
+      map_mode = MAP_READ_ONLY;
+      break;
+    case GpuMemoryBuffer::WRITE_ONLY:
+      map_mode = MAP_WRITE_ONLY;
+      break;
+    case GpuMemoryBuffer::READ_WRITE:
+      map_mode = MAP_READ_WRITE;
+      break;
+    default:
+      LOG(DFATAL) << "Unknown map mode: " << mode;
+  }
+  int err = g_gl_draw_functions->map(buffer_id_, map_mode, vaddr);
   DCHECK(err == 0);
   mapped_ = true;
 }
 
 void GpuMemoryBufferImpl::Unmap() {
   DCHECK(buffer_id_ != 0);
-  int err = g_gl_draw_functions->unlock(buffer_id_);
+  int err = g_gl_draw_functions->unmap(buffer_id_);
   DCHECK(err == 0);
   mapped_ = false;
 }
@@ -59,12 +70,31 @@ bool GpuMemoryBufferImpl::IsMapped() {
   return mapped_;
 }
 
+bool GpuMemoryBufferImpl::InitCheck() {
+  return buffer_id_ != 0;
+}
+
+// static
+scoped_ptr<gpu::GpuMemoryBuffer> GpuMemoryBufferImpl::CreateGpuMemoryBuffer(
+    int width, int height) {
+  DCHECK(width > 0);
+  DCHECK(height > 0);
+  scoped_ptr<GpuMemoryBufferImpl> result(new GpuMemoryBufferImpl(
+      gfx::Size(width, height)));
+
+  // Check if the buffer allocation succeeded.
+  if (!result->InitCheck())
+    return scoped_ptr<GpuMemoryBuffer>();
+
+  return result.PassAs<gpu::GpuMemoryBuffer>();
+}
+
 // static
 void GpuMemoryBufferImpl::SetAwDrawGLFunctionTable(
     AwDrawGLFunctionTable* table) {
   g_gl_draw_functions = table;
-  gpu::SetProcessDefaultGpuMemoryBufferFactory(
-      base::Bind(&CreateGpuMemoryBuffer));
+  ::webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
+      SetGpuMemoryBufferCreator(&CreateGpuMemoryBuffer);
 }
 
 }  // namespace android_webview

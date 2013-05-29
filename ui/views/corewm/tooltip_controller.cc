@@ -48,7 +48,7 @@ const size_t kMaxLines = 10;
 // difference in font metrics.  Rationalize this.
 const int kTooltipVerticalPadding = 2;
 const int kTooltipTimeoutMs = 500;
-const int kTooltipShownTimeoutMs = 10000;
+const int kDefaultTooltipShownTimeoutMs = 10000;
 
 // FIXME: get cursor offset from actual cursor size.
 const int kCursorOffsetX = 10;
@@ -98,6 +98,7 @@ class TooltipController::Tooltip : public views::WidgetObserver {
                                            kTooltipBorder));
     }
     label_.set_owned_by_client();
+    label_.SetMultiLine(true);
   }
 
   virtual ~Tooltip() {
@@ -119,7 +120,7 @@ class TooltipController::Tooltip : public views::WidgetObserver {
     label_.SetText(trimmed_text);
 
     int width = max_width + 2 * kTooltipHorizontalPadding;
-    int height = label_.GetPreferredSize().height() +
+    int height = label_.GetHeightForWidth(max_width) +
         2 * kTooltipVerticalPadding;
     if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoDropShadows)) {
       width += 2 * kTooltipBorderWidth;
@@ -230,6 +231,11 @@ void TooltipController::UpdateTooltip(aura::Window* target) {
   }
 }
 
+void TooltipController::SetTooltipShownTimeout(aura::Window* target,
+                                               int timeout_in_ms) {
+  tooltip_shown_timeout_map_[target] = timeout_in_ms;
+}
+
 void TooltipController::SetTooltipsEnabled(bool enable) {
   if (tooltips_enabled_ == enable)
     return;
@@ -309,6 +315,7 @@ void TooltipController::OnCancelMode(ui::CancelModeEvent* event) {
 
 void TooltipController::OnWindowDestroyed(aura::Window* window) {
   if (tooltip_window_ == window) {
+    tooltip_shown_timeout_map_.erase(tooltip_window_);
     tooltip_window_->RemoveObserver(this);
     tooltip_window_ = NULL;
   }
@@ -477,9 +484,12 @@ void TooltipController::UpdateIfRequired() {
       } else {
         GetTooltip()->SetText(tooltip_window_, tooltip_text_, widget_loc);
         GetTooltip()->Show();
-        tooltip_shown_timer_.Start(FROM_HERE,
-              base::TimeDelta::FromMilliseconds(kTooltipShownTimeoutMs),
-              this, &TooltipController::TooltipShownTimerFired);
+        int timeout = GetTooltipShownTimeout();
+        if (timeout > 0) {
+          tooltip_shown_timer_.Start(FROM_HERE,
+                base::TimeDelta::FromMilliseconds(timeout),
+                this, &TooltipController::TooltipShownTimerFired);
+        }
       }
     }
   }
@@ -513,6 +523,14 @@ bool TooltipController::IsCursorVisible() {
       aura::client::GetCursorClient(root);
   // |cursor_client| may be NULL in tests, treat NULL as always visible.
   return !cursor_client || cursor_client->IsCursorVisible();
+}
+
+int TooltipController::GetTooltipShownTimeout() {
+  std::map<aura::Window*, int>::const_iterator it =
+      tooltip_shown_timeout_map_.find(tooltip_window_);
+  if (it == tooltip_shown_timeout_map_.end())
+    return kDefaultTooltipShownTimeoutMs;
+  return it->second;
 }
 
 }  // namespace corewm

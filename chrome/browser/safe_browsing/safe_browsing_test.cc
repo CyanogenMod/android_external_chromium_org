@@ -203,7 +203,7 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
     return is_update_scheduled_;
   }
 
-  MessageLoop* SafeBrowsingMessageLoop() {
+  base::MessageLoop* SafeBrowsingMessageLoop() {
     return database_manager()->safe_browsing_thread_->message_loop();
   }
 
@@ -250,6 +250,10 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
     // TODO(kalman): Generate new testing data that includes the extension
     // blacklist.
     command_line->AppendSwitch(switches::kSbDisableExtensionBlacklist);
+
+    // TODO(tburkard): Generate new testing data that includes the side-effect
+    // free whitelist.
+    command_line->AppendSwitch(switches::kSbDisableSideEffectFreeWhitelist);
 
     // Point to the testing server for all SafeBrowsing requests.
     std::string url_prefix = test_server_->GetURL("safebrowsing").spec();
@@ -346,7 +350,7 @@ class SafeBrowsingServerTestHelper
 
   // Checks status in SafeBrowsing Thread.
   void CheckIsDatabaseReady() {
-    EXPECT_EQ(MessageLoop::current(),
+    EXPECT_EQ(base::MessageLoop::current(),
               safe_browsing_test_->SafeBrowsingMessageLoop());
     safe_browsing_test_->CheckIsDatabaseReady();
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
@@ -418,7 +422,7 @@ class SafeBrowsingServerTestHelper
   // Stops UI loop after desired status is updated.
   void StopUILoop() {
     EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
   }
 
   // Fetch a URL. If message_loop_started is true, starts the message loop

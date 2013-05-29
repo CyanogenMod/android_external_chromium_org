@@ -21,14 +21,15 @@
 #include "base/process_util.h"
 #include "base/threading/thread_local.h"
 #include "content/common/child_process.h"
-#include "content/common/npobject_util.h"
-#include "content/common/plugin_messages.h"
+#include "content/common/plugin_process_messages.h"
+#include "content/common_child/npobject_util.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/plugin/content_plugin_client.h"
 #include "ipc/ipc_channel_handle.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/npapi/plugin_list.h"
+#include "webkit/plugins/npapi/plugin_utils.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 
 #if defined(TOOLKIT_GTK)
@@ -147,7 +148,7 @@ void PluginThread::Shutdown() {
   NPChannelBase::CleanupChannels();
   webkit::npapi::PluginLib::UnloadAllPlugins();
 
-  if (webkit_glue::ShouldForcefullyTerminatePluginProcess())
+  if (webkit::npapi::ShouldForcefullyTerminatePluginProcess())
     base::KillProcess(base::GetCurrentProcessHandle(), 0, /* wait= */ false);
 
   lazy_tls.Pointer()->Set(NULL);

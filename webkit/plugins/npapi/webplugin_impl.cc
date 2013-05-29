@@ -41,13 +41,13 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/rect.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
-#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/glue/multipart_response_delegate.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/webplugin_delegate.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
 #include "webkit/plugins/plugin_constants.h"
+#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using appcache::WebApplicationCacheHostImpl;
 using WebKit::WebCanvas;
@@ -243,10 +243,15 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
   if (!plugin_delegate)
     return false;
 
+  // Store the plugin's unique identifier, used by the container to track its
+  // script objects.
+  npp_ = plugin_delegate->GetPluginNPP();
+
   // Set the container before Initialize because the plugin may
-  // synchronously call NPN_GetValue to get its container during its
-  // initialization.
+  // synchronously call NPN_GetValue to get its container, or make calls
+  // passing script objects that need to be tracked, during initialization.
   SetContainer(container);
+
   bool ok = plugin_delegate->Initialize(
       plugin_url_, arg_names_, arg_values_, this, load_manually_);
   if (!ok) {
@@ -278,6 +283,10 @@ NPObject* WebPluginImpl::scriptableObject() {
     return NULL;
 
   return delegate_->GetPluginScriptableObject();
+}
+
+NPP WebPluginImpl::pluginNPP() {
+  return npp_;
 }
 
 bool WebPluginImpl::getFormValue(WebKit::WebString& value) {
@@ -402,7 +411,16 @@ bool WebPluginImpl::handleInputEvent(
   if (event.type == WebInputEvent::ContextMenu)
     return true;
 
-  return delegate_->HandleInputEvent(event, &cursor_info);
+  WebCursor::CursorInfo web_cursor_info;
+  bool ret = delegate_->HandleInputEvent(event, &web_cursor_info);
+  cursor_info.type = web_cursor_info.type;
+  cursor_info.hotSpot = web_cursor_info.hotspot;
+  cursor_info.customImage = web_cursor_info.custom_image;
+  cursor_info.imageScaleFactor = web_cursor_info.image_scale_factor;
+#if defined(OS_WIN)
+  cursor_info.externalHandle = web_cursor_info.external_handle;
+#endif
+  return ret;
 }
 
 void WebPluginImpl::didReceiveResponse(const WebURLResponse& response) {
@@ -475,6 +493,7 @@ WebPluginImpl::WebPluginImpl(
       webframe_(webframe),
       delegate_(NULL),
       container_(NULL),
+      npp_(NULL),
       plugin_url_(params.url),
       load_manually_(params.loadManually),
       first_geometry_update_(true),
@@ -1046,6 +1065,8 @@ void WebPluginImpl::SetContainer(WebPluginContainer* container) {
   if (!container)
     TearDownPluginInstance(NULL);
   container_ = container;
+  if (container_)
+    container_->allowScriptObjects();
 }
 
 void WebPluginImpl::HandleURLRequest(const char* url,
@@ -1324,19 +1345,32 @@ bool WebPluginImpl::ReinitializePluginForResponse(
 
 void WebPluginImpl::TearDownPluginInstance(
     WebURLLoader* loader_to_ignore) {
-  // The container maintains a list of JSObjects which are related to this
-  // plugin.  Tell the frame we're gone so that it can invalidate all of
-  // those sub JSObjects.
+  // JavaScript garbage collection may cause plugin script object references to
+  // be retained long after the plugin is destroyed. Some plugins won't cope
+  // with their objects being released after they've been destroyed, and once
+  // we've actually unloaded the plugin the object's releaseobject() code may
+  // no longer be in memory. The container tracks the plugin's objects and lets
+  // us invalidate them, releasing the references to them held by the JavaScript
+  // runtime.
   if (container_) {
     container_->clearScriptObjects();
     container_->setWebLayer(NULL);
   }
 
+  // Call PluginDestroyed() first to prevent the plugin from calling us back
+  // in the middle of tearing down the render tree.
   if (delegate_) {
-    // Call PluginDestroyed() first to prevent the plugin from calling us back
-    // in the middle of tearing down the render tree.
+    // The plugin may call into the browser and pass script objects even during
+    // teardown, so temporarily re-enable plugin script objects.
+    DCHECK(container_);
+    container_->allowScriptObjects();
+
     delegate_->PluginDestroyed();
     delegate_ = NULL;
+
+    // Invalidate any script objects created during teardown here, before the
+    // plugin might actually be unloaded.
+    container_->clearScriptObjects();
   }
 
   // Cancel any pending requests because otherwise this deleted object will

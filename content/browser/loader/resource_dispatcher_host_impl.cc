@@ -86,8 +86,8 @@
 #include "net/url_request/url_request_job_factory.h"
 #include "webkit/appcache/appcache_interceptor.h"
 #include "webkit/appcache/appcache_interfaces.h"
-#include "webkit/blob/blob_storage_controller.h"
-#include "webkit/blob/shareable_file_reference.h"
+#include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/glue/resource_request_body.h"
 #include "webkit/glue/webkit_glue.h"
 
@@ -612,7 +612,8 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(net::URLRequest* request,
       info->GetChildID(),
       info->GetRouteID(),
       target_id,
-      handler->stream()->CreateHandle(request->url(), mime_type));
+      handler->stream()->CreateHandle(request->url(), mime_type),
+      request->GetExpectedContentSize());
   return (scoped_ptr<ResourceHandler>(handler.release())).Pass();
 }
 
@@ -724,10 +725,17 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
   ResourceRequestInfoImpl* info = loader->GetRequestInfo();
   // There should be an entry in the map created when we dispatched the
   // request.
-  GlobalRoutingID routing_id(info->GetGlobalRoutingID());
-  DCHECK(offline_policy_map_.end() != offline_policy_map_.find(routing_id));
-  offline_policy_map_[routing_id]->UpdateStateForSuccessfullyStartedRequest(
-      loader->request()->response_info());
+  OfflineMap::iterator policy_it(
+      offline_policy_map_.find(info->GetGlobalRoutingID()));
+  if (offline_policy_map_.end() != policy_it) {
+    policy_it->second->UpdateStateForSuccessfullyStartedRequest(
+        loader->request()->response_info());
+  } else {
+    // We should always have an entry in offline_policy_map_ from when
+    // this request traversed Begin{Download,SaveFile,Request}.
+    // TODO(rdsmith): This isn't currently true; see http://crbug.com/241176.
+    NOTREACHED();
+  }
 
   int render_process_id, render_view_id;
   if (!info->GetAssociatedRenderView(&render_process_id, &render_view_id))

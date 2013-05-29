@@ -65,18 +65,11 @@ class PageCycler(page_measurement.PageMeasurement):
     options.AppendExtraBrowserArg('--dom-automation')
     options.AppendExtraBrowserArg('--js-flags=--expose_gc')
     options.AppendExtraBrowserArg('--no-sandbox')
-    # Temporarily enable threaded compositing on Mac on only some page sets.
-    # This malignancy is to diagnose an issue where the bots are experiencing
-    # a regression that isn't reproducing locally.
-    # TODO(ccameron): delete this
-    # http://crbug.com/180025
-    if sys.platform == 'darwin':
-      composited_page_sets = ('/bloat.json', '/moz.json', '/intl2.json')
-      if sys.argv[-1].endswith(composited_page_sets):
-        options.AppendExtraBrowserArg('--force-compositing-mode')
-        options.AppendExtraBrowserArg('--enable-threaded-compositing')
-      else:
-        options.AppendExtraBrowserArg('--disable-force-compositing-mode')
+
+    # Temporarily disable typical_25 page set on mac.
+    if sys.platform == 'darwin' and sys.argv[-1].endswith('/typical_25.json'):
+      print 'typical_25 is currently disabled on mac. Skipping test.'
+      sys.exit(0)
 
   def MeasureMemory(self, tab, results):
     memory = tab.browser.memory_stats
@@ -149,7 +142,7 @@ class PageCycler(page_measurement.PageMeasurement):
   def MeasurePage(self, page, tab, results):
     def _IsDone():
       return bool(tab.EvaluateJavaScript('__pc_load_time'))
-    util.WaitFor(_IsDone, 1200)
+    util.WaitFor(_IsDone, 60)
 
     for h in self.histograms:
       h.GetValue(page, tab, results)

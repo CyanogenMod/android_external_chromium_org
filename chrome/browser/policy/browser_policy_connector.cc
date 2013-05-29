@@ -25,6 +25,7 @@
 #include "chrome/browser/policy/cloud/device_management_service.h"
 #include "chrome/browser/policy/configuration_policy_provider.h"
 #include "chrome/browser/policy/managed_mode_policy_provider.h"
+#include "chrome/browser/policy/policy_domain_descriptor.h"
 #include "chrome/browser/policy/policy_service_impl.h"
 #include "chrome/browser/policy/policy_statistics_collector.h"
 #include "chrome/common/chrome_paths.h"
@@ -188,7 +189,8 @@ void BrowserPolicyConnector::Init(
     device_local_account_policy_service_.reset(
         new DeviceLocalAccountPolicyService(
             chromeos::DBusThreadManager::Get()->GetSessionManagerClient(),
-            chromeos::DeviceSettingsService::Get()));
+            chromeos::DeviceSettingsService::Get(),
+            chromeos::CrosSettings::Get()));
     device_local_account_policy_service_->Connect(
         device_management_service_.get());
   }
@@ -202,7 +204,7 @@ void BrowserPolicyConnector::Init(
       new policy::PolicyStatisticsCollector(
           GetPolicyService(),
           local_state_,
-          MessageLoop::current()->message_loop_proxy()));
+          base::MessageLoop::current()->message_loop_proxy()));
   policy_statistics_collector_->Initialize();
 
   is_initialized_ = true;
@@ -289,7 +291,9 @@ scoped_ptr<PolicyService> BrowserPolicyConnector::CreatePolicyService(
               std::back_inserter(providers));
   }
   scoped_ptr<PolicyService> service(new PolicyServiceImpl(providers));
-  service->RegisterPolicyDomain(POLICY_DOMAIN_CHROME, std::set<std::string>());
+  scoped_refptr<PolicyDomainDescriptor> descriptor = new PolicyDomainDescriptor(
+      POLICY_DOMAIN_CHROME);
+  service->RegisterPolicyDomain(descriptor);
   return service.Pass();
 }
 
@@ -336,7 +340,6 @@ NetworkConfigurationUpdater*
       network_configuration_updater_.reset(
           new NetworkConfigurationUpdaterImpl(
               GetPolicyService(),
-              chromeos::ManagedNetworkConfigurationHandler::Get(),
               make_scoped_ptr(new chromeos::CertificateHandler)));
     } else {
       network_configuration_updater_.reset(

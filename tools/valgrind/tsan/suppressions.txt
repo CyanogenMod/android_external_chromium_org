@@ -445,6 +445,49 @@
   ...
   fun:disk_cache::EntryImpl::WriteDataImpl*
 }
+{
+  bug_66835a
+  ThreadSanitizer:Race
+  fun:getenv
+  fun:::EnvironmentImpl::GetVarImpl
+  fun:::EnvironmentImpl::GetVar
+  fun:ShellIntegrationLinux::GetDesktopName
+  fun:::GetIsDefaultWebClient
+  fun:ShellIntegration::GetDefaultBrowser
+  fun:::RecordDefaultBrowserUMAStat
+  fun:base::internal::RunnableAdapter::Run
+}
+{
+  bug_66835b
+  ThreadSanitizer:Race
+  fun:__add_to_environ
+  fun:g_setenv
+  ...
+  fun:giop_init
+  fun:CORBA_ORB_init
+  fun:gconf_orb_get
+  ...
+  fun:gconf_activate_server
+  ...
+  fun:gconf_engine_get_fuller
+  fun:gconf_engine_get_entry
+  ...
+  fun:GConfTitlebarListener::GConfTitlebarListener
+  fun:DefaultSingletonTraits::New
+  fun:Singleton::get
+  fun:GConfTitlebarListener::GetInstance
+  fun:BrowserTitlebar::Init
+  fun:BrowserWindowGtk::InitWidgets
+  fun:BrowserWindowGtk::Init
+  fun:BrowserWindow::CreateBrowserWindow
+  fun:::CreateBrowserWindow
+  fun:Browser::Browser
+  fun:StartupBrowserCreatorImpl::OpenTabsInBrowser
+  fun:StartupBrowserCreatorImpl::ProcessSpecifiedURLs
+  fun:StartupBrowserCreatorImpl::ProcessStartupURLs
+  fun:StartupBrowserCreatorImpl::ProcessLaunchURLs
+  fun:StartupBrowserCreatorImpl::Launch
+}
 
 {
   bug_67957
@@ -881,7 +924,7 @@
   fun:g_object_new
   ...
   fun:ThemeServiceFactory::BuildServiceInstanceFor
-  fun:ProfileKeyedServiceFactory::GetServiceForProfile
+  fun:BrowserContextKeyedServiceFactory::GetServiceForBrowserContext
   fun:ThemeServiceFactory::GetForProfile
   fun:ExtensionService::GarbageCollectExtensions
   fun:ExtensionService::InitAfterImport
@@ -1001,55 +1044,12 @@
   fun:file_util::OpenFile
   fun:file_util::OpenFile
   fun:file_util::OpenFile
-  fun:components::VisitedLinkMaster::InitFromFile
-  fun:components::VisitedLinkMaster::InitFromFile
-  fun:components::VisitedLinkMaster::InitFromFile
-  fun:components::VisitedLinkMaster::Init
-  fun:components::VisitedLinkEventsTest::SetUp
+  fun:visitedlink::VisitedLinkMaster::InitFromFile
+  fun:visitedlink::VisitedLinkMaster::InitFromFile
+  fun:visitedlink::VisitedLinkMaster::InitFromFile
+  fun:visitedlink::VisitedLinkMaster::Init
+  fun:visitedlink::VisitedLinkEventsTest::SetUp
   fun:testing::internal::HandleExceptionsInMethodIfSupported
-}
-{
-  bug_66835a
-  ThreadSanitizer:Race
-  fun:getenv
-  fun:::EnvironmentImpl::GetVarImpl
-  fun:::EnvironmentImpl::GetVar
-  fun:ShellIntegrationLinux::GetDesktopName
-  fun:::GetIsDefaultWebClient
-  fun:ShellIntegration::GetDefaultBrowser
-  fun:::RecordDefaultBrowserUMAStat
-  fun:base::internal::RunnableAdapter::Run
-}
-{
-  bug_66835b
-  ThreadSanitizer:Race
-  fun:__add_to_environ
-  fun:g_setenv
-  ...
-  fun:giop_init
-  fun:CORBA_ORB_init
-  fun:gconf_orb_get
-  ...
-  fun:gconf_activate_server
-  ...
-  fun:gconf_engine_get_fuller
-  fun:gconf_engine_get_entry
-  ...
-  fun:GConfTitlebarListener::GConfTitlebarListener
-  fun:DefaultSingletonTraits::New
-  fun:Singleton::get
-  fun:GConfTitlebarListener::GetInstance
-  fun:BrowserTitlebar::Init
-  fun:BrowserWindowGtk::InitWidgets
-  fun:BrowserWindowGtk::Init
-  fun:BrowserWindow::CreateBrowserWindow
-  fun:::CreateBrowserWindow
-  fun:Browser::Browser
-  fun:StartupBrowserCreatorImpl::OpenTabsInBrowser
-  fun:StartupBrowserCreatorImpl::ProcessSpecifiedURLs
-  fun:StartupBrowserCreatorImpl::ProcessStartupURLs
-  fun:StartupBrowserCreatorImpl::ProcessLaunchURLs
-  fun:StartupBrowserCreatorImpl::Launch
 }
 {
    bug_178433a
@@ -1116,4 +1116,44 @@
   fun:setlocale
   ...
   fun:gfx::GtkInitFromCommandLine
+}
+{
+  bug_239350
+  ThreadSanitizer:Race
+  fun:av_buffer_unref
+  fun:av_frame_unref
+  fun:avcodec_decode_video2
+  ...
+  fun:media::FFmpegVideoDecoder::Decode
+}
+{
+  bug_241939a
+  ThreadSanitizer:Race
+  fun:CreateDialogParamW
+  fun:CharPrevW
+  fun:SystemParametersInfoW
+  fun:RegisterClassExW
+  fun:base::MessagePumpForUI::InitMessageWnd
+  fun:base::MessagePumpForUI::MessagePumpForUI
+  fun:base::MessageLoop::MessageLoop
+  fun:remoting::AutoThread::ThreadMain
+}
+{
+  bug_241939b
+  ThreadSanitizer:Race
+  fun:GetWindowLongW
+  fun:GetWindowLongW
+  fun:GetWindowLongW
+  fun:PostMessageW
+  fun:PostMessageW
+  fun:SetWindowTextW
+  fun:KiUserCallbackDispatcher
+  fun:LoadStringA
+  fun:LoadStringA
+  fun:LoadStringA
+  fun:CreateWindowExW
+  fun:base::MessagePumpForUI::InitMessageWnd
+  fun:base::MessagePumpForUI::MessagePumpForUI
+  fun:base::MessageLoop::MessageLoop
+  fun:remoting::AutoThread::ThreadMain
 }

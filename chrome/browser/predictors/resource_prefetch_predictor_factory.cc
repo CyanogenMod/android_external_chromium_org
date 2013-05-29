@@ -9,7 +9,7 @@
 #include "chrome/browser/predictors/resource_prefetch_common.h"
 #include "chrome/browser/predictors/resource_prefetch_predictor.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace predictors {
 
@@ -17,7 +17,7 @@ namespace predictors {
 ResourcePrefetchPredictor* ResourcePrefetchPredictorFactory::GetForProfile(
     Profile* profile) {
   return static_cast<ResourcePrefetchPredictor*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -27,15 +27,16 @@ ResourcePrefetchPredictorFactory::GetInstance() {
 }
 
 ResourcePrefetchPredictorFactory::ResourcePrefetchPredictorFactory()
-    : ProfileKeyedServiceFactory("ResourcePrefetchPredictor",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "ResourcePrefetchPredictor",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(HistoryServiceFactory::GetInstance());
   DependsOn(PredictorDatabaseFactory::GetInstance());
 }
 
 ResourcePrefetchPredictorFactory::~ResourcePrefetchPredictorFactory() {}
 
-ProfileKeyedService*
+BrowserContextKeyedService*
     ResourcePrefetchPredictorFactory::BuildServiceInstanceFor(
         content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);

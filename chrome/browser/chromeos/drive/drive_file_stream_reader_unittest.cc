@@ -59,7 +59,7 @@ class LocalReaderProxyTest : public ::testing::Test {
     worker_thread_.reset();
   }
 
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
   content::TestBrowserThread io_thread_;
 
   base::ScopedTempDir temp_dir_;
@@ -112,7 +112,7 @@ class NetworkReaderProxyTest : public ::testing::Test {
   NetworkReaderProxyTest() : io_thread_(BrowserThread::IO, &message_loop_) {
   }
 
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
   content::TestBrowserThread io_thread_;
 };
 
@@ -327,7 +327,6 @@ class DriveFileStreamReaderTest : public ::testing::Test {
         "chromeos/gdata/root_feed.json");
     fake_drive_service_->LoadAccountMetadataForWapi(
         "chromeos/gdata/account_metadata.json");
-    fake_drive_service_->LoadAppListForDriveApi("chromeos/drive/applist.json");
 
     // Create a testee instance.
     fake_file_system_.reset(
@@ -349,7 +348,7 @@ class DriveFileStreamReaderTest : public ::testing::Test {
                       base::Unretained(this));
   }
 
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread io_thread_;
 

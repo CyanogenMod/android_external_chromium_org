@@ -4,7 +4,7 @@
 
 #include "net/quic/crypto/crypto_handshake.h"
 
-#include "net/quic/crypto/aes_128_gcm_encrypter.h"
+#include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/quic/crypto/crypto_server_config.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_time.h"
@@ -42,15 +42,14 @@ class QuicCryptoServerConfigPeer {
 TEST(QuicCryptoServerConfigTest, ServerConfig) {
   QuicCryptoServerConfig server("source address token secret");
   MockClock clock;
-  CryptoHandshakeMessage extra_tags;
 
   scoped_ptr<CryptoHandshakeMessage>(
-      server.AddDefaultConfig(QuicRandom::GetInstance(), &clock, extra_tags,
+      server.AddDefaultConfig(QuicRandom::GetInstance(), &clock,
                               QuicCryptoServerConfig::kDefaultExpiry));
 }
 
 TEST(QuicCryptoServerConfigTest, SourceAddressTokens) {
-  if (!Aes128GcmEncrypter::IsSupported()) {
+  if (!Aes128Gcm12Encrypter::IsSupported()) {
     LOG(INFO) << "AES GCM not supported. Test skipped.";
     return;
   }

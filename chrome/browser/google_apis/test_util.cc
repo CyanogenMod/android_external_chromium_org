@@ -28,7 +28,7 @@ namespace google_apis {
 namespace test_util {
 
 // This class is used to monitor if any task is posted to a message loop.
-class TaskObserver : public MessageLoop::TaskObserver {
+class TaskObserver : public base::MessageLoop::TaskObserver {
  public:
   TaskObserver() : posted_(false) {}
   virtual ~TaskObserver() {}
@@ -78,9 +78,9 @@ void RunBlockingPoolTask() {
     content::BrowserThread::GetBlockingPool()->FlushForTesting();
 
     TaskObserver task_observer;
-    MessageLoop::current()->AddTaskObserver(&task_observer);
-    MessageLoop::current()->RunUntilIdle();
-    MessageLoop::current()->RemoveTaskObserver(&task_observer);
+    base::MessageLoop::current()->AddTaskObserver(&task_observer);
+    base::MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RemoveTaskObserver(&task_observer);
     if (!task_observer.posted())
       break;
   }
@@ -88,7 +88,7 @@ void RunBlockingPoolTask() {
 
 void RunAndQuit(const base::Closure& closure) {
   closure.Run();
-  MessageLoop::current()->Quit();
+  base::MessageLoop::current()->Quit();
 }
 
 bool WriteStringToFile(const base::FilePath& file_path,
@@ -126,11 +126,11 @@ scoped_ptr<base::Value> LoadJSONFile(const std::string& relative_path) {
 }
 
 // Returns a HttpResponse created from the given file path.
-scoped_ptr<net::test_server::HttpResponse> CreateHttpResponseFromFile(
+scoped_ptr<net::test_server::BasicHttpResponse> CreateHttpResponseFromFile(
     const base::FilePath& file_path) {
   std::string content;
   if (!file_util::ReadFileToString(file_path, &content))
-    return scoped_ptr<net::test_server::HttpResponse>();
+    return scoped_ptr<net::test_server::BasicHttpResponse>();
 
   std::string content_type = "text/plain";
   if (EndsWith(file_path.AsUTF8Unsafe(), ".json", true /* case sensitive */)) {
@@ -139,17 +139,12 @@ scoped_ptr<net::test_server::HttpResponse> CreateHttpResponseFromFile(
     content_type = "application/atom+xml";
   }
 
-  scoped_ptr<net::test_server::HttpResponse> http_response(
-      new net::test_server::HttpResponse);
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse);
   http_response->set_code(net::test_server::SUCCESS);
   http_response->set_content(content);
   http_response->set_content_type(content_type);
   return http_response.Pass();
-}
-
-void DoNothingForReAuthenticateCallback(
-    AuthenticatedOperationInterface* /* operation */) {
-  NOTREACHED();
 }
 
 scoped_ptr<net::test_server::HttpResponse> HandleDownloadRequest(
@@ -162,7 +157,8 @@ scoped_ptr<net::test_server::HttpResponse> HandleDownloadRequest(
   std::string remaining_path;
   if (!RemovePrefix(absolute_url.path(), "/files/", &remaining_path))
     return scoped_ptr<net::test_server::HttpResponse>();
-  return CreateHttpResponseFromFile(GetTestFilePath(remaining_path));
+  return CreateHttpResponseFromFile(
+      GetTestFilePath(remaining_path)).PassAs<net::test_server::HttpResponse>();
 }
 
 bool VerifyJsonData(const base::FilePath& expected_json_file_path,

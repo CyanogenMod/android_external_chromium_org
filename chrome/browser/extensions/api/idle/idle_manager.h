@@ -15,7 +15,7 @@
 #include "base/timer.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/idle.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -39,7 +39,7 @@ struct IdleMonitor {
 
 class IdleManager : public content::NotificationObserver,
                     public EventRouter::Observer,
-                    public ProfileKeyedService {
+                    public BrowserContextKeyedService {
  public:
   class IdleTimeProvider {
    public:
@@ -72,7 +72,7 @@ class IdleManager : public content::NotificationObserver,
 
   void Init();
 
-  // ProfileKeyedService implementation.
+  // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   // content::NotificationDelegate implementation.

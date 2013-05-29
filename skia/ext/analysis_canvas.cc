@@ -71,13 +71,12 @@ AnalysisDevice::AnalysisDevice(const SkBitmap& bm)
   : INHERITED(bm)
   , isForcedNotSolid_(false)
   , isForcedNotTransparent_(false)
-  , isSolidColor_(false)
-  , isTransparent_(false)
+  , isSolidColor_(true)
+  , isTransparent_(true)
   , hasText_(false) {
 }
 
 AnalysisDevice::~AnalysisDevice() {
-
 }
 
 bool AnalysisDevice::getColorIfSolid(SkColor* color) const {
@@ -288,6 +287,11 @@ bool AnalysisCanvas::getColorIfSolid(SkColor* color) const {
 
 bool AnalysisCanvas::hasText() const {
   return (static_cast<AnalysisDevice*>(getDevice()))->hasText();
+}
+
+bool AnalysisCanvas::abortDrawing() {
+  // Early out as soon as we have detected that the tile has text.
+  return hasText();
 }
 
 bool AnalysisCanvas::clipRect(const SkRect& rect, SkRegion::Op op,

@@ -14,7 +14,6 @@
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/google_apis/drive_service_interface.h"
-#include "chrome/browser/google_apis/drive_upload_mode.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/power_save_blocker.h"
@@ -46,14 +45,12 @@ namespace google_apis {
 // Structure containing current upload information of file, passed between
 // DriveServiceInterface methods and callbacks.
 struct DriveUploader::UploadFileInfo {
-  UploadFileInfo(UploadMode upload_mode,
-                 const base::FilePath& drive_path,
+  UploadFileInfo(const base::FilePath& drive_path,
                  const base::FilePath& local_path,
                  const std::string& content_type,
                  const UploadCompletionCallback& callback,
                  const ProgressCallback& progress_callback)
-      : upload_mode(upload_mode),
-        drive_path(drive_path),
+      : drive_path(drive_path),
         file_path(local_path),
         content_type(content_type),
         completion_callback(callback),
@@ -75,9 +72,6 @@ struct DriveUploader::UploadFileInfo {
            "], drive_path=[" + drive_path.AsUTF8Unsafe() +
            "]";
   }
-
-  // Whether this is uploading a new file or updating an existing file.
-  const UploadMode upload_mode;
 
   // Final path in gdata. Looks like /special/drive/MyFolder/MyFile.
   const base::FilePath drive_path;
@@ -128,8 +122,7 @@ void DriveUploader::UploadNewFile(const std::string& parent_resource_id,
   DCHECK(!callback.is_null());
 
   StartUploadFile(
-      scoped_ptr<UploadFileInfo>(new UploadFileInfo(UPLOAD_NEW_FILE,
-                                                    drive_file_path,
+      scoped_ptr<UploadFileInfo>(new UploadFileInfo(drive_file_path,
                                                     local_file_path,
                                                     content_type,
                                                     callback,
@@ -156,8 +149,7 @@ void DriveUploader::UploadExistingFile(
   DCHECK(!callback.is_null());
 
   StartUploadFile(
-      scoped_ptr<UploadFileInfo>(new UploadFileInfo(UPLOAD_EXISTING_FILE,
-                                                    drive_file_path,
+      scoped_ptr<UploadFileInfo>(new UploadFileInfo(drive_file_path,
                                                     local_file_path,
                                                     content_type,
                                                     callback,
@@ -166,6 +158,30 @@ void DriveUploader::UploadExistingFile(
                  weak_ptr_factory_.GetWeakPtr(),
                  resource_id,
                  etag));
+}
+
+void DriveUploader::ResumeUploadFile(
+    const GURL& upload_location,
+    const base::FilePath& drive_file_path,
+    const base::FilePath& local_file_path,
+    const std::string& content_type,
+    const UploadCompletionCallback& callback,
+    const ProgressCallback& progress_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!drive_file_path.empty());
+  DCHECK(!local_file_path.empty());
+  DCHECK(!content_type.empty());
+  DCHECK(!callback.is_null());
+
+  scoped_ptr<UploadFileInfo> upload_file_info(new UploadFileInfo(
+      drive_file_path, local_file_path, content_type,
+      callback, progress_callback));
+  upload_file_info->upload_location = upload_location;
+
+  StartUploadFile(
+      upload_file_info.Pass(),
+      base::Bind(&DriveUploader::StartGetUploadStatus,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void DriveUploader::StartUploadFile(
@@ -265,12 +281,27 @@ void DriveUploader::OnUploadLocationReceived(
   // PostTask is necessary because we have to finish
   // InitiateUpload's callback before calling ResumeUpload, due to the
   // implementation of OperationRegistry. (http://crbug.com/134814)
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&DriveUploader::UploadNextChunk,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(&upload_file_info),
                  0));  // Upload from the beginning of the file.
+}
+
+void DriveUploader::StartGetUploadStatus(
+    scoped_ptr<UploadFileInfo> upload_file_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(upload_file_info);
+
+  UploadFileInfo* info_ptr = upload_file_info.get();
+  drive_service_->GetUploadStatus(
+      info_ptr->drive_path,
+      info_ptr->upload_location,
+      info_ptr->content_length,
+      base::Bind(&DriveUploader::OnUploadRangeResponseReceived,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 base::Passed(&upload_file_info)));
 }
 
 void DriveUploader::UploadNextChunk(
@@ -283,7 +314,6 @@ void DriveUploader::UploadNextChunk(
 
   UploadFileInfo* info_ptr = upload_file_info.get();
   drive_service_->ResumeUpload(
-      info_ptr->upload_mode,
       info_ptr->drive_path,
       info_ptr->upload_location,
       start_position,
@@ -308,11 +338,11 @@ void DriveUploader::OnUploadRangeResponseReceived(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (response.code == HTTP_CREATED || response.code == HTTP_SUCCESS) {
-    // When upload_mode is UPLOAD_NEW_FILE, we expect HTTP_CREATED, and
-    // when upload_mode is UPLOAD_EXISTING_FILE, we expect HTTP_SUCCESS.
-    // There is an exception: if we uploading an empty file, UPLOAD_NEW_FILE
-    // also returns HTTP_SUCCESS on Drive API v2. The correct way of the fix
-    // should be uploading the metadata only. However, to keep the
+    // When uploading a new file, we expect HTTP_CREATED, and when uploading
+    // an existing file (to overwrite), we expect HTTP_SUCCESS.
+    // There is an exception: if we uploading an empty file, uploading a new
+    // file also returns HTTP_SUCCESS on Drive API v2. The correct way of the
+    // fix should be uploading the metadata only. However, to keep the
     // compatibility with GData WAPI during the migration period, we just
     // relax the condition here.
     // TODO(hidehiko): Upload metadata only for empty files, after GData WAPI
@@ -321,10 +351,8 @@ void DriveUploader::OnUploadRangeResponseReceived(
              << upload_file_info->drive_path.value() << "]";
 
     // Done uploading.
-    upload_file_info->completion_callback.Run(HTTP_SUCCESS,
-                                              upload_file_info->drive_path,
-                                              upload_file_info->file_path,
-                                              entry.Pass());
+    upload_file_info->completion_callback.Run(
+        HTTP_SUCCESS, GURL(), entry.Pass());
     return;
   }
 
@@ -358,7 +386,7 @@ void DriveUploader::OnUploadRangeResponseReceived(
   // PostTask is necessary because we have to finish previous ResumeUpload's
   // callback before calling ResumeUpload again, due to the implementation of
   // OperationRegistry. (http://crbug.com/134814)
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&DriveUploader::UploadNextChunk,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -381,10 +409,8 @@ void DriveUploader::UploadFailed(scoped_ptr<UploadFileInfo> upload_file_info,
 
   LOG(ERROR) << "Upload failed " << upload_file_info->DebugString();
 
-  upload_file_info->completion_callback.Run(error,
-                                            upload_file_info->drive_path,
-                                            upload_file_info->file_path,
-                                            scoped_ptr<ResourceEntry>());
+  upload_file_info->completion_callback.Run(
+      error, upload_file_info->upload_location, scoped_ptr<ResourceEntry>());
 }
 
 }  // namespace google_apis

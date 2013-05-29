@@ -20,6 +20,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_handle.h"
+#include "base/win/windows_version.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
 #include "net/base/ip_endpoint.h"
@@ -226,26 +227,22 @@ bool RdpSession::Initialize(const ScreenResolution& resolution) {
     return false;
   }
 
-  // DaemonProcess::CreateDesktopSession() verifies that the resolution is
-  // valid.
-  DCHECK(resolution.IsValid());
-
   ScreenResolution local_resolution = resolution;
 
   // If the screen resolution is not specified, use the default screen
   // resolution.
   if (local_resolution.IsEmpty()) {
-    local_resolution.dimensions_.set(kDefaultRdpScreenWidth,
-                                     kDefaultRdpScreenHeight);
-    local_resolution.dpi_.set(kDefaultRdpDpi, kDefaultRdpDpi);
+    local_resolution = ScreenResolution(
+        webrtc::DesktopSize(kDefaultRdpScreenWidth, kDefaultRdpScreenHeight),
+        webrtc::DesktopVector(kDefaultRdpDpi, kDefaultRdpDpi));
   }
 
   // Get the screen dimensions assuming the default DPI.
-  SkISize host_size = local_resolution.ScaleDimensionsToDpi(
-      SkIPoint::Make(kDefaultRdpDpi, kDefaultRdpDpi));
+  webrtc::DesktopSize host_size = local_resolution.ScaleDimensionsToDpi(
+      webrtc::DesktopVector(kDefaultRdpDpi, kDefaultRdpDpi));
 
   // Make sure that the host resolution is within the limits supported by RDP.
-  host_size = SkISize::Make(
+  host_size = webrtc::DesktopSize(
       std::min(kMaxRdpScreenWidth,
                std::max(kMinRdpScreenWidth, host_size.width())),
       std::min(kMaxRdpScreenHeight,
@@ -516,9 +513,20 @@ void DesktopSessionWin::OnSessionAttached(uint32 session_id) {
 
   ReportElapsedTime("attached");
 
-  // Get the name of the executable the desktop process will run.
+  // Launch elevated on Win8 to be able to inject Alt+Tab.
+  bool launch_elevated = base::win::GetVersion() >= base::win::VERSION_WIN8;
+
+  // Get the name of the executable to run. |kDesktopBinaryName| specifies
+  // uiAccess="true" in it's manifest.
   base::FilePath desktop_binary;
-  if (!GetInstalledBinaryPath(kDesktopBinaryName, &desktop_binary)) {
+  bool result;
+  if (launch_elevated) {
+    result = GetInstalledBinaryPath(kDesktopBinaryName, &desktop_binary);
+  } else {
+    result = GetInstalledBinaryPath(kHostBinaryName, &desktop_binary);
+  }
+
+  if (!result) {
     OnPermanentError();
     return;
   }
@@ -534,13 +542,17 @@ void DesktopSessionWin::OnSessionAttached(uint32 session_id) {
 
   // Create a delegate capable of launching a process in a different session.
   scoped_ptr<WtsSessionProcessDelegate> delegate(
-      new WtsSessionProcessDelegate(
-          caller_task_runner_, io_task_runner_, target.Pass(), session_id, true,
-          WideToUTF8(kDaemonIpcSecurityDescriptor)));
+      new WtsSessionProcessDelegate(io_task_runner_,
+                                    target.Pass(),
+                                    launch_elevated,
+                                    WideToUTF8(kDaemonIpcSecurityDescriptor)));
+  if (!delegate->Initialize(session_id)) {
+    OnPermanentError();
+    return;
+  }
 
   // Create a launcher for the desktop process, using the per-session delegate.
-  launcher_.reset(new WorkerProcessLauncher(
-      caller_task_runner_, delegate.Pass(), this));
+  launcher_.reset(new WorkerProcessLauncher(delegate.Pass(), this));
 }
 
 void DesktopSessionWin::OnSessionDetached() {

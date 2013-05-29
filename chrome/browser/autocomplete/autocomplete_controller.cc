@@ -54,43 +54,43 @@ void AutocompleteMatchToAssistedQuery(
   *subtype = string16::npos;
 
   switch (match) {
-    case AutocompleteMatch::SEARCH_SUGGEST: {
+    case AutocompleteMatchType::SEARCH_SUGGEST: {
       *type = 0;
       return;
     }
-    case AutocompleteMatch::NAVSUGGEST: {
+    case AutocompleteMatchType::NAVSUGGEST: {
       *type = 5;
       return;
     }
-    case AutocompleteMatch::SEARCH_WHAT_YOU_TYPED: {
+    case AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED: {
       *subtype = 57;
       return;
     }
-    case AutocompleteMatch::URL_WHAT_YOU_TYPED: {
+    case AutocompleteMatchType::URL_WHAT_YOU_TYPED: {
       *subtype = 58;
       return;
     }
-    case AutocompleteMatch::SEARCH_HISTORY: {
+    case AutocompleteMatchType::SEARCH_HISTORY: {
       *subtype = 59;
       return;
     }
-    case AutocompleteMatch::HISTORY_URL: {
+    case AutocompleteMatchType::HISTORY_URL: {
       *subtype = 60;
       return;
     }
-    case AutocompleteMatch::HISTORY_TITLE: {
+    case AutocompleteMatchType::HISTORY_TITLE: {
       *subtype = 61;
       return;
     }
-    case AutocompleteMatch::HISTORY_BODY: {
+    case AutocompleteMatchType::HISTORY_BODY: {
       *subtype = 62;
       return;
     }
-    case AutocompleteMatch::HISTORY_KEYWORD: {
+    case AutocompleteMatchType::HISTORY_KEYWORD: {
       *subtype = 63;
       return;
     }
-    case AutocompleteMatch::BOOKMARK_TITLE: {
+    case AutocompleteMatchType::BOOKMARK_TITLE: {
       *subtype = 65;
       return;
     }
@@ -241,9 +241,18 @@ void AutocompleteController::Start(const AutocompleteInput& input) {
   base::TimeTicks start_time = base::TimeTicks::Now();
   for (ACProviders::iterator i(providers_.begin()); i != providers_.end();
        ++i) {
+    // TODO(mpearson): Remove timing code once bugs 178705 / 237703 / 168933
+    // are resolved.
+    base::TimeTicks provider_start_time = base::TimeTicks::Now();
     (*i)->Start(input_, minimal_changes);
     if (input.matches_requested() != AutocompleteInput::ALL_MATCHES)
       DCHECK((*i)->done());
+    base::TimeTicks provider_end_time = base::TimeTicks::Now();
+    std::string name = std::string("Omnibox.ProviderTime.") + (*i)->GetName();
+    base::HistogramBase* counter = base::Histogram::FactoryGet(
+        name, 1, 5000, 20, base::Histogram::kUmaTargetedHistogramFlag);
+    counter->Add(static_cast<int>(
+        (provider_end_time - provider_start_time).InMilliseconds()));
   }
   if (input.matches_requested() == AutocompleteInput::ALL_MATCHES &&
       (input.text().length() < 6)) {

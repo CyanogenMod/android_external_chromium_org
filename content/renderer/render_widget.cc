@@ -29,6 +29,7 @@
 #include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/gpu/mailbox_output_surface.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
+#include "content/renderer/ime_event_guard.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
@@ -48,15 +49,17 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/point.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/compositor_bindings/web_rendering_stats_impl.h"
+#include "webkit/glue/cursor_utils.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
+#include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/synchronous_compositor_output_surface.h"
@@ -177,6 +180,7 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       device_scale_factor_(screen_info_.deviceScaleFactor),
       throttle_input_events_(true),
       is_threaded_compositing_enabled_(false),
+      overscroll_notifications_enabled_(false),
       weak_ptr_factory_(this) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
@@ -186,6 +190,9 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
   is_threaded_compositing_enabled_ =
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableThreadedCompositing);
+  overscroll_notifications_enabled_ =
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableOverscrollNotifications);
 }
 
 RenderWidget::~RenderWidget() {
@@ -296,7 +303,7 @@ bool RenderWidget::AllowPartialSwap() const {
   return true;
 }
 
-bool RenderWidget::SynchronouslyDisableVSync() const {
+bool RenderWidget::UsingSynchronousRendererCompositor() const {
 #if defined(OS_ANDROID)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableSynchronousRendererCompositor)) {
@@ -332,7 +339,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SmoothScrollCompleted, OnSmoothScrollCompleted)
     IPC_MESSAGE_HANDLER(ViewMsg_SetTextDirection, OnSetTextDirection)
     IPC_MESSAGE_HANDLER(ViewMsg_Move_ACK, OnRequestMoveAck)
-    IPC_MESSAGE_HANDLER(ViewMsg_ScreenInfoChanged, OnScreenInfoChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScreenRects, OnUpdateScreenRects)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewMsg_ImeBatchStateChanged, OnImeBatchStateChanged)
@@ -406,12 +412,18 @@ void RenderWidget::Resize(const gfx::Size& new_size,
     // Resize should have caused an invalidation of the entire view.
     DCHECK(new_size.IsEmpty() || is_accelerated_compositing_active_ ||
            paint_aggregator_.HasPendingUpdate());
-  } else if (!RenderThreadImpl::current()->short_circuit_size_updates()) {
+  } else if (size_browser_expects_ == new_size) {
+    resize_ack = NO_RESIZE_ACK;
+  }
+
+  if (new_size.IsEmpty() || physical_backing_size.IsEmpty()) {
+    // For empty size or empty physical_backing_size, there is no next paint
+    // (along with which to send the ack) until they are set to non-empty.
     resize_ack = NO_RESIZE_ACK;
   }
 
   // Send the Resize_ACK flag once we paint again if requested.
-  if (resize_ack == SEND_RESIZE_ACK && !new_size.IsEmpty())
+  if (resize_ack == SEND_RESIZE_ACK)
     set_next_paint_is_resize_ack();
 
   if (fullscreen_change)
@@ -419,8 +431,7 @@ void RenderWidget::Resize(const gfx::Size& new_size,
 
   // If a resize ack is requested and it isn't set-up, then no more resizes will
   // come in and in general things will go wrong.
-  DCHECK(resize_ack != SEND_RESIZE_ACK || new_size.IsEmpty() ||
-         next_paint_is_resize_ack());
+  DCHECK(resize_ack != SEND_RESIZE_ACK || next_paint_is_resize_ack());
 }
 
 void RenderWidget::OnClose() {
@@ -452,13 +463,13 @@ void RenderWidget::OnCreatingNewAck() {
   CompleteInit();
 }
 
-void RenderWidget::OnResize(const gfx::Size& new_size,
-                            const gfx::Size& physical_backing_size,
-                            float overdraw_bottom_height,
-                            const gfx::Rect& resizer_rect,
-                            bool is_fullscreen) {
-  Resize(new_size, physical_backing_size, overdraw_bottom_height, resizer_rect,
-         is_fullscreen, SEND_RESIZE_ACK);
+void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
+  screen_info_ = params.screen_info;
+  SetDeviceScaleFactor(screen_info_.deviceScaleFactor);
+  Resize(params.new_size, params.physical_backing_size,
+         params.overdraw_bottom_height, params.resizer_rect,
+         params.is_fullscreen, SEND_RESIZE_ACK);
+  size_browser_expects_ = params.new_size;
 }
 
 void RenderWidget::OnChangeResizeRect(const gfx::Rect& resizer_rect) {
@@ -528,6 +539,7 @@ void RenderWidget::OnUpdateRectAck() {
   TRACE_EVENT0("renderer", "RenderWidget::OnUpdateRectAck");
   DCHECK(update_reply_pending_);
   update_reply_pending_ = false;
+  size_browser_expects_ = size_;
 
   // If we sent an UpdateRect message with a zero-sized bitmap, then we should
   // have no current paint buffer.
@@ -599,6 +611,10 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   attributes.antialias = false;
   attributes.shareResources = true;
   attributes.noAutomaticFlushes = true;
+  attributes.depth = false;
+  attributes.stencil = false;
+  if (command_line.HasSwitch(cc::switches::kForceDirectLayerDrawing))
+    attributes.stencil = true;
   WebGraphicsContext3DCommandBufferImpl* context =
       CreateGraphicsContext3D(attributes);
   if (!context)
@@ -698,15 +714,17 @@ void RenderWidget::OnViewContextSwapBuffersComplete() {
 }
 
 void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
-                                      const cc::LatencyInfo& latency_info,
+                                      const ui::LatencyInfo& latency_info,
                                       bool is_keyboard_shortcut) {
-  TRACE_EVENT0("renderer", "RenderWidget::OnHandleInputEvent");
-
   handling_input_event_ = true;
   if (!input_event) {
     handling_input_event_ = false;
     return;
   }
+
+  const char* const event_name = GetEventName(input_event->type);
+  TRACE_EVENT1("renderer", "RenderWidget::OnHandleInputEvent",
+               "event", event_name);
 
   if (compositor_)
     compositor_->SetLatencyInfo(latency_info);
@@ -718,12 +736,9 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
       (now.InSecondsF() - input_event->timeStampSeconds) *
           base::Time::kMicrosecondsPerSecond);
   UMA_HISTOGRAM_CUSTOM_COUNTS("Event.Latency.Renderer", delta, 0, 1000000, 100);
-  std::string name_for_event =
-      base::StringPrintf("Event.Latency.Renderer.%s",
-                         GetEventName(input_event->type));
   base::HistogramBase* counter_for_type =
       base::Histogram::FactoryGet(
-          name_for_event,
+          base::StringPrintf("Event.Latency.Renderer.%s", event_name),
           0,
           1000000,
           100,
@@ -1389,23 +1404,24 @@ void RenderWidget::didScrollRect(int dx, int dy,
 
 void RenderWidget::didAutoResize(const WebSize& new_size) {
   if (size_.width() != new_size.width || size_.height() != new_size.height) {
-    if (RenderThreadImpl::current()->short_circuit_size_updates()) {
-      setWindowRect(WebRect(rootWindowRect().x,
-                            rootWindowRect().y,
-                            new_size.width,
-                            new_size.height));
-    } else {
-      size_ = new_size;
+    size_ = new_size;
 
-      // If we don't clear PaintAggregator after changing autoResize state, then
-      // we might end up in a situation where bitmap_rect is larger than the
-      // view_size. By clearing PaintAggregator, we ensure that we don't end up
-      // with invalid damage rects.
-      paint_aggregator_.ClearPendingUpdate();
+    // If we don't clear PaintAggregator after changing autoResize state, then
+    // we might end up in a situation where bitmap_rect is larger than the
+    // view_size. By clearing PaintAggregator, we ensure that we don't end up
+    // with invalid damage rects.
+    paint_aggregator_.ClearPendingUpdate();
+
+    if (RenderThreadImpl::current()->short_circuit_size_updates()) {
+      WebRect new_pos(rootWindowRect().x,
+                      rootWindowRect().y,
+                      new_size.width,
+                      new_size.height);
+      view_screen_rect_ = new_pos;
+      window_screen_rect_ = new_pos;
     }
 
-    if (auto_resize_mode_)
-      AutoResizeCompositor();
+    AutoResizeCompositor();
 
     if (!RenderThreadImpl::current()->short_circuit_size_updates())
       need_update_rect_for_auto_resize_ = true;
@@ -1570,8 +1586,8 @@ void RenderWidget::scheduleAnimation() {
 
 void RenderWidget::didChangeCursor(const WebCursorInfo& cursor_info) {
   // TODO(darin): Eliminate this temporary.
-  WebCursor cursor(cursor_info);
-
+  WebCursor cursor;
+  webkit_glue::InitializeCursorFromWebKitCursorInfo(&cursor, cursor_info);
   // Only send a SetCursor message if we need to make a change.
   if (!current_cursor_.IsEqual(cursor)) {
     current_cursor_ = cursor;
@@ -1600,6 +1616,14 @@ void RenderWidget::show(WebNavigationPolicy) {
   // process will impose a default position otherwise.
   Send(new ViewHostMsg_ShowWidget(opener_id_, routing_id_, initial_pos_));
   SetPendingWindowRect(initial_pos_);
+}
+
+void RenderWidget::didProgrammaticallyScroll(
+    const WebKit::WebPoint& scroll_point) {
+  if (!compositor_)
+    return;
+  Send(new ViewHostMsg_DidProgrammaticallyScroll(
+    routing_id_, gfx::Vector2d(scroll_point.x, scroll_point.y)));
 }
 
 void RenderWidget::didFocus() {
@@ -1717,8 +1741,7 @@ void RenderWidget::OnImeSetComposition(
     int selection_start, int selection_end) {
   if (!webwidget_)
     return;
-  DCHECK(!handling_ime_event_);
-  handling_ime_event_ = true;
+  ImeEventGuard guard(this);
   if (webwidget_->setComposition(
       text, WebVector<WebCompositionUnderline>(underlines),
       selection_start, selection_end)) {
@@ -1753,16 +1776,13 @@ void RenderWidget::OnImeSetComposition(
     }
     UpdateCompositionInfo(range, std::vector<gfx::Rect>());
   }
-  handling_ime_event_ = false;
-  UpdateTextInputState(DO_NOT_SHOW_IME);
 }
 
 void RenderWidget::OnImeConfirmComposition(
     const string16& text, const ui::Range& replacement_range) {
   if (!webwidget_)
     return;
-  DCHECK(!handling_ime_event_);
-  handling_ime_event_ = true;
+  ImeEventGuard guard(this);
   handling_input_event_ = true;
   webwidget_->confirmComposition(text);
   handling_input_event_ = false;
@@ -1775,8 +1795,6 @@ void RenderWidget::OnImeConfirmComposition(
     range.set_end(location + length);
   }
   UpdateCompositionInfo(range, std::vector<gfx::Rect>());
-  handling_ime_event_ = false;
-  UpdateTextInputState(DO_NOT_SHOW_IME);
 }
 
 // This message causes the renderer to render an image of the
@@ -1933,12 +1951,6 @@ void RenderWidget::OnSetTextDirection(WebTextDirection direction) {
   webwidget_->setTextDirection(direction);
 }
 
-void RenderWidget::OnScreenInfoChanged(
-    const WebKit::WebScreenInfo& screen_info) {
-  screen_info_ = screen_info;
-  SetDeviceScaleFactor(screen_info.deviceScaleFactor);
-}
-
 void RenderWidget::OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                                        const gfx::Rect& window_screen_rect) {
   view_screen_rect_ = view_screen_rect;
@@ -2054,6 +2066,22 @@ static bool IsDateTimeInput(ui::TextInputType type) {
       type == ui::TEXT_INPUT_TYPE_WEEK;
 }
 
+
+void RenderWidget::StartHandlingImeEvent() {
+  DCHECK(!handling_ime_event_);
+  handling_ime_event_ = true;
+}
+
+void RenderWidget::FinishHandlingImeEvent() {
+  DCHECK(handling_ime_event_);
+  handling_ime_event_ = false;
+  // While handling an ime event, text input state and selection bounds updates
+  // are ignored. These must explicitly be updated once finished handling the
+  // ime event.
+  UpdateSelectionBounds();
+  UpdateTextInputState(DO_NOT_SHOW_IME);
+}
+
 void RenderWidget::UpdateTextInputState(ShowIme show_ime) {
   if (handling_ime_event_)
     return;
@@ -2102,6 +2130,8 @@ void RenderWidget::GetSelectionBounds(gfx::Rect* focus, gfx::Rect* anchor) {
 
 void RenderWidget::UpdateSelectionBounds() {
   if (!webwidget_)
+    return;
+  if (handling_ime_event_)
     return;
 
   ViewHostMsg_SelectionBounds_Params params;
@@ -2211,10 +2241,8 @@ void RenderWidget::resetInputMethod() {
   if (text_input_type_ != ui::TEXT_INPUT_TYPE_NONE) {
     // If a composition text exists, then we need to let the browser process
     // to cancel the input method's ongoing composition session.
-    handling_ime_event_ = true;
     if (webwidget_->confirmComposition())
       Send(new ViewHostMsg_ImeCancelComposition(routing_id()));
-    handling_ime_event_ = false;
   }
 
   // Send an updated IME range with the current caret rect.
@@ -2312,6 +2340,15 @@ void RenderWidget::BeginSmoothScroll(
 
   Send(new ViewHostMsg_BeginSmoothScroll(routing_id_, params));
   pending_smooth_scroll_gesture_ = callback;
+}
+
+void RenderWidget::DidOverscroll(gfx::Vector2dF accumulated_overscroll,
+                                 gfx::Vector2dF current_fling_velocity) {
+  if (overscroll_notifications_enabled_) {
+    Send(new ViewHostMsg_DidOverscroll(routing_id_,
+                                       accumulated_overscroll,
+                                       current_fling_velocity));
+  }
 }
 
 bool RenderWidget::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {

@@ -154,22 +154,22 @@ cr.define('print_preview', function() {
      */
     requestPreview: function() {
       if (!this.printTicketStore_.isTicketValidForPreview() ||
-          !this.destinationStore_.selectedDestination) {
+          !this.printTicketStore_.isInitialized) {
         return false;
       }
       if (!this.hasPreviewChanged_()) {
         // Changes to these ticket items might not trigger a new preview, but
         // they still need to be recorded.
-        this.marginsType_ = this.printTicketStore_.getMarginsType();
+        this.marginsType_ = this.printTicketStore_.marginsType.getValue();
         return false;
       }
-      this.isLandscapeEnabled_ = this.printTicketStore_.isLandscapeEnabled();
+      this.isLandscapeEnabled_ = this.printTicketStore_.landscape.getValue();
       this.isHeaderFooterEnabled_ =
-          this.printTicketStore_.isHeaderFooterEnabled();
+          this.printTicketStore_.headerFooter.getValue();
       this.colorValue_ = this.printTicketStore_.color.getValue();
       this.isFitToPageEnabled_ = this.printTicketStore_.fitToPage.getValue();
-      this.pageRanges_ = this.printTicketStore_.getPageRanges();
-      this.marginsType_ = this.printTicketStore_.getMarginsType();
+      this.pageRanges_ = this.printTicketStore_.pageRange.getPageRanges();
+      this.marginsType_ = this.printTicketStore_.marginsType.getValue();
       this.isCssBackgroundEnabled_ =
           this.printTicketStore_.cssBackground.getValue();
       this.isSelectionOnlyEnabled_ =
@@ -266,18 +266,19 @@ cr.define('print_preview', function() {
     hasPreviewChanged_: function() {
       var ticketStore = this.printTicketStore_;
       return this.inFlightRequestId_ == -1 ||
-          ticketStore.isLandscapeEnabled() != this.isLandscapeEnabled_ ||
-          ticketStore.isHeaderFooterEnabled() != this.isHeaderFooterEnabled_ ||
+          !ticketStore.landscape.isValueEqual(this.isLandscapeEnabled_) ||
+          !ticketStore.headerFooter.isValueEqual(this.isHeaderFooterEnabled_) ||
           !ticketStore.color.isValueEqual(this.colorValue_) ||
           !ticketStore.fitToPage.isValueEqual(this.isFitToPageEnabled_) ||
           this.pageRanges_ == null ||
-          !areRangesEqual(ticketStore.getPageRanges(), this.pageRanges_) ||
-          (ticketStore.getMarginsType() != this.marginsType_ &&
-              ticketStore.getMarginsType() !=
-                  print_preview.ticket_items.MarginsType.Value.CUSTOM) ||
-          (ticketStore.getMarginsType() ==
-              print_preview.ticket_items.MarginsType.Value.CUSTOM &&
-              !ticketStore.getCustomMargins().equals(
+          !areRangesEqual(ticketStore.pageRange.getPageRanges(),
+                          this.pageRanges_) ||
+          (!ticketStore.marginsType.isValueEqual(this.marginsType_) &&
+              !ticketStore.marginsType.isValueEqual(
+                  print_preview.ticket_items.MarginsType.Value.CUSTOM)) ||
+          (ticketStore.marginsType.isValueEqual(
+              print_preview.ticket_items.MarginsType.Value.CUSTOM) &&
+              !ticketStore.customMargins.isValueEqual(
                   this.documentInfo_.margins)) ||
           !ticketStore.cssBackground.isValueEqual(
               this.isCssBackgroundEnabled_) ||
@@ -335,7 +336,7 @@ cr.define('print_preview', function() {
         return; // Ignore old response.
       }
       this.documentInfo_.updatePageCount(event.pageCount);
-      this.pageRanges_ = this.printTicketStore_.getPageRanges();
+      this.pageRanges_ = this.printTicketStore_.pageRange.getPageRanges();
     },
 
     /**
@@ -347,7 +348,7 @@ cr.define('print_preview', function() {
       if (this.inFlightRequestId_ != event.previewResponseId) {
         return; // Ignore old response.
       }
-      var pageNumberSet = this.printTicketStore_.getPageNumberSet();
+      var pageNumberSet = this.printTicketStore_.pageRange.getPageNumberSet();
       this.dispatchPreviewStartEvent_(
           event.previewUid, pageNumberSet.getPageNumberAt(0) - 1);
       for (var i = 0; i < pageNumberSet.size; i++) {
@@ -368,9 +369,9 @@ cr.define('print_preview', function() {
         return; // Ignore old response.
       }
       var pageNumber = event.pageIndex + 1;
-      if (this.printTicketStore_.getPageNumberSet().hasPageNumber(pageNumber)) {
-        var previewIndex = this.printTicketStore_.getPageNumberSet()
-            .getPageNumberIndex(pageNumber);
+      var pageNumberSet = this.printTicketStore_.pageRange.getPageNumberSet();
+      if (pageNumberSet.hasPageNumber(pageNumber)) {
+        var previewIndex = pageNumberSet.getPageNumberIndex(pageNumber);
         if (previewIndex == 0) {
           this.dispatchPreviewStartEvent_(event.previewUid, event.pageIndex);
         }

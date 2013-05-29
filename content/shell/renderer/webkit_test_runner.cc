@@ -18,6 +18,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
+#include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "content/public/test/layouttest_support.h"
@@ -56,7 +57,6 @@
 #include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestRunner.h"
 #include "ui/gfx/rect.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/glue/glue_serialize.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webpreferences.h"
 #include "webkit/mocks/test_media_stream_client.h"
@@ -344,6 +344,17 @@ void WebKitTestRunner::setClientWindowRect(const WebRect& rect) {
   ForceResizeRenderView(render_view(), WebSize(rect.width, rect.height));
 }
 
+void WebKitTestRunner::enableAutoResizeMode(const WebSize& min_size,
+                                            const WebSize& max_size) {
+  EnableAutoResizeMode(render_view(), min_size, max_size);
+}
+
+void WebKitTestRunner::disableAutoResizeMode(const WebSize& new_size) {
+  DisableAutoResizeMode(render_view(), new_size);
+  if (!new_size.isEmpty())
+    ForceResizeRenderView(render_view(), new_size);
+}
+
 void WebKitTestRunner::showDevTools() {
   Send(new ShellViewHostMsg_ShowDevTools(routing_id()));
 }
@@ -512,7 +523,7 @@ void WebKitTestRunner::captureHistoryForWindow(
   WebVector<WebHistoryItem> result(num_entries);
   for (size_t entry = 0; entry < num_entries; ++entry) {
     result[entry] =
-        webkit_glue::HistoryItemFromString(session_histories_[pos][entry]);
+        PageStateToHistoryItem(session_histories_[pos][entry]);
   }
   history->swap(result);
 }
@@ -557,6 +568,7 @@ void WebKitTestRunner::Navigate(const GURL& url) {
         ShellRenderProcessObserver::GetInstance()->test_interfaces();
     interfaces->setTestIsRunning(true);
     interfaces->configureForTestWithURL(GURL(), false);
+    ForceResizeRenderView(render_view(), WebSize(800, 600));
   }
 }
 
@@ -681,7 +693,7 @@ void WebKitTestRunner::OnSetTestConfiguration(
 
 void WebKitTestRunner::OnSessionHistory(
     const std::vector<int>& routing_ids,
-    const std::vector<std::vector<std::string> >& session_histories,
+    const std::vector<std::vector<PageState> >& session_histories,
     const std::vector<unsigned>& current_entry_indexes) {
   routing_ids_ = routing_ids;
   session_histories_ = session_histories;

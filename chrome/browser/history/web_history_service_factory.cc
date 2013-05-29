@@ -7,11 +7,11 @@
 #include "base/command_line.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/history/web_history_service.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace {
 // Returns true if the user is signed in and full history sync is enabled,
@@ -40,12 +40,12 @@ history::WebHistoryService* WebHistoryServiceFactory::GetForProfile(
       Profile* profile) {
   if (IsHistorySyncEnabled(profile)) {
     return static_cast<history::WebHistoryService*>(
-        GetInstance()->GetServiceForProfile(profile, true));
+        GetInstance()->GetServiceForBrowserContext(profile, true));
   }
   return NULL;
 }
 
-ProfileKeyedService* WebHistoryServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* WebHistoryServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
 
@@ -56,8 +56,9 @@ ProfileKeyedService* WebHistoryServiceFactory::BuildServiceInstanceFor(
 }
 
 WebHistoryServiceFactory::WebHistoryServiceFactory()
-    : ProfileKeyedServiceFactory("WebHistoryServiceFactory",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "WebHistoryServiceFactory",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(TokenServiceFactory::GetInstance());
   DependsOn(CookieSettings::Factory::GetInstance());
 }

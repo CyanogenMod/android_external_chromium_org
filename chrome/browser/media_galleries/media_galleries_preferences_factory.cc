@@ -7,14 +7,14 @@
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 // static
 chrome::MediaGalleriesPreferences*
 MediaGalleriesPreferencesFactory::GetForProfile(Profile* profile) {
   return static_cast<chrome::MediaGalleriesPreferences*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -24,12 +24,14 @@ MediaGalleriesPreferencesFactory::GetInstance() {
 }
 
 MediaGalleriesPreferencesFactory::MediaGalleriesPreferencesFactory()
-    : ProfileKeyedServiceFactory("MediaGalleriesPreferences",
-                                 ProfileDependencyManager::GetInstance()) {}
+    : BrowserContextKeyedServiceFactory(
+        "MediaGalleriesPreferences",
+        BrowserContextDependencyManager::GetInstance()) {}
 
 MediaGalleriesPreferencesFactory::~MediaGalleriesPreferencesFactory() {}
 
-ProfileKeyedService* MediaGalleriesPreferencesFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+MediaGalleriesPreferencesFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new chrome::MediaGalleriesPreferences(static_cast<Profile*>(profile));
 }

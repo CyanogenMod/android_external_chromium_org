@@ -9,8 +9,8 @@
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/invalidation/invalidation_frontend.h"
 #include "chrome/browser/invalidation/invalidator_storage.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/signin/signin_global_error.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "sync/notifier/invalidation_handler.h"
@@ -30,7 +30,7 @@ namespace invalidation {
 // It provides invalidations for desktop platforms (Win, Mac, Linux).
 class TiclInvalidationService
     : public base::NonThreadSafe,
-      public ProfileKeyedService,
+      public BrowserContextKeyedService,
       public InvalidationFrontend,
       public content::NotificationObserver,
       public syncer::InvalidationHandler {
@@ -68,7 +68,7 @@ class TiclInvalidationService
   virtual void OnIncomingInvalidation(
       const syncer::ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
 
-  // Override of ProfileKeyedService methods.
+  // Overrides BrowserContextKeyedService method.
   virtual void Shutdown() OVERRIDE;
 
  protected:
@@ -83,7 +83,8 @@ class TiclInvalidationService
 
   void Start();
   void UpdateToken();
-  void Stop();
+  void StopInvalidator();
+  void Logout();
 
   Profile *const profile_;
   SigninManagerBase *const signin_manager_;

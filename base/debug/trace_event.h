@@ -667,6 +667,17 @@
         category_group, name, TRACE_ID_DONT_MANGLE(id), TRACE_EVENT_FLAG_NONE)
 
 
+// Macro to efficiently determine if a given category group is enabled.
+#define TRACE_EVENT_CATEGORY_GROUP_ENABLED(category_group, ret) \
+    do { \
+      INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group); \
+      if (*INTERNAL_TRACE_EVENT_UID(catstatic)) { \
+        *ret = true; \
+      } else { \
+        *ret = false; \
+      } \
+    } while (0)
+
 ////////////////////////////////////////////////////////////////////////////////
 // Implementation specific tracing API definitions.
 
@@ -722,12 +733,15 @@
 // Defines visibility for classes in trace_event.h
 #define TRACE_EVENT_API_CLASS_EXPORT BASE_EXPORT
 
+// Not supported in split-dll build. http://crbug.com/237249
+#if !defined(CHROME_SPLIT_DLL)
 // The thread buckets for the sampling profiler.
 TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state0;
 TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state1;
 TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state2;
 #define TRACE_EVENT_API_THREAD_BUCKET(thread_bucket)                           \
   g_trace_state##thread_bucket
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 

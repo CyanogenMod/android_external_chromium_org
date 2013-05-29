@@ -32,6 +32,7 @@
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/spdy/spdy_stream.h"
 #include "net/spdy/spdy_write_queue.h"
 #include "net/ssl/ssl_client_cert_type.h"
 #include "net/ssl/ssl_config_service.h"
@@ -129,7 +130,8 @@ class NET_EXPORT_PRIVATE SpdyStreamRequest {
   // returned, must not be called again without CancelRequest() or
   // ReleaseStream() being called first. Otherwise, in case of an
   // immediate error, this may be called again.
-  int StartRequest(const scoped_refptr<SpdySession>& session,
+  int StartRequest(SpdyStreamType type,
+                   const scoped_refptr<SpdySession>& session,
                    const GURL& url,
                    RequestPriority priority,
                    const BoundNetLog& net_log,
@@ -158,12 +160,14 @@ class NET_EXPORT_PRIVATE SpdyStreamRequest {
   void OnRequestCompleteFailure(int rv);
 
   // Accessors called by |session_|.
+  SpdyStreamType type() const { return type_; }
   const GURL& url() const { return url_; }
   RequestPriority priority() const { return priority_; }
   const BoundNetLog& net_log() const { return net_log_; }
 
   void Reset();
 
+  SpdyStreamType type_;
   scoped_refptr<SpdySession> session_;
   base::WeakPtr<SpdyStream> stream_;
   GURL url_;
@@ -189,13 +193,13 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   };
 
   // Create a new SpdySession.
-  // |host_port_proxy_pair| is the host/port that this session connects to, and
-  // the proxy configuration settings that it's using.
+  // |spdy_session_key| is the host/port that this session connects to, privacy
+  // and proxy configuration settings that it's using.
   // |spdy_session_pool| is the SpdySessionPool that owns us.  Its lifetime must
   // strictly be greater than |this|.
   // |session| is the HttpNetworkSession.  |net_log| is the NetLog that we log
   // network events to.
-  SpdySession(const HostPortProxyPair& host_port_proxy_pair,
+  SpdySession(const SpdySessionKey& spdy_session_key,
               SpdySessionPool* spdy_session_pool,
               HttpServerProperties* http_server_properties,
               bool verify_domain_authentication,
@@ -212,12 +216,14 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
               NetLog* net_log);
 
   const HostPortPair& host_port_pair() const {
-    return host_port_proxy_pair_.first;
+    return spdy_session_key_.host_port_proxy_pair().first;
   }
   const HostPortProxyPair& host_port_proxy_pair() const {
-    return host_port_proxy_pair_;
+    return spdy_session_key_.host_port_proxy_pair();
   }
-
+  const SpdySessionKey& spdy_session_key() const {
+    return spdy_session_key_;
+  }
   // Get a pushed stream for a given |url|.  If the server initiates a
   // stream, it might already exist for a given path.  The server
   // might also not have initiated the stream yet, but indicated it
@@ -274,11 +280,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                             const std::string& cert,
                             RequestPriority priority,
                             scoped_ptr<SpdyFrame>* credential_frame);
-
-  // Creates and returns a HEADERS frame.
-  scoped_ptr<SpdyFrame> CreateHeadersFrame(SpdyStreamId stream_id,
-                                           const SpdyHeaderBlock& headers,
-                                           SpdyControlFlags flags);
 
   // Creates and returns a SpdyBuffer holding a data frame with the
   // given data. May return NULL if stalled by flow control.
@@ -428,10 +429,10 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   SpdyCredentialState* credential_state() { return &credential_state_; }
 
   // Adds |alias| to set of aliases associated with this session.
-  void AddPooledAlias(const HostPortProxyPair& alias);
+  void AddPooledAlias(const SpdySessionKey& alias_key);
 
   // Returns the set of aliases associated with this session.
-  const std::set<HostPortProxyPair>& pooled_aliases() const {
+  const std::set<SpdySessionKey>& pooled_aliases() const {
     return pooled_aliases_;
   }
 
@@ -789,12 +790,12 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // method.
   base::WeakPtrFactory<SpdySession> weak_factory_;
 
-  // The domain this session is connected to.
-  const HostPortProxyPair host_port_proxy_pair_;
+  // The key used to identify this session.
+  const SpdySessionKey spdy_session_key_;
 
-  // Set set of HostPortProxyPairs for which this session has serviced
+  // Set set of SpdySessionKeys for which this session has serviced
   // requests.
-  std::set<HostPortProxyPair> pooled_aliases_;
+  std::set<SpdySessionKey> pooled_aliases_;
 
   // |spdy_session_pool_| owns us, therefore its lifetime must exceed ours.  We
   // set this to NULL after we are removed from the pool.

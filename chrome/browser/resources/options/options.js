@@ -17,10 +17,7 @@ var CookiesView = options.CookiesView;
 var CreateProfileOverlay = options.CreateProfileOverlay;
 var EditDictionaryOverlay = cr.IsMac ? null : options.EditDictionaryOverlay;
 var FactoryResetOverlay = options.FactoryResetOverlay;
-var ManagedUserSetPassphraseOverlay = options.ManagedUserSetPassphraseOverlay;
-var ManagedUserSettings = options.ManagedUserSettings;
-var ManagedUserSettingsExceptionsArea =
-    options.managedUserSettings.ManagedUserSettingsExceptionsArea;
+var ManagedUserLearnMoreOverlay = options.ManagedUserLearnMoreOverlay;
 var FontSettings = options.FontSettings;
 var HandlerOptions = options.HandlerOptions;
 var HomePageOverlay = options.HomePageOverlay;
@@ -33,6 +30,7 @@ var OptionsPage = options.OptionsPage;
 var PasswordManager = options.PasswordManager;
 var Preferences = options.Preferences;
 var PreferredNetworks = options.PreferredNetworks;
+var ResetProfileSettingsOverlay = options.ResetProfileSettingsOverlay;
 var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
 var StartupOverlay = options.StartupOverlay;
@@ -135,17 +133,10 @@ function load() {
                               [$('language-button')]);
   OptionsPage.registerOverlay(ManageProfileOverlay.getInstance(),
                               BrowserOptions.getInstance());
-  if (loadTimeData.getBoolean('managedUsersEnabled')) {
-    OptionsPage.registerOverlay(ManagedUserSettingsExceptionsArea.getInstance(),
-                                ManagedUserSettings.getInstance());
-    if (!cr.isChromeOS) {
-      OptionsPage.registerOverlay(ManagedUserSetPassphraseOverlay.getInstance(),
-                                  ManagedUserSettings.getInstance(),
-                                  [$('set-passphrase')]);
-    }
-    OptionsPage.registerOverlay(ManagedUserSettings.getInstance(),
-                                BrowserOptions.getInstance(),
-                                [$('managed-user-settings-button')]);
+  if (loadTimeData.getBoolean('managedUsersEnabled') &&
+      !cr.isChromeOS) {
+    OptionsPage.registerOverlay(ManagedUserLearnMoreOverlay.getInstance(),
+                                CreateProfileOverlay.getInstance());
   }
   OptionsPage.registerOverlay(MediaGalleriesManager.getInstance(),
                               ContentSettings.getInstance(),
@@ -153,6 +144,9 @@ function load() {
   OptionsPage.registerOverlay(PasswordManager.getInstance(),
                               BrowserOptions.getInstance(),
                               [$('manage-passwords')]);
+  OptionsPage.registerOverlay(ResetProfileSettingsOverlay.getInstance(),
+                              BrowserOptions.getInstance(),
+                              [$('reset-profile-settings')]);
   OptionsPage.registerOverlay(SearchEngineManager.getInstance(),
                               BrowserOptions.getInstance(),
                               [$('manage-default-search-engines')]);

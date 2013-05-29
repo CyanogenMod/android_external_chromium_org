@@ -4,11 +4,6 @@
 
 #include "cc/base/worker_pool.h"
 
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
-#endif
-
 #include <algorithm>
 
 #include "base/bind.h"
@@ -16,6 +11,7 @@
 #include "base/stringprintf.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/threading/simple_thread.h"
+#include "base/threading/thread_restrictions.h"
 
 namespace cc {
 
@@ -182,6 +178,9 @@ void WorkerPool::Inner::Shutdown() {
 
   while (workers_.size()) {
     scoped_ptr<base::DelegateSimpleThread> worker = workers_.take_front();
+    // http://crbug.com/240453 - Join() is considered IO and will block this
+    // thread. See also http://crbug.com/239423 for further ideas.
+    base::ThreadRestrictions::ScopedAllowIO allow_io;
     worker->Join();
   }
 }
@@ -241,9 +240,9 @@ void WorkerPool::Inner::OnIdleOnOriginThread() {
 
 void WorkerPool::Inner::Run() {
 #if defined(OS_ANDROID)
-  // TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-  int nice_value = 10;  // Idle priority.
-  setpriority(PRIO_PROCESS, base::PlatformThread::CurrentId(), nice_value);
+  base::PlatformThread::SetThreadPriority(
+      base::PlatformThread::CurrentHandle(),
+      base::kThreadPriority_Background);
 #endif
 
   base::AutoLock lock(lock_);
@@ -293,11 +292,10 @@ void WorkerPool::Inner::Run() {
   has_pending_tasks_cv_.Signal();
 }
 
-WorkerPool::WorkerPool(WorkerPoolClient* client,
-                       size_t num_threads,
+WorkerPool::WorkerPool(size_t num_threads,
                        base::TimeDelta check_for_completed_tasks_delay,
                        const std::string& thread_name_prefix)
-    : client_(client),
+    : client_(NULL),
       origin_loop_(base::MessageLoopProxy::current()),
       weak_ptr_factory_(this),
       check_for_completed_tasks_delay_(check_for_completed_tasks_delay),
@@ -367,6 +365,7 @@ void WorkerPool::DispatchCompletionCallbacks() {
     task->DidComplete();
   }
 
+  DCHECK(client_);
   client_->DidFinishDispatchingWorkerPoolCompletionCallbacks();
 }
 

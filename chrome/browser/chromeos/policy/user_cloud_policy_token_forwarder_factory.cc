@@ -8,9 +8,9 @@
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_token_forwarder.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace policy {
 
@@ -21,15 +21,16 @@ UserCloudPolicyTokenForwarderFactory*
 }
 
 UserCloudPolicyTokenForwarderFactory::UserCloudPolicyTokenForwarderFactory()
-    : ProfileKeyedServiceFactory("UserCloudPolicyTokenForwarder",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "UserCloudPolicyTokenForwarder",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(TokenServiceFactory::GetInstance());
   DependsOn(UserCloudPolicyManagerFactoryChromeOS::GetInstance());
 }
 
 UserCloudPolicyTokenForwarderFactory::~UserCloudPolicyTokenForwarderFactory() {}
 
-ProfileKeyedService*
+BrowserContextKeyedService*
     UserCloudPolicyTokenForwarderFactory::BuildServiceInstanceFor(
         content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
@@ -51,7 +52,8 @@ ProfileKeyedService*
   return new UserCloudPolicyTokenForwarder(manager, token_service);
 }
 
-bool UserCloudPolicyTokenForwarderFactory::ServiceIsCreatedWithProfile() const {
+bool UserCloudPolicyTokenForwarderFactory::
+ServiceIsCreatedWithBrowserContext() const {
   // Create this object when the profile is created so it fetches the token
   // during startup.
   return true;

@@ -6,21 +6,14 @@
 
 #include "apps/shortcut_manager.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace apps {
 
 // static
 ShortcutManager* ShortcutManagerFactory::GetForProfile(Profile* profile) {
   return static_cast<ShortcutManager*>(
-      GetInstance()->GetServiceForProfile(profile, true));
-}
-
-// static
-void ShortcutManagerFactory::ResetForProfile(Profile* profile) {
-  ShortcutManagerFactory* factory = GetInstance();
-  factory->ProfileShutdown(profile);
-  factory->ProfileDestroyed(profile);
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 ShortcutManagerFactory* ShortcutManagerFactory::GetInstance() {
@@ -28,19 +21,20 @@ ShortcutManagerFactory* ShortcutManagerFactory::GetInstance() {
 }
 
 ShortcutManagerFactory::ShortcutManagerFactory()
-    : ProfileKeyedServiceFactory("ShortcutManager",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "ShortcutManager",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 ShortcutManagerFactory::~ShortcutManagerFactory() {
 }
 
-ProfileKeyedService* ShortcutManagerFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* ShortcutManagerFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new ShortcutManager(static_cast<Profile*>(profile));
 }
 
-bool ShortcutManagerFactory::ServiceIsCreatedWithProfile() const {
+bool ShortcutManagerFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

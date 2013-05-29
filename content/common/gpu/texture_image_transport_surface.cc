@@ -31,6 +31,7 @@ TextureImageTransportSurface::TextureImageTransportSurface(
     const gfx::GLSurfaceHandle& handle)
       : fbo_id_(0),
         backbuffer_(CreateTextureDefinition(gfx::Size(), 0)),
+        scale_factor_(1.f),
         stub_destroyed_(false),
         backbuffer_suggested_allocation_(true),
         frontbuffer_suggested_allocation_(true),
@@ -168,8 +169,10 @@ void* TextureImageTransportSurface::GetConfig() {
   return surface_.get() ? surface_->GetConfig() : NULL;
 }
 
-void TextureImageTransportSurface::OnResize(gfx::Size size) {
+void TextureImageTransportSurface::OnResize(gfx::Size size,
+                                            float scale_factor) {
   current_size_ = size;
+  scale_factor_ = scale_factor;
   CreateBackTexture();
 }
 
@@ -193,7 +196,7 @@ void TextureImageTransportSurface::OnWillDestroyStub() {
 }
 
 void TextureImageTransportSurface::SetLatencyInfo(
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   latency_info_ = latency_info;
 }
 
@@ -211,6 +214,7 @@ bool TextureImageTransportSurface::SwapBuffers() {
   DCHECK(backbuffer_size() == current_size_);
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
   params.size = backbuffer_size();
+  params.scale_factor = scale_factor_;
   params.mailbox_name.assign(
       reinterpret_cast<const char*>(&mailbox_name_), sizeof(mailbox_name_));
 
@@ -249,6 +253,7 @@ bool TextureImageTransportSurface::PostSubBuffer(
   DCHECK(current_size_ == backbuffer_size());
   GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params params;
   params.surface_size = backbuffer_size();
+  params.surface_scale_factor = scale_factor_;
   params.x = x;
   params.y = y;
   params.width = width;

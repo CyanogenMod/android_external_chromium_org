@@ -217,7 +217,7 @@ void MakeNavigateParams(const NavigationEntryImpl& entry,
   }
   params->referrer = entry.GetReferrer();
   params->transition = entry.GetTransitionType();
-  params->state = entry.GetContentState();
+  params->page_state = entry.GetPageState();
   params->navigation_type =
       GetNavigationType(controller.GetBrowserContext(), entry, reload_type);
   params->request_time = base::Time::Now();
@@ -284,6 +284,26 @@ WebContents* WebContents::FromRenderViewHost(const RenderViewHost* rvh) {
   return rvh->GetDelegate()->GetAsWebContents();
 }
 
+// WebContentsImpl::DestructionObserver ----------------------------------------
+
+class WebContentsImpl::DestructionObserver : public WebContentsObserver {
+ public:
+  DestructionObserver(WebContentsImpl* owner, WebContents* watched_contents)
+      : WebContentsObserver(watched_contents),
+        owner_(owner) {
+  }
+
+  // WebContentsObserver:
+  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
+    owner_->OnWebContentsDestroyed(static_cast<WebContentsImpl*>(web_contents));
+  }
+
+ private:
+  WebContentsImpl* owner_;
+
+  DISALLOW_COPY_AND_ASSIGN(DestructionObserver);
+};
+
 // WebContentsImpl -------------------------------------------------------------
 
 WebContentsImpl::WebContentsImpl(
@@ -316,7 +336,7 @@ WebContentsImpl::WebContentsImpl(
       maximum_zoom_percent_(static_cast<int>(kMaximumZoomFactor * 100)),
       temporary_zoom_settings_(false),
       content_restrictions_(0),
-      color_chooser_(NULL),
+      color_chooser_identifier_(0),
       message_source_(NULL),
       fullscreen_widget_routing_id_(MSG_ROUTING_NONE) {
 }
@@ -371,6 +391,9 @@ WebContentsImpl::~WebContentsImpl() {
                     WebContentsImplDestroyed());
 
   SetDelegate(NULL);
+
+  STLDeleteContainerPairSecondPointers(destruction_observers_.begin(),
+                                       destruction_observers_.end());
 }
 
 WebContentsImpl* WebContentsImpl::CreateWithOpener(
@@ -507,14 +530,16 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
       command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
   prefs.css_shaders_enabled =
       command_line.HasSwitch(switches::kEnableCssShaders);
-  prefs.css_variables_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
   prefs.css_grid_layout_enabled =
       command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
   prefs.lazy_layout_enabled =
       command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
   prefs.threaded_html_parser =
       !command_line.HasSwitch(switches::kDisableThreadedHTMLParser);
+  prefs.experimental_websocket_enabled =
+      command_line.HasSwitch(switches::kEnableExperimentalWebSocket);
+  prefs.pinch_virtual_viewport_enabled =
+      command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport);
 
 #if defined(OS_ANDROID)
   prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
@@ -574,14 +599,11 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
   // pages (unless it's specifically allowed).
   if ((url.SchemeIs(chrome::kChromeUIScheme) ||
       (url.SchemeIs(chrome::kAboutScheme) &&
-       url.spec() != chrome::kAboutBlankURL)) &&
+       url.spec() != kAboutBlankURL)) &&
       !command_line.HasSwitch(switches::kAllowWebUICompositing)) {
     prefs.accelerated_compositing_enabled = false;
     prefs.accelerated_2d_canvas_enabled = false;
   }
-
-  prefs.apply_default_device_scale_factor_in_compositor = true;
-  prefs.apply_page_scale_factor_in_compositor = true;
 
   prefs.fixed_position_creates_stacking_context = !command_line.HasSwitch(
       switches::kDisableFixedPositionCreatesStackingContext);
@@ -663,6 +685,8 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
     IPC_MESSAGE_HANDLER(ViewHostMsg_RegisterProtocolHandler,
                         OnRegisterProtocolHandler)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Find_Reply, OnFindReply)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidProgrammaticallyScroll,
+                        OnDidProgrammaticallyScroll)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CrashedPlugin, OnCrashedPlugin)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AppCacheAccessed, OnAppCacheAccessed)
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenColorChooser, OnOpenColorChooser)
@@ -719,8 +743,20 @@ BrowserContext* WebContentsImpl::GetBrowserContext() const {
 }
 
 const GURL& WebContentsImpl::GetURL() const {
-  // We may not have a navigation entry yet
+  // We may not have a navigation entry yet.
   NavigationEntry* entry = controller_.GetActiveEntry();
+  return entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
+}
+
+const GURL& WebContentsImpl::GetActiveURL() const {
+  // We may not have a navigation entry yet.
+  NavigationEntry* entry = controller_.GetActiveEntry();
+  return entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
+}
+
+const GURL& WebContentsImpl::GetLastCommittedURL() const {
+  // We may not have a navigation entry yet.
+  NavigationEntry* entry = controller_.GetLastCommittedEntry();
   return entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
 }
 
@@ -856,6 +892,8 @@ const std::string& WebContentsImpl::GetUserAgentOverride() const {
 void WebContentsImpl::SetParentNativeViewAccessible(
 gfx::NativeViewAccessible accessible_parent) {
   accessible_parent_ = accessible_parent;
+  if (GetRenderViewHost())
+    GetRenderViewHostImpl()->SetParentNativeViewAccessible(accessible_parent);
 }
 #endif
 
@@ -1106,9 +1144,6 @@ void WebContentsImpl::Observe(int type,
                               const NotificationSource& source,
                               const NotificationDetails& details) {
   switch (type) {
-    case NOTIFICATION_WEB_CONTENTS_DESTROYED:
-      OnWebContentsDestroyed(Source<WebContents>(source).ptr());
-      break;
     case NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED: {
       RenderWidgetHost* host = Source<RenderWidgetHost>(source).ptr();
       for (PendingWidgetViews::iterator i = pending_widget_views_.begin();
@@ -1158,10 +1193,8 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
   view_->CreateView(initial_size, params.context);
 
   // Listen for whether our opener gets destroyed.
-  if (opener_) {
-    registrar_.Add(this, NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                   Source<WebContents>(opener_));
-  }
+  if (opener_)
+    AddDestructionObserver(opener_);
 
   registrar_.Add(this,
                  NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
@@ -1176,11 +1209,11 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
 #endif
 }
 
-void WebContentsImpl::OnWebContentsDestroyed(WebContents* web_contents) {
+void WebContentsImpl::OnWebContentsDestroyed(WebContentsImpl* web_contents) {
+  RemoveDestructionObserver(web_contents);
+
   // Clear the opener if it has been closed.
   if (web_contents == opener_) {
-    registrar_.Remove(this, NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                      Source<WebContents>(opener_));
     opener_ = NULL;
     return;
   }
@@ -1191,11 +1224,25 @@ void WebContentsImpl::OnWebContentsDestroyed(WebContents* web_contents) {
     if (iter->second != web_contents)
       continue;
     pending_contents_.erase(iter);
-    registrar_.Remove(this, NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                      Source<WebContents>(web_contents));
     return;
   }
   NOTREACHED();
+}
+
+void WebContentsImpl::AddDestructionObserver(WebContentsImpl* web_contents) {
+  if (!ContainsKey(destruction_observers_, web_contents)) {
+    destruction_observers_[web_contents] =
+        new DestructionObserver(this, web_contents);
+  }
+}
+
+void WebContentsImpl::RemoveDestructionObserver(WebContentsImpl* web_contents) {
+  DestructionObservers::iterator iter =
+      destruction_observers_.find(web_contents);
+  if (iter != destruction_observers_.end()) {
+    delete destruction_observers_[web_contents];
+    destruction_observers_.erase(iter);
+  }
 }
 
 void WebContentsImpl::AddObserver(WebContentsObserver* observer) {
@@ -1406,8 +1453,7 @@ void WebContentsImpl::CreateNewWindow(
     // later.
     DCHECK_NE(MSG_ROUTING_NONE, route_id);
     pending_contents_[route_id] = new_contents;
-    registrar_.Add(this, NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                   Source<WebContents>(new_contents));
+    AddDestructionObserver(new_contents);
   }
 
   if (delegate_) {
@@ -1542,8 +1588,7 @@ WebContentsImpl* WebContentsImpl::GetCreatedWindow(int route_id) {
 
   WebContentsImpl* new_contents = iter->second;
   pending_contents_.erase(route_id);
-  registrar_.Remove(this, NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                    Source<WebContents>(new_contents));
+  RemoveDestructionObserver(new_contents);
 
   // Don't initialize the guest WebContents immediately.
   if (new_contents->GetRenderProcessHost()->IsGuest())
@@ -1594,6 +1639,11 @@ void WebContentsImpl::RequestMediaAccessPermission(
     delegate_->RequestMediaAccessPermission(this, request, callback);
   else
     callback.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
+}
+
+void WebContentsImpl::DidSendScreenRects(RenderWidgetHostImpl* rwh) {
+  if (browser_plugin_embedder_)
+    browser_plugin_embedder_->DidSendScreenRects(rwh);
 }
 
 void WebContentsImpl::UpdatePreferredSize(const gfx::Size& pref_size) {
@@ -1935,11 +1985,11 @@ void WebContentsImpl::ViewSource() {
 }
 
 void WebContentsImpl::ViewFrameSource(const GURL& url,
-                                      const std::string& content_state) {
+                                      const PageState& page_state) {
   if (!delegate_)
     return;
 
-  delegate_->ViewSourceForFrame(this, url, content_state);
+  delegate_->ViewSourceForFrame(this, url, page_state);
 }
 
 int WebContentsImpl::GetMinimumZoomPercent() const {
@@ -1967,17 +2017,16 @@ bool WebContentsImpl::HasOpener() const {
   return opener_ != NULL;
 }
 
-void WebContentsImpl::DidChooseColorInColorChooser(int color_chooser_id,
-                                                   SkColor color) {
+void WebContentsImpl::DidChooseColorInColorChooser(SkColor color) {
   Send(new ViewMsg_DidChooseColorResponse(
-      GetRoutingID(), color_chooser_id, color));
+      GetRoutingID(), color_chooser_identifier_, color));
 }
 
-void WebContentsImpl::DidEndColorChooser(int color_chooser_id) {
-  Send(new ViewMsg_DidEndColorChooser(GetRoutingID(), color_chooser_id));
-  if (delegate_)
-    delegate_->DidEndColorChooser();
-  color_chooser_ = NULL;
+void WebContentsImpl::DidEndColorChooser() {
+  Send(new ViewMsg_DidEndColorChooser(GetRoutingID(),
+                                      color_chooser_identifier_));
+  color_chooser_.reset();
+  color_chooser_identifier_ = 0;
 }
 
 int WebContentsImpl::DownloadImage(const GURL& url,
@@ -1992,7 +2041,7 @@ int WebContentsImpl::DownloadImage(const GURL& url,
 
 bool WebContentsImpl::FocusLocationBarByDefault() {
   NavigationEntry* entry = controller_.GetActiveEntry();
-  if (entry && entry->GetURL() == GURL(chrome::kAboutBlankURL))
+  if (entry && entry->GetURL() == GURL(kAboutBlankURL))
     return true;
   return delegate_ && delegate_->ShouldFocusLocationBarByDefault(this);
 }
@@ -2009,7 +2058,7 @@ void WebContentsImpl::DidStartProvisionalLoadForFrame(
     bool is_main_frame,
     const GURL& url) {
   bool is_error_page = (url.spec() == kUnreachableWebDataURL);
-  bool is_iframe_srcdoc = (url.spec() == chrome::kAboutSrcDocURL);
+  bool is_iframe_srcdoc = (url.spec() == kAboutSrcDocURL);
   GURL validated_url(url);
   RenderProcessHost* render_process_host =
       render_view_host->GetProcess();
@@ -2289,6 +2338,12 @@ void WebContentsImpl::OnFindReply(int request_id,
   }
 }
 
+void WebContentsImpl::OnDidProgrammaticallyScroll(
+    const gfx::Vector2d& scroll_point) {
+  if (delegate_)
+    delegate_->DidProgrammaticallyScroll(this, scroll_point);
+}
+
 #if defined(OS_ANDROID)
 void WebContentsImpl::OnFindMatchRectsReply(
     int version,
@@ -2323,20 +2378,23 @@ void WebContentsImpl::OnAppCacheAccessed(const GURL& manifest_url,
 
 void WebContentsImpl::OnOpenColorChooser(int color_chooser_id,
                                          SkColor color) {
-  color_chooser_ = delegate_ ?
-      delegate_->OpenColorChooser(this, color_chooser_id, color) : NULL;
+  ColorChooser* new_color_chooser = delegate_->OpenColorChooser(this, color);
+  if (color_chooser_ == new_color_chooser)
+    return;
+  color_chooser_.reset(new_color_chooser);
+  color_chooser_identifier_ = color_chooser_id;
 }
 
 void WebContentsImpl::OnEndColorChooser(int color_chooser_id) {
   if (color_chooser_ &&
-      color_chooser_id == color_chooser_->identifier())
+      color_chooser_id == color_chooser_identifier_)
     color_chooser_->End();
 }
 
 void WebContentsImpl::OnSetSelectedColorInColorChooser(int color_chooser_id,
                                                        SkColor color) {
   if (color_chooser_ &&
-      color_chooser_id == color_chooser_->identifier())
+      color_chooser_id == color_chooser_identifier_)
     color_chooser_->SetSelectedColor(color);
 }
 
@@ -2397,6 +2455,7 @@ void WebContentsImpl::OnBrowserPluginMessage(const IPC::Message& message) {
 
 void WebContentsImpl::OnDidDownloadImage(
     int id,
+    int http_status_code,
     const GURL& image_url,
     int requested_size,
     const std::vector<SkBitmap>& bitmaps) {
@@ -2407,7 +2466,7 @@ void WebContentsImpl::OnDidDownloadImage(
     return;
   }
   if (!iter->second.is_null()) {
-    iter->second.Run(id, image_url, requested_size, bitmaps);
+    iter->second.Run(id, http_status_code, image_url, requested_size, bitmaps);
   }
   image_download_map_.erase(id);
 }
@@ -2779,7 +2838,7 @@ void WebContentsImpl::DidNavigate(
   // this is for about:blank.  In that case, the SiteInstance can still be
   // considered unused until a navigation to a real page.
   if (!static_cast<SiteInstanceImpl*>(GetSiteInstance())->HasSite() &&
-      params.url != GURL(chrome::kAboutBlankURL)) {
+      params.url != GURL(kAboutBlankURL)) {
     static_cast<SiteInstanceImpl*>(GetSiteInstance())->SetSite(params.url);
   }
 
@@ -2843,7 +2902,7 @@ void WebContentsImpl::DidNavigate(
 
 void WebContentsImpl::UpdateState(RenderViewHost* rvh,
                                   int32 page_id,
-                                  const std::string& state) {
+                                  const PageState& page_state) {
   // Ensure that this state update comes from either the active RVH or one of
   // the swapped out RVHs.  We don't expect to hear from any other RVHs.
   DCHECK(rvh == GetRenderViewHost() || render_manager_.IsOnSwappedOutList(rvh));
@@ -2860,9 +2919,9 @@ void WebContentsImpl::UpdateState(RenderViewHost* rvh,
     return;
   NavigationEntry* entry = controller_.GetEntryAtIndex(entry_index);
 
-  if (state == entry->GetContentState())
+  if (page_state == entry->GetPageState())
     return;  // Nothing to update.
-  entry->SetContentState(state);
+  entry->SetPageState(page_state);
   controller_.NotifyEntryChanged(entry, entry_index);
 }
 
@@ -2990,8 +3049,7 @@ void WebContentsImpl::DidDisownOpener(RenderViewHost* rvh) {
   if (opener_) {
     // Clear our opener so that future cross-process navigations don't have an
     // opener assigned.
-    registrar_.Remove(this, NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                      Source<WebContents>(opener_));
+    RemoveDestructionObserver(opener_);
     opener_ = NULL;
   }
 

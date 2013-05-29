@@ -4,6 +4,9 @@
 
 #include "cc/output/gl_renderer.h"
 
+#include <set>
+
+#include "cc/base/math_util.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_provider.h"
@@ -148,7 +151,10 @@ class FakeRendererClient : public RendererClient {
         last_call_was_set_visibility_(0),
         root_layer_(LayerImpl::Create(host_impl_.active_tree(), 1)),
         memory_allocation_limit_bytes_(
-            PrioritizedResourceManager::DefaultMemoryAllocationLimit()) {
+            PrioritizedResourceManager::DefaultMemoryAllocationLimit()),
+        viewport_size_(gfx::Size(1, 1)),
+        scale_factor_(1.f),
+        is_viewport_changed_(true) {
     root_layer_->CreateRenderSurface();
     RenderPass::Id render_pass_id =
         root_layer_->render_surface()->RenderPassId();
@@ -162,6 +168,9 @@ class FakeRendererClient : public RendererClient {
   virtual gfx::Size DeviceViewportSize() const OVERRIDE {
     static gfx::Size fake_size(1, 1);
     return fake_size;
+  }
+  virtual float DeviceScaleFactor() const OVERRIDE {
+    return scale_factor_;
   }
   virtual const LayerTreeSettings& Settings() const OVERRIDE {
     static LayerTreeSettings fake_settings;
@@ -196,6 +205,14 @@ class FakeRendererClient : public RendererClient {
       bool* last_call_was_set_visibility) {
     last_call_was_set_visibility_ = last_call_was_set_visibility;
   }
+  void set_viewport_and_scale(
+      gfx::Size viewport_size, float scale_factor) {
+    viewport_size_ = viewport_size;
+    scale_factor_ = scale_factor;
+    is_viewport_changed_ = true;
+  }
+  bool is_viewport_changed() const { return is_viewport_changed_; }
+  void clear_viewport_changed() { is_viewport_changed_ = false; }
 
   RenderPass* root_render_pass() { return render_passes_in_draw_order_.back(); }
   RenderPassList* render_passes_in_draw_order() {
@@ -214,6 +231,9 @@ class FakeRendererClient : public RendererClient {
   scoped_ptr<LayerImpl> root_layer_;
   RenderPassList render_passes_in_draw_order_;
   size_t memory_allocation_limit_bytes_;
+  gfx::Size viewport_size_;
+  float scale_factor_;
+  bool is_viewport_changed_;
 };
 
 class FakeRendererGL : public GLRenderer {
@@ -248,7 +268,7 @@ class GLRendererTest : public testing::Test {
 
   virtual void SetUp() { renderer_.Initialize(); }
 
-  void SwapBuffers() { renderer_.SwapBuffers(LatencyInfo()); }
+  void SwapBuffers() { renderer_.SwapBuffers(ui::LatencyInfo()); }
 
   FrameCountingMemoryAllocationSettingContext* Context() {
     return static_cast<FrameCountingMemoryAllocationSettingContext*>(
@@ -269,15 +289,77 @@ class GLRendererTest : public testing::Test {
 // declared above it.
 }  // namespace
 
+
+// Gives unique shader ids and unique program ids for tests that need them.
+class ShaderCreatorMockGraphicsContext : public TestWebGraphicsContext3D {
+ public:
+  ShaderCreatorMockGraphicsContext()
+      : next_program_id_number_(10000),
+        next_shader_id_number_(1) {}
+
+  bool hasShader(WebGLId shader) {
+    return shader_set_.find(shader) != shader_set_.end();
+  }
+
+  bool hasProgram(WebGLId program) {
+    return program_set_.find(program) != program_set_.end();
+  }
+
+  virtual WebGLId createProgram() {
+    unsigned program = next_program_id_number_;
+    program_set_.insert(program);
+    next_program_id_number_++;
+    return program;
+  }
+
+  virtual void deleteProgram(WebGLId program) {
+    ASSERT_TRUE(hasProgram(program));
+    program_set_.erase(program);
+  }
+
+  virtual void useProgram(WebGLId program) {
+    if (!program)
+      return;
+    ASSERT_TRUE(hasProgram(program));
+  }
+
+  virtual WebKit::WebGLId createShader(WebKit::WGC3Denum) {
+    unsigned shader = next_shader_id_number_;
+    shader_set_.insert(shader);
+    next_shader_id_number_++;
+    return shader;
+  }
+
+  virtual void deleteShader(WebKit::WebGLId shader) {
+    ASSERT_TRUE(hasShader(shader));
+    shader_set_.erase(shader);
+  }
+
+  virtual void attachShader(WebGLId program, WebGLId shader) {
+    ASSERT_TRUE(hasProgram(program));
+    ASSERT_TRUE(hasShader(shader));
+  }
+
+ protected:
+  unsigned next_program_id_number_;
+  unsigned next_shader_id_number_;
+  std::set<unsigned> program_set_;
+  std::set<unsigned> shader_set_;
+};
+
 class GLRendererShaderTest : public testing::Test {
  protected:
   GLRendererShaderTest()
-      : output_surface_(FakeOutputSurface::Create3d()),
+      : output_surface_(FakeOutputSurface::Create3d(
+            scoped_ptr<WebKit::WebGraphicsContext3D>(
+                new ShaderCreatorMockGraphicsContext()))),
         resource_provider_(ResourceProvider::Create(output_surface_.get(), 0)),
-        renderer_(GLRenderer::Create(&mock_client_,
-                                     output_surface_.get(),
-                                     resource_provider_.get(),
-                                     0)) {}
+        renderer_(scoped_ptr<FakeRendererGL>(
+            new FakeRendererGL(&mock_client_,
+                               output_surface_.get(),
+                               resource_provider_.get()))) {
+    renderer_->Initialize();
+  }
 
   void TestRenderPassProgram() {
     EXPECT_PROGRAM_VALID(renderer_->render_pass_program_);
@@ -336,7 +418,7 @@ class GLRendererShaderTest : public testing::Test {
   scoped_ptr<OutputSurface> output_surface_;
   FakeRendererClient mock_client_;
   scoped_ptr<ResourceProvider> resource_provider_;
-  scoped_ptr<GLRenderer> renderer_;
+  scoped_ptr<FakeRendererGL> renderer_;
 };
 
 namespace {
@@ -1023,7 +1105,11 @@ TEST(GLRendererTest2, ScissorTestWhenClearing) {
   renderer.DrawFrame(mock_client.render_passes_in_draw_order());
 }
 
-TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
+// This test was never actually working as intended. Before adding
+// ShaderCreatorMockGraphicsContext, all shader programs received the same
+// program identifier from the TestWebGraphicsContext3D, so it always passed
+// when checking which shader was used.
+TEST_F(GLRendererShaderTest, DISABLED_DrawRenderPassQuadShaderPermutations) {
   gfx::Rect viewport_rect(mock_client_.DeviceViewportSize());
   ScopedPtrVector<RenderPass>* render_passes =
       mock_client_.render_passes_in_draw_order();
@@ -1279,6 +1365,57 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
   TestRenderPassMaskColorMatrixProgramAA();
 }
 
+// At this time, the AA code path cannot be taken if the surface's rect would
+// project incorrectly by the given transform, because of w<0 clipping.
+TEST_F(GLRendererShaderTest, DrawRenderPassQuadSkipsAAForClippingTransform) {
+  gfx::Rect child_rect(50, 50);
+  RenderPass::Id child_pass_id(2, 0);
+  TestRenderPass* child_pass;
+
+  gfx::Rect viewport_rect(mock_client_.DeviceViewportSize());
+  RenderPass::Id root_pass_id(1, 0);
+  TestRenderPass* root_pass;
+
+  gfx::Transform transform_preventing_aa;
+  transform_preventing_aa.ApplyPerspectiveDepth(40.0);
+  transform_preventing_aa.RotateAboutYAxis(-20.0);
+  transform_preventing_aa.Scale(30.0, 1.0);
+
+  // Verify that the test transform and test rect actually do cause the clipped
+  // flag to trigger. Otherwise we are not testing the intended scenario.
+  bool clipped = false;
+  MathUtil::MapQuad(transform_preventing_aa,
+                    gfx::QuadF(child_rect),
+                    &clipped);
+  ASSERT_TRUE(clipped);
+
+  // Set up the render pass quad to be drawn
+  ScopedPtrVector<RenderPass>* render_passes =
+      mock_client_.render_passes_in_draw_order();
+
+  render_passes->clear();
+
+  child_pass = AddRenderPass(
+      render_passes, child_pass_id, child_rect, transform_preventing_aa);
+
+  root_pass = AddRenderPass(
+      render_passes, root_pass_id, viewport_rect, gfx::Transform());
+
+  AddRenderPassQuad(root_pass,
+                    child_pass,
+                    0,
+                    skia::RefPtr<SkImageFilter>(),
+                    transform_preventing_aa);
+
+  renderer_->DecideRenderPassAllocationsForFrame(
+      *mock_client_.render_passes_in_draw_order());
+  renderer_->DrawFrame(mock_client_.render_passes_in_draw_order());
+
+  // If use_aa incorrectly ignores clipping, it will use the
+  // RenderPassProgramAA shader instead of the RenderPassProgram.
+  TestRenderPassProgram();
+}
+
 TEST_F(GLRendererShaderTest, DrawSolidColorShader) {
   gfx::Rect viewport_rect(mock_client_.DeviceViewportSize());
   ScopedPtrVector<RenderPass>* render_passes =
@@ -1317,7 +1454,8 @@ class OutputSurfaceMockContext : public TestWebGraphicsContext3D {
   MOCK_METHOD0(discardBackbufferCHROMIUM, void());
   MOCK_METHOD2(bindFramebuffer, void(WGC3Denum target, WebGLId framebuffer));
   MOCK_METHOD0(prepareTexture, void());
-  MOCK_METHOD2(reshape, void(int width, int height));
+  MOCK_METHOD3(reshapeWithScaleFactor,
+               void(int width, int height, float scale_factor));
   MOCK_METHOD4(drawElements,
                void(WGC3Denum mode,
                     WGC3Dsizei count,
@@ -1342,10 +1480,10 @@ class MockOutputSurface : public OutputSurface {
   MOCK_METHOD1(SendFrameToParentCompositor, void(CompositorFrame* frame));
   MOCK_METHOD0(EnsureBackbuffer, void());
   MOCK_METHOD0(DiscardBackbuffer, void());
-  MOCK_METHOD1(Reshape, void(gfx::Size size));
+  MOCK_METHOD2(Reshape, void(gfx::Size size, float scale_factor));
   MOCK_METHOD0(BindFramebuffer, void());
-  MOCK_METHOD2(PostSubBuffer, void(gfx::Rect rect, const LatencyInfo&));
-  MOCK_METHOD1(SwapBuffers, void(const LatencyInfo&));
+  MOCK_METHOD2(PostSubBuffer, void(gfx::Rect rect, const ui::LatencyInfo&));
+  MOCK_METHOD1(SwapBuffers, void(const ui::LatencyInfo&));
 };
 
 class MockOutputSurfaceTest : public testing::Test, public FakeRendererClient {
@@ -1356,7 +1494,7 @@ class MockOutputSurfaceTest : public testing::Test, public FakeRendererClient {
 
   virtual void SetUp() { EXPECT_TRUE(renderer_.Initialize()); }
 
-  void SwapBuffers() { renderer_.SwapBuffers(LatencyInfo()); }
+  void SwapBuffers() { renderer_.SwapBuffers(ui::LatencyInfo()); }
 
   void DrawFrame() {
     gfx::Rect viewport_rect(DeviceViewportSize());
@@ -1370,7 +1508,11 @@ class MockOutputSurfaceTest : public testing::Test, public FakeRendererClient {
 
     EXPECT_CALL(output_surface_, EnsureBackbuffer()).WillRepeatedly(Return());
 
-    EXPECT_CALL(output_surface_, Reshape(_)).Times(1);
+    if (is_viewport_changed()) {
+      EXPECT_CALL(output_surface_,
+                  Reshape(DeviceViewportSize(), DeviceScaleFactor())).Times(1);
+      clear_viewport_changed();
+    }
 
     EXPECT_CALL(output_surface_, BindFramebuffer()).Times(1);
 
@@ -1394,7 +1536,31 @@ TEST_F(MockOutputSurfaceTest, DrawFrameAndSwap) {
   DrawFrame();
 
   EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
-  renderer_.SwapBuffers(LatencyInfo());
+  renderer_.SwapBuffers(ui::LatencyInfo());
+}
+
+TEST_F(MockOutputSurfaceTest, DrawFrameAndResizeAndSwap) {
+  DrawFrame();
+  EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
+  renderer_.SwapBuffers(ui::LatencyInfo());
+
+  set_viewport_and_scale(gfx::Size(2, 2), 2.f);
+  renderer_.ViewportChanged();
+
+  DrawFrame();
+  EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
+  renderer_.SwapBuffers(ui::LatencyInfo());
+
+  DrawFrame();
+  EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
+  renderer_.SwapBuffers(ui::LatencyInfo());
+
+  set_viewport_and_scale(gfx::Size(1, 1), 1.f);
+  renderer_.ViewportChanged();
+
+  DrawFrame();
+  EXPECT_CALL(output_surface_, SwapBuffers(_)).Times(1);
+  renderer_.SwapBuffers(ui::LatencyInfo());
 }
 
 class MockOutputSurfaceTestWithPartialSwap : public MockOutputSurfaceTest {
@@ -1410,7 +1576,7 @@ TEST_F(MockOutputSurfaceTestWithPartialSwap, DrawFrameAndSwap) {
   DrawFrame();
 
   EXPECT_CALL(output_surface_, PostSubBuffer(_, _)).Times(1);
-  renderer_.SwapBuffers(LatencyInfo());
+  renderer_.SwapBuffers(ui::LatencyInfo());
 }
 
 class MockOutputSurfaceTestWithSendCompositorFrame

@@ -11,14 +11,14 @@
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace extensions {
 
 // static
 InstallTracker* InstallTrackerFactory::GetForProfile(Profile* profile) {
   return static_cast<InstallTracker*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 InstallTrackerFactory* InstallTrackerFactory::GetInstance() {
@@ -26,15 +26,16 @@ InstallTrackerFactory* InstallTrackerFactory::GetInstance() {
 }
 
 InstallTrackerFactory::InstallTrackerFactory()
-    : ProfileKeyedServiceFactory("InstallTracker",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "InstallTracker",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(ExtensionSystemFactory::GetInstance());
 }
 
 InstallTrackerFactory::~InstallTrackerFactory() {
 }
 
-ProfileKeyedService* InstallTrackerFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* InstallTrackerFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
   ExtensionService* service =

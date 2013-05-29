@@ -114,6 +114,9 @@ const char kAppsNoThrob[]                   = "apps-no-throb";
 // Experimental native frame support for packaged apps.
 const char kAppsUseNativeFrame[]            = "apps-use-native-frame";
 
+// Enables overriding the path for the default authentication extension.
+const char kAuthExtensionPath[]             = "auth-ext-path";
+
 // Whitelist of servers that Negotiate will generate delegated Kerberos tickets
 // for.
 const char kAuthNegotiateDelegateWhitelist[] =
@@ -510,10 +513,8 @@ const char kEnableDesktopGuestMode[]        = "enable-desktop-guest-mode";
 // If true devtools experimental settings are enabled.
 const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
 
-// Enables an interactive autocomplete UI and a way to invoke this UI from
-// WebKit by enabling HTMLFormElement#requestAutocomplete (and associated
-// autocomplete* events and logic).
-const char kEnableInteractiveAutocomplete[] = "enable-interactive-autocomplete";
+// Enable draggable menu button.
+const char kEnableDraggableMenuButton[]     = "enable-draggable-menu-button";
 
 // Enables extensions to be easily installed from sites other than the web
 // store. Without this flag, they can still be installed, but must be manually
@@ -630,6 +631,10 @@ const char kEnableProfiling[]               = "enable-profiling";
 // Enables support for the QUIC protocol.  This is a temporary testing flag.
 const char kEnableQuic[]                    = "enable-quic";
 
+// Enables support in chrome://settings to reset settings in your profile
+// that are often touched by malware.
+const char kEnableResetProfileSettings[]    = "enable-reset-profile-settings";
+
 // Enables content settings based on host *and* plug-in in the user
 // preferences.
 const char kEnableResourceContentSettings[] =
@@ -643,9 +648,6 @@ const char kEnableSdch[]                    = "enable-sdch";
 
 // Disable SPDY/3.1. This is a temporary testing flag.
 const char kDisableSpdy31[]                 = "disable-spdy31";
-
-// Enable SPDY/4 alpha 1. This is a temporary testing flag.
-const char kEnableSpdy4a1[]                 = "enable-spdy4a1";
 
 // Enable SPDY CREDENTIAL frame support.  This is a temporary testing flag.
 const char kEnableSpdyCredentialFrames[]    = "enable-spdy-credential-frames";
@@ -824,14 +826,6 @@ const char kHstsHosts[]                     = "hsts-hosts";
 const char kIgnoreUrlFetcherCertRequests[]  =
     "ignore-urlfetcher-cert-requests";
 
-// Performs importing from another browser. The value associated with this
-// setting encodes the target browser and what items to import.
-const char kImport[]                        = "import";
-
-// Performs bookmark importing from an HTML file. The value associated with
-// this setting encodes the file path. It may be used jointly with kImport.
-const char kImportFromFile[]                = "import-from-file";
-
 // Causes the browser to launch directly in incognito mode.
 const char kIncognito[]                     = "incognito";
 
@@ -877,14 +871,15 @@ const char kLoadExtension[]                 = "load-extension";
 // to a separate file if a file name is given.
 const char kLogNetLog[]                     = "log-net-log";
 
-// Uninstalls an extension with the specified extension id.
-const char kUninstallExtension[]            = "uninstall-extension";
+// Makes Chrome default browser
+const char kMakeDefaultBrowser[]            = "make-default-browser";
+
+// Used to authenticate requests to the Sync service for managed users. Setting
+// this switch also causes Sync to be set up for a managed user.
+const char kManagedUserSyncToken[]          = "managed-user-sync-token";
 
 // Starts the browser in managed mode.
 const char kManaged[]                       = "managed";
-
-// Makes Chrome default browser
-const char kMakeDefaultBrowser[]            = "make-default-browser";
 
 // Forces the maximum disk space to be used by the media cache, in bytes.
 const char kMediaCacheSize[]                = "media-cache-size";
@@ -1417,6 +1412,9 @@ const char kTrustedSpdyProxy[]              = "trusted-spdy-proxy";
 // be used only by the upgrade process.
 const char kTryChromeAgain[]                = "try-chrome-again";
 
+// Uninstalls an extension with the specified extension id.
+const char kUninstallExtension[]            = "uninstall-extension";
+
 // Runs un-installation steps that were done by chrome first-run.
 const char kUninstall[]                     = "uninstall";
 
@@ -1465,10 +1463,6 @@ const char kViewerConnection[]              = "viewer-connection";
 
 // Cycle through a series of URLs listed in the specified file.
 const char kVisitURLs[]                     = "visit-urls";
-
-// Enable the "native services" feature of web-intents.
-const char kWebIntentsNativeServicesEnabled[] =
-    "web-intents-native-services-enabled";
 
 // Adds the given extension ID to all the permission whitelists.
 const char kWhitelistedExtensionID[]        = "whitelisted-extension-id";
@@ -1525,6 +1519,11 @@ const char kPasswordStore[]                 = "password-store";
 #endif  // OS_POSIX
 
 #if defined(OS_MACOSX)
+// Enables the app list OSX .app shim, for showing the app list. If the flag is
+// not present, Chrome will check if the shim exists at startup, and delete it
+// if it does.
+const char kEnableAppListShim[]             = "enable-app-list-shim";
+
 // Enables the tabs expose feature ( http://crbug.com/50307 ).
 const char kEnableExposeForTabs[]           = "enable-expose-for-tabs";
 
@@ -1542,6 +1541,11 @@ const char kUseMockKeychain[]               = "use-mock-keychain";
 #endif
 
 #if defined(OS_WIN)
+// If set, the app list will be disabled at startup. Note this doesn't prevent
+// the app list from running, it just makes Chrome think the app list hasn't
+// been enabled (as in kEnableAppList) yet.
+const char kDisableAppList[]                = "disable-app-list";
+
 // If set, the app list will be enabled as if enabled from CWS.
 const char kEnableAppList[]                 = "enable-app-list";
 
@@ -1573,10 +1577,6 @@ const char kFileManagerExtensionPath[]      = "filemgr-ext-path";
 
 // Enables overriding the path of image loader extension.
 const char kImageLoaderExtensionPath[]      = "image-loader-ext-path";
-
-// Dumps dependency information about our profile services into a dot file in
-// the profile directory.
-const char kDumpProfileDependencyGraph[]    = "dump-profile-graph";
 #endif  // NDEBUG
 
 // Controls print preview in the browser process.

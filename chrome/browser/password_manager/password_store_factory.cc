@@ -11,12 +11,12 @@
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_default.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 #if defined(OS_WIN)
@@ -54,7 +54,7 @@ scoped_refptr<PasswordStore> PasswordStoreFactory::GetForProfile(
   }
 
   return static_cast<PasswordStore*>(
-      GetInstance()->GetServiceForProfile(profile, true).get());
+      GetInstance()->GetServiceForBrowserContext(profile, true).get());
 }
 
 // static
@@ -63,9 +63,9 @@ PasswordStoreFactory* PasswordStoreFactory::GetInstance() {
 }
 
 PasswordStoreFactory::PasswordStoreFactory()
-    : RefcountedProfileKeyedServiceFactory(
+    : RefcountedBrowserContextKeyedServiceFactory(
         "PasswordStore",
-        ProfileDependencyManager::GetInstance()) {
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(WebDataServiceFactory::GetInstance());
 }
 
@@ -93,7 +93,7 @@ LocalProfileId PasswordStoreFactory::GetLocalProfileId(
 }
 #endif
 
-scoped_refptr<RefcountedProfileKeyedService>
+scoped_refptr<RefcountedBrowserContextKeyedService>
 PasswordStoreFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);

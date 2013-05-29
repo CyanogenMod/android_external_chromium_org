@@ -39,7 +39,7 @@ const QuicTag kC255 = TAG('C', '2', '5', '5');  // ECDH, Curve25519
 
 // AEAD algorithms
 const QuicTag kNULL = TAG('N', 'U', 'L', 'L');  // null algorithm
-const QuicTag kAESG = TAG('A', 'E', 'S', 'G');  // AES128 + GCM
+const QuicTag kAESG = TAG('A', 'E', 'S', 'G');  // AES128 + GCM-12
 
 // Congestion control feedback types
 const QuicTag kQBIC = TAG('Q', 'B', 'I', 'C');  // TCP cubic
@@ -60,6 +60,7 @@ const QuicTag kCGST = TAG('C', 'G', 'S', 'T');  // Congestion control
 const QuicTag kICSL = TAG('I', 'C', 'S', 'L');  // Idle connection state
                                                 // lifetime
 const QuicTag kKATO = TAG('K', 'A', 'T', 'O');  // Keepalive timeout
+const QuicTag kMSPC = TAG('M', 'S', 'P', 'C');  // Max streams per connection.
 const QuicTag kSNI  = TAG('S', 'N', 'I', '\0'); // Server name
                                                 // indication
 const QuicTag kPUBS = TAG('P', 'U', 'B', 'S');  // Public key values
@@ -70,6 +71,9 @@ const QuicTag kPROF = TAG('P', 'R', 'O', 'F');  // Proof (signature).
 const QuicTag kCCS  = TAG('C', 'C', 'S', 0);    // Common certificate set
 const QuicTag kCCRT = TAG('C', 'C', 'R', 'T');  // Cached certificate
 const QuicTag kEXPY = TAG('E', 'X', 'P', 'Y');  // Expiry
+
+// Universal tags
+const QuicTag kPAD  = TAG('P', 'A', 'D', '\0'); // Padding
 
 // These tags have a special form so that they appear either at the beginning
 // or the end of a handshake message. Since handshake messages are sorted by
@@ -103,6 +107,12 @@ const size_t kOrbitSize = 8;  // Number of bytes in an orbit value.
 // kProofSignatureLabel is prepended to server configs before signing to avoid
 // any cross-protocol attacks on the signature.
 const char kProofSignatureLabel[] = "QUIC server config signature";
+
+// kClientHelloMinimumSize is the minimum size of a client hello. Client hellos
+// will have PAD tags added in order to ensure this minimum is met and client
+// hellos smaller than this will be an error. This minimum size reduces the
+// amplification factor of any mirror DoS attack.
+const size_t kClientHelloMinimumSize = 512;
 
 }  // namespace net
 

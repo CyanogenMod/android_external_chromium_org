@@ -52,8 +52,8 @@
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/size_f.h"
+#include "webkit/common/user_agent/user_agent_util.h"
 #include "webkit/glue/webmenuitem.h"
-#include "webkit/user_agent/user_agent_util.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF16;
@@ -699,6 +699,14 @@ void ContentViewCoreImpl::SetVSyncNotificationEnabled(bool enabled) {
       env, obj.obj(), static_cast<jboolean>(enabled));
 }
 
+void ContentViewCoreImpl::SetNeedsAnimate() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+  Java_ContentViewCore_setNeedsAnimate(env, obj.obj());
+}
+
 ui::ViewAndroid* ContentViewCoreImpl::GetViewAndroid() const {
   // view_android_ should never be null for Chrome.
   DCHECK(view_android_);
@@ -853,14 +861,6 @@ float ContentViewCoreImpl::GetTouchPaddingDip() {
 
 float ContentViewCoreImpl::GetDpiScale() const {
   return dpi_scale_;
-}
-
-void ContentViewCoreImpl::SetInputHandler(
-    WebKit::WebCompositorInputHandler* input_handler) {
-  if (!input_event_filter_)
-    input_event_filter_.reset(new SyncInputEventFilter);
-
-  input_event_filter_->SetInputHandler(input_handler);
 }
 
 void ContentViewCoreImpl::RequestContentClipping(
@@ -1236,7 +1236,17 @@ void ContentViewCoreImpl::OnVSync(JNIEnv* env, jobject /* obj */,
   if (!view)
     return;
 
-  view->SendVSync(base::TimeTicks::FromInternalValue(frame_time_micros));
+  view->SendBeginFrame(
+      base::TimeTicks::FromInternalValue(frame_time_micros));
+}
+
+jboolean ContentViewCoreImpl::OnAnimate(JNIEnv* env, jobject /* obj */,
+                                        jlong frame_time_micros) {
+  RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
+  if (!view)
+    return false;
+
+  return view->Animate(base::TimeTicks::FromInternalValue(frame_time_micros));
 }
 
 jboolean ContentViewCoreImpl::PopulateBitmapFromCompositor(JNIEnv* env,
@@ -1278,8 +1288,11 @@ void ContentViewCoreImpl::AttachExternalVideoSurface(JNIEnv* env,
 #if defined(GOOGLE_TV)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  if (rvhi && rvhi->media_player_manager()) {
-    rvhi->media_player_manager()->AttachExternalVideoSurface(
+  MediaPlayerManagerImpl* media_player_manager_impl =
+      rvhi ? static_cast<MediaPlayerManagerImpl*>(rvhi->media_player_manager())
+           : NULL;
+  if (media_player_manager_impl) {
+    media_player_manager_impl->AttachExternalVideoSurface(
         static_cast<int>(player_id), jsurface);
   }
 #endif
@@ -1291,8 +1304,11 @@ void ContentViewCoreImpl::DetachExternalVideoSurface(JNIEnv* env,
 #if defined(GOOGLE_TV)
   RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
       web_contents_->GetRenderViewHost());
-  if (rvhi && rvhi->media_player_manager()) {
-    rvhi->media_player_manager()->DetachExternalVideoSurface(
+  MediaPlayerManagerImpl* media_player_manager_impl =
+      rvhi ? static_cast<MediaPlayerManagerImpl*>(rvhi->media_player_manager())
+           : NULL;
+  if (media_player_manager_impl) {
+    media_player_manager_impl->DetachExternalVideoSurface(
         static_cast<int>(player_id));
   }
 #endif

@@ -14,6 +14,7 @@ import struct
 import subprocess
 import sys
 
+import getos
 import quote
 
 if sys.version_info < (2, 6, 0):
@@ -22,6 +23,8 @@ if sys.version_info < (2, 6, 0):
 
 NeededMatcher = re.compile('^ *NEEDED *([^ ]+)\n$')
 FormatMatcher = re.compile('^(.+):\\s*file format (.+)\n$')
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 OBJDUMP_ARCH_MAP = {
     # Names returned by Linux's objdump:
@@ -187,7 +190,7 @@ class ArchFile(object):
     self.path = path
     self.url = url
     self.arch = arch
-    if arch is None:
+    if not arch:
       self.arch = ParseElfHeader(path)[0]
 
   def __repr__(self):
@@ -232,15 +235,23 @@ class NmfUtils(object):
     self.remap = remap or {}
     self.pnacl = main_files and main_files[0].endswith('pexe')
 
-  def GleanFromObjdump(self, files):
+    for filename in self.main_files:
+      if not os.path.exists(filename):
+        raise Error('Input file not found: %s' % filename)
+      if not os.path.isfile(filename):
+        raise Error('Input is not a file: %s' % filename)
+
+  def GleanFromObjdump(self, files, arch):
     '''Get architecture and dependency information for given files
 
     Args:
-      files: A dict with key=filename and value=list or set of archs.  E.g.:
-          { '/path/to/my.nexe': ['x86-32']
-            '/path/to/lib64/libmy.so': ['x86-64'],
-            '/path/to/mydata.so': ['x86-32', 'x86-64'],
-            '/path/to/my.data': None }  # Indicates all architectures
+      files: A list of files to examine.
+          [ '/path/to/my.nexe',
+            '/path/to/lib64/libmy.so',
+            '/path/to/mydata.so',
+            '/path/to/my.data' ]
+      arch: The architecure we are looking for, or None to accept any
+            architecture.
 
     Returns: A tuple with the following members:
       input_info: A dict with key=filename and value=ArchFile of input files.
@@ -251,12 +262,25 @@ class NmfUtils(object):
           set(['x86-32/libc.so', 'x86-64/libgcc.so'])
     '''
     if not self.objdump:
-      raise Error('No objdump executable specified (see --help for more info)')
-    DebugPrint('GleanFromObjdump(%s)' % ([self.objdump, '-p'] + files.keys()))
-    proc = subprocess.Popen([self.objdump, '-p'] + files.keys(),
-                            stdout=subprocess.PIPE,
+      self.objdump = FindObjdumpExecutable()
+      if not self.objdump:
+        raise Error('No objdump executable found (see --help for more info)')
+
+    full_paths = set()
+    for filename in files:
+      if os.path.exists(filename):
+        full_paths.add(filename)
+      else:
+        for path in self.FindLibsInPath(filename):
+          full_paths.add(path)
+
+    cmd = [self.objdump, '-p'] + list(full_paths)
+    DebugPrint('GleanFromObjdump[%s](%s)' % (arch, cmd))
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, bufsize=-1)
+
     input_info = {}
+    found_basenames = set()
     needed = set()
     output, err_output = proc.communicate()
     if proc.returncode:
@@ -269,18 +293,26 @@ class NmfUtils(object):
       matched = FormatMatcher.match(line)
       if matched:
         filename = matched.group(1)
-        arch = OBJDUMP_ARCH_MAP[matched.group(2)]
-        if files[filename] is None or arch in files[filename]:
-          name = os.path.basename(filename)
-          input_info[filename] = ArchFile(
-              arch=arch,
-              name=name,
-              path=filename,
-              url='/'.join(self.lib_prefix + [ARCH_LOCATION[arch], name]))
+        file_arch = OBJDUMP_ARCH_MAP[matched.group(2)]
+        if arch and file_arch != arch:
+          continue
+        name = os.path.basename(filename)
+        found_basenames.add(name)
+        input_info[filename] = ArchFile(
+            arch=file_arch,
+            name=name,
+            path=filename,
+            url='/'.join(self.lib_prefix + [ARCH_LOCATION[file_arch], name]))
       matched = NeededMatcher.match(line)
       if matched:
-        if files[filename] is None or arch in files[filename]:
-          needed.add('/'.join([arch, matched.group(1)]))
+        match = '/'.join([file_arch, matched.group(1)])
+        needed.add(match)
+        Trace("NEEDED: %s" % match)
+
+    for filename in files:
+      if os.path.basename(filename) not in found_basenames:
+        raise Error('Library not found [%s]: %s' % (arch, filename))
+
     return input_info, needed
 
   def FindLibsInPath(self, name):
@@ -318,28 +350,36 @@ class NmfUtils(object):
 
     if dynamic:
       examined = set()
-      all_files, unexamined = self.GleanFromObjdump(
-          dict([(f, None) for f in self.main_files]))
-      for name, arch_file in all_files.items():
-        arch_file.url = name
+      all_files, unexamined = self.GleanFromObjdump(self.main_files, None)
+      for arch_file in all_files.itervalues():
+        arch_file.url = arch_file.path
         if unexamined:
           unexamined.add('/'.join([arch_file.arch, RUNNABLE_LD]))
+
       while unexamined:
         files_to_examine = {}
+
+        # Take all the currently unexamined files and group them
+        # by architecture.
         for arch_name in unexamined:
           arch, name = arch_name.split('/')
-          for path in self.FindLibsInPath(name):
-            files_to_examine.setdefault(path, set()).add(arch)
-        new_files, needed = self.GleanFromObjdump(files_to_examine)
-        all_files.update(new_files)
+          files_to_examine.setdefault(arch, []).append(name)
+
+        # Call GleanFromObjdump() for each architecture.
+        needed = set()
+        for arch, files in files_to_examine.iteritems():
+          new_files, new_needed = self.GleanFromObjdump(files, arch)
+          all_files.update(new_files)
+          needed |= new_needed
+
         examined |= unexamined
         unexamined = needed - examined
 
       # With the runnable-ld.so scheme we have today, the proper name of
       # the dynamic linker should be excluded from the list of files.
       ldso = [LD_NACL_MAP[arch] for arch in set(OBJDUMP_ARCH_MAP.values())]
-      for name, arch_map in all_files.items():
-        if arch_map.name in ldso:
+      for name, arch_file in all_files.items():
+        if arch_file.name in ldso:
           del all_files[name]
 
       self.needed = all_files
@@ -364,8 +404,9 @@ class NmfUtils(object):
     nexe_root = os.path.normcase(nexe_root)
 
     needed = self.GetNeeded()
-    for source, arch_file in needed.items():
+    for arch_file in needed.itervalues():
       urldest = arch_file.url
+      source = arch_file.path
 
       # for .nexe and .so files specified on the command line stage
       # them in paths relative to the .nexe (with the .nexe always
@@ -519,6 +560,68 @@ def ParseExtraFiles(encoded_list, err):
   return canonicalized
 
 
+def GetSDKRoot():
+  """Determine current NACL_SDK_ROOT, either via the environment variable
+  itself, or by attempting to derive it from the location of this script.
+  """
+  sdk_root = os.environ.get('NACL_SDK_ROOT')
+  if not sdk_root:
+    sdk_root = os.path.dirname(SCRIPT_DIR)
+    if not os.path.exists(os.path.join(sdk_root, 'toolchain')):
+      return None
+
+  return sdk_root
+
+
+def FindObjdumpExecutable():
+  """Derive path to objdump executable to use for determining shared
+  object dependencies.
+  """
+  sdk_root = GetSDKRoot()
+  if not sdk_root:
+    return None
+
+  osname = getos.GetPlatform()
+  toolchain = os.path.join(sdk_root, 'toolchain', '%s_x86_glibc' % osname)
+  objdump = os.path.join(toolchain, 'bin', 'x86_64-nacl-objdump')
+  if osname == 'win':
+    objdump += '.exe'
+
+  if not os.path.exists(objdump):
+    sys.stderr.write('WARNING: failed to find objdump in default '
+                     'location: %s' % objdump)
+    return None
+
+  return objdump
+
+
+def GetDefaultLibPath(config):
+  """Derive default library path to use when searching for shared
+  objects.  This currently include the toolchain library folders
+  as well as the top level SDK lib folder and the naclports lib
+  folder.  We include both 32-bit and 64-bit library paths.
+  """
+  assert(config in ('Debug', 'Release'))
+  sdk_root = GetSDKRoot()
+  if not sdk_root:
+    # TOOD(sbc): output a warning here?  We would also need to suppress
+    # the warning when run from the chromium build.
+    return []
+
+  osname = getos.GetPlatform()
+  libpath = [
+    'toolchain/%s_x86_glibc/x86_64-nacl/lib' % osname,
+    'toolchain/%s_x86_glibc/x86_64-nacl/lib32' % osname,
+    'lib/glibc_x86_32/%s' % config,
+    'lib/glibc_x86_64/%s' % config,
+    'ports/lib/glibc_x86_32/%s' % config,
+    'ports/lib/glibc_x86_64/%s' % config,
+  ]
+  libpath = [os.path.normpath(p) for p in libpath]
+  libpath = [os.path.join(sdk_root, p) for p in libpath]
+  return libpath
+
+
 def main(argv):
   parser = optparse.OptionParser(
       usage='Usage: %prog [options] nexe [extra_libs...]')
@@ -526,8 +629,14 @@ def main(argv):
                     help='Write manifest file to FILE (default is stdout)',
                     metavar='FILE')
   parser.add_option('-D', '--objdump', dest='objdump',
-                    help='Use TOOL as the "objdump" tool to run',
+                    help='Override the default "objdump" tool used to find '
+                         'shared object dependencies',
                     metavar='TOOL')
+  parser.add_option('--no-default-libpath', action='store_true',
+                    help="Don't include the SDK default library paths")
+  parser.add_option('--debug-libs', action='store_true',
+                    help='Use debug library paths when constructing default '
+                         'library path.')
   parser.add_option('-L', '--library-path', dest='lib_path',
                     action='append', default=[],
                     help='Add DIRECTORY to library search path',
@@ -578,6 +687,17 @@ def main(argv):
   else:
     path_prefix = []
 
+  for libpath in options.lib_path:
+    if not os.path.exists(libpath):
+      raise Error('Specified library path does not exist: %s' % libpath)
+    if not os.path.isdir(libpath):
+      raise Error('Specified library is not a directory: %s' % libpath)
+
+  if not options.no_default_libpath:
+    # Add default libraries paths to the end of the search path.
+    config = options.debug_libs and 'Debug' or 'Release'
+    options.lib_path += GetDefaultLibPath(config)
+
   nmf = NmfUtils(objdump=options.objdump,
                  main_files=args,
                  lib_path=options.lib_path,
@@ -586,7 +706,7 @@ def main(argv):
                  remap=remap)
 
   nmf.GetManifest()
-  if options.output is None:
+  if not options.output:
     sys.stdout.write(nmf.GetJson())
   else:
     with open(options.output, 'w') as output:
@@ -605,5 +725,8 @@ if __name__ == '__main__':
     rtn = main(sys.argv[1:])
   except Error, e:
     sys.stderr.write('%s: %s\n' % (os.path.basename(__file__), e))
+    rtn = 1
+  except KeyboardInterrupt:
+    sys.stderr.write('%s: interrupted\n' % os.path.basename(__file__))
     rtn = 1
   sys.exit(rtn)

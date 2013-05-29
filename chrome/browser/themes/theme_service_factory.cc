@@ -9,9 +9,9 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 #if defined(TOOLKIT_GTK)
@@ -21,7 +21,7 @@
 // static
 ThemeService* ThemeServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<ThemeService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -40,12 +40,13 @@ ThemeServiceFactory* ThemeServiceFactory::GetInstance() {
 }
 
 ThemeServiceFactory::ThemeServiceFactory()
-    : ProfileKeyedServiceFactory("ThemeService",
-                                 ProfileDependencyManager::GetInstance()) {}
+    : BrowserContextKeyedServiceFactory(
+        "ThemeService",
+        BrowserContextDependencyManager::GetInstance()) {}
 
 ThemeServiceFactory::~ThemeServiceFactory() {}
 
-ProfileKeyedService* ThemeServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* ThemeServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   ThemeService* provider = NULL;
 #if defined(TOOLKIT_GTK)
@@ -93,6 +94,6 @@ content::BrowserContext* ThemeServiceFactory::GetBrowserContextToUse(
   return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
-bool ThemeServiceFactory::ServiceIsCreatedWithProfile() const {
+bool ThemeServiceFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }

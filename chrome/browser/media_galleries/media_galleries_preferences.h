@@ -15,8 +15,8 @@
 #include "base/observer_list.h"
 #include "base/string16.h"
 #include "base/time.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/storage_monitor/removable_storage_observer.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 class Profile;
 
@@ -111,7 +111,7 @@ typedef std::set<MediaGalleryPrefId> MediaGalleryPrefIdSet;
 
 // A class to manage the media gallery preferences.  There is one instance per
 // user profile.
-class MediaGalleriesPreferences : public ProfileKeyedService,
+class MediaGalleriesPreferences : public BrowserContextKeyedService,
                                   public RemovableStorageObserver {
  public:
   class GalleryChangeObserver {
@@ -190,7 +190,7 @@ class MediaGalleriesPreferences : public ProfileKeyedService,
     return known_galleries_;
   }
 
-  // ProfileKeyedService implementation:
+  // BrowserContextKeyedService implementation:
   virtual void Shutdown() OVERRIDE;
 
   static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
@@ -211,6 +211,9 @@ class MediaGalleriesPreferences : public ProfileKeyedService,
 
   // Try to add an entry for the iTunes 'device'.
   void OnITunesDeviceID(const std::string& device_id);
+
+  // Try to add an entry for the Picasa 'device'.
+  void OnPicasaDeviceID(const std::string& device_id);
 
   // Builds |known_galleries_| from the persistent store.
   // Notifies GalleryChangeObservers if |notify_observers| is true.

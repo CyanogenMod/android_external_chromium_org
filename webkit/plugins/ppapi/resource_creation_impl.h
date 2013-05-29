@@ -41,7 +41,9 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateFileRef(PP_Instance instance,
                                     PP_Resource file_system,
                                     const char* path) OVERRIDE;
-  virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateFileRef(
+      const ::ppapi::PPB_FileRef_CreateInfo& serialized) OVERRIDE;
+  virtual PP_Resource CreateFlashDRM(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,
       const PP_BrowserFont_Trusted_Description* description,
@@ -110,7 +112,6 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
       PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateURLLoader(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateVideoCapture(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateVideoDecoder(
       PP_Instance instance,

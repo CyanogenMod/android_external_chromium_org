@@ -45,7 +45,9 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   const std::string& guid() const { return guid_; }
   const std::string& connection_state() const { return connection_state_; }
   const std::string& profile_path() const { return profile_path_; }
+  const std::string& proxy_config() const { return proxy_config_; }
   const std::string& error() const { return error_; }
+  const std::string& error_details() const { return error_details_; }
   bool auto_connect() const { return auto_connect_; }
   bool favorite() const { return favorite_; }
   int priority() const { return priority_; }
@@ -65,6 +67,9 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
 
   bool IsConnectedState() const;
   bool IsConnectingState() const;
+
+  // Returns true if |error_| contains an authentication error.
+  bool HasAuthenticationError() const;
 
   // Helpers (used e.g. when a state is cached)
   static bool StateIsConnected(const std::string& connection_state);
@@ -95,7 +100,9 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   std::string guid_;
   std::string connection_state_;
   std::string profile_path_;
+  std::string proxy_config_;
   std::string error_;
+  std::string error_details_;
   bool auto_connect_;
   bool favorite_;
   int priority_;

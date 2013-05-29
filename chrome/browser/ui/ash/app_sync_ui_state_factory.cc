@@ -5,9 +5,9 @@
 #include "chrome/browser/ui/ash/app_sync_ui_state_factory.h"
 
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/ash/app_sync_ui_state.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 AppSyncUIState* AppSyncUIStateFactory::GetForProfile(Profile* profile) {
@@ -15,7 +15,7 @@ AppSyncUIState* AppSyncUIStateFactory::GetForProfile(Profile* profile) {
     return NULL;
 
   return static_cast<AppSyncUIState*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -24,15 +24,16 @@ AppSyncUIStateFactory* AppSyncUIStateFactory::GetInstance() {
 }
 
 AppSyncUIStateFactory::AppSyncUIStateFactory()
-    : ProfileKeyedServiceFactory("AppSyncUIState",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "AppSyncUIState",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(ProfileSyncServiceFactory::GetInstance());
 }
 
 AppSyncUIStateFactory::~AppSyncUIStateFactory() {
 }
 
-ProfileKeyedService* AppSyncUIStateFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* AppSyncUIStateFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
   DCHECK(AppSyncUIState::ShouldObserveAppSyncForProfile(profile));

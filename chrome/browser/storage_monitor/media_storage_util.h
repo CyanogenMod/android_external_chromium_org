@@ -14,30 +14,15 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
-#include "chrome/browser/storage_monitor/storage_monitor.h"
 
 namespace chrome {
 
+struct StorageInfo;
+
 class MediaStorageUtil {
  public:
-  enum Type {
-    // A removable mass storage device with a DCIM directory.
-    REMOVABLE_MASS_STORAGE_WITH_DCIM,
-    // A removable mass storage device without a DCIM directory.
-    REMOVABLE_MASS_STORAGE_NO_DCIM,
-    // A fixed mass storage device.
-    FIXED_MASS_STORAGE,
-    // A MTP or PTP device.
-    MTP_OR_PTP,
-    // A Mac ImageCapture device.
-    MAC_IMAGE_CAPTURE,
-    // An iTunes library.
-    ITUNES,
-  };
-
   typedef std::set<std::string /*device id*/> DeviceIdSet;
   typedef base::Callback<void(bool)> BoolCallback;
-
 
   // Check if the file system at the passed mount point looks like a media
   // device using the existence of DCIM directory.
@@ -47,51 +32,16 @@ class MediaStorageUtil {
   // if additional OS X heuristic is implemented.
   static bool HasDcim(const base::FilePath& mount_point);
 
-  // Constructs the device product name from |vendor_name| and |model_name|.
-  static string16 GetFullProductName(const std::string& vendor_name,
-                                     const std::string& model_name);
-
-  // Constructs the display name for device from |storage_size_in_bytes| and
-  // |name|.
-  static string16 GetDisplayNameForDevice(uint64 storage_size_in_bytes,
-                                          const string16& name);
-
-  // Returns a device id given properties of the device. A prefix dependent on
-  // |type| is added so |unique_id| need only be unique within the given type.
-  // Returns an empty string if an invalid type is passed in.
-  static std::string MakeDeviceId(Type type, const std::string& unique_id);
-
-  // Extracts the device |type| and |unique_id| from |device_id|. Returns false
-  // if the device_id isn't properly formatted.
-  static bool CrackDeviceId(const std::string& device_id,
-                            Type* type, std::string* unique_id);
-
-  // Looks inside |device_id| to determine if it is a media device
-  // (type is REMOVABLE_MASS_STORAGE_WITH_DCIM or MTP_OR_PTP).
-  static bool IsMediaDevice(const std::string& device_id);
-
-  // Looks inside |device_id| to determine if it is a media device
-  // (type isn't FIXED_MASS_STORAGE).
-  static bool IsRemovableDevice(const std::string& device_id);
-
-  // Looks inside |device_id| to determine if it is a mass storage device
-  // (type isn't MTP_OR_PTP).
-  static bool IsMassStorageDevice(const std::string& device_id);
-
   // Returns true if we will be able to create a filesystem for this device.
   static bool CanCreateFileSystem(const std::string& device_id,
                                   const base::FilePath& path);
-
-  // Determines if the device is attached to the computer.
-  static void IsDeviceAttached(const std::string& device_id,
-                               const BoolCallback& callback);
 
   // Removes disconnected devices from |devices| and then calls |done|.
   static void FilterAttachedDevices(DeviceIdSet* devices,
                                     const base::Closure& done);
 
   // Given |path|, fill in |device_info|, and |relative_path|
-  // (from the root of the device) if they are not NULL.
+  // (from the root of the device).
   static bool GetDeviceInfoFromPath(const base::FilePath& path,
                                     StorageInfo* device_info,
                                     base::FilePath* relative_path);

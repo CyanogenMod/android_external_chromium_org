@@ -102,9 +102,7 @@ class BrowserBackend(object):
 
     extensions = [extension.local_path for extension in
                   self.options.extensions_to_load if not extension.is_component]
-    # join extension paths with ';' rather than ',' due
-    # to a tokenization issue with dbus-send
-    extension_str = ';'.join(extensions)
+    extension_str = ','.join(extensions)
     if len(extensions) > 0:
       args.append('--load-extension=%s' % extension_str)
 
@@ -133,8 +131,21 @@ class BrowserBackend(object):
       raise exceptions.BrowserGoneException()
 
     def AllExtensionsLoaded():
+      # Extension pages are loaded from an about:blank page,
+      # so we need to check that the document URL is the extension
+      # page in addition to the ready state.
+      extension_ready_js = """
+          document.URL.lastIndexOf('chrome-extension://%s/', 0) == 0 &&
+          (document.readyState == 'complete' ||
+           document.readyState == 'interactive')
+      """
       for e in self.options.extensions_to_load:
         if not e.extension_id in self._extension_dict_backend:
+          return False
+        extension_object = self._extension_dict_backend[e.extension_id]
+        res = extension_object.EvaluateJavaScript(
+            extension_ready_js % e.extension_id)
+        if not res:
           return False
       return True
     if self._supports_extensions:
@@ -186,10 +197,16 @@ class BrowserBackend(object):
   def supports_tracing(self):
     return self.is_content_shell or self._chrome_branch_number >= 1385
 
-  def StartTracing(self):
+  def StartTracing(self, custom_categories=None):
+    """ custom_categories is an optional string containing a list of
+    comma separated categories that will be traced instead of the
+    default category set.  Example: use
+    "webkit,cc,disabled-by-default-cc.debug" to trace only those three
+    event categories.
+    """
     if self._tracing_backend is None:
       self._tracing_backend = tracing_backend.TracingBackend(self._port)
-    self._tracing_backend.BeginTracing()
+    self._tracing_backend.BeginTracing(custom_categories)
 
   def StopTracing(self):
     self._tracing_backend.EndTracing()

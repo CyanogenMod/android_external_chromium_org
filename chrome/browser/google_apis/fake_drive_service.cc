@@ -88,6 +88,13 @@ GURL GetUploadUrl(const base::DictionaryValue& entry) {
   return GURL(upload_url);
 }
 
+// Returns |url| without query parameter.
+GURL RemoveQueryParameter(const GURL& url) {
+  GURL::Replacements replacements;
+  replacements.ClearQuery();
+  return url.ReplaceComponents(replacements);
+}
+
 }  // namespace
 
 FakeDriveService::FakeDriveService()
@@ -120,6 +127,20 @@ bool FakeDriveService::LoadResourceListForWapi(
       as_dict->Remove("feed", &feed) &&
       feed->GetAsDictionary(&feed_as_dict)) {
     resource_list_value_.reset(feed_as_dict);
+
+    // Go through entries and convert test$data from a string to a binary blob.
+    base::ListValue* entries = NULL;
+    if (feed_as_dict->GetList("entry", &entries)) {
+      for (size_t i = 0; i < entries->GetSize(); ++i) {
+        base::DictionaryValue* entry = NULL;
+        std::string content_data;
+        if (entries->GetDictionary(i, &entry) &&
+            entry->GetString("test$data", &content_data)) {
+          entry->Set("test$data", base::BinaryValue::CreateWithCopiedBuffer(
+                  content_data.c_str(), content_data.size()));
+        }
+      }
+    }
   }
 
   return resource_list_value_;
@@ -191,6 +212,11 @@ bool FakeDriveService::CancelForFilePath(const base::FilePath& file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   last_cancelled_file_ = file_path;
   return true;
+}
+
+std::string FakeDriveService::CanonicalizeResourceId(
+    const std::string& resource_id) const {
+  return resource_id;
 }
 
 bool FakeDriveService::HasAccessToken() const {
@@ -344,7 +370,7 @@ void FakeDriveService::GetResourceEntry(
 
   if (offline_) {
     scoped_ptr<ResourceEntry> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    GDATA_NO_CONNECTION,
@@ -356,14 +382,14 @@ void FakeDriveService::GetResourceEntry(
   if (entry) {
     scoped_ptr<ResourceEntry> resource_entry =
         ResourceEntry::CreateFrom(*entry);
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_SUCCESS, base::Passed(&resource_entry)));
     return;
   }
 
   scoped_ptr<ResourceEntry> null;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
 }
@@ -378,7 +404,7 @@ void FakeDriveService::GetAboutResource(
 
   if (offline_) {
     scoped_ptr<AboutResource> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    GDATA_NO_CONNECTION, base::Passed(&null)));
@@ -392,7 +418,7 @@ void FakeDriveService::GetAboutResource(
           GetRootResourceId()));
   // Overwrite the change id.
   about_resource->set_largest_change_id(largest_changestamp_);
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback,
                  HTTP_SUCCESS, base::Passed(&about_resource)));
@@ -401,10 +427,11 @@ void FakeDriveService::GetAboutResource(
 void FakeDriveService::GetAppList(const GetAppListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+  DCHECK(app_info_value_);
 
   if (offline_) {
     scoped_ptr<AppList> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    GDATA_NO_CONNECTION,
@@ -413,7 +440,7 @@ void FakeDriveService::GetAppList(const GetAppListCallback& callback) {
   }
 
   scoped_ptr<AppList> app_list(AppList::CreateFrom(*app_info_value_));
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, HTTP_SUCCESS, base::Passed(&app_list)));
 }
@@ -426,7 +453,7 @@ void FakeDriveService::DeleteResource(
   DCHECK(!callback.is_null());
 
   if (offline_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, GDATA_NO_CONNECTION));
     return;
   }
@@ -443,7 +470,7 @@ void FakeDriveService::DeleteResource(
           entry->GetString("gd$resourceId.$t", &current_resource_id) &&
           resource_id == current_resource_id) {
         entries->Remove(i, NULL);
-        MessageLoop::current()->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
         return;
       }
@@ -452,7 +479,7 @@ void FakeDriveService::DeleteResource(
 
   // TODO(satorux): Add support for returning "deleted" entries in
   // changelists from GetResourceList().
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(callback, HTTP_NOT_FOUND));
 }
 
@@ -467,7 +494,7 @@ void FakeDriveService::DownloadFile(
   DCHECK(!download_action_callback.is_null());
 
   if (offline_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(download_action_callback,
                    GDATA_NO_CONNECTION,
@@ -490,15 +517,20 @@ void FakeDriveService::DownloadFile(
   // TODO(satorux): To be correct, we should update docs$md5Checksum.$t here.
   int64 file_size = 0;
   if (base::StringToInt64(file_size_string, &file_size)) {
-    std::string content(file_size, 'x');
-    DCHECK_EQ(static_cast<size_t>(file_size), content.size());
+    base::BinaryValue* content_binary_data;
+    std::string content_data;
+    if (entry->GetBinary("test$data", &content_binary_data)) {
+      content_data = std::string(content_binary_data->GetBuffer(),
+          content_binary_data->GetSize());
+    }
+    DCHECK_EQ(static_cast<size_t>(file_size), content_data.size());
 
     if (!get_content_callback.is_null()) {
       const int64 kBlockSize = 5;
       for (int64 i = 0; i < file_size; i += kBlockSize) {
         const int64 size = std::min(kBlockSize, file_size - i);
         scoped_ptr<std::string> content_for_callback(
-            new std::string(content.substr(i, size)));
+            new std::string(content_data.substr(i, size)));
         base::MessageLoopProxy::current()->PostTask(
             FROM_HERE,
             base::Bind(get_content_callback, HTTP_SUCCESS,
@@ -506,7 +538,7 @@ void FakeDriveService::DownloadFile(
       }
     }
 
-    if (test_util::WriteStringToFile(local_cache_path, content)) {
+    if (test_util::WriteStringToFile(local_cache_path, content_data)) {
       if (!progress_callback.is_null()) {
         // See also the comment in ResumeUpload(). For testing that clients
         // can handle the case progress_callback is called multiple times,
@@ -533,8 +565,9 @@ void FakeDriveService::DownloadFile(
       base::Bind(download_action_callback, GDATA_FILE_ERROR, base::FilePath()));
 }
 
-void FakeDriveService::CopyHostedDocument(
+void FakeDriveService::CopyResource(
     const std::string& resource_id,
+    const std::string& in_parent_resource_id,
     const std::string& new_name,
     const GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -542,13 +575,16 @@ void FakeDriveService::CopyHostedDocument(
 
   if (offline_) {
     scoped_ptr<ResourceEntry> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    GDATA_NO_CONNECTION,
                    base::Passed(&null)));
     return;
   }
+
+  const std::string& parent_resource_id = in_parent_resource_id.empty() ?
+      GetRootResourceId() : in_parent_resource_id;
 
   base::DictionaryValue* resource_list_dict = NULL;
   base::ListValue* entries = NULL;
@@ -557,53 +593,62 @@ void FakeDriveService::CopyHostedDocument(
       resource_list_dict->GetList("entry", &entries)) {
     for (size_t i = 0; i < entries->GetSize(); ++i) {
       base::DictionaryValue* entry = NULL;
-      base::ListValue* categories = NULL;
       std::string current_resource_id;
       if (entries->GetDictionary(i, &entry) &&
           entry->GetString("gd$resourceId.$t", &current_resource_id) &&
-          resource_id == current_resource_id &&
-          entry->GetList("category", &categories)) {
-        // Check that the resource is a hosted document. We consider it a
-        // hosted document if the kind is neither "folder" nor "file".
-        for (size_t k = 0; k < categories->GetSize(); ++k) {
-          base::DictionaryValue* category = NULL;
-          std::string scheme, term;
-          if (categories->GetDictionary(k, &category) &&
-              category->GetString("scheme", &scheme) &&
-              category->GetString("term", &term) &&
-              scheme == "http://schemas.google.com/g/2005#kind" &&
-              term != "http://schemas.google.com/docs/2007#file" &&
-              term != "http://schemas.google.com/docs/2007#folder") {
-            // Make a copy and set the new resource ID and the new title.
-            scoped_ptr<DictionaryValue> copied_entry(entry->DeepCopy());
-            copied_entry->SetString("gd$resourceId.$t",
-                                    resource_id + "_copied");
-            copied_entry->SetString("title.$t", new_name);
+          resource_id == current_resource_id) {
+        // Make a copy and set the new resource ID and the new title.
+        scoped_ptr<DictionaryValue> copied_entry(entry->DeepCopy());
+        copied_entry->SetString("gd$resourceId.$t",
+                                resource_id + "_copied");
+        copied_entry->SetString("title.$t", new_name);
 
-            AddNewChangestamp(copied_entry.get());
-
-            // Parse the new entry.
-            scoped_ptr<ResourceEntry> resource_entry =
-                ResourceEntry::CreateFrom(*copied_entry);
-            // Add it to the resource list.
-            entries->Append(copied_entry.release());
-
-            MessageLoop::current()->PostTask(
-                FROM_HERE,
-                base::Bind(callback,
-                           HTTP_SUCCESS,
-                           base::Passed(&resource_entry)));
-            return;
-          }
+        // Reset parent directory.
+        base::ListValue* links = NULL;
+        if (!entry->GetList("link", &links)) {
+          links = new base::ListValue;
+          entry->Set("link", links);
         }
+        links->Clear();
+
+        base::DictionaryValue* link = new base::DictionaryValue;
+        link->SetString(
+            "rel", "http://schemas.google.com/docs/2007#parent");
+        link->SetString("href", GetFakeLinkUrl(parent_resource_id).spec());
+        links->Append(link);
+
+        AddNewChangestamp(copied_entry.get());
+
+        // Parse the new entry.
+        scoped_ptr<ResourceEntry> resource_entry =
+            ResourceEntry::CreateFrom(*copied_entry);
+        // Add it to the resource list.
+        entries->Append(copied_entry.release());
+
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE,
+            base::Bind(callback,
+                       HTTP_SUCCESS,
+                       base::Passed(&resource_entry)));
+        return;
       }
     }
   }
 
   scoped_ptr<ResourceEntry> null;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
+}
+
+void FakeDriveService::CopyHostedDocument(
+    const std::string& resource_id,
+    const std::string& new_name,
+    const GetResourceEntryCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  CopyResource(resource_id, std::string(), new_name, callback);
 }
 
 void FakeDriveService::RenameResource(
@@ -614,7 +659,7 @@ void FakeDriveService::RenameResource(
   DCHECK(!callback.is_null());
 
   if (offline_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, GDATA_NO_CONNECTION));
     return;
   }
@@ -623,13 +668,52 @@ void FakeDriveService::RenameResource(
   if (entry) {
     entry->SetString("title.$t", new_name);
     AddNewChangestamp(entry);
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
     return;
   }
 
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(callback, HTTP_NOT_FOUND));
+}
+
+void FakeDriveService::TouchResource(
+    const std::string& resource_id,
+    const base::Time& modified_date,
+    const base::Time& last_viewed_by_me_date,
+    const GetResourceEntryCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!modified_date.is_null());
+  DCHECK(!last_viewed_by_me_date.is_null());
+  DCHECK(!callback.is_null());
+
+  if (offline_) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback, GDATA_NO_CONNECTION,
+                   base::Passed(scoped_ptr<ResourceEntry>())));
+    return;
+  }
+
+  base::DictionaryValue* entry = FindEntryByResourceId(resource_id);
+  if (!entry) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback, HTTP_NOT_FOUND,
+                   base::Passed(scoped_ptr<ResourceEntry>())));
+    return;
+  }
+
+  entry->SetString("updated.$t",
+                   util::FormatTimeAsString(modified_date));
+  entry->SetString("gd$lastViewed.$t",
+                   util::FormatTimeAsString(last_viewed_by_me_date));
+  AddNewChangestamp(entry);
+
+  scoped_ptr<ResourceEntry> parsed_entry(ResourceEntry::CreateFrom(*entry));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(callback, HTTP_SUCCESS, base::Passed(&parsed_entry)));
 }
 
 void FakeDriveService::AddResourceToDirectory(
@@ -640,7 +724,7 @@ void FakeDriveService::AddResourceToDirectory(
   DCHECK(!callback.is_null());
 
   if (offline_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, GDATA_NO_CONNECTION));
     return;
   }
@@ -664,12 +748,12 @@ void FakeDriveService::AddResourceToDirectory(
     links->Append(link);
 
     AddNewChangestamp(entry);
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
     return;
   }
 
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(callback, HTTP_NOT_FOUND));
 }
 
@@ -681,7 +765,7 @@ void FakeDriveService::RemoveResourceFromDirectory(
   DCHECK(!callback.is_null());
 
   if (offline_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, GDATA_NO_CONNECTION));
     return;
   }
@@ -702,7 +786,7 @@ void FakeDriveService::RemoveResourceFromDirectory(
             GURL(href) == parent_content_url) {
           links->Remove(i, NULL);
           AddNewChangestamp(entry);
-          MessageLoop::current()->PostTask(
+          base::MessageLoop::current()->PostTask(
               FROM_HERE, base::Bind(callback, HTTP_SUCCESS));
           return;
         }
@@ -710,7 +794,7 @@ void FakeDriveService::RemoveResourceFromDirectory(
     }
   }
 
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(callback, HTTP_NOT_FOUND));
 }
 
@@ -723,7 +807,7 @@ void FakeDriveService::AddNewDirectory(
 
   if (offline_) {
     scoped_ptr<ResourceEntry> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    GDATA_NO_CONNECTION,
@@ -733,21 +817,21 @@ void FakeDriveService::AddNewDirectory(
 
   const char kContentType[] = "application/atom+xml;type=feed";
   const base::DictionaryValue* new_entry = AddNewEntry(kContentType,
-                                                       0,  // content_length
+                                                       "",  // content_data
                                                        parent_resource_id,
                                                        directory_name,
                                                        false,  // shared_with_me
                                                        "folder");
   if (!new_entry) {
     scoped_ptr<ResourceEntry> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
     return;
   }
 
   scoped_ptr<ResourceEntry> parsed_entry(ResourceEntry::CreateFrom(*new_entry));
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, HTTP_CREATED, base::Passed(&parsed_entry)));
 }
@@ -763,7 +847,7 @@ void FakeDriveService::InitiateUploadNewFile(
   DCHECK(!callback.is_null());
 
   if (offline_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, GDATA_NO_CONNECTION, GURL()));
     return;
@@ -772,13 +856,13 @@ void FakeDriveService::InitiateUploadNewFile(
   // Content length should be zero, as we'll create an empty file first. The
   // content will be added in ResumeUpload().
   const base::DictionaryValue* new_entry = AddNewEntry(content_type,
-                                                       0,  // content_length
+                                                       "",  // content_data
                                                        parent_resource_id,
                                                        title,
                                                        false,  // shared_with_me
                                                        "file");
   if (!new_entry) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_NOT_FOUND, GURL()));
     return;
@@ -786,9 +870,11 @@ void FakeDriveService::InitiateUploadNewFile(
   const GURL upload_url = GetUploadUrl(*new_entry);
   DCHECK(upload_url.is_valid());
 
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(callback, HTTP_SUCCESS, upload_url));
+      base::Bind(callback, HTTP_SUCCESS,
+                 net::AppendQueryParameter(upload_url, "mode", "newfile")));
+
 }
 
 void FakeDriveService::InitiateUploadExistingFile(
@@ -802,7 +888,7 @@ void FakeDriveService::InitiateUploadExistingFile(
   DCHECK(!callback.is_null());
 
   if (offline_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, GDATA_NO_CONNECTION, GURL()));
     return;
@@ -810,7 +896,7 @@ void FakeDriveService::InitiateUploadExistingFile(
 
   DictionaryValue* entry = FindEntryByResourceId(resource_id);
   if (!entry) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_NOT_FOUND, GURL()));
     return;
@@ -819,7 +905,7 @@ void FakeDriveService::InitiateUploadExistingFile(
   std::string entry_etag;
   entry->GetString("gd$etag", &entry_etag);
   if (!etag.empty() && etag != entry_etag) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_PRECONDITION, GURL()));
     return;
@@ -829,13 +915,13 @@ void FakeDriveService::InitiateUploadExistingFile(
   const GURL upload_url = GetUploadUrl(*entry);
   DCHECK(upload_url.is_valid());
 
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(callback, HTTP_SUCCESS, upload_url));
+      base::Bind(callback, HTTP_SUCCESS,
+                 net::AppendQueryParameter(upload_url, "mode", "existing")));
 }
 
 void FakeDriveService::GetUploadStatus(
-    UploadMode upload_mode,
     const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 content_length,
@@ -845,7 +931,6 @@ void FakeDriveService::GetUploadStatus(
 }
 
 void FakeDriveService::ResumeUpload(
-      UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_url,
       int64 start_position,
@@ -861,7 +946,7 @@ void FakeDriveService::ResumeUpload(
   scoped_ptr<ResourceEntry> result_entry;
 
   if (offline_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    UploadRangeResponse(GDATA_NO_CONNECTION,
@@ -872,9 +957,9 @@ void FakeDriveService::ResumeUpload(
   }
 
   DictionaryValue* entry = NULL;
-  entry = FindEntryByUploadUrl(upload_url);
+  entry = FindEntryByUploadUrl(RemoveQueryParameter(upload_url));
   if (!entry) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    UploadRangeResponse(HTTP_NOT_FOUND,
@@ -891,7 +976,7 @@ void FakeDriveService::ResumeUpload(
   if (!entry->GetString("docs$size.$t", &current_size_string) ||
       !base::StringToInt64(current_size_string, &current_size) ||
       current_size != start_position) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    UploadRangeResponse(HTTP_BAD_REQUEST,
@@ -911,14 +996,14 @@ void FakeDriveService::ResumeUpload(
     // crucial difference of the progress callback from others.
     // Note that progress is notified in the relative offset in each chunk.
     const int64 chunk_size = end_position - start_position;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(progress_callback, chunk_size / 2, chunk_size));
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(progress_callback, chunk_size, chunk_size));
   }
 
   if (content_length != end_position) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    UploadRangeResponse(HTTP_RESUME_INCOMPLETE,
@@ -928,13 +1013,19 @@ void FakeDriveService::ResumeUpload(
     return;
   }
 
+  AddNewChangestamp(entry);
   result_entry = ResourceEntry::CreateFrom(*entry).Pass();
 
-  GDataErrorCode return_code = HTTP_SUCCESS;
-  if (upload_mode == UPLOAD_NEW_FILE)
-    return_code = HTTP_CREATED;
+  std::string upload_mode;
+  bool upload_mode_found =
+      net::GetValueForKeyInQuery(upload_url, "mode", &upload_mode);
+  DCHECK(upload_mode_found &&
+         (upload_mode == "newfile" || upload_mode == "existing"));
 
-  MessageLoop::current()->PostTask(
+  GDataErrorCode return_code =
+      upload_mode == "newfile" ? HTTP_CREATED : HTTP_SUCCESS;
+
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback,
                  UploadRangeResponse(return_code,
@@ -951,7 +1042,7 @@ void FakeDriveService::AuthorizeApp(const std::string& resource_id,
 }
 
 void FakeDriveService::AddNewFile(const std::string& content_type,
-                                  int64 content_length,
+                                  const std::string& content_data,
                                   const std::string& parent_resource_id,
                                   const std::string& title,
                                   bool shared_with_me,
@@ -961,7 +1052,7 @@ void FakeDriveService::AddNewFile(const std::string& content_type,
 
   if (offline_) {
     scoped_ptr<ResourceEntry> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    GDATA_NO_CONNECTION,
@@ -977,14 +1068,14 @@ void FakeDriveService::AddNewFile(const std::string& content_type,
     entry_kind = "file";
 
   const base::DictionaryValue* new_entry = AddNewEntry(content_type,
-                                                       content_length,
+                                                       content_data,
                                                        parent_resource_id,
                                                        title,
                                                        shared_with_me,
                                                        entry_kind);
   if (!new_entry) {
     scoped_ptr<ResourceEntry> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
     return;
@@ -992,7 +1083,7 @@ void FakeDriveService::AddNewFile(const std::string& content_type,
 
   scoped_ptr<ResourceEntry> parsed_entry(
       ResourceEntry::CreateFrom(*new_entry));
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, HTTP_CREATED, base::Passed(&parsed_entry)));
 }
@@ -1006,7 +1097,7 @@ void FakeDriveService::SetLastModifiedTime(
 
   if (offline_) {
     scoped_ptr<ResourceEntry> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    GDATA_NO_CONNECTION,
@@ -1017,7 +1108,7 @@ void FakeDriveService::SetLastModifiedTime(
   base::DictionaryValue* entry = FindEntryByResourceId(resource_id);
   if (!entry) {
     scoped_ptr<ResourceEntry> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, HTTP_NOT_FOUND, base::Passed(&null)));
     return;
@@ -1032,7 +1123,7 @@ void FakeDriveService::SetLastModifiedTime(
 
   scoped_ptr<ResourceEntry> parsed_entry(
       ResourceEntry::CreateFrom(*entry));
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, HTTP_SUCCESS, base::Passed(&parsed_entry)));
 }
@@ -1134,7 +1225,7 @@ void FakeDriveService::AddNewChangestamp(base::DictionaryValue* entry) {
 
 const base::DictionaryValue* FakeDriveService::AddNewEntry(
     const std::string& content_type,
-    int64 content_length,
+    const std::string& content_data,
     const std::string& parent_resource_id,
     const std::string& title,
     bool shared_with_me,
@@ -1158,9 +1249,13 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
   new_entry->SetString("gd$resourceId.$t", resource_id);
   new_entry->SetString("title.$t", title);
   new_entry->SetString("docs$filename", title);
-  // Set the content size and MD5 for a file.
+  // Set the contents, size and MD5 for a file.
   if (entry_kind == "file") {
-    new_entry->SetString("docs$size.$t", base::Int64ToString(content_length));
+    new_entry->Set("test$data",
+        base::BinaryValue::CreateWithCopiedBuffer(
+            content_data.c_str(), content_data.size()));
+    new_entry->SetString("docs$size.$t",
+                         base::Int64ToString(content_data.size()));
     // TODO(satorux): Set the correct MD5 here.
     new_entry->SetString("docs$md5Checksum.$t",
                          "3b4385ebefec6e743574c76bbd0575de");
@@ -1234,7 +1329,7 @@ void FakeDriveService::GetResourceListInternal(
     const GetResourceListCallback& callback) {
   if (offline_) {
     scoped_ptr<ResourceList> null;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback,
                    GDATA_NO_CONNECTION,
@@ -1334,7 +1429,7 @@ void FakeDriveService::GetResourceListInternal(
 
   if (load_counter)
     *load_counter += 1;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(callback,
                  HTTP_SUCCESS,

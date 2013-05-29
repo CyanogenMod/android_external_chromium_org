@@ -7,7 +7,9 @@
 
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
+#import "chrome/browser/ui/cocoa/autofill/autofill_layout.h"
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
 
 namespace content {
@@ -18,6 +20,7 @@ namespace autofill {
   class AutofillDialogController;
 }
 
+@class AutofillAccountChooser;
 @class AutofillDialogWindowController;
 @class AutofillSignInContainer;
 @class AutofillMainContainer;
@@ -48,12 +51,14 @@ class AutofillDialogCocoa : public AutofillDialogView,
   virtual void HideSignIn() OVERRIDE;
   virtual void UpdateProgressBar(double value) OVERRIDE;
   virtual void ModelChanged() OVERRIDE;
+  virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE;
 
   // ConstrainedWindowMacDelegate implementation.
   virtual void OnConstrainedWindowClosed(
       ConstrainedWindowMac* window) OVERRIDE;
 
   AutofillDialogController* controller() { return controller_; }
+
   void PerformClose();
 
  private:
@@ -67,27 +72,38 @@ class AutofillDialogCocoa : public AutofillDialogView,
 
 }  // autofill
 
-@interface AutofillDialogWindowController : NSWindowController
-                                            <NSWindowDelegate> {
+@interface AutofillDialogWindowController :
+    NSWindowController<NSWindowDelegate, AutofillLayout> {
  @private
   content::WebContents* webContents_;  // weak.
   autofill::AutofillDialogCocoa* autofillDialog_;  // weak.
 
   scoped_nsobject<AutofillMainContainer> mainContainer_;
   scoped_nsobject<AutofillSignInContainer> signInContainer_;
+  scoped_nsobject<AutofillAccountChooser> accountChooser_;
 }
 
 // Designated initializer. The WebContents cannot be NULL.
 - (id)initWithWebContents:(content::WebContents*)webContents
       autofillDialog:(autofill::AutofillDialogCocoa*)autofillDialog;
 
-// Closes the sheet and ends the modal loop. This will also clean up the memory.
-- (IBAction)closeSheet:(id)sender;
+// A child view request re-layouting.
+- (void)requestRelayout;
+
+// Validate data. If it is valid, notify the controller that the user would
+// like to use the data.
+- (IBAction)accept:(id)sender;
+
+// User cancels dialog.
+- (IBAction)cancel:(id)sender;
 
 // Forwarding AutofillDialogView calls.
 - (void)updateAccountChooser;
+- (void)getInputs:(autofill::DetailOutputMap*)outputs
+       forSection:(autofill::DialogSection)section;
 - (content::NavigationController*)showSignIn;
 - (void)hideSignIn;
+- (void)modelChanged;
 
 @end
 

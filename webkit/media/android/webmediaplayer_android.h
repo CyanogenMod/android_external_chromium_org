@@ -12,15 +12,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/time.h"
-#if defined(GOOGLE_TV)
 #include "media/base/demuxer_stream.h"
-#endif
 #include "cc/layers/video_frame_provider.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayer.h"
 #include "ui/gfx/rect_f.h"
+#include "webkit/media/android/media_source_delegate.h"
 #include "webkit/media/android/stream_texture_factory_android.h"
 
 namespace media {
@@ -36,10 +35,6 @@ class WebLayerImpl;
 }
 
 namespace webkit_media {
-
-#if defined(GOOGLE_TV)
-class MediaSourceDelegate;
-#endif
 class WebMediaPlayerManagerAndroid;
 class WebMediaPlayerProxyAndroid;
 
@@ -96,7 +91,7 @@ class WebMediaPlayerAndroid
   virtual void setSize(const WebKit::WebSize& size);
   virtual void paint(WebKit::WebCanvas* canvas,
                      const WebKit::WebRect& rect,
-                     uint8_t alpha);
+                     unsigned char alpha);
 
   virtual bool copyVideoTextureToPlatformTexture(
       WebKit::WebGraphicsContext3D* web_graphics_context,
@@ -151,16 +146,18 @@ class WebMediaPlayerAndroid
       OVERRIDE;
 
   // Media player callback handlers.
-  virtual void OnMediaMetadataChanged(base::TimeDelta duration, int width,
-                                      int height, bool success);
-  virtual void OnPlaybackComplete();
-  virtual void OnBufferingUpdate(int percentage);
-  virtual void OnSeekComplete(base::TimeDelta current_time);
-  virtual void OnMediaError(int error_type);
-  virtual void OnVideoSizeChanged(int width, int height);
+  void OnMediaMetadataChanged(base::TimeDelta duration, int width,
+                              int height, bool success);
+  void OnPlaybackComplete();
+  void OnBufferingUpdate(int percentage);
+  void OnSeekComplete(base::TimeDelta current_time);
+  void OnMediaError(int error_type);
+  void OnVideoSizeChanged(int width, int height);
+  void OnMediaSeekRequest(base::TimeDelta time_to_seek,
+                          bool request_texture_peer);
 
   // Called to update the current time.
-  virtual void OnTimeUpdate(base::TimeDelta current_time);
+  void OnTimeUpdate(base::TimeDelta current_time);
 
   // Functions called when media player status changes.
   void OnMediaPlayerPlay();
@@ -202,10 +199,10 @@ class WebMediaPlayerAndroid
   virtual MediaKeyException cancelKeyRequest(
       const WebKit::WebString& key_system,
       const WebKit::WebString& session_id) OVERRIDE;
+#endif
 
   // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
   void OnReadFromDemuxer(media::DemuxerStream::Type type, bool seek_done);
-#endif
 
  protected:
   // Helper method to update the playing state.
@@ -283,6 +280,9 @@ class WebMediaPlayerAndroid
   // Whether media player needs to re-establish the surface texture peer.
   bool needs_establish_peer_;
 
+  // Whether |stream_texture_proxy_| is initialized.
+  bool stream_texture_proxy_initialized_;
+
   // Whether the video size info is available.
   bool has_size_info_;
 
@@ -306,9 +306,10 @@ class WebMediaPlayerAndroid
   // A rectangle represents the geometry of video frame, when computed last
   // time.
   gfx::RectF last_computed_rect_;
-
-  scoped_ptr<MediaSourceDelegate> media_source_delegate_;
 #endif
+
+  scoped_ptr<MediaSourceDelegate,
+             MediaSourceDelegate::Destroyer> media_source_delegate_;
 
   // Proxy object that delegates method calls on Render Thread.
   // This object is created on the Render Thread and is only called in the
@@ -318,7 +319,7 @@ class WebMediaPlayerAndroid
   // The current playing time. Because the media player is in the browser
   // process, it will regularly update the |current_time_| by calling
   // OnTimeUpdate().
-  float current_time_;
+  double current_time_;
 
   media::MediaLog* media_log_;
 

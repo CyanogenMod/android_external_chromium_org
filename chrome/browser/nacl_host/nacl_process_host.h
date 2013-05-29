@@ -146,6 +146,11 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // Message handlers for validation caching.
   void OnQueryKnownToValidate(const std::string& signature, bool* result);
   void OnSetKnownToValidate(const std::string& signature);
+  void OnResolveFileToken(uint64 file_token_lo, uint64 file_token_hi,
+                          IPC::Message* reply_msg);
+  void FileResolved(base::PlatformFile* file, const base::FilePath& file_path,
+                    IPC::Message* reply_msg);
+
 #if defined(OS_WIN)
   // Message handler for Windows hardware exception handling.
   void OnAttachDebugExceptionHandler(const std::string& info,
@@ -169,7 +174,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   bool process_launched_by_broker_;
 #elif defined(OS_LINUX)
   bool wait_for_nacl_gdb_;
-  MessageLoopForIO::FileDescriptorWatcher nacl_gdb_watcher_;
+  base::MessageLoopForIO::FileDescriptorWatcher nacl_gdb_watcher_;
 
   class NaClGdbWatchDelegate;
   scoped_ptr<NaClGdbWatchDelegate> nacl_gdb_watcher_delegate_;

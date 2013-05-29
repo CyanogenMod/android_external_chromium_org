@@ -54,6 +54,7 @@ static const int k640IsoFileDurationMs = 2737;
 static const int k640IsoCencFileDurationMs = 2736;
 static const int k1280IsoFileDurationMs = 2736;
 static const int kVP9WebMFileDurationMs = 2736;
+static const int kVP8AWebMFileDurationMs = 2700;
 
 // Note: Tests using this class only exercise the DecryptingDemuxerStream path.
 // They do not exercise the Decrypting{Audio|Video}Decoder path.
@@ -237,6 +238,8 @@ class MockMediaSource {
                        base::Unretained(this)),
             base::Bind(&MockMediaSource::DemuxerNeedKey,
                        base::Unretained(this)),
+            base::Bind(&MockMediaSource::OnTextTrack,
+                       base::Unretained(this)),
             LogCB())),
         owned_chunk_demuxer_(chunk_demuxer_) {
 
@@ -322,6 +325,12 @@ class MockMediaSource {
     CHECK(!need_key_cb_.is_null());
     need_key_cb_.Run(
         std::string(), std::string(), type, init_data.Pass(), init_data_size);
+  }
+
+  scoped_ptr<TextTrack> OnTextTrack(TextKind kind,
+                                    const std::string& label,
+                                    const std::string& language) {
+    return scoped_ptr<TextTrack>();
   }
 
  private:
@@ -431,9 +440,7 @@ TEST_F(PipelineIntegrationTest, BasicPlaybackHashed) {
   EXPECT_EQ("-3.59,-2.06,-0.43,2.15,0.77,-0.95,", GetAudioHash());
 }
 
-// TODO(fgalligan): Enable test when code to parse encrypted WebM files lands
-// in Chromium's FFmpeg. crbug.com/189221
-TEST_F(PipelineIntegrationTest, DISABLED_BasicPlaybackEncrypted) {
+TEST_F(PipelineIntegrationTest, BasicPlaybackEncrypted) {
   FakeEncryptedMedia encrypted_media(new KeyProvidingApp());
   set_need_key_cb(base::Bind(&FakeEncryptedMedia::NeedKey,
                              base::Unretained(&encrypted_media)));
@@ -472,6 +479,23 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource_VideoOnly_VP9_WebM) {
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
   EXPECT_EQ(kVP9WebMFileDurationMs,
+            pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+  source.Abort();
+  Stop();
+}
+
+TEST_F(PipelineIntegrationTest, BasicPlayback_MediaSource_VP8A_WebM) {
+  MockMediaSource source("bear-vp8a.webm", kVideoOnlyWebM, kAppendWholeFile);
+  StartPipelineWithMediaSource(&source);
+  source.EndOfStream();
+
+  EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
+  EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
+  EXPECT_EQ(kVP8AWebMFileDurationMs,
             pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   Play();
@@ -929,6 +953,14 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_VP8A_WebM) {
   Play();
   ASSERT_TRUE(WaitUntilOnEnded());
   EXPECT_EQ(last_video_frame_format_, VideoFrame::YV12A);
+}
+
+// Verify that VP8 video with inband text track can be played back.
+TEST_F(PipelineIntegrationTest, BasicPlayback_VP8_WebVTT_WebM) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear-vp8-webvtt.webm"),
+                    PIPELINE_OK));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
 }
 
 }  // namespace media

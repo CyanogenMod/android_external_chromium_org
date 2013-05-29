@@ -9,8 +9,8 @@
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_store.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace policy {
 
@@ -33,8 +33,9 @@ scoped_ptr<UserCloudPolicyManager>
 }
 
 UserCloudPolicyManagerFactory::UserCloudPolicyManagerFactory()
-    : ProfileKeyedBaseFactory("UserCloudPolicyManager",
-                              ProfileDependencyManager::GetInstance()) {}
+    : BrowserContextKeyedBaseFactory(
+        "UserCloudPolicyManager",
+        BrowserContextDependencyManager::GetInstance()) {}
 
 UserCloudPolicyManagerFactory::~UserCloudPolicyManagerFactory() {}
 
@@ -63,7 +64,7 @@ scoped_ptr<UserCloudPolicyManager>
   return manager.Pass();
 }
 
-void UserCloudPolicyManagerFactory::ProfileShutdown(
+void UserCloudPolicyManagerFactory::BrowserContextShutdown(
     content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
   if (profile->IsOffTheRecord())
@@ -71,7 +72,7 @@ void UserCloudPolicyManagerFactory::ProfileShutdown(
   UserCloudPolicyManager* manager = GetManagerForProfile(profile);
   if (manager) {
     manager->CloudPolicyManager::Shutdown();
-    manager->ProfileKeyedService::Shutdown();
+    manager->BrowserContextKeyedService::Shutdown();
   }
 }
 

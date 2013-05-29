@@ -10,6 +10,7 @@
 #include "ui/gfx/rect.h"
 
 struct AwDrawGLInfo;
+struct AwDrawSWFunctionTable;
 
 namespace content {
 class ContentViewCore;
@@ -52,7 +53,8 @@ class BrowserViewRenderer {
     virtual base::android::ScopedJavaLocalRef<jobject> CreateBitmap(
         JNIEnv* env,
         int width,
-        int height) = 0;
+        int height,
+        bool cache_result) = 0;
 
     // Draws the provided Java Bitmap into the provided Java Canvas.
     virtual void DrawBitmapIntoCanvas(
@@ -68,6 +70,10 @@ class BrowserViewRenderer {
    protected:
     virtual ~JavaHelper() {}
   };
+
+  static void SetAwDrawSWFunctionTable(AwDrawSWFunctionTable* table);
+  static AwDrawSWFunctionTable* GetAwDrawSWFunctionTable();
+  static bool IsSkiaVersionCompatible();
 
   // Content control methods.
   virtual void SetContents(content::ContentViewCore* content_view_core) = 0;

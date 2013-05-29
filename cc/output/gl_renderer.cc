@@ -20,6 +20,7 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/context_provider.h"
+#include "cc/output/copy_output_request.h"
 #include "cc/output/geometry_binding.h"
 #include "cc/output/gl_frame_data.h"
 #include "cc/output/output_surface.h"
@@ -42,10 +43,12 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/GrContext.h"
 #include "third_party/skia/include/gpu/GrTexture.h"
 #include "third_party/skia/include/gpu/SkGpuDevice.h"
 #include "third_party/skia/include/gpu/SkGrTexturePixelRef.h"
+#include "third_party/skia/include/gpu/gl/GrGLInterface.h"
 #include "ui/gfx/quad_f.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -92,7 +95,7 @@ const float kAntiAliasingEpsilon = 1.0f / 1024.0f;
 struct GLRenderer::PendingAsyncReadPixels {
   PendingAsyncReadPixels() : buffer(0) {}
 
-  CopyRenderPassCallback copy_callback;
+  scoped_ptr<CopyOutputRequest> copy_request;
   base::CancelableClosure finished_read_pixels_callback;
   unsigned buffer;
 
@@ -103,11 +106,17 @@ struct GLRenderer::PendingAsyncReadPixels {
 scoped_ptr<GLRenderer> GLRenderer::Create(RendererClient* client,
                                           OutputSurface* output_surface,
                                           ResourceProvider* resource_provider,
-                                          int highp_threshold_min) {
+                                          int highp_threshold_min,
+                                          bool use_skia_gpu_backend) {
   scoped_ptr<GLRenderer> renderer(new GLRenderer(
       client, output_surface, resource_provider, highp_threshold_min));
   if (!renderer->Initialize())
     return scoped_ptr<GLRenderer>();
+  if (use_skia_gpu_backend) {
+    renderer->InitializeGrContext();
+    DCHECK(renderer->CanUseSkiaGPUBackend())
+        << "Requested Skia GPU backend, but can't use it.";
+  }
 
   return renderer.Pass();
 }
@@ -137,7 +146,7 @@ bool GLRenderer::Initialize() {
   if (!context_->makeContextCurrent())
     return false;
 
-  context_->pushGroupMarkerEXT("CompositorContext");
+  context_->pushGroupMarkerEXT(Settings().compositor_name.c_str());
 
   std::string extensions_string =
       UTF16ToASCII(context_->getString(GL_EXTENSIONS));
@@ -145,13 +154,6 @@ bool GLRenderer::Initialize() {
   base::SplitString(extensions_string, ' ', &extensions_list);
   std::set<std::string> extensions(extensions_list.begin(),
                                    extensions_list.end());
-
-  if (Settings().accelerate_painting &&
-      extensions.count("GL_EXT_texture_format_BGRA8888") &&
-      extensions.count("GL_EXT_read_format_bgra"))
-    capabilities_.using_accelerated_painting = true;
-  else
-    capabilities_.using_accelerated_painting = false;
 
   capabilities_.using_partial_swap =
       Settings().partial_swap_enabled &&
@@ -190,12 +192,12 @@ bool GLRenderer::Initialize() {
 
   capabilities_.using_offscreen_context3d = true;
 
+  capabilities_.using_map_image =
+      extensions.count("GL_CHROMIUM_map_image") > 0 &&
+      Settings().use_map_image;
+
   is_using_bind_uniform_ =
       extensions.count("GL_CHROMIUM_bind_uniform_location") > 0;
-
-  // Make sure scissoring starts as disabled.
-  GLC(context_, context_->disable(GL_SCISSOR_TEST));
-  DCHECK(!is_scissor_enabled_);
 
   if (!InitializeSharedObjects())
     return false;
@@ -205,11 +207,22 @@ bool GLRenderer::Initialize() {
   return true;
 }
 
+void GLRenderer::InitializeGrContext() {
+  skia::RefPtr<GrGLInterface> interface = skia::AdoptRef(
+      context_->createGrGLInterface());
+  if (!interface)
+    return;
+
+  gr_context_ = skia::AdoptRef(GrContext::Create(
+      kOpenGL_GrBackend,
+      reinterpret_cast<GrBackendContext>(interface.get())));
+  ReinitializeGrCanvas();
+}
+
 GLRenderer::~GLRenderer() {
   while (!pending_async_read_pixels_.empty()) {
-    pending_async_read_pixels_.back()->finished_read_pixels_callback.Cancel();
-    pending_async_read_pixels_.back()->copy_callback.Run(
-        scoped_ptr<SkBitmap>());
+    PendingAsyncReadPixels* pending_read = pending_async_read_pixels_.back();
+    pending_read->finished_read_pixels_callback.Cancel();
     pending_async_read_pixels_.pop_back();
   }
 
@@ -261,7 +274,10 @@ void GLRenderer::SendManagedMemoryStats(size_t bytes_visible,
 
 void GLRenderer::ReleaseRenderPassTextures() { render_pass_textures_.clear(); }
 
-void GLRenderer::ViewportChanged() { is_viewport_changed_ = true; }
+void GLRenderer::ViewportChanged() {
+  is_viewport_changed_ = true;
+  ReinitializeGrCanvas();
+}
 
 void GLRenderer::ClearFramebuffer(DrawingFrame* frame) {
   // On DEBUG builds, opaque render passes are cleared to blue to easily see
@@ -271,10 +287,18 @@ void GLRenderer::ClearFramebuffer(DrawingFrame* frame) {
   else
     GLC(context_, context_->clearColor(0, 0, 1, 1));
 
-#ifdef NDEBUG
-  if (frame->current_render_pass->has_transparent_background)
+  bool always_clear = false;
+#ifndef NDEBUG
+  always_clear = true;
 #endif
-    context_->clear(GL_COLOR_BUFFER_BIT);
+  if (always_clear || frame->current_render_pass->has_transparent_background) {
+    GLbitfield clear_bits = GL_COLOR_BUFFER_BIT;
+    // Only the Skia GPU backend uses the stencil buffer.  No need to clear it
+    // otherwise.
+    if (CanUseSkiaGPUBackend())
+      clear_bits |= GL_STENCIL_BUFFER_BIT;
+    context_->clear(clear_bits);
+  }
 }
 
 void GLRenderer::BeginDrawingFrame(DrawingFrame* frame) {
@@ -290,21 +314,13 @@ void GLRenderer::BeginDrawingFrame(DrawingFrame* frame) {
     // can leave the window at the wrong size if we never draw and the proper
     // viewport size is never set.
     is_viewport_changed_ = false;
-    output_surface_->Reshape(gfx::Size(ViewportWidth(), ViewportHeight()));
+    output_surface_->Reshape(gfx::Size(ViewportWidth(), ViewportHeight()),
+                             DeviceScaleFactor());
   }
 
   MakeContextCurrent();
-  // Bind the common vertex attributes used for drawing all the layers.
-  shared_geometry_->PrepareForDraw();
 
-  GLC(context_, context_->disable(GL_DEPTH_TEST));
-  GLC(context_, context_->disable(GL_CULL_FACE));
-  GLC(context_, context_->colorMask(true, true, true, true));
-  GLC(context_, context_->enable(GL_BLEND));
-  blend_shadow_ = true;
-  GLC(context_, context_->blendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
-  GLC(Context(), Context()->activeTexture(GL_TEXTURE0));
-  program_shadow_ = 0;
+  ReinitializeGLState();
 }
 
 void GLRenderer::DoNoOp() {
@@ -734,14 +750,14 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   bool clipped = false;
   gfx::QuadF device_quad = MathUtil::MapQuad(
       contents_device_transform, SharedGeometryQuad(), &clipped);
-  DCHECK(!clipped);
   LayerQuad device_layer_bounds(gfx::QuadF(device_quad.BoundingBox()));
   LayerQuad device_layer_edges(device_quad);
 
   // Use anti-aliasing programs only when necessary.
-  bool use_aa = (!device_quad.IsRectilinear() ||
-                 !gfx::IsNearestRectWithinDistance(device_quad.BoundingBox(),
-                                                   kAntiAliasingEpsilon));
+  bool use_aa = !clipped &&
+      (!device_quad.IsRectilinear() ||
+       !gfx::IsNearestRectWithinDistance(device_quad.BoundingBox(),
+                                         kAntiAliasingEpsilon));
   if (use_aa) {
     device_layer_bounds.InflateAntiAliasingDistance();
     device_layer_edges.InflateAntiAliasingDistance();
@@ -992,7 +1008,6 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   gfx::QuadF surface_quad = MathUtil::MapQuad(contents_device_transform_inverse,
                                               device_layer_edges.ToQuadF(),
                                               &clipped);
-  DCHECK(!clipped);
 
   SetShaderOpacity(quad->opacity(), shader_alpha_location);
   SetShaderQuadF(surface_quad, shader_quad_location);
@@ -1468,8 +1483,57 @@ void GLRenderer::DrawStreamVideoQuad(const DrawingFrame* frame,
                    program->vertex_shader().matrix_location());
 }
 
+void GLRenderer::DrawPictureQuadDirectToBackbuffer(
+    const DrawingFrame* frame,
+    const PictureDrawQuad* quad) {
+  DCHECK(CanUseSkiaGPUBackend());
+  DCHECK_EQ(quad->opacity(), 1.f) << "Need to composite to a bitmap or a "
+                                     "render surface for non-1 opacity quads";
+
+  // TODO(enne): This should be done more lazily / efficiently.
+  gr_context_->resetContext();
+
+  // Reset the canvas matrix to identity because the clip rect is in target
+  // space.
+  SkMatrix sk_identity;
+  sk_identity.setIdentity();
+  sk_canvas_->setMatrix(sk_identity);
+
+  if (is_scissor_enabled_) {
+    sk_canvas_->clipRect(gfx::RectToSkRect(scissor_rect_),
+                         SkRegion::kReplace_Op);
+  } else {
+    sk_canvas_->clipRect(gfx::RectToSkRect(gfx::Rect(ViewportSize())),
+                         SkRegion::kReplace_Op);
+  }
+
+  gfx::Transform contents_device_transform = frame->window_matrix *
+    frame->projection_matrix * quad->quadTransform();
+  contents_device_transform.Translate(quad->rect.x(),
+                                      quad->rect.y());
+  contents_device_transform.FlattenTo2d();
+  SkMatrix sk_device_matrix;
+  gfx::TransformToFlattenedSkMatrix(contents_device_transform,
+                                    &sk_device_matrix);
+  sk_canvas_->setMatrix(sk_device_matrix);
+
+  quad->picture_pile->RasterDirect(
+      sk_canvas_.get(), quad->content_rect, quad->contents_scale, NULL);
+
+  // Flush any drawing buffers that have been deferred.
+  sk_canvas_->flush();
+
+  // TODO(enne): This should be done more lazily / efficiently.
+  ReinitializeGLState();
+}
+
 void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
                                  const PictureDrawQuad* quad) {
+  if (quad->can_draw_direct_to_backbuffer && CanUseSkiaGPUBackend()) {
+    DrawPictureQuadDirectToBackbuffer(frame, quad);
+    return;
+  }
+
   if (on_demand_tile_raster_bitmap_.width() != quad->texture_size.width() ||
       on_demand_tile_raster_bitmap_.height() != quad->texture_size.height()) {
     on_demand_tile_raster_bitmap_.setConfig(
@@ -1491,8 +1555,8 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
   SkDevice device(on_demand_tile_raster_bitmap_);
   SkCanvas canvas(&device);
 
-  quad->picture_pile->Raster(&canvas, quad->content_rect, quad->contents_scale,
-                             NULL);
+  quad->picture_pile->RasterToBitmap(&canvas, quad->content_rect,
+                                     quad->contents_scale, NULL);
 
   resource_provider_->SetPixels(
       on_demand_tile_raster_resource_id_,
@@ -1803,10 +1867,10 @@ void GLRenderer::EnsureScissorTestDisabled() {
 
 void GLRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
-    const CopyRenderPassCallback& callback) {
+    scoped_ptr<CopyOutputRequest> request) {
   GetFramebufferPixelsAsync(frame->current_render_pass->output_rect,
                             frame->flipped_y,
-                            callback);
+                            request.Pass());
 }
 
 void GLRenderer::ToGLMatrix(float* gl_matrix, const gfx::Transform& transform) {
@@ -1896,7 +1960,7 @@ void GLRenderer::Finish() {
   context_->finish();
 }
 
-void GLRenderer::SwapBuffers(const LatencyInfo& latency_info) {
+void GLRenderer::SwapBuffers(const ui::LatencyInfo& latency_info) {
   DCHECK(visible_);
   DCHECK(!is_backbuffer_discarded_);
 
@@ -2025,15 +2089,13 @@ void GLRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
                          AsyncGetFramebufferPixelsCleanupCallback());
 }
 
-void GLRenderer::GetFramebufferPixelsAsync(gfx::Rect rect,
-                                           bool flipped_y,
-                                           CopyRenderPassCallback callback) {
-  if (callback.is_null())
+void GLRenderer::GetFramebufferPixelsAsync(
+    gfx::Rect rect, bool flipped_y, scoped_ptr<CopyOutputRequest> request) {
+  DCHECK(!request->IsEmpty());
+  if (request->IsEmpty())
     return;
-  if (rect.IsEmpty()) {
-    callback.Run(scoped_ptr<SkBitmap>());
+  if (rect.IsEmpty())
     return;
-  }
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
   bitmap->setConfig(SkBitmap::kARGB_8888_Config, rect.width(), rect.height());
@@ -2048,11 +2110,10 @@ void GLRenderer::GetFramebufferPixelsAsync(gfx::Rect rect,
       &GLRenderer::PassOnSkBitmap,
       base::Unretained(this),
       base::Passed(&bitmap),
-      base::Passed(&lock),
-      callback);
+      base::Passed(&lock));
 
   scoped_ptr<PendingAsyncReadPixels> pending_read(new PendingAsyncReadPixels);
-  pending_read->copy_callback = callback;
+  pending_read->copy_request = request.Pass();
   pending_async_read_pixels_.insert(pending_async_read_pixels_.begin(),
                                     pending_read.Pass());
 
@@ -2187,7 +2248,10 @@ void GLRenderer::FinishedReadback(
     gfx::Size size,
     bool flipped_y) {
   DCHECK(!pending_async_read_pixels_.empty());
-  DCHECK_EQ(source_buffer, pending_async_read_pixels_.back()->buffer);
+
+  PendingAsyncReadPixels* current_read = pending_async_read_pixels_.back();
+  // Make sure we service the readbacks in order.
+  DCHECK_EQ(source_buffer, current_read->buffer);
 
   uint8* src_pixels = NULL;
 
@@ -2226,7 +2290,7 @@ void GLRenderer::FinishedReadback(
   // TODO(danakj): This can go away when synchronous readback is no more and its
   // contents can just move here.
   if (!cleanup_callback.is_null())
-    cleanup_callback.Run(src_pixels != NULL);
+    cleanup_callback.Run(current_read->copy_request.Pass(), src_pixels != NULL);
 
   pending_async_read_pixels_.pop_back();
 }
@@ -2234,15 +2298,13 @@ void GLRenderer::FinishedReadback(
 void GLRenderer::PassOnSkBitmap(
     scoped_ptr<SkBitmap> bitmap,
     scoped_ptr<SkAutoLockPixels> lock,
-    const CopyRenderPassCallback& callback,
+    scoped_ptr<CopyOutputRequest> request,
     bool success) {
-  DCHECK(callback.Equals(pending_async_read_pixels_.back()->copy_callback));
+  DCHECK(request->HasBitmapRequest());
 
   lock.reset();
   if (success)
-    callback.Run(bitmap.Pass());
-  else
-    callback.Run(scoped_ptr<SkBitmap>());
+    request->SendBitmapResult(bitmap.Pass());
 }
 
 bool GLRenderer::GetFramebufferTexture(ScopedResource* texture,
@@ -2797,6 +2859,51 @@ void GLRenderer::CleanupSharedObjects() {
     resource_provider_->DeleteResource(on_demand_tile_raster_resource_id_);
 
   ReleaseRenderPassTextures();
+}
+
+void GLRenderer::ReinitializeGrCanvas() {
+  if (!CanUseSkiaGPUBackend())
+    return;
+
+  GrBackendRenderTargetDesc desc;
+  desc.fWidth = ViewportWidth();
+  desc.fHeight = ViewportHeight();
+  desc.fConfig = kRGBA_8888_GrPixelConfig;
+  desc.fOrigin = kTopLeft_GrSurfaceOrigin;
+  desc.fSampleCnt = 1;
+  desc.fStencilBits = 8;
+  desc.fRenderTargetHandle = 0;
+
+  skia::RefPtr<GrSurface> surface(
+      skia::AdoptRef(gr_context_->wrapBackendRenderTarget(desc)));
+  skia::RefPtr<SkDevice> device(
+      skia::AdoptRef(SkGpuDevice::Create(surface.get())));
+  sk_canvas_ = skia::AdoptRef(new SkCanvas(device.get()));
+}
+
+void GLRenderer::ReinitializeGLState() {
+  // Bind the common vertex attributes used for drawing all the layers.
+  shared_geometry_->PrepareForDraw();
+
+  GLC(context_, context_->disable(GL_STENCIL_TEST));
+  GLC(context_, context_->disable(GL_DEPTH_TEST));
+  GLC(context_, context_->disable(GL_CULL_FACE));
+  GLC(context_, context_->colorMask(true, true, true, true));
+  GLC(context_, context_->enable(GL_BLEND));
+  blend_shadow_ = true;
+  GLC(context_, context_->blendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
+  GLC(context_, context_->activeTexture(GL_TEXTURE0));
+  program_shadow_ = 0;
+
+  // Make sure scissoring starts as disabled.
+  is_scissor_enabled_ = false;
+  GLC(context_, context_->disable(GL_SCISSOR_TEST));
+}
+
+bool GLRenderer::CanUseSkiaGPUBackend() const {
+  // The Skia GPU backend requires a stencil buffer.  See ReinitializeGrCanvas
+  // implementation.
+  return gr_context_ && context_->getContextAttributes().stencil;
 }
 
 bool GLRenderer::IsContextLost() {

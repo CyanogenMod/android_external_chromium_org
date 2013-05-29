@@ -5,7 +5,9 @@
 #include "chromeos/network/network_connection_handler.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/json/json_reader.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_service_client.h"
@@ -26,14 +28,16 @@ namespace chromeos {
 
 namespace {
 
-const char kLogModule[] = "NetworkConnectionHandler";
-
-void InvokeErrorCallback(
-    const std::string& service_path,
-    const network_handler::ErrorCallback& error_callback,
-    const std::string& error_name) {
-  network_handler::ShillErrorCallbackFunction(
-      kLogModule, service_path, error_callback, error_name, "Connect Error");
+void InvokeErrorCallback(const std::string& service_path,
+                         const network_handler::ErrorCallback& error_callback,
+                         const std::string& error_name) {
+  std::string error_msg = "Connect Error: " + error_name;
+  NET_LOG_ERROR(error_msg, service_path);
+  if (error_callback.is_null())
+    return;
+  scoped_ptr<base::DictionaryValue> error_data(
+      network_handler::CreateErrorData(service_path, error_name, error_msg));
+  error_callback.Run(error_name, error_data.Pass());
 }
 
 bool NetworkMayNeedCredentials(const NetworkState* network) {
@@ -107,8 +111,6 @@ bool CertificateIsConfigured(NetworkUIData* ui_data) {
 
 }  // namespace
 
-static NetworkConnectionHandler* g_connection_handler_instance = NULL;
-
 const char NetworkConnectionHandler::kErrorNotFound[] = "not-found";
 const char NetworkConnectionHandler::kErrorConnected[] = "connected";
 const char NetworkConnectionHandler::kErrorConnecting[] = "connecting";
@@ -123,38 +125,33 @@ const char NetworkConnectionHandler::kErrorConfigurationRequired[] =
     "configuration-required";
 const char NetworkConnectionHandler::kErrorShillError[] = "shill-error";
 
-// static
-void NetworkConnectionHandler::Initialize() {
-  CHECK(!g_connection_handler_instance);
-  g_connection_handler_instance = new NetworkConnectionHandler;
-}
-
-// static
-void NetworkConnectionHandler::Shutdown() {
-  CHECK(g_connection_handler_instance);
-  delete g_connection_handler_instance;
-  g_connection_handler_instance = NULL;
-}
-
-// static
-NetworkConnectionHandler* NetworkConnectionHandler::Get() {
-  CHECK(g_connection_handler_instance)
-      << "NetworkConnectionHandler::Get() called before Initialize()";
-  return g_connection_handler_instance;
-}
-
-NetworkConnectionHandler::NetworkConnectionHandler() {
+NetworkConnectionHandler::NetworkConnectionHandler()
+    : network_state_handler_(NULL),
+      network_configuration_handler_(NULL) {
+  const char* new_handlers_enabled =
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kUseNewNetworkConfigurationHandlers) ?
+      "enabled" : "disabled";
+  NET_LOG_EVENT("NewNetworkConfigurationHandlers", new_handlers_enabled);
 }
 
 NetworkConnectionHandler::~NetworkConnectionHandler() {
 }
 
+void NetworkConnectionHandler::Init(
+    NetworkStateHandler* network_state_handler,
+    NetworkConfigurationHandler* network_configuration_handler) {
+  network_state_handler_ = network_state_handler;
+  network_configuration_handler_ = network_configuration_handler;
+}
+
 void NetworkConnectionHandler::ConnectToNetwork(
     const std::string& service_path,
     const base::Closure& success_callback,
-    const network_handler::ErrorCallback& error_callback) {
+    const network_handler::ErrorCallback& error_callback,
+    bool ignore_error_state) {
   const NetworkState* network =
-      NetworkStateHandler::Get()->GetNetworkState(service_path);
+      network_state_handler_->GetNetworkState(service_path);
   if (!network) {
     InvokeErrorCallback(service_path, error_callback, kErrorNotFound);
     return;
@@ -168,13 +165,31 @@ void NetworkConnectionHandler::ConnectToNetwork(
     InvokeErrorCallback(service_path, error_callback, kErrorConnecting);
     return;
   }
-  if (network->passphrase_required()) {
-    InvokeErrorCallback(service_path, error_callback, kErrorPassphraseRequired);
-    return;
-  }
   if (NetworkRequiresActivation(network)) {
     InvokeErrorCallback(service_path, error_callback, kErrorActivationRequired);
     return;
+  }
+  if (!ignore_error_state) {
+    if (network->passphrase_required()) {
+      InvokeErrorCallback(service_path, error_callback,
+                          kErrorPassphraseRequired);
+      return;
+    }
+    if (network->error() == flimflam::kErrorConnectFailed) {
+      InvokeErrorCallback(service_path, error_callback,
+                          kErrorPassphraseRequired);
+      return;
+    }
+    if (network->error() == flimflam::kErrorBadPassphrase) {
+      InvokeErrorCallback(service_path, error_callback,
+                          kErrorPassphraseRequired);
+      return;
+    }
+    if (network->HasAuthenticationError()) {
+      InvokeErrorCallback(service_path, error_callback,
+                          kErrorConfigurationRequired);
+      return;
+    }
   }
 
   // All synchronous checks passed, add |service_path| to connecting list.
@@ -182,7 +197,7 @@ void NetworkConnectionHandler::ConnectToNetwork(
 
   if (!network->connectable() && NetworkMayNeedCredentials(network)) {
     // Request additional properties to check.
-    NetworkConfigurationHandler::Get()->GetProperties(
+    network_configuration_handler_->GetProperties(
         network->path(),
         base::Bind(&NetworkConnectionHandler::VerifyConfiguredAndConnect,
                    AsWeakPtr(), success_callback, error_callback),
@@ -199,7 +214,7 @@ void NetworkConnectionHandler::DisconnectNetwork(
     const base::Closure& success_callback,
     const network_handler::ErrorCallback& error_callback) {
   const NetworkState* network =
-      NetworkStateHandler::Get()->GetNetworkState(service_path);
+      network_state_handler_->GetNetworkState(service_path);
   if (!network) {
     InvokeErrorCallback(service_path, error_callback, kErrorNotFound);
     return;
@@ -217,8 +232,8 @@ void NetworkConnectionHandler::CallShillConnect(
     const network_handler::ErrorCallback& error_callback) {
   // TODO(stevenjb): Remove SetConnectingNetwork and use this class to maintain
   // the connecting network(s) once NetworkLibrary path is eliminated.
-  NetworkStateHandler::Get()->SetConnectingNetwork(service_path);
-  network_event_log::AddEntry(kLogModule, "Connect Request", service_path);
+  network_state_handler_->SetConnectingNetwork(service_path);
+  NET_LOG_EVENT("Connect Request", service_path);
   DBusThreadManager::Get()->GetShillServiceClient()->Connect(
       dbus::ObjectPath(service_path),
       base::Bind(&NetworkConnectionHandler::HandleShillSuccess,
@@ -231,7 +246,7 @@ void NetworkConnectionHandler::CallShillDisconnect(
     const std::string& service_path,
     const base::Closure& success_callback,
     const network_handler::ErrorCallback& error_callback) {
-  network_event_log::AddEntry(kLogModule, "Disconnect Request", service_path);
+  NET_LOG_EVENT("Disconnect Request", service_path);
   DBusThreadManager::Get()->GetShillServiceClient()->Disconnect(
       dbus::ObjectPath(service_path),
       base::Bind(&NetworkConnectionHandler::HandleShillSuccess,
@@ -246,7 +261,7 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
     const std::string& service_path,
     const base::DictionaryValue& properties) {
   const NetworkState* network =
-      NetworkStateHandler::Get()->GetNetworkState(service_path);
+      network_state_handler_->GetNetworkState(service_path);
   if (!network) {
     InvokeErrorCallback(service_path, error_callback, kErrorNotFound);
     return;
@@ -291,7 +306,7 @@ void NetworkConnectionHandler::HandleShillSuccess(
   // point (or maybe call it twice, once indicating in-progress, then success
   // or failure).
   pending_requests_.erase(service_path);
-  network_event_log::AddEntry(kLogModule, "Connected", service_path);
+  NET_LOG_EVENT("Connect Request Sent", service_path);
   success_callback.Run();
 }
 
@@ -303,7 +318,7 @@ void NetworkConnectionHandler::HandleShillFailure(
   pending_requests_.erase(service_path);
   std::string error = "Connect Failure: " + error_name + ": " + error_message;
   network_handler::ShillErrorCallbackFunction(
-      kLogModule, service_path, error_callback, error_name, error_message);
+      service_path, error_callback, error_name, error_message);
 }
 
 }  // namespace chromeos

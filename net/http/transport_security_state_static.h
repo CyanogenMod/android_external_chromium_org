@@ -400,6 +400,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {25, true, "\004plus\007sandbox\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {19, true, "\006script\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {20, true, "\007history\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
+  {21, true, "\010security\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {20, true, "\006market\007android\003com", true, kGooglePins, DOMAIN_ANDROID_COM },
   {26, true, "\003ssl\020google-analytics\003com", true, kGooglePins, DOMAIN_GOOGLE_ANALYTICS_COM },
   {18, true, "\005drive\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
@@ -679,6 +680,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {11, true, "\006betnet\002fr", true, kNoPins, DOMAIN_NOT_PINNED },
   {13, true, "\010uprotect\002it", true, kNoPins, DOMAIN_NOT_PINNED },
   {14, false, "\010squareup\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, false, "\006square\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {9, true, "\004cert\002se", true, kNoPins, DOMAIN_NOT_PINNED },
   {11, true, "\006crypto\002is", true, kNoPins, DOMAIN_NOT_PINNED },
   {20, true, "\005simon\007butcher\004name", true, kNoPins, DOMAIN_NOT_PINNED },
@@ -801,6 +803,15 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {10, true, "\004sah3\003net", true, kNoPins, DOMAIN_NOT_PINNED },
   {9, false, "\003grc\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {13, false, "\003www\003grc\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, false, "\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, false, "\003www\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\007manager\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, false, "\004blog\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false, "\007library\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\005forum\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {14, false, "\001p\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\005paste\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {21, false, "\010pastebin\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

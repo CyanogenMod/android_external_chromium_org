@@ -11,7 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "extensions/common/extension_resource.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/layout.h"
@@ -32,7 +32,7 @@ class Extension;
 // The views need to load their icons asynchronously might be deleted before
 // the images have loaded. If you pass your callback using a weak_ptr, this
 // will make sure the callback won't be called after the view is deleted.
-class ImageLoader : public ProfileKeyedService {
+class ImageLoader : public BrowserContextKeyedService {
  public:
   // Information about a singe image representation to load from an extension
   // resource.

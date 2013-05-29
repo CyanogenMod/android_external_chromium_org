@@ -46,10 +46,13 @@ LOCAL_SRC_FILES := \
 	ui/base/animation/tween.cc \
 	ui/base/clipboard/clipboard.cc \
 	ui/base/clipboard/clipboard_android.cc \
+	ui/base/clipboard/clipboard_constants.cc \
 	ui/base/clipboard/custom_data_helper.cc \
 	ui/base/clipboard/scoped_clipboard_writer.cc \
+	ui/base/default_theme_provider.cc \
 	ui/base/events/event_utils.cc \
 	ui/base/keycodes/keyboard_code_conversion.cc \
+	ui/base/latency_info.cc \
 	ui/base/l10n/l10n_font_util.cc \
 	ui/base/l10n/l10n_util.cc \
 	ui/base/l10n/l10n_util_android.cc \
@@ -185,6 +188,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -236,17 +240,17 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libpng \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(gyp_shared_intermediate_dir)/ui/app_locale_settings \
 	$(gyp_shared_intermediate_dir)/ui/ui_strings \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/jpeg \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/external/jpeg \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

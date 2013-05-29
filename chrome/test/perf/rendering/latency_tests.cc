@@ -25,7 +25,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/test/gpu/gpu_test_config.h"
+#include "gpu/config/gpu_test_config.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
@@ -99,9 +99,9 @@ const int kInputsPerFrame = 16;
 const int kClearColorGreen = 137;
 const int kMouseY = 5;
 
-// Don't analyze begin frames that may be inaccurate. Latencies can be as high
+// Don't analyze start frames that may be inaccurate. Latencies can be as high
 // as 5 frames or so, so skip the first 6 frames to get more accurate results.
-const int kIgnoreBeginFrames = 6;
+const int kIgnoreStartFrames = 6;
 // Don't analyze end frames that may be inaccurate.
 const int kIgnoreEndFrames = 4;
 // Minimum frames to produce an answer.
@@ -258,7 +258,7 @@ void LatencyTest::RunTest(const std::vector<int>& behaviors) {
   // without multisampling. Since the Latency test does not depend much on the
   // GPU, let's just skip testing on Intel since the data is redundant with
   // other non-Intel bots.
-  GPUTestBotConfig test_bot;
+  gpu::GPUTestBotConfig test_bot;
   test_bot.LoadCurrentConfig(NULL);
   const std::vector<uint32>& gpu_vendor = test_bot.gpu_vendor();
 #if defined(OS_LINUX)
@@ -478,7 +478,7 @@ double LatencyTest::CalculateLatency() {
       ++swap_count;
       // Don't analyze first few swaps, because they are filling the rendering
       // pipeline and may be unstable.
-      if (swap_count > kIgnoreBeginFrames) {
+      if (swap_count > kIgnoreStartFrames) {
         // First, find the beginning of this swap.
         size_t begin_swap_pos = 0;
         EXPECT_TRUE(FindLastOf(events, query_begin_swaps_, end_swap_pos,

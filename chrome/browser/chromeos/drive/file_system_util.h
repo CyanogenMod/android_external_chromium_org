@@ -42,10 +42,6 @@ const base::FilePath::CharType kMountedArchiveFileExtension[] =
     FILE_PATH_LITERAL("mounted");
 const base::FilePath::CharType kWildCard[] =
     FILE_PATH_LITERAL("*");
-// The path is used for creating a symlink in "pinned" directory for a file
-// which is not yet fetched.
-const base::FilePath::CharType kSymLinkToDevNull[] =
-    FILE_PATH_LITERAL("/dev/null");
 
 // Special resource IDs introduced to manage pseudo directory tree locally.
 // These strings are supposed to be different from any resource ID used on the
@@ -145,21 +141,15 @@ std::string UnescapeCacheFileName(const std::string& filename);
 // \u2215 pretty much looks the same in UI.
 std::string EscapeUtf8FileName(const std::string& input);
 
-// Extracts resource_id out of edit url.
-std::string ExtractResourceIdFromUrl(const GURL& url);
-
 // Gets the cache root path (i.e. <user_profile_dir>/GCache/v1) from the
 // profile.
 base::FilePath GetCacheRootPath(Profile* profile);
 
 // Extracts resource_id, md5, and extra_extension from cache path.
-// Case 1: Pinned and outgoing symlinks only have resource_id.
-// Example: path="/user/GCache/v1/pinned/pdf:a1b2" =>
-//          resource_id="pdf:a1b2", md5="", extra_extension="";
-// Case 2: Normal files have both resource_id and md5.
+// Case 1: Normal files have both resource_id and md5.
 // Example: path="/user/GCache/v1/tmp/pdf:a1b2.01234567" =>
 //          resource_id="pdf:a1b2", md5="01234567", extra_extension="";
-// Case 3: Mounted files have all three parts.
+// Case 2: Mounted files have all three parts.
 // Example: path="/user/GCache/v1/persistent/pdf:a1b2.01234567.mounted" =>
 //          resource_id="pdf:a1b2", md5="01234567", extra_extension="mounted".
 void ParseCacheFilePath(const base::FilePath& path,
@@ -167,7 +157,7 @@ void ParseCacheFilePath(const base::FilePath& path,
                         std::string* md5,
                         std::string* extra_extension);
 
-// Callback type for PrepareWritablebase::FilePathAndRun.
+// Callback type for PrepareWritableFileAndRun.
 typedef base::Callback<void (FileError, const base::FilePath& path)>
     OpenFileCallback;
 
@@ -221,6 +211,24 @@ struct DestroyHelper {
       object->Destroy();
   }
 };
+
+// Creates a GDoc file with given values.
+//
+// GDoc files are used to represent hosted documents on local filesystems.
+// A GDoc file contains a JSON whose content is a URL to view the document and
+// a resource ID of the entry.
+bool CreateGDocFile(const base::FilePath& file_path,
+                    const GURL& url,
+                    const std::string& resource_id);
+
+// Returns true if |file_path| has a GDoc file extension. (e.g. ".gdoc")
+bool HasGDocFileExtension(const base::FilePath& file_path);
+
+// Reads URL from a GDoc file.
+GURL ReadUrlFromGDocFile(const base::FilePath& file_path);
+
+// Reads resource ID from a GDoc file.
+std::string ReadResourceIdFromGDocFile(const base::FilePath& file_path);
 
 }  // namespace util
 }  // namespace drive

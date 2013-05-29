@@ -9,6 +9,7 @@
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/common/autocomplete_match_type.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/instant_types.h"
 #include "chrome/common/url_constants.h"
@@ -143,7 +144,8 @@ v8::Handle<v8::Object> GenerateNativeSuggestion(
     const InstantAutocompleteResult& result) {
   v8::Handle<v8::Object> obj = v8::Object::New();
   obj->Set(v8::String::New("provider"), UTF16ToV8String(result.provider));
-  obj->Set(v8::String::New("type"), UTF16ToV8String(result.type));
+  obj->Set(v8::String::New("type"),
+           UTF8ToV8String(AutocompleteMatchType::ToString(result.type)));
   obj->Set(v8::String::New("description"), UTF16ToV8String(result.description));
   obj->Set(v8::String::New("destination_url"),
            UTF16ToV8String(result.destination_url));
@@ -249,16 +251,11 @@ bool IsSensitiveInput(const string16& query) {
     // IsQuerySuitableForSuggest function.)
 
     // First we check the scheme: if this looks like a URL with a scheme that is
-    // not http/https/ftp, we shouldn't send it.  Sending things like file: and
-    // data: is a waste of time and a disclosure of potentially private, local
-    // data.  Other "schemes" may actually be usernames, and we don't want to
-    // send passwords.  If the scheme is OK, we still need to check other cases
-    // below.
-    if (!LowerCaseEqualsASCII(query_as_url.scheme(), chrome::kHttpScheme) &&
-        !LowerCaseEqualsASCII(query_as_url.scheme(), chrome::kHttpsScheme) &&
-        !LowerCaseEqualsASCII(query_as_url.scheme(), chrome::kFtpScheme)) {
+    // file, we shouldn't send it.  Sending such things is a waste of time and a
+    // disclosure of potentially private, local data.  If the scheme is OK, we
+    // still need to check other cases below.
+    if (LowerCaseEqualsASCII(query_as_url.scheme(), chrome::kFileScheme))
       return true;
-    }
 
     // Don't send URLs with usernames, queries or refs.  Some of these are
     // private, and the Suggest server is unlikely to have any useful results
@@ -268,17 +265,15 @@ bool IsSensitiveInput(const string16& query) {
     // server is once again unlikely to have and useful results.
     if (!query_as_url.username().empty() ||
         !query_as_url.port().empty() ||
-        !query_as_url.query().empty() || !query_as_url.ref().empty()) {
+        !query_as_url.query().empty() || !query_as_url.ref().empty())
       return true;
-    }
 
     // Don't send anything for https except the hostname.  Hostnames are OK
     // because they are visible when the TCP connection is established, but the
     // specific path may reveal private information.
     if (LowerCaseEqualsASCII(query_as_url.scheme(), chrome::kHttpsScheme) &&
-        !query_as_url.path().empty() && query_as_url.path() != "/") {
+        !query_as_url.path().empty() && query_as_url.path() != "/")
       return true;
-    }
   }
   return false;
 }

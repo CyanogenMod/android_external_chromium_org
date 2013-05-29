@@ -22,25 +22,24 @@ CC_EXPORT extern const char kDisableImplSidePainting[];
 CC_EXPORT extern const char kDisableThreadedAnimation[];
 CC_EXPORT extern const char kEnableCompositorFrameMessage[];
 CC_EXPORT extern const char kEnableImplSidePainting[];
-CC_EXPORT extern const char kEnablePredictionBenchmarking[];
 CC_EXPORT extern const char kEnableRightAlignedScheduling[];
 CC_EXPORT extern const char kEnableTopControlsPositionCalculation[];
+CC_EXPORT extern const char kForceDirectLayerDrawing[];
 CC_EXPORT extern const char kJankInsteadOfCheckerboard[];
 CC_EXPORT extern const char kNumRasterThreads[];
 CC_EXPORT extern const char kTopControlsHeight[];
 CC_EXPORT extern const char kTopControlsHideThreshold[];
 CC_EXPORT extern const char kTraceOverdraw[];
 CC_EXPORT extern const char kTopControlsShowThreshold[];
-CC_EXPORT extern const char kTraceAllRenderedFrames[];
 CC_EXPORT extern const char kSlowDownRasterScaleFactor[];
 CC_EXPORT extern const char kLowResolutionContentsScaleFactor[];
 CC_EXPORT extern const char kCompositeToMailbox[];
 CC_EXPORT extern const char kMaxTilesForInterestArea[];
 CC_EXPORT extern const char kMaxUnusedResourceMemoryUsagePercentage[];
-CC_EXPORT extern const char kEnablePinchZoomScrollbars[];
-CC_EXPORT extern const char kDisablePinchZoomScrollbars[];
+CC_EXPORT extern const char kEnablePinchVirtualViewport[];
 CC_EXPORT extern const char kEnablePartialSwap[];
 CC_EXPORT extern const char kStrictLayerPropertyChangeChecking[];
+CC_EXPORT extern const char kUseMapImage[];
 
 // Switches for both the renderer and ui compositors.
 CC_EXPORT extern const char kUIDisablePartialSwap[];

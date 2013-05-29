@@ -44,7 +44,7 @@ const AcceleratorData kAcceleratorData[] = {
   { true, ui::VKEY_KBD_BRIGHTNESS_DOWN, ui::EF_NONE, KEYBOARD_BRIGHTNESS_DOWN },
   { true, ui::VKEY_KBD_BRIGHTNESS_UP, ui::EF_NONE, KEYBOARD_BRIGHTNESS_UP },
   // Maximize button.
-  { true, ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_CONTROL_DOWN, CYCLE_DISPLAY_MODE },
+  { true, ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_CONTROL_DOWN, TOGGLE_MIRROR_MODE },
   { true, ui::VKEY_MEDIA_LAUNCH_APP2, ui::EF_ALT_DOWN, SWAP_PRIMARY_DISPLAY },
   // Cycle windows button.
   { true, ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN, TAKE_SCREENSHOT },
@@ -185,6 +185,10 @@ const AcceleratorData kDesktopAcceleratorData[] = {
   { true, ui::VKEY_L, ui::EF_ALT_DOWN, LOCK_SCREEN },
   { true, ui::VKEY_POWER, ui::EF_SHIFT_DOWN, LOCK_PRESSED },
   { false, ui::VKEY_POWER, ui::EF_SHIFT_DOWN, LOCK_RELEASED },
+  { true, ui::VKEY_D, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN,
+    ADD_REMOVE_DISPLAY },
+  { true, ui::VKEY_M, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN,
+    TOGGLE_MIRROR_MODE },
 #endif
   // Extra shortcut for display swaping as alt-f4 is taken on linux desktop.
   { true, ui::VKEY_S, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
@@ -237,6 +241,18 @@ const AcceleratorAction kReservedActions[] = {
 
 const size_t kReservedActionsLength = arraysize(kReservedActions);
 
+const AcceleratorAction kReservedDebugActions[] = {
+  PRINT_LAYER_HIERARCHY,
+  PRINT_VIEW_HIERARCHY,
+  PRINT_WINDOW_HIERARCHY,
+  DEBUG_TOGGLE_DEVICE_SCALE_FACTOR,
+  DEBUG_TOGGLE_SHOW_DEBUG_BORDERS,
+  DEBUG_TOGGLE_SHOW_FPS_COUNTER,
+  DEBUG_TOGGLE_SHOW_PAINT_RECTS,
+};
+
+const size_t kReservedDebugActionsLength = arraysize(kReservedDebugActions);
+
 const AcceleratorAction kActionsAllowedAtLoginOrLockScreen[] = {
   BRIGHTNESS_DOWN,
   BRIGHTNESS_UP,
@@ -263,8 +279,9 @@ const AcceleratorAction kActionsAllowedAtLoginOrLockScreen[] = {
   VOLUME_MUTE,
   VOLUME_UP,
 #if defined(OS_CHROMEOS)
-  CYCLE_DISPLAY_MODE,
+  ADD_REMOVE_DISPLAY,
   DISABLE_GPU_WATCHDOG,
+  TOGGLE_MIRROR_MODE,
 #endif
 #if defined(OS_CHROMEOS) && !defined(NDEBUG)
   POWER_PRESSED,
@@ -312,8 +329,11 @@ const AcceleratorAction kActionsAllowedAtModalWindow[] = {
   VOLUME_MUTE,
   VOLUME_UP,
 #if defined(OS_CHROMEOS)
-  CYCLE_DISPLAY_MODE,
+#if !defined(NDEBUG)
+  ADD_REMOVE_DISPLAY,
+#endif
   LOCK_SCREEN,
+  TOGGLE_MIRROR_MODE,
 #endif
 };
 
@@ -326,6 +346,7 @@ const AcceleratorAction kNonrepeatableActions[] = {
   CYCLE_BACKWARD_MRU,
   CYCLE_FORWARD_LINEAR,
   CYCLE_FORWARD_MRU,
+  EXIT,
   PRINT_UI_HIERARCHIES,  // Don't fill the logs if the key is held down.
   ROTATE_SCREEN,
   ROTATE_WINDOW,
@@ -378,8 +399,9 @@ const AcceleratorAction kActionsAllowedInAppMode[] = {
   VOLUME_MUTE,
   VOLUME_UP,
 #if defined(OS_CHROMEOS)
-  CYCLE_DISPLAY_MODE,
+  ADD_REMOVE_DISPLAY,
   DISABLE_GPU_WATCHDOG,
+  TOGGLE_MIRROR_MODE,
 #endif  // defined(OS_CHROMEOS)
 };
 

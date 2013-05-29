@@ -9,6 +9,7 @@
 #include "base/message_loop.h"
 #include "base/process_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/task_manager/resource_provider.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,7 +27,7 @@ const char* kZeroCPUUsage = "0.0";
 const char* kZeroCPUUsage = "0";
 #endif
 
-class TestResource : public TaskManager::Resource {
+class TestResource : public task_manager::Resource {
  public:
   TestResource() : refresh_called_(false) {}
 
@@ -110,7 +111,7 @@ TEST_F(TaskManagerTest, Resources) {
 
 // Tests that the model is calling Refresh() on its resources.
 TEST_F(TaskManagerTest, RefreshCalled) {
-  MessageLoop loop;
+  base::MessageLoop loop;
   TaskManager task_manager;
   TaskManagerModel* model = task_manager.model_;
   TestResource resource;

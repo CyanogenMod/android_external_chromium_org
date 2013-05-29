@@ -108,7 +108,7 @@ class VIEWS_EXPORT RootView : public View,
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
   virtual void SetMouseHandler(View* new_mouse_handler) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual void ReorderChildLayers(ui::Layer* parent_layer) OVERRIDE;
+  virtual void UpdateParentLayer() OVERRIDE;
 
  protected:
   // Overridden from View:
@@ -120,8 +120,8 @@ class VIEWS_EXPORT RootView : public View,
   virtual View::DragInfo* GetDragInfo() OVERRIDE;
 
  private:
-  friend class View;
-  friend class Widget;
+  friend class ::views::View;
+  friend class ::views::Widget;
 
   // Input ---------------------------------------------------------------------
 

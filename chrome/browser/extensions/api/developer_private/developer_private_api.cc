@@ -5,6 +5,7 @@
 #include "chrome/browser/extensions/api/developer_private/developer_private_api.h"
 
 #include "base/base64.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/strings/string_number_conversions.h"
@@ -28,6 +29,7 @@
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/developer_private.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension_icon_set.h"
@@ -47,11 +49,12 @@
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/blob/shareable_file_reference.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_operation.h"
-#include "webkit/fileapi/local_file_system_operation.h"
-#include "webkit/fileapi/syncable/syncable_file_system_util.h"
+#include "ui/webui/web_ui_util.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/local_file_system_operation.h"
+#include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
+#include "webkit/common/blob/shareable_file_reference.h"
 
 using content::RenderViewHost;
 
@@ -291,7 +294,7 @@ void DeveloperPrivateGetItemsInfoFunction::
   ShellWindowRegistry* registry = ShellWindowRegistry::Get(profile());
   if (!registry) return;
 
-  const ShellWindowRegistry::ShellWindowSet windows =
+  const ShellWindowRegistry::ShellWindowList windows =
       registry->GetShellWindowsForApp(extension->id());
 
   for (ShellWindowRegistry::const_iterator it = windows.begin();
@@ -410,10 +413,24 @@ bool DeveloperPrivateGetItemsInfoFunction::RunImpl() {
                                    ExtensionIconSet::MATCH_BIGGER);
     id_to_icon[item.id()] = item_resource;
 
-    if (item.location() == Manifest::COMPONENT)
-      continue;  // Skip built-in extensions / apps;
+    // Don't show component extensions because they are only extensions as an
+    // implementation detail of Chrome.
+    if (item.location() == Manifest::COMPONENT &&
+        !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kShowComponentExtensionOptions)) {
+      continue;
+    }
+
+    // Don't show apps that aren't visible in either launcher or ntp.
+    if (item.is_app() && !item.ShouldDisplayInAppLauncher() &&
+        !item.ShouldDisplayInNewTabPage() &&
+        !Manifest::IsUnpackedLocation(item.location())) {
+      continue;
+    }
+
     item_list.push_back(make_linked_ptr<developer::ItemInfo>(
-        CreateItemInfo(item, false).release()));
+        CreateItemInfo(
+            item, service->IsExtensionEnabled(item.id())).release()));
   }
 
   content::BrowserThread::PostTask(content::BrowserThread::FILE, FROM_HERE,
@@ -975,133 +992,6 @@ DeveloperPrivateExportSyncfsFolderToLocalfsFunction::
 DeveloperPrivateExportSyncfsFolderToLocalfsFunction::
     ~DeveloperPrivateExportSyncfsFolderToLocalfsFunction() {}
 
-bool DeveloperPrivateLoadProjectToSyncfsFunction::RunImpl() {
-  // TODO(grv) : add unittests.
-  base::FilePath::StringType project_name;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &project_name));
-  if (!ValidateFolderName(project_name)) {
-    DLOG(INFO) << "Invalid project_name : [" << project_name << "]";
-    return false;
-  }
-
-  context_ = content::BrowserContext::GetStoragePartition(profile(),
-      render_view_host()->GetSiteInstance())->GetFileSystemContext();
-  content::BrowserThread::PostTask(content::BrowserThread::FILE, FROM_HERE,
-      base::Bind(&DeveloperPrivateLoadProjectToSyncfsFunction::
-                 CopyFolder,
-                 this, project_name));
-  return true;
-}
-
-void DeveloperPrivateLoadProjectToSyncfsFunction::CopyFolder(
-    const base::FilePath::StringType& project_name) {
-  base::FilePath path(profile()->GetPath());
-  path = path.Append(kUnpackedAppsFolder);
-  path = path.Append(project_name);
-
-  std::vector<base::FilePath> paths = ListFolder(path);
-  content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE,
-      base::Bind(&DeveloperPrivateLoadProjectToSyncfsFunction::
-                 CopyFiles,
-                 this, paths));
-}
-
-void DeveloperPrivateLoadProjectToSyncfsFunction::CopyFiles(
-    const std::vector<base::FilePath>& paths) {
-  std::string origin_url(
-      Extension::GetBaseURLFromExtensionId(extension_id()).spec());
-  fileapi::FileSystemURL url(sync_file_system::CreateSyncableFileSystemURL(
-      GURL(origin_url),
-      sync_file_system::DriveFileSyncService::kServiceName,
-      base::FilePath()));
-
-  pendingCallbacksCount_ = paths.size();
-
-  for (size_t i = 0; i < paths.size(); ++i) {
-    base::PlatformFileError error_code;
-    fileapi::FileSystemOperation* op
-        = context_->CreateFileSystemOperation(url, &error_code);
-    DCHECK(op);
-
-    std::string origin_url(
-        Extension::GetBaseURLFromExtensionId(extension_id()).spec());
-    fileapi::FileSystemURL
-        dest_url(sync_file_system::CreateSyncableFileSystemURL(
-            GURL(origin_url),
-            sync_file_system::DriveFileSyncService::kServiceName,
-            base::FilePath(paths[i].BaseName())));
-
-    op->AsLocalFileSystemOperation()->CopyInForeignFile(paths[i], dest_url,
-        base::Bind(&DeveloperPrivateLoadProjectToSyncfsFunction::
-                   CopyFilesCallback,
-                   this));
-  }
-}
-
-void DeveloperPrivateLoadProjectToSyncfsFunction::CopyFilesCallback(
-    const base::PlatformFileError result) {
-
-  CHECK(pendingCallbacksCount_);
-  pendingCallbacksCount_--;
-
-  if (success_ && result != base::PLATFORM_FILE_OK) {
-    SetError("Error in copying files to sync filesystem.");
-    success_ = false;
-  }
-
-  if (!pendingCallbacksCount_) {
-    content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
-        base::Bind(&DeveloperPrivateLoadProjectToSyncfsFunction::SendResponse,
-                   this,
-                   success_));
-  }
-}
-
-DeveloperPrivateLoadProjectToSyncfsFunction::
-    DeveloperPrivateLoadProjectToSyncfsFunction()
-    : pendingCallbacksCount_(0), success_(true) {}
-
-DeveloperPrivateLoadProjectToSyncfsFunction::
-    ~DeveloperPrivateLoadProjectToSyncfsFunction() {}
-
-bool DeveloperPrivateGetProjectsInfoFunction::RunImpl() {
-  // TODO(grv) : add unittests.
-  content::BrowserThread::PostTask(content::BrowserThread::FILE, FROM_HERE,
-      base::Bind(&DeveloperPrivateGetProjectsInfoFunction::ReadFolder,
-                 this));
-
-  // Released by ReadFolder
-  AddRef();
-  return true;
-}
-
-void DeveloperPrivateGetProjectsInfoFunction::ReadFolder() {
-  base::FilePath path(profile()->GetPath());
-  path = path.Append(kUnpackedAppsFolder);
-
-  std::vector<base::FilePath> paths = ListFolder(path);
-  ProjectInfoList info_list;
-  for (size_t i = 0; i <  paths.size(); ++i) {
-    scoped_ptr<developer::ProjectInfo> info(new developer::ProjectInfo());
-    info->name = paths[i].BaseName().MaybeAsASCII();
-    info_list.push_back(
-        make_linked_ptr<developer::ProjectInfo>(info.release()));
-  }
-
-  results_ = developer::GetProjectsInfo::Results::Create(info_list);
-  content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
-      base::Bind(&DeveloperPrivateGetProjectsInfoFunction::SendResponse,
-                 this,
-                 true));
-  Release();
-}
-
-DeveloperPrivateGetProjectsInfoFunction::
-    DeveloperPrivateGetProjectsInfoFunction() {}
-
-DeveloperPrivateGetProjectsInfoFunction::
-    ~DeveloperPrivateGetProjectsInfoFunction() {}
-
 bool DeveloperPrivateLoadProjectFunction::RunImpl() {
   // TODO(grv) : add unit tests.
   base::FilePath::StringType project_name;
@@ -1209,6 +1099,8 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   DictionaryValue* dict = new DictionaryValue();
   SetResult(dict);
 
+  webui::SetFontAndTextDirection(dict);
+
   #define   SET_STRING(id, idr) \
     dict->SetString(id, l10n_util::GetStringUTF16(idr))
   SET_STRING("extensionSettings", IDS_MANAGE_EXTENSIONS_SETTING_WINDOWS_TITLE);
@@ -1217,8 +1109,9 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("appsDevtoolNoApps", IDS_APPS_DEVTOOL_NO_APPS_INSTALLED);
   SET_STRING("appsDevtoolApps", IDS_APPS_DEVTOOL_APPS_INSTALLED);
   SET_STRING("appsDevtoolExtensions", IDS_APPS_DEVTOOL_EXTENSIONS_INSTALLED);
-  SET_STRING("appsDevtoolNoExtensions",
-             IDS_EXTENSIONS_NONE_INSTALLED);
+  SET_STRING("appsDevtoolNoExtensions", IDS_EXTENSIONS_NONE_INSTALLED);
+  SET_STRING("appsDevtoolUnpacked", IDS_APPS_DEVTOOL_UNPACKED_INSTALLED);
+  SET_STRING("appsDevtoolNoUnpacked", IDS_APPS_DEVTOOL_NO_UNPACKED_INSTALLED);
   SET_STRING("appsDevtoolTitle", IDS_APPS_DEVTOOL_TITLE);
   SET_STRING("extensionSettingsGetMoreExtensions", IDS_GET_MORE_EXTENSIONS);
   SET_STRING("extensionSettingsExtensionId", IDS_EXTENSIONS_ID);

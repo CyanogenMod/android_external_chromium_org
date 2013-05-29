@@ -82,7 +82,7 @@ namespace predictors {
 class AutocompleteActionPredictorTest : public testing::Test {
  public:
   AutocompleteActionPredictorTest()
-      : loop_(MessageLoop::TYPE_DEFAULT),
+      : loop_(base::MessageLoop::TYPE_DEFAULT),
         ui_thread_(BrowserThread::UI, &loop_),
         db_thread_(BrowserThread::DB, &loop_),
         file_thread_(BrowserThread::FILE, &loop_),
@@ -214,7 +214,7 @@ class AutocompleteActionPredictorTest : public testing::Test {
   }
 
  private:
-  MessageLoop loop_;
+  base::MessageLoop loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread file_thread_;
@@ -352,7 +352,7 @@ TEST_F(AutocompleteActionPredictorTest, RecommendActionURL) {
   ASSERT_NO_FATAL_FAILURE(AddAllRows());
 
   AutocompleteMatch match;
-  match.type = AutocompleteMatch::HISTORY_URL;
+  match.type = AutocompleteMatchType::HISTORY_URL;
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_url_db); ++i) {
     match.destination_url = GURL(test_url_db[i].url);
@@ -366,7 +366,7 @@ TEST_F(AutocompleteActionPredictorTest, RecommendActionSearch) {
   ASSERT_NO_FATAL_FAILURE(AddAllRows());
 
   AutocompleteMatch match;
-  match.type = AutocompleteMatch::SEARCH_WHAT_YOU_TYPED;
+  match.type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED;
 
   for (size_t i = 0; i < arraysize(test_url_db); ++i) {
     match.destination_url = GURL(test_url_db[i].url);

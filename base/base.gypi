@@ -138,6 +138,7 @@
           'debug/trace_event_android.cc',
           'debug/trace_event_impl.cc',
           'debug/trace_event_impl.h',
+          'debug/trace_event_impl_constants.cc',
           'debug/trace_event_win.cc',
           'deferred_sequenced_task_runner.cc',
           'deferred_sequenced_task_runner.h',
@@ -161,6 +162,7 @@
           'files/dir_reader_posix.h',
           'files/file_path.cc',
           'files/file_path.h',
+          'files/file_path_constants.cc',
           'files/file_path_watcher.cc',
           'files/file_path_watcher.h',
           'files/file_path_watcher_kqueue.cc',
@@ -245,6 +247,7 @@
           'mac/scoped_block.h',
           'mac/scoped_cftyperef.h',
           'mac/scoped_ioobject.h',
+          'mac/scoped_ioplugininterface.h',
           'mac/scoped_launch_data.h',
           'mac/scoped_mach_port.cc',
           'mac/scoped_mach_port.h',
@@ -373,6 +376,16 @@
           'process_util_posix.cc',
           'process_util_win.cc',
           'process_win.cc',
+          'process/process_metrics.h',
+          'process/process_metrics_freebsd.cc',
+          'process/process_metrics_ios.cc',
+          'process/process_metrics_linux.cc',
+          'process/process_metrics_mac.cc',
+          'process/process_metrics_openbsd.cc',
+          'process/process_metrics_posix.cc',
+          'process/process_metrics_win.cc',
+          'process/internal_linux.cc',
+          'process/internal_linux.h',
           'profiler/scoped_profile.cc',
           'profiler/scoped_profile.h',
           'profiler/alternate_timer.cc',
@@ -404,6 +417,7 @@
           'stl_util.h',
           'string_util.cc',
           'string_util.h',
+          'string_util_constants.cc',
           'string_util_posix.h',
           'string_util_win.h',
           'string16.cc',
@@ -471,6 +485,8 @@
           'threading/non_thread_safe_impl.cc',
           'threading/non_thread_safe_impl.h',
           'threading/platform_thread.h',
+          'threading/platform_thread_android.cc',
+          'threading/platform_thread_linux.cc',
           'threading/platform_thread_mac.mm',
           'threading/platform_thread_posix.cc',
           'threading/platform_thread_win.cc',
@@ -653,8 +669,11 @@
                'threading/sequenced_worker_pool.cc',
                'third_party/dynamic_annotations/dynamic_annotations.c',
             ],
-            # Metrics won't work in the NaCl sandbox.
-            'sources/': [ ['exclude', '^metrics/'] ],
+            'sources/': [
+              # Metrics won't work in the NaCl sandbox.
+              ['exclude', '^metrics/'],
+              ['include', '^threading/platform_thread_linux\\.cc$'],
+            ],
           }],
           ['OS == "android" and >(nacl_untrusted_build)==0', {
             'sources!': [
@@ -666,10 +685,18 @@
             'sources/': [
               ['include', '^files/file_path_watcher_linux\\.cc$'],
               ['include', '^process_util_linux\\.cc$'],
+              ['include', '^process/internal_linux\\.cc$'],
+              ['include', '^process/process_metrics_linux\\.cc$'],
               ['include', '^posix/unix_domain_socket_linux\\.cc$'],
               ['include', '^strings/sys_string_conversions_posix\\.cc$'],
               ['include', '^sys_info_linux\\.cc$'],
               ['include', '^worker_pool_linux\\.cc$'],
+            ],
+          }],
+          ['OS == "android" and _toolset == "host" and host_os == "linux"', {
+            'sources/': [
+              # Pull in specific files for host builds.
+              ['include', '^threading/platform_thread_linux\\.cc$'],
             ],
           }],
           ['OS == "ios" and _toolset != "host"', {

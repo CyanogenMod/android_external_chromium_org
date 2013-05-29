@@ -7,6 +7,7 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "cc/output/compositor_frame_metadata.h"
+#include "cc/output/copy_output_request.h"
 #include "cc/output/gl_renderer.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/software_renderer.h"
@@ -15,8 +16,8 @@
 #include "cc/test/pixel_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_implementation.h"
-#include "webkit/gpu/context_provider_in_process.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
+#include "webkit/common/gpu/context_provider_in_process.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace cc {
 
@@ -28,6 +29,9 @@ class PixelTest::PixelTestRendererClient : public RendererClient {
   // RendererClient implementation.
   virtual gfx::Size DeviceViewportSize() const OVERRIDE {
     return device_viewport_size_;
+  }
+  virtual float DeviceScaleFactor() const OVERRIDE {
+    return 1.f;
   }
   virtual const LayerTreeSettings& Settings() const OVERRIDE {
     return settings_;
@@ -74,10 +78,10 @@ bool PixelTest::RunPixelTestWithReadbackTarget(
     const PixelComparator& comparator) {
   base::RunLoop run_loop;
 
-  target->copy_callbacks.push_back(
+  target->copy_requests.push_back(CopyOutputRequest::CreateBitmapRequest(
       base::Bind(&PixelTest::ReadbackResult,
                  base::Unretained(this),
-                 run_loop.QuitClosure()));
+                 run_loop.QuitClosure())));
 
   renderer_->DecideRenderPassAllocationsForFrame(*pass_list);
   renderer_->DrawFrame(pass_list);
@@ -113,7 +117,7 @@ bool PixelTest::PixelsMatchReference(const base::FilePath& ref_file,
                         comparator);
 }
 
-void PixelTest::SetUpGLRenderer() {
+void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
   CHECK(fake_client_);
   CHECK(gfx::InitializeGLBindings(gfx::kGLImplementationOSMesaGL));
 
@@ -127,7 +131,8 @@ void PixelTest::SetUpGLRenderer() {
   renderer_ = GLRenderer::Create(fake_client_.get(),
                                  output_surface_.get(),
                                  resource_provider_.get(),
-                                 0).PassAs<DirectRenderer>();
+                                 0,
+                                 use_skia_gpu_backend).PassAs<DirectRenderer>();
 
   scoped_refptr<webkit::gpu::ContextProviderInProcess> offscreen_contexts =
       webkit::gpu::ContextProviderInProcess::Create();

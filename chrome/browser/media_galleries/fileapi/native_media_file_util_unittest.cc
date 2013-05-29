@@ -15,15 +15,15 @@
 #include "chrome/browser/media_galleries/fileapi/media_file_system_mount_point_provider.h"
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/fileapi/external_mount_points.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_mount_point_provider.h"
-#include "webkit/fileapi/file_system_operation.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/fileapi/mock_file_system_options.h"
-#include "webkit/fileapi/native_file_util.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/browser/fileapi/mock_file_system_options.h"
+#include "webkit/browser/fileapi/native_file_util.h"
 #include "webkit/quota/mock_special_storage_policy.h"
 
 #define FPL(x) FILE_PATH_LITERAL(x)
@@ -196,7 +196,7 @@ class NativeMediaFileUtilTest : public testing::Test {
   }
 
  private:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   base::ScopedTempDir data_dir_;
   scoped_refptr<fileapi::FileSystemContext> file_system_context_;
@@ -230,7 +230,7 @@ TEST_F(NativeMediaFileUtilTest, DirectoryExistsAndFileExistsFiltering) {
       operation->FileExists(
           url, base::Bind(&ExpectEqHelper, test_name, expectation));
     }
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 }
 
@@ -244,7 +244,7 @@ TEST_F(NativeMediaFileUtilTest, ReadDirectoryFiltering) {
   bool completed = false;
   NewOperation(url)->ReadDirectory(
       url, base::Bind(&DidReadDirectory, &content, &completed));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(completed);
   EXPECT_EQ(6u, content.size());
 
@@ -282,7 +282,7 @@ TEST_F(NativeMediaFileUtilTest, CreateFileAndCreateDirectoryFiltering) {
         operation->CreateFile(
             url, false, base::Bind(&ExpectEqHelper, test_name, expectation));
       }
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -321,7 +321,7 @@ TEST_F(NativeMediaFileUtilTest, CopySourceFiltering) {
       }
       operation->Copy(
           url, dest_url, base::Bind(&ExpectEqHelper, test_name, expectation));
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -387,7 +387,7 @@ TEST_F(NativeMediaFileUtilTest, CopyDestFiltering) {
       }
       operation->Copy(
           src_url, url, base::Bind(&ExpectEqHelper, test_name, expectation));
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -426,7 +426,7 @@ TEST_F(NativeMediaFileUtilTest, MoveSourceFiltering) {
       }
       operation->Move(
           url, dest_url, base::Bind(&ExpectEqHelper, test_name, expectation));
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -494,7 +494,7 @@ TEST_F(NativeMediaFileUtilTest, MoveDestFiltering) {
       }
       operation->Move(
           src_url, url, base::Bind(&ExpectEqHelper, test_name, expectation));
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -525,7 +525,7 @@ TEST_F(NativeMediaFileUtilTest, GetMetadataFiltering) {
                                         test_name,
                                         expectation,
                                         kFilteringTestCases[i].is_directory));
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -553,7 +553,7 @@ TEST_F(NativeMediaFileUtilTest, RemoveFiltering) {
       }
       operation->Remove(
           url, false, base::Bind(&ExpectEqHelper, test_name, expectation));
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -584,7 +584,7 @@ TEST_F(NativeMediaFileUtilTest, TruncateFiltering) {
       }
       operation->Truncate(
           url, 0, base::Bind(&ExpectEqHelper, test_name, expectation));
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -614,7 +614,7 @@ TEST_F(NativeMediaFileUtilTest, TouchFileFiltering) {
       }
       operation->TouchFile(
           url, time, time, base::Bind(&ExpectEqHelper, test_name, expectation));
-      MessageLoop::current()->RunUntilIdle();
+      base::MessageLoop::current()->RunUntilIdle();
     }
   }
 }
@@ -646,7 +646,7 @@ TEST_F(NativeMediaFileUtilTest, CreateSnapshot) {
     error = base::PLATFORM_FILE_ERROR_FAILED;
     operation->CreateSnapshotFile(url,
         base::Bind(CreateSnapshotCallback, &error));
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     ASSERT_EQ(expected_error, error);
   }
 }

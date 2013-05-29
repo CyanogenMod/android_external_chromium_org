@@ -22,7 +22,6 @@
 #include "base/timer.h"
 #include "chrome/browser/invalidation/invalidation_frontend.h"
 #include "chrome/browser/invalidation/invalidator_storage.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/sync/backend_unrecoverable_error_handler.h"
 #include "chrome/browser/sync/failed_datatypes_handler.h"
@@ -33,6 +32,7 @@
 #include "chrome/browser/sync/profile_sync_service_base.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync/sync_prefs.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
@@ -161,7 +161,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
                            public SigninGlobalError::AuthStatusProvider,
                            public syncer::UnrecoverableErrorHandler,
                            public content::NotificationObserver,
-                           public ProfileKeyedService,
+                           public BrowserContextKeyedService,
                            public invalidation::InvalidationFrontend {
  public:
   typedef browser_sync::SyncBackendHost::Status Status;
@@ -185,6 +185,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
                                             // types and clicking OK.
     // Events resulting in the stoppage of sync service.
     STOP_FROM_OPTIONS = 20,  // Sync was stopped from Wrench->Options.
+    STOP_FROM_ADVANCED_DIALOG = 21,  // Sync was stopped via advanced settings.
 
     // Miscellaneous events caused by sync service.
 
@@ -576,7 +577,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   void StopAndSuppress();
 
   // Resets the flag for suppressing sync startup and starts the sync backend.
-  void UnsuppressAndStart();
+  virtual void UnsuppressAndStart();
 
   // Marks all currently registered types as "acknowledged" so we won't prompt
   // the user about them any more.
@@ -616,7 +617,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   virtual syncer::InvalidatorState GetInvalidatorState() const OVERRIDE;
 
-  // ProfileKeyedService implementation.  This must be called exactly
+  // BrowserContextKeyedService implementation.  This must be called exactly
   // once (before this object is destroyed).
   virtual void Shutdown() OVERRIDE;
 
@@ -796,14 +797,11 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // |invalidator_registrar_| is not NULL).
   void UpdateInvalidatorRegistrarState();
 
-  // Destroys / recreates an instance of ProfileSyncService. Used exclusively by
-  // the sync integration tests so they can restart sync from scratch without
-  // tearing down and recreating the browser process. Needed because simply
-  // calling Shutdown() and Initialize() will not recreate other internal
-  // objects like SyncBackendHost, SyncManager, etc.
-  void ResetForTest();
+  // Returns the username (in form of an email address) that should be used in
+  // the credentials.
+  std::string GetEffectiveUsername();
 
-  // Factory used to create various dependent objects.
+ // Factory used to create various dependent objects.
   scoped_ptr<ProfileSyncComponentsFactory> factory_;
 
   // The profile whose data we are synchronizing.

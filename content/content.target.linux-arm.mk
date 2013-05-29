@@ -14,6 +14,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_app_gyp)/content_content_app_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_browser_gyp)/content_content_browser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_child_gyp)/content_content_common_child_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_common_gyp)/content_content_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_gpu_gyp)/content_content_gpu_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,content_content_plugin_gyp)/content_content_plugin_gyp.a \

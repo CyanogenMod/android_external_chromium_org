@@ -32,22 +32,22 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageEventDispatcher.h"
 #include "v8/include/v8.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
-#include "webkit/compositor_bindings/web_compositor_support_impl.h"
-#include "webkit/compositor_bindings/web_layer_tree_view_impl_for_testing.h"
-#include "webkit/database/vfs_backend.h"
+#include "webkit/browser/database/vfs_backend.h"
+#include "webkit/common/gpu/test_context_provider_factory.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
+#include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
-#include "webkit/gpu/test_context_provider_factory.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
-#include "webkit/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
+#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/support/gc_extension.h"
 #include "webkit/support/simple_database_system.h"
 #include "webkit/support/test_webmessageportchannel.h"
 #include "webkit/support/web_audio_device_mock.h"
 #include "webkit/support/web_gesture_curve_mock.h"
+#include "webkit/support/web_layer_tree_view_impl_for_testing.h"
 #include "webkit/support/webkit_support.h"
 #include "webkit/support/weburl_loader_mock_factory.h"
 #include "webkit/tools/test_shell/mock_webclipboard_impl.h"
@@ -375,22 +375,6 @@ TestWebKitPlatformSupport::createOffscreenGraphicsContext3D(
       attributes);
 }
 
-WebKit::WebGraphicsContext3D*
-TestWebKitPlatformSupport::sharedOffscreenGraphicsContext3D() {
-  main_thread_contexts_ =
-      webkit::gpu::TestContextProviderFactory::GetInstance()->
-          OffscreenContextProviderForMainThread();
-  if (!main_thread_contexts_)
-    return NULL;
-  return main_thread_contexts_->Context3d();
-}
-
-GrContext* TestWebKitPlatformSupport::sharedOffscreenGrContext() {
-  if (!main_thread_contexts_)
-    return NULL;
-  return main_thread_contexts_->GrContext();
-}
-
 WebKit::WebGraphicsContext3DProvider* TestWebKitPlatformSupport::
     createSharedOffscreenGraphicsContext3DProvider() {
   main_thread_contexts_ =
@@ -546,7 +530,7 @@ WebKit::WebLayerTreeView*
       new WebLayerTreeViewImplForTesting(
           webkit_support::FAKE_CONTEXT, NULL));
 
-  if (!view->initialize(scoped_ptr<cc::Thread>()))
+  if (!view->Initialize(scoped_ptr<cc::Thread>()))
     return NULL;
   return view.release();
 }

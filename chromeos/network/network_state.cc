@@ -16,8 +16,6 @@
 
 namespace {
 
-const char kLogModule[] = "NetworkState";
-
 bool ConvertListValueToStringVector(const base::ListValue& string_list,
                                     std::vector<std::string>* result) {
   for (size_t i = 0; i < string_list.GetSize(); ++i) {
@@ -83,6 +81,8 @@ bool NetworkState::PropertyChanged(const std::string& key,
     return GetBooleanValue(key, value, &passphrase_required_);
   } else if (key == flimflam::kErrorProperty) {
     return GetStringValue(key, value, &error_);
+  } else if (key == shill::kErrorDetailsProperty) {
+    return GetStringValue(key, value, &error_details_);
   } else if (key == IPConfigProperty(flimflam::kAddressProperty)) {
     return GetStringValue(key, value, &ip_address_);
   } else if (key == IPConfigProperty(flimflam::kNameServersProperty)) {
@@ -111,6 +111,8 @@ bool NetworkState::PropertyChanged(const std::string& key,
     return GetStringValue(key, value, &guid_);
   } else if (key == flimflam::kProfileProperty) {
     return GetStringValue(key, value, &profile_path_);
+  } else if (key == flimflam::kProxyConfigProperty) {
+    return GetStringValue(key, value, &proxy_config_);
   } else if (key == shill::kActivateOverNonCellularNetworkProperty) {
     return GetBooleanValue(key, value, &activate_over_non_cellular_networks_);
   } else if (key == shill::kOutOfCreditsProperty) {
@@ -145,6 +147,8 @@ void NetworkState::GetProperties(base::DictionaryValue* dictionary) const {
       flimflam::kPassphraseRequiredProperty, passphrase_required_);
   dictionary->SetStringWithoutPathExpansion(flimflam::kErrorProperty,
                                             error_);
+  dictionary->SetStringWithoutPathExpansion(shill::kErrorDetailsProperty,
+                                            error_details_);
   base::DictionaryValue* ipconfig_properties = new DictionaryValue;
   ipconfig_properties->SetStringWithoutPathExpansion(flimflam::kAddressProperty,
                                                      ip_address_);
@@ -175,6 +179,8 @@ void NetworkState::GetProperties(base::DictionaryValue* dictionary) const {
   dictionary->SetStringWithoutPathExpansion(flimflam::kGuidProperty, guid_);
   dictionary->SetStringWithoutPathExpansion(flimflam::kProfileProperty,
                                             profile_path_);
+  dictionary->SetStringWithoutPathExpansion(flimflam::kProxyConfigProperty,
+                                            proxy_config_);
   dictionary->SetBooleanWithoutPathExpansion(
       shill::kActivateOverNonCellularNetworkProperty,
       activate_over_non_cellular_networks_);
@@ -190,15 +196,23 @@ bool NetworkState::IsConnectingState() const {
   return StateIsConnecting(connection_state_);
 }
 
+bool NetworkState::HasAuthenticationError() const {
+  return (error_ == flimflam::kErrorBadPassphrase ||
+          error_ == flimflam::kErrorBadWEPKey ||
+          error_ == flimflam::kErrorPppAuthFailed ||
+          error_ == shill::kErrorEapLocalTlsFailed ||
+          error_ == shill::kErrorEapRemoteTlsFailed ||
+          error_ == shill::kErrorEapAuthenticationFailed);
+}
+
 void NetworkState::UpdateName() {
   if (hex_ssid_.empty()) {
     // Validate name for UTF8.
     std::string valid_ssid = ValidateUTF8(name());
     if (valid_ssid != name()) {
       set_name(valid_ssid);
-      network_event_log::AddEntry(
-          kLogModule, "UpdateName",
-          base::StringPrintf("%s: UTF8: %s", path().c_str(), name().c_str()));
+      NET_LOG_DEBUG("UpdateName", base::StringPrintf(
+          "%s: UTF8: %s", path().c_str(), name().c_str()));
     }
     return;
   }
@@ -210,7 +224,7 @@ void NetworkState::UpdateName() {
   } else {
     std::string desc = base::StringPrintf("%s: Error processing: %s",
                                           path().c_str(), hex_ssid_.c_str());
-    network_event_log::AddEntry(kLogModule, "UpdateName", desc);
+    NET_LOG_DEBUG("UpdateName", desc);
     LOG(ERROR) << desc;
     ssid = name();
   }
@@ -218,9 +232,8 @@ void NetworkState::UpdateName() {
   if (IsStringUTF8(ssid)) {
     if (ssid != name()) {
       set_name(ssid);
-      network_event_log::AddEntry(
-          kLogModule, "UpdateName",
-          base::StringPrintf("%s: UTF8: %s", path().c_str(), name().c_str()));
+      NET_LOG_DEBUG("UpdateName", base::StringPrintf(
+          "%s: UTF8: %s", path().c_str(), name().c_str()));
     }
     return;
   }
@@ -236,10 +249,9 @@ void NetworkState::UpdateName() {
     std::string utf8_ssid;
     if (base::ConvertToUtf8AndNormalize(ssid, encoding, &utf8_ssid)) {
       set_name(utf8_ssid);
-      network_event_log::AddEntry(
-          kLogModule, "UpdateName",
-          base::StringPrintf("%s: Encoding=%s: %s", path().c_str(),
-                             encoding.c_str(), name().c_str()));
+      NET_LOG_DEBUG("UpdateName", base::StringPrintf(
+          "%s: Encoding=%s: %s", path().c_str(),
+          encoding.c_str(), name().c_str()));
       return;
     }
   }
@@ -247,10 +259,9 @@ void NetworkState::UpdateName() {
   // Unrecognized encoding. Only use raw bytes if name_ is empty.
   if (name().empty())
     set_name(ssid);
-  network_event_log::AddEntry(
-      kLogModule, "UpdateName",
-      base::StringPrintf("%s: Unrecognized Encoding=%s: %s", path().c_str(),
-                         encoding.c_str(), name().c_str()));
+  NET_LOG_DEBUG("UpdateName", base::StringPrintf(
+      "%s: Unrecognized Encoding=%s: %s", path().c_str(),
+      encoding.c_str(), name().c_str()));
 }
 
 // static

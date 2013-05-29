@@ -15,9 +15,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/browser/webdata/web_data_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "sync/api/sync_change.h"
@@ -61,7 +61,7 @@ struct URLVisitedDetails;
 // TemplateURLService handles deletion.
 
 class TemplateURLService : public WebDataServiceConsumer,
-                           public ProfileKeyedService,
+                           public BrowserContextKeyedService,
                            public content::NotificationObserver,
                            public syncer::SyncableService {
  public:
@@ -261,7 +261,7 @@ class TemplateURLService : public WebDataServiceConsumer,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // ProfileKeyedService implementation.
+  // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   // syncer::SyncableService implementation.

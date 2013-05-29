@@ -16,7 +16,6 @@
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/devtools/devtools_window.h"
-#include "chrome/browser/download/download_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -51,7 +50,6 @@
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_applications/web_app.h"
@@ -59,6 +57,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -71,9 +70,9 @@
 #include "content/public/common/content_restriction.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "net/base/escape.h"
-#include "webkit/glue/glue_serialize.h"
-#include "webkit/user_agent/user_agent_util.h"
+#include "webkit/common/user_agent/user_agent_util.h"
 
 #if defined(OS_MACOSX)
 #include "ui/base/cocoa/find_pasteboard.h"
@@ -95,6 +94,7 @@ using content::Referrer;
 using content::SSLStatus;
 using content::UserMetricsAction;
 using content::WebContents;
+using web_modal::WebContentsModalDialogManager;
 
 namespace chrome {
 namespace {
@@ -246,7 +246,7 @@ int GetContentRestrictions(const Browser* browser) {
     NavigationEntry* active_entry =
         current_tab->GetController().GetActiveEntry();
     // See comment in UpdateCommandsForTabState about why we call url().
-    if (!download_util::IsSavableURL(
+    if (!content::IsSavableURL(
             active_entry ? active_entry->GetURL() : GURL()) ||
         current_tab->ShowingInterstitialPage())
       content_restrictions |= content::CONTENT_RESTRICTION_SAVE;
@@ -400,14 +400,19 @@ void OpenCurrentURL(Browser* browser) {
     return;
 
   content::PageTransition page_transition = location_bar->GetPageTransition();
+  content::PageTransition page_transition_without_qualifier(
+      PageTransitionStripQualifier(page_transition));
   WindowOpenDisposition open_disposition =
       location_bar->GetWindowOpenDisposition();
   // A PAGE_TRANSITION_TYPED means the user has typed a URL. We do not want to
   // open URLs with instant_controller since in some cases it disregards it
   // and performs a search instead. For example, when using CTRL-Enter, the
   // location_bar is aware of the URL but instant is not.
-  if (PageTransitionStripQualifier(page_transition) !=
-          content::PAGE_TRANSITION_TYPED &&
+  // Instant should also not handle PAGE_TRANSITION_RELOAD because its knowledge
+  // of the omnibox text may be stale if the user focuses in the omnibox and
+  // presses enter without typing anything.
+  if (page_transition_without_qualifier != content::PAGE_TRANSITION_TYPED &&
+      page_transition_without_qualifier != content::PAGE_TRANSITION_RELOAD &&
       browser->instant_controller() &&
       browser->instant_controller()->OpenInstant(open_disposition))
     return;
@@ -990,13 +995,13 @@ void ViewSource(Browser* browser, WebContents* contents) {
   if (!entry)
     return;
 
-  ViewSource(browser, contents, entry->GetURL(), entry->GetContentState());
+  ViewSource(browser, contents, entry->GetURL(), entry->GetPageState());
 }
 
 void ViewSource(Browser* browser,
                 WebContents* contents,
                 const GURL& url,
-                const std::string& content_state) {
+                const content::PageState& page_state) {
   content::RecordAction(UserMetricsAction("ViewSource"));
   DCHECK(contents);
 
@@ -1014,8 +1019,7 @@ void ViewSource(Browser* browser,
   active_entry->SetVirtualURL(view_source_url);
 
   // Do not restore scroller position.
-  active_entry->SetContentState(
-      webkit_glue::RemoveScrollOffsetFromHistoryState(content_state));
+  active_entry->SetPageState(page_state.RemoveScrollOffset());
 
   // Do not restore title, derive it from the url.
   active_entry->SetTitle(string16());

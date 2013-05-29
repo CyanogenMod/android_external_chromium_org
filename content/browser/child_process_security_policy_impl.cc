@@ -20,7 +20,7 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "net/url_request/url_request.h"
-#include "webkit/fileapi/isolated_context.h"
+#include "webkit/browser/fileapi/isolated_context.h"
 
 namespace content {
 
@@ -547,7 +547,7 @@ bool ChildProcessSecurityPolicyImpl::CanRequestURL(
       return CanRequestURL(child_id, child_url);
     }
 
-    if (LowerCaseEqualsASCII(url.spec(), chrome::kAboutBlankURL))
+    if (LowerCaseEqualsASCII(url.spec(), kAboutBlankURL))
       return true;  // Every child process can request <about:blank>.
 
     // URLs like <about:memory> and <about:crash> shouldn't be requestable by

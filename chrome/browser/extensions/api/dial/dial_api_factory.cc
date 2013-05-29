@@ -6,14 +6,14 @@
 
 #include "chrome/browser/extensions/api/dial/dial_api.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace extensions {
 
 // static
 scoped_refptr<DialAPI> DialAPIFactory::GetForProfile(Profile* profile) {
   return static_cast<DialAPI*>(
-      GetInstance()->GetServiceForProfile(profile, true).get());
+      GetInstance()->GetServiceForBrowserContext(profile, true).get());
 }
 
 // static
@@ -21,21 +21,21 @@ DialAPIFactory* DialAPIFactory::GetInstance() {
   return Singleton<DialAPIFactory>::get();
 }
 
-DialAPIFactory::DialAPIFactory() : RefcountedProfileKeyedServiceFactory(
-    "DialAPI", ProfileDependencyManager::GetInstance()) {
+DialAPIFactory::DialAPIFactory() : RefcountedBrowserContextKeyedServiceFactory(
+    "DialAPI", BrowserContextDependencyManager::GetInstance()) {
   DependsOn(ExtensionSystemFactory::GetInstance());
 }
 
 DialAPIFactory::~DialAPIFactory() {
 }
 
-scoped_refptr<RefcountedProfileKeyedService>
+scoped_refptr<RefcountedBrowserContextKeyedService>
     DialAPIFactory::BuildServiceInstanceFor(
         content::BrowserContext* profile) const {
   return scoped_refptr<DialAPI>(new DialAPI(static_cast<Profile*>(profile)));
 }
 
-bool DialAPIFactory::ServiceIsCreatedWithProfile() const {
+bool DialAPIFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

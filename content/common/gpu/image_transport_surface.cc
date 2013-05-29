@@ -54,7 +54,7 @@ ImageTransportHelper::ImageTransportHelper(ImageTransportSurface* surface,
 ImageTransportHelper::~ImageTransportHelper() {
   if (stub_) {
     stub_->SetLatencyInfoCallback(
-        base::Callback<void(const cc::LatencyInfo&)>());
+        base::Callback<void(const ui::LatencyInfo&)>());
   }
   manager_->RemoveRoute(route_id_);
 }
@@ -128,7 +128,7 @@ void ImageTransportHelper::SendUpdateVSyncParameters(
 }
 
 void ImageTransportHelper::SendLatencyInfo(
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   manager_->Send(new GpuHostMsg_FrameDrawn(latency_info));
 }
 
@@ -191,8 +191,8 @@ void ImageTransportHelper::OnResizeViewACK() {
   surface_->OnResizeViewACK();
 }
 
-void ImageTransportHelper::Resize(gfx::Size size) {
-  surface_->OnResize(size);
+void ImageTransportHelper::Resize(gfx::Size size, float scale_factor) {
+  surface_->OnResize(size, scale_factor);
 
 #if defined(OS_ANDROID)
   manager_->gpu_memory_manager()->ScheduleManage(
@@ -201,7 +201,7 @@ void ImageTransportHelper::Resize(gfx::Size size) {
 }
 
 void ImageTransportHelper::SetLatencyInfo(
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   surface_->SetLatencyInfo(latency_info);
 }
 
@@ -242,7 +242,7 @@ bool PassThroughImageTransportSurface::DeferDraws() {
 }
 
 void PassThroughImageTransportSurface::SetLatencyInfo(
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   latency_info_ = latency_info;
 }
 
@@ -326,7 +326,8 @@ void PassThroughImageTransportSurface::OnResizeViewACK() {
   helper_->SetScheduled(true);
 }
 
-void PassThroughImageTransportSurface::OnResize(gfx::Size size) {
+void PassThroughImageTransportSurface::OnResize(gfx::Size size,
+                                                float scale_factor) {
   new_size_ = size;
 
   if (transport_) {

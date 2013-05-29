@@ -21,8 +21,7 @@ namespace content {
 void RendererWebCookieJarImpl::setCookie(
     const WebURL& url, const WebURL& first_party_for_cookies,
     const WebString& value) {
-  std::string value_utf8;
-  UTF16ToUTF8(value.data(), value.length(), &value_utf8);
+  std::string value_utf8 = UTF16ToUTF8(value);
   if (!GetContentClient()->renderer()->HandleSetCookieRequest(
           sender_, url, first_party_for_cookies, value_utf8)) {
     sender_->Send(new ViewHostMsg_SetCookie(
@@ -74,8 +73,7 @@ void RendererWebCookieJarImpl::rawCookies(
 
 void RendererWebCookieJarImpl::deleteCookie(
     const WebURL& url, const WebString& cookie_name) {
-  std::string cookie_name_utf8;
-  UTF16ToUTF8(cookie_name.data(), cookie_name.length(), &cookie_name_utf8);
+  std::string cookie_name_utf8 = UTF16ToUTF8(cookie_name);
   sender_->Send(new ViewHostMsg_DeleteCookie(url, cookie_name_utf8));
 }
 

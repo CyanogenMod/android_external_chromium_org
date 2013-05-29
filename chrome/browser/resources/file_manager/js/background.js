@@ -10,6 +10,12 @@
 var appWindows = {};
 
 /**
+ * Synchronous queue for asynchronous calls.
+ * @type {AsyncUtil.Queue}
+ */
+var queue = new AsyncUtil.Queue();
+
+/**
  * @return {Array.<DOMWindow>} Array of content windows for all currently open
  *   app windows.
  */
@@ -43,18 +49,18 @@ var LaunchType = {
  * 3. The app may have |unload| function to persist the app state that does not
  *    fit into |window.appState|.
  *
+ * @param {AsyncUtil.Queue} queue Queue for asynchronous window launches.
  * @param {string} url App window content url.
  * @param {string} id App window id.
  * @param {Object|function} options Options object or a function to create it.
  * @constructor
  */
-function AppWindowWrapper(url, id, options) {
+function AppWindowWrapper(queue, url, id, options) {
+  this.queue_ = queue;
   this.url_ = url;
   this.id_ = id;
   this.options_ = options;
-
   this.window_ = null;
-  this.creating_ = false;
 }
 
 /**
@@ -86,14 +92,17 @@ AppWindowWrapper.prototype.getSimilarWindows_ = function() {
 };
 
 /**
- * Open the window.
+ * Opens the window.
+ *
  * @param {Object} appState App state.
+ * @param {function()} callback Completion callback.
  */
-AppWindowWrapper.prototype.launch = function(appState) {
-  console.assert(!this.isOpen(), 'The window is already open');
-  console.assert(!this.creating_, 'The window is already opening');
-
-  this.creating_ = true;
+AppWindowWrapper.prototype.launch = function(appState, callback) {
+  if (this.isOpen()) {
+    console.error('The window is already open');
+    callback();
+    return;
+  }
   this.appState_ = appState;
 
   var options = this.options_;
@@ -111,7 +120,6 @@ AppWindowWrapper.prototype.launch = function(appState) {
   var createWindow = function() {
     chrome.app.window.onRestored.removeListener(createWindow);
     chrome.app.window.create(this.url_, options, function(appWindow) {
-      this.creating_ = false;
       this.window_ = appWindow;
 
       // If we have already another window of the same kind, then shift this
@@ -122,8 +130,10 @@ AppWindowWrapper.prototype.launch = function(appState) {
                          bounds.top + AppWindowWrapper.SHIFT_DISTANCE);
       }
 
-      // Show after changing bounds is done.
-      appWindow.show();
+      // Show after changing bounds is done. For the new UI, Files.app shows
+      // it's window as soon as the UI is pre-initialized.
+      if (!this.id_.match(FILES_ID_PATTERN))
+        appWindow.show();
 
       appWindows[this.id_] = appWindow;
       var contentWindow = appWindow.contentWindow;
@@ -143,6 +153,8 @@ AppWindowWrapper.prototype.launch = function(appState) {
         this.window_ = null;
         maybeCloseBackgroundPage();
       }.bind(this));
+
+      callback();
     }.bind(this));
   }.bind(this);
 
@@ -167,18 +179,27 @@ AppWindowWrapper.prototype.launch = function(appState) {
 };
 
 /**
+ * Enqueues opening the window.
+ * @param {Object} appState App state.
+ */
+AppWindowWrapper.prototype.enqueueLaunch = function(appState) {
+  this.queue_.run(this.launch.bind(this, appState));
+};
+
+/**
  * Wrapper for a singleton app window.
  *
  * In addition to the AppWindowWrapper requirements the app scripts should
  * have |reload| method that re-initializes the app based on a changed
  * |window.appState|.
  *
+ * @param {AsyncUtil.Queue} queue Queue for asynchronous window launches.
  * @param {string} url App window content url.
  * @param {Object|function} options Options object or a function to return it.
  * @constructor
  */
-function SingletonAppWindowWrapper(url, options) {
-  AppWindowWrapper.call(this, url, url, options);
+function SingletonAppWindowWrapper(queue, url, options) {
+  AppWindowWrapper.call(this, queue, url, url, options);
 }
 
 /**
@@ -192,21 +213,18 @@ SingletonAppWindowWrapper.prototype = { __proto__: AppWindowWrapper.prototype };
  * Activates an existing window or creates a new one.
  *
  * @param {Object} appState App state.
+ * @param {function()} callback Completion callback.
  */
-SingletonAppWindowWrapper.prototype.launch = function(appState) {
+SingletonAppWindowWrapper.prototype.launch = function(appState, callback) {
   if (this.isOpen()) {
     this.window_.contentWindow.appState = appState;
     this.window_.contentWindow.reload();
     this.window_.focus();
+    callback();
     return;
   }
 
-  if (this.creating_) {
-    this.appState_ = appState;
-    return;
-  }
-
-  AppWindowWrapper.prototype.launch.call(this, appState);
+  AppWindowWrapper.prototype.launch.call(this, appState, callback);
 };
 
 /**
@@ -220,10 +238,11 @@ SingletonAppWindowWrapper.prototype.reopen = function() {
 
     try {
       var appState = JSON.parse(value);
-      this.launch(appState);
     } catch (e) {
       console.error('Corrupt launch data for ' + this.id_, value);
+      return;
     }
+    this.enqueueLaunch(appState);
   }.bind(this));
 };
 
@@ -263,68 +282,82 @@ function createFileManagerOptions() {
  * @param {Object=} opt_appState App state.
  * @param {number=} opt_id Window id.
  * @param {LaunchType=} opt_type Launch type. Default: ALWAYS_CREATE.
- * @return {string} The window's App ID.
+ * @param {function(string)=} opt_callback Completion callback with the App ID.
  */
-function launchFileManager(opt_appState, opt_id, opt_type) {
+function launchFileManager(opt_appState, opt_id, opt_type, opt_callback) {
   var type = opt_type || LaunchType.ALWAYS_CREATE;
 
-  // Check if there is already a window with the same path. If so, then
-  // reuse it instead of opening a new one.
-  if (type == LaunchType.FOCUS_SAME_OR_CREATE ||
-      type == LaunchType.FOCUS_ANY_OR_CREATE) {
-    if (opt_appState && opt_appState.defaultPath) {
-      for (var key in appWindows) {
-        var contentWindow = appWindows[key].contentWindow;
-        if (contentWindow.appState &&
-            opt_appState.defaultPath == contentWindow.appState.defaultPath) {
-          appWindows[key].focus();
-          return key;
+  // Wait until all windows are created.
+  queue.run(function(onTaskCompleted) {
+    // Check if there is already a window with the same path. If so, then
+    // reuse it instead of opening a new one.
+    if (type == LaunchType.FOCUS_SAME_OR_CREATE ||
+        type == LaunchType.FOCUS_ANY_OR_CREATE) {
+      if (opt_appState && opt_appState.defaultPath) {
+        for (var key in appWindows) {
+          var contentWindow = appWindows[key].contentWindow;
+          if (contentWindow.appState &&
+              opt_appState.defaultPath == contentWindow.appState.defaultPath) {
+            appWindows[key].focus();
+            if (opt_callback)
+              opt_callback(key);
+            onTaskCompleted();
+            return;
+          }
         }
       }
     }
-  }
 
-  // Focus any window if none is focused. Try restored first.
-  if (type == LaunchType.FOCUS_ANY_OR_CREATE) {
-    // If there is already a focused window, then finish.
-    for (var key in appWindows) {
-      // The isFocused() method should always be available, but in case
-      // Files.app's failed on some error, wrap it with try catch.
-      try {
-        if (appWindows[key].contentWindow.isFocused())
-          return key;
-      } catch (e) {
-        console.error(e.message);
+    // Focus any window if none is focused. Try restored first.
+    if (type == LaunchType.FOCUS_ANY_OR_CREATE) {
+      // If there is already a focused window, then finish.
+      for (var key in appWindows) {
+        // The isFocused() method should always be available, but in case
+        // Files.app's failed on some error, wrap it with try catch.
+        try {
+          if (appWindows[key].contentWindow.isFocused())
+            return key;
+        } catch (e) {
+          console.error(e.message);
+        }
       }
-    }
-    // Try to focus the first non-minimized window.
-    for (var key in appWindows) {
-      if (!appWindows[key].isMinimized()) {
+      // Try to focus the first non-minimized window.
+      for (var key in appWindows) {
+        if (!appWindows[key].isMinimized()) {
+          appWindows[key].focus();
+          if (opt_callback)
+            opt_callback(key);
+          onTaskCompleted();
+          return;
+        }
+      }
+      // Restore and focus any window.
+      for (var key in appWindows) {
         appWindows[key].focus();
-        return key;
+        if (opt_callback)
+          opt_callback(key);
+        onTaskCompleted();
+        return;
       }
     }
-    // Restore and focus any window.
-    for (var key in appWindows) {
-      appWindows[key].focus();
-      return key;
-    }
-  }
 
-  // Create a new instance in case of ALWAYS_CREATE type, or as a fallback
-  // for other types.
+    // Create a new instance in case of ALWAYS_CREATE type, or as a fallback
+    // for other types.
 
-  var id = opt_id || nextFileManagerWindowID;
-  nextFileManagerWindowID = Math.max(nextFileManagerWindowID, id + 1);
-  var appId = FILES_ID_PREFIX + id;
+    var id = opt_id || nextFileManagerWindowID;
+    nextFileManagerWindowID = Math.max(nextFileManagerWindowID, id + 1);
+    var appId = FILES_ID_PREFIX + id;
 
-  var appWindow = new AppWindowWrapper(
-      util.platform.newUI() ? 'main_new_ui.html' : 'main.html',
-      appId,
-      createFileManagerOptions);
-  appWindow.launch(opt_appState || {});
-
-  return appId;
+    var appWindow = new AppWindowWrapper(
+        queue,
+        util.platform.newUI() ? 'main_new_ui.html' : 'main.html',
+        appId,
+        createFileManagerOptions);
+    appWindow.enqueueLaunch(opt_appState || {});
+    if (opt_callback)
+      opt_callback(appId);
+    onTaskCompleted();
+  });
 }
 
 /**
@@ -407,26 +440,28 @@ function createAudioPlayerOptions() {
   };
 }
 
-var audioPlayer =
-    new SingletonAppWindowWrapper('mediaplayer.html', createAudioPlayerOptions);
+var audioPlayer = new SingletonAppWindowWrapper(queue,
+                                                'mediaplayer.html',
+                                                createAudioPlayerOptions);
 
 /**
  * Launch the audio player.
  * @param {Object} playlist Playlist.
  */
 function launchAudioPlayer(playlist) {
-  audioPlayer.launch(playlist);
+  audioPlayer.enqueueLaunch(playlist);
 }
 
-var videoPlayer =
-    new SingletonAppWindowWrapper('video_player.html', { hidden: true });
+var videoPlayer = new SingletonAppWindowWrapper(queue,
+                                                'video_player.html',
+                                                {hidden: true});
 
 /**
  * Launch the video player.
  * @param {string} url Video url.
  */
 function launchVideoPlayer(url) {
-  videoPlayer.launch({url: url});
+  videoPlayer.enqueueLaunch({url: url});
 }
 
 /**

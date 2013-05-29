@@ -17,6 +17,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
 #include "chrome/browser/profiles/profile_shortcut_manager_win.h"
+#include "chrome/browser/shell_integration.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/product.h"
 #include "chrome/installer/util/shell_util.h"
@@ -85,31 +86,28 @@ class ProfileShortcutManagerTest : public testing::Test {
   }
 
   void RunPendingTasks() {
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
+    base::MessageLoop::current()->Run();
   }
 
   void SetupDefaultProfileShortcut(const tracked_objects::Location& location) {
-    ASSERT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_1_name_))
-        << location.ToString();
-    // A non-badged shortcut for chrome is automatically created with the
-    // first profile (for the case when the user deletes their only profile).
-    profile_info_cache_->AddProfileToCache(profile_1_path_, profile_1_name_,
-                                           string16(), 0, false);
-    RunPendingTasks();
-    // We now have 1 profile, so we expect a new shortcut with no profile
-    // information.
-    ValidateNonProfileShortcut(location);
-  }
-
-  void SetupAndCreateTwoShortcuts(const tracked_objects::Location& location) {
     ASSERT_EQ(0, profile_info_cache_->GetNumberOfProfiles())
         << location.ToString();
     ASSERT_FALSE(ProfileShortcutExistsAtDefaultPath(profile_1_name_))
         << location.ToString();
-
     profile_info_cache_->AddProfileToCache(profile_1_path_, profile_1_name_,
                                            string16(), 0, false);
+    // Also create a non-badged shortcut for Chrome, which is conveniently done
+    // by |CreateProfileShortcut()| since there is only one profile.
+    profile_shortcut_manager_->CreateProfileShortcut(profile_1_path_);
+    RunPendingTasks();
+    // Verify that there's now a shortcut with no profile information.
+    ValidateNonProfileShortcut(location);
+  }
+
+  void SetupAndCreateTwoShortcuts(const tracked_objects::Location& location) {
+    SetupDefaultProfileShortcut(location);
     CreateProfileWithShortcut(location, profile_2_name_, profile_2_path_);
     ValidateProfileShortcut(location, profile_1_name_, profile_1_path_);
   }
@@ -141,6 +139,8 @@ class ProfileShortcutManagerTest : public testing::Test {
     EXPECT_TRUE(file_util::PathExists(icon_path)) << location.ToString();
 
     base::win::ShortcutProperties expected_properties;
+    expected_properties.set_app_id(
+        ShellIntegration::GetChromiumModelIdForProfile(profile_path));
     expected_properties.set_target(GetExePath());
     expected_properties.set_description(GetDistribution()->GetAppDescription());
     expected_properties.set_dual_mode(false);
@@ -270,7 +270,7 @@ class ProfileShortcutManagerTest : public testing::Test {
     return system_shortcuts_directory;
   }
 
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
   scoped_ptr<TestingProfileManager> profile_manager_;

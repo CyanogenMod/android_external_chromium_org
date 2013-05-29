@@ -11,8 +11,6 @@
 
 namespace gpu {
 class ScopedSafeSharedMemory;
-class TextureUploadStats;
-class TransferStateInternal;
 
 // Class which handles async pixel transfers using EGLImageKHR and another
 // upload thread
@@ -52,17 +50,6 @@ class AsyncPixelTransferDelegateEGL
       AsyncMemoryParams mem_params,
       ScopedSafeSharedMemory* safe_shared_memory,
       const CompletionCallback& callback);
-  static void PerformAsyncTexImage2D(
-      TransferStateInternal* state,
-      AsyncTexImage2DParams tex_params,
-      AsyncMemoryParams mem_params,
-      ScopedSafeSharedMemory* safe_shared_memory);
-  static void PerformAsyncTexSubImage2D(
-      TransferStateInternal* state,
-      AsyncTexSubImage2DParams tex_params,
-      AsyncMemoryParams mem_params,
-      ScopedSafeSharedMemory* safe_shared_memory,
-      scoped_refptr<TextureUploadStats> texture_upload_stats);
 
   // Returns true if a work-around was used.
   bool WorkAroundAsyncTexImage2D(
@@ -78,7 +65,7 @@ class AsyncPixelTransferDelegateEGL
   typedef std::list<base::WeakPtr<AsyncPixelTransferState> > TransferQueue;
   TransferQueue pending_allocations_;
 
-  scoped_refptr<TextureUploadStats> texture_upload_stats_;
+  scoped_refptr<AsyncPixelTransferUploadStats> texture_upload_stats_;
   bool is_imagination_;
   bool is_qualcomm_;
 

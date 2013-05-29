@@ -67,9 +67,8 @@ DirectoryModel.fakeDriveEntry_ = {
 
 /**
  * Fake entry representing a psuedo directory, which contains Drive files
- * available offline. This entry works as a trigger to start a search using
- * DirectoryContentsDriveOffline. specialSearch() must be called to start a
- * special search.
+ * available offline. This entry works as a trigger to start a search for
+ * offline files.
  * @type {Object}
  * @const
  * @private
@@ -109,15 +108,15 @@ DirectoryModel.fakeDriveRecentEntry_ = {
 
 /**
  * List of fake entries for special searches.
- * TODO(haruki): Add the entry for "Recent".
- * TODO(hirono): Bring back the entry for "Offline". http://crbug.com/238545
  *
  * @type {Array.<Object>}
  * @const
  */
-DirectoryModel.FAKE_DRIVE_SPECIAL_SEARCH_ENTRIES =
-    [DirectoryModel.fakeDriveSharedWithMeEntry_,
-     DirectoryModel.fakeDriveRecentEntry_];
+DirectoryModel.FAKE_DRIVE_SPECIAL_SEARCH_ENTRIES = [
+  DirectoryModel.fakeDriveSharedWithMeEntry_,
+  DirectoryModel.fakeDriveRecentEntry_,
+  DirectoryModel.fakeDriveOfflineEntry_
+];
 
 /**
  * DirectoryModel extends cr.EventTarget.
@@ -1363,38 +1362,33 @@ DirectoryModel.prototype.specialSearch = function(path, opt_query) {
     }
 
     var specialSearchType = PathUtil.getRootType(path);
-    var newDirContents;
+    var searchOption;
     var dirEntry;
     if (specialSearchType == RootType.DRIVE_OFFLINE) {
-      newDirContents = new DirectoryContentsDriveOffline(
-          this.currentFileListContext_,
-          driveRoot,
-          DirectoryModel.fakeDriveOfflineEntry_,
-          query);
       dirEntry = DirectoryModel.fakeDriveOfflineEntry_;
+      searchOption =
+          DirectoryContentsDriveSearchMetadata.SearchType.SEARCH_OFFLINE;
     } else if (specialSearchType == RootType.DRIVE_SHARED_WITH_ME) {
-      newDirContents = new DirectoryContentsDriveSearchMetadata(
-          this.currentFileListContext_,
-          driveRoot,
-          DirectoryModel.fakeDriveSharedWithMeEntry_,
-          query,
-          DirectoryContentsDriveSearchMetadata.
-              SearchType.SEARCH_SHARED_WITH_ME);
       dirEntry = DirectoryModel.fakeDriveSharedWithMeEntry_;
+      searchOption =
+          DirectoryContentsDriveSearchMetadata.SearchType.SEARCH_SHARED_WITH_ME;
     } else if (specialSearchType == RootType.DRIVE_RECENT) {
-      newDirContents = new DirectoryContentsDriveSearchMetadata(
-          this.currentFileListContext_,
-          driveRoot,
-          DirectoryModel.fakeDriveRecentEntry_,
-          query,
-          DirectoryContentsDriveSearchMetadata.SearchType.SEARCH_RECENT_FILES);
       dirEntry = DirectoryModel.fakeDriveRecentEntry_;
+      searchOption =
+          DirectoryContentsDriveSearchMetadata.SearchType.SEARCH_RECENT_FILES;
+
     } else {
       // Unknown path.
       this.changeDirectory(thid.getDefaultDirectory());
       return;
     }
 
+    var newDirContents = new DirectoryContentsDriveSearchMetadata(
+        this.currentFileListContext_,
+        driveRoot,
+        dirEntry,
+        query,
+        searchOption);
     var previous = this.currentDirContents_.getDirectoryEntry();
     this.clearAndScan_(newDirContents);
 

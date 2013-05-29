@@ -41,6 +41,7 @@ NULL_REGEX = re.compile('')
 
 LOGGER = logging.getLogger('dmprof')
 POLICIES_JSON_PATH = os.path.join(BASE_PATH, 'policies.json')
+CHROME_SRC_PATH = os.path.join(BASE_PATH, os.pardir, os.pardir)
 
 
 # Heap Profile Dump versions
@@ -220,11 +221,11 @@ class SymbolDataSources(object):
   very big.  So, the 'dmprof' profiler is designed to use 'SymbolMappingCache'
   which caches actually used symbols.
   """
-  def __init__(self, prefix, fake_directories=None):
+  def __init__(self, prefix, alternative_dirs=None):
     self._prefix = prefix
     self._prepared_symbol_data_sources_path = None
     self._loaded_symbol_data_sources = None
-    self._fake_directories = fake_directories or {}
+    self._alternative_dirs = alternative_dirs or {}
 
   def prepare(self):
     """Prepares symbol data sources by extracting mapping from a binary.
@@ -240,7 +241,7 @@ class SymbolDataSources(object):
         prepare_symbol_info.prepare_symbol_info(
             self._prefix + '.maps',
             output_dir_path=self._prefix + '.symmap',
-            fake_directories=self._fake_directories,
+            alternative_dirs=self._alternative_dirs,
             use_tempdir=True,
             use_source_file_name=True))
     if self._prepared_symbol_data_sources_path:
@@ -376,12 +377,14 @@ class Rule(object):
 
   def __init__(self,
                name,
-               mmap,
+               allocator_type,
                stackfunction_pattern=None,
                stacksourcefile_pattern=None,
-               typeinfo_pattern=None):
+               typeinfo_pattern=None,
+               mappedpathname_pattern=None,
+               mappedpermission_pattern=None):
     self._name = name
-    self._mmap = mmap
+    self._allocator_type = allocator_type
 
     self._stackfunction_pattern = None
     if stackfunction_pattern:
@@ -397,13 +400,22 @@ class Rule(object):
     if typeinfo_pattern:
       self._typeinfo_pattern = re.compile(typeinfo_pattern + r'\Z')
 
+    self._mappedpathname_pattern = None
+    if mappedpathname_pattern:
+      self._mappedpathname_pattern = re.compile(mappedpathname_pattern + r'\Z')
+
+    self._mappedpermission_pattern = None
+    if mappedpermission_pattern:
+      self._mappedpermission_pattern = re.compile(
+          mappedpermission_pattern + r'\Z')
+
   @property
   def name(self):
     return self._name
 
   @property
-  def mmap(self):
-    return self._mmap
+  def allocator_type(self):
+    return self._allocator_type
 
   @property
   def stackfunction_pattern(self):
@@ -416,6 +428,14 @@ class Rule(object):
   @property
   def typeinfo_pattern(self):
     return self._typeinfo_pattern
+
+  @property
+  def mappedpathname_pattern(self):
+    return self._mappedpathname_pattern
+
+  @property
+  def mappedpermission_pattern(self):
+    return self._mappedpermission_pattern
 
 
 class Policy(object):
@@ -459,13 +479,29 @@ class Policy(object):
       typeinfo = bucket.typeinfo_name
 
     for rule in self._rules:
-      if (bucket.mmap == rule.mmap and
+      if (bucket.allocator_type == rule.allocator_type and
           (not rule.stackfunction_pattern or
            rule.stackfunction_pattern.match(stackfunction)) and
           (not rule.stacksourcefile_pattern or
            rule.stacksourcefile_pattern.match(stacksourcefile)) and
           (not rule.typeinfo_pattern or rule.typeinfo_pattern.match(typeinfo))):
         bucket.component_cache = rule.name
+        return rule.name
+
+    assert False
+
+  def find_unhooked(self, region):
+    for rule in self._rules:
+      if (region[0] == 'unhooked' and
+          rule.allocator_type == 'unhooked' and
+          (not rule.mappedpathname_pattern or
+           rule.mappedpathname_pattern.match(region[1]['vma']['name'])) and
+          (not rule.mappedpermission_pattern or
+           rule.mappedpermission_pattern.match(
+               region[1]['vma']['readable'] +
+               region[1]['vma']['writable'] +
+               region[1]['vma']['executable'] +
+               region[1]['vma']['private']))):
         return rule.name
 
     assert False
@@ -524,10 +560,12 @@ class Policy(object):
       stacksourcefile = rule.get('stacksourcefile')
       rules.append(Rule(
           rule['name'],
-          rule['allocator'] == 'mmap',
+          rule['allocator'],  # allocator_type
           stackfunction,
           stacksourcefile,
-          rule['typeinfo'] if 'typeinfo' in rule else None))
+          rule['typeinfo'] if 'typeinfo' in rule else None,
+          rule.get('mappedpathname'),
+          rule.get('mappedpermission')))
 
     return Policy(rules, policy['version'], policy['components'])
 
@@ -597,9 +635,9 @@ class PolicySet(object):
 class Bucket(object):
   """Represents a bucket, which is a unit of memory block classification."""
 
-  def __init__(self, stacktrace, mmap, typeinfo, typeinfo_name):
+  def __init__(self, stacktrace, allocator_type, typeinfo, typeinfo_name):
     self._stacktrace = stacktrace
-    self._mmap = mmap
+    self._allocator_type = allocator_type
     self._typeinfo = typeinfo
     self._typeinfo_name = typeinfo_name
 
@@ -613,7 +651,7 @@ class Bucket(object):
 
   def __str__(self):
     result = []
-    result.append('mmap' if self._mmap else 'malloc')
+    result.append(self._allocator_type)
     if self._symbolized_typeinfo == 'no typeinfo':
       result.append('tno_typeinfo')
     else:
@@ -658,8 +696,8 @@ class Bucket(object):
     return self._stacktrace
 
   @property
-  def mmap(self):
-    return self._mmap
+  def allocator_type(self):
+    return self._allocator_type
 
   @property
   def typeinfo(self):
@@ -739,7 +777,7 @@ class BucketSet(object):
       for frame in stacktrace:
         self._code_addresses.add(frame)
       self._buckets[int(words[0])] = Bucket(
-          stacktrace, words[1] == 'mmap', typeinfo, typeinfo_name)
+          stacktrace, words[1], typeinfo, typeinfo_name)
 
   def __iter__(self):
     for bucket_id, bucket_content in self._buckets.iteritems():
@@ -777,8 +815,17 @@ class Dump(object):
       r'^ ([ \(])([a-f0-9]+)([ \)])-([ \(])([a-f0-9]+)([ \)])\s+'
       r'(hooked|unhooked)\s+(.+)$', re.IGNORECASE)
 
-  _TIME_PATTERN = re.compile(
+  _HOOKED_PATTERN = re.compile(r'(?P<TYPE>.+ )?(?P<COMMITTED>[0-9]+) / '
+                               '(?P<RESERVED>[0-9]+) @ (?P<BUCKETID>[0-9]+)')
+  _UNHOOKED_PATTERN = re.compile(r'(?P<TYPE>.+ )?(?P<COMMITTED>[0-9]+) / '
+                                 '(?P<RESERVED>[0-9]+)')
+
+  _OLD_HOOKED_PATTERN = re.compile(r'(?P<TYPE>.+) @ (?P<BUCKETID>[0-9]+)')
+  _OLD_UNHOOKED_PATTERN = re.compile(r'(?P<TYPE>.+) (?P<COMMITTED>[0-9]+)')
+
+  _TIME_PATTERN_FORMAT = re.compile(
       r'^Time: ([0-9]+/[0-9]+/[0-9]+ [0-9]+:[0-9]+:[0-9]+)(\.[0-9]+)?')
+  _TIME_PATTERN_SECONDS = re.compile(r'^Time: ([0-9]+)$')
 
   def __init__(self, path, modified_time):
     self._path = path
@@ -933,12 +980,17 @@ class Dump(object):
 
     while True:
       if self._lines[ln].startswith('Time:'):
-        matched = self._TIME_PATTERN.match(self._lines[ln])
-        if matched:
+        matched_seconds = self._TIME_PATTERN_SECONDS.match(self._lines[ln])
+        matched_format = self._TIME_PATTERN_FORMAT.match(self._lines[ln])
+        if matched_format:
           self._time = time.mktime(datetime.datetime.strptime(
-              matched.group(1), '%Y/%m/%d %H:%M:%S').timetuple())
-          if matched.group(2):
-            self._time += float(matched.group(2)[1:]) / 1000.0
+              matched_format.group(1), '%Y/%m/%d %H:%M:%S').timetuple())
+          if matched_format.group(2):
+            self._time += float(matched_format.group(2)[1:]) / 1000.0
+        elif matched_seconds:
+          self._time = float(matched_seconds.group(1))
+      elif self._lines[ln].startswith('Reason:'):
+        pass  # Nothing to do for 'Reason:'
       else:
         break
       ln += 1
@@ -953,12 +1005,15 @@ class Dump(object):
 
     ln += 1
     self._map = {}
+    current_vma = dict()
     while True:
       entry = proc_maps.ProcMaps.parse_line(self._lines[ln])
       if entry:
+        current_vma = dict()
         for _, _, attr in self._procmaps.iter_range(entry.begin, entry.end):
           for key, value in entry.as_dict().iteritems():
             attr[key] = value
+            current_vma[key] = value
         ln += 1
         continue
       matched = self._HOOK_PATTERN.match(self._lines[ln])
@@ -968,9 +1023,30 @@ class Dump(object):
       # 5: end address
       # 7: hooked or unhooked
       # 8: additional information
+      if matched.group(7) == 'hooked':
+        submatched = self._HOOKED_PATTERN.match(matched.group(8))
+        if not submatched:
+          submatched = self._OLD_HOOKED_PATTERN.match(matched.group(8))
+      elif matched.group(7) == 'unhooked':
+        submatched = self._UNHOOKED_PATTERN.match(matched.group(8))
+        if not submatched:
+          submatched = self._OLD_UNHOOKED_PATTERN.match(matched.group(8))
+      else:
+        assert matched.group(7) in ['hooked', 'unhooked']
+
+      submatched_dict = submatched.groupdict()
+      region_info = { 'vma': current_vma }
+      if submatched_dict.get('TYPE'):
+        region_info['type'] = submatched_dict['TYPE'].strip()
+      if submatched_dict.get('COMMITTED'):
+        region_info['committed'] = int(submatched_dict['COMMITTED'])
+      if submatched_dict.get('RESERVED'):
+        region_info['reserved'] = int(submatched_dict['RESERVED'])
+      if submatched_dict.get('BUCKETID'):
+        region_info['bucket_id'] = int(submatched_dict['BUCKETID'])
+
       self._map[(int(matched.group(2), 16),
-                 int(matched.group(5), 16))] = (matched.group(7),
-                                                matched.group(8))
+                 int(matched.group(5), 16))] = (matched.group(7), region_info)
       ln += 1
 
   def _extract_stacktrace_lines(self, line_number):
@@ -1048,14 +1124,24 @@ class Command(object):
 
   See COMMANDS in main().
   """
+  _DEVICE_LIB_BASEDIRS = ['/data/data/', '/data/app-lib/']
+
   def __init__(self, usage):
     self._parser = optparse.OptionParser(usage)
 
   @staticmethod
   def load_basic_files(
-      dump_path, multiple, no_dump=False, fake_directories=None):
+      dump_path, multiple, no_dump=False, alternative_dirs=None):
     prefix = Command._find_prefix(dump_path)
-    symbol_data_sources = SymbolDataSources(prefix, fake_directories or {})
+    # If the target process is estimated to be working on Android, converts
+    # a path in the Android device to a path estimated to be corresponding in
+    # the host.  Use --alternative-dirs to specify the conversion manually.
+    if not alternative_dirs:
+      alternative_dirs = Command._estimate_alternative_dirs(prefix)
+    if alternative_dirs:
+      for device, host in alternative_dirs.iteritems():
+        LOGGER.info('Assuming %s on device as %s on host' % (device, host))
+    symbol_data_sources = SymbolDataSources(prefix, alternative_dirs)
     symbol_data_sources.prepare()
     bucket_set = BucketSet()
     bucket_set.load(prefix)
@@ -1088,6 +1174,37 @@ class Command(object):
   @staticmethod
   def _find_prefix(path):
     return re.sub('\.[0-9][0-9][0-9][0-9]\.heap', '', path)
+
+  @staticmethod
+  def _estimate_alternative_dirs(prefix):
+    """Estimates a path in host from a corresponding path in target device.
+
+    For Android, dmprof.py should find symbol information from binaries in
+    the host instead of the Android device because dmprof.py doesn't run on
+    the Android device.  This method estimates a path in the host
+    corresponding to a path in the Android device.
+
+    Returns:
+        A dict that maps a path in the Android device to a path in the host.
+        If a file in Command._DEVICE_LIB_BASEDIRS is found in /proc/maps, it
+        assumes the process was running on Android and maps the path to
+        "out/Debug/lib" in the Chromium directory.  An empty dict is returned
+        unless Android.
+    """
+    device_lib_path_candidates = set()
+
+    with open(prefix + '.maps') as maps_f:
+      maps = proc_maps.ProcMaps.load(maps_f)
+      for entry in maps:
+        name = entry.as_dict()['name']
+        if any([base_dir in name for base_dir in Command._DEVICE_LIB_BASEDIRS]):
+          device_lib_path_candidates.add(os.path.dirname(name))
+
+    if len(device_lib_path_candidates) == 1:
+      return {device_lib_path_candidates.pop(): os.path.join(
+                  CHROME_SRC_PATH, 'out', 'Debug', 'lib')}
+    else:
+      return {}
 
   @staticmethod
   def _find_all_dumps(dump_path):
@@ -1202,7 +1319,7 @@ class PolicyCommands(Command):
         'Usage: %%prog %s [-p POLICY] <first-dump>' % command)
     self._parser.add_option('-p', '--policy', type='string', dest='policy',
                             help='profile with POLICY', metavar='POLICY')
-    self._parser.add_option('--fake-directories', dest='fake_directories',
+    self._parser.add_option('--alternative-dirs', dest='alternative_dirs',
                             metavar='/path/on/target@/path/on/host[:...]',
                             help='Read files in /path/on/host/ instead of '
                                  'files in /path/on/target/.')
@@ -1210,13 +1327,13 @@ class PolicyCommands(Command):
   def _set_up(self, sys_argv):
     options, args = self._parse_args(sys_argv, 1)
     dump_path = args[1]
-    fake_directories_dict = {}
-    if options.fake_directories:
-      for fake_directory_pair in options.fake_directories.split(':'):
-        target_path, host_path = fake_directory_pair.split('@', 1)
-        fake_directories_dict[target_path] = host_path
+    alternative_dirs_dict = {}
+    if options.alternative_dirs:
+      for alternative_dir_pair in options.alternative_dirs.split(':'):
+        target_path, host_path = alternative_dir_pair.split('@', 1)
+        alternative_dirs_dict[target_path] = host_path
     (bucket_set, dumps) = Command.load_basic_files(
-        dump_path, True, fake_directories=fake_directories_dict)
+        dump_path, True, alternative_dirs=alternative_dirs_dict)
 
     policy_set = PolicySet.load(Command._parse_policy_list(options.policy))
     return policy_set, dumps, bucket_set
@@ -1242,6 +1359,7 @@ class PolicyCommands(Command):
     sizes = dict((c, 0) for c in policy.components)
 
     PolicyCommands._accumulate(dump, policy, bucket_set, sizes)
+    PolicyCommands._accumulate_maps(dump, policy, sizes)
 
     sizes['mmap-no-log'] = (
         dump.global_stat('profiled-mmap_committed') -
@@ -1256,6 +1374,10 @@ class PolicyCommands(Command):
     sizes['tc-unused'] = (
         sizes['mmap-tcmalloc'] -
         dump.global_stat('profiled-malloc_committed'))
+    if sizes['tc-unused'] < 0:
+      LOGGER.warn('    Assuming tc-unused=0 as it is negative: %d (bytes)' %
+                  sizes['tc-unused'])
+      sizes['tc-unused'] = 0
     sizes['tc-total'] = sizes['mmap-tcmalloc']
 
     for key, value in {
@@ -1268,11 +1390,6 @@ class PolicyCommands(Command):
         'stack': 'stack_committed',
         'other': 'other_committed',
         'unhooked-absent': 'nonprofiled-absent_committed',
-        'unhooked-anonymous': 'nonprofiled-anonymous_committed',
-        'unhooked-file-exec': 'nonprofiled-file-exec_committed',
-        'unhooked-file-nonexec': 'nonprofiled-file-nonexec_committed',
-        'unhooked-stack': 'nonprofiled-stack_committed',
-        'unhooked-other': 'nonprofiled-other_committed',
         'total-vm': 'total_virtual',
         'filemapped-vm': 'file_virtual',
         'anonymous-vm': 'anonymous_virtual',
@@ -1319,6 +1436,13 @@ class PolicyCommands(Command):
         sizes['mmap-total-log'] += int(words[COMMITTED])
       else:
         sizes['other-total-log'] += int(words[COMMITTED])
+
+  @staticmethod
+  def _accumulate_maps(dump, policy, sizes):
+    for _, value in dump.iter_map:
+      if value[0] == 'unhooked':
+        component_match = policy.find_unhooked(value)
+        sizes[component_match] += int(value[1]['committed'])
 
 
 class CSVCommand(PolicyCommands):
@@ -1466,16 +1590,18 @@ class MapCommand(Command):
         if not x:
           out.write('None\n')
         elif x[0] == 'hooked':
-          attrs = x[1].split()
-          assert len(attrs) == 3
-          bucket_id = int(attrs[2])
+          region_info = x[1]
+          bucket_id = region_info['bucket_id']
           bucket = bucket_set.get(bucket_id)
           component = policy.find(bucket)
-          out.write('hooked %s: %s @ %d\n' % (attrs[0], component, bucket_id))
+          out.write('hooked %s: %s @ %d\n' % (
+              region_info['type'] if 'type' in region_info else 'None',
+              component, bucket_id))
         else:
-          attrs = x[1].split()
-          size = int(attrs[1])
-          out.write('unhooked %s: %d bytes committed\n' % (attrs[0], size))
+          region_info = x[1]
+          size = region_info['committed']
+          out.write('unhooked %s: %d bytes committed\n' % (
+              region_info['type'] if 'type' in region_info else 'None', size))
 
 
 class ExpandCommand(Command):

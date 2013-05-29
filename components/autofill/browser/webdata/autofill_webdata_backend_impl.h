@@ -49,7 +49,7 @@ class AutofillWebDataBackendImpl
   virtual void RemoveObserver(
       AutofillWebDataServiceObserverOnDBThread* observer) OVERRIDE;
   virtual WebDatabase* GetDatabase() OVERRIDE;
-  virtual void RemoveExpiredFormElementsWrapper() OVERRIDE;
+  virtual void RemoveExpiredFormElements() OVERRIDE;
   virtual void NotifyOfMultipleAutofillChanges() OVERRIDE;
 
   // Adds form fields to the web database.
@@ -73,8 +73,6 @@ class AutofillWebDataBackendImpl
       const base::Time& delete_end,
       WebDatabase* db);
 
-  // Removes expired form elements recorded for Autocomplete from the database.
-  WebDatabase::State RemoveExpiredFormElements(WebDatabase* db);
 
   // Removes the Form-value |value| which has been entered in form input fields
   // named |name| from the database.
@@ -118,6 +116,13 @@ class AutofillWebDataBackendImpl
       const base::Time& delete_end,
       WebDatabase* db);
 
+  // Removes origin URLs associated with Autofill profiles and credit cards from
+  // the database.
+  WebDatabase::State RemoveOriginURLsModifiedBetween(
+      const base::Time& delete_begin,
+      const base::Time& delete_end,
+      WebDatabase* db);
+
  protected:
   virtual ~AutofillWebDataBackendImpl();
 
@@ -129,6 +134,8 @@ class AutofillWebDataBackendImpl
   // (http://crbug/112250).
   friend class base::RefCountedThreadSafe<AutofillWebDataBackendImpl,
       content::BrowserThread::DeleteOnDBThread>;
+
+  WebDatabase::State RemoveExpiredFormElementsImpl(WebDatabase* db);
 
   // Callbacks to ensure that sensitive info is destroyed if request is
   // cancelled.

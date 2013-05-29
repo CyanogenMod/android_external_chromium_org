@@ -62,8 +62,7 @@ class VIEWS_EXPORT NativeTextfieldWrapper {
   // Clears the selection within the edit field and sets the caret to the end.
   virtual void ClearSelection() = 0;
 
-  // Updates the border display for the native text field with the state desired
-  // by the Textfield.
+  // Updates whether there is a visible border.
   virtual void UpdateBorder() = 0;
 
   // Updates the color of the border with the state desired by the Textfield.
@@ -95,6 +94,9 @@ class VIEWS_EXPORT NativeTextfieldWrapper {
 
   // Updates the vertical margins for the native text field.
   virtual void UpdateVerticalMargins() = 0;
+
+  // Updates the vertical alignment for the native text field.
+  virtual void UpdateVerticalAlignment() = 0;
 
   // Sets the focus to the text field. Returns false if the wrapper
   // didn't take focus.

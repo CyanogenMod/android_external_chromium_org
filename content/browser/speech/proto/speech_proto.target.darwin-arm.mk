@@ -17,14 +17,14 @@ GYP_TARGET_DEPENDENCIES := \
 ### Generated for rule "content_browser_speech_proto_speech_proto_gyp_speech_proto_target_genproto":
 # "{'inputs': ['../../../../tools/protoc_wrapper/protoc_wrapper.py', '$(gyp_shared_intermediate_dir)/protoc'], 'msvs_cygwin_shell': '0', 'extension': 'proto', 'outputs': ['$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/%(INPUT_ROOT)s_pb2.py', '$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/%(INPUT_ROOT)s.pb.cc', '$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/%(INPUT_ROOT)s.pb.h'], 'rule_name': 'genproto', 'rule_sources': ['google_streaming_api.proto'], 'action': ['python', '../../../../tools/protoc_wrapper/protoc_wrapper.py', '--include', '', '--protobuf', '$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/%(INPUT_ROOT)s.pb.h', '--proto-in-dir', '.', '--proto-in-file', '%(INPUT_ROOT)s$(suffix $<)', '--use-system-protobuf=0', '--', '$(gyp_shared_intermediate_dir)/protoc', '--cpp_out', '$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto', '--python_out', '$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto'], 'message': 'Generating C++ and Python code from $(RULE_SOURCES)', 'process_outputs_as_sources': '1'}":
 $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: $(LOCAL_PATH)/content/browser/speech/proto/google_streaming_api.proto $(LOCAL_PATH)/tools/protoc_wrapper/protoc_wrapper.py $(gyp_shared_intermediate_dir)/protoc $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto $(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto; cd $(gyp_local_path)/content/browser/speech/proto; python ../../../../tools/protoc_wrapper/protoc_wrapper.py --include "" --protobuf "$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/google_streaming_api.pb.h" --proto-in-dir . --proto-in-file "google_streaming_api$(suffix $<)" "--use-system-protobuf=0" -- "$(gyp_shared_intermediate_dir)/protoc" --cpp_out "$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto" --python_out "$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto"
 
-$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/google_streaming_api.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py
-$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/google_streaming_api.pb.h: $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py
+$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/google_streaming_api.pb.cc: $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py ;
+$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/google_streaming_api.pb.h: $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py ;
 .PHONY: content_browser_speech_proto_speech_proto_gyp_rule_trigger
 content_browser_speech_proto_speech_proto_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py
 
@@ -97,6 +97,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -123,9 +124,9 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

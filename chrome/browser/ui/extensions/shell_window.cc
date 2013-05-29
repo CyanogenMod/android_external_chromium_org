@@ -4,13 +4,13 @@
 
 #include "chrome/browser/ui/extensions/shell_window.h"
 
+#include "apps/shell_window_geometry_cache.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/app_window_contents.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/image_loader.h"
-#include "chrome/browser/extensions/shell_window_geometry_cache.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -20,16 +20,17 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/extensions/native_app_window.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -52,6 +53,8 @@
 using content::ConsoleMessageLevel;
 using content::WebContents;
 using extensions::APIPermission;
+using web_modal::WebContentsModalDialogHost;
+using web_modal::WebContentsModalDialogManager;
 
 namespace {
 const int kDefaultWidth = 512;
@@ -96,6 +99,7 @@ ShellWindow::ShellWindow(Profile* profile,
                          const extensions::Extension* extension)
     : profile_(profile),
       extension_(extension),
+      extension_id_(extension->id()),
       window_type_(WINDOW_TYPE_DEFAULT),
       image_loader_ptr_factory_(this),
       fullscreen_for_window_api_(false),
@@ -134,9 +138,9 @@ void ShellWindow::Init(const GURL& url,
   if (!params.window_key.empty()) {
     window_key_ = params.window_key;
 
-    extensions::ShellWindowGeometryCache* cache =
-        extensions::ExtensionSystem::Get(profile())->
-          shell_window_geometry_cache();
+    apps::ShellWindowGeometryCache* cache =
+        apps::ShellWindowGeometryCache::Get(profile());
+
     gfx::Rect cached_bounds;
     if (cache->GetGeometry(extension()->id(), params.window_key,
                            &cached_bounds, &cached_state)) {
@@ -320,6 +324,10 @@ void ShellWindow::OnNativeWindowChanged() {
     shell_window_contents_->NativeWindowChanged(native_app_window_.get());
 }
 
+void ShellWindow::OnNativeWindowActivated() {
+  extensions::ShellWindowRegistry::Get(profile_)->ShellWindowActivated(this);
+}
+
 scoped_ptr<gfx::Image> ShellWindow::GetAppListIcon() {
   // TODO(skuhne): We might want to use LoadImages in UpdateExtensionAppIcon
   // instead to let the extension give us pre-defined icons in the launcher
@@ -422,6 +430,7 @@ void ShellWindow::OnImageLoaded(const gfx::Image& image) {
 }
 
 void ShellWindow::DidDownloadFavicon(int id,
+                                     int http_status_code,
                                      const GURL& image_url,
                                      int requested_size,
                                      const std::vector<SkBitmap>& bitmaps) {
@@ -462,6 +471,11 @@ void ShellWindow::CloseContents(WebContents* contents) {
 
 bool ShellWindow::ShouldSuppressDialogs() {
   return true;
+}
+
+content::ColorChooser* ShellWindow::OpenColorChooser(WebContents* web_contents,
+                                                     SkColor initial_color) {
+  return chrome::ShowColorChooser(web_contents, initial_color);
 }
 
 void ShellWindow::RunFileChooser(WebContents* tab,
@@ -548,10 +562,6 @@ extensions::ActiveTabPermissionGranter*
   return NULL;
 }
 
-void ShellWindow::SetWebContentsBlocked(content::WebContents* web_contents,
-                                        bool blocked) {
-}
-
 WebContentsModalDialogHost* ShellWindow::GetWebContentsModalDialogHost() {
   return native_app_window_.get();
 }
@@ -569,9 +579,8 @@ void ShellWindow::SaveWindowPosition() {
   if (!native_app_window_)
     return;
 
-  extensions::ShellWindowGeometryCache* cache =
-      extensions::ExtensionSystem::Get(profile())->
-          shell_window_geometry_cache();
+  apps::ShellWindowGeometryCache* cache =
+      apps::ShellWindowGeometryCache::Get(profile());
 
   gfx::Rect bounds = native_app_window_->GetRestoredBounds();
   bounds.Inset(native_app_window_->GetFrameInsets());

@@ -47,6 +47,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/language_detection_details.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -852,7 +853,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutInvalid) {
   ui_test_utils::NavigateToURL(browser(), downloads_url);
   EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_CREATE_SHORTCUTS));
 
-  GURL blank_url(chrome::kAboutBlankURL);
+  GURL blank_url(content::kAboutBlankURL);
   ui_test_utils::NavigateToURL(browser(), blank_url);
   EXPECT_FALSE(command_updater->IsCommandEnabled(IDC_CREATE_SHORTCUTS));
 }
@@ -1039,7 +1040,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, AppIdSwitch) {
 IN_PROC_BROWSER_TEST_F(BrowserTest, PageLanguageDetection) {
   ASSERT_TRUE(test_server()->Start());
 
-  std::string lang;
+  //std::string lang;
+  LanguageDetectionDetails details;
 
   // Open a new tab with a page in English.
   AddTabAtIndex(0, GURL(test_server()->GetURL("files/english_page.html")),
@@ -1051,27 +1053,29 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, PageLanguageDetection) {
       TranslateTabHelper::FromWebContents(current_web_contents);
   content::Source<WebContents> source(current_web_contents);
 
-  ui_test_utils::WindowedNotificationObserverWithDetails<std::string>
+  ui_test_utils::WindowedNotificationObserverWithDetails<
+    LanguageDetectionDetails>
       en_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
   EXPECT_EQ("", translate_tab_helper->language_state().original_language());
   en_language_detected_signal.Wait();
   EXPECT_TRUE(en_language_detected_signal.GetDetailsFor(
-        source.map_key(), &lang));
-  EXPECT_EQ("en", lang);
+        source.map_key(), &details));
+  EXPECT_EQ("en", details.adopted_language);
   EXPECT_EQ("en", translate_tab_helper->language_state().original_language());
 
   // Now navigate to a page in French.
-  ui_test_utils::WindowedNotificationObserverWithDetails<std::string>
+  ui_test_utils::WindowedNotificationObserverWithDetails<
+    LanguageDetectionDetails>
       fr_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
   ui_test_utils::NavigateToURL(
       browser(), GURL(test_server()->GetURL("files/french_page.html")));
   fr_language_detected_signal.Wait();
-  lang.clear();
+  details.adopted_language.clear();
   EXPECT_TRUE(fr_language_detected_signal.GetDetailsFor(
-        source.map_key(), &lang));
-  EXPECT_EQ("fr", lang);
+        source.map_key(), &details));
+  EXPECT_EQ("fr", details.adopted_language);
   EXPECT_EQ("fr", translate_tab_helper->language_state().original_language());
 }
 
@@ -1109,7 +1113,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, RestorePinnedTabs) {
 
   // Add a pinned non-app tab.
   chrome::NewTab(browser());
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   model->SetTabPinned(2, true);
 
   // Write out the pinned tabs.
@@ -1121,7 +1125,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, RestorePinnedTabs) {
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, first_run);
   launch.profile_ = browser()->profile();
-  launch.ProcessStartupURLs(std::vector<GURL>());
+  launch.ProcessStartupURLs(std::vector<GURL>(),
+                            browser()->host_desktop_type());
 
   // The launch should have created a new browser.
   ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
@@ -1253,7 +1258,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_StartMinimized) {
 // Makes sure the forward button is disabled immediately when navigating
 // forward to a slow-to-commit page.
 IN_PROC_BROWSER_TEST_F(BrowserTest, ForwardDisabledOnForward) {
-  GURL blank_url(chrome::kAboutBlankURL);
+  GURL blank_url(content::kAboutBlankURL);
   ui_test_utils::NavigateToURL(browser(), blank_url);
 
   ui_test_utils::NavigateToURL(
@@ -1663,7 +1668,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest2, NoTabsInPopups) {
   EXPECT_EQ(1, app_browser->tab_strip_model()->count());
 
   // Now try opening another tab in the app browser.
-  AddTabWithURLParams params2(GURL(chrome::kAboutBlankURL),
+  AddTabWithURLParams params2(GURL(content::kAboutBlankURL),
                               content::PAGE_TRANSITION_TYPED);
   app_browser->AddTabWithURL(&params2);
   EXPECT_EQ(app_browser, params2.target);
@@ -1681,7 +1686,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest2, NoTabsInPopups) {
   EXPECT_EQ(1, app_popup_browser->tab_strip_model()->count());
 
   // Now try opening another tab in the app popup browser.
-  AddTabWithURLParams params3(GURL(chrome::kAboutBlankURL),
+  AddTabWithURLParams params3(GURL(content::kAboutBlankURL),
                               content::PAGE_TRANSITION_TYPED);
   app_popup_browser->AddTabWithURL(&params3);
   EXPECT_EQ(app_popup_browser, params3.target);

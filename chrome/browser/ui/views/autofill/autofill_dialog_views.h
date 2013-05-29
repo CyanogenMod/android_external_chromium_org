@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 #include "chrome/browser/ui/autofill/testable_autofill_dialog_view.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/controls/combobox/combobox_listener.h"
@@ -39,7 +40,6 @@ class FocusManager;
 class ImageButton;
 class ImageView;
 class Label;
-class LabelButton;
 class Link;
 class MenuRunner;
 class StyledLabel;
@@ -55,6 +55,7 @@ class KeyEvent;
 
 namespace autofill {
 
+class AutofillDialogSignInDelegate;
 struct DetailInput;
 
 // Views toolkit implementation of the Autofill dialog that handles the
@@ -68,7 +69,8 @@ class AutofillDialogViews : public AutofillDialogView,
                             public views::FocusChangeListener,
                             public views::LinkListener,
                             public views::ComboboxListener,
-                            public views::StyledLabelListener {
+                            public views::StyledLabelListener,
+                            public ui::AcceleratorTarget {
  public:
   explicit AutofillDialogViews(AutofillDialogController* controller);
   virtual ~AutofillDialogViews();
@@ -100,6 +102,11 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void SetTextContentsOfInput(const DetailInput& input,
                                       const string16& contents) OVERRIDE;
   virtual void ActivateInput(const DetailInput& input) OVERRIDE;
+  virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE;
+
+  // ui::AcceleratorTarget implementation:
+  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  virtual bool CanHandleAccelerators() const OVERRIDE;
 
   // views::DialogDelegate implementation:
   virtual string16 GetWindowTitle() const OVERRIDE;
@@ -295,6 +302,8 @@ class AutofillDialogViews : public AutofillDialogView,
         const base::WeakPtr<views::View>& arrow_centering_anchor) {
       arrow_centering_anchor_ = arrow_centering_anchor;
     }
+
+    // TODO(estade): Wrap notifications text.
 
    private:
     // Utility function for determining whether an arrow should be drawn
@@ -584,6 +593,9 @@ class AutofillDialogViews : public AutofillDialogView,
   std::map<views::View*, string16> validity_map_;
 
   ScopedObserver<views::Widget, AutofillDialogViews> observer_;
+
+  // Delegate for the sign-in dialog's webview.
+  scoped_ptr<AutofillDialogSignInDelegate> sign_in_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillDialogViews);
 };

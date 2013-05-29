@@ -19,6 +19,7 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/external_component_loader.h"
 #include "chrome/browser/extensions/external_policy_loader.h"
 #include "chrome/browser/extensions/external_pref_loader.h"
 #include "chrome/browser/extensions/external_provider_interface.h"
@@ -444,20 +445,30 @@ void ExternalProviderImpl::CreateExternalProviders(
 #endif
 
 #if defined(OS_CHROMEOS)
-    policy::BrowserPolicyConnector* connector =
-        g_browser_process->browser_policy_connector();
-    if (is_chromeos_demo_session && connector->GetAppPackUpdater()) {
+    policy::AppPackUpdater* app_pack_updater =
+        g_browser_process->browser_policy_connector()->GetAppPackUpdater();
+    if (is_chromeos_demo_session && app_pack_updater &&
+        !app_pack_updater->created_external_loader()) {
       provider_list->push_back(
           linked_ptr<ExternalProviderInterface>(
             new ExternalProviderImpl(
                 service,
-                connector->GetAppPackUpdater()->CreateExternalLoader(),
+                app_pack_updater->CreateExternalLoader(),
                 Manifest::EXTERNAL_PREF,
                 Manifest::INVALID_LOCATION,
                 Extension::NO_FLAGS)));
     }
 #endif
   }
+
+  provider_list->push_back(
+      linked_ptr<ExternalProviderInterface>(
+        new ExternalProviderImpl(
+            service,
+            new ExternalComponentLoader(),
+            Manifest::INVALID_LOCATION,
+            Manifest::EXTERNAL_POLICY_DOWNLOAD,
+            Extension::FROM_WEBSTORE | Extension::WAS_INSTALLED_BY_DEFAULT)));
 }
 
 }  // namespace extensions

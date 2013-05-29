@@ -251,6 +251,8 @@ virtual void RegisterSharedIdsCHROMIUM(
 virtual GLboolean EnableFeatureCHROMIUM(const char* feature) = 0;
 virtual void* MapBufferCHROMIUM(GLuint target, GLenum access) = 0;
 virtual GLboolean UnmapBufferCHROMIUM(GLuint target) = 0;
+virtual void* MapImageCHROMIUM(GLuint image_id, GLenum access) = 0;
+virtual void UnmapImageCHROMIUM(GLuint image_id) = 0;
 virtual void* MapBufferSubDataCHROMIUM(
     GLuint target, GLintptr offset, GLsizeiptr size, GLenum access) = 0;
 virtual void UnmapBufferSubDataCHROMIUM(const void* mem) = 0;
@@ -258,7 +260,8 @@ virtual void* MapTexSubImage2DCHROMIUM(
     GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
     GLsizei height, GLenum format, GLenum type, GLenum access) = 0;
 virtual void UnmapTexSubImage2DCHROMIUM(const void* mem) = 0;
-virtual void ResizeCHROMIUM(GLuint width, GLuint height) = 0;
+virtual void ResizeCHROMIUM(GLuint width, GLuint height, GLfloat scale_factor) =
+    0;
 virtual const GLchar* GetRequestableExtensionsCHROMIUM() = 0;
 virtual void RequestExtensionCHROMIUM(const char* extension) = 0;
 virtual void RateLimitOffscreenContextCHROMIUM() = 0;
@@ -268,6 +271,11 @@ virtual void GetProgramInfoCHROMIUM(
     GLuint program, GLsizei bufsize, GLsizei* size, void* info) = 0;
 virtual GLuint CreateStreamTextureCHROMIUM(GLuint texture) = 0;
 virtual void DestroyStreamTextureCHROMIUM(GLuint texture) = 0;
+virtual GLuint CreateImageCHROMIUM(
+    GLsizei width, GLsizei height, GLenum internalformat) = 0;
+virtual void DestroyImageCHROMIUM(GLuint image_id) = 0;
+virtual void GetImageParameterivCHROMIUM(
+    GLuint image_id, GLenum pname, GLint* params) = 0;
 virtual void GetTranslatedShaderSourceANGLE(
     GLuint shader, GLsizei bufsize, GLsizei* length, char* source) = 0;
 virtual void PostSubBufferCHROMIUM(

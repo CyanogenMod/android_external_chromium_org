@@ -15,7 +15,6 @@ namespace net {
 
 class CryptoHandshakeMessage;
 class QuicCryptoServerConfig;
-class QuicNegotiatedParameters;
 class QuicSession;
 
 namespace test {
@@ -24,8 +23,7 @@ class CryptoTestUtils;
 
 class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
  public:
-  QuicCryptoServerStream(const QuicConfig& config,
-                         const QuicCryptoServerConfig& crypto_config,
+  QuicCryptoServerStream(const QuicCryptoServerConfig& crypto_config,
                          QuicSession* session);
   explicit QuicCryptoServerStream(QuicSession* session);
   virtual ~QuicCryptoServerStream();
@@ -34,12 +32,17 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
   virtual void OnHandshakeMessage(
       const CryptoHandshakeMessage& message) OVERRIDE;
 
+ protected:
+  virtual QuicErrorCode ProcessClientHello(
+      const CryptoHandshakeMessage& message,
+      CryptoHandshakeMessage* reply,
+      string* error_details);
+
+  const QuicCryptoServerConfig* crypto_config() { return &crypto_config_; }
+
  private:
   friend class test::CryptoTestUtils;
 
-  // config_ contains non-crypto parameters that are negotiated in the crypto
-  // handshake.
-  const QuicConfig& config_;
   // crypto_config_ contains crypto parameters for the handshake.
   const QuicCryptoServerConfig& crypto_config_;
 };

@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop.h"
-#include "content/common/media/media_player_messages.h"
+#include "content/common/media/media_player_messages_android.h"
 #include "webkit/media/android/webmediaplayer_android.h"
 #include "webkit/media/android/webmediaplayer_manager_android.h"
 
@@ -44,9 +44,8 @@ bool WebMediaPlayerProxyImplAndroid::OnMessageReceived(
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidExitFullscreen, OnDidExitFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPlay, OnPlayerPlay)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPause, OnPlayerPause)
-#if defined(GOOGLE_TV)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_ReadFromDemuxer, OnReadFromDemuxer)
-#endif
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaSeekRequest, OnMediaSeekRequest)
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -174,6 +173,13 @@ void WebMediaPlayerProxyImplAndroid::ExitFullscreen(int player_id) {
   Send(new MediaPlayerHostMsg_ExitFullscreen(routing_id(), player_id));
 }
 
+void WebMediaPlayerProxyImplAndroid::ReadFromDemuxerAck(
+    int player_id,
+    const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params) {
+  Send(new MediaPlayerHostMsg_ReadFromDemuxerAck(
+      routing_id(), player_id, params));
+}
+
 #if defined(GOOGLE_TV)
 void WebMediaPlayerProxyImplAndroid::RequestExternalSurface(
     int player_id, const gfx::RectF& geometry) {
@@ -191,6 +197,14 @@ void WebMediaPlayerProxyImplAndroid::DidCommitCompositorFrame() {
         routing_id(), it->first, false, it->second));
   }
 }
+#endif
+
+void WebMediaPlayerProxyImplAndroid::OnReadFromDemuxer(
+    int player_id, media::DemuxerStream::Type type, bool seek_done) {
+  webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
+  if (player)
+    player->OnReadFromDemuxer(type, seek_done);
+}
 
 void WebMediaPlayerProxyImplAndroid::DemuxerReady(
     int player_id,
@@ -198,25 +212,20 @@ void WebMediaPlayerProxyImplAndroid::DemuxerReady(
   Send(new MediaPlayerHostMsg_DemuxerReady(routing_id(), player_id, params));
 }
 
-void WebMediaPlayerProxyImplAndroid::ReadFromDemuxerAck(
-    int player_id,
-    const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params) {
-  Send(new MediaPlayerHostMsg_ReadFromDemuxerAck(
-      routing_id(), player_id, params));
-
-}
-void WebMediaPlayerProxyImplAndroid::OnReadFromDemuxer(
-    int player_id, media::DemuxerStream::Type type, bool seek_done) {
-  webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
-  if (player)
-    player->OnReadFromDemuxer(type, seek_done);
-}
-#endif
-
 webkit_media::WebMediaPlayerAndroid*
     WebMediaPlayerProxyImplAndroid::GetWebMediaPlayer(int player_id) {
   return static_cast<webkit_media::WebMediaPlayerAndroid*>(
       manager_->GetMediaPlayer(player_id));
 }
+
+void WebMediaPlayerProxyImplAndroid::OnMediaSeekRequest(
+    int player_id, base::TimeDelta time_to_seek, bool request_texture_peer) {
+  webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
+  if (player) {
+    Send(new MediaPlayerHostMsg_MediaSeekRequestAck(routing_id(), player_id));
+    player->OnMediaSeekRequest(time_to_seek, request_texture_peer);
+  }
+}
+
 
 }  // namespace content

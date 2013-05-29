@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class Profile;
 
@@ -17,7 +17,7 @@ namespace extensions {
 class InstallLimiter;
 
 // Singleton that owns all InstallLimiter and associates them with profiles.
-class InstallLimiterFactory : public ProfileKeyedServiceFactory {
+class InstallLimiterFactory : public BrowserContextKeyedServiceFactory {
  public:
   static InstallLimiter* GetForProfile(Profile* profile);
 
@@ -29,8 +29,8 @@ class InstallLimiterFactory : public ProfileKeyedServiceFactory {
   InstallLimiterFactory();
   virtual ~InstallLimiterFactory();
 
-  // ProfileKeyedServiceFactory overrides:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory overrides:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(InstallLimiterFactory);

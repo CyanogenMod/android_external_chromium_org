@@ -11,9 +11,9 @@
 #include "base/run_loop.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "chrome/browser/storage_monitor/mock_removable_storage_observer.h"
 #include "chrome/browser/storage_monitor/removable_device_constants.h"
+#include "chrome/browser/storage_monitor/storage_info.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -51,8 +51,8 @@ class StorageMonitorMacTest : public testing::Test {
 
     unique_id_ = "test_id";
     mount_point_ = base::FilePath("/unused_test_directory");
-    device_id_ = MediaStorageUtil::MakeDeviceId(
-        MediaStorageUtil::REMOVABLE_MASS_STORAGE_NO_DCIM, unique_id_);
+    device_id_ = StorageInfo::MakeDeviceId(
+        StorageInfo::REMOVABLE_MASS_STORAGE_NO_DCIM, unique_id_);
     disk_info_ = CreateStorageInfo(device_id_, "",
                                    mount_point_, kTestSize);
   }
@@ -67,7 +67,7 @@ class StorageMonitorMacTest : public testing::Test {
 
  protected:
   // The message loop and file thread to run tests on.
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 
@@ -87,16 +87,16 @@ TEST_F(StorageMonitorMacTest, AddRemove) {
 
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(0, mock_storage_observer_->detach_calls());
-  EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id);
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name);
+  EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id());
+  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(mount_point_.value(),
-            mock_storage_observer_->last_attached().location);
+            mock_storage_observer_->last_attached().location());
 
   UpdateDisk(disk_info_, StorageMonitorMac::UPDATE_DEVICE_REMOVED);
 
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(1, mock_storage_observer_->detach_calls());
-  EXPECT_EQ(device_id_, mock_storage_observer_->last_detached().device_id);
+  EXPECT_EQ(device_id_, mock_storage_observer_->last_detached().device_id());
 }
 
 TEST_F(StorageMonitorMacTest, UpdateVolumeName) {
@@ -104,12 +104,12 @@ TEST_F(StorageMonitorMacTest, UpdateVolumeName) {
 
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(0, mock_storage_observer_->detach_calls());
-  EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id);
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name);
+  EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id());
+  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(kTestSize,
-            mock_storage_observer_->last_attached().total_size_in_bytes);
+            mock_storage_observer_->last_attached().total_size_in_bytes());
   EXPECT_EQ(mount_point_.value(),
-            mock_storage_observer_->last_attached().location);
+            mock_storage_observer_->last_attached().location());
 
   StorageInfo info2 = CreateStorageInfo(
       device_id_, "", mount_point_, kTestSize * 2);
@@ -117,14 +117,14 @@ TEST_F(StorageMonitorMacTest, UpdateVolumeName) {
   message_loop_.RunUntilIdle();
 
   EXPECT_EQ(1, mock_storage_observer_->detach_calls());
-  EXPECT_EQ(device_id_, mock_storage_observer_->last_detached().device_id);
+  EXPECT_EQ(device_id_, mock_storage_observer_->last_detached().device_id());
   EXPECT_EQ(2, mock_storage_observer_->attach_calls());
-  EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id);
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name);
+  EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id());
+  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(kTestSize * 2,
-            mock_storage_observer_->last_attached().total_size_in_bytes);
+            mock_storage_observer_->last_attached().total_size_in_bytes());
   EXPECT_EQ(mount_point_.value(),
-            mock_storage_observer_->last_attached().location);
+            mock_storage_observer_->last_attached().location());
 }
 
 TEST_F(StorageMonitorMacTest, DCIM) {
@@ -134,18 +134,18 @@ TEST_F(StorageMonitorMacTest, DCIM) {
       temp_dir.path().Append(kDCIMDirectoryName)));
 
   base::FilePath mount_point = temp_dir.path();
-  std::string device_id = MediaStorageUtil::MakeDeviceId(
-      MediaStorageUtil::REMOVABLE_MASS_STORAGE_WITH_DCIM, unique_id_);
+  std::string device_id = StorageInfo::MakeDeviceId(
+      StorageInfo::REMOVABLE_MASS_STORAGE_WITH_DCIM, unique_id_);
   StorageInfo info = CreateStorageInfo(device_id, "", mount_point, kTestSize);
 
   UpdateDisk(info, StorageMonitorMac::UPDATE_DEVICE_ADDED);
 
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(0, mock_storage_observer_->detach_calls());
-  EXPECT_EQ(device_id, mock_storage_observer_->last_attached().device_id);
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name);
+  EXPECT_EQ(device_id, mock_storage_observer_->last_attached().device_id());
+  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(mount_point.value(),
-            mock_storage_observer_->last_attached().location);
+            mock_storage_observer_->last_attached().location());
 }
 
 TEST_F(StorageMonitorMacTest, GetStorageInfo) {
@@ -153,18 +153,18 @@ TEST_F(StorageMonitorMacTest, GetStorageInfo) {
 
   EXPECT_EQ(1, mock_storage_observer_->attach_calls());
   EXPECT_EQ(0, mock_storage_observer_->detach_calls());
-  EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id);
-  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name);
+  EXPECT_EQ(device_id_, mock_storage_observer_->last_attached().device_id());
+  EXPECT_EQ(string16(), mock_storage_observer_->last_attached().name());
   EXPECT_EQ(mount_point_.value(),
-            mock_storage_observer_->last_attached().location);
+            mock_storage_observer_->last_attached().location());
 
   StorageInfo info;
   EXPECT_TRUE(monitor_->GetStorageInfoForPath(mount_point_.AppendASCII("foo"),
                                               &info));
-  EXPECT_EQ(device_id_, info.device_id);
-  EXPECT_EQ(string16(), info.name);
-  EXPECT_EQ(mount_point_.value(), info.location);
-  EXPECT_EQ(kTestSize, info.total_size_in_bytes);
+  EXPECT_EQ(device_id_, info.device_id());
+  EXPECT_EQ(string16(), info.name());
+  EXPECT_EQ(mount_point_.value(), info.location());
+  EXPECT_EQ(kTestSize, info.total_size_in_bytes());
 
   EXPECT_FALSE(monitor_->GetStorageInfoForPath(
       base::FilePath("/non/matching/path"), &info));

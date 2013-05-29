@@ -18,8 +18,8 @@
 #include "base/string16.h"
 #include "base/timer.h"
 #include "base/values.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sessions/session_id.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
@@ -43,7 +43,7 @@ class PrefRegistrySyncable;
 
 // ChromeToMobileService connects to the cloud print service to enumerate
 // compatible mobiles owned by its profile and send URLs and MHTML snapshots.
-class ChromeToMobileService : public ProfileKeyedService,
+class ChromeToMobileService : public BrowserContextKeyedService,
                               public net::URLFetcherDelegate,
                               public content::NotificationObserver,
                               public OAuth2AccessTokenConsumer,
@@ -134,7 +134,7 @@ class ChromeToMobileService : public ProfileKeyedService,
   // Opens the "Learn More" help article link in the supplied |browser|.
   void LearnMore(Browser* browser) const;
 
-  // ProfileKeyedService method.
+  // BrowserContextKeyedService method.
   virtual void Shutdown() OVERRIDE;
 
   // net::URLFetcherDelegate method.

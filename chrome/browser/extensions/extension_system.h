@@ -13,8 +13,9 @@
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
 #include "chrome/browser/extensions/api/socket/socket.h"
 #include "chrome/browser/extensions/api/usb/usb_device_resource.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "extensions/common/one_shot_event.h"
 
 class ExtensionInfoMap;
 class ExtensionProcessManager;
@@ -28,7 +29,6 @@ class AlarmManager;
 class Blacklist;
 class EventRouter;
 class Extension;
-class ExtensionPrefs;
 class ExtensionSystemSharedFactory;
 class ExtensionWarningBadgeService;
 class ExtensionWarningService;
@@ -37,7 +37,6 @@ class ManagementPolicy;
 class MessageService;
 class NavigationObserver;
 class RulesRegistryService;
-class ShellWindowGeometryCache;
 class StandardManagementPolicyProvider;
 class StateStore;
 class UserScriptMaster;
@@ -47,7 +46,7 @@ class UserScriptMaster;
 // and incognito Profiles, except as called out in comments.
 // This interface supports using TestExtensionSystem for TestingProfiles
 // that don't want all of the extensions baggage in their tests.
-class ExtensionSystem : public ProfileKeyedService {
+class ExtensionSystem : public BrowserContextKeyedService {
  public:
   ExtensionSystem();
   virtual ~ExtensionSystem();
@@ -56,7 +55,7 @@ class ExtensionSystem : public ProfileKeyedService {
   // a convenience wrapper around ExtensionSystemFactory::GetForProfile.
   static ExtensionSystem* Get(Profile* profile);
 
-  // ProfileKeyedService implementation.
+  // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE {}
 
   // Initializes extensions machinery.
@@ -85,12 +84,6 @@ class ExtensionSystem : public ProfileKeyedService {
 
   // The rules store is created at startup.
   virtual StateStore* rules_store() = 0;
-
-  // The extension prefs.
-  virtual ExtensionPrefs* extension_prefs() = 0;
-
-  // The ShellWindowGeometryCache is created at startup.
-  virtual ShellWindowGeometryCache* shell_window_geometry_cache() = 0;
 
   // Returns the IO-thread-accessible extension data.
   virtual ExtensionInfoMap* info_map() = 0;
@@ -136,19 +129,22 @@ class ExtensionSystem : public ProfileKeyedService {
   virtual void UnregisterExtensionWithRequestContexts(
       const std::string& extension_id,
       const extension_misc::UnloadedExtensionReason reason) {}
+
+  // Signaled when the extension system has completed its startup tasks.
+  virtual const OneShotEvent& ready() const = 0;
 };
 
 // The ExtensionSystem for ProfileImpl and OffTheRecordProfileImpl.
 // Implementation details: non-shared services are owned by
-// ExtensionSystemImpl, a ProfileKeyedService with separate incognito
-// instances. A private Shared class (also a ProfileKeyedService,
+// ExtensionSystemImpl, a BrowserContextKeyedService with separate incognito
+// instances. A private Shared class (also a BrowserContextKeyedService,
 // but with a shared instance for incognito) keeps the common services.
 class ExtensionSystemImpl : public ExtensionSystem {
  public:
   explicit ExtensionSystemImpl(Profile* profile);
   virtual ~ExtensionSystemImpl();
 
-  // ProfileKeyedService implementation.
+  // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   virtual void InitForRegularProfile(bool extensions_enabled) OVERRIDE;
@@ -160,9 +156,6 @@ class ExtensionSystemImpl : public ExtensionSystem {
   virtual ExtensionProcessManager* process_manager() OVERRIDE;
   virtual StateStore* state_store() OVERRIDE;  // shared
   virtual StateStore* rules_store() OVERRIDE;  // shared
-  virtual ExtensionPrefs* extension_prefs() OVERRIDE;  // shared
-  virtual ShellWindowGeometryCache* shell_window_geometry_cache()
-      OVERRIDE;  // shared
   virtual LazyBackgroundTaskQueue* lazy_background_task_queue()
       OVERRIDE;  // shared
   virtual ExtensionInfoMap* info_map() OVERRIDE;  // shared
@@ -184,12 +177,14 @@ class ExtensionSystemImpl : public ExtensionSystem {
       const std::string& extension_id,
       const extension_misc::UnloadedExtensionReason reason) OVERRIDE;
 
+  virtual const OneShotEvent& ready() const OVERRIDE;
+
  private:
   friend class ExtensionSystemSharedFactory;
 
   // Owns the Extension-related systems that have a single instance
   // shared between normal and incognito profiles.
-  class Shared : public ProfileKeyedService {
+  class Shared : public BrowserContextKeyedService {
    public:
     explicit Shared(Profile* profile);
     virtual ~Shared();
@@ -200,13 +195,11 @@ class ExtensionSystemImpl : public ExtensionSystem {
     void RegisterManagementPolicyProviders();
     void Init(bool extensions_enabled);
 
-    // ProfileKeyedService implementation.
+    // BrowserContextKeyedService implementation.
     virtual void Shutdown() OVERRIDE;
 
     StateStore* state_store();
     StateStore* rules_store();
-    ExtensionPrefs* extension_prefs();
-    ShellWindowGeometryCache* shell_window_geometry_cache();
     ExtensionService* extension_service();
     ManagementPolicy* management_policy();
     UserScriptMaster* user_script_master();
@@ -215,6 +208,7 @@ class ExtensionSystemImpl : public ExtensionSystem {
     LazyBackgroundTaskQueue* lazy_background_task_queue();
     EventRouter* event_router();
     ExtensionWarningService* warning_service();
+    const OneShotEvent& ready() const { return ready_; }
 
    private:
     Profile* profile_;
@@ -223,27 +217,25 @@ class ExtensionSystemImpl : public ExtensionSystem {
 
     scoped_ptr<StateStore> state_store_;
     scoped_ptr<StateStore> rules_store_;
-    scoped_ptr<ExtensionPrefs> extension_prefs_;
-    // ShellWindowGeometryCache depends on ExtensionPrefs.
-    scoped_ptr<ShellWindowGeometryCache> shell_window_geometry_cache_;
     // LazyBackgroundTaskQueue is a dependency of
     // MessageService and EventRouter.
     scoped_ptr<LazyBackgroundTaskQueue> lazy_background_task_queue_;
     scoped_ptr<EventRouter> event_router_;
     scoped_ptr<NavigationObserver> navigation_observer_;
     scoped_refptr<UserScriptMaster> user_script_master_;
-    // Blacklist depends on ExtensionPrefs.
     scoped_ptr<Blacklist> blacklist_;
-    // StandardManagementPolicyProvider depends on ExtensionPrefs and Blacklist.
+    // StandardManagementPolicyProvider depends on Blacklist.
     scoped_ptr<StandardManagementPolicyProvider>
         standard_management_policy_provider_;
-    // ExtensionService depends on ExtensionPrefs, StateStore, and Blacklist.
+    // ExtensionService depends on StateStore and Blacklist.
     scoped_ptr<ExtensionService> extension_service_;
     scoped_ptr<ManagementPolicy> management_policy_;
     // extension_info_map_ needs to outlive extension_process_manager_.
     scoped_refptr<ExtensionInfoMap> extension_info_map_;
     scoped_ptr<ExtensionWarningService> extension_warning_service_;
     scoped_ptr<ExtensionWarningBadgeService> extension_warning_badge_service_;
+
+    OneShotEvent ready_;
   };
 
   Profile* profile_;

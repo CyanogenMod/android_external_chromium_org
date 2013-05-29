@@ -277,12 +277,13 @@ LOCAL_SRC_FILES := \
 	net/quic/congestion_control/send_algorithm_interface.cc \
 	net/quic/congestion_control/tcp_cubic_sender.cc \
 	net/quic/congestion_control/tcp_receiver.cc \
-	net/quic/crypto/aes_128_gcm_decrypter_openssl.cc \
-	net/quic/crypto/aes_128_gcm_encrypter_openssl.cc \
+	net/quic/crypto/aes_128_gcm_12_decrypter_openssl.cc \
+	net/quic/crypto/aes_128_gcm_12_encrypter_openssl.cc \
 	net/quic/crypto/cert_compressor.cc \
 	net/quic/crypto/common_cert_set.cc \
 	net/quic/crypto/crypto_framer.cc \
 	net/quic/crypto/crypto_handshake.cc \
+	net/quic/crypto/crypto_secret_boxer.cc \
 	net/quic/crypto/crypto_server_config.cc \
 	net/quic/crypto/crypto_server_config_protobuf.cc \
 	net/quic/crypto/crypto_utils.cc \
@@ -293,6 +294,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/quic_decrypter.cc \
 	net/quic/crypto/quic_encrypter.cc \
 	net/quic/crypto/quic_random.cc \
+	net/quic/crypto/scoped_evp_cipher_ctx.cc \
 	net/quic/crypto/strike_register.cc \
 	net/quic/crypto/source_address_token.cc \
 	net/quic/quic_bandwidth.cc \
@@ -369,6 +371,7 @@ LOCAL_SRC_FILES := \
 	net/spdy/spdy_proxy_client_socket.cc \
 	net/spdy/spdy_read_queue.cc \
 	net/spdy/spdy_session.cc \
+	net/spdy/spdy_session_key.cc \
 	net/spdy/spdy_session_pool.cc \
 	net/spdy/spdy_stream.cc \
 	net/spdy/spdy_websocket_stream.cc \
@@ -472,6 +475,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -503,14 +507,14 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/sdch/open-vcdiff/src \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/zlib \
 	$(gyp_shared_intermediate_dir)/net \
 	$(LOCAL_PATH)/third_party/openssl/openssl/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

@@ -29,7 +29,6 @@ class FakeFileSystemTest : public ::testing::Test {
         "chromeos/gdata/root_feed.json");
     fake_drive_service_->LoadAccountMetadataForWapi(
         "chromeos/gdata/account_metadata.json");
-    fake_drive_service_->LoadAppListForDriveApi("chromeos/drive/applist.json");
 
     // Create a testee instance.
     fake_file_system_.reset(
@@ -37,7 +36,7 @@ class FakeFileSystemTest : public ::testing::Test {
     ASSERT_TRUE(fake_file_system_->InitializeForTesting());
   }
 
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
 
   scoped_ptr<google_apis::FakeDriveService> fake_drive_service_;
@@ -124,7 +123,7 @@ TEST_F(FakeFileSystemTest, GetFileContentByPath) {
   // The download should be happened so the |get_content_callback|
   // should have the actual data.
   std::string content = get_content_callback.GetConcatenatedData();
-  EXPECT_EQ(10U, content.size());
+  EXPECT_EQ(26U, content.size());
   EXPECT_EQ(FILE_ERROR_OK, completion_error);
 
   initialize_error = FILE_ERROR_FAILED;

@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -22,7 +22,7 @@ class UserCloudPolicyManagerChromeOS;
 // UserCloudPolicyManagerChromeOS, when it becomes available. This service
 // decouples the UserCloudPolicyManagerChromeOS from depending directly on the
 // TokenService, since it is initialized much earlier.
-class UserCloudPolicyTokenForwarder : public ProfileKeyedService,
+class UserCloudPolicyTokenForwarder : public BrowserContextKeyedService,
                                       public content::NotificationObserver {
  public:
   // The factory of this PKS depends on the factories of these two arguments,
@@ -32,7 +32,7 @@ class UserCloudPolicyTokenForwarder : public ProfileKeyedService,
                                 TokenService* token_service);
   virtual ~UserCloudPolicyTokenForwarder();
 
-  // ProfileKeyedService:
+  // BrowserContextKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // NotificationObserver:

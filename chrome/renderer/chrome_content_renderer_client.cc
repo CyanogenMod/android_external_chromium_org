@@ -36,10 +36,12 @@
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "chrome/renderer/extensions/miscellaneous_bindings.h"
+#include "chrome/renderer/extensions/renderer_permissions_policy_delegate.h"
 #include "chrome/renderer/extensions/resource_request_policy.h"
 #include "chrome/renderer/external_extension.h"
 #include "chrome/renderer/loadtimes_extension_bindings.h"
 #include "chrome/renderer/net/net_error_helper.h"
+#include "chrome/renderer/net/prescient_networking_dispatcher.h"
 #include "chrome/renderer/net/renderer_net_predictor.h"
 #include "chrome/renderer/net_benchmarking_extension.h"
 #include "chrome/renderer/one_click_signin_agent.h"
@@ -97,10 +99,6 @@
 #include "webkit/plugins/ppapi/ppapi_interface_factory.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
-
-#if defined(ENABLE_AUTOMATION)
-#include "chrome/renderer/automation/automation_renderer_helper.h"
-#endif
 
 using autofill::AutofillAgent;
 using autofill::PasswordAutofillAgent;
@@ -214,9 +212,13 @@ ChromeContentRendererClient::~ChromeContentRendererClient() {
 void ChromeContentRendererClient::RenderThreadStarted() {
   chrome_observer_.reset(new ChromeRenderProcessObserver(this));
   extension_dispatcher_.reset(new extensions::Dispatcher());
+  permissions_policy_delegate_.reset(
+      new extensions::RendererPermissionsPolicyDelegate(
+          extension_dispatcher_.get()));
+  prescient_networking_dispatcher_.reset(new PrescientNetworkingDispatcher());
   net_predictor_.reset(new RendererNetPredictor());
   spellcheck_.reset(new SpellCheck());
-  visited_link_slave_.reset(new components::VisitedLinkSlave());
+  visited_link_slave_.reset(new visitedlink::VisitedLinkSlave());
 #if defined(FULL_SAFE_BROWSING)
   phishing_classifier_.reset(safe_browsing::PhishingClassifierFilter::Create());
 #endif
@@ -354,12 +356,6 @@ void ChromeContentRendererClient::RenderViewCreated(
 #endif
 
   new NetErrorHelper(render_view);
-
-#if defined(ENABLE_AUTOMATION)
-  // Used only for testing/automation.
-  if (command_line->HasSwitch(switches::kDomAutomationController))
-    new AutomationRendererHelper(render_view);
-#endif
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   new OneClickSigninAgent(render_view);
@@ -1018,6 +1014,11 @@ void ChromeContentRendererClient::PrefetchHostName(const char* hostname,
   net_predictor_->Resolve(hostname, length);
 }
 
+WebKit::WebPrescientNetworking*
+ChromeContentRendererClient::GetPrescientNetworking() {
+  return prescient_networking_dispatcher_.get();
+}
+
 bool ChromeContentRendererClient::ShouldOverridePageVisibilityState(
     const content::RenderView* render_view,
     WebKit::WebPageVisibilityState* override_state) const {
@@ -1058,6 +1059,9 @@ bool ChromeContentRendererClient::HandleSetCookieRequest(
 void ChromeContentRendererClient::SetExtensionDispatcher(
     extensions::Dispatcher* extension_dispatcher) {
   extension_dispatcher_.reset(extension_dispatcher);
+  permissions_policy_delegate_.reset(
+      new extensions::RendererPermissionsPolicyDelegate(
+          extension_dispatcher_.get()));
 }
 
 bool ChromeContentRendererClient::CrossesExtensionExtents(

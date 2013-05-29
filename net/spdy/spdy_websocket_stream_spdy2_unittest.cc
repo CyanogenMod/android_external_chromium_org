@@ -188,14 +188,17 @@ class SpdyWebSocketStreamSpdy2Test : public testing::Test {
   }
 
  protected:
-  SpdyWebSocketStreamSpdy2Test() : session_deps_(kProtoSPDY2) {}
+  SpdyWebSocketStreamSpdy2Test()
+      : spdy_util_(kProtoSPDY2),
+        session_deps_(kProtoSPDY2) {}
   virtual ~SpdyWebSocketStreamSpdy2Test() {}
 
   virtual void SetUp() {
     host_port_pair_.set_host("example.com");
     host_port_pair_.set_port(80);
-    host_port_proxy_pair_.first = host_port_pair_;
-    host_port_proxy_pair_.second = ProxyServer::Direct();
+    spdy_session_key_ = SpdySessionKey(host_port_pair_,
+                                       ProxyServer::Direct(),
+                                       kPrivacyModeDisabled);
 
     spdy_settings_id_to_set_ = SETTINGS_MAX_CONCURRENT_STREAMS;
     spdy_settings_flags_to_set_ = SETTINGS_FLAG_PLEASE_PERSIST;
@@ -207,7 +210,7 @@ class SpdyWebSocketStreamSpdy2Test : public testing::Test {
   }
 
   virtual void TearDown() {
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   void Prepare(SpdyStreamId stream_id) {
@@ -252,9 +255,9 @@ class SpdyWebSocketStreamSpdy2Test : public testing::Test {
           spdy_settings_value_to_set_);
     }
 
-    EXPECT_FALSE(spdy_session_pool->HasSession(host_port_proxy_pair_));
-    session_ = spdy_session_pool->Get(host_port_proxy_pair_, BoundNetLog());
-    EXPECT_TRUE(spdy_session_pool->HasSession(host_port_proxy_pair_));
+    EXPECT_FALSE(spdy_session_pool->HasSession(spdy_session_key_));
+    session_ = spdy_session_pool->Get(spdy_session_key_, BoundNetLog());
+    EXPECT_TRUE(spdy_session_pool->HasSession(spdy_session_key_));
     transport_params_ = new TransportSocketParams(host_port_pair_, MEDIUM,
                                                   false, false,
                                                   OnHostResolutionCallback());
@@ -281,6 +284,7 @@ class SpdyWebSocketStreamSpdy2Test : public testing::Test {
     websocket_stream_->SendRequest(headers.Pass());
   }
 
+  SpdyTestUtil spdy_util_;
   SpdySettingsIds spdy_settings_id_to_set_;
   SpdySettingsFlags spdy_settings_flags_to_set_;
   uint32 spdy_settings_value_to_set_;
@@ -298,7 +302,7 @@ class SpdyWebSocketStreamSpdy2Test : public testing::Test {
   scoped_ptr<SpdyFrame> message_frame_;
   scoped_ptr<SpdyFrame> closing_frame_;
   HostPortPair host_port_pair_;
-  HostPortProxyPair host_port_proxy_pair_;
+  SpdySessionKey spdy_session_key_;
   TestCompletionCallback completion_callback_;
   TestCompletionCallback sync_callback_;
 
@@ -388,7 +392,7 @@ TEST_F(SpdyWebSocketStreamSpdy2Test, Basic) {
 
   // EOF close SPDY session.
   EXPECT_TRUE(!http_session_->spdy_session_pool()->HasSession(
-      host_port_proxy_pair_));
+      spdy_session_key_));
   EXPECT_TRUE(data()->at_read_eof());
   EXPECT_TRUE(data()->at_write_eof());
 }
@@ -450,7 +454,7 @@ TEST_F(SpdyWebSocketStreamSpdy2Test, DestructionBeforeClose) {
   EXPECT_EQ(static_cast<int>(kMessageFrameLength), events[3].result);
 
   EXPECT_TRUE(http_session_->spdy_session_pool()->HasSession(
-      host_port_proxy_pair_));
+      spdy_session_key_));
   EXPECT_TRUE(data()->at_read_eof());
   EXPECT_TRUE(data()->at_write_eof());
 }
@@ -513,13 +517,13 @@ TEST_F(SpdyWebSocketStreamSpdy2Test, DestructionAfterExplicitClose) {
   EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_CLOSE, events[4].event_type);
 
   EXPECT_TRUE(http_session_->spdy_session_pool()->HasSession(
-      host_port_proxy_pair_));
+      spdy_session_key_));
 }
 
 TEST_F(SpdyWebSocketStreamSpdy2Test, IOPending) {
   Prepare(1);
   scoped_ptr<SpdyFrame> settings_frame(
-      ConstructSpdySettings(spdy_settings_to_send_));
+      spdy_util_.ConstructSpdySettings(spdy_settings_to_send_));
   MockWrite writes[] = {
     // Setting throttling make SpdySession send settings frame automatically.
     CreateMockWrite(*settings_frame.get(), 1),
@@ -614,7 +618,7 @@ TEST_F(SpdyWebSocketStreamSpdy2Test, IOPending) {
 
   // EOF close SPDY session.
   EXPECT_TRUE(!http_session_->spdy_session_pool()->HasSession(
-      host_port_proxy_pair_));
+      spdy_session_key_));
   EXPECT_TRUE(data()->at_read_eof());
   EXPECT_TRUE(data()->at_write_eof());
 }

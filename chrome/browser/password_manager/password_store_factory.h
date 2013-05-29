@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service_factory.h"
 
 class PasswordStore;
 class Profile;
@@ -24,7 +24,8 @@ typedef int LocalProfileId;
 // Singleton that owns all PasswordStores and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated PasswordStore.
-class PasswordStoreFactory : public RefcountedProfileKeyedServiceFactory {
+class PasswordStoreFactory
+    : public RefcountedBrowserContextKeyedServiceFactory {
  public:
   static scoped_refptr<PasswordStore> GetForProfile(
       Profile* profile, Profile::ServiceAccessType set);
@@ -41,9 +42,9 @@ class PasswordStoreFactory : public RefcountedProfileKeyedServiceFactory {
   LocalProfileId GetLocalProfileId(PrefService* prefs) const;
 #endif
 
-  // ProfileKeyedServiceFactory:
-  virtual scoped_refptr<RefcountedProfileKeyedService> BuildServiceInstanceFor(
-      content::BrowserContext* context) const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual scoped_refptr<RefcountedBrowserContextKeyedService>
+      BuildServiceInstanceFor(content::BrowserContext* context) const OVERRIDE;
   virtual void RegisterUserPrefs(
       user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(

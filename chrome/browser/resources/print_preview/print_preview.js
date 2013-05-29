@@ -102,7 +102,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.PageSettings}
      * @private
      */
-    this.pageSettings_ = new print_preview.PageSettings(this.printTicketStore_);
+    this.pageSettings_ = new print_preview.PageSettings(
+        this.printTicketStore_.pageRange);
     this.addChild(this.pageSettings_);
 
     /**
@@ -119,8 +120,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.LayoutSettings}
      * @private
      */
-    this.layoutSettings_ = new print_preview.LayoutSettings(
-        this.printTicketStore_);
+    this.layoutSettings_ =
+        new print_preview.LayoutSettings(this.printTicketStore_.landscape);
     this.addChild(this.layoutSettings_);
 
     /**
@@ -137,8 +138,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.MarginSettings}
      * @private
      */
-    this.marginSettings_ = new print_preview.MarginSettings(
-        this.printTicketStore_);
+    this.marginSettings_ =
+        new print_preview.MarginSettings(this.printTicketStore_.marginsType);
     this.addChild(this.marginSettings_);
 
     /**
@@ -147,7 +148,11 @@ cr.define('print_preview', function() {
      * @private
      */
     this.otherOptionsSettings_ = new print_preview.OtherOptionsSettings(
-        this.printTicketStore_);
+        this.printTicketStore_.duplex,
+        this.printTicketStore_.fitToPage,
+        this.printTicketStore_.cssBackground,
+        this.printTicketStore_.selectionOnly,
+        this.printTicketStore_.headerFooter);
     this.addChild(this.otherOptionsSettings_);
 
     /**
@@ -791,16 +796,13 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * Called when the native layer dispatches a DISABLE_SCALING event. Updates
-     * the print ticket.
+     * Called when the native layer dispatches a DISABLE_SCALING event. Resets
+     * fit-to-page selection and updates document info.
      * @private
      */
     onDisableScaling_: function() {
-      // TODO(rltoscano): This should be a property of the document and should
-      // affect whether the fit-to-page capability is available. That way, we
-      // don't mistake this value for a user provided value.
-      // See crbug.com/234857
-      this.printTicketStore_.fitToPage.updateValue(false);
+      this.printTicketStore_.fitToPage.updateValue(null);
+      this.documentInfo_.updateIsScalingDisabled(true);
     },
 
     /**
@@ -815,7 +817,8 @@ cr.define('print_preview', function() {
       setIsVisible($('cloud-print-dialog-throbber'), true);
       this.setIsEnabled_(false);
       this.uiState_ = PrintPreview.UiState_.OPENING_NATIVE_PRINT_DIALOG;
-      this.nativeLayer_.startShowCloudPrintDialog();
+      this.nativeLayer_.startShowCloudPrintDialog(
+          this.printTicketStore_.pageRange.getPageNumberSet().size);
     },
 
     /**

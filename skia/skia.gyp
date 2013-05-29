@@ -92,12 +92,12 @@
         #'../third_party/skia/src/ports/SkPurgeableMemoryBlock_mac.cpp',
         '../third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp',
 
-        '../third_party/skia/src/ports/FontHostConfiguration_android.cpp',
+        '../third_party/skia/src/ports/SkFontConfigInterface_android.cpp',
         #'../third_party/skia/src/ports/SkFontHost_FONTPATH.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.h',
-        '../third_party/skia/src/ports/SkFontHost_android.cpp',
+        '../third_party/skia/src/ports/SkFontConfigParser_android.cpp',
         #'../third_party/skia/src/ports/SkFontHost_ascender.cpp',
         #'../third_party/skia/src/ports/SkFontHost_linux.cpp',
         '../third_party/skia/src/ports/SkFontHost_mac.cpp',
@@ -326,7 +326,7 @@
             ['exclude', '_android\\.(cc|cpp)$'],
           ],
           'sources!': [
-            '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp'
+            '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp',
           ],
           'defines': [
             'SK_DEFAULT_FONT_CACHE_LIMIT=(20*1024*1024)',
@@ -371,6 +371,7 @@
             '-Wno-unused-function',
           ],
           'sources': [
+            '../third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp',
             '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
             '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
           ],
@@ -393,6 +394,9 @@
           'sources/': [ ['exclude', '_gtk\\.(cc|cpp)$'] ],
         }],
         [ 'OS == "android"', {
+          'sources': [
+            '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
+          ],
           'sources/': [
             ['exclude', '_linux\\.(cc|cpp)$'],
           ],
@@ -743,6 +747,7 @@
             '../third_party/skia/src/opts/SkBitmapProcState_opts_none.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
+            'ext/convolver_mips_dspr2.cc',
           ],
         }],
       ],
@@ -786,7 +791,7 @@
             ],
           },
         }],
-        [ 'target_arch != "arm"', {
+        [ 'target_arch != "arm" and target_arch != "mipsel"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSSE3.cpp',
           ],

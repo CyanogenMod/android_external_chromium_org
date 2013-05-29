@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class BackgroundContentsService;
 class Profile;
@@ -15,7 +15,8 @@ class Profile;
 // Singleton that owns all BackgroundContentsServices and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated BackgroundContentsService.
-class BackgroundContentsServiceFactory : public ProfileKeyedServiceFactory {
+class BackgroundContentsServiceFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   static BackgroundContentsService* GetForProfile(Profile* profile);
 
@@ -27,14 +28,14 @@ class BackgroundContentsServiceFactory : public ProfileKeyedServiceFactory {
   BackgroundContentsServiceFactory();
   virtual ~BackgroundContentsServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual void RegisterUserPrefs(
       user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };
 

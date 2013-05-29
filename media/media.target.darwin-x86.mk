@@ -37,7 +37,6 @@ LOCAL_SRC_FILES := \
 	media/audio/audio_input_controller.cc \
 	media/audio/audio_input_device.cc \
 	media/audio/audio_input_ipc.cc \
-	media/audio/audio_input_stream_impl.cc \
 	media/audio/audio_manager.cc \
 	media/audio/audio_manager_base.cc \
 	media/audio/audio_output_controller.cc \
@@ -60,7 +59,7 @@ LOCAL_SRC_FILES := \
 	media/audio/simple_sources.cc \
 	media/audio/virtual_audio_input_stream.cc \
 	media/audio/virtual_audio_output_stream.cc \
-	media/base/android/media_player_manager.cc \
+	media/base/android/demuxer_stream_player_params.cc \
 	media/base/android/media_resource_getter.cc \
 	media/base/audio_converter.cc \
 	media/base/audio_decoder.cc \
@@ -97,6 +96,10 @@ LOCAL_SRC_FILES := \
 	media/base/ranges.cc \
 	media/base/seekable_buffer.cc \
 	media/base/serial_runner.cc \
+	media/base/simd/convert_rgb_to_yuv_c.cc \
+	media/base/simd/convert_yuv_to_rgb_c.cc \
+	media/base/simd/filter_yuv_c.cc \
+	media/base/simd/yuv_to_rgb_table.cc \
 	media/base/sinc_resampler.cc \
 	media/base/stream_parser.cc \
 	media/base/stream_parser_buffer.cc \
@@ -105,6 +108,7 @@ LOCAL_SRC_FILES := \
 	media/base/video_frame.cc \
 	media/base/video_renderer.cc \
 	media/base/video_util.cc \
+	media/base/yuv_convert.cc \
 	media/crypto/aes_decryptor.cc \
 	media/filters/audio_decoder_selector.cc \
 	media/filters/audio_renderer_algorithm.cc \
@@ -114,6 +118,7 @@ LOCAL_SRC_FILES := \
 	media/filters/decrypting_demuxer_stream.cc \
 	media/filters/decrypting_video_decoder.cc \
 	media/filters/fake_demuxer_stream.cc \
+	media/filters/fake_video_decoder.cc \
 	media/filters/file_data_source.cc \
 	media/filters/gpu_video_decoder.cc \
 	media/filters/h264_to_annex_b_bitstream_converter.cc \
@@ -132,6 +137,7 @@ LOCAL_SRC_FILES := \
 	media/video/video_decode_accelerator.cc \
 	media/webm/webm_audio_client.cc \
 	media/webm/webm_cluster_parser.cc \
+	media/webm/webm_constants.cc \
 	media/webm/webm_content_encodings.cc \
 	media/webm/webm_content_encodings_client.cc \
 	media/webm/webm_crypto_helpers.cc \
@@ -140,6 +146,7 @@ LOCAL_SRC_FILES := \
 	media/webm/webm_stream_parser.cc \
 	media/webm/webm_tracks_parser.cc \
 	media/webm/webm_video_client.cc \
+	media/webm/webm_webvtt_parser.cc \
 	media/base/media_stub.cc \
 	media/mp4/aac.cc \
 	media/mp4/avc.cc \
@@ -149,7 +156,8 @@ LOCAL_SRC_FILES := \
 	media/mp4/es_descriptor.cc \
 	media/mp4/mp4_stream_parser.cc \
 	media/mp4/offset_byte_queue.cc \
-	media/mp4/track_run_iterator.cc
+	media/mp4/track_run_iterator.cc \
+	media/base/simd/convert_yuv_to_rgb_x86.cc
 
 
 # Flags passed to both C and C++ files.
@@ -195,6 +203,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -244,11 +253,11 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/opus/src/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

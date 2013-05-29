@@ -94,11 +94,11 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Whether Autocheckout is currently running.
   bool AutocheckoutIsRunning() const;
 
-  // Whether there was an error in the previous Autocheckout flow.
-  bool HadAutocheckoutError() const;
-
   // Called when there is an error in an active Autocheckout flow.
   void OnAutocheckoutError();
+
+  // Called when an Autocheckout flow completes successfully.
+  void OnAutocheckoutSuccess();
 
   // AutofillDialogController implementation.
   virtual string16 DialogTitle() const OVERRIDE;
@@ -117,6 +117,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual gfx::Image AccountChooserImage() OVERRIDE;
   virtual bool ShouldShowDetailArea() const OVERRIDE;
   virtual bool ShouldShowProgressBar() const OVERRIDE;
+  virtual int GetDialogButtons() const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
   virtual const std::vector<ui::Range>& LegalDocumentLinks() OVERRIDE;
   virtual bool SectionIsActive(DialogSection section) const OVERRIDE;
@@ -264,8 +265,19 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Exposed and virtual for testing.
   virtual bool IsFirstRun() const;
 
+  // Asks risk module to asynchronously load fingerprint data. Data will be
+  // returned via |OnDidLoadRiskFingerprintData()|. Exposed for testing.
+  virtual void LoadRiskFingerprintData();
+  virtual void OnDidLoadRiskFingerprintData(
+      scoped_ptr<risk::Fingerprint> fingerprint);
+
   // Opens the given URL in a new foreground tab.
   virtual void OpenTabWithUrl(const GURL& url);
+
+  // Exposed for testing.
+  const std::map<DialogSection, bool>& section_editing_state() const {
+    return section_editing_state_;
+  }
 
  private:
   // Whether or not the current request wants credit info back.
@@ -277,11 +289,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
 
   // Initializes |suggested_email_| et al.
   void SuggestionsUpdated();
-
-  // Returns whether |profile| is complete, i.e. can fill out all the relevant
-  // address info. Incomplete profiles will not be displayed in the dropdown
-  // menu.
-  bool IsCompleteProfile(const AutofillProfile& profile);
 
   // Whether the user's wallet items have at least one address and instrument.
   bool HasCompleteWallet() const;
@@ -333,9 +340,15 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Sets the CVC result on |form_structure_| to the value in |cvc|.
   void SetCvcResult(const string16& cvc);
 
-  // Gets the name from SECTION_CC (if that section is active). This might
-  // come from manual user input or the active suggestion.
-  string16 GetCcName();
+  // Gets the value for |type| in |section|, whether it comes from manual user
+  // input or the active suggestion.
+  string16 GetValueFromSection(DialogSection section,
+                               AutofillFieldType type);
+
+  // Saves the data in |profile| to the personal data manager. This may add
+  // a new profile or tack onto an existing profile.
+  void SaveProfileGleanedFromSection(const AutofillProfile& profile,
+                                     DialogSection section);
 
   // Gets the SuggestionsMenuModel for |section|.
   SuggestionsMenuModel* SuggestionsMenuModelForSection(DialogSection section);
@@ -378,11 +391,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Hides |popup_controller_|'s popup view, if it exists.
   void HidePopup();
 
-  // Asks risk module to asynchronously load fingerprint data. Data will be
-  // returned via OnDidLoadRiskFingerprintData.
-  void LoadRiskFingerprintData();
-  void OnDidLoadRiskFingerprintData(scoped_ptr<risk::Fingerprint> fingerprint);
-
   // Whether the user has chosen to enter all new data in |section|. This
   // happens via choosing "Add a new X..." from a section's suggestion menu.
   bool IsManuallyEditingSection(DialogSection section) const;
@@ -390,9 +398,8 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Whether the user has chosen to enter all new data in at least one section.
   bool IsManuallyEditingAnySection() const;
 
-  // Returns true if the |value| is a valid string for the given autofill field
-  // type.
-  bool InputIsValid(AutofillFieldType type, const string16& value) const;
+  // Whether a particular DetailInput in |section| should be edited or not.
+  bool InputIsEditable(const DetailInput& input, DialogSection section) const;
 
   // Whether all of the input fields currently showing in the dialog have valid
   // contents.
@@ -416,6 +423,9 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // or Online Wallet (|is_submitting_|) and update the view.
   void SetIsSubmitting(bool submitting);
 
+  // Whether the user has accepted all the current legal documents' terms.
+  bool AreLegalDocumentsCurrent() const;
+
   // Start the submit proccess to interact with Online Wallet (might do various
   // things like accept documents, save details, update details, respond to
   // required actions, etc.).
@@ -436,6 +446,10 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // This information is decoded to reveal a fronting (proxy) card.
   void GetFullWallet();
 
+  // Calls |GetFullWallet()| if the required members (|risk_data_|,
+  // |active_instrument_id_|, and |active_address_id_|) are populated.
+  void GetFullWalletIfReady();
+
   // Updates the state of the controller and |view_| based on any required
   // actions returned by Save or Update calls to Wallet.
   void HandleSaveOrUpdateRequiredActions(
@@ -447,6 +461,26 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Called when there's nothing left to accept, update, save, or authenticate
   // in order to fill |form_structure_| and pass data back to the invoking page.
   void FinishSubmit();
+
+  // Writes to prefs the choice of AutofillDataModel for |section|.
+  void PersistAutofillChoice(DialogSection section,
+                             const std::string& guid,
+                             int variant);
+
+  // Sets the outparams to the default AutofillDataModel for |section| (which is
+  // the first one in the menu that is a suggestion item).
+  void GetDefaultAutofillChoice(DialogSection section,
+                                std::string* guid,
+                                int* variant);
+
+  // Reads from prefs the choice of AutofillDataModel for |section|. Returns
+  // whether there was a setting to read.
+  bool GetAutofillChoice(DialogSection section,
+                         std::string* guid,
+                         int* variant);
+
+  // Calculates which AutofillDataModel variant |model| is referring to.
+  size_t GetSelectedVariantForModel(const SuggestionsMenuModel& model);
 
   // Logs metrics when the dialog is submitted.
   void LogOnFinishSubmitMetrics();
@@ -517,6 +551,10 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   scoped_ptr<wallet::WalletItems> wallet_items_;
   scoped_ptr<wallet::FullWallet> full_wallet_;
 
+  // Local machine signals to pass along on each request to trigger (or
+  // discourage) risk challenges; sent if the user is up to date on legal docs.
+  std::string risk_data_;
+
   // The text to display when the user is accepting new terms of service, etc.
   string16 legal_documents_text_;
   // The ranges within |legal_documents_text_| to linkify.
@@ -573,6 +611,9 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Whether this is the first time this profile has seen the Autofill dialog.
   bool is_first_run_;
 
+  // Whether a user accepted legal documents while this dialog is running.
+  bool has_accepted_legal_documents_;
+
   // True after the user first accepts the dialog and presses "Submit". May
   // continue to be true while processing required actions.
   bool is_submitting_;
@@ -581,8 +622,8 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Wallet data.
   bool wallet_server_validation_error_;
 
-  // Whether or not there was an error in the Autocheckout flow.
-  bool had_autocheckout_error_;
+  // The current state of the Autocheckout flow.
+  AutocheckoutState autocheckout_state_;
 
   // Whether the latency to display to the UI was logged to UMA yet.
   bool was_ui_latency_logged_;

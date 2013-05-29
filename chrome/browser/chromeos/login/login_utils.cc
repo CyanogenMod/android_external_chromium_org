@@ -146,6 +146,7 @@ class LoginUtilsImpl
       const std::string& display_email,
       bool using_oauth,
       bool has_cookies,
+      bool has_active_session,
       LoginUtils::Delegate* delegate) OVERRIDE;
   virtual void DelegateDeleted(LoginUtils::Delegate* delegate) OVERRIDE;
   virtual void CompleteOffTheRecordLogin(const GURL& start_url) OVERRIDE;
@@ -320,15 +321,18 @@ void LoginUtilsImpl::PrepareProfile(
     const std::string& display_email,
     bool using_oauth,
     bool has_cookies,
+    bool has_active_session,
     LoginUtils::Delegate* delegate) {
   BootTimesLoader* btl = BootTimesLoader::Get();
 
   VLOG(1) << "Completing login for " << user_context.username;
 
-  btl->AddLoginTimeMarker("StartSession-Start", false);
-  DBusThreadManager::Get()->GetSessionManagerClient()->StartSession(
-      user_context.username);
-  btl->AddLoginTimeMarker("StartSession-End", false);
+  if (!has_active_session) {
+    btl->AddLoginTimeMarker("StartSession-Start", false);
+    DBusThreadManager::Get()->GetSessionManagerClient()->StartSession(
+        user_context.username);
+    btl->AddLoginTimeMarker("StartSession-End", false);
+  }
 
   btl->AddLoginTimeMarker("UserLoggedIn-Start", false);
   UserManager* user_manager = UserManager::Get();
@@ -756,8 +760,10 @@ class WarmingObserver : public ConnectivityStateHelperObserver,
     ConnectivityStateHelper* csh = ConnectivityStateHelper::Get();
     if (csh->IsConnected()) {
       const int kConnectionsNeeded = 1;
+      GURL url(GaiaUrls::GetInstance()->client_login_url());
       chrome_browser_net::PreconnectOnUIThread(
-          GURL(GaiaUrls::GetInstance()->client_login_url()),
+          url,
+          url,
           chrome_browser_net::UrlInfo::EARLY_LOAD_MOTIVATED,
           kConnectionsNeeded,
           url_request_context_getter_);
@@ -798,8 +804,10 @@ void LoginUtilsImpl::PrewarmAuthentication() {
   ConnectivityStateHelper* csh = ConnectivityStateHelper::Get();
   if (csh->IsConnected()) {
     const int kConnectionsNeeded = 1;
+    GURL url(GaiaUrls::GetInstance()->client_login_url());
     chrome_browser_net::PreconnectOnUIThread(
-        GURL(GaiaUrls::GetInstance()->client_login_url()),
+        url,
+        url,
         chrome_browser_net::UrlInfo::EARLY_LOAD_MOTIVATED,
         kConnectionsNeeded,
         url_request_context_getter_);

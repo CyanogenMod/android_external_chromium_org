@@ -15,7 +15,6 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
 #include "chrome/browser/sync/glue/change_processor_mock.h"
 #include "chrome/browser/sync/glue/data_type_controller_mock.h"
 #include "chrome/browser/sync/glue/model_associator_mock.h"
@@ -24,6 +23,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/profile_mock.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "sync/api/sync_error.h"
@@ -54,19 +54,21 @@ class HistoryMock : public HistoryService {
   virtual ~HistoryMock() {}
 };
 
-ProfileKeyedService* BuildBookmarkModel(content::BrowserContext* context) {
+BrowserContextKeyedService* BuildBookmarkModel(
+    content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
   BookmarkModel* bookmark_model = new BookmarkModel(profile);
   bookmark_model->Load(profile->GetIOTaskRunner());
   return bookmark_model;
 }
 
-ProfileKeyedService* BuildBookmarkModelWithoutLoading(
+BrowserContextKeyedService* BuildBookmarkModelWithoutLoading(
     content::BrowserContext* profile) {
   return new BookmarkModel(static_cast<Profile*>(profile));
 }
 
-ProfileKeyedService* BuildHistoryService(content::BrowserContext* profile) {
+BrowserContextKeyedService* BuildHistoryService(
+    content::BrowserContext* profile) {
   return new HistoryMock(static_cast<Profile*>(profile));
 }
 
@@ -142,7 +144,7 @@ class SyncBookmarkDataTypeControllerTest : public testing::Test {
                    base::Unretained(&start_callback_)));
   }
 
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   scoped_refptr<BookmarkDataTypeController> bookmark_dtc_;
   scoped_ptr<ProfileSyncComponentsFactoryMock> profile_sync_factory_;

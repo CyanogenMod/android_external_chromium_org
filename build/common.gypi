@@ -45,6 +45,9 @@
           # Disable viewport meta tag by default.
           'enable_viewport%': 0,
 
+          # Enable DoubleResourceLoadTiming support.
+          'enable_double_resource_load_timing%': 1,
+
           # Enable HiDPI support.
           'enable_hidpi%': 0,
 
@@ -101,6 +104,7 @@
         'use_ozone%': '<(use_ozone)',
         'use_openssl%': '<(use_openssl)',
         'enable_viewport%': '<(enable_viewport)',
+        'enable_double_resource_load_timing%': '<(enable_double_resource_load_timing)',
         'enable_hidpi%': '<(enable_hidpi)',
         'enable_touch_ui%': '<(enable_touch_ui)',
         'buildtype%': '<(buildtype)',
@@ -182,6 +186,7 @@
       'use_ozone%': '<(use_ozone)',
       'use_openssl%': '<(use_openssl)',
       'enable_viewport%': '<(enable_viewport)',
+      'enable_double_resource_load_timing%': '<(enable_double_resource_load_timing)',
       'enable_hidpi%': '<(enable_hidpi)',
       'enable_touch_ui%': '<(enable_touch_ui)',
       'android_webview_build%': '<(android_webview_build)',
@@ -408,6 +413,7 @@
 
       'spdy_proxy_auth_origin%' : '',
       'spdy_proxy_auth_property%' : '',
+      'spdy_proxy_auth_value%' : '',
 
       'conditions': [
         # A flag for POSIX platforms
@@ -445,11 +451,13 @@
           'use_x11%': 1,
         }],
 
-        # Flags to use glib on non-Mac POSIX platforms.
+        # Flags to use pango and glib on non-Mac POSIX platforms.
         ['OS=="win" or OS=="mac" or OS=="ios" or OS=="android"', {
           'use_glib%': 0,
+          'use_pango%': 0,
         }, {
           'use_glib%': 1,
+          'use_pango%': 1,
         }],
 
         # We always use skia text rendering in Aura on Windows, since GDI
@@ -501,7 +509,7 @@
         }],
 
         # Enable autofill dialog for Android and Views-enabled platforms for now.
-        ['toolkit_views==1 or (OS=="android" and android_webview_build==0)', {
+        ['toolkit_views==1 or (OS=="android" and android_webview_build==0) or OS=="mac"', {
           'enable_autofill_dialog%': 1
         }],
 
@@ -675,22 +683,33 @@
       # for the HRTF panner in WebAudio.
       'use_concatenated_impulse_responses': 1,
 
-      # Set this to 1 to use the Google-internal file containing
-      # official API keys for Google Chrome even in a developer build.
-      # Setting this variable explicitly to 1 will cause your build to
-      # fail if the internal file is missing.
+      # You can set the variable 'use_official_google_api_keys' to 1
+      # to use the Google-internal file containing official API keys
+      # for Google Chrome even in a developer build.  Setting this
+      # variable explicitly to 1 will cause your build to fail if the
+      # internal file is missing.
       #
-      # Set this to 0 to not use the internal file, even when it
-      # exists in your checkout.
+      # The variable is documented here, but not handled in this file;
+      # see //google_apis/determine_use_official_keys.gypi for the
+      # implementation.
       #
-      # Leave set to 2 to have this variable implicitly set to 1 if
-      # you have src/google_apis/internal/google_chrome_api_keys.h in
-      # your checkout, and implicitly set to 0 if not.
+      # Set the variable to 0 to not use the internal file, even when
+      # it exists in your checkout.
       #
-      # Note that official builds always behave as if this variable
+      # Leave it unset in your include.gypi to have the variable
+      # implicitly set to 1 if you have
+      # src/google_apis/internal/google_chrome_api_keys.h in your
+      # checkout, and implicitly set to 0 if not.
+      #
+      # Note that official builds always behave as if the variable
       # was explicitly set to 1, i.e. they always use official keys,
       # and will fail to build if the internal file is missing.
-      'use_official_google_api_keys%': 2,
+      #
+      # NOTE: You MUST NOT explicitly set the variable to 2 in your
+      # include.gypi or by other means. Due to subtleties of GYP, this
+      # is not the same as leaving the variable unset, even though its
+      # default value in
+      # //google_apis/determine_use_official_keys.gypi is 2.
 
       # Set these to bake the specified API keys and OAuth client
       # IDs/secrets into your build.
@@ -724,6 +743,7 @@
     'os_bsd%': '<(os_bsd)',
     'os_posix%': '<(os_posix)',
     'use_glib%': '<(use_glib)',
+    'use_pango%': '<(use_pango)',
     'use_ozone%': '<(use_ozone)',
     'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
     'use_x11%': '<(use_x11)',
@@ -731,6 +751,7 @@
     'linux_fpic%': '<(linux_fpic)',
     'chromeos%': '<(chromeos)',
     'enable_viewport%': '<(enable_viewport)',
+    'enable_double_resource_load_timing%': '<(enable_double_resource_load_timing)',
     'enable_hidpi%': '<(enable_hidpi)',
     'enable_touch_ui%': '<(enable_touch_ui)',
     'use_xi2_mt%':'<(use_xi2_mt)',
@@ -797,13 +818,13 @@
     'enable_app_list%': '<(enable_app_list)',
     'use_default_render_theme%': '<(use_default_render_theme)',
     'enable_settings_app%': '<(enable_settings_app)',
-    'use_official_google_api_keys%': '<(use_official_google_api_keys)',
     'google_api_key%': '<(google_api_key)',
     'google_default_client_id%': '<(google_default_client_id)',
     'google_default_client_secret%': '<(google_default_client_secret)',
     'enable_managed_users%': '<(enable_managed_users)',
     'spdy_proxy_auth_origin%': '<(spdy_proxy_auth_origin)',
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
+    'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
 
     # Use system mesa instead of bundled one.
     'use_system_mesa%': 0,
@@ -911,9 +932,6 @@
     # sandbox the zygote process and, thus, all renderer processes.
     'linux_sandbox_path%': '',
 
-    # Set this to true to enable SELinux support.
-    'selinux%': 0,
-
     # Clang stuff.
     'clang%': '<(clang)',
     'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
@@ -948,6 +966,7 @@
 
     # Enable TCMalloc.
     'linux_use_tcmalloc%': 1,
+    'android_use_tcmalloc%': 0,
 
     # Disable TCMalloc's heapchecker.
     'linux_use_heapchecker%': 0,
@@ -1094,15 +1113,6 @@
         # TODO(jschuh): crbug.com/177664 Investigate Win64 pyauto build.
         'python_arch%': 'ia32',
       }],
-      # If use_official_google_api_keys is already set (to 0 or 1), we
-      # do none of the implicit checking.  If it is set to 1 and the
-      # internal keys file is missing, the build will fail at compile
-      # time.  If it is set to 0 and keys are not provided by other
-      # means, a warning will be printed at compile time.
-      ['use_official_google_api_keys==2', {
-        'use_official_google_api_keys%':
-            '<!(python <(DEPTH)/google_apis/build/check_internal.py <(DEPTH)/google_apis/internal/google_chrome_api_keys.h)',
-      }],
       ['os_posix==1 and OS!="mac" and OS!="ios"', {
         # Figure out the python architecture to decide if we build pyauto.
         'python_arch%': '<!(<(DEPTH)/build/linux/python_arch.sh <(sysroot)/usr/<(system_libdir)/libpython<(python_ver).so.1.0)',
@@ -1185,7 +1195,6 @@
           'android_sdk_root%': '<(android_sdk_root)',
           'android_sdk_version%': '<(android_sdk_version)',
           'android_stlport_root': '<(android_ndk_root)/sources/cxx-stl/stlport',
-          'android_libstdcpp_root': '<(android_ndk_root)/sources/cxx-stl/gnu-libstdc++/4.6',
 
           'android_sdk%': '<(android_sdk_root)/platforms/android-<(android_sdk_version)',
 
@@ -1235,11 +1244,8 @@
         'android_sdk_jar%': '<(android_sdk)/android.jar',
 
         'android_stlport_root': '<(android_stlport_root)',
-        'android_libstdcpp_root': '<(android_libstdcpp_root)',
         'android_stlport_include': '<(android_stlport_root)/stlport',
-        'android_libstdcpp_include': '<(android_libstdcpp_root)/include',
         'android_stlport_libs_dir': '<(android_stlport_root)/libs/<(android_app_abi)',
-        'android_libstdcpp_libs_dir': '<(android_libstdcpp_root)/libs/<(android_app_abi)',
 
         # Location of the "strip" binary, used by both gyp and scripts.
         'android_strip%' : '<!(/bin/echo -n <(android_toolchain)/*-strip)',
@@ -1413,6 +1419,12 @@
         'use_cups%': 0,
       }],
 
+      ['enable_plugins==1 and (OS=="linux" or OS=="mac" or OS=="win" or google_tv==1)', {
+        'enable_pepper_cdms%': 1,
+      }, {
+        'enable_pepper_cdms%': 0,
+      }],
+
       # Native Client glibc toolchain is enabled
       # by default except on arm and mips.
       ['target_arch=="arm" or target_arch=="mipsel"', {
@@ -1495,8 +1507,13 @@
         ],
       }],
       ['OS=="android"', {
-        'grit_defines': ['-D', 'android',
+        'grit_defines': ['-t', 'android',
                          '-E', 'ANDROID_JAVA_TAGGED_ONLY=true'],
+        'conditions': [
+          ['google_tv==1', {
+            'grit_defines': ['-D', 'google_tv'],
+          }],
+        ],
       }],
       ['OS=="mac"', {
         'grit_defines': ['-D', 'scale_factors=2x'],
@@ -1554,7 +1571,7 @@
         # See http://crbug.com/145503.
         'component': "static_library",
         # TODO(glider): we do not strip ASan binaries until the dynamic ASan
-        # runtime is fully adopted. See http://crbug.com/170629.
+        # runtime is fully adopted. See http://crbug.com/242503.
         'mac_strip_release': 0,
       }],
       ['tsan==1', {
@@ -1838,6 +1855,9 @@
           ],
         },
       }],
+      ['enable_double_resource_load_timing==1', {
+        'defines': ['ENABLE_DOUBLE_RESOURCE_LOAD_TIMING'],
+      }],
       ['enable_rlz==1', {
         'defines': ['ENABLE_RLZ'],
       }],
@@ -1912,6 +1932,9 @@
       }],
       ['enable_viewport==1', {
         'defines': ['ENABLE_VIEWPORT'],
+      }],
+      ['enable_pepper_cdms==1', {
+        'defines': ['ENABLE_PEPPER_CDMS'],
       }],
       ['configuration_policy==1', {
         'defines': ['ENABLE_CONFIGURATION_POLICY'],
@@ -2003,9 +2026,6 @@
       ['dcheck_always_on!=0', {
         'defines': ['DCHECK_ALWAYS_ON=1'],
       }],  # dcheck_always_on!=0
-      ['selinux==1', {
-        'defines': ['CHROMIUM_SELINUX=1'],
-      }],
       ['win_use_allocator_shim==0', {
         'conditions': [
           ['OS=="win"', {
@@ -2190,6 +2210,9 @@
       }],
       ['spdy_proxy_auth_property != ""', {
         'defines': ['SPDY_PROXY_AUTH_PROPERTY="<(spdy_proxy_auth_property)"'],
+      }],
+      ['spdy_proxy_auth_value != ""', {
+        'defines': ['SPDY_PROXY_AUTH_VALUE="<(spdy_proxy_auth_value)"'],
       }],
       ['enable_mdns==1', {
         'defines': ['ENABLE_MDNS=1'],
@@ -2578,6 +2601,11 @@
                   '<@(release_extra_cflags)',
                 ],
               }],
+            ],
+          }],
+          ['OS=="ios"', {
+            'defines': [
+              'NS_BLOCK_ASSERTIONS=1',
             ],
           }],
         ],
@@ -3112,6 +3140,12 @@
                   '-Wl,--as-needed',
                 ],
               }],
+              ['_toolset=="target" and OS=="linux"', {
+                'ldflags': [
+                  # http://crbug.com/234010.
+                  '-lrt',
+                ],
+              }],
             ],
           }],
           ['asan==1', {
@@ -3228,7 +3262,7 @@
               }],
             ],
           }],
-          ['linux_use_tcmalloc==0', {
+          ['linux_use_tcmalloc==0 and android_use_tcmalloc==0', {
             'defines': ['NO_TCMALLOC'],
           }],
           ['linux_keep_shadow_stacks==1', {
@@ -3415,9 +3449,6 @@
             ],
             'conditions': [
               ['component=="shared_library"', {
-                'libraries': [
-                  '-lgnustl_shared',
-                ],
                 'ldflags!': [
                   '-Wl,--exclude-libs=ALL',
                 ],
@@ -3536,11 +3567,9 @@
               }, { # else: use_system_stlport!=1
                 'cflags': [
                   '-I<(android_stlport_include)',
-                  '-I<(android_libstdcpp_include)',
                 ],
                 'ldflags': [
                   '-L<(android_stlport_libs_dir)',
-                  '-L<(android_libstdcpp_libs_dir)',
                 ],
               }],
               ['target_arch=="ia32"', {
@@ -3732,10 +3761,7 @@
                 '$(inherited)', '-std=gnu++11',
               ],
             }],
-            # TODO(thakis): Reenable plugins with once
-            # tools/clang/scripts/update.sh no longer pins clang to an ancient
-            # version for asan (http://crbug.com/170629)
-            ['clang==1 and clang_use_chrome_plugins==1 and asan!=1', {
+            ['clang==1 and clang_use_chrome_plugins==1', {
               'OTHER_CFLAGS': [
                 '<@(clang_chrome_plugins_flags)',
               ],
@@ -3987,6 +4013,9 @@
           # but keying off (or setting) 'clang' isn't valid for iOS as it
           # also seems to mean using the custom build of clang.
 
+          # TODO(stuartmorgan): switch to c++0x (see TODOs in the clang
+          # section above).
+          'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++0x',
           # Don't use -Wc++0x-extensions, which Xcode 4 enables by default
           # when building with clang. This warning is triggered when the
           # override keyword is used via the OVERRIDE macro from
@@ -4004,9 +4033,9 @@
             '-Wno-unused-function',
             # See comments on this flag higher up in this file.
             '-Wno-unnamed-type-template-args',
-            # This (rightfully) complains about 'override', which we use
-            # heavily.
-            '-Wno-c++11-extensions',
+            # Match OS X clang C++11 warning settings.
+            '-Wno-c++11-narrowing',
+            '-Wno-reserved-user-defined-literal',
           ],
         },
         'target_conditions': [
@@ -4039,17 +4068,10 @@
                 },
               },
             },
-            'xcode_settings': {
-              # It is necessary to link with the -fobjc-arc flag to use
-              # subscripting on iOS < 6.
-              'OTHER_LDFLAGS': [
-                '-fobjc-arc',
-              ],
-            },
             'conditions': [
-              # TODO(justincohen): ninja builds don't support signing yet.
-              ['"<(GENERATOR)"!="ninja"', {
+              ['"<(GENERATOR)"=="xcode"', {
                 'xcode_settings': {
+                  # TODO(justincohen): ninja builds don't support signing yet.
                   'conditions': [
                     ['chromium_ios_signing', {
                       # iOS SDK wants everything for device signed.
@@ -4060,6 +4082,59 @@
                     }],
                   ],
                 },
+              }],
+              ['"<(GENERATOR)"=="xcode" and clang!=1', {
+                'xcode_settings': {
+                  # It is necessary to link with the -fobjc-arc flag to use
+                  # subscripting on iOS < 6.
+                  'OTHER_LDFLAGS': [
+                    '-fobjc-arc',
+                  ],
+                },
+              }],
+              ['clang==1', {
+                'target_conditions': [
+                  ['_toolset=="target"', {
+                    'variables': {
+                      'developer_dir': '<!(xcode-select -print-path)',
+                      'arc_toolchain_path': '<(developer_dir)/Toolchains/XcodeDefault.xctoolchain/usr/lib/arc',
+                    },
+                    # It is necessary to force load libarclite from Xcode for
+                    # third_party/llvm-build because libarclite_* is only
+                    # distributed by Xcode.
+                    'conditions': [
+                      ['"<(GENERATOR)"=="ninja" and target_arch=="armv7"', {
+                        'xcode_settings': {
+                          'OTHER_LDFLAGS': [
+                            '-force_load',
+                            '<(arc_toolchain_path)/libarclite_iphoneos.a',
+                          ],
+                        },
+                      }],
+                      ['"<(GENERATOR)"=="ninja" and target_arch!="armv7"', {
+                        'xcode_settings': {
+                          'OTHER_LDFLAGS': [
+                            '-force_load',
+                            '<(arc_toolchain_path)/libarclite_iphonesimulator.a',
+                          ],
+                        },
+                      }],
+                      # Xcode sets target_arch at compile-time.
+                      ['"<(GENERATOR)"=="xcode"', {
+                        'xcode_settings': {
+                          'OTHER_LDFLAGS[arch=armv7]': [
+                            '-force_load',
+                            '<(arc_toolchain_path)/libarclite_iphoneos.a',
+                          ],
+                          'OTHER_LDFLAGS[arch=i386]': [
+                            '-force_load',
+                            '<(arc_toolchain_path)/libarclite_iphonesimulator.a',
+                          ],
+                        },
+                      }],
+                    ],
+                  }],
+                ],
               }],
             ],
           }],

@@ -7,8 +7,8 @@
 #include "chrome/browser/extensions/api/sync_file_system/extension_sync_event_observer.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace extensions {
 
@@ -16,7 +16,7 @@ namespace extensions {
 ExtensionSyncEventObserver*
 ExtensionSyncEventObserverFactory::GetForProfile(Profile* profile) {
   return static_cast<ExtensionSyncEventObserver*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -26,15 +26,17 @@ ExtensionSyncEventObserverFactory::GetInstance() {
 }
 
 ExtensionSyncEventObserverFactory::ExtensionSyncEventObserverFactory()
-    : ProfileKeyedServiceFactory("ExtensionSyncEventObserver",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "ExtensionSyncEventObserver",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(sync_file_system::SyncFileSystemServiceFactory::GetInstance());
   DependsOn(ExtensionSystemFactory::GetInstance());
 }
 
 ExtensionSyncEventObserverFactory::~ExtensionSyncEventObserverFactory() {}
 
-ProfileKeyedService* ExtensionSyncEventObserverFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+ExtensionSyncEventObserverFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new ExtensionSyncEventObserver(static_cast<Profile*>(profile));
 }

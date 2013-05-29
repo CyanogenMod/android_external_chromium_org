@@ -21,6 +21,8 @@ cr.define('print_preview', function() {
   function PreviewArea(
       destinationStore, printTicketStore, nativeLayer, documentInfo) {
     print_preview.Component.call(this);
+    // TODO(rltoscano): Understand the dependencies of printTicketStore needed
+    // here, and add only those here (not the entire print ticket store).
 
     /**
      * Used to get the currently selected destination.
@@ -70,7 +72,10 @@ cr.define('print_preview', function() {
      * @private
      */
     this.marginControlContainer_ = new print_preview.MarginControlContainer(
-        this.printTicketStore_, this.documentInfo_);
+        this.documentInfo_,
+        this.printTicketStore_.marginsType,
+        this.printTicketStore_.customMargins,
+        this.printTicketStore_.measurementSystem);
     this.addChild(this.marginControlContainer_);
 
     /**
@@ -287,6 +292,30 @@ cr.define('print_preview', function() {
           this.onTicketChange_.bind(this));
       this.tracker.add(
           this.printTicketStore_.cssBackground,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+        this.printTicketStore_.customMargins,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.fitToPage,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.headerFooter,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.landscape,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.marginsType,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.pageRange,
           print_preview.ticket_items.TicketItem.EventType.CHANGE,
           this.onTicketChange_.bind(this));
       this.tracker.add(
@@ -569,10 +598,10 @@ cr.define('print_preview', function() {
       // loaded and the document must be modifiable.
       if (this.documentInfo_.isModifiable) {
         this.plugin_.printPreviewPageCount(
-            this.printTicketStore_.getPageNumberSet().size);
+            this.printTicketStore_.pageRange.getPageNumberSet().size);
       }
       this.plugin_.setPageNumbers(JSON.stringify(
-          this.printTicketStore_.getPageNumberSet().asArray()));
+          this.printTicketStore_.pageRange.getPageNumberSet().asArray()));
       if (this.zoomLevel_ != null && this.pageOffset_ != null) {
         this.plugin_.setZoomLevel(this.zoomLevel_);
         this.plugin_.setPageXOffset(this.pageOffset_.x);

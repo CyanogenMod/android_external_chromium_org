@@ -20,7 +20,7 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
 #include "chrome/browser/ui/views/reload_button.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -38,6 +38,7 @@
 
 using content::WebContents;
 using views::GridLayout;
+using web_modal::WebContentsModalDialogManager;
 
 namespace {
 
@@ -137,7 +138,7 @@ SimpleWebViewDialog::~SimpleWebViewDialog() {
   if (web_view_container_.get()) {
     // WebView can't be deleted immediately, because it could be on the stack.
     web_view_->web_contents()->SetDelegate(NULL);
-    MessageLoop::current()->DeleteSoon(
+    base::MessageLoop::current()->DeleteSoon(
         FROM_HERE, web_view_container_.release());
   }
 }
@@ -185,12 +186,8 @@ void SimpleWebViewDialog::Init() {
   toolbar_model_.reset(new ToolbarModelImpl(this));
 
   // Location bar.
-  location_bar_ = new LocationBarView(NULL,
-                                      profile_,
-                                      command_updater_.get(),
-                                      toolbar_model_.get(),
-                                      this,
-                                      LocationBarView::POPUP);
+  location_bar_ = new LocationBarView(NULL, profile_, command_updater_.get(),
+                                      toolbar_model_.get(), this, true);
 
   // Reload button.
   reload_ = new ReloadButton(location_bar_, command_updater_.get());
@@ -301,9 +298,8 @@ void SimpleWebViewDialog::ShowWebsiteSettings(
 PageActionImageView* SimpleWebViewDialog::CreatePageActionImageView(
     LocationBarView* owner,
     ExtensionAction* action) {
-  // Notreached because SimpleWebViewDialog uses
-  // LocationBarView::POPUP type, and it doesn't create
-  // PageActionImageViews.
+  // Notreached because SimpleWebViewDialog uses a popup-mode LocationBarView,
+  // and it doesn't create PageActionImageViews.
   NOTREACHED();
   return NULL;
 }

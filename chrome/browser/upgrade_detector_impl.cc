@@ -387,7 +387,7 @@ void UpgradeDetectorImpl::NotifyOnUpgrade() {
   if (is_unstable_channel_) {
     // There's only one threat level for unstable channels like dev and
     // canary, and it hits after one hour. During testing, it hits after one
-    // minute.
+    // second.
     const int kUnstableThreshold = 1;
 
     if (is_critical_or_outdated)
@@ -401,7 +401,7 @@ void UpgradeDetectorImpl::NotifyOnUpgrade() {
       return;  // Not ready to recommend upgrade.
     }
   } else {
-    const int kMultiplier = is_testing ? 1 : 24;
+    const int kMultiplier = is_testing ? 10 : 24;
     // 14 days when not testing, otherwise 14 seconds.
     const int kSevereThreshold = 14 * kMultiplier;
     const int kHighThreshold = 7 * kMultiplier;

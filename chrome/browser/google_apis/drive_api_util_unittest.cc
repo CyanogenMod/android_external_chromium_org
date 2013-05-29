@@ -4,6 +4,7 @@
 
 #include "chrome/browser/google_apis/drive_api_util.h"
 
+#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace google_apis {
@@ -46,6 +47,32 @@ TEST(DriveApiUtilTest, TranslateQuery) {
   EXPECT_EQ("", TranslateQuery("\"\"\"\""));
   EXPECT_EQ("", TranslateQuery("\"\" \"\""));
   EXPECT_EQ("fullText contains 'dog'", TranslateQuery("\"\" dog \"\""));
+}
+
+TEST(FileSystemUtilTest, ExtractResourceIdFromUrl) {
+  EXPECT_EQ("file:2_file_resource_id", ExtractResourceIdFromUrl(
+      GURL("https://file1_link_self/file:2_file_resource_id")));
+  // %3A should be unescaped.
+  EXPECT_EQ("file:2_file_resource_id", ExtractResourceIdFromUrl(
+      GURL("https://file1_link_self/file%3A2_file_resource_id")));
+
+  // The resource ID cannot be extracted, hence empty.
+  EXPECT_EQ("", ExtractResourceIdFromUrl(GURL("https://www.example.com/")));
+}
+
+TEST(FileSystemUtilTest, CanonicalizeResourceId) {
+  std::string resource_id("1YsCnrMxxgp7LDdtlFDt-WdtEIth89vA9inrILtvK-Ug");
+
+  // New style ID is unchanged.
+  EXPECT_EQ(resource_id, CanonicalizeResourceId(resource_id));
+
+  // Drop prefixes from old style IDs.
+  EXPECT_EQ(resource_id, CanonicalizeResourceId("document:" + resource_id));
+  EXPECT_EQ(resource_id, CanonicalizeResourceId("spreadsheet:" + resource_id));
+  EXPECT_EQ(resource_id, CanonicalizeResourceId("presentation:" + resource_id));
+  EXPECT_EQ(resource_id, CanonicalizeResourceId("drawing:" + resource_id));
+  EXPECT_EQ(resource_id, CanonicalizeResourceId("table:" + resource_id));
+  EXPECT_EQ(resource_id, CanonicalizeResourceId("externalapp:" + resource_id));
 }
 
 }  // namespace util

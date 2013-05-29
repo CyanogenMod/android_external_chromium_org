@@ -43,14 +43,16 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "v8/include/v8.h"
-#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/media/buffered_data_source.h"
+#include "webkit/media/texttrack_impl.h"
 #include "webkit/media/webaudiosourceprovider_impl.h"
+#include "webkit/media/webinbandtexttrack_impl.h"
 #include "webkit/media/webmediaplayer_delegate.h"
 #include "webkit/media/webmediaplayer_params.h"
 #include "webkit/media/webmediaplayer_util.h"
 #include "webkit/media/webmediasourceclient_impl.h"
 #include "webkit/plugins/ppapi/ppapi_webplugin_impl.h"
+#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using WebKit::WebCanvas;
 using WebKit::WebMediaPlayer;
@@ -146,7 +148,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       chunk_demuxer_(NULL),
       pending_repaint_(false),
       pending_size_change_(false),
-      video_frame_provider_client_(NULL) {
+      video_frame_provider_client_(NULL),
+      text_track_index_(0) {
   media_log_->AddEvent(
       media_log_->CreateEvent(media::MediaLogEvent::WEBMEDIAPLAYER_CREATED));
 
@@ -518,7 +521,7 @@ void WebMediaPlayerImpl::setSize(const WebSize& size) {
 
 void WebMediaPlayerImpl::paint(WebCanvas* canvas,
                                const WebRect& rect,
-                               uint8_t alpha) {
+                               unsigned char alpha) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   if (!accelerated_compositing_reported_) {
@@ -870,6 +873,7 @@ void WebMediaPlayerImpl::OnPipelineEnded() {
 
 void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
   DCHECK(main_loop_->BelongsToCurrentThread());
+  DCHECK_NE(error, media::PIPELINE_OK);
 
   if (ready_state_ == WebMediaPlayer::ReadyStateHaveNothing) {
     // Any error that occurs before reaching ReadyStateHaveMetadata should
@@ -879,49 +883,10 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
     return;
   }
 
-  switch (error) {
-    case media::PIPELINE_OK:
-      NOTREACHED() << "PIPELINE_OK isn't an error!";
-      break;
+  SetNetworkState(PipelineErrorToNetworkState(error));
 
-    case media::PIPELINE_ERROR_NETWORK:
-    case media::PIPELINE_ERROR_READ:
-      SetNetworkState(WebMediaPlayer::NetworkStateNetworkError);
-      break;
-
-    // TODO(vrk): Because OnPipelineInitialize() directly reports the
-    // NetworkStateFormatError instead of calling OnPipelineError(), I believe
-    // this block can be deleted. Should look into it! (crbug.com/126070)
-    case media::PIPELINE_ERROR_INITIALIZATION_FAILED:
-    case media::PIPELINE_ERROR_COULD_NOT_RENDER:
-    case media::PIPELINE_ERROR_URL_NOT_FOUND:
-    case media::DEMUXER_ERROR_COULD_NOT_OPEN:
-    case media::DEMUXER_ERROR_COULD_NOT_PARSE:
-    case media::DEMUXER_ERROR_NO_SUPPORTED_STREAMS:
-    case media::DECODER_ERROR_NOT_SUPPORTED:
-      SetNetworkState(WebMediaPlayer::NetworkStateFormatError);
-      break;
-
-    case media::PIPELINE_ERROR_DECODE:
-    case media::PIPELINE_ERROR_ABORT:
-    case media::PIPELINE_ERROR_OPERATION_PENDING:
-    case media::PIPELINE_ERROR_INVALID_STATE:
-      SetNetworkState(WebMediaPlayer::NetworkStateDecodeError);
-      break;
-
-    case media::PIPELINE_ERROR_DECRYPT:
-      // Decrypt error.
-      EmeUMAHistogramCounts(current_key_system_.utf8(), "DecryptError", 1);
-
-      // TODO(xhwang): Change to use NetworkStateDecryptError once it's added in
-      // Webkit (see http://crbug.com/124486).
-      SetNetworkState(WebMediaPlayer::NetworkStateDecodeError);
-      break;
-
-    case media::PIPELINE_STATUS_MAX:
-      NOTREACHED() << "PIPELINE_STATUS_MAX isn't a real error!";
-      break;
-  }
+  if (error == media::PIPELINE_ERROR_DECRYPT)
+    EmeUMAHistogramCounts(current_key_system_.utf8(), "DecryptError", 1);
 
   // Repaint to trigger UI update.
   Repaint();
@@ -987,6 +952,23 @@ void WebMediaPlayerImpl::OnNeedKey(const std::string& key_system,
                          WebString::fromUTF8(session_id),
                          init_data.get(),
                          init_data_size);
+}
+
+scoped_ptr<media::TextTrack>
+WebMediaPlayerImpl::OnTextTrack(media::TextKind kind,
+                                const std::string& label,
+                                const std::string& language) {
+  typedef WebInbandTextTrackImpl::Kind webkind_t;
+  const webkind_t webkind = static_cast<webkind_t>(kind);
+  const WebKit::WebString weblabel = WebKit::WebString::fromUTF8(label);
+  const WebKit::WebString weblanguage = WebKit::WebString::fromUTF8(language);
+
+  WebInbandTextTrackImpl* const text_track =
+    new WebInbandTextTrackImpl(webkind, weblabel, weblanguage,
+                               text_track_index_++);
+  GetClient()->addTextTrack(text_track);
+
+  return scoped_ptr<media::TextTrack>(new TextTrackImpl(text_track));
 }
 
 #define COMPILE_ASSERT_MATCHING_ENUM(name) \
@@ -1084,6 +1066,7 @@ void WebMediaPlayerImpl::StartPipeline(WebKit::WebMediaSource* media_source) {
         BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnDemuxerOpened,
                               base::Passed(&ms)),
         BIND_TO_RENDER_LOOP_2(&WebMediaPlayerImpl::OnNeedKey, "", ""),
+        base::Bind(&WebMediaPlayerImpl::OnTextTrack, base::Unretained(this)),
         base::Bind(&LogMediaSourceError, media_log_));
     demuxer_.reset(chunk_demuxer_);
 

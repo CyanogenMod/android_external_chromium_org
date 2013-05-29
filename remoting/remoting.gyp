@@ -300,6 +300,7 @@
             '../google_apis/google_apis.gyp:google_apis',
             '../media/media.gyp:media',
             '../ipc/ipc.gyp:ipc',
+            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
           ],
           'defines': [
             'VERSION=<(version_full)',
@@ -326,6 +327,8 @@
             'host/chromoting_host_context.h',
             'host/chromoting_messages.cc',
             'host/chromoting_messages.h',
+            'host/chromoting_param_traits.cc',
+            'host/chromoting_param_traits.h',
             'host/client_session.cc',
             'host/client_session.h',
             'host/client_session_control.h',
@@ -358,7 +361,7 @@
             'host/dns_blackhole_checker.h',
             'host/heartbeat_sender.cc',
             'host/heartbeat_sender.h',
-            'host/host_change_notification_listener.cc', 
+            'host/host_change_notification_listener.cc',
             'host/host_change_notification_listener.h',
             'host/host_config.cc',
             'host/host_config.h',
@@ -390,6 +393,9 @@
             'host/ipc_input_injector.h',
             'host/ipc_screen_controls.cc',
             'host/ipc_screen_controls.h',
+            'host/ipc_util.h',
+            'host/ipc_util_posix.cc',
+            'host/ipc_util_win.cc',
             'host/ipc_video_frame_capturer.cc',
             'host/ipc_video_frame_capturer.h',
             'host/it2me_desktop_environment.cc',
@@ -589,6 +595,13 @@
           'sources': [
             'host/keygen_main.cc',
           ],
+          'conditions': [
+            ['OS=="linux" and linux_use_tcmalloc==1', {
+              'dependencies': [
+                '../base/allocator/allocator.gyp:allocator',
+              ],
+            }],
+          ],
         },  # end of target 'remoting_host_keygen'
 
         {
@@ -724,10 +737,19 @@
           ],
           'sources': [
             'host/setup/native_messaging_host.cc',
+            'host/setup/native_messaging_host.h',
+            'host/setup/native_messaging_host_main.cc',
             'host/setup/native_messaging_reader.cc',
             'host/setup/native_messaging_reader.h',
             'host/setup/native_messaging_writer.cc',
             'host/setup/native_messaging_writer.h',
+          ],
+          'conditions': [
+            ['OS=="linux" and linux_use_tcmalloc==1', {
+              'dependencies': [
+                '../base/allocator/allocator.gyp:allocator',
+              ],
+            }],
           ],
         },  # end of target 'remoting_native_messaging_host'
       ],  # end of 'targets'
@@ -868,6 +890,11 @@
                 }],  # mac_breakpad==1
               ],  # conditions
             }],  # OS=mac
+            ['OS=="linux" and linux_use_tcmalloc==1', {
+              'dependencies': [
+                '../base/allocator/allocator.gyp:allocator',
+              ],
+            }],  # OS=linux
           ],  # end of 'conditions'
         },  # end of target 'remoting_me2me_host'
 
@@ -921,6 +948,13 @@
           ],
           'sources': [
             'host/setup/start_host.cc',
+          ],
+          'conditions': [
+            ['linux_use_tcmalloc==1', {
+              'dependencies': [
+                '../base/allocator/allocator.gyp:allocator',
+              ],
+            }],
           ],
         },  # end of target 'remoting_start_host'
       ],  # end of 'targets'
@@ -1401,6 +1435,7 @@
             'remoting_me2me_host_static',
             'remoting_protocol',
             'remoting_version_resources',
+            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
           ],
           'sources': [
             '<(SHARED_INTERMEDIATE_DIR)/remoting/host/chromoting_lib.rc',
@@ -1420,8 +1455,6 @@
             'host/desktop_session.h',
             'host/desktop_session_agent.cc',
             'host/desktop_session_agent.h',
-            'host/desktop_session_agent_posix.cc',
-            'host/desktop_session_agent_win.cc',
             'host/desktop_session_win.cc',
             'host/desktop_session_win.h',
             'host/host_exit_codes.h',
@@ -1452,8 +1485,6 @@
             'host/win/unprivileged_process_delegate.h',
             'host/win/worker_process_launcher.cc',
             'host/win/worker_process_launcher.h',
-            'host/win/wts_console_session_process_driver.cc',
-            'host/win/wts_console_session_process_driver.h',
             'host/win/wts_session_process_delegate.cc',
             'host/win/wts_session_process_delegate.h',
             'host/worker_process_ipc_delegate.h',
@@ -1810,7 +1841,6 @@
             'BRANDING=<(branding)',
             'DAEMON_CONTROLLER_CLSID={<(daemon_controller_clsid)}',
             'RDP_DESKTOP_SESSION_CLSID={<(rdp_desktop_session_clsid)}',
-            'REMOTING_MULTI_PROCESS=<(remoting_multi_process)',
             'VERSION=<(version_full)',
           ],
           'generated_files': [
@@ -2231,10 +2261,10 @@
         '../third_party/speex/speex.gyp:libspeex',
         '../media/media.gyp:media',
         '../media/media.gyp:shared_memory_support',
-        '../media/media.gyp:yuv_convert',
         'remoting_jingle_glue',
         'remoting_resources',
         'proto/chromotocol.gyp:chromotocol_proto_lib',
+        '../third_party/webrtc/modules/modules.gyp:desktop_capture',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
@@ -2470,6 +2500,12 @@
         'protocol/negotiating_client_authenticator.h',
         'protocol/negotiating_host_authenticator.cc',
         'protocol/negotiating_host_authenticator.h',
+        'protocol/pairing_authenticator_base.cc',
+        'protocol/pairing_authenticator_base.h',
+        'protocol/pairing_client_authenticator.cc',
+        'protocol/pairing_client_authenticator.h',
+        'protocol/pairing_host_authenticator.cc',
+        'protocol/pairing_host_authenticator.h',
         'protocol/pairing_registry.cc',
         'protocol/pairing_registry.h',
         'protocol/protobuf_video_reader.cc',
@@ -2530,6 +2566,7 @@
         'remoting_jingle_glue',
         'remoting_protocol',
         'remoting_resources',
+        '../third_party/webrtc/modules/modules.gyp:desktop_capture',
       ],
       'defines': [
         'VERSION=<(version_full)',
@@ -2579,8 +2616,6 @@
         'host/desktop_session.h',
         'host/desktop_session_agent.cc',
         'host/desktop_session_agent.h',
-        'host/desktop_session_agent_posix.cc',
-        'host/desktop_session_agent_win.cc',
         'host/heartbeat_sender_unittest.cc',
         'host/host_change_notification_listener_unittest.cc',
         'host/host_mock_objects.cc',

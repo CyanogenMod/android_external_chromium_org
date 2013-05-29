@@ -13,6 +13,7 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/chromeos/network_login_observer.h"
+#include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_normalizer.h"
@@ -621,6 +622,11 @@ const std::string& NetworkLibraryImplBase::GetCellularHomeCarrierId() const {
   return EmptyString();
 }
 
+bool NetworkLibraryImplBase::CellularDeviceUsesDirectActivation() const {
+  const NetworkDevice* cellular = FindCellularDevice();
+  return cellular && (cellular->carrier() == shill::kCarrierSprint);
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Profiles.
 
@@ -1196,6 +1202,11 @@ void NetworkLibraryImplBase::LoadOncNetworks(
     ForgetNetworksById(source, network_ids, false);
   } else if (source == onc::ONC_SOURCE_USER_IMPORT && !removal_ids.empty()) {
     ForgetNetworksById(source, removal_ids, true);
+  }
+  // Ensure NetworkStateHandler properties are up-to-date.
+  if (NetworkHandler::IsInitialized()) {
+    NetworkHandler::Get()->network_state_handler()->
+        RequestUpdateForAllNetworks();
   }
 }
 

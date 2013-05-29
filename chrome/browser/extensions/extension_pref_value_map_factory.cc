@@ -6,12 +6,12 @@
 
 #include "chrome/browser/extensions/extension_pref_value_map.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 ExtensionPrefValueMapFactory::ExtensionPrefValueMapFactory()
-    : ProfileKeyedServiceFactory(
+    : BrowserContextKeyedServiceFactory(
         "ExtensionPrefValueMap",
-        ProfileDependencyManager::GetInstance()) {
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 ExtensionPrefValueMapFactory::~ExtensionPrefValueMapFactory() {
@@ -21,7 +21,7 @@ ExtensionPrefValueMapFactory::~ExtensionPrefValueMapFactory() {
 ExtensionPrefValueMap* ExtensionPrefValueMapFactory::GetForProfile(
     Profile* profile) {
   return static_cast<ExtensionPrefValueMap*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -29,7 +29,8 @@ ExtensionPrefValueMapFactory* ExtensionPrefValueMapFactory::GetInstance() {
   return Singleton<ExtensionPrefValueMapFactory>::get();
 }
 
-ProfileKeyedService* ExtensionPrefValueMapFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+ExtensionPrefValueMapFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new ExtensionPrefValueMap();
 }

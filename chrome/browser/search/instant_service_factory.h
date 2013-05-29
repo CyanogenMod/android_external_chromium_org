@@ -8,14 +8,14 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class InstantService;
 class Profile;
-class ProfileKeyedService;
+class BrowserContextKeyedService;
 
 // Singleton that owns all InstantServices and associates them with Profiles.
-class InstantServiceFactory : public ProfileKeyedServiceFactory {
+class InstantServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the InstantService for |profile|.
   static InstantService* GetForProfile(Profile* profile);
@@ -28,10 +28,10 @@ class InstantServiceFactory : public ProfileKeyedServiceFactory {
   InstantServiceFactory();
   virtual ~InstantServiceFactory();
 
-  // Overridden from ProfileKeyedServiceFactory:
+  // Overridden from BrowserContextKeyedServiceFactory:
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(InstantServiceFactory);

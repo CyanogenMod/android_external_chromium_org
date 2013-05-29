@@ -37,6 +37,9 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
   Layer::PushPropertiesTo(base_layer);
 
   PictureLayerImpl* layer_impl = static_cast<PictureLayerImpl*>(base_layer);
+  // This should be first so others can use it.
+  layer_impl->UpdateTwinLayer();
+
   layer_impl->SetIsMask(is_mask_);
   layer_impl->CreateTilingSet();
   // Unlike other properties, invalidation must always be set on layer_impl.
@@ -84,9 +87,10 @@ void PictureLayer::Update(ResourceUpdateQueue*,
   pile_invalidation_.Swap(&pending_invalidation_);
   pending_invalidation_.Clear();
 
-  gfx::Rect visible_layer_rect = gfx::ToEnclosingRect(
-      gfx::ScaleRect(visible_content_rect(), 1.f / contents_scale_x()));
-  devtools_instrumentation::ScopedPaintLayer paint_layer(id());
+  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
+      visible_content_rect(), 1.f / contents_scale_x());
+  devtools_instrumentation::ScopedLayerTask paint_layer(
+      devtools_instrumentation::kPaintLayer, id());
   pile_->Update(client_,
                 background_color(),
                 pile_invalidation_,
@@ -96,6 +100,10 @@ void PictureLayer::Update(ResourceUpdateQueue*,
 
 void PictureLayer::SetIsMask(bool is_mask) {
   is_mask_ = is_mask;
+}
+
+bool PictureLayer::SupportsLCDText() const {
+  return true;
 }
 
 }  // namespace cc

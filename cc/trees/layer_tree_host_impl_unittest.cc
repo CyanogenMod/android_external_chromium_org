@@ -17,7 +17,6 @@
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/layers/render_surface_impl.h"
-#include "cc/layers/scrollbar_geometry_fixed_thumb.h"
 #include "cc/layers/scrollbar_layer_impl.h"
 #include "cc/layers/solid_color_layer_impl.h"
 #include "cc/layers/texture_layer_impl.h"
@@ -36,7 +35,6 @@
 #include "cc/test/fake_proxy.h"
 #include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/fake_video_frame_provider.h"
-#include "cc/test/fake_web_scrollbar_theme_geometry.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_test_common.h"
 #include "cc/test/render_pass_test_common.h"
@@ -96,7 +94,8 @@ class LayerTreeHostImplTest : public testing::Test,
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
   virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
                                         base::TimeDelta interval) OVERRIDE {}
-  virtual void DidVSync(base::TimeTicks frame_time) OVERRIDE {}
+  virtual void BeginFrameOnImplThread(base::TimeTicks frame_time)
+      OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE {
     on_can_draw_state_changed_called_ = true;
   }
@@ -129,8 +128,8 @@ class LayerTreeHostImplTest : public testing::Test,
   virtual void RenewTreePriority() OVERRIDE {}
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
       OVERRIDE {}
-  virtual void DidReceiveLastInputEventForVSync(base::TimeTicks frame_time)
-      OVERRIDE {}
+  virtual void DidReceiveLastInputEventForBeginFrameOnImplThread(
+      base::TimeTicks frame_time) OVERRIDE {}
   virtual void DidActivatePendingTree() OVERRIDE {}
 
   void set_reduce_memory_result(bool reduce_memory_result) {
@@ -209,7 +208,7 @@ class LayerTreeHostImplTest : public testing::Test,
     scroll->SetScrollable(true);
     scroll->SetScrollOffset(gfx::Vector2d());
     scroll->SetMaxScrollOffset(gfx::Vector2d(content_size.width(),
-                                           content_size.height()));
+                                             content_size.height()));
     scroll->SetBounds(content_size);
     scroll->SetContentBounds(content_size);
     scroll->SetPosition(gfx::PointF());
@@ -245,6 +244,10 @@ class LayerTreeHostImplTest : public testing::Test,
 
   void InitializeRendererAndDrawFrame() {
     host_impl_->InitializeRenderer(CreateOutputSurface());
+    DrawFrame();
+  }
+
+  void DrawFrame() {
     LayerTreeHostImpl::FrameData frame;
     EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
     host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
@@ -676,25 +679,25 @@ TEST_F(LayerTreeHostImplTest, ScrollVerticallyByPageReturnsCorrectValue) {
 
   // Trying to scroll without a vertical scrollbar will fail.
   EXPECT_FALSE(host_impl_->ScrollVerticallyByPage(
-      gfx::Point(), WebKit::WebScrollbar::ScrollForward));
+      gfx::Point(), SCROLL_FORWARD));
   EXPECT_FALSE(host_impl_->ScrollVerticallyByPage(
-      gfx::Point(), WebKit::WebScrollbar::ScrollBackward));
+      gfx::Point(), SCROLL_BACKWARD));
 
   scoped_ptr<cc::ScrollbarLayerImpl> vertical_scrollbar(
       cc::ScrollbarLayerImpl::Create(
           host_impl_->active_tree(),
           20,
-          scoped_ptr<ScrollbarGeometryFixedThumb>()));
+          VERTICAL));
   vertical_scrollbar->SetBounds(gfx::Size(15, 1000));
   host_impl_->RootScrollLayer()->SetVerticalScrollbarLayer(
       vertical_scrollbar.get());
 
   // Trying to scroll with a vertical scrollbar will succeed.
   EXPECT_TRUE(host_impl_->ScrollVerticallyByPage(
-      gfx::Point(), WebKit::WebScrollbar::ScrollForward));
+      gfx::Point(), SCROLL_FORWARD));
   EXPECT_FLOAT_EQ(875.f, host_impl_->RootScrollLayer()->ScrollDelta().y());
   EXPECT_TRUE(host_impl_->ScrollVerticallyByPage(
-      gfx::Point(), WebKit::WebScrollbar::ScrollBackward));
+      gfx::Point(), SCROLL_BACKWARD));
 }
 
 TEST_F(LayerTreeHostImplTest,
@@ -2097,6 +2100,148 @@ TEST_F(LayerTreeHostImplTest, RootLayerScrollOffsetDelegation) {
             scroll_layer->TotalScrollOffset().ToString());
 }
 
+TEST_F(LayerTreeHostImplTest, OverscrollRoot) {
+  SetupScrollAndContentsLayers(gfx::Size(100, 100));
+  host_impl_->SetViewportSize(gfx::Size(50, 50));
+  host_impl_->active_tree()->SetPageScaleFactorAndLimits(1.f, 0.5f, 4.f);
+  InitializeRendererAndDrawFrame();
+  EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
+  EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
+
+  // In-bounds scrolling does not affect overscroll.
+  EXPECT_EQ(InputHandler::ScrollStarted,
+            host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel));
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, 10));
+  EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
+  EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
+
+  // Overscroll events are reflected immediately.
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, 50));
+  EXPECT_EQ(gfx::Vector2dF(0, 10), host_impl_->accumulated_root_overscroll());
+  EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
+
+  // In-bounds scrolling resets accumulated overscroll.
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -50));
+  EXPECT_EQ(gfx::Vector2dF(0, 0), host_impl_->accumulated_root_overscroll());
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -10));
+  EXPECT_EQ(gfx::Vector2dF(0, -10), host_impl_->accumulated_root_overscroll());
+
+  // Overscroll accumulates within the scope of ScrollBegin/ScrollEnd as long
+  // as no scroll occurs.
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -20));
+  EXPECT_EQ(gfx::Vector2dF(0, -30), host_impl_->accumulated_root_overscroll());
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -20));
+  EXPECT_EQ(gfx::Vector2dF(0, -50), host_impl_->accumulated_root_overscroll());
+  // Overscroll resets on valid scroll.
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, 10));
+  EXPECT_EQ(gfx::Vector2dF(0, 0), host_impl_->accumulated_root_overscroll());
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -20));
+  EXPECT_EQ(gfx::Vector2dF(0, -10), host_impl_->accumulated_root_overscroll());
+  host_impl_->ScrollEnd();
+
+  EXPECT_EQ(InputHandler::ScrollStarted,
+            host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel));
+  // Fling velocity is reflected immediately.
+  host_impl_->NotifyCurrentFlingVelocity(gfx::Vector2dF(10, 0));
+  EXPECT_EQ(gfx::Vector2dF(10, 0), host_impl_->current_fling_velocity());
+  host_impl_->ScrollBy(gfx::Point(), gfx::Vector2d(0, -20));
+  EXPECT_EQ(gfx::Vector2dF(0, -20), host_impl_->accumulated_root_overscroll());
+  EXPECT_EQ(gfx::Vector2dF(10, 0), host_impl_->current_fling_velocity());
+}
+
+
+TEST_F(LayerTreeHostImplTest, OverscrollChildWithoutBubbling) {
+  // Scroll child layers beyond their maximum scroll range and make sure root
+  // overscroll does not accumulate.
+  gfx::Size surface_size(10, 10);
+  scoped_ptr<LayerImpl> root = CreateScrollableLayer(1, surface_size);
+
+  scoped_ptr<LayerImpl> grand_child = CreateScrollableLayer(3, surface_size);
+  grand_child->SetScrollOffset(gfx::Vector2d(0, 2));
+
+  scoped_ptr<LayerImpl> child = CreateScrollableLayer(2, surface_size);
+  child->SetScrollOffset(gfx::Vector2d(0, 3));
+  child->AddChild(grand_child.Pass());
+
+  root->AddChild(child.Pass());
+  host_impl_->active_tree()->SetRootLayer(root.Pass());
+  host_impl_->active_tree()->DidBecomeActive();
+  host_impl_->SetViewportSize(surface_size);
+  InitializeRendererAndDrawFrame();
+  {
+    gfx::Vector2d scroll_delta(0, -10);
+    EXPECT_EQ(InputHandler::ScrollStarted,
+              host_impl_->ScrollBegin(gfx::Point(5, 5),
+                                      InputHandler::NonBubblingGesture));
+    host_impl_->ScrollBy(gfx::Point(), scroll_delta);
+    EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
+    host_impl_->ScrollEnd();
+
+    LayerImpl* child = host_impl_->active_tree()->root_layer()->children()[0];
+    LayerImpl* grand_child = child->children()[0];
+
+    // The next time we scroll we should only scroll the parent, but overscroll
+    // should still not reach the root layer.
+    scroll_delta = gfx::Vector2d(0, -30);
+    EXPECT_EQ(InputHandler::ScrollStarted,
+              host_impl_->ScrollBegin(gfx::Point(5, 5),
+                                      InputHandler::NonBubblingGesture));
+    EXPECT_EQ(host_impl_->CurrentlyScrollingLayer(), grand_child);
+    EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
+    host_impl_->ScrollBy(gfx::Point(), scroll_delta);
+    EXPECT_EQ(host_impl_->CurrentlyScrollingLayer(), child);
+    EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
+    host_impl_->ScrollEnd();
+
+    // After scrolling the parent, another scroll on the opposite direction
+    // should scroll the child, resetting the fling velocity.
+    scroll_delta = gfx::Vector2d(0, 70);
+    host_impl_->NotifyCurrentFlingVelocity(gfx::Vector2dF(10, 0));
+    EXPECT_EQ(gfx::Vector2dF(10, 0), host_impl_->current_fling_velocity());
+    EXPECT_EQ(InputHandler::ScrollStarted,
+              host_impl_->ScrollBegin(gfx::Point(5, 5),
+                                      InputHandler::NonBubblingGesture));
+    EXPECT_EQ(host_impl_->CurrentlyScrollingLayer(), grand_child);
+    host_impl_->ScrollBy(gfx::Point(), scroll_delta);
+    EXPECT_EQ(host_impl_->CurrentlyScrollingLayer(), grand_child);
+    EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
+    EXPECT_EQ(gfx::Vector2dF(), host_impl_->current_fling_velocity());
+    host_impl_->ScrollEnd();
+  }
+}
+
+TEST_F(LayerTreeHostImplTest, OverscrollChildEventBubbling) {
+  // When we try to scroll a non-scrollable child layer, the scroll delta
+  // should be applied to one of its ancestors if possible. Overscroll should
+  // be reflected only when it has bubbled up to the root scrolling layer.
+  gfx::Size surface_size(10, 10);
+  gfx::Size content_size(20, 20);
+  scoped_ptr<LayerImpl> root = CreateScrollableLayer(1, content_size);
+  scoped_ptr<LayerImpl> child = CreateScrollableLayer(2, content_size);
+
+  child->SetScrollable(false);
+  root->AddChild(child.Pass());
+
+  host_impl_->SetViewportSize(surface_size);
+  host_impl_->active_tree()->SetRootLayer(root.Pass());
+  host_impl_->active_tree()->DidBecomeActive();
+  InitializeRendererAndDrawFrame();
+  {
+    gfx::Vector2d scroll_delta(0, 8);
+    EXPECT_EQ(InputHandler::ScrollStarted,
+              host_impl_->ScrollBegin(gfx::Point(5, 5),
+                                      InputHandler::Wheel));
+    host_impl_->ScrollBy(gfx::Point(), scroll_delta);
+    EXPECT_EQ(gfx::Vector2dF(), host_impl_->accumulated_root_overscroll());
+    host_impl_->ScrollBy(gfx::Point(), scroll_delta);
+    EXPECT_EQ(gfx::Vector2dF(0, 6), host_impl_->accumulated_root_overscroll());
+    host_impl_->ScrollBy(gfx::Point(), scroll_delta);
+    EXPECT_EQ(gfx::Vector2dF(0, 14), host_impl_->accumulated_root_overscroll());
+    host_impl_->ScrollEnd();
+  }
+}
+
+
 class BlendStateTrackerContext: public TestWebGraphicsContext3D {
  public:
   BlendStateTrackerContext() : blend_(false) {}
@@ -2517,16 +2662,32 @@ TEST_F(LayerTreeHostImplTest, ViewportCovered) {
 
 class ReshapeTrackerContext: public TestWebGraphicsContext3D {
  public:
-  ReshapeTrackerContext() : reshape_called_(false) {}
+  ReshapeTrackerContext()
+    : reshape_called_(false),
+      last_reshape_width_(-1),
+      last_reshape_height_(-1),
+      last_reshape_scale_factor_(-1.f) {
+  }
 
-  virtual void reshape(int width, int height) OVERRIDE {
+  virtual void reshapeWithScaleFactor(
+      int width, int height, float scale_factor) OVERRIDE {
     reshape_called_ = true;
+    last_reshape_width_ = width;
+    last_reshape_height_ = height;
+    last_reshape_scale_factor_ = scale_factor;
   }
 
   bool reshape_called() const { return reshape_called_; }
+  void clear_reshape_called() { reshape_called_ = false; }
+  int last_reshape_width() { return last_reshape_width_; }
+  int last_reshape_height() { return last_reshape_height_; }
+  int last_reshape_scale_factor() { return last_reshape_scale_factor_; }
 
  private:
   bool reshape_called_;
+  int last_reshape_width_;
+  int last_reshape_height_;
+  float last_reshape_scale_factor_;
 };
 
 class FakeDrawableLayerImpl: public LayerImpl {
@@ -2558,12 +2719,39 @@ TEST_F(LayerTreeHostImplTest, ReshapeNotCalledUntilDraw) {
   root->SetDrawsContent(true);
   host_impl_->active_tree()->SetRootLayer(root.Pass());
   EXPECT_FALSE(reshape_tracker->reshape_called());
+  reshape_tracker->clear_reshape_called();
 
   LayerTreeHostImpl::FrameData frame;
+  host_impl_->SetViewportSize(gfx::Size(10, 10));
+  host_impl_->SetDeviceScaleFactor(1.f);
   EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
   host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
   EXPECT_TRUE(reshape_tracker->reshape_called());
+  EXPECT_EQ(reshape_tracker->last_reshape_width(), 10);
+  EXPECT_EQ(reshape_tracker->last_reshape_height(), 10);
+  EXPECT_EQ(reshape_tracker->last_reshape_scale_factor(), 1.f);
   host_impl_->DidDrawAllLayers(frame);
+  reshape_tracker->clear_reshape_called();
+
+  host_impl_->SetViewportSize(gfx::Size(20, 30));
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
+  host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
+  EXPECT_TRUE(reshape_tracker->reshape_called());
+  EXPECT_EQ(reshape_tracker->last_reshape_width(), 20);
+  EXPECT_EQ(reshape_tracker->last_reshape_height(), 30);
+  EXPECT_EQ(reshape_tracker->last_reshape_scale_factor(), 1.f);
+  host_impl_->DidDrawAllLayers(frame);
+  reshape_tracker->clear_reshape_called();
+
+  host_impl_->SetDeviceScaleFactor(2.f);
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
+  host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
+  EXPECT_TRUE(reshape_tracker->reshape_called());
+  EXPECT_EQ(reshape_tracker->last_reshape_width(), 20);
+  EXPECT_EQ(reshape_tracker->last_reshape_height(), 30);
+  EXPECT_EQ(reshape_tracker->last_reshape_scale_factor(), 2.f);
+  host_impl_->DidDrawAllLayers(frame);
+  reshape_tracker->clear_reshape_called();
 }
 
 class PartialSwapTrackerContext : public TestWebGraphicsContext3D {
@@ -4361,6 +4549,9 @@ class TestRenderer : public GLRenderer, public RendererClient {
   virtual gfx::Size DeviceViewportSize() const OVERRIDE {
     return viewport_size_;
   }
+  virtual float DeviceScaleFactor() const OVERRIDE {
+    return 1.f;
+  }
   virtual const LayerTreeSettings& Settings() const OVERRIDE {
     return settings_;
   }
@@ -5516,6 +5707,46 @@ TEST_F(CompositorFrameMetadataTest, CompositorFrameAckCountsAsSwapComplete) {
   CompositorFrameAck ack;
   host_impl_->OnSendFrameToParentCompositorAck(ack);
   EXPECT_EQ(swap_buffers_complete_, 1);
+}
+
+class CountingSoftwareDevice : public SoftwareOutputDevice {
+ public:
+  CountingSoftwareDevice() : frames_began_(0), frames_ended_(0) {}
+
+  virtual SkCanvas* BeginPaint(gfx::Rect damage_rect) OVERRIDE {
+    ++frames_began_;
+    return SoftwareOutputDevice::BeginPaint(damage_rect);
+  }
+  virtual void EndPaint(SoftwareFrameData* frame_data) OVERRIDE {
+    ++frames_ended_;
+    SoftwareOutputDevice::EndPaint(frame_data);
+  }
+
+  int frames_began_, frames_ended_;
+};
+
+TEST_F(LayerTreeHostImplTest, ForcedDrawToSoftwareDeviceBasicRender) {
+  SetupScrollAndContentsLayers(gfx::Size(100, 100));
+  host_impl_->SetViewportSize(gfx::Size(50, 50));
+  CountingSoftwareDevice* software_device = new CountingSoftwareDevice();
+  FakeOutputSurface* output_surface = FakeOutputSurface::CreateDeferredGL(
+      scoped_ptr<SoftwareOutputDevice>(software_device)).release();
+  host_impl_->InitializeRenderer(scoped_ptr<OutputSurface>(output_surface));
+
+  output_surface->set_forced_draw_to_software_device(true);
+  EXPECT_TRUE(output_surface->ForcedDrawToSoftwareDevice());
+
+  EXPECT_EQ(0, software_device->frames_began_);
+  EXPECT_EQ(0, software_device->frames_ended_);
+
+  DrawFrame();
+
+  EXPECT_EQ(1, software_device->frames_began_);
+  EXPECT_EQ(1, software_device->frames_ended_);
+
+  // Call other API methods that are likely to hit NULL pointer in this mode.
+  EXPECT_TRUE(host_impl_->AsValue());
+  EXPECT_TRUE(host_impl_->ActivationStateAsValue());
 }
 
 }  // namespace

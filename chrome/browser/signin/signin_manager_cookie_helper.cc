@@ -6,7 +6,6 @@
 
 #include <vector>
 
-#include "chrome/browser/browser_process.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/cookies/cookie_monster.h"
@@ -43,7 +42,7 @@ void SigninManagerCookieHelper::FetchGaiaCookiesOnIOThread() {
       cookie_store()->GetCookieMonster();
   if (cookie_monster) {
     cookie_monster->GetAllCookiesForURLAsync(
-        GURL(GaiaUrls::GetInstance()->gaia_origin_url()),
+        GaiaUrls::GetInstance()->gaia_url(),
         base::Bind(&SigninManagerCookieHelper::OnGaiaCookiesFetched, this));
   } else {
     OnGaiaCookiesFetched(net::CookieList());

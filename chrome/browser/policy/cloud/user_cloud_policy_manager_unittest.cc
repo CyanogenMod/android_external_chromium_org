@@ -39,7 +39,7 @@ class UserCloudPolicyManagerTest : public testing::Test {
     if (manager_) {
       manager_->RemoveObserver(&observer_);
       manager_->CloudPolicyManager::Shutdown();
-      manager_->ProfileKeyedService::Shutdown();
+      manager_->BrowserContextKeyedService::Shutdown();
     }
   }
 
@@ -55,7 +55,7 @@ class UserCloudPolicyManagerTest : public testing::Test {
   }
 
   // Required by the refresh scheduler that's created by the manager.
-  MessageLoop loop_;
+  base::MessageLoop loop_;
 
   // Convenience policy objects.
   PolicyMap policy_map_;

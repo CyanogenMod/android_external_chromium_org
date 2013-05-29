@@ -318,6 +318,26 @@ class BrowserPluginBindingForward : public BrowserPluginMethodBinding {
 
 // Note: This is a method that is used internally by the <webview> shim only.
 // This should not be exposed to developers.
+class BrowserPluginBindingGetInstanceID : public BrowserPluginMethodBinding {
+ public:
+  BrowserPluginBindingGetInstanceID()
+      : BrowserPluginMethodBinding(browser_plugin::kMethodGetInstanceId, 0) {
+  }
+
+  virtual bool Invoke(BrowserPluginBindings* bindings,
+                      const NPVariant* args,
+                      NPVariant* result) OVERRIDE {
+    int instance_id = bindings->instance()->instance_id();
+    INT32_TO_NPVARIANT(instance_id, *result);
+    return true;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingGetInstanceID);
+};
+
+// Note: This is a method that is used internally by the <webview> shim only.
+// This should not be exposed to developers.
 class BrowserPluginBindingGetRouteID : public BrowserPluginMethodBinding {
  public:
   BrowserPluginBindingGetRouteID()
@@ -817,7 +837,8 @@ BrowserPluginBindings::BrowserPluginBindings(BrowserPlugin* instance)
       np_object_(NULL),
       weak_ptr_factory_(this) {
   NPObject* obj =
-      WebBindings::createObject(NULL, &browser_plugin_message_class);
+      WebBindings::createObject(instance->pluginNPP(),
+                                &browser_plugin_message_class);
   np_object_ = static_cast<BrowserPluginBindings::BrowserPluginNPObject*>(obj);
   np_object_->message_channel = weak_ptr_factory_.GetWeakPtr();
 
@@ -826,6 +847,7 @@ BrowserPluginBindings::BrowserPluginBindings(BrowserPlugin* instance)
   method_bindings_.push_back(new BrowserPluginBindingCanGoBack);
   method_bindings_.push_back(new BrowserPluginBindingCanGoForward);
   method_bindings_.push_back(new BrowserPluginBindingForward);
+  method_bindings_.push_back(new BrowserPluginBindingGetInstanceID);
   method_bindings_.push_back(new BrowserPluginBindingGetProcessID);
   method_bindings_.push_back(new BrowserPluginBindingGetRouteID);
   method_bindings_.push_back(new BrowserPluginBindingGo);

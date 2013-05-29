@@ -25,11 +25,11 @@
 #include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "content/common/child_process.h"
-#include "content/common/npobject_proxy.h"
-#include "content/common/npobject_stub.h"
-#include "content/common/npobject_util.h"
-#include "content/common/plugin_messages.h"
 #include "content/common/view_messages.h"
+#include "content/common_child/npobject_proxy.h"
+#include "content/common_child/npobject_stub.h"
+#include "content/common_child/npobject_util.h"
+#include "content/common_child/plugin_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/plugin_channel_host.h"
 #include "content/renderer/render_thread_impl.h"
@@ -40,7 +40,6 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebDragData.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
@@ -49,6 +48,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
+#include "webkit/glue/webcursor.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/plugin_constants.h"
@@ -212,6 +212,7 @@ WebPluginDelegateProxy::WebPluginDelegateProxy(
       mime_type_(mime_type),
       instance_id_(MSG_ROUTING_NONE),
       npobject_(NULL),
+      npp_(new NPP_t),
       sad_plugin_(NULL),
       invalidate_pending_(false),
       transparent_(false),
@@ -646,7 +647,7 @@ bool WebPluginDelegateProxy::CreateSharedBitmap(
   if (!memory->get())
     return false;
 #endif
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
   TransportDIB::Handle handle;
   IPC::Message* msg = new ViewHostMsg_AllocTransportDIB(size, false, &handle);
   if (!RenderThreadImpl::current()->Send(msg))
@@ -743,6 +744,11 @@ NPObject* WebPluginDelegateProxy::GetPluginScriptableObject() {
   return WebBindings::retainObject(npobject_);
 }
 
+NPP WebPluginDelegateProxy::GetPluginNPP() {
+  // Return a dummy NPP for WebKit to use to identify this plugin.
+  return npp_.get();
+}
+
 bool WebPluginDelegateProxy::GetFormValue(string16* value) {
   bool success = false;
   Send(new PluginMsg_GetFormValue(instance_id_, value, &success));
@@ -765,7 +771,7 @@ void WebPluginDelegateProxy::SetFocus(bool focused) {
 
 bool WebPluginDelegateProxy::HandleInputEvent(
     const WebInputEvent& event,
-    WebCursorInfo* cursor_info) {
+    WebCursor::CursorInfo* cursor_info) {
   bool handled;
   WebCursor cursor;
   // A windowless plugin can enter a modal loop in the context of a
@@ -776,7 +782,6 @@ bool WebPluginDelegateProxy::HandleInputEvent(
       instance_id_, &event, &handled, &cursor);
   message->set_pump_messages_event(modal_loop_pump_messages_event_.get());
   Send(message);
-  cursor.GetCursorInfo(cursor_info);
   return handled;
 }
 

@@ -15,6 +15,7 @@
 #include "media/base/media_log.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/webm/webm_parser.h"
+#include "media/webm/webm_tracks_parser.h"
 
 namespace media {
 
@@ -74,7 +75,7 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   WebMClusterParser(int64 timecode_scale,
                     int audio_track_num,
                     int video_track_num,
-                    const std::set<int>& text_tracks,
+                    const WebMTracksParser::TextTracks& text_tracks,
                     const std::set<int64>& ignored_tracks,
                     const std::string& audio_encryption_key_id,
                     const std::string& video_encryption_key_id,
@@ -109,9 +110,10 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   virtual bool OnBinary(int id, const uint8* data, int size) OVERRIDE;
 
   bool ParseBlock(bool is_simple_block, const uint8* buf, int size,
-                  int duration);
+                  const uint8* additional, int additional_size, int duration);
   bool OnBlock(bool is_simple_block, int track_num, int timecode, int duration,
-               int flags, const uint8* data, int size);
+               int flags, const uint8* data, int size,
+               const uint8* additional, int additional_size);
 
   // Resets the Track objects associated with each text track.
   void ResetTextTracks();
@@ -132,6 +134,9 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   scoped_ptr<uint8[]> block_data_;
   int block_data_size_;
   int64 block_duration_;
+  int64 block_add_id_;
+  scoped_ptr<uint8[]> block_additional_data_;
+  int block_additional_data_size_;
 
   int64 cluster_timecode_;
   base::TimeDelta cluster_start_time_;

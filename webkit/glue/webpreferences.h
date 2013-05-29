@@ -65,8 +65,6 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   int minimum_font_size;
   int minimum_logical_font_size;
   std::string default_encoding;
-  bool apply_default_device_scale_factor_in_compositor;
-  bool apply_page_scale_factor_in_compositor;
   bool javascript_enabled;
   bool web_security_enabled;
   bool javascript_can_open_windows_automatically;
@@ -156,6 +154,8 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool initialize_at_minimum_page_scale;
   bool smart_insert_delete_enabled;
   bool spatial_navigation_enabled;
+  bool experimental_websocket_enabled;
+  bool pinch_virtual_viewport_enabled;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly

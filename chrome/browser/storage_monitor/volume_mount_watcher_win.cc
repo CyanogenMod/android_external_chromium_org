@@ -21,6 +21,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
 #include "chrome/browser/storage_monitor/media_storage_util.h"
+#include "chrome/browser/storage_monitor/storage_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
 
@@ -54,7 +55,6 @@ enum EjectWinLockOutcomes {
 // reports that some floppy drives don't report as DRIVE_REMOVABLE.
 DeviceType GetDeviceType(const string16& mount_point) {
   UINT drive_type = GetDriveType(mount_point.c_str());
-  VLOG(1) << "Getting drive type for " << mount_point << " is " << drive_type;
   if (drive_type == DRIVE_FIXED || drive_type == DRIVE_REMOTE ||
       drive_type == DRIVE_RAMDISK) {
     return FIXED;
@@ -62,15 +62,28 @@ DeviceType GetDeviceType(const string16& mount_point) {
   if (drive_type != DRIVE_REMOVABLE)
     return FLOPPY;
 
+  // Check device strings of the form "X:" and "\\.\X:"
+  // For floppy drives, these will return strings like "/Device/Floppy0"
   string16 device = mount_point;
   if (EndsWith(mount_point, L"\\", false))
-    device = mount_point.substr(0, device.length() - 1);
+    device = mount_point.substr(0, mount_point.length() - 1);
   string16 device_path;
-  if (!QueryDosDevice(device.c_str(), WriteInto(&device_path, kMaxPathBufLen),
-                      kMaxPathBufLen))
-    return REMOVABLE;
-  VLOG(1) << "Got device path " << device_path;
-  return device_path.find(L"Floppy") == string16::npos ? REMOVABLE : FLOPPY;
+  string16 device_path_slash;
+  DWORD dos_device = QueryDosDevice(
+      device.c_str(), WriteInto(&device_path, kMaxPathBufLen), kMaxPathBufLen);
+  string16 device_slash = string16(L"\\\\.\\");
+  device_slash += device;
+  DWORD dos_device_slash = QueryDosDevice(
+      device_slash.c_str(), WriteInto(&device_path_slash, kMaxPathBufLen),
+      kMaxPathBufLen);
+  if (dos_device == 0 && dos_device_slash == 0)
+    return FLOPPY;
+  if (device_path.find(L"Floppy") != string16::npos ||
+      device_path_slash.find(L"Floppy") != string16::npos) {
+    return FLOPPY;
+  }
+
+  return REMOVABLE;
 }
 
 // Returns 0 if the devicetype is not volume.
@@ -105,29 +118,29 @@ uint64 GetVolumeSize(const string16& mount_point) {
 // http://blogs.msdn.com/b/adioltean/archive/2005/04/16/408947.aspx.
 bool GetDeviceDetails(const base::FilePath& device_path,
                       chrome::StorageInfo* info) {
+  DCHECK(info);
+
   string16 mount_point;
   if (!GetVolumePathName(device_path.value().c_str(),
                          WriteInto(&mount_point, kMaxPathBufLen),
                          kMaxPathBufLen)) {
     return false;
   }
+  mount_point.resize(wcslen(mount_point.c_str()));
 
   // Note: experimentally this code does not spin a floppy drive. It
   // returns a GUID associated with the device, not the volume.
   string16 guid;
-  if (info) {
-    if (!GetVolumeNameForVolumeMountPoint(mount_point.c_str(),
-                                          WriteInto(&guid, kMaxPathBufLen),
-                                          kMaxPathBufLen)) {
-      return false;
-    }
-    // In case it has two GUID's (see above mentioned blog), do it again.
-    if (!GetVolumeNameForVolumeMountPoint(guid.c_str(),
-                                          WriteInto(&guid, kMaxPathBufLen),
-                                          kMaxPathBufLen)) {
-      return false;
-    }
-    VLOG(1) << "guid=" << guid;
+  if (!GetVolumeNameForVolumeMountPoint(mount_point.c_str(),
+                                        WriteInto(&guid, kMaxPathBufLen),
+                                        kMaxPathBufLen)) {
+    return false;
+  }
+  // In case it has two GUID's (see above mentioned blog), do it again.
+  if (!GetVolumeNameForVolumeMountPoint(guid.c_str(),
+                                        WriteInto(&guid, kMaxPathBufLen),
+                                        kMaxPathBufLen)) {
+    return false;
   }
 
   // If we're adding a floppy drive, return without querying any more
@@ -135,23 +148,16 @@ bool GetDeviceDetails(const base::FilePath& device_path,
   // Note: treats FLOPPY as FIXED_MASS_STORAGE. This is intentional.
   DeviceType device_type = GetDeviceType(mount_point);
   if (device_type == FLOPPY) {
-    VLOG(1) << "Returning floppy";
-    if (info) {
-      info->device_id = chrome::MediaStorageUtil::MakeDeviceId(
-          chrome::MediaStorageUtil::FIXED_MASS_STORAGE, UTF16ToUTF8(guid));
-    }
+    info->set_device_id(chrome::StorageInfo::MakeDeviceId(
+        chrome::StorageInfo::FIXED_MASS_STORAGE, UTF16ToUTF8(guid)));
     return true;
   }
 
-  if (!info)
-    return true;
-
-  chrome::MediaStorageUtil::Type type =
-      chrome::MediaStorageUtil::FIXED_MASS_STORAGE;
+  chrome::StorageInfo::Type type = chrome::StorageInfo::FIXED_MASS_STORAGE;
   if (device_type == REMOVABLE) {
-    type = chrome::MediaStorageUtil::REMOVABLE_MASS_STORAGE_NO_DCIM;
+    type = chrome::StorageInfo::REMOVABLE_MASS_STORAGE_NO_DCIM;
     if (chrome::MediaStorageUtil::HasDcim(base::FilePath(mount_point)))
-       type = chrome::MediaStorageUtil::REMOVABLE_MASS_STORAGE_WITH_DCIM;
+      type = chrome::StorageInfo::REMOVABLE_MASS_STORAGE_WITH_DCIM;
   }
 
   // NOTE: experimentally, this function returns false if there is no volume
@@ -161,17 +167,15 @@ bool GetDeviceDetails(const base::FilePath& device_path,
                         WriteInto(&volume_label, kMaxPathBufLen),
                         kMaxPathBufLen, NULL, NULL, NULL, NULL, 0);
 
-  info->location = mount_point;
-  info->total_size_in_bytes = GetVolumeSize(mount_point);
-  info->device_id = chrome::MediaStorageUtil::MakeDeviceId(
-      type, UTF16ToUTF8(guid));
+  uint64 total_size_in_bytes = GetVolumeSize(mount_point);
+  std::string device_id =
+      chrome::StorageInfo::MakeDeviceId(type, UTF16ToUTF8(guid));
 
   // TODO(gbillock): if volume_label.empty(), get the vendor/model information
   // for the volume.
-  info->vendor_name = string16();
-  info->model_name = string16();
-  info->storage_label = volume_label;
-
+  *info = chrome::StorageInfo(device_id, string16(), mount_point,
+                              volume_label, string16(), string16(),
+                              total_size_in_bytes);
   return true;
 }
 
@@ -370,7 +374,6 @@ void VolumeMountWatcherWin::AddDevicesOnUIThread(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   for (size_t i = 0; i < removable_devices.size(); i++) {
-    VLOG(1) << "Adding device " << removable_devices[i].value();
     if (ContainsKey(pending_device_checks_, removable_devices[i]))
       continue;
     pending_device_checks_.insert(removable_devices[i]);
@@ -490,7 +493,7 @@ void VolumeMountWatcherWin::HandleDeviceAttachEventOnUIThread(
   DeviceCheckComplete(device_path);
 
   // Don't call removable storage observers for fixed volumes.
-  if (!MediaStorageUtil::IsRemovableDevice(info.device_id))
+  if (!StorageInfo::IsRemovableDevice(info.device_id()))
     return;
 
   if (notifications_)
@@ -508,7 +511,7 @@ void VolumeMountWatcherWin::HandleDeviceDetachEventOnUIThread(
     return;
 
   if (notifications_)
-    notifications_->ProcessDetach(device_info->second.device_id);
+    notifications_->ProcessDetach(device_info->second.device_id());
   device_metadata_.erase(device_info);
 }
 

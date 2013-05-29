@@ -21,12 +21,14 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/translate_language_list.h"
 #include "chrome/browser/translate/translate_manager.h"
 #include "chrome/browser/translate/translate_prefs.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/language_detection_details.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
@@ -112,10 +114,12 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
 
   void SimulateOnTranslateLanguageDetermined(const std::string& lang,
                                              bool page_translatable) {
+    LanguageDetectionDetails details;
+    details.adopted_language = lang;
     RenderViewHostTester::TestOnMessageReceived(
         rvh(),
         ChromeViewHostMsg_TranslateLanguageDetermined(
-            0, lang, page_translatable));
+            0, details, page_translatable));
   }
 
   bool GetTranslateMessage(int* page_id,
@@ -208,7 +212,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
 
     // The TranslateManager class processes the navigation entry committed
     // notification in a posted task; process that task.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   virtual void Observe(int type,
@@ -279,9 +283,10 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
 
     std::string data;
     if (success) {
-      data = base::StringPrintf("%s{\"sl\": {\"bla\": \"bla\"}, \"%s\": {",
-                                TranslateManager::kLanguageListCallbackName,
-                                TranslateManager::kTargetLanguagesKey);
+      data = base::StringPrintf(
+          "%s{\"sl\": {\"bla\": \"bla\"}, \"%s\": {",
+          TranslateLanguageList::kLanguageListCallbackName,
+          TranslateLanguageList::kTargetLanguagesKey);
       const char* comma = "";
       for (size_t i = 0; i < languages.size(); ++i) {
         data += base::StringPrintf(
@@ -803,7 +808,7 @@ TEST_F(TranslateManagerBrowserTest, ReloadFromLocationBar) {
 
   // The TranslateManager class processes the navigation entry committed
   // notification in a posted task; process that task.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(GetTranslateInfoBar() != NULL);
 }
 
@@ -1326,13 +1331,13 @@ TEST_F(TranslateManagerBrowserTest, ContextMenu) {
   EXPECT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_TRANSLATE));
   EXPECT_TRUE(menu->IsCommandIdEnabled(IDC_CONTENT_CONTEXT_TRANSLATE));
 
-  // Test that the translate context menu is disabled when the page is in an
+  // Test that the translate context menu is enabled even if the page is in an
   // unsupported language.
   SimulateNavigation(url, "qbz", true);
   menu.reset(TestRenderViewContextMenu::CreateContextMenu(web_contents()));
   menu->Init();
   EXPECT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_TRANSLATE));
-  EXPECT_FALSE(menu->IsCommandIdEnabled(IDC_CONTENT_CONTEXT_TRANSLATE));
+  EXPECT_TRUE(menu->IsCommandIdEnabled(IDC_CONTENT_CONTEXT_TRANSLATE));
 }
 
 // Tests that an extra always/never translate button is shown on the "before
@@ -1424,12 +1429,12 @@ TEST_F(TranslateManagerBrowserTest, NonTranslatablePage) {
   // We should not have an infobar.
   EXPECT_TRUE(GetTranslateInfoBar() == NULL);
 
-  // The context menu should be disabled.
+  // The context menu is enabled to allow users to force translation.
   scoped_ptr<TestRenderViewContextMenu> menu(
       TestRenderViewContextMenu::CreateContextMenu(web_contents()));
   menu->Init();
   EXPECT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_TRANSLATE));
-  EXPECT_FALSE(menu->IsCommandIdEnabled(IDC_CONTENT_CONTEXT_TRANSLATE));
+  EXPECT_TRUE(menu->IsCommandIdEnabled(IDC_CONTENT_CONTEXT_TRANSLATE));
 }
 
 // Tests that the script is expired and refetched as expected.
@@ -1449,7 +1454,7 @@ TEST_F(TranslateManagerBrowserTest, ScriptExpires) {
           0, 0, "fr", "en", TranslateErrors::NONE));
 
   // A task should have been posted to clear the script, run it.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // Do another navigation and translation.
   SimulateNavigation(GURL("http://www.google.es"), "es", true);
@@ -1499,7 +1504,8 @@ IN_PROC_BROWSER_TEST_F(InProcessBrowserTest,
       TranslateTabHelper::FromWebContents(current_web_contents);
   content::Source<WebContents> source(current_web_contents);
 
-  ui_test_utils::WindowedNotificationObserverWithDetails<std::string>
+  ui_test_utils::WindowedNotificationObserverWithDetails<
+    LanguageDetectionDetails>
       fr_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
 
@@ -1507,10 +1513,10 @@ IN_PROC_BROWSER_TEST_F(InProcessBrowserTest,
       base::FilePath(), base::FilePath(FILE_PATH_LITERAL("french_page.html")));
   ui_test_utils::NavigateToURL(browser(), french_url);
   fr_language_detected_signal.Wait();
-  std::string lang;
+  LanguageDetectionDetails details;
   EXPECT_TRUE(fr_language_detected_signal.GetDetailsFor(
-        source.map_key(), &lang));
-  EXPECT_EQ("fr", lang);
+        source.map_key(), &details));
+  EXPECT_EQ("fr", details.adopted_language);
   EXPECT_EQ("fr", translate_tab_helper->language_state().original_language());
 }
 
@@ -1524,7 +1530,8 @@ IN_PROC_BROWSER_TEST_F(InProcessBrowserTest, MAYBE_TranslateSessionRestore) {
       browser()->tab_strip_model()->GetActiveWebContents();
   content::Source<WebContents> source(current_web_contents);
 
-  ui_test_utils::WindowedNotificationObserverWithDetails<std::string>
+  ui_test_utils::WindowedNotificationObserverWithDetails<
+    LanguageDetectionDetails>
       fr_language_detected_signal(chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
                                   source);
   fr_language_detected_signal.Wait();

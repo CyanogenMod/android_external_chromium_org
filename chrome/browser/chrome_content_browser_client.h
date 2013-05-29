@@ -23,6 +23,7 @@ class QuotaPermissionContext;
 
 namespace extensions {
 class Extension;
+class BrowserPermissionsPolicyDelegate;
 }
 
 namespace user_prefs {
@@ -157,7 +158,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       bool overridable,
       bool strict_enforcement,
       const base::Callback<void(bool)>& callback,
-      bool* cancel_request) OVERRIDE;
+      content::CertificateRequestResultType* request) OVERRIDE;
   virtual void SelectClientCertificate(
       int render_process_id,
       int render_view_id,
@@ -258,6 +259,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
  private:
   // Set of origins that can use TCP/UDP private APIs from NaCl.
   std::set<std::string> allowed_socket_origins_;
+  scoped_ptr<extensions::BrowserPermissionsPolicyDelegate>
+      permissions_policy_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeContentBrowserClient);
 };

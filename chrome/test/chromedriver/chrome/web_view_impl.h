@@ -24,6 +24,7 @@ class DomTracker;
 class FrameTracker;
 class GeolocationOverrideManager;
 struct KeyEvent;
+class Log;
 struct MouseEvent;
 class NavigationTracker;
 class Status;
@@ -31,12 +32,14 @@ class Status;
 class WebViewImpl : public WebView {
  public:
   WebViewImpl(const std::string& id,
-              scoped_ptr<DevToolsClient> client);
+              scoped_ptr<DevToolsClient> client,
+              Log* log);
   virtual ~WebViewImpl();
 
   // Overridden from WebView:
   virtual std::string GetId() OVERRIDE;
   virtual Status ConnectIfNecessary() OVERRIDE;
+  virtual DevToolsClient* GetDevToolsClient() OVERRIDE;
   virtual Status Load(const std::string& url) OVERRIDE;
   virtual Status Reload() OVERRIDE;
   virtual Status EvaluateScript(const std::string& frame,
@@ -71,7 +74,6 @@ class WebViewImpl : public WebView {
       const std::string& frame_id) OVERRIDE;
   virtual Status IsPendingNavigation(
       const std::string& frame_id, bool* is_pending) OVERRIDE;
-  virtual Status GetMainFrame(std::string* out_frame) OVERRIDE;
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;
   virtual Status OverrideGeolocation(const Geoposition& geoposition) OVERRIDE;
   virtual Status CaptureScreenshot(std::string* screenshot) OVERRIDE;
@@ -87,6 +89,8 @@ class WebViewImpl : public WebView {
                                    bool is_user_supplied,
                                    const base::TimeDelta& timeout,
                                    scoped_ptr<base::Value>* result);
+  Status IsNotPendingNavigation(const std::string& frame_id,
+                                bool* is_not_pending);
   std::string id_;
   scoped_ptr<DomTracker> dom_tracker_;
   scoped_ptr<FrameTracker> frame_tracker_;
@@ -94,6 +98,7 @@ class WebViewImpl : public WebView {
   scoped_ptr<JavaScriptDialogManager> dialog_manager_;
   scoped_ptr<GeolocationOverrideManager> geolocation_override_manager_;
   scoped_ptr<DevToolsClient> client_;
+  Log* log_;
 };
 
 namespace internal {

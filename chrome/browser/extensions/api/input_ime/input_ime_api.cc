@@ -153,6 +153,7 @@ const char kOnKeyEvent[] = "input.ime.onKeyEvent";
 const char kOnCandidateClicked[] = "input.ime.onCandidateClicked";
 const char kOnMenuItemActivated[] = "input.ime.onMenuItemActivated";
 const char kOnSurroundingTextChanged[] = "input.ime.onSurroundingTextChanged";
+const char kOnReset[] = "input.ime.onReset";
 
 }  // namespace events
 
@@ -252,6 +253,7 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
     dict->SetBoolean("altKey", event.alt_key);
     dict->SetBoolean("ctrlKey", event.ctrl_key);
     dict->SetBoolean("shiftKey", event.shift_key);
+    dict->SetBoolean("capsLock", event.caps_lock);
 
     scoped_ptr<base::ListValue> args(new ListValue());
     args->Append(Value::CreateStringValue(engine_id));
@@ -323,6 +325,16 @@ class ImeObserver : public chromeos::InputMethodEngine::Observer {
                              events::kOnSurroundingTextChanged, args.Pass());
   }
 
+  virtual void OnReset(const std::string& engine_id) OVERRIDE {
+    if (profile_ == NULL || extension_id_.empty())
+      return;
+    scoped_ptr<base::ListValue> args(new ListValue());
+    args->Append(Value::CreateStringValue(engine_id));
+
+    DispatchEventToExtension(profile_, extension_id_,
+                             events::kOnReset, args.Pass());
+  }
+
  private:
   Profile* profile_;
   std::string extension_id_;
@@ -367,7 +379,8 @@ bool InputImeEventRouter::RegisterIme(
       chromeos::InputMethodEngine::CreateEngine(
           observer, component.name.c_str(), extension_id.c_str(),
           component.id.c_str(), component.description.c_str(),
-          component.language.c_str(), layouts, &error);
+          component.language.c_str(), layouts, component.options_page_url,
+          &error);
   if (!engine) {
     delete observer;
     LOG(ERROR) << "RegisterIme: " << error;

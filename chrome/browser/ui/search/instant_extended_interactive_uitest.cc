@@ -58,6 +58,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/sessions/serialized_navigation_entry.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -373,9 +374,16 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, MAYBE_UsesOverlayIfTabNotReady) {
   EXPECT_TRUE(instant()->UseTabForSuggestions());
 }
 
+// Flaky on Mac Tests bot. crbug.com/242415
+#if defined(OS_MACOSX)
+#define MAYBE_MiddleClickOnSuggestionOpensInNewTab DISABLED_MiddleClickOnSuggestionOpensInNewTab
+#else
+#define MAYBE_MiddleClickOnSuggestionOpensInNewTab MiddleClickOnSuggestionOpensInNewTab
+#endif
+
 // Test that middle clicking on a suggestion opens the result in a new tab.
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
-                       MiddleClickOnSuggestionOpensInNewTab) {
+                       MAYBE_MiddleClickOnSuggestionOpensInNewTab) {
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
   FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
   EXPECT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
@@ -1713,8 +1721,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, RestrictedItemReadback) {
     InstantAutocompleteResult res;
     res.provider = ASCIIToUTF16(AutocompleteProvider::TypeToString(
         AutocompleteProvider::TYPE_BUILTIN));
-    res.type = ASCIIToUTF16(AutocompleteMatch::TypeToString(
-        AutocompleteMatch::SEARCH_WHAT_YOU_TYPED)),
+    res.type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
     res.description = ASCIIToUTF16(description);
     res.destination_url = ASCIIToUTF16(url);
     res.transition = content::PAGE_TRANSITION_TYPED;
@@ -1805,7 +1812,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_HasBookmarkProvider) {
   const AutocompleteResult& result = omnibox()->model()->result();
   for (AutocompleteResult::const_iterator iter = result.begin();
        !found_bookmark_match && iter != result.end(); ++iter) {
-    found_bookmark_match = iter->type == AutocompleteMatch::BOOKMARK_TITLE;
+    found_bookmark_match = iter->type == AutocompleteMatchType::BOOKMARK_TITLE;
   }
 
   EXPECT_TRUE(found_bookmark_match);
@@ -1839,7 +1846,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, TemporaryTextResetWhenPopupClosed) {
 
   // The omnibox should've reverted to the underlying permanent URL.
   EXPECT_FALSE(HasTemporaryText());
-  EXPECT_EQ(std::string(chrome::kAboutBlankURL), GetOmniboxText());
+  EXPECT_EQ(std::string(content::kAboutBlankURL), GetOmniboxText());
 }
 
 // Test that autocomplete results aren't sent when the popup is closed.
@@ -2301,6 +2308,206 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, SearchProviderForLocalNTP) {
   autocomplete_observer.Wait();
   ASSERT_TRUE(omnibox()->model()->autocomplete_controller()->
               search_provider()->IsNonInstantSearchDone());
+}
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, OverlaySendsSearchWhatYouTyped) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+
+  // This input could be interpreted either as an URL or a query based on the
+  // relative ranking of search-what-you-typed or url-what-you-typed.
+  content::WindowedNotificationObserver autocomplete_observer(
+      chrome::NOTIFICATION_INSTANT_SENT_AUTOCOMPLETE_RESULTS,
+      content::NotificationService::AllSources());
+  SetOmniboxText("define:foo");
+  autocomplete_observer.Wait();
+
+  // In this case, we should treat [define:foo] as a query, so
+  // search-what-you-typed should be the top suggestion.
+  EXPECT_TRUE(ExecuteScript(
+      "var sorted = chrome.embeddedSearch.searchBox.nativeSuggestions.sort("
+          "function (a,b) {"
+            "return b.rankingData.relevance - a.rankingData.relevance;"
+          "});"));
+  std::string type;
+  EXPECT_TRUE(GetStringFromJS(instant()->GetOverlayContents(),
+                              "sorted[0].type", &type));
+  ASSERT_EQ("search-what-you-typed", type);
+}
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
+                       OverlayDoesNotEchoSearchProviderNAVSUGGEST) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+
+  // Show the overlay so suggestions are allowed.
+  SetOmniboxTextAndWaitForOverlayToShow("www.");
+  content::WebContents* overlay = instant()->GetOverlayContents();
+
+  // Set a URL suggestion and wait for SearchProvider to echo it.
+  content::WindowedNotificationObserver autocomplete_observer(
+      chrome::NOTIFICATION_INSTANT_SENT_AUTOCOMPLETE_RESULTS,
+      content::NotificationService::AllSources());
+  instant()->SetSuggestions(
+      overlay,
+      std::vector<InstantSuggestion>(
+          1,
+          InstantSuggestion(ASCIIToUTF16("http://www.example.com/"),
+                            INSTANT_COMPLETE_NOW,
+                            INSTANT_SUGGESTION_URL,
+                            ASCIIToUTF16("www."),
+                            kNoMatchIndex)));
+  autocomplete_observer.Wait();
+
+  // Check that SearchProvider set a NAVSUGGEST match.
+  bool have_navsuggest_match = false;
+  SearchProvider* search_provider =
+      omnibox()->model()->autocomplete_controller()->search_provider();
+  for (ACMatches::const_iterator match = search_provider->matches().begin();
+       match != search_provider->matches().end(); ++match) {
+    if (match->type == AutocompleteMatchType::NAVSUGGEST) {
+      have_navsuggest_match = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(have_navsuggest_match);
+
+  // Check that InstantController did not send the NAVSUGGEST match.
+  bool sent_navsuggest_match = true;
+  EXPECT_TRUE(GetBoolFromJS(overlay,
+      "chrome.embeddedSearch.searchBox.nativeSuggestions.some("
+          "function (s) {"
+            "return s.type == 'navsuggest';"
+          "})", &sent_navsuggest_match));
+  EXPECT_FALSE(sent_navsuggest_match);
+}
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, AcceptingURLSearchDoesNotNavigate) {
+  // Get a committed Instant tab, which will be in the Instant process and thus
+  // support chrome::GetSearchTerms().
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlaySupport();
+
+  // Create an observer to wait for the instant tab to support Instant.
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
+      content::NotificationService::AllSources());
+
+  // Do a search and commit it.
+  ASSERT_TRUE(SetOmniboxTextAndWaitForOverlayToShow("foo"));
+  EXPECT_EQ(ASCIIToUTF16("foo"), omnibox()->GetText());
+  browser()->window()->GetLocationBar()->AcceptInput();
+  observer.Wait();
+
+  // Set URL-like search terms for the instant tab.
+  content::WebContents* instant_tab = instant()->instant_tab()->contents();
+  content::NavigationEntry* visible_entry =
+      instant_tab->GetController().GetVisibleEntry();
+  visible_entry->SetExtraData(sessions::kSearchTermsKey,
+                              ASCIIToUTF16("http://example.com"));
+  SetOmniboxText("http://example.com");
+  omnibox()->model()->SetInputInProgress(false);
+  omnibox()->CloseOmniboxPopup();
+
+  // Accept the omnibox input.
+  EXPECT_FALSE(omnibox()->model()->user_input_in_progress());
+  EXPECT_EQ(ToolbarModel::URL_LIKE_SEARCH_TERMS,
+            browser()->toolbar_model()->GetSearchTermsType());
+  GURL instant_tab_url = instant_tab->GetURL();
+  browser()->window()->GetLocationBar()->AcceptInput();
+  EXPECT_EQ(instant_tab_url, instant_tab->GetURL());
+}
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, AcceptingJSSearchDoesNotRunJS) {
+  // Get a committed Instant tab, which will be in the Instant process and thus
+  // support chrome::GetSearchTerms().
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlaySupport();
+
+  // Create an observer to wait for the instant tab to support Instant.
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
+      content::NotificationService::AllSources());
+
+  // Do a search and commit it.
+  ASSERT_TRUE(SetOmniboxTextAndWaitForOverlayToShow("foo"));
+  EXPECT_EQ(ASCIIToUTF16("foo"), omnibox()->GetText());
+  browser()->window()->GetLocationBar()->AcceptInput();
+  observer.Wait();
+
+  // Set URL-like search terms for the instant tab.
+  content::WebContents* instant_tab = instant()->instant_tab()->contents();
+  content::NavigationEntry* visible_entry =
+      instant_tab->GetController().GetVisibleEntry();
+  const char kEvilJS[] = "javascript:document.title='evil';1;";
+  visible_entry->SetExtraData(sessions::kSearchTermsKey, ASCIIToUTF16(kEvilJS));
+  SetOmniboxText(kEvilJS);
+  omnibox()->model()->SetInputInProgress(false);
+  omnibox()->CloseOmniboxPopup();
+
+  // Accept the omnibox input.
+  EXPECT_FALSE(omnibox()->model()->user_input_in_progress());
+  EXPECT_EQ(ToolbarModel::URL_LIKE_SEARCH_TERMS,
+            browser()->toolbar_model()->GetSearchTermsType());
+  browser()->window()->GetLocationBar()->AcceptInput();
+  // Force some Javascript to run in the renderer so the inline javascript:
+  // would be forced to run if it's going to.
+  EXPECT_TRUE(content::ExecuteScript(instant_tab, "1;"));
+  EXPECT_NE(ASCIIToUTF16("evil"), instant_tab->GetTitle());
+}
+
+// Flaky on mac: http://crbug.com/242164
+#if defined(OS_MACOSX)
+#define MAYBE_ReloadSearchAfterBackReloadsCorrectQuery DISABLED_ReloadSearchAfterBackReloadsCorrectQuery
+#else
+#define MAYBE_ReloadSearchAfterBackReloadsCorrectQuery ReloadSearchAfterBackReloadsCorrectQuery
+#endif
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
+                       MAYBE_ReloadSearchAfterBackReloadsCorrectQuery) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlaySupport();
+
+  // Create an observer to wait for the instant tab to support Instant.
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
+      content::NotificationService::AllSources());
+
+  // Search for [foo].
+  ASSERT_TRUE(SetOmniboxTextAndWaitForOverlayToShow("foo"));
+  EXPECT_EQ(ASCIIToUTF16("foo"), omnibox()->GetText());
+  browser()->window()->GetLocationBar()->AcceptInput();
+  observer.Wait();
+
+  // Search again for [bar].
+  content::WebContents* instant_tab = instant()->instant_tab()->contents();
+  EXPECT_TRUE(content::ExecuteScript(instant_tab,
+                                     "suggestion = 'bart';"));
+  SetOmniboxTextAndWaitForSuggestion("bar");
+  EXPECT_EQ(ASCIIToUTF16("t"), GetGrayText());
+
+  // Accept the new query and wait for the page to navigate.
+  content::WindowedNotificationObserver nav_observer(
+        content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+        content::NotificationService::AllSources());
+  browser()->window()->GetLocationBar()->AcceptInput();
+  nav_observer.Wait();
+
+  // Press back button and reload.
+  content::WindowedNotificationObserver back_observer(
+        content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+        content::NotificationService::AllSources());
+  instant_tab->GetController().GoBack();
+  back_observer.Wait();
+  EXPECT_EQ("foo", GetOmniboxText());
+  FocusOmnibox();
+  content::WindowedNotificationObserver reload_observer(
+        content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+        content::NotificationService::AllSources());
+  browser()->window()->GetLocationBar()->AcceptInput();
+  reload_observer.Wait();
+
+  EXPECT_EQ("foo", GetOmniboxText());
 }
 
 class InstantExtendedFirstTabTest : public InProcessBrowserTest,

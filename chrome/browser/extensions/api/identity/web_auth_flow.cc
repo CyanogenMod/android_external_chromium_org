@@ -5,11 +5,14 @@
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 
 #include "base/location.h"
+#include "base/message_loop.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "content/public/browser/load_notification_details.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -46,6 +49,8 @@ WebAuthFlow::WebAuthFlow(
 }
 
 WebAuthFlow::~WebAuthFlow() {
+  DCHECK(delegate_ == NULL);
+
   // Stop listening to notifications first since some of the code
   // below may generate notifications.
   registrar_.RemoveAll();
@@ -72,12 +77,21 @@ void WebAuthFlow::Start() {
       this,
       content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
       content::Source<WebContents>(contents_));
+  registrar_.Add(
+      this,
+      content::NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
+      content::Source<WebContents>(contents_));
 
   controller->LoadURL(
       provider_url_,
       content::Referrer(),
       content::PAGE_TRANSITION_AUTO_TOPLEVEL,
       std::string());
+}
+
+void WebAuthFlow::DetachDelegateAndDelete() {
+  delegate_ = NULL;
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 WebContents* WebAuthFlow::CreateWebContents() {
@@ -100,7 +114,8 @@ void WebAuthFlow::ShowAuthFlowPopup() {
 }
 
 void WebAuthFlow::BeforeUrlLoaded(const GURL& url) {
-  delegate_->OnAuthFlowURLChange(url);
+  if (delegate_)
+    delegate_->OnAuthFlowURLChange(url);
 }
 
 void WebAuthFlow::AfterUrlLoaded() {
@@ -110,7 +125,8 @@ void WebAuthFlow::AfterUrlLoaded() {
 
   // Report results directly if not in interactive mode.
   if (mode_ != WebAuthFlow::INTERACTIVE) {
-    delegate_->OnAuthFlowFailure(WebAuthFlow::INTERACTION_REQUIRED);
+    if (delegate_)
+      delegate_->OnAuthFlowFailure(WebAuthFlow::INTERACTION_REQUIRED);
     return;
   }
 
@@ -127,6 +143,15 @@ void WebAuthFlow::Observe(int type,
           content::Details<ResourceRedirectDetails>(details).ptr();
       if (redirect_details != NULL)
         BeforeUrlLoaded(redirect_details->new_url);
+    }
+    break;
+    case content::NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED: {
+      std::pair<content::NavigationEntry*, bool>* title =
+          content::Details<
+            std::pair<content::NavigationEntry*, bool> >(details).ptr();
+
+      if (title->first)
+        delegate_->OnAuthFlowTitleChange(UTF16ToUTF8(title->first->GetTitle()));
     }
     break;
     default:
@@ -148,7 +173,8 @@ void WebAuthFlow::DidStopLoading(RenderViewHost* render_view_host) {
 
 void WebAuthFlow::WebContentsDestroyed(WebContents* web_contents) {
   contents_ = NULL;
-  delegate_->OnAuthFlowFailure(WebAuthFlow::WINDOW_CLOSED);
+  if (delegate_)
+    delegate_->OnAuthFlowFailure(WebAuthFlow::WINDOW_CLOSED);
 }
 
 }  // namespace extensions

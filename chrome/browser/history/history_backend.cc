@@ -25,6 +25,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
+#include "chrome/browser/favicon/favicon_changed_details.h"
 #include "chrome/browser/favicon/imported_favicon_usage.h"
 #include "chrome/browser/history/download_row.h"
 #include "chrome/browser/history/history_db_task.h"
@@ -230,7 +231,7 @@ class KillHistoryDatabaseErrorDelegate : public sql::ErrorDelegate {
 
       // Don't just do the close/delete here, as we are being called by |db| and
       // that seems dangerous.
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&HistoryBackend::KillHistoryDatabase, backend_));
     }
@@ -301,7 +302,7 @@ void HistoryBackend::Init(const std::string& languages, bool force_fail) {
   typed_url_syncable_service_.reset(new TypedUrlSyncableService(this));
 }
 
-void HistoryBackend::SetOnBackendDestroyTask(MessageLoop* message_loop,
+void HistoryBackend::SetOnBackendDestroyTask(base::MessageLoop* message_loop,
                                              const base::Closure& task) {
   if (!backend_destroy_task_.is_null())
     DLOG(WARNING) << "Setting more than one destroy task, overriding";
@@ -1085,7 +1086,7 @@ void HistoryBackend::AddPageNoVisitForBookmark(const GURL& url,
 }
 
 void HistoryBackend::IterateURLs(
-    const scoped_refptr<components::VisitedLinkDelegate::URLEnumerator>&
+    const scoped_refptr<visitedlink::VisitedLinkDelegate::URLEnumerator>&
     iterator) {
   if (db_) {
     HistoryDatabase::URLEnumerator e;
@@ -1217,7 +1218,7 @@ void HistoryBackend::QuerySegmentUsage(
     // entries.
     if (!segment_queried_) {
       segment_queried_ = true;
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&HistoryBackend::DeleteOldSegmentData, this));
     }
@@ -1906,7 +1907,7 @@ void HistoryBackend::GetFavicons(
     int icon_types,
     int desired_size_in_dip,
     const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    std::vector<FaviconBitmapResult>* bitmap_results) {
+    std::vector<chrome::FaviconBitmapResult>* bitmap_results) {
   UpdateFaviconMappingsAndFetchImpl(NULL, icon_urls, icon_types,
                                     desired_size_in_dip, desired_scale_factors,
                                     bitmap_results);
@@ -1917,18 +1918,18 @@ void HistoryBackend::GetFaviconsForURL(
     int icon_types,
     int desired_size_in_dip,
     const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    std::vector<FaviconBitmapResult>* bitmap_results) {
+    std::vector<chrome::FaviconBitmapResult>* bitmap_results) {
   DCHECK(bitmap_results);
   GetFaviconsFromDB(page_url, icon_types, desired_size_in_dip,
                     desired_scale_factors, bitmap_results);
 }
 
 void HistoryBackend::GetFaviconForID(
-    FaviconID favicon_id,
+    chrome::FaviconID favicon_id,
     int desired_size_in_dip,
     ui::ScaleFactor desired_scale_factor,
-    std::vector<FaviconBitmapResult>* bitmap_results) {
-  std::vector<FaviconID> favicon_ids;
+    std::vector<chrome::FaviconBitmapResult>* bitmap_results) {
+  std::vector<chrome::FaviconID> favicon_ids;
   favicon_ids.push_back(favicon_id);
   std::vector<ui::ScaleFactor> desired_scale_factors;
   desired_scale_factors.push_back(desired_scale_factor);
@@ -1946,7 +1947,7 @@ void HistoryBackend::UpdateFaviconMappingsAndFetch(
     int icon_types,
     int desired_size_in_dip,
     const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    std::vector<FaviconBitmapResult>* bitmap_results) {
+    std::vector<chrome::FaviconBitmapResult>* bitmap_results) {
   UpdateFaviconMappingsAndFetchImpl(&page_url, icon_urls, icon_types,
                                     desired_size_in_dip, desired_scale_factors,
                                     bitmap_results);
@@ -1955,14 +1956,14 @@ void HistoryBackend::UpdateFaviconMappingsAndFetch(
 void HistoryBackend::MergeFavicon(
     const GURL& page_url,
     const GURL& icon_url,
-    history::IconType icon_type,
+    chrome::IconType icon_type,
     scoped_refptr<base::RefCountedMemory> bitmap_data,
     const gfx::Size& pixel_size) {
   if (!thumbnail_db_ || !db_)
     return;
 
-  FaviconID favicon_id = thumbnail_db_->GetFaviconIDForFaviconURL(icon_url,
-      icon_type, NULL);
+  chrome::FaviconID favicon_id =
+      thumbnail_db_->GetFaviconIDForFaviconURL(icon_url, icon_type, NULL);
 
   if (!favicon_id) {
     // There is no favicon at |icon_url|, create it.
@@ -2083,7 +2084,7 @@ void HistoryBackend::MergeFavicon(
   // |page_url|.
   bool mapping_changed = false;
   if (icon_mappings.size() != 1 || icon_mappings[0].icon_url != icon_url) {
-    std::vector<FaviconID> favicon_ids;
+    std::vector<chrome::FaviconID> favicon_ids;
     favicon_ids.push_back(favicon_id);
     SetFaviconMappingsForPageAndRedirects(page_url, icon_type, favicon_ids);
     mapping_changed = true;
@@ -2096,15 +2097,15 @@ void HistoryBackend::MergeFavicon(
 
 void HistoryBackend::SetFavicons(
     const GURL& page_url,
-    IconType icon_type,
-    const std::vector<FaviconBitmapData>& favicon_bitmap_data) {
+    chrome::IconType icon_type,
+    const std::vector<chrome::FaviconBitmapData>& favicon_bitmap_data) {
   if (!thumbnail_db_ || !db_)
     return;
 
   DCHECK(ValidateSetFaviconsParams(favicon_bitmap_data));
 
   // Build map of FaviconBitmapData for each icon url.
-  typedef std::map<GURL, std::vector<FaviconBitmapData> >
+  typedef std::map<GURL, std::vector<chrome::FaviconBitmapData> >
       BitmapDataByIconURL;
   BitmapDataByIconURL grouped_by_icon_url;
   for (size_t i = 0; i < favicon_bitmap_data.size(); ++i) {
@@ -2116,11 +2117,11 @@ void HistoryBackend::SetFavicons(
   // or icon mappings.
   bool data_modified = false;
 
-  std::vector<FaviconID> icon_ids;
+  std::vector<chrome::FaviconID> icon_ids;
   for (BitmapDataByIconURL::const_iterator it = grouped_by_icon_url.begin();
        it != grouped_by_icon_url.end(); ++it) {
     const GURL& icon_url = it->first;
-    FaviconID icon_id =
+    chrome::FaviconID icon_id =
         thumbnail_db_->GetFaviconIDForFaviconURL(icon_url, icon_type, NULL);
 
     if (!icon_id) {
@@ -2188,14 +2189,14 @@ void HistoryBackend::SetImportedFavicons(
   std::set<GURL> favicons_changed;
 
   for (size_t i = 0; i < favicon_usage.size(); i++) {
-    FaviconID favicon_id = thumbnail_db_->GetFaviconIDForFaviconURL(
-        favicon_usage[i].favicon_url, history::FAVICON, NULL);
+    chrome::FaviconID favicon_id = thumbnail_db_->GetFaviconIDForFaviconURL(
+        favicon_usage[i].favicon_url, chrome::FAVICON, NULL);
     if (!favicon_id) {
       // This favicon doesn't exist yet, so we create it using the given data.
       // TODO(pkotwicz): Pass in real pixel size.
       favicon_id = thumbnail_db_->AddFavicon(
           favicon_usage[i].favicon_url,
-          history::FAVICON,
+          chrome::FAVICON,
           GetDefaultFaviconSizes(),
           new base::RefCountedBytes(favicon_usage[i].png_data),
           now,
@@ -2224,7 +2225,8 @@ void HistoryBackend::SetImportedFavicons(
           favicons_changed.insert(*url);
         }
       } else {
-        if (!thumbnail_db_->GetIconMappingsForPageURL(*url, FAVICON, NULL)) {
+        if (!thumbnail_db_->GetIconMappingsForPageURL(
+                *url, chrome::FAVICON, NULL)) {
           // URL is present in history, update the favicon *only* if it is not
           // set already.
           thumbnail_db_->AddIconMapping(*url, favicon_id);
@@ -2236,7 +2238,7 @@ void HistoryBackend::SetImportedFavicons(
 
   if (!favicons_changed.empty()) {
     // Send the notification about the changed favicon URLs.
-    FaviconChangeDetails* changed_details = new FaviconChangeDetails;
+    FaviconChangedDetails* changed_details = new FaviconChangedDetails;
     changed_details->urls.swap(favicons_changed);
     BroadcastNotifications(chrome::NOTIFICATION_FAVICON_CHANGED,
                            changed_details);
@@ -2249,31 +2251,32 @@ void HistoryBackend::UpdateFaviconMappingsAndFetchImpl(
     int icon_types,
     int desired_size_in_dip,
     const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    std::vector<FaviconBitmapResult>* bitmap_results) {
+    std::vector<chrome::FaviconBitmapResult>* bitmap_results) {
   // If |page_url| is specified, |icon_types| must be either a single icon
   // type or icon types which are equivalent.
   DCHECK(!page_url ||
-         icon_types == FAVICON ||
-         icon_types == TOUCH_ICON ||
-         icon_types == TOUCH_PRECOMPOSED_ICON ||
-         icon_types == (TOUCH_ICON | TOUCH_PRECOMPOSED_ICON));
+         icon_types == chrome::FAVICON ||
+         icon_types == chrome::TOUCH_ICON ||
+         icon_types == chrome::TOUCH_PRECOMPOSED_ICON ||
+         icon_types == (chrome::TOUCH_ICON | chrome::TOUCH_PRECOMPOSED_ICON));
   bitmap_results->clear();
 
   if (!thumbnail_db_) {
     return;
   }
 
-  std::vector<FaviconID> favicon_ids;
+  std::vector<chrome::FaviconID> favicon_ids;
 
   // The icon type for which the mappings will the updated and data will be
   // returned.
-  IconType selected_icon_type = INVALID_ICON;
+  chrome::IconType selected_icon_type = chrome::INVALID_ICON;
 
   for (size_t i = 0; i < icon_urls.size(); ++i) {
     const GURL& icon_url = icon_urls[i];
-    IconType icon_type_out;
-    const FaviconID favicon_id = thumbnail_db_->GetFaviconIDForFaviconURL(
-        icon_url, icon_types, &icon_type_out);
+    chrome::IconType icon_type_out;
+    const chrome::FaviconID favicon_id =
+        thumbnail_db_->GetFaviconIDForFaviconURL(
+            icon_url, icon_types, &icon_type_out);
 
     if (favicon_id) {
       // Return and update icon mappings only for the largest icon type. As
@@ -2303,8 +2306,8 @@ void HistoryBackend::UpdateFaviconMappingsAndFetchImpl(
 }
 
 void HistoryBackend::SetFaviconBitmaps(
-    FaviconID icon_id,
-    const std::vector<FaviconBitmapData>& favicon_bitmap_data,
+    chrome::FaviconID icon_id,
+    const std::vector<chrome::FaviconBitmapData>& favicon_bitmap_data,
     bool* favicon_bitmaps_changed) {
   if (favicon_bitmaps_changed)
     *favicon_bitmaps_changed = false;
@@ -2312,12 +2315,12 @@ void HistoryBackend::SetFaviconBitmaps(
   std::vector<FaviconBitmapIDSize> bitmap_id_sizes;
   thumbnail_db_->GetFaviconBitmapIDSizes(icon_id, &bitmap_id_sizes);
 
-  std::vector<FaviconBitmapData> to_add = favicon_bitmap_data;
+  std::vector<chrome::FaviconBitmapData> to_add = favicon_bitmap_data;
 
   for (size_t i = 0; i < bitmap_id_sizes.size(); ++i) {
     const gfx::Size& pixel_size = bitmap_id_sizes[i].pixel_size;
-    std::vector<FaviconBitmapData>::iterator match_it = to_add.end();
-    for (std::vector<FaviconBitmapData>::iterator it = to_add.begin();
+    std::vector<chrome::FaviconBitmapData>::iterator match_it = to_add.end();
+    for (std::vector<chrome::FaviconBitmapData>::iterator it = to_add.begin();
          it != to_add.end(); ++it) {
       if (it->pixel_size == pixel_size) {
         match_it = it;
@@ -2358,7 +2361,7 @@ void HistoryBackend::SetFaviconBitmaps(
 }
 
 bool HistoryBackend::ValidateSetFaviconsParams(
-    const std::vector<FaviconBitmapData>& favicon_bitmap_data) const {
+    const std::vector<chrome::FaviconBitmapData>& favicon_bitmap_data) const {
   typedef std::map<GURL, size_t> BitmapsPerIconURL;
   BitmapsPerIconURL num_bitmaps_per_icon_url;
   for (size_t i = 0; i < favicon_bitmap_data.size(); ++i) {
@@ -2402,7 +2405,7 @@ bool HistoryBackend::GetFaviconsFromDB(
     int icon_types,
     int desired_size_in_dip,
     const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    std::vector<FaviconBitmapResult>* favicon_bitmap_results) {
+    std::vector<chrome::FaviconBitmapResult>* favicon_bitmap_results) {
   DCHECK(favicon_bitmap_results);
   favicon_bitmap_results->clear();
 
@@ -2416,7 +2419,7 @@ bool HistoryBackend::GetFaviconsFromDB(
   std::vector<IconMapping> icon_mappings;
   thumbnail_db_->GetIconMappingsForPageURL(page_url, icon_types,
                                            &icon_mappings);
-  std::vector<FaviconID> favicon_ids;
+  std::vector<chrome::FaviconID> favicon_ids;
   for (size_t i = 0; i < icon_mappings.size(); ++i)
     favicon_ids.push_back(icon_mappings[i].icon_id);
 
@@ -2429,10 +2432,10 @@ bool HistoryBackend::GetFaviconsFromDB(
 }
 
 bool HistoryBackend::GetFaviconBitmapResultsForBestMatch(
-    const std::vector<FaviconID>& candidate_favicon_ids,
+    const std::vector<chrome::FaviconID>& candidate_favicon_ids,
     int desired_size_in_dip,
     const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    std::vector<FaviconBitmapResult>* favicon_bitmap_results) {
+    std::vector<chrome::FaviconBitmapResult>* favicon_bitmap_results) {
   favicon_bitmap_results->clear();
 
   if (candidate_favicon_ids.empty())
@@ -2442,7 +2445,7 @@ bool HistoryBackend::GetFaviconBitmapResultsForBestMatch(
   // |desired_size_in_dip| and |desired_scale_factors|.
   // TODO(pkotwicz): Select bitmap results from multiple favicons once
   // content::FaviconStatus supports multiple icon URLs.
-  FaviconID best_favicon_id = 0;
+  chrome::FaviconID best_favicon_id = 0;
   std::vector<FaviconBitmapID> best_bitmap_ids;
   float highest_score = kSelectFaviconFramesInvalidScore;
   for (size_t i = 0; i < candidate_favicon_ids.size(); ++i) {
@@ -2477,7 +2480,7 @@ bool HistoryBackend::GetFaviconBitmapResultsForBestMatch(
   // Construct FaviconBitmapResults from |best_favicon_id| and
   // |best_bitmap_ids|.
   GURL icon_url;
-  IconType icon_type;
+  chrome::IconType icon_type;
   if (!thumbnail_db_->GetFaviconHeader(best_favicon_id, &icon_url,
                                        &icon_type, NULL)) {
     return false;
@@ -2485,7 +2488,7 @@ bool HistoryBackend::GetFaviconBitmapResultsForBestMatch(
 
   for (size_t i = 0; i < best_bitmap_ids.size(); ++i) {
     base::Time last_updated;
-    FaviconBitmapResult bitmap_result;
+    chrome::FaviconBitmapResult bitmap_result;
     bitmap_result.icon_url = icon_url;
     bitmap_result.icon_type = icon_type;
     if (!thumbnail_db_->GetFaviconBitmap(best_bitmap_ids[i],
@@ -2505,8 +2508,8 @@ bool HistoryBackend::GetFaviconBitmapResultsForBestMatch(
 
 bool HistoryBackend::SetFaviconMappingsForPageAndRedirects(
     const GURL& page_url,
-    IconType icon_type,
-    const std::vector<FaviconID>& icon_ids) {
+    chrome::IconType icon_type,
+    const std::vector<chrome::FaviconID>& icon_ids) {
   if (!thumbnail_db_)
     return false;
 
@@ -2527,8 +2530,8 @@ bool HistoryBackend::SetFaviconMappingsForPageAndRedirects(
 
 bool HistoryBackend::SetFaviconMappingsForPage(
     const GURL& page_url,
-    IconType icon_type,
-    const std::vector<FaviconID>& icon_ids) {
+    chrome::IconType icon_type,
+    const std::vector<chrome::FaviconID>& icon_ids) {
   DCHECK_LE(icon_ids.size(), kMaxFaviconsPerPage);
   bool mappings_changed = false;
 
@@ -2542,14 +2545,14 @@ bool HistoryBackend::SetFaviconMappingsForPage(
   // Remove any favicons which are orphaned as a result of the removal of the
   // icon mappings.
 
-  std::vector<FaviconID> unmapped_icon_ids = icon_ids;
+  std::vector<chrome::FaviconID> unmapped_icon_ids = icon_ids;
 
   std::vector<IconMapping> icon_mappings;
   thumbnail_db_->GetIconMappingsForPageURL(page_url, &icon_mappings);
 
   for (std::vector<IconMapping>::iterator m = icon_mappings.begin();
        m != icon_mappings.end(); ++m) {
-    std::vector<FaviconID>::iterator icon_id_it = std::find(
+    std::vector<chrome::FaviconID>::iterator icon_id_it = std::find(
         unmapped_icon_ids.begin(), unmapped_icon_ids.end(), m->icon_id);
 
     // If the icon mapping already exists, avoid removing it and adding it back.
@@ -2558,9 +2561,10 @@ bool HistoryBackend::SetFaviconMappingsForPage(
       continue;
     }
 
-    if ((icon_type == TOUCH_ICON && m->icon_type == TOUCH_PRECOMPOSED_ICON) ||
-        (icon_type == TOUCH_PRECOMPOSED_ICON && m->icon_type == TOUCH_ICON) ||
-        (icon_type == m->icon_type)) {
+    if ((icon_type == chrome::TOUCH_ICON &&
+         m->icon_type == chrome::TOUCH_PRECOMPOSED_ICON) ||
+        (icon_type == chrome::TOUCH_PRECOMPOSED_ICON &&
+         m->icon_type == chrome::TOUCH_ICON) || (icon_type == m->icon_type)) {
       thumbnail_db_->DeleteIconMapping(m->mapping_id);
 
       // Removing the icon mapping may have orphaned the associated favicon so
@@ -2601,7 +2605,7 @@ void HistoryBackend::SendFaviconChangedNotificationForPageAndRedirects(
   history::RedirectList redirect_list;
   GetCachedRecentRedirects(page_url, &redirect_list);
 
-  FaviconChangeDetails* changed_details = new FaviconChangeDetails;
+  FaviconChangedDetails* changed_details = new FaviconChangedDetails;
   for (size_t i = 0; i < redirect_list.size(); ++i)
     changed_details->urls.insert(redirect_list[i]);
 
@@ -2647,7 +2651,7 @@ void HistoryBackend::ScheduleCommit() {
   if (scheduled_commit_)
     return;
   scheduled_commit_ = new CommitLaterTask(this);
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&CommitLaterTask::RunCommit, scheduled_commit_.get()),
       base::TimeDelta::FromSeconds(kCommitIntervalSeconds));
@@ -2687,7 +2691,7 @@ void HistoryBackend::ProcessDBTaskImpl() {
     // Tasks wants to run some more. Schedule it at the end of current tasks.
     db_task_requests_.push_back(request);
     // And process it after an invoke later.
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&HistoryBackend::ProcessDBTaskImpl, this));
   }
 }
@@ -2999,7 +3003,7 @@ bool HistoryBackend::ClearAllThumbnailHistory(URLRows* kept_urls) {
     return false;
 
   // This maps existing favicon IDs to the ones in the temporary table.
-  typedef std::map<FaviconID, FaviconID> FaviconMap;
+  typedef std::map<chrome::FaviconID, chrome::FaviconID> FaviconMap;
   FaviconMap copied_favicons;
 
   // Copy all unique favicons to the temporary table, and update all the
@@ -3011,8 +3015,8 @@ bool HistoryBackend::ClearAllThumbnailHistory(URLRows* kept_urls) {
 
     for (std::vector<IconMapping>::iterator m = icon_mappings.begin();
          m != icon_mappings.end(); ++m) {
-      FaviconID old_id = m->icon_id;
-      FaviconID new_id;
+      chrome::FaviconID old_id = m->icon_id;
+      chrome::FaviconID new_id;
       FaviconMap::const_iterator found = copied_favicons.find(old_id);
       if (found == copied_favicons.end()) {
         new_id = thumbnail_db_->CopyFaviconAndFaviconBitmapsToTemporaryTables(

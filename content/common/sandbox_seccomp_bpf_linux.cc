@@ -21,6 +21,10 @@
 
 #include <vector>
 
+#if defined(__arm__) && !defined(MAP_STACK)
+#define MAP_STACK 0x20000  // Daisy build environment has old headers.
+#endif
+
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -89,8 +93,16 @@ inline bool IsArchitectureArm() {
 #endif
 }
 
+inline bool IsUsingToolKitGtk() {
+#if defined(TOOLKIT_GTK)
+  return true;
+#else
+  return false;
+#endif
+}
+
 intptr_t CrashSIGSYS_Handler(const struct arch_seccomp_data& args, void* aux) {
-  int syscall = args.nr;
+  uint32_t syscall = args.nr;
   if (syscall >= 1024)
     syscall = 0;
   // Encode 8-bits of the 1st two arguments too, so we can discern which socket
@@ -114,7 +126,7 @@ intptr_t CrashSIGSYS_Handler(const struct arch_seccomp_data& args, void* aux) {
 }
 
 // TODO(jln): rewrite reporting functions.
-intptr_t ReportCloneFailure(const struct arch_seccomp_data& args, void* aux) {
+intptr_t SIGSYSCloneFailure(const struct arch_seccomp_data& args, void* aux) {
   // "flags" in the first argument in the kernel's clone().
   // Mark as volatile to be able to find the value on the stack in a minidump.
 #if !defined(NDEBUG)
@@ -134,7 +146,7 @@ intptr_t ReportCloneFailure(const struct arch_seccomp_data& args, void* aux) {
 }
 
 // TODO(jln): rewrite reporting functions.
-intptr_t ReportPrctlFailure(const struct arch_seccomp_data& args,
+intptr_t SIGSYSPrctlFailure(const struct arch_seccomp_data& args,
                             void* /* aux */) {
   // Mark as volatile to be able to find the value on the stack in a minidump.
 #if !defined(NDEBUG)
@@ -148,7 +160,7 @@ intptr_t ReportPrctlFailure(const struct arch_seccomp_data& args,
     _exit(1);
 }
 
-intptr_t ReportIoctlFailure(const struct arch_seccomp_data& args,
+intptr_t SIGSYSIoctlFailure(const struct arch_seccomp_data& args,
                             void* /* aux */) {
   // Make "request" volatile so that we can see it on the stack in a minidump.
 #if !defined(NDEBUG)
@@ -511,20 +523,20 @@ bool IsAllowedSignalHandling(int sysno) {
   }
 }
 
-bool IsOperationOnFd(int sysno) {
+bool IsAllowedOperationOnFd(int sysno) {
   switch (sysno) {
     case __NR_close:
     case __NR_dup:
     case __NR_dup2:
     case __NR_dup3:
-    case __NR_fcntl:  // TODO(jln): we may want to restrict arguments.
-#if defined(__i386__) || defined(__arm__)
-    case __NR_fcntl64:
-#endif
 #if defined(__x86_64__) || defined(__arm__)
     case __NR_shutdown:
 #endif
       return true;
+    case __NR_fcntl:
+#if defined(__i386__) || defined(__arm__)
+    case __NR_fcntl64:
+#endif
     default:
       return false;
   }
@@ -658,13 +670,6 @@ bool IsAllowedAddressSpaceAccess(int sysno) {
   switch (sysno) {
     case __NR_brk:
     case __NR_mlock:
-#if defined(__i386__) || defined(__x86_64__)
-    case __NR_mmap:   // TODO(jln): to restrict flags.
-#endif
-#if defined(__i386__) || defined(__arm__)
-    case __NR_mmap2:
-#endif
-    case __NR_mprotect:
     case __NR_munlock:
     case __NR_munmap:
       return true;
@@ -672,8 +677,15 @@ bool IsAllowedAddressSpaceAccess(int sysno) {
     case __NR_mincore:
     case __NR_mlockall:
 #if defined(__i386__) || defined(__x86_64__)
+    case __NR_mmap:
+#endif
+#if defined(__i386__) || defined(__arm__)
+    case __NR_mmap2:
+#endif
+#if defined(__i386__) || defined(__x86_64__)
     case __NR_modify_ldt:
 #endif
+    case __NR_mprotect:
     case __NR_mremap:
     case __NR_msync:
     case __NR_munlockall:
@@ -1183,7 +1195,7 @@ bool IsBaselinePolicyAllowed(int sysno) {
       IsArmPrivate(sysno) ||
 #endif
       IsKill(sysno) ||
-      IsOperationOnFd(sysno)) {
+      IsAllowedOperationOnFd(sysno)) {
     return true;
   } else {
     return false;
@@ -1236,24 +1248,83 @@ bool IsBaselinePolicyWatched(int sysno) {
   }
 }
 
-ErrorCode BaselinePolicy(Sandbox *sandbox, int sysno) {
-#if defined(__x86_64__) || defined(__arm__)
-  if (sysno == __NR_socketpair) {
-    // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
-    COMPILE_ASSERT(AF_UNIX == PF_UNIX, af_unix_pf_unix_different);
-    return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, AF_UNIX,
-                         ErrorCode(ErrorCode::ERR_ALLOWED),
-                         sandbox->Trap(CrashSIGSYS_Handler, NULL));
-  }
-#endif
-  if (sysno == __NR_madvise) {
-    // Only allow MADV_DONTNEED (aka MADV_FREE).
-    return sandbox->Cond(2, ErrorCode::TP_32BIT,
-                         ErrorCode::OP_EQUAL, MADV_DONTNEED,
-                         ErrorCode(ErrorCode::ERR_ALLOWED),
-                         ErrorCode(EPERM));
-  }
+ErrorCode RestrictMmapFlags(Sandbox *sandbox) {
+  // The flags you see are actually the allowed ones, and the variable is a
+  // "denied" mask because of the negation operator.
+  // Significantly, we don't permit MAP_HUGETLB, or the newer flags such as
+  // MAP_POPULATE.
+  uint32_t denied_mask = ~(MAP_SHARED | MAP_PRIVATE | MAP_ANONYMOUS |
+                           MAP_STACK | MAP_NORESERVE | MAP_FIXED);
+  return sandbox->Cond(3, ErrorCode::TP_32BIT, ErrorCode::OP_HAS_ANY_BITS,
+                       denied_mask,
+                       sandbox->Trap(CrashSIGSYS_Handler, NULL),
+                       ErrorCode(ErrorCode::ERR_ALLOWED));
+}
 
+ErrorCode RestrictMprotectFlags(Sandbox *sandbox) {
+  // The flags you see are actually the allowed ones, and the variable is a
+  // "denied" mask because of the negation operator.
+  // Significantly, we don't permit weird undocumented flags such as
+  // PROT_GROWSDOWN.
+  uint32_t denied_mask = ~(PROT_READ | PROT_WRITE | PROT_EXEC);
+  return sandbox->Cond(2, ErrorCode::TP_32BIT, ErrorCode::OP_HAS_ANY_BITS,
+                       denied_mask,
+                       sandbox->Trap(CrashSIGSYS_Handler, NULL),
+                       ErrorCode(ErrorCode::ERR_ALLOWED));
+}
+
+ErrorCode RestrictFcntlCommands(Sandbox *sandbox) {
+  // For now, we're only sure this will work on x64. This is because of the
+  // use of TP_64BIT for a "long" argument. Ideally, the seccomp API would
+  // have a TP_LONG or TP_SIZET type.
+  DCHECK(IsArchitectureX86_64());
+  // We allow F_GETFL, F_SETFL, F_GETFD, F_SETFD, F_DUPFD, F_DUPFD_CLOEXEC,
+  // F_SETLK, F_SETLKW and F_GETLK.
+  // We also restrict the flags in F_SETFL. We don't want to permit flags with
+  // a history of trouble such as O_DIRECT. The flags you see are actually the
+  // allowed ones, and the variable is a "denied" mask because of the negation
+  // operator.
+  // Glibc overrides the kernel's O_LARGEFILE value. Account for this.
+  int kOLargeFileFlag = O_LARGEFILE;
+  if (IsArchitectureX86_64())
+    kOLargeFileFlag = 0100000;
+
+  unsigned long denied_mask = ~(O_ACCMODE | O_APPEND | O_NONBLOCK | O_SYNC |
+                                kOLargeFileFlag | O_CLOEXEC | O_NOATIME);
+  return sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_GETFL,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_SETFL,
+                       sandbox->Cond(2, ErrorCode::TP_64BIT,
+                                     ErrorCode::OP_HAS_ANY_BITS, denied_mask,
+                                     sandbox->Trap(CrashSIGSYS_Handler, NULL),
+                                     ErrorCode(ErrorCode::ERR_ALLOWED)),
+         sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_GETFD,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_SETFD,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_DUPFD,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_SETLK,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_SETLKW,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_GETLK,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(1, ErrorCode::TP_32BIT,
+                       ErrorCode::OP_EQUAL, F_DUPFD_CLOEXEC,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Trap(CrashSIGSYS_Handler, NULL))))))))));
+}
+
+ErrorCode BaselinePolicy(Sandbox *sandbox, int sysno) {
   if (IsBaselinePolicyAllowed(sysno)) {
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
@@ -1263,6 +1334,57 @@ ErrorCode BaselinePolicy(Sandbox *sandbox, int sysno) {
   if (IsSocketCall(sysno)) {
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
+#endif
+
+#if defined(__x86_64__) || defined(__arm__)
+  if (sysno == __NR_socketpair) {
+    // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
+    COMPILE_ASSERT(AF_UNIX == PF_UNIX, af_unix_pf_unix_different);
+    return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, AF_UNIX,
+                         ErrorCode(ErrorCode::ERR_ALLOWED),
+                         sandbox->Trap(CrashSIGSYS_Handler, NULL));
+  }
+#endif
+
+  if (sysno == __NR_madvise) {
+    // Only allow MADV_DONTNEED (aka MADV_FREE).
+    return sandbox->Cond(2, ErrorCode::TP_32BIT,
+                         ErrorCode::OP_EQUAL, MADV_DONTNEED,
+                         ErrorCode(ErrorCode::ERR_ALLOWED),
+                         ErrorCode(EPERM));
+  }
+
+#if defined(__i386__) || defined(__x86_64__)
+  if (sysno == __NR_mmap) {
+    if (IsArchitectureX86_64())
+      return RestrictMmapFlags(sandbox);
+    else
+      return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+#endif
+
+#if defined(__i386__) || defined(__arm__)
+  if (sysno == __NR_mmap2)
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
+#endif
+
+  if (sysno == __NR_mprotect) {
+    if (IsArchitectureX86_64())
+      return RestrictMprotectFlags(sandbox);
+    else
+      return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+
+  if (sysno == __NR_fcntl) {
+    if (IsArchitectureX86_64())
+      return RestrictFcntlCommands(sandbox);
+    else
+      return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+
+#if defined(__i386__) || defined(__arm__)
+  if (sysno == __NR_fcntl64)
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
 #endif
 
   // TODO(jln): some system calls in those sets are not supposed to
@@ -1290,8 +1412,17 @@ ErrorCode GpuProcessPolicy(Sandbox *sandbox, int sysno,
                            void *broker_process) {
   switch(sysno) {
     case __NR_ioctl:
+#if defined(__i386__) || defined(__x86_64__)
+    // The Nvidia driver uses flags not in the baseline policy
+    // (MAP_LOCKED | MAP_EXECUTABLE | MAP_32BIT)
+    case __NR_mmap:
+#endif
+    // We also hit this on the linux_chromeos bot but don't yet know what
+    // weird flags were involved.
+    case __NR_mprotect:
     case __NR_sched_getaffinity:
     case __NR_sched_setaffinity:
+    case __NR_setpriority:
       return ErrorCode(ErrorCode::ERR_ALLOWED);
     case __NR_access:
     case __NR_open:
@@ -1368,22 +1499,6 @@ ErrorCode ArmMaliGpuBrokerProcessPolicy(Sandbox *sandbox,
   }
 }
 
-// Allow clone(2) for threads, crash if anything else is attempted.
-// Don't restrict on ASAN.
-ErrorCode RestrictCloneToThreads(Sandbox *sandbox) {
-  // Glibc's pthread.
-  if (!RunningOnASAN()) {
-    return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
-        CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
-        CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS |
-        CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID,
-        ErrorCode(ErrorCode::ERR_ALLOWED),
-        sandbox->Trap(ReportCloneFailure, NULL));
-  } else {
-    return ErrorCode(ErrorCode::ERR_ALLOWED);
-  }
-}
-
 // Allow clone(2) for threads.
 // Reject fork(2) attempts with EPERM.
 // Crash if anything else is attempted.
@@ -1399,7 +1514,7 @@ ErrorCode RestrictCloneToThreadsAndEPERMFork(Sandbox* sandbox) {
            sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
                          CLONE_PARENT_SETTID | SIGCHLD,
                          ErrorCode(EPERM),
-           sandbox->Trap(ReportCloneFailure, NULL)));
+           sandbox->Trap(SIGSYSCloneFailure, NULL)));
   } else {
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
@@ -1415,29 +1530,24 @@ ErrorCode RestrictPrctl(Sandbox *sandbox) {
                        PR_SET_DUMPABLE, ErrorCode(ErrorCode::ERR_ALLOWED),
          sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
                        PR_GET_DUMPABLE, ErrorCode(ErrorCode::ERR_ALLOWED),
-         sandbox->Trap(ReportPrctlFailure, NULL))));
+         sandbox->Trap(SIGSYSPrctlFailure, NULL))));
 }
 
 ErrorCode RestrictIoctl(Sandbox *sandbox) {
-  // Allow TCGETS and FIONREAD, trap to ReportIoctlFailure otherwise.
-  return sandbox->Cond(1, ErrorCode::TP_64BIT, ErrorCode::OP_EQUAL, TCGETS,
+  // Allow TCGETS and FIONREAD, trap to SIGSYSIoctlFailure otherwise.
+  return sandbox->Cond(1, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, TCGETS,
                        ErrorCode(ErrorCode::ERR_ALLOWED),
-         sandbox->Cond(1, ErrorCode::TP_64BIT, ErrorCode::OP_EQUAL, FIONREAD,
+         sandbox->Cond(1, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, FIONREAD,
                        ErrorCode(ErrorCode::ERR_ALLOWED),
-                       sandbox->Trap(ReportIoctlFailure, NULL)));
+                       sandbox->Trap(SIGSYSIoctlFailure, NULL)));
 }
 
 ErrorCode RendererOrWorkerProcessPolicy(Sandbox *sandbox, int sysno, void *) {
   switch (sysno) {
     case __NR_clone:
-      return RestrictCloneToThreads(sandbox);
+      return RestrictCloneToThreadsAndEPERMFork(sandbox);
     case __NR_ioctl:
-      // Restrict IOCTL on x86_64.
-      if (IsArchitectureX86_64()) {
-        return RestrictIoctl(sandbox);
-      } else {
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
-      }
+      return RestrictIoctl(sandbox);
     case __NR_prctl:
       return RestrictPrctl(sandbox);
     // Allow the system calls below.
@@ -1464,15 +1574,16 @@ ErrorCode RendererOrWorkerProcessPolicy(Sandbox *sandbox, int sysno, void *) {
     case __NR_prlimit64:
       return ErrorCode(EPERM);  // See crbug.com/160157.
     default:
-      // These need further tightening.
+      if (IsUsingToolKitGtk()) {
 #if defined(__x86_64__) || defined(__arm__)
-      if (IsSystemVSharedMemory(sysno))
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
+        if (IsSystemVSharedMemory(sysno))
+          return ErrorCode(ErrorCode::ERR_ALLOWED);
 #endif
 #if defined(__i386__)
-      if (IsSystemVIpc(sysno))
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
+        if (IsSystemVIpc(sysno))
+          return ErrorCode(ErrorCode::ERR_ALLOWED);
 #endif
+      }
 
       // Default on the baseline policy.
       return BaselinePolicy(sandbox, sysno);
@@ -1482,7 +1593,10 @@ ErrorCode RendererOrWorkerProcessPolicy(Sandbox *sandbox, int sysno, void *) {
 ErrorCode FlashProcessPolicy(Sandbox *sandbox, int sysno, void *) {
   switch (sysno) {
     case __NR_clone:
+#if defined(__x86_64__)
+      // TODO(jorgelo): enable this on other platforms.
       return RestrictCloneToThreadsAndEPERMFork(sandbox);
+#endif
     case __NR_sched_get_priority_max:
     case __NR_sched_get_priority_min:
     case __NR_sched_getaffinity:
@@ -1494,15 +1608,16 @@ ErrorCode FlashProcessPolicy(Sandbox *sandbox, int sysno, void *) {
     case __NR_ioctl:
       return ErrorCode(ENOTTY);  // Flash Access.
     default:
-      // These need further tightening.
+      if (IsUsingToolKitGtk()) {
 #if defined(__x86_64__) || defined(__arm__)
-      if (IsSystemVSharedMemory(sysno))
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
+        if (IsSystemVSharedMemory(sysno))
+          return ErrorCode(ErrorCode::ERR_ALLOWED);
 #endif
 #if defined(__i386__)
-      if (IsSystemVIpc(sysno))
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
+        if (IsSystemVIpc(sysno))
+          return ErrorCode(ErrorCode::ERR_ALLOWED);
 #endif
+      }
 
       // Default on the baseline policy.
       return BaselinePolicy(sandbox, sysno);

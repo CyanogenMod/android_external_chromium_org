@@ -13,6 +13,7 @@
 #include "net/base/net_export.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/quic_protocol.h"
 #include "net/quic/quic_time.h"
 
 namespace net {
@@ -23,30 +24,10 @@ struct QuicCryptoNegotiatedParameters;
 
 class NET_EXPORT_PRIVATE CryptoUtils {
  public:
-  enum Priority {
-    LOCAL_PRIORITY,
-    PEER_PRIORITY,
-  };
-
   enum Perspective {
     SERVER,
     CLIENT,
   };
-
-  // FindMutualTag sets |out_result| to the first tag in the priority list that
-  // is also in the other list and returns true. If there is no intersection it
-  // returns false.
-  //
-  // Which list has priority is determined by |priority|.
-  //
-  // If |out_index| is non-NULL and a match is found then the index of that
-  // match in |their_tags| is written to |out_index|.
-  static bool FindMutualTag(const QuicTagVector& our_tags,
-                            const QuicTag* their_tags,
-                            size_t num_their_tags,
-                            Priority priority,
-                            QuicTag* out_result,
-                            size_t* out_index);
 
   // Generates the connection nonce. The nonce is formed as:
   //   <4 bytes> current time
@@ -56,6 +37,17 @@ class NET_EXPORT_PRIVATE CryptoUtils {
                             QuicRandom* random_generator,
                             base::StringPiece orbit,
                             std::string* nonce);
+
+  // Returns true if the sni is valid, false otherwise.
+  //  (1) disallow IP addresses;
+  //  (2) check that the hostname contains valid characters only; and
+  //  (3) contains at least one dot.
+  static bool IsValidSNI(base::StringPiece sni);
+
+  // Convert hostname to lowercase and remove the trailing '.'.
+  // Returns |hostname|. NormalizeHostname() doesn't support IP address
+  // literals. IsValidSNI() should be called before calling NormalizeHostname().
+  static std::string NormalizeHostname(const char* hostname);
 
   // DeriveKeys populates |out->encrypter| and |out->decrypter| given the
   // contents of |premaster_secret|, |client_nonce|, |server_nonce| and

@@ -11,7 +11,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/notifications/sync_notifier/synced_notification.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "sync/api/syncable_service.h"
 
 class NotificationUIManager;
@@ -23,12 +23,12 @@ namespace notifier {
 // delivered notifications for chrome. These are obtained from the sync service
 // and kept up to date.
 class ChromeNotifierService : public syncer::SyncableService,
-                              public ProfileKeyedService {
+                              public BrowserContextKeyedService {
  public:
   ChromeNotifierService(Profile* profile, NotificationUIManager* manager);
   virtual ~ChromeNotifierService();
 
-  // Methods from ProfileKeyedService.
+  // Methods from BrowserContextKeyedService.
   virtual void Shutdown() OVERRIDE;
 
   // syncer::SyncableService implementation.

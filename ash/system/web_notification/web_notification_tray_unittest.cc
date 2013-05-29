@@ -14,7 +14,7 @@
 #include "ash/test/ash_test_base.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
-#include "ui/message_center/message_center_constants.h"
+#include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notification_list.h"
@@ -63,15 +63,18 @@ class WebNotificationTrayTest : public test::AshTestBase {
         ASCIIToUTF16("Notification message body."),
         ASCIIToUTF16("www.test.org"),
         "" /* extension id */,
-        NULL /* optional_fields */);
+        NULL /* optional_fields */,
+        NULL /* delegate */);
   }
 
   void UpdateNotification(const std::string& old_id,
                           const std::string& new_id) {
     GetMessageCenter()->UpdateNotification(
-        old_id, new_id,
+        old_id,
+        new_id,
         ASCIIToUTF16("Updated Web Notification"),
         ASCIIToUTF16("Updated message body."),
+        NULL,
         NULL);
   }
 

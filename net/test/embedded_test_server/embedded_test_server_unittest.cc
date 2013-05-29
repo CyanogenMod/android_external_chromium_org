@@ -51,7 +51,7 @@ class EmbeddedTestServerTest : public testing::Test,
 
   virtual void SetUp() OVERRIDE {
     base::Thread::Options thread_options;
-    thread_options.message_loop_type = MessageLoop::TYPE_IO;
+    thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
     ASSERT_TRUE(io_thread_.StartWithOptions(thread_options));
 
     request_context_getter_ = new TestURLRequestContextGetter(
@@ -69,7 +69,7 @@ class EmbeddedTestServerTest : public testing::Test,
   virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE {
     ++num_responses_received_;
     if (num_responses_received_ == num_responses_expected_)
-      MessageLoop::current()->Quit();
+      base::MessageLoop::current()->Quit();
   }
 
   // Waits until the specified number of responses are received.
@@ -77,7 +77,7 @@ class EmbeddedTestServerTest : public testing::Test,
     num_responses_received_ = 0;
     num_responses_expected_ = num_responses;
     // Will be terminated in OnURLFetchComplete().
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 
   // Handles |request| sent to |path| and returns the response per |content|,
@@ -91,11 +91,11 @@ class EmbeddedTestServerTest : public testing::Test,
 
     GURL absolute_url = server_->GetURL(request.relative_url);
     if (absolute_url.path() == path) {
-      scoped_ptr<HttpResponse> http_response(new HttpResponse);
+      scoped_ptr<BasicHttpResponse> http_response(new BasicHttpResponse);
       http_response->set_code(code);
       http_response->set_content(content);
       http_response->set_content_type(content_type);
-      return http_response.Pass();
+      return http_response.PassAs<HttpResponse>();
     }
 
     return scoped_ptr<HttpResponse>();
@@ -144,6 +144,26 @@ TEST_F(EmbeddedTestServerTest, RegisterRequestHandler) {
   EXPECT_EQ("text/html", GetContentTypeFromFetcher(*fetcher));
 
   EXPECT_EQ("/test?q=foo", request_relative_url_);
+}
+
+TEST_F(EmbeddedTestServerTest, ServeFilesFromDirectory) {
+  base::FilePath src_dir;
+  ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &src_dir));
+  server_->ServeFilesFromDirectory(
+      src_dir.AppendASCII("net").AppendASCII("data"));
+
+  scoped_ptr<URLFetcher> fetcher(
+      URLFetcher::Create(server_->GetURL("/test.html"),
+                              URLFetcher::GET,
+                              this));
+  fetcher->SetRequestContext(request_context_getter_.get());
+  fetcher->Start();
+  WaitForResponses(1);
+
+  EXPECT_EQ(URLRequestStatus::SUCCESS, fetcher->GetStatus().status());
+  EXPECT_EQ(SUCCESS, fetcher->GetResponseCode());
+  EXPECT_EQ("<p>Hello World!</p>", GetContentFromFetcher(*fetcher));
+  EXPECT_EQ("", GetContentTypeFromFetcher(*fetcher));
 }
 
 TEST_F(EmbeddedTestServerTest, DefaultNotFoundResponse) {

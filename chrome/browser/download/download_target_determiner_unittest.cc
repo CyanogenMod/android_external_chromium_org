@@ -332,8 +332,6 @@ DownloadTargetDeterminerTest::CreateActiveDownloadItem(
       .WillByDefault(Return(true));
   ON_CALL(*item, IsDangerous())
       .WillByDefault(Return(false));
-  ON_CALL(*item, IsInProgress())
-      .WillByDefault(Return(true));
   ON_CALL(*item, IsTemporary())
       .WillByDefault(Return(false));
   return item;
@@ -410,7 +408,7 @@ void DownloadTargetDeterminerTest::DownloadTargetVerifier(
 
   switch (test_case.expected_intermediate) {
     case EXPECT_CRDOWNLOAD:
-      EXPECT_EQ(download_util::GetCrDownloadPath(local_path).value(),
+      EXPECT_EQ(DownloadTargetDeterminer::GetCrDownloadPath(local_path).value(),
                 intermediate_path.value());
       break;
 
@@ -421,7 +419,8 @@ void DownloadTargetDeterminerTest::DownloadTargetVerifier(
       // 2. Points to the same directory as the target.
       // 3. Has extension ".crdownload".
       // 4. Basename starts with "Unconfirmed ".
-      EXPECT_NE(download_util::GetCrDownloadPath(expected_local_path).value(),
+      EXPECT_NE(DownloadTargetDeterminer::GetCrDownloadPath(expected_local_path)
+                    .value(),
                 intermediate_path.value());
       EXPECT_EQ(expected_local_path.DirName().value(),
                 intermediate_path.DirName().value());
@@ -969,8 +968,8 @@ TEST_F(DownloadTargetDeterminerTest, TargetDeterminer_InactiveDownload) {
     const DownloadTestCase& test_case = kInactiveTestCases[i];
     scoped_ptr<content::MockDownloadItem> item(
         CreateActiveDownloadItem(i, test_case));
-    EXPECT_CALL(*item.get(), IsInProgress())
-        .WillRepeatedly(Return(false));
+    EXPECT_CALL(*item.get(), GetState())
+        .WillRepeatedly(Return(content::DownloadItem::CANCELLED));
     // Even though one is a SAVE_AS download, no prompt will be displayed to
     // the user because the download is inactive.
     EXPECT_CALL(*delegate(), PromptUserForDownloadPath(_, _, _))

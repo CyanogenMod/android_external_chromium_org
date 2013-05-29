@@ -6,11 +6,12 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_PREF_VALUE_MAP_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class ExtensionPrefValueMap;
+class Profile;
 
-class ExtensionPrefValueMapFactory : public ProfileKeyedServiceFactory {
+class ExtensionPrefValueMapFactory : public BrowserContextKeyedServiceFactory {
  public:
   static ExtensionPrefValueMap* GetForProfile(Profile* profile);
 
@@ -22,7 +23,7 @@ class ExtensionPrefValueMapFactory : public ProfileKeyedServiceFactory {
   ExtensionPrefValueMapFactory();
   virtual ~ExtensionPrefValueMapFactory();
 
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 };
 

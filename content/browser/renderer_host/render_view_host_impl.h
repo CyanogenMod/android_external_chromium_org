@@ -51,9 +51,16 @@ class Range;
 struct SelectedFileInfo;
 }
 
+#if defined(OS_ANDROID)
+namespace media {
+class MediaPlayerManager;
+}
+#endif
+
 namespace content {
 
 class ChildProcessSecurityPolicyImpl;
+class PageState;
 class PowerSaveBlocker;
 class RenderViewHostObserver;
 class RenderWidgetHostDelegate;
@@ -64,10 +71,6 @@ struct ContextMenuParams;
 struct FileChooserParams;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
-
-#if defined(OS_ANDROID)
-class MediaPlayerManagerImpl;
-#endif
 
 #if defined(COMPILER_MSVC)
 // RenderViewHostImpl is the bottom of a diamond-shaped hierarchy,
@@ -378,7 +381,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #endif
 
 #if defined(OS_ANDROID)
-  MediaPlayerManagerImpl* media_player_manager() {
+  media::MediaPlayerManager* media_player_manager() {
     return media_player_manager_;
   }
 
@@ -479,7 +482,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnDidFailProvisionalLoadWithError(
       const ViewHostMsg_DidFailProvisionalLoadWithError_Params& params);
   void OnNavigate(const IPC::Message& msg);
-  void OnUpdateState(int32 page_id, const std::string& state);
+  void OnUpdateState(int32 page_id, const PageState& state);
   void OnUpdateTitle(int32 page_id,
                      const string16& title,
                      WebKit::WebTextDirection title_direction);
@@ -571,7 +574,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   void ClearPowerSaveBlockers();
 
-  bool CanAccessFilesOfSerializedState(const std::string& state) const;
+  bool CanAccessFilesOfPageState(const PageState& state) const;
 
   // Our delegate, which wants to know about changes in the RenderView.
   RenderViewHostDelegate* delegate_;
@@ -688,7 +691,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 #if defined(OS_ANDROID)
   // Manages all the android mediaplayer objects and handling IPCs for video.
   // This class inherits from RenderViewHostObserver.
-  MediaPlayerManagerImpl* media_player_manager_;
+  media::MediaPlayerManager* media_player_manager_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);

@@ -38,21 +38,26 @@ var CLASSES = {
   FAKEBOX_ANIMATE: 'fakebox-animate', // triggers fakebox animation
   FAKEBOX_FOCUS: 'fakebox-focused', // Applies focus styles to the fakebox
   FAVICON: 'mv-favicon',
-  GOOGLE_PAGE: 'google-page', // shows the Google logo and fakebox
   HIDE_BLACKLIST_BUTTON: 'mv-x-hide', // hides blacklist button during animation
   HIDE_NOTIFICATION: 'mv-notice-hide',
   HIDE_NTP: 'hide-ntp', // hides NTP and disables scrollbars
   HIDE_TILE: 'mv-tile-hide', // hides tiles on small browser width
   HOVERED: 'hovered',
+  // Vertically centers the most visited section for a non-Google provided page
+  NON_GOOGLE_PAGE: 'non-google-page',
   PAGE: 'mv-page', // page tiles
   PAGE_READY: 'mv-page-ready',  // page tile when ready
   ROW: 'mv-row',  // tile row
+  RTL: 'rtl',  // sets element alignments for an RTL language
   SEARCH: 'search',
   SELECTED: 'selected', // a selected suggestion (if any)
   SUGGESTION: 'suggestion',
   SUGGESTION_CONTENTS: 'suggestion-contents',
   SUGGESTIONS_BOX: 'suggestions-box',
   THUMBNAIL: 'mv-thumb',
+  // Applied when user types. Makes fakebox non-interactive and hides
+  // scrollbars. Removed on ESC.
+  USER_TYPED: 'user-typed',
   TILE: 'mv-tile',
   TITLE: 'mv-title'
 };
@@ -79,21 +84,26 @@ var IDS = {
   SUGGESTION_STYLE: 'suggestion-style',
   SUGGESTION_TEXT_PREFIX: 'suggestion-text-',
   TILES: 'mv-tiles',
-  TOP_MARGIN: 'mv-top-margin',
   UNDO_LINK: 'mv-undo'
+};
+
+
+/**
+ * Enum for keycodes.
+ * @enum {number}
+ * @const
+ */
+var KEYCODE = {
+  DELETE: 46,
+  DOWN_ARROW: 40,
+  ENTER: 13,
+  ESC: 27,
+  UP_ARROW: 38
 };
 
 // =============================================================================
 //  NTP implementation
 // =============================================================================
-
-
-/**
- * The element used to vertically position the most visited section on
- * window resize.
- * @type {Element}
- */
-var topMarginElement;
 
 
 /**
@@ -194,14 +204,6 @@ var TILE_WIDTH = 140;
  * @const
  */
 var TILE_MARGIN_START = 20;
-
-
-/**
- * The height of the most visited section.
- * @type {number}
- * @const
- */
-var MOST_VISITED_HEIGHT = 296;
 
 
 /** @type {number} @const */
@@ -362,7 +364,7 @@ function onMostVisitedChange() {
     // Otherwise render the tiles using the new data without animation.
     tiles = [];
     for (var i = 0; i < MAX_NUM_TILES_TO_SHOW; ++i) {
-      tiles.push(createTile(pages[i]));
+      tiles.push(createTile(pages[i], i));
     }
     renderTiles();
   }
@@ -393,16 +395,18 @@ function renderTiles() {
  * @param {string} fontFamily The font family for text in the iframe.
  * @param {number} fontSize The font size for text in the iframe.
  * @param {boolean} textShadow True if text should be drawn with a shadow.
+ * @param {number} position The position of the iframe in the UI.
  * @return {string} An URL to display the most visited component in an iframe.
  */
 function getMostVisitedIframeUrl(filename, rid, color, fontFamily, fontSize,
-    textShadow) {
+    textShadow, position) {
   return 'chrome-search://most-visited/' + encodeURIComponent(filename) + '?' +
       ['rid=' + encodeURIComponent(rid),
        'c=' + encodeURIComponent(color),
        'f=' + encodeURIComponent(fontFamily),
        'fs=' + encodeURIComponent(fontSize),
-       'ts=' + (textShadow ? '1' : '')].join('&');
+       'ts=' + (textShadow ? '1' : ''),
+       'pos=' + encodeURIComponent(position)].join('&');
 }
 
 
@@ -410,9 +414,10 @@ function getMostVisitedIframeUrl(filename, rid, color, fontFamily, fontSize,
  * Creates a Tile with the specified page data. If no data is provided, a
  * filler Tile is created.
  * @param {Object} page The page data.
+ * @param {number} position The position of the tile.
  * @return {Tile} The new Tile.
  */
-function createTile(page) {
+function createTile(page, position) {
   var tileElement = document.createElement('div');
   tileElement.classList.add(CLASSES.TILE);
 
@@ -420,20 +425,28 @@ function createTile(page) {
     var rid = page.rid;
     tileElement.classList.add(CLASSES.PAGE);
 
-    // The click handler for navigating to the page identified by the RID.
-    tileElement.addEventListener('click', function() {
+    var navigateFunction = function() {
       ntpApiHandle.navigateContentWindow(rid);
-    });
+    };
+
+    // The click handler for navigating to the page identified by the RID.
+    tileElement.addEventListener('click', navigateFunction);
+
+    // Make thumbnails tab-accessible.
+    tileElement.setAttribute('tabindex', '1');
+    registerKeyHandler(tileElement, KEYCODE.ENTER, navigateFunction);
 
     // The iframe which renders the page title.
     var titleElement = document.createElement('iframe');
+    titleElement.tabIndex = '-1';
     var usingCustomTheme = document.body.classList.contains(
         CLASSES.CUSTOM_THEME);
 
     titleElement.src = getMostVisitedIframeUrl(
         MOST_VISITED_TITLE_IFRAME, rid,
         usingCustomTheme ? MOST_VISITED_THEME_TITLE_COLOR : MOST_VISITED_COLOR,
-        MOST_VISITED_FONT_FAMILY, MOST_VISITED_FONT_SIZE, usingCustomTheme);
+        MOST_VISITED_FONT_FAMILY, MOST_VISITED_FONT_SIZE, usingCustomTheme,
+        position);
     titleElement.hidden = true;
     titleElement.onload = function() { titleElement.hidden = false; };
     titleElement.className = CLASSES.TITLE;
@@ -441,9 +454,10 @@ function createTile(page) {
 
     // The iframe which renders either a thumbnail or domain element.
     var thumbnailElement = document.createElement('iframe');
+    thumbnailElement.tabIndex = '-1';
     thumbnailElement.src = getMostVisitedIframeUrl(
         MOST_VISITED_THUMBNAIL_IFRAME, rid, MOST_VISITED_COLOR,
-        MOST_VISITED_FONT_FAMILY, MOST_VISITED_FONT_SIZE, false);
+        MOST_VISITED_FONT_FAMILY, MOST_VISITED_FONT_SIZE, false, position);
     thumbnailElement.hidden = true;
     thumbnailElement.onload = function() {
       thumbnailElement.hidden = false;
@@ -455,8 +469,12 @@ function createTile(page) {
     // The button used to blacklist this page.
     var blacklistButton = createAndAppendElement(
         tileElement, 'div', CLASSES.BLACKLIST_BUTTON);
-    blacklistButton.addEventListener('click', generateBlacklistFunction(rid));
+    var blacklistFunction = generateBlacklistFunction(rid);
+    blacklistButton.addEventListener('click', blacklistFunction);
     blacklistButton.title = templateData.removeThumbnailTooltip;
+
+    // When a tile is focused, have delete also blacklist the page.
+    registerKeyHandler(tileElement, KEYCODE.DELETE, blacklistFunction);
 
     // The page favicon, if any.
     var faviconUrl = page.faviconUrl;
@@ -551,22 +569,32 @@ function onRestoreAll() {
 
 
 /**
- * Handles a resize by vertically centering the most visited section
- * and re-rendering the tiles if the number of columns has changed.
+ * Re-renders the tiles if the number of columns has changed.  As a temporary
+ * fix for crbug/240510, updates the width of the fakebox and most visited tiles
+ * container.
  */
 function onResize() {
-  // The Google page uses a fixed layout instead.
-  if (!isGooglePage) {
-    var clientHeight = document.documentElement.clientHeight;
-    topMarginElement.style.marginTop =
-        Math.max(0, (clientHeight - MOST_VISITED_HEIGHT) / 2) + 'px';
-  }
+  var innerWidth = window.innerWidth;
+
+  // These values should remain in sync with local_ntp.css.
+  // TODO(jeremycho): Delete once the root cause of crbug/240510 is resolved.
+  var setWidths = function(tilesContainerWidth) {
+    tilesContainer.style.width = tilesContainerWidth + 'px';
+    if (fakebox)
+      fakebox.style.width = (tilesContainerWidth - 2) + 'px';
+  };
+  if (innerWidth >= 820 || innerWidth == 0)
+    setWidths(620);
+  else if (innerWidth >= 660)
+    setWidths(460);
+  else
+    setWidths(300);
 
   var tileRequiredWidth = TILE_WIDTH + TILE_MARGIN_START;
   // Adds margin-start to the available width to compensate the extra margin
   // counted above for the first tile (which does not have a margin-start).
-  var availableWidth = document.documentElement.clientWidth +
-      TILE_MARGIN_START - MIN_TOTAL_HORIZONTAL_PADDING;
+  var availableWidth = innerWidth + TILE_MARGIN_START -
+      MIN_TOTAL_HORIZONTAL_PADDING;
   var numColumnsToShow = Math.floor(availableWidth / tileRequiredWidth);
   numColumnsToShow = Math.max(MIN_NUM_COLUMNS,
                               Math.min(MAX_NUM_COLUMNS, numColumnsToShow));
@@ -593,9 +621,11 @@ function getTileByRid(rid) {
 
 
 /**
- * Hides the NTP.
+ * Handles when the user first types by animating or disabling the fakebox and
+ * hiding the scrollbars.
  */
-function hideNtp() {
+function updateNtpOnUserInput() {
+  document.body.classList.add(CLASSES.USER_TYPED);
   if (fakebox && isFakeboxFocused() &&
       !document.body.classList.contains(CLASSES.FAKEBOX_ANIMATE)) {
     // The user has typed in the fakebox - initiate the fakebox animation,
@@ -603,22 +633,18 @@ function hideNtp() {
     setFakeboxFocus(false);
     fakebox.addEventListener('webkitTransitionEnd', fakeboxAnimationDone);
     document.body.classList.add(CLASSES.FAKEBOX_ANIMATE);
-  } else if (!fakebox ||
-      !document.body.classList.contains(CLASSES.FAKEBOX_ANIMATE)) {
-    // The user has typed in the omnibox - hide the NTP immediately.
-    document.body.classList.add(CLASSES.HIDE_NTP);
-    clearCustomTheme();
   }
 }
 
 
 /**
- * Shows the NTP (destroys the activeBox if exists, reloads the custom
- * theme and shows the top visible bars).
+ * Restores the NTP (destroys the activeBox if exists, reloads the custom
+ * theme, shows the top visible bars, re-enables the fakebox and scrollbars).
  */
-function showNtp() {
+function restoreNtp() {
   hideActiveSuggestions();
   searchboxApiHandle.showBars();
+  document.body.classList.remove(CLASSES.USER_TYPED);
   document.body.classList.remove(CLASSES.HIDE_NTP);
   onThemeChange();
 }
@@ -657,10 +683,11 @@ function isFakeboxFocused() {
 
 /**
  * @param {!Event} event The click event.
- * @return {boolean} True if the click occurred in the fakebox.
+ * @return {boolean} True if the click occurred in an enabled fakebox.
  */
 function isFakeboxClick(event) {
-  return fakebox.contains(event.target);
+  return fakebox.contains(event.target) &&
+      !document.body.classList.contains(CLASSES.USER_TYPED);
 }
 
 
@@ -772,29 +799,6 @@ var VERBATIM_URL_TYPE = 'url-what-you-typed';
  */
 var VERBATIM_SEARCH_TYPE = 'search-what-you-typed';
 
-
-/**
- * "Up" arrow keycode.
- * @type {number}
- * @const
- */
-var KEY_UP_ARROW = 38;
-
-
-/**
- * "Down" arrow keycode.
- * @type {number}
- * @const
- */
-var KEY_DOWN_ARROW = 40;
-
-
-/**
- * "Esc" keycode.
- * @type {number}
- * @const
- */
-var KEY_ESC = 27;
 
 /**
  * Pixels of padding inside a suggestion div for displaying its icon.
@@ -924,6 +928,7 @@ IframePool.prototype = {
       iframe.id = IDS.SUGGESTION_TEXT_PREFIX + i;
       iframe.src = 'chrome-search://suggestion/result.html';
       iframe.style.top = OFF_SCREEN;
+      iframe.tabIndex = '-1';
       iframe.addEventListener('mouseover', function(e) {
         if (activeBox)
           activeBox.hover(e.currentTarget.id);
@@ -1414,11 +1419,18 @@ function updateSuggestions() {
   }
   var inputValue = searchboxApiHandle.value;
 
-  // Hide the NTP if input has made it into the omnibox.
-  if (inputValue && isNtpVisible())
-    hideNtp();
+  // Update the NTP as necessary if input has made it into the omnibox or the
+  // input is undefined, which signifies a sensitive query.
+  if (inputValue != '' && !document.body.classList.contains(CLASSES.USER_TYPED))
+    updateNtpOnUserInput();
+  // Re-enable the fakebox if the user typed in the omnibox then backspaced away
+  // their query.
+  else if (inputValue == '' && isNtpVisible() &&
+      document.body.classList.contains(CLASSES.USER_TYPED)) {
+    restoreNtp();
+  }
 
-  if (inputValue && suggestions.length) {
+  if (inputValue != '' && suggestions.length) {
     pendingBox = new SuggestionsBox(inputValue,
         suggestions.slice(0, MAX_SUGGESTIONS_TO_SHOW), selectedIndex);
     searchboxApiHandle.hideBars();
@@ -1483,19 +1495,19 @@ function setSuggestionStyles() {
  */
 function handleKeyPress(e) {
   switch (e.keyCode) {
-    case KEY_UP_ARROW:
+    case KEYCODE.UP_ARROW:
       if (activeBox)
         activeBox.selectPrevious();
       break;
-    case KEY_DOWN_ARROW:
+    case KEYCODE.DOWN_ARROW:
       if (activeBox)
         activeBox.selectNext();
       break;
-    case KEY_ESC:
+    case KEYCODE.ESC:
       if (activeBox && activeBox.hasSelectedSuggestion())
         activeBox.clearSelection();
       else
-        showNtp();
+        restoreNtp();
       break;
   }
 }
@@ -1586,6 +1598,19 @@ function removeChildren(node) {
 
 
 /**
+ * @param {!Element} element The element to register the handler for.
+ * @param {number} keycode The keycode of the key to register.
+ * @param {!Function} handler The key handler to register.
+ */
+function registerKeyHandler(element, keycode, handler) {
+  element.addEventListener('keydown', function(event) {
+    if (event.keyCode == keycode)
+      handler(event);
+  });
+}
+
+
+/**
  * @return {Object} the handle to the embeddedSearch API.
  */
 function getEmbeddedSearchApiHandle() {
@@ -1616,7 +1641,6 @@ function init() {
     callDeferredUpdateSuggestions();
   };
 
-  topMarginElement = $(IDS.TOP_MARGIN);
   tilesContainer = $(IDS.TILES);
   notification = $(IDS.NOTIFICATION);
   attribution = $(IDS.ATTRIBUTION);
@@ -1629,7 +1653,6 @@ function init() {
   }
 
   if (isGooglePage) {
-    document.body.classList.add(CLASSES.GOOGLE_PAGE);
     var logo = document.createElement('div');
     logo.id = IDS.LOGO;
 
@@ -1641,6 +1664,8 @@ function init() {
 
     ntpContents.insertBefore(fakebox, ntpContents.firstChild);
     ntpContents.insertBefore(logo, ntpContents.firstChild);
+  } else {
+    document.body.classList.add(CLASSES.NON_GOOGLE_PAGE);
   }
 
 
@@ -1648,9 +1673,11 @@ function init() {
   notificationMessage.textContent = templateData.thumbnailRemovedNotification;
   var undoLink = $(IDS.UNDO_LINK);
   undoLink.addEventListener('click', onUndo);
+  registerKeyHandler(undoLink, KEYCODE.ENTER, onUndo);
   undoLink.textContent = templateData.undoThumbnailRemove;
   var restoreAllLink = $(IDS.RESTORE_ALL_LINK);
   restoreAllLink.addEventListener('click', onRestoreAll);
+  registerKeyHandler(restoreAllLink, KEYCODE.ENTER, onUndo);
   restoreAllLink.textContent = templateData.restoreThumbnailsShort;
   attribution.textContent = templateData.attributionIntro;
 
@@ -1697,9 +1724,13 @@ function init() {
     searchboxApiHandle.onkeycapturechange = function() {
       setFakeboxFocus(searchboxApiHandle.isKeyCaptureEnabled);
     };
+  }
 
-    // Set the cursor alignment based on language directionality.
-    $(IDS.CURSOR).style[searchboxApiHandle.rtl ? 'right' : 'left'] = '9px';
+  if (searchboxApiHandle.rtl) {
+    $(IDS.NOTIFICATION).dir = 'rtl';
+    // Add class for setting alignments based on language directionality.
+    document.body.classList.add('rtl');
+    $(IDS.TILES).dir = 'rtl';
   }
 }
 

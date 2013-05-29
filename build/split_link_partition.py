@@ -9,7 +9,7 @@
     # the part for the last block that matches. Inputs are lower()d before
     # the regex is run.
 
-    # chrome0.dll.
+    # chrome.dll.
     [
       r'.*',
     ],
@@ -113,4 +113,72 @@
     r'^winspool\.lib$',
     r'^ws2_32\.lib$',
   ],
+
+  # objs split out of libs. These will be extracted from whichever side
+  # they're not on according to the 'parts' split, and then just the obj
+  # linked into the other side. Each should be a 2-tuple, where the first is
+  # a regex for the .lib name, and the second is a regex for the .obj from
+  # that lib. The lib should not match anything in 'all'.
+  #
+  # Note: If you're considering adding something that isn't a _switches or a
+  # _constants file, it'd probably be better to break the target into separate
+  # .lib files.
+  'all_from_libs': [
+    (r'autofill_common\.lib$', r'switches\.obj$'),
+    (r'autofill_common\.lib$', r'autofill_constants\.obj$'),
+    (r'\bbase\.lib$', r'scoped_variant\.obj$'),
+    (r'\bbase\.lib$', r'string_util_constants\.obj$'),
+    (r'\bbase\.lib$', r'trace_event_impl_constants\.obj$'),
+    (r'\bbase_i18n\.lib$', r'i18n_constants\.obj$'),
+    (r'base_static\.lib$', r'base_switches\.obj$'),
+    (r'\bbase\.lib$', r'file_path_constants\.obj$'),
+    (r'\bcc\.lib$', r'switches\.obj$'),
+    (r'\bcommon\.lib$', r'constants\.obj$'),
+    (r'\bcommon\.lib$', r'extension_manifest_constants\.obj$'),
+    (r'\bcommon\.lib$', r'localized_error\.obj$'),
+    (r'\bcommon\.lib$', r'url_constants\.obj$'),
+    (r'\bcommon\.lib$', r'view_type\.obj$'),
+    # It sort of looks like most of this lib could go in 'all', but there's a
+    # couple registration/initialization functions that make me a bit nervous.
+    (r'common_constants\.lib$', r'chrome_constants\.obj$'),
+    (r'common_constants\.lib$', r'chrome_switches\.obj$'),
+    (r'common_constants\.lib$', r'pref_names\.obj$'),
+    (r'content_common\.lib$', r'browser_plugin_constants\.obj$'),
+    (r'content_common\.lib$', r'content_constants\.obj$'),
+    (r'content_common\.lib$', r'content_switches\.obj$'),
+    (r'content_common\.lib$', r'media_stream_options\.obj$'),
+    (r'content_common\.lib$', r'page_zoom\.obj$'),
+    (r'content_common\.lib$', r'url_constants\.obj$'),
+    (r'gl_wrapper\.lib$', r'gl_switches\.obj$'),
+    # TODO(scottmg): These are not solely constants, but look safe.
+    (r'libjingle_webrtc_common\.lib$', r'localaudiosource\.obj$'),
+    (r'libjingle_webrtc_common\.lib$', r'mediaconstraintsinterface\.obj$'),
+    (r'\bmedia\.lib$', r'audio_manager_base\.obj$'),
+    (r'\bmedia\.lib$', r'media_switches\.obj$'),
+    # TODO(scottmg): This one is not solely constants, but looks safe.
+    (r'\bnet\.lib$', r'http_request_headers\.obj$'),
+    (r'\bnet\.lib$', r'net_errors\.obj$'),
+    (r'ppapi_shared\.lib$', r'id_assignment\.obj$'),
+    (r'ppapi_shared\.lib$', r'ppapi_switches\.obj$'),
+    (r'ppapi_shared\.lib$', r'ppb_instance_shared\.obj$'),
+    (r'ppapi_shared\.lib$', r'net_address_private_impl_constants\.obj$'),
+    (r'printing\.lib$', r'print_job_constants\.obj$'),
+    (r'protobuf_lite\.lib$', r'generated_message_util\.obj$'),
+    (r'skia\.lib$', r'skunpremultiply\.obj$'),
+    (r'skia\.lib$', r'skblitter\.obj$'),
+    (r'\bui\.lib$', r'clipboard_constants\.obj$'),
+    (r'\bui\.lib$', r'favicon_size\.obj$'),
+    (r'\bui\.lib$', r'ui_base_switches\.obj$'),
+    (r'webkit.*plugins_common\.lib$', r'plugin_switches\.obj$'),
+    (r'webkit.*plugins_common\.lib$', r'plugin_constants'),
+    (r'webkit.*storage\.lib$', r'appcache_interfaces\.obj$'),
+    (r'webkit.*storage\.lib$', r'database_tracker\.obj$'),
+    (r'webkit.*storage\.lib$', r'database_util\.obj$'),
+    (r'webkit.*storage\.lib$', r'file_permission_policy\.obj$'),
+    (r'webkit.*storage\.lib$', r'file_system_task_runners\.obj$'),
+  ],
+
+  # This manifest will be merged with the intermediate one from the linker,
+  # and embedded in both DLLs.
+  'manifest': '..\\..\\chrome\\app\\chrome.dll.manifest'
 }

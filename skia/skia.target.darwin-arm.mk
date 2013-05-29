@@ -68,10 +68,10 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkPaintOptionsAndroid.cpp \
 	third_party/skia/src/images/SkScaledBitmapSampler.cpp \
 	third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp \
-	third_party/skia/src/ports/FontHostConfiguration_android.cpp \
+	third_party/skia/src/ports/SkFontConfigInterface_android.cpp \
 	third_party/skia/src/ports/SkFontHost_FreeType.cpp \
 	third_party/skia/src/ports/SkFontHost_FreeType_common.cpp \
-	third_party/skia/src/ports/SkFontHost_android.cpp \
+	third_party/skia/src/ports/SkFontConfigParser_android.cpp \
 	third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp \
 	third_party/skia/src/ports/SkOSFile_stdio.cpp \
 	third_party/skia/src/ports/SkThread_pthread.cpp \
@@ -98,6 +98,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkBitmapHeap.cpp \
 	third_party/skia/src/core/SkBitmapProcShader.cpp \
 	third_party/skia/src/core/SkBitmapProcState.cpp \
+	third_party/skia/src/core/SkBitmapProcBicubic.cpp \
 	third_party/skia/src/core/SkBitmapProcState_matrixProcs.cpp \
 	third_party/skia/src/core/SkBitmap_scroll.cpp \
 	third_party/skia/src/core/SkBlitMask_D32.cpp \
@@ -130,6 +131,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkDeviceProfile.cpp \
 	third_party/skia/src/core/SkDither.cpp \
 	third_party/skia/src/core/SkDraw.cpp \
+	third_party/skia/src/core/SkDrawLooper.cpp \
 	third_party/skia/src/core/SkEdgeBuilder.cpp \
 	third_party/skia/src/core/SkEdgeClipper.cpp \
 	third_party/skia/src/core/SkEdge.cpp \
@@ -278,6 +280,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkKernel33MaskFilter.cpp \
 	third_party/skia/src/effects/SkLayerDrawLooper.cpp \
 	third_party/skia/src/effects/SkLayerRasterizer.cpp \
+	third_party/skia/src/effects/SkLerpXfermode.cpp \
 	third_party/skia/src/effects/SkLightingImageFilter.cpp \
 	third_party/skia/src/effects/SkMatrixConvolutionImageFilter.cpp \
 	third_party/skia/src/effects/SkMergeImageFilter.cpp \
@@ -383,7 +386,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/SkGrTexturePixelRef.cpp \
 	third_party/skia/src/image/SkImage_Gpu.cpp \
 	third_party/skia/src/image/SkSurface_Gpu.cpp \
-	third_party/skia/src/gpu/gl/SkGLContextHelper.cpp
+	third_party/skia/src/gpu/gl/SkGLContextHelper.cpp \
+	third_party/skia/src/ports/SkFontHost_fontconfig.cpp
 
 
 # Flags passed to both C and C++ files.
@@ -430,6 +434,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -455,6 +460,7 @@ MY_DEFS := \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(8*1024*1024)' \
 	'-DUSE_CHROMIUM_SKIA' \
+	'-DSK_IGNORE_MAC_TEXT_BOUNDS_FIX' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -490,11 +496,11 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/src/gpu \
 	$(LOCAL_PATH)/third_party/expat/files/lib \
 	$(LOCAL_PATH)/third_party/zlib \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/expat/lib \
+	$(PWD)/external/expat/lib \
 	$(LOCAL_PATH)/third_party/freetype/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

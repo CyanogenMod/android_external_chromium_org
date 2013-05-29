@@ -7,10 +7,10 @@
 
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
-#include "cc/debug/latency_info.h"
 #include "cc/quads/render_pass.h"
 #include "cc/resources/managed_memory_policy.h"
 #include "cc/trees/layer_tree_host.h"
+#include "ui/base/latency_info.h"
 
 namespace cc {
 
@@ -21,6 +21,7 @@ class ScopedResource;
 class CC_EXPORT RendererClient {
  public:
   virtual gfx::Size DeviceViewportSize() const = 0;
+  virtual float DeviceScaleFactor() const = 0;
   virtual const LayerTreeSettings& Settings() const = 0;
   virtual void SetFullRootLayerDamage() = 0;
   virtual void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy) = 0;
@@ -47,6 +48,8 @@ class CC_EXPORT Renderer {
   int ViewportWidth() const { return ViewportSize().width(); }
   int ViewportHeight() const { return ViewportSize().height(); }
 
+  float DeviceScaleFactor() const { return client_->DeviceScaleFactor(); }
+
   virtual void ViewportChanged() {}
   virtual void ReceiveCompositorFrameAck(const CompositorFrameAck& ack) {}
 
@@ -66,7 +69,7 @@ class CC_EXPORT Renderer {
   virtual void DoNoOp() {}
 
   // Puts backbuffer onscreen.
-  virtual void SwapBuffers(const LatencyInfo& latency_info) = 0;
+  virtual void SwapBuffers(const ui::LatencyInfo& latency_info) = 0;
 
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) = 0;
 

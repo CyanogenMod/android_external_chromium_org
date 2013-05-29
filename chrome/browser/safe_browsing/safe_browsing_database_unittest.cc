@@ -363,7 +363,7 @@ TEST_F(SafeBrowsingDatabaseTest, ListNameForBrowse) {
 
 TEST_F(SafeBrowsingDatabaseTest, ListNameForBrowseAndDownload) {
   database_.reset();
-  MessageLoop loop(MessageLoop::TYPE_DEFAULT);
+  base::MessageLoop loop(base::MessageLoop::TYPE_DEFAULT);
   SafeBrowsingStoreFile* browse_store = new SafeBrowsingStoreFile();
   SafeBrowsingStoreFile* download_store = new SafeBrowsingStoreFile();
   SafeBrowsingStoreFile* csd_whitelist_store = new SafeBrowsingStoreFile();
@@ -374,7 +374,8 @@ TEST_F(SafeBrowsingDatabaseTest, ListNameForBrowseAndDownload) {
                                               download_store,
                                               csd_whitelist_store,
                                               download_whitelist_store,
-                                              extension_blacklist_store));
+                                              extension_blacklist_store,
+                                              NULL));
   database_->Init(database_filename_);
 
   SBChunkList chunks;
@@ -1078,9 +1079,10 @@ TEST_F(SafeBrowsingDatabaseTest, DISABLED_FileCorruptionHandling) {
   // influence task-posting.  Database specifically needs to the
   // file-backed.
   database_.reset();
-  MessageLoop loop(MessageLoop::TYPE_DEFAULT);
+  base::MessageLoop loop(base::MessageLoop::TYPE_DEFAULT);
   SafeBrowsingStoreFile* store = new SafeBrowsingStoreFile();
-  database_.reset(new SafeBrowsingDatabaseNew(store, NULL, NULL, NULL, NULL));
+  database_.reset(new SafeBrowsingDatabaseNew(store, NULL, NULL, NULL, NULL,
+                                              NULL));
   database_->Init(database_filename_);
 
   // This will cause an empty database to be created.
@@ -1128,7 +1130,7 @@ TEST_F(SafeBrowsingDatabaseTest, DISABLED_FileCorruptionHandling) {
 
     // Flush through the corruption-handler task.
     VLOG(1) << "Expect failed check on: SafeBrowsing database reset";
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   // Database file should not exist.
@@ -1146,13 +1148,14 @@ TEST_F(SafeBrowsingDatabaseTest, DISABLED_FileCorruptionHandling) {
 // Checks database reading and writing.
 TEST_F(SafeBrowsingDatabaseTest, ContainsDownloadUrl) {
   database_.reset();
-  MessageLoop loop(MessageLoop::TYPE_DEFAULT);
+  base::MessageLoop loop(base::MessageLoop::TYPE_DEFAULT);
   SafeBrowsingStoreFile* browse_store = new SafeBrowsingStoreFile();
   SafeBrowsingStoreFile* download_store = new SafeBrowsingStoreFile();
   SafeBrowsingStoreFile* csd_whitelist_store = new SafeBrowsingStoreFile();
   database_.reset(new SafeBrowsingDatabaseNew(browse_store,
                                               download_store,
                                               csd_whitelist_store,
+                                              NULL,
                                               NULL,
                                               NULL));
   database_->Init(database_filename_);
@@ -1249,14 +1252,14 @@ TEST_F(SafeBrowsingDatabaseTest, ContainsDownloadUrl) {
 // Checks that the whitelists are handled properly.
 TEST_F(SafeBrowsingDatabaseTest, Whitelists) {
   database_.reset();
-  MessageLoop loop(MessageLoop::TYPE_DEFAULT);
+  base::MessageLoop loop(base::MessageLoop::TYPE_DEFAULT);
   // We expect all calls to ContainsCsdWhitelistedUrl in particular to be made
   // from the IO thread.  In general the whitelist lookups are thread-safe.
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
 
   // If the whitelist is disabled everything should match the whitelist.
   database_.reset(new SafeBrowsingDatabaseNew(new SafeBrowsingStoreFile(),
-                                              NULL, NULL, NULL, NULL));
+                                              NULL, NULL, NULL, NULL, NULL));
   database_->Init(database_filename_);
   EXPECT_TRUE(database_->ContainsDownloadWhitelistedUrl(
       GURL(std::string("http://www.phishing.com/"))));
@@ -1272,7 +1275,8 @@ TEST_F(SafeBrowsingDatabaseTest, Whitelists) {
   database_.reset(new SafeBrowsingDatabaseNew(browse_store, NULL,
                                               csd_whitelist_store,
                                               download_whitelist_store,
-                                              extension_blacklist_store));
+                                              extension_blacklist_store,
+                                              NULL));
   database_->Init(database_filename_);
 
   const char kGood1Host[] = "www.good1.com/";

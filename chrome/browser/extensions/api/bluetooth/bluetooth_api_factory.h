@@ -6,13 +6,15 @@
 #define CHROME_BROWSER_EXTENSIONS_API_BLUETOOTH_BLUETOOTH_API_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace extensions {
 
 class BluetoothAPI;
 
-class BluetoothAPIFactory : public ProfileKeyedServiceFactory {
+class BluetoothAPIFactory : public BrowserContextKeyedServiceFactory {
  public:
   static BluetoothAPI* GetForProfile(Profile* profile);
 
@@ -24,12 +26,12 @@ class BluetoothAPIFactory : public ProfileKeyedServiceFactory {
   BluetoothAPIFactory();
   virtual ~BluetoothAPIFactory();
 
-  // ProfileKeyedServiceFactory implementation.
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory implementation.
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };
 

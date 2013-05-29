@@ -9,7 +9,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/file_version_info.h"
 #include "base/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -316,6 +315,16 @@ void URLRequestHttpJob::Start() {
   request_info_.method = request_->method();
   request_info_.load_flags = request_->load_flags();
   request_info_.request_id = request_->identifier();
+  // Enable privacy mode if cookie settings or flags tell us not send or
+  // save cookies.
+  bool enable_privacy_mode =
+      (request_info_.load_flags & LOAD_DO_NOT_SEND_COOKIES) ||
+      (request_info_.load_flags & LOAD_DO_NOT_SAVE_COOKIES) ||
+      CanEnablePrivacyMode();
+  // Privacy mode could still be disabled in OnCookiesLoaded if we are going
+  // to send previously saved cookies.
+  request_info_.privacy_mode = enable_privacy_mode ?
+      kPrivacyModeEnabled : kPrivacyModeDisabled;
 
   // Strip Referer from request_info_.extra_headers to prevent, e.g., plugins
   // from overriding headers that are controlled using other means. Otherwise a
@@ -416,6 +425,7 @@ void URLRequestHttpJob::DestroyTransaction() {
   DoneWithRequest(ABORTED);
   transaction_.reset();
   response_info_ = NULL;
+  receive_headers_end_ = base::TimeTicks();
 }
 
 void URLRequestHttpJob::StartTransaction() {
@@ -495,7 +505,7 @@ void URLRequestHttpJob::StartTransactionInternal() {
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestHttpJob::OnStartCompleted,
                  weak_factory_.GetWeakPtr(), rv));
@@ -624,6 +634,8 @@ void URLRequestHttpJob::OnCookiesLoaded(const std::string& cookie_line) {
   if (!cookie_line.empty()) {
     request_info_.extra_headers.SetHeader(
         HttpRequestHeaders::kCookie, cookie_line);
+    // Disable privacy mode as we are sending cookies anyway.
+    request_info_.privacy_mode = kPrivacyModeDisabled;
   }
   DoStartTransaction();
 }
@@ -819,6 +831,8 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
   if (!transaction_.get())
     return;
 
+  receive_headers_end_ = base::TimeTicks::Now();
+
   // Clear the IO_PENDING status
   SetStatus(URLRequestStatus());
 
@@ -918,6 +932,7 @@ void URLRequestHttpJob::RestartTransactionWithAuth(
 
   // These will be reset in OnStartCompleted.
   response_info_ = NULL;
+  receive_headers_end_ = base::TimeTicks();
   response_cookies_.clear();
 
   ResetTimer();
@@ -982,8 +997,12 @@ void URLRequestHttpJob::GetResponseInfo(HttpResponseInfo* info) {
 
 void URLRequestHttpJob::GetLoadTimingInfo(
     LoadTimingInfo* load_timing_info) const {
-  if (transaction_)
-    transaction_->GetLoadTimingInfo(load_timing_info);
+  // If haven't made it far enough to receive any headers, don't return
+  // anything.  This makes for more consistent behavior in the case of errors.
+  if (!transaction_ || receive_headers_end_.is_null())
+    return;
+  if (transaction_->GetLoadTimingInfo(load_timing_info))
+    load_timing_info->receive_headers_end = receive_headers_end_;
 }
 
 bool URLRequestHttpJob::GetResponseCookies(std::vector<std::string>* cookies) {
@@ -1124,6 +1143,7 @@ void URLRequestHttpJob::CancelAuth() {
 
   // These will be reset in OnStartCompleted.
   response_info_ = NULL;
+  receive_headers_end_ = base::TimeTicks::Now();
   response_cookies_.clear();
 
   ResetTimer();
@@ -1136,7 +1156,7 @@ void URLRequestHttpJob::CancelAuth() {
   //
   // We have to do this via InvokeLater to avoid "recursing" the consumer.
   //
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestHttpJob::OnStartCompleted,
                  weak_factory_.GetWeakPtr(), OK));
@@ -1147,6 +1167,7 @@ void URLRequestHttpJob::ContinueWithCertificate(
   DCHECK(transaction_.get());
 
   DCHECK(!response_info_) << "should not have a response yet";
+  receive_headers_end_ = base::TimeTicks();
 
   ResetTimer();
 
@@ -1160,7 +1181,7 @@ void URLRequestHttpJob::ContinueWithCertificate(
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestHttpJob::OnStartCompleted,
                  weak_factory_.GetWeakPtr(), rv));
@@ -1172,6 +1193,7 @@ void URLRequestHttpJob::ContinueDespiteLastError() {
     return;
 
   DCHECK(!response_info_) << "should not have a response yet";
+  receive_headers_end_ = base::TimeTicks();
 
   ResetTimer();
 
@@ -1185,7 +1207,7 @@ void URLRequestHttpJob::ContinueDespiteLastError() {
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestHttpJob::OnStartCompleted,
                  weak_factory_.GetWeakPtr(), rv));

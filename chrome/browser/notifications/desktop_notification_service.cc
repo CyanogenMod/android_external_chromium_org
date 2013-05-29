@@ -118,7 +118,7 @@ class NotificationPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual ~NotificationPermissionInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
-  virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
@@ -190,9 +190,8 @@ NotificationPermissionInfoBarDelegate::
     host->DesktopNotificationPermissionRequestDone(callback_context_);
 }
 
-gfx::Image* NotificationPermissionInfoBarDelegate::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_DESKTOP_NOTIFICATIONS);
+int NotificationPermissionInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_DESKTOP_NOTIFICATIONS;
 }
 
 InfoBarDelegate::Type
@@ -232,9 +231,9 @@ bool NotificationPermissionInfoBarDelegate::Cancel() {
 void DesktopNotificationService::RegisterUserPrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kMessageCenterDisabledExtensionIds,
-                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterListPref(prefs::kMessageCenterDisabledSystemComponentIds,
-                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static
@@ -366,6 +365,8 @@ DesktopNotificationService::DesktopNotificationService(
       base::Bind(
           &DesktopNotificationService::OnDisabledSystemComponentIdsChanged,
           base::Unretained(this)));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+                 content::Source<Profile>(profile_));
 }
 
 DesktopNotificationService::~DesktopNotificationService() {
@@ -620,4 +621,18 @@ WebKit::WebNotificationPresenter::Permission
     return WebKit::WebNotificationPresenter::PermissionNotAllowed;
   NOTREACHED() << "Invalid notifications settings value: " << setting;
   return WebKit::WebNotificationPresenter::PermissionNotAllowed;
+}
+
+void DesktopNotificationService::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_UNINSTALLED, type);
+
+  extensions::Extension* extension =
+      content::Details<extensions::Extension>(details).ptr();
+  if (IsExtensionEnabled(extension->id()))
+    return;
+
+  SetExtensionEnabled(extension->id(), true);
 }

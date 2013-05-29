@@ -295,7 +295,7 @@ HistoryURLProviderParams::HistoryURLProviderParams(
     const std::string& languages,
     TemplateURL* default_search_provider,
     const SearchTermsData& search_terms_data)
-    : message_loop(MessageLoop::current()),
+    : message_loop(base::MessageLoop::current()),
       input(input),
       prevent_inline_autocomplete(input.prevent_inline_autocomplete()),
       trim_http(trim_http),
@@ -333,7 +333,7 @@ AutocompleteMatch HistoryURLProvider::SuggestExactInput(
     const AutocompleteInput& input,
     bool trim_http) {
   AutocompleteMatch match(provider, 0, false,
-                          AutocompleteMatch::URL_WHAT_YOU_TYPED);
+                          AutocompleteMatchType::URL_WHAT_YOU_TYPED);
 
   const GURL& url = input.canonicalized_url();
   if (url.is_valid()) {
@@ -1039,7 +1039,7 @@ AutocompleteMatch HistoryURLProvider::HistoryMatchToACMatch(
     int relevance) {
   const history::URLRow& info = history_match.url_info;
   AutocompleteMatch match(this, relevance,
-      !!info.visit_count(), AutocompleteMatch::HISTORY_URL);
+      !!info.visit_count(), AutocompleteMatchType::HISTORY_URL);
   match.typed_count = info.typed_count();
   match.destination_url = info.url();
   DCHECK(match.destination_url.is_valid());

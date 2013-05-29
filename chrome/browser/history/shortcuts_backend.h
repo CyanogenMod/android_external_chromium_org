@@ -18,7 +18,7 @@
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
+#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
@@ -31,7 +31,7 @@ class ShortcutsDatabase;
 
 // This class manages the shortcut provider backend - access to database on the
 // db thread, etc.
-class ShortcutsBackend : public RefcountedProfileKeyedService,
+class ShortcutsBackend : public RefcountedBrowserContextKeyedService,
                          public content::NotificationObserver {
  public:
   // The following struct encapsulates one previously selected omnibox shortcut.
@@ -142,7 +142,7 @@ class ShortcutsBackend : public RefcountedProfileKeyedService,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // RefcountedProfileKeyedService
+  // RefcountedBrowserContextKeyedService
   virtual void ShutdownOnUIThread() OVERRIDE;
 
   enum CurrentState {

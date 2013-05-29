@@ -59,6 +59,7 @@
 #include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "net/base/net_util.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -66,8 +67,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/snapshot/snapshot.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/glue/glue_serialize.h"
+#include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/glue/webdropdata.h"
 #include "webkit/glue/webkit_glue.h"
 
@@ -77,7 +77,7 @@
 #elif defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #elif defined(OS_ANDROID)
-#include "content/browser/android/media_player_manager_impl.h"
+#include "media/base/android/media_player_manager.h"
 #endif
 
 using base::TimeDelta;
@@ -197,7 +197,7 @@ RenderViewHostImpl::RenderViewHostImpl(
     g_created_callbacks.Get().at(i).Run(this);
 
 #if defined(OS_ANDROID)
-  media_player_manager_ = new MediaPlayerManagerImpl(this);
+  media_player_manager_ = media::MediaPlayerManager::Create(this);
 #endif
 }
 
@@ -1207,7 +1207,7 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
   // should be killed.
   if (!CanCommitURL(validated_params.url)) {
     VLOG(1) << "Blocked URL " << validated_params.url.spec();
-    validated_params.url = GURL(chrome::kAboutBlankURL);
+    validated_params.url = GURL(kAboutBlankURL);
     RecordAction(UserMetricsAction("CanCommitURL_BlockedAndKilled"));
     // Kills the process.
     process->ReceivedBadMessage();
@@ -1234,7 +1234,7 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
 
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
-  if (!CanAccessFilesOfSerializedState(validated_params.content_state)) {
+  if (!CanAccessFilesOfPageState(validated_params.page_state)) {
     GetProcess()->ReceivedBadMessage();
     return;
   }
@@ -1242,11 +1242,10 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
   delegate_->DidNavigate(this, validated_params);
 }
 
-void RenderViewHostImpl::OnUpdateState(int32 page_id,
-                                       const std::string& state) {
+void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
-  if (!CanAccessFilesOfSerializedState(state)) {
+  if (!CanAccessFilesOfPageState(state)) {
     GetProcess()->ReceivedBadMessage();
     return;
   }
@@ -1725,7 +1724,7 @@ void RenderViewHostImpl::FilterURL(ChildProcessSecurityPolicyImpl* policy,
     // This is because the browser treats navigation to an empty GURL as a
     // navigation to the home page. This is often a privileged page
     // (chrome://newtab/) which is exactly what we don't want.
-    *url = GURL(chrome::kAboutBlankURL);
+    *url = GURL(kAboutBlankURL);
     RecordAction(UserMetricsAction("FilterURLTermiate_Invalid"));
     return;
   }
@@ -1733,7 +1732,7 @@ void RenderViewHostImpl::FilterURL(ChildProcessSecurityPolicyImpl* policy,
   if (url->SchemeIs(chrome::kAboutScheme)) {
     // The renderer treats all URLs in the about: scheme as being about:blank.
     // Canonicalize about: URLs to about:blank.
-    *url = GURL(chrome::kAboutBlankURL);
+    *url = GURL(kAboutBlankURL);
     RecordAction(UserMetricsAction("FilterURLTermiate_About"));
   }
 
@@ -1747,7 +1746,7 @@ void RenderViewHostImpl::FilterURL(ChildProcessSecurityPolicyImpl* policy,
     // URL.  This prevents us from storing the blocked URL and becoming confused
     // later.
     VLOG(1) << "Blocked URL " << url->spec();
-    *url = GURL(chrome::kAboutBlankURL);
+    *url = GURL(kAboutBlankURL);
     RecordAction(UserMetricsAction("FilterURLTermiate_Blocked"));
   }
 }
@@ -2073,12 +2072,12 @@ void RenderViewHostImpl::ClearPowerSaveBlockers() {
   STLDeleteValues(&power_save_blockers_);
 }
 
-bool RenderViewHostImpl::CanAccessFilesOfSerializedState(
-    const std::string& state) const {
+bool RenderViewHostImpl::CanAccessFilesOfPageState(
+    const PageState& state) const {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  const std::vector<base::FilePath>& file_paths =
-      webkit_glue::FilePathsFromHistoryState(state);
+
+  const std::vector<base::FilePath>& file_paths = state.GetReferencedFiles();
   for (std::vector<base::FilePath>::const_iterator file = file_paths.begin();
        file != file_paths.end(); ++file) {
     if (!policy->CanReadFile(GetProcess()->GetID(), *file))

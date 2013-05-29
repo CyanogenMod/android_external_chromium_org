@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class Profile;
 class ProtocolHandlerRegistry;
@@ -16,7 +16,8 @@ template <typename T> struct DefaultSingletonTraits;
 // Singleton that owns all ProtocolHandlerRegistrys and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated ProtocolHandlerRegistry.
-class ProtocolHandlerRegistryFactory : public ProfileKeyedServiceFactory {
+class ProtocolHandlerRegistryFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the singleton instance of the ProtocolHandlerRegistryFactory.
   static ProtocolHandlerRegistryFactory* GetInstance();
@@ -26,8 +27,8 @@ class ProtocolHandlerRegistryFactory : public ProfileKeyedServiceFactory {
   static ProtocolHandlerRegistry* GetForProfile(Profile* profile);
 
  protected:
-  // ProfileKeyedServiceFactory implementation.
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory implementation.
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
@@ -38,8 +39,8 @@ class ProtocolHandlerRegistryFactory : public ProfileKeyedServiceFactory {
   ProtocolHandlerRegistryFactory();
   virtual ~ProtocolHandlerRegistryFactory();
 
-  // ProfileKeyedServiceFactory implementation.
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory implementation.
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ProtocolHandlerRegistryFactory);

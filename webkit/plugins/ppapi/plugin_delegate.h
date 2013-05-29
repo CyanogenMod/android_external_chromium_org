@@ -33,7 +33,7 @@
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/shared_impl/dir_contents.h"
 #include "ui/gfx/size.h"
-#include "webkit/fileapi/file_system_types.h"
+#include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/glue/clipboard_client.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 #include "webkit/quota/quota_types.h"
@@ -54,7 +54,7 @@ class Time;
 }
 
 namespace fileapi {
-class FileSystemCallbackDispatcher;
+struct DirectoryEntry;
 }
 
 namespace gfx {
@@ -84,6 +84,9 @@ class WebGamepads;
 class WebPlugin;
 struct WebCompositionUnderline;
 struct WebCursorInfo;
+struct WebURLError;
+class WebURLLoaderClient;
+class WebURLResponse;
 }
 
 namespace webkit_glue {
@@ -93,6 +96,7 @@ class NetworkListObserver;
 }  // namespace webkit_glue
 
 namespace webkit {
+
 namespace ppapi {
 
 class FileIO;
@@ -498,30 +502,42 @@ class PluginDelegate {
       int flags,
       const AsyncOpenFileSystemURLCallback& callback) = 0;
 
+  // Callback typedefs for FileSystem related methods.
+  typedef base::Callback<void (base::PlatformFileError)> StatusCallback;
+  typedef base::Callback<void(
+      const std::vector<fileapi::DirectoryEntry>& entries,
+      bool has_more)> ReadDirectoryCallback;
+  typedef base::Callback<void(
+      const base::PlatformFileInfo& file_info,
+      const base::FilePath& platform_path)> MetadataCallback;
+
   virtual bool MakeDirectory(
       const GURL& path,
       bool recursive,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+      const StatusCallback& callback) = 0;
   virtual bool Query(const GURL& path,
-                     fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                     const MetadataCallback& success_callback,
+                     const StatusCallback& error_callback) = 0;
   virtual bool ReadDirectoryEntries(
       const GURL& path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+      const ReadDirectoryCallback& success_callback,
+      const StatusCallback& error_callback) = 0;
   virtual bool Touch(const GURL& path,
                      const base::Time& last_access_time,
                      const base::Time& last_modified_time,
-                     fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                     const StatusCallback& callback) = 0;
   virtual bool SetLength(const GURL& path,
                          int64_t length,
-                         fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                         const StatusCallback& callback) = 0;
   virtual bool Delete(const GURL& path,
-                      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                      const StatusCallback& callback) = 0;
   virtual bool Rename(const GURL& file_path,
                       const GURL& new_file_path,
-                      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+                      const StatusCallback& callback) = 0;
   virtual bool ReadDirectory(
       const GURL& directory_path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
+      const ReadDirectoryCallback& success_callback,
+      const StatusCallback& error_callback) = 0;
 
   // For quota handlings for FileIO API.
   typedef base::Callback<void (int64)> AvailableSpaceCallback;
@@ -675,6 +691,14 @@ class PluginDelegate {
 
   // Returns true if running in process.
   virtual bool IsRunningInProcess(PP_Instance instance) const = 0;
+
+  // Notifies the plugin of the document load. This should initiate the call to
+  // PPP_Instance.HandleDocumentLoad.
+  //
+  // The loader object should set itself on the PluginInstance as the document
+  // loader using set_document_loader.
+  virtual void HandleDocumentLoad(PluginInstance* instance,
+                                  const WebKit::WebURLResponse& response) = 0;
 };
 
 }  // namespace ppapi

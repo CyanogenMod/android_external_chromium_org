@@ -47,11 +47,28 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
   // NULL. When slow-down-raster-scale-factor is set to a value
   // greater than 1, the reported rasterize time is the minimum
   // measured value over all runs.
-  void Raster(
+  void RasterDirect(
       SkCanvas* canvas,
       gfx::Rect canvas_rect,
       float contents_scale,
       RasterStats* raster_stats);
+
+  // Similar to the above RasterDirect method, but this is a convenience method
+  // for when it is known that the raster is going to an intermediate bitmap
+  // that itself will then be blended and thus that a canvas clear is required.
+  void RasterToBitmap(
+      SkCanvas* canvas,
+      gfx::Rect canvas_rect,
+      float contents_scale,
+      RasterStats* raster_stats);
+
+  // Called when analyzing a tile. We can use AnalysisCanvas as
+  // SkDrawPictureCallback, which allows us to early out from analysis.
+  void RasterForAnalysis(
+      skia::AnalysisCanvas* canvas,
+      gfx::Rect canvas_rect,
+      float contents_scale);
+
 
   skia::RefPtr<SkPicture> GetFlattenedPicture();
 
@@ -114,6 +131,13 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
       const PicturePileImpl* other, unsigned thread_index);
 
   PicturePileImpl(const PicturePileImpl* other, unsigned thread_index);
+
+  void RasterCommon(
+      SkCanvas* canvas,
+      SkDrawPictureCallback* callback,
+      gfx::Rect canvas_rect,
+      float contents_scale,
+      RasterStats* raster_stats);
 
   bool enable_lcd_text_;
 

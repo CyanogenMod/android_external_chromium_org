@@ -12,11 +12,11 @@
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/thread.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/output/copy_output_request.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebAnimationDelegate.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebLayerScrollClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -40,6 +40,7 @@ Layer::Layer()
       have_wheel_event_handlers_(false),
       anchor_point_(0.5f, 0.5f),
       background_color_(0),
+      compositing_reasons_(kCompositingReasonUnknown),
       opacity_(1.f),
       anchor_point_z_(0.f),
       is_container_for_fixed_position_layers_(false),
@@ -67,9 +68,6 @@ Layer::~Layer() {
   // Our parent should be holding a reference to us so there should be no
   // way for us to be destroyed while we still have a parent.
   DCHECK(!parent());
-
-  for (size_t i = 0; i < request_copy_callbacks_.size(); ++i)
-    request_copy_callbacks_[i].Run(scoped_ptr<SkBitmap>());
 
   layer_animation_controller_->RemoveValueObserver(this);
 
@@ -312,11 +310,12 @@ void Layer::SetChildren(const LayerList& children) {
     AddChild(children[i]);
 }
 
-void Layer::RequestCopyAsBitmap(RequestCopyAsBitmapCallback callback) {
+void Layer::RequestCopyOfOutput(
+    scoped_ptr<CopyOutputRequest> request) {
   DCHECK(IsPropertyChangeAllowed());
-  if (callback.is_null())
+  if (request->IsEmpty())
     return;
-  request_copy_callbacks_.push_back(callback);
+  copy_requests_.push_back(request.Pass());
   SetNeedsCommit();
 }
 
@@ -623,18 +622,17 @@ void Layer::SetPositionConstraint(const LayerPositionConstraint& constraint) {
   SetNeedsCommit();
 }
 
-static void RunCopyCallbackOnMainThread(
-    const Layer::RequestCopyAsBitmapCallback& callback,
-    scoped_ptr<SkBitmap> bitmap) {
-  callback.Run(bitmap.Pass());
+static void RunCopyCallbackOnMainThread(scoped_ptr<CopyOutputRequest> request,
+                                        scoped_ptr<SkBitmap> bitmap) {
+  if (request->HasBitmapRequest())
+    request->SendBitmapResult(bitmap.Pass());
 }
 
-static void PostCopyCallbackToMainThread(
-    Thread* main_thread,
-    const Layer::RequestCopyAsBitmapCallback& callback,
-    scoped_ptr<SkBitmap> bitmap) {
+static void PostCopyCallbackToMainThread(Thread* main_thread,
+                                         scoped_ptr<CopyOutputRequest> request,
+                                         scoped_ptr<SkBitmap> bitmap) {
   main_thread->PostTask(base::Bind(&RunCopyCallbackOnMainThread,
-                                   callback,
+                                   base::Passed(&request),
                                    base::Passed(&bitmap)));
 }
 
@@ -646,6 +644,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetContentBounds(content_bounds());
   layer->SetContentsScale(contents_scale_x(), contents_scale_y());
   layer->SetDebugName(debug_name_);
+  layer->SetCompositingReasons(compositing_reasons_);
   layer->SetDoubleSided(double_sided_);
   layer->SetDrawCheckerboardForMissingTiles(
       draw_checkerboard_for_missing_tiles_);
@@ -679,16 +678,21 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetScrollOffset(scroll_offset_);
   layer->SetMaxScrollOffset(max_scroll_offset_);
 
-  // Wrap the request_copy_callbacks_ in a PostTask to the main thread.
-  std::vector<RequestCopyAsBitmapCallback> main_thread_request_copy_callbacks;
-  for (size_t i = 0; i < request_copy_callbacks_.size(); ++i) {
-    main_thread_request_copy_callbacks.push_back(
-        base::Bind(&PostCopyCallbackToMainThread,
-                   layer_tree_host()->proxy()->MainThread(),
-                   request_copy_callbacks_[i]));
+  // Wrap the copy_requests_ in a PostTask to the main thread.
+  ScopedPtrVector<CopyOutputRequest> main_thread_copy_requests;
+  for (ScopedPtrVector<CopyOutputRequest>::iterator it = copy_requests_.begin();
+       it != copy_requests_.end();
+       ++it) {
+    scoped_ptr<CopyOutputRequest> original_request = copy_requests_.take(it);
+    scoped_ptr<CopyOutputRequest> main_thread_request =
+        CopyOutputRequest::CreateBitmapRequest(base::Bind(
+            &PostCopyCallbackToMainThread,
+            layer_tree_host()->proxy()->MainThread(),
+            base::Passed(&original_request)));
+    main_thread_copy_requests.push_back(main_thread_request.Pass());
   }
-  request_copy_callbacks_.clear();
-  layer->PassRequestCopyCallbacks(&main_thread_request_copy_callbacks);
+  copy_requests_.clear();
+  layer->PassCopyRequests(&main_thread_copy_requests);
 
   // If the main thread commits multiple times before the impl thread actually
   // draws, then damage tracking will become incorrect if we simply clobber the
@@ -745,6 +749,10 @@ bool Layer::NeedMoreUpdates() {
 void Layer::SetDebugName(const std::string& debug_name) {
   debug_name_ = debug_name;
   SetNeedsCommit();
+}
+
+void Layer::SetCompositingReasons(CompositingReasons reasons) {
+  compositing_reasons_ = reasons;
 }
 
 void Layer::CreateRenderSurface() {
@@ -848,6 +856,10 @@ ScrollbarLayer* Layer::ToScrollbarLayer() {
 
 RenderingStatsInstrumentation* Layer::rendering_stats_instrumentation() const {
   return layer_tree_host_->rendering_stats_instrumentation();
+}
+
+bool Layer::SupportsLCDText() const {
+  return false;
 }
 
 }  // namespace cc

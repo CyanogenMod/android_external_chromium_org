@@ -7,13 +7,15 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace extensions {
 class TokenCacheService;
 }  // namespace extensions
 
-class TokenCacheServiceFactory : public ProfileKeyedServiceFactory {
+class TokenCacheServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static extensions::TokenCacheService* GetForProfile(Profile* profile);
   static TokenCacheServiceFactory* GetInstance();
@@ -24,8 +26,8 @@ class TokenCacheServiceFactory : public ProfileKeyedServiceFactory {
 
   friend struct DefaultSingletonTraits<TokenCacheServiceFactory>;
 
-  // Inherited from ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // Inherited from BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 
    DISALLOW_COPY_AND_ASSIGN(TokenCacheServiceFactory);

@@ -10,12 +10,13 @@ import time
 
 from telemetry.core import browser_finder
 from telemetry.core import browser_options
+from telemetry.core import discover
 from telemetry.core import wpr_modes
 from telemetry.page import page_measurement
 from telemetry.page import page_runner
 from telemetry.page import page_set
 from telemetry.page import page_test
-from telemetry.test import discover
+from telemetry.page import page_test_results
 
 class RecordPage(page_test.PageTest):
   def __init__(self, measurements):
@@ -90,27 +91,25 @@ def Main(measurement_dir):
     print >> sys.stderr, """No browser found.\n
 Use --browser=list to figure out which are available.\n"""
     sys.exit(1)
-  results = page_test.PageTestResults()
+  results = page_test_results.PageTestResults()
   with page_runner.PageRunner(ps) as runner:
     runner.Run(options, possible_browser, recorder, results)
 
-  if results.page_failures:
+  if results.errors or results.failures:
     logging.warning('Some pages failed. The recording has not been updated for '
                     'these pages.')
-    logging.warning('Failed pages: %s', '\n'.join(
-        [failure['page'].url for failure in results.page_failures]))
+    logging.warning('Failed pages:\n%s',
+                    '\n'.join(results.errors + results.failures))
 
-  if results.skipped_pages:
+  if results.skipped:
     logging.warning('Some pages were skipped. The recording has not been '
                     'updated for these pages.')
-    logging.warning('Skipped pages: %s', '\n'.join(
-        [skipped['page'].url for skipped in results.skipped_pages]))
+    logging.warning('Skipped pages:\n%s', '\n'.join(results.skipped))
 
-  if results.page_successes:
+  if results.successes:
     # Update the metadata for the pages which were recorded.
-    ps.wpr_archive_info.AddRecordedPages(
-        [page['page'] for page in results.page_successes])
+    ps.wpr_archive_info.AddRecordedPages(results.successes)
   else:
     os.remove(temp_target_wpr_file_path)
 
-  return min(255, len(results.page_failures))
+  return min(255, len(results.failures))

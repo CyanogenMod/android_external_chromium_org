@@ -18,7 +18,8 @@
           "code": {"type": "string", "description": "Value of the physical key being pressed. The value is not affected by current keyboard layout or modifier state."},
           "altKey": {"type": "boolean", "optional": true, "description": "Whether or not the ALT key is pressed."},
           "ctrlKey": {"type": "boolean", "optional": true, "description": "Whether or not the CTRL key is pressed."},
-          "shiftKey": {"type": "boolean", "optional": true, "description": "Whether or not the SHIFT key is pressed."}
+          "shiftKey": {"type": "boolean", "optional": true, "description": "Whether or not the SHIFT key is pressed."},
+          "capsLock": {"type": "boolean", "optional": true, "description": "Whether or not the CAPS_LOCK is enabled."}
         }
       },
       {
@@ -625,6 +626,18 @@
                 "description": "The beginning position of the selection. This value indicates caret position if is no selection."
               }
             }
+          }
+        ]
+      },
+      {
+        "name": "onReset",
+        "type": "function",
+        "description": "This event is sent when chrome terminates ongoing text input session.",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "engineID",
+            "description": "ID of the engine receiving the event"
           }
         ]
       }

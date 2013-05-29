@@ -49,6 +49,7 @@ class PowerManagerClientImpl : public PowerManagerClient {
         pending_suspend_id_(-1),
         suspend_is_pending_(false),
         num_pending_suspend_readiness_callbacks_(0),
+        last_is_projecting_(false),
         weak_ptr_factory_(this) {
     power_manager_proxy_ = bus->GetObjectProxy(
         power_manager::kPowerManagerServiceName,
@@ -299,6 +300,7 @@ class PowerManagerClientImpl : public PowerManagerClient {
         &method_call,
         dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
         dbus::ObjectProxy::EmptyResponseCallback());
+    last_is_projecting_ = is_projecting;
   }
 
   virtual base::Closure GetSuspendReadinessCallback() OVERRIDE {
@@ -336,6 +338,7 @@ class PowerManagerClientImpl : public PowerManagerClient {
   void NameOwnerChangedReceived(dbus::Signal* signal) {
     VLOG(1) << "Power manager restarted";
     RegisterSuspendDelay();
+    SetIsProjecting(last_is_projecting_);
     FOR_EACH_OBSERVER(Observer, observers_, PowerManagerRestarted());
   }
 
@@ -430,6 +433,19 @@ class PowerManagerClientImpl : public PowerManagerClient {
         NOTREACHED();
         break;
     }
+
+    // Check power status values are consistent
+    if (!status.is_calculating_battery_time) {
+      int64 battery_seconds_to_goal = status.line_power_on ?
+          status.battery_seconds_to_full : status.battery_seconds_to_empty;
+      if (battery_seconds_to_goal < 0) {
+        LOG(ERROR) << "Received power supply status with negative seconds to "
+            << (status.line_power_on ? "full" : "empty")
+            << ". Assume time is still being calculated.";
+        status.is_calculating_battery_time = true;
+      }
+    }
+
     VLOG(1) << "Power status: " << status.ToString();
     FOR_EACH_OBSERVER(Observer, observers_, PowerChanged(status));
   }
@@ -677,6 +693,9 @@ class PowerManagerClientImpl : public PowerManagerClient {
   // suspend to memory.
   base::Time last_suspend_wall_time_;
 
+  // Last state passed to SetIsProjecting().
+  bool last_is_projecting_;
+
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
   base::WeakPtrFactory<PowerManagerClientImpl> weak_ptr_factory_;
@@ -748,6 +767,7 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
       return;
     }
     if (!timer_.IsRunning() && update_type == UPDATE_USER) {
+      Update();
       timer_.Start(
           FROM_HERE,
           base::TimeDelta::FromMilliseconds(1000),

@@ -174,6 +174,7 @@ class CONTENT_EXPORT BrowserPlugin :
   virtual bool initialize(WebKit::WebPluginContainer* container) OVERRIDE;
   virtual void destroy() OVERRIDE;
   virtual NPObject* scriptableObject() OVERRIDE;
+  virtual struct _NPP* pluginNPP() OVERRIDE;
   virtual bool supportsKeyboardFocus() const OVERRIDE;
   virtual bool canProcessDrag() const OVERRIDE;
   virtual void paint(
@@ -239,6 +240,7 @@ class CONTENT_EXPORT BrowserPlugin :
 
   int width() const { return plugin_rect_.width(); }
   int height() const { return plugin_rect_.height(); }
+  gfx::Rect plugin_rect() { return plugin_rect_; }
   // Gets the Max Height value used for auto size.
   int GetAdjustedMaxHeight() const;
   // Gets the Max Width value used for auto size.
@@ -274,7 +276,7 @@ class CONTENT_EXPORT BrowserPlugin :
   // allocates a new |pending_damage_buffer_| if in software rendering mode.
   void PopulateResizeGuestParameters(
       BrowserPluginHostMsg_ResizeGuest_Params* params,
-      const gfx::Size& view_size);
+      const gfx::Rect& view_size);
 
   // Populates BrowserPluginHostMsg_AutoSize_Params object with autosize state.
   void PopulateAutoSizeParameters(
@@ -439,6 +441,9 @@ class CONTENT_EXPORT BrowserPlugin :
   // Used for HW compositing.
   bool compositing_enabled_;
   scoped_refptr<BrowserPluginCompositingHelper> compositing_helper_;
+
+  // Used to identify the plugin to WebBindings.
+  scoped_ptr<struct _NPP> npp_;
 
   // Weak factory used in v8 |MakeWeak| callback, since the v8 callback might
   // get called after BrowserPlugin has been destroyed.

@@ -99,6 +99,7 @@ SocketStream::SocketStream(const GURL& url, Delegate* delegate)
       proxy_mode_(kDirectConnection),
       proxy_url_(url),
       pac_request_(NULL),
+      privacy_mode_(kPrivacyModeDisabled),
       // Unretained() is required; without it, Bind() creates a circular
       // dependency and the SocketStream object will not be freed.
       io_callback_(base::Bind(&SocketStream::OnIOCompleted,
@@ -109,10 +110,10 @@ SocketStream::SocketStream(const GURL& url, Delegate* delegate)
       closing_(false),
       server_closed_(false),
       metrics_(new SocketStreamMetrics(url)) {
-  DCHECK(MessageLoop::current()) <<
-      "The current MessageLoop must exist";
-  DCHECK_EQ(MessageLoop::TYPE_IO, MessageLoop::current()->type()) <<
-      "The current MessageLoop must be TYPE_IO";
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
+  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+      << "The current base::MessageLoop must be TYPE_IO";
   DCHECK(delegate_);
 }
 
@@ -162,15 +163,28 @@ void SocketStream::set_context(const URLRequestContext* context) {
   }
 }
 
+void SocketStream::CheckPrivacyMode() {
+  if (context_ && context_->network_delegate()) {
+    bool enable = context_->network_delegate()->CanEnablePrivacyMode(url_,
+                                                                     url_);
+    privacy_mode_ = enable ? kPrivacyModeEnabled : kPrivacyModeDisabled;
+    // Disable Channel ID if privacy mode is enabled.
+    if (enable)
+      server_ssl_config_.channel_id_enabled = false;
+  }
+}
+
 void SocketStream::Connect() {
-  DCHECK(MessageLoop::current()) <<
-      "The current MessageLoop must exist";
-  DCHECK_EQ(MessageLoop::TYPE_IO, MessageLoop::current()->type()) <<
-      "The current MessageLoop must be TYPE_IO";
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
+  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+      << "The current base::MessageLoop must be TYPE_IO";
   if (context_) {
     ssl_config_service()->GetSSLConfig(&server_ssl_config_);
     proxy_ssl_config_ = server_ssl_config_;
   }
+  CheckPrivacyMode();
+
   DCHECK_EQ(next_state_, STATE_NONE);
 
   AddRef();  // Released in Finish()
@@ -180,9 +194,8 @@ void SocketStream::Connect() {
   net_log_.BeginEvent(
       NetLog::TYPE_SOCKET_STREAM_CONNECT,
       NetLog::StringCallback("url", &url_.possibly_invalid_spec()));
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&SocketStream::DoLoop, this, OK));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&SocketStream::DoLoop, this, OK));
 }
 
 size_t SocketStream::GetTotalSizeOfPendingWriteBufs() const {
@@ -195,10 +208,10 @@ size_t SocketStream::GetTotalSizeOfPendingWriteBufs() const {
 }
 
 bool SocketStream::SendData(const char* data, int len) {
-  DCHECK(MessageLoop::current()) <<
-      "The current MessageLoop must exist";
-  DCHECK_EQ(MessageLoop::TYPE_IO, MessageLoop::current()->type()) <<
-      "The current MessageLoop must be TYPE_IO";
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
+  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+      << "The current base::MessageLoop must be TYPE_IO";
   DCHECK_GT(len, 0);
 
   if (!socket_.get() || !socket_->IsConnected() || next_state_ == STATE_NONE)
@@ -232,35 +245,33 @@ bool SocketStream::SendData(const char* data, int len) {
   if (!current_write_buf_) {
     // Send pending data asynchronously, so that delegate won't be called
     // back before returning from SendData().
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&SocketStream::DoLoop, this, OK));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&SocketStream::DoLoop, this, OK));
   }
 
   return true;
 }
 
 void SocketStream::Close() {
-  DCHECK(MessageLoop::current()) <<
-      "The current MessageLoop must exist";
-  DCHECK_EQ(MessageLoop::TYPE_IO, MessageLoop::current()->type()) <<
-      "The current MessageLoop must be TYPE_IO";
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
+  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+      << "The current base::MessageLoop must be TYPE_IO";
   // If next_state_ is STATE_NONE, the socket was not opened, or already
   // closed.  So, return immediately.
   // Otherwise, it might call Finish() more than once, so breaks balance
   // of AddRef() and Release() in Connect() and Finish(), respectively.
   if (next_state_ == STATE_NONE)
     return;
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&SocketStream::DoClose, this));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&SocketStream::DoClose, this));
 }
 
 void SocketStream::RestartWithAuth(const AuthCredentials& credentials) {
-  DCHECK(MessageLoop::current()) <<
-      "The current MessageLoop must exist";
-  DCHECK_EQ(MessageLoop::TYPE_IO, MessageLoop::current()->type()) <<
-      "The current MessageLoop must be TYPE_IO";
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
+  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+      << "The current base::MessageLoop must be TYPE_IO";
   DCHECK(proxy_auth_controller_.get());
   if (!socket_.get()) {
     LOG(ERROR) << "Socket is closed before restarting with auth.";
@@ -269,15 +280,18 @@ void SocketStream::RestartWithAuth(const AuthCredentials& credentials) {
 
   proxy_auth_controller_->ResetAuth(credentials);
 
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&SocketStream::DoRestartWithAuth, this));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&SocketStream::DoRestartWithAuth, this));
 }
 
 void SocketStream::DetachDelegate() {
   if (!delegate_)
     return;
   delegate_ = NULL;
+  // Prevent the rest of the function from executing if we are being called from
+  // within Finish().
+  if (next_state_ == STATE_NONE)
+    return;
   net_log_.AddEvent(NetLog::TYPE_CANCELLED);
   // We don't need to send pending data when client detach the delegate.
   pending_write_bufs_.clear();
@@ -295,9 +309,8 @@ void SocketStream::SetClientSocketFactory(
 }
 
 void SocketStream::CancelWithError(int error) {
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&SocketStream::DoLoop, this, error));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&SocketStream::DoLoop, this, error));
 }
 
 void SocketStream::CancelWithSSLError(const SSLInfo& ssl_info) {
@@ -305,9 +318,8 @@ void SocketStream::CancelWithSSLError(const SSLInfo& ssl_info) {
 }
 
 void SocketStream::ContinueDespiteError() {
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&SocketStream::DoLoop, this, OK));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&SocketStream::DoLoop, this, OK));
 }
 
 SocketStream::~SocketStream() {
@@ -344,10 +356,10 @@ void SocketStream::DoClose() {
 }
 
 void SocketStream::Finish(int result) {
-  DCHECK(MessageLoop::current()) <<
-      "The current MessageLoop must exist";
-  DCHECK_EQ(MessageLoop::TYPE_IO, MessageLoop::current()->type()) <<
-      "The current MessageLoop must be TYPE_IO";
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
+  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+      << "The current base::MessageLoop must be TYPE_IO";
   DCHECK_LE(result, OK);
   if (result == OK)
     result = ERR_CONNECTION_CLOSED;
@@ -355,14 +367,13 @@ void SocketStream::Finish(int result) {
   DVLOG(1) << "Finish result=" << ErrorToString(result);
 
   metrics_->OnClose();
-  Delegate* delegate = delegate_;
+
+  if (result != ERR_CONNECTION_CLOSED && delegate_)
+    delegate_->OnError(this, result);
+  if (result != ERR_PROTOCOL_SWITCHED && delegate_)
+    delegate_->OnClose(this);
   delegate_ = NULL;
-  if (delegate) {
-    if (result != ERR_CONNECTION_CLOSED)
-      delegate->OnError(this, result);
-    if (result != ERR_PROTOCOL_SWITCHED)
-      delegate->OnClose(this);
-  }
+
   Release();
 }
 
@@ -921,16 +932,14 @@ int SocketStream::DoReadTunnelHeadersComplete(int result) {
       DCHECK(!proxy_info_.is_empty());
       next_state_ = STATE_AUTH_REQUIRED;
       if (proxy_auth_controller_->HaveAuth()) {
-        MessageLoop::current()->PostTask(
-            FROM_HERE,
-            base::Bind(&SocketStream::DoRestartWithAuth, this));
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE, base::Bind(&SocketStream::DoRestartWithAuth, this));
         return ERR_IO_PENDING;
       }
       if (delegate_) {
         // Wait until RestartWithAuth or Close is called.
-        MessageLoop::current()->PostTask(
-            FROM_HERE,
-            base::Bind(&SocketStream::DoAuthRequired, this));
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE, base::Bind(&SocketStream::DoAuthRequired, this));
         return ERR_IO_PENDING;
       }
       break;

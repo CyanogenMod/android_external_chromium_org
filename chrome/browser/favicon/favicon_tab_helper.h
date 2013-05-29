@@ -10,7 +10,6 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "chrome/browser/favicon/favicon_handler_delegate.h"
-#include "chrome/browser/history/history_types.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "content/public/common/favicon_url.h"
@@ -72,6 +71,14 @@ class FaviconTabHelper : public content::WebContentsObserver,
   virtual int StartDownload(const GURL& url, int image_size) OVERRIDE;
   virtual void NotifyFaviconUpdated(bool icon_url_changed) OVERRIDE;
 
+  // Favicon download callback.
+  void DidDownloadFavicon(
+      int id,
+      int http_status_code,
+      const GURL& image_url,
+      int requested_size,
+      const std::vector<SkBitmap>& bitmaps);
+
  private:
   explicit FaviconTabHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<FaviconTabHelper>;
@@ -83,13 +90,6 @@ class FaviconTabHelper : public content::WebContentsObserver,
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
-
-  // Favicon download callback.
-  void DidDownloadFavicon(
-      int id,
-      const GURL& image_url,
-      int requested_size,
-      const std::vector<SkBitmap>& bitmaps);
 
   Profile* profile_;
   bool should_fetch_icons_;

@@ -61,12 +61,11 @@ ResourceEntry CreateResourceEntry(int sequence_id,
   file_info->set_is_directory(is_directory);
 
   if (!is_directory) {
-    DriveFileSpecificInfo* file_specific_info =
-        entry.mutable_file_specific_info();
+    FileSpecificInfo* file_specific_info = entry.mutable_file_specific_info();
     file_info->set_size(sequence_id * 1024);
     file_specific_info->set_file_md5(std::string("md5:") + title);
   } else {
-    DriveDirectorySpecificInfo* directory_specific_info =
+    DirectorySpecificInfo* directory_specific_info =
         entry.mutable_directory_specific_info();
     directory_specific_info->set_changestamp(kTestChangestamp);
   }
@@ -81,7 +80,7 @@ bool AddResourceEntry(ResourceMetadata* resource_metadata,
   ResourceEntry entry = CreateResourceEntry(sequence_id,
                                             is_directory,
                                             parent_resource_id);
-  return resource_metadata->AddEntry(entry, NULL) == FILE_ERROR_OK;
+  return resource_metadata->AddEntry(entry) == FILE_ERROR_OK;
 }
 
 // Creates the following files/directories
@@ -98,7 +97,7 @@ bool AddResourceEntry(ResourceMetadata* resource_metadata,
 void SetUpEntries(ResourceMetadata* resource_metadata) {
   // Create mydrive root directory.
   ASSERT_EQ(FILE_ERROR_OK, resource_metadata->AddEntry(
-      util::CreateMyDriveRootEntry(kTestRootResourceId), NULL));
+      util::CreateMyDriveRootEntry(kTestRootResourceId)));
 
   int sequence_id = 1;
   ASSERT_TRUE(AddResourceEntry(
@@ -217,7 +216,7 @@ class ResourceMetadataTestOnUIThread : public testing::Test {
       resource_metadata_;
 
  private:
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
 };
 
@@ -1199,7 +1198,7 @@ class ResourceMetadataTest : public testing::Test {
   }
 
   base::ScopedTempDir temp_dir_;
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests>
       resource_metadata_;

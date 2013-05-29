@@ -6,7 +6,6 @@
 #define CC_LAYERS_LAYER_IMPL_H_
 
 #include <string>
-#include <vector>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -17,6 +16,7 @@
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/input/input_handler.h"
+#include "cc/layers/compositing_reasons.h"
 #include "cc/layers/draw_properties.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/layer_position_constraint.h"
@@ -76,13 +76,9 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   // Warning: This does not preserve tree structure invariants.
   void ClearChildList();
 
-  void PassRequestCopyCallbacks(
-      std::vector<RenderPass::RequestCopyAsBitmapCallback>* callbacks);
-  void TakeRequestCopyCallbacks(
-      std::vector<RenderPass::RequestCopyAsBitmapCallback>* callbacks);
-  bool HasRequestCopyCallback() const {
-    return !request_copy_callbacks_.empty();
-  }
+  void PassCopyRequests(ScopedPtrVector<CopyOutputRequest>* requests);
+  void TakeCopyRequests(ScopedPtrVector<CopyOutputRequest>* request);
+  bool HasCopyRequest() const { return !copy_requests_.empty(); }
 
   void SetMaskLayer(scoped_ptr<LayerImpl> mask_layer);
   LayerImpl* mask_layer() { return mask_layer_.get(); }
@@ -204,6 +200,14 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   // Debug layer name.
   void SetDebugName(const std::string& debug_name) { debug_name_ = debug_name; }
   std::string debug_name() const { return debug_name_; }
+
+  void SetCompositingReasons(CompositingReasons reasons) {
+      compositing_reasons_ = reasons;
+  }
+
+  CompositingReasons compositing_reasons() const {
+      return compositing_reasons_;
+  }
 
   bool ShowDebugBorders() const;
 
@@ -413,6 +417,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   virtual void PushPropertiesTo(LayerImpl* layer);
 
   scoped_ptr<base::Value> AsValue() const;
+  virtual size_t GPUMemoryUsageInBytes() const;
 
  protected:
   LayerImpl(LayerTreeImpl* layer_impl, int id);
@@ -423,6 +428,11 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void AppendDebugBorderQuad(QuadSink* quad_sink,
                              const SharedQuadState* shared_quad_state,
                              AppendQuadsData* append_quads_data) const;
+  void AppendDebugBorderQuad(QuadSink* quad_sink,
+                             const SharedQuadState* shared_quad_state,
+                             AppendQuadsData* append_quads_data,
+                             SkColor color,
+                             float width) const;
 
   virtual void DumpLayerProperties(std::string* str, int indent) const;
   static std::string IndentString(int indent);
@@ -514,6 +524,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   // Debug layer name.
   std::string debug_name_;
+  CompositingReasons compositing_reasons_;
 
   WebKit::WebFilterOperations filters_;
   WebKit::WebFilterOperations background_filters_;
@@ -539,7 +550,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   ScrollbarLayerImpl* horizontal_scrollbar_layer_;
   ScrollbarLayerImpl* vertical_scrollbar_layer_;
 
-  std::vector<RenderPass::RequestCopyAsBitmapCallback> request_copy_callbacks_;
+  ScopedPtrVector<CopyOutputRequest> copy_requests_;
 
   // Group of properties that need to be computed based on the layer tree
   // hierarchy before layers can be drawn.

@@ -17,6 +17,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/dom_activity_logger.h"
@@ -99,7 +100,7 @@ std::string UserScriptSlave::GetExtensionIdForIsolatedWorld(
 void UserScriptSlave::InitializeIsolatedWorld(int isolated_world_id,
                                               const Extension* extension) {
   const URLPatternSet& permissions =
-      extension->GetEffectiveHostPermissions();
+      PermissionsData::GetEffectiveHostPermissions(extension);
   for (URLPatternSet::const_iterator i = permissions.begin();
        i != permissions.end(); ++i) {
     const char* schemes[] = {
@@ -287,12 +288,16 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
       continue;
 
     // Content scripts are not tab-specific.
-    int kNoTabId = -1;
-    if (!extension->CanExecuteScriptOnPage(data_source_url,
-                                           frame->top()->document().url(),
-                                           kNoTabId,
-                                           script,
-                                           NULL)) {
+    const int kNoTabId = -1;
+    // We don't have a process id in this context.
+    const int kNoProcessId = -1;
+    if (!PermissionsData::CanExecuteScriptOnPage(extension,
+                                                 data_source_url,
+                                                 frame->top()->document().url(),
+                                                 kNoTabId,
+                                                 script,
+                                                 kNoProcessId,
+                                                 NULL)) {
       continue;
     }
 

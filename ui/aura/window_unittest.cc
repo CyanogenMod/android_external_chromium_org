@@ -35,6 +35,7 @@
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/compositor/test/test_layers.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/screen.h"
 
@@ -1271,6 +1272,32 @@ TEST_F(WindowTest, MouseEnterExitWithClick) {
   EXPECT_FALSE(d2.exited());
 }
 
+TEST_F(WindowTest, MouseEnterExitWhenDeleteWithCapture) {
+  MouseEnterExitWindowDelegate delegate;
+  scoped_ptr<Window> window(
+      CreateTestWindowWithDelegate(&delegate, 1, gfx::Rect(10, 10, 50, 50),
+                                   root_window()));
+
+  test::EventGenerator generator(root_window());
+  generator.MoveMouseToCenterOf(window.get());
+  EXPECT_TRUE(delegate.entered());
+  EXPECT_FALSE(delegate.exited());
+
+  // Emmulate what Views does on a click by grabbing and releasing capture.
+  generator.PressLeftButton();
+  window->SetCapture();
+
+  delegate.ResetExpectations();
+  generator.MoveMouseTo(0, 0);
+  EXPECT_FALSE(delegate.entered());
+  EXPECT_FALSE(delegate.exited());
+
+  delegate.ResetExpectations();
+  window.reset();
+  EXPECT_FALSE(delegate.entered());
+  EXPECT_FALSE(delegate.exited());
+}
+
 // Verifies that enter / exits are sent if windows appear and are deleted
 // under the current mouse position..
 TEST_F(WindowTest, MouseEnterExitWithDelete) {
@@ -1284,8 +1311,8 @@ TEST_F(WindowTest, MouseEnterExitWithDelete) {
   EXPECT_TRUE(d1.entered());
   EXPECT_FALSE(d1.exited());
 
+  MouseEnterExitWindowDelegate d2;
   {
-    MouseEnterExitWindowDelegate d2;
     scoped_ptr<Window> w2(
         CreateTestWindowWithDelegate(&d2, 2, gfx::Rect(10, 10, 50, 50),
                                      root_window()));
@@ -1299,6 +1326,7 @@ TEST_F(WindowTest, MouseEnterExitWithDelete) {
   }
   // Enters / exits can be send asynchronously.
   RunAllPendingInMessageLoop();
+  EXPECT_TRUE(d2.exited());
   EXPECT_TRUE(d1.entered());
 }
 
@@ -1330,7 +1358,55 @@ TEST_F(WindowTest, MouseEnterExitWithHide) {
   w2->Hide();
   // Enters / exits can be send asynchronously.
   RunAllPendingInMessageLoop();
+  EXPECT_TRUE(d2.exited());
   EXPECT_TRUE(d1.entered());
+}
+
+TEST_F(WindowTest, MouseEnterExitWithParentHide) {
+  MouseEnterExitWindowDelegate d1;
+  scoped_ptr<Window> w1(
+      CreateTestWindowWithDelegate(&d1, 1, gfx::Rect(10, 10, 50, 50),
+                                   root_window()));
+  MouseEnterExitWindowDelegate d2;
+  Window* w2 = CreateTestWindowWithDelegate(&d2, 2, gfx::Rect(10, 10, 50, 50),
+                                            w1.get());
+  test::EventGenerator generator(root_window());
+  generator.MoveMouseToCenterOf(w2);
+  // Enters / exits can be send asynchronously.
+  RunAllPendingInMessageLoop();
+  EXPECT_TRUE(d2.entered());
+  EXPECT_FALSE(d2.exited());
+
+  d2.ResetExpectations();
+  w1->Hide();
+  RunAllPendingInMessageLoop();
+  EXPECT_FALSE(d2.entered());
+  EXPECT_TRUE(d2.exited());
+
+  w1.reset();
+}
+
+TEST_F(WindowTest, MouseEnterExitWithParentDelete) {
+  MouseEnterExitWindowDelegate d1;
+  scoped_ptr<Window> w1(
+      CreateTestWindowWithDelegate(&d1, 1, gfx::Rect(10, 10, 50, 50),
+                                   root_window()));
+  MouseEnterExitWindowDelegate d2;
+  Window* w2 = CreateTestWindowWithDelegate(&d2, 2, gfx::Rect(10, 10, 50, 50),
+                                            w1.get());
+  test::EventGenerator generator(root_window());
+  generator.MoveMouseToCenterOf(w2);
+
+  // Enters / exits can be send asynchronously.
+  RunAllPendingInMessageLoop();
+  EXPECT_TRUE(d2.entered());
+  EXPECT_FALSE(d2.exited());
+
+  d2.ResetExpectations();
+  w1.reset();
+  RunAllPendingInMessageLoop();
+  EXPECT_FALSE(d2.entered());
+  EXPECT_TRUE(d2.exited());
 }
 
 // Creates a window with a delegate (w111) that can handle events at a lower
@@ -1981,6 +2057,21 @@ TEST_F(WindowTest, RecreateLayer) {
   EXPECT_TRUE(layer->GetMasksToBounds());
 }
 
+// Verify that RecreateLayer() stacks the old layer above the newly creatd
+// layer.
+TEST_F(WindowTest, RecreateLayerZOrder) {
+  scoped_ptr<Window> w(
+      CreateTestWindow(SK_ColorWHITE, 1, gfx::Rect(0, 0, 100, 100),
+                       root_window()));
+  scoped_ptr<ui::Layer> old_layer(w->RecreateLayer());
+
+  const std::vector<ui::Layer*>& child_layers =
+      root_window()->layer()->children();
+  ASSERT_EQ(2u, child_layers.size());
+  EXPECT_EQ(w->layer(), child_layers[0]);
+  EXPECT_EQ(old_layer.get(), child_layers[1]);
+}
+
 // Ensure that acquiring a layer then recreating a layer does not crash
 // and that RecreateLayer returns null.
 TEST_F(WindowTest, AcquireThenRecreateLayer) {
@@ -1997,23 +2088,39 @@ TEST_F(WindowTest, AcquireThenRecreateLayer) {
 
 TEST_F(WindowTest, StackWindowsWhoseLayersHaveNoDelegate) {
   scoped_ptr<Window> window1(CreateTestWindowWithId(1, root_window()));
+  window1->layer()->set_name("1");
   scoped_ptr<Window> window2(CreateTestWindowWithId(2, root_window()));
+  window2->layer()->set_name("2");
+  scoped_ptr<Window> window3(CreateTestWindowWithId(3, root_window()));
+  window3->layer()->set_name("3");
 
-  // This brings window1 (and its layer) to the front.
-  root_window()->StackChildAbove(window1.get(), window2.get());
-  EXPECT_EQ(root_window()->children().front(), window2.get());
-  EXPECT_EQ(root_window()->children().back(), window1.get());
-  EXPECT_EQ(root_window()->layer()->children().front(), window2->layer());
-  EXPECT_EQ(root_window()->layer()->children().back(), window1->layer());
+  // This brings |window1| (and its layer) to the front.
+  root_window()->StackChildAbove(window1.get(), window3.get());
+  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
+  EXPECT_EQ("2 3 1",
+            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
 
-  // Since window1 does not have a delegate, window2 should not move in
+  // Since |window1| does not have a delegate, |window2| should not move in
   // front of it, nor should its layer.
   window1->layer()->set_delegate(NULL);
   root_window()->StackChildAbove(window2.get(), window1.get());
-  EXPECT_EQ(root_window()->children().front(), window2.get());
-  EXPECT_EQ(root_window()->children().back(), window1.get());
-  EXPECT_EQ(root_window()->layer()->children().front(), window2->layer());
-  EXPECT_EQ(root_window()->layer()->children().back(), window1->layer());
+  EXPECT_EQ("3 2 1", ChildWindowIDsAsString(root_window()));
+  EXPECT_EQ("3 2 1",
+            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
+
+  // It should still be possible to stack |window3| immediately below |window1|.
+  root_window()->StackChildBelow(window3.get(), window1.get());
+  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
+  EXPECT_EQ("2 3 1",
+            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
+
+  // Since neither |window3| nor |window1| have a delegate, |window2| should
+  // not move in front of either.
+  window3->layer()->set_delegate(NULL);
+  root_window()->StackChildBelow(window2.get(), window1.get());
+  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
+  EXPECT_EQ("2 3 1",
+            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
 }
 
 TEST_F(WindowTest, StackTransientsWhoseLayersHaveNoDelegate) {
@@ -2122,7 +2229,7 @@ TEST_F(WindowTest, MouseEventsOnWindowChange) {
   RunAllPendingInMessageLoop();
   EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
   // Window is detached, so no event is set.
-  EXPECT_EQ("0 0 0", d11.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 1", d11.GetMouseMotionCountsAndReset());
 
   w1->AddChild(w11.get());
   RunAllPendingInMessageLoop();
@@ -2134,7 +2241,7 @@ TEST_F(WindowTest, MouseEventsOnWindowChange) {
   w11->Hide();
   RunAllPendingInMessageLoop();
   EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
-  EXPECT_EQ("0 0 0", d11.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 1", d11.GetMouseMotionCountsAndReset());
 
   w11->Show();
   RunAllPendingInMessageLoop();
@@ -2169,7 +2276,7 @@ TEST_F(WindowTest, MouseEventsOnWindowChange) {
       &d11, 1, gfx::Rect(0, 0, 100, 100), w1.get()));
   RunAllPendingInMessageLoop();
   EXPECT_EQ("0 0 0", d1.GetMouseMotionCountsAndReset());
-  EXPECT_EQ("0 0 0", d11.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 1", d11.GetMouseMotionCountsAndReset());
 
   // Closing windows
   w11.reset();
@@ -2326,7 +2433,6 @@ TEST_F(WindowTest, StackOverClosingTransient) {
   EXPECT_EQ(root->layer()->children()[3], transient2->layer());
 
   // This brings window1 and its transient to the front.
-  // root_window()->StackChildAbove(window1.get(), window2.get());
   root->StackChildAtTop(window1.get());
 
   EXPECT_EQ(root->children()[0], window2.get());

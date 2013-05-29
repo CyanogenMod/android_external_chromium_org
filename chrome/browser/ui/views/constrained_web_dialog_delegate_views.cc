@@ -6,8 +6,8 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager_delegate.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
+#include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -17,12 +17,15 @@
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/window/dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
 
 using content::WebContents;
 using ui::WebDialogDelegate;
 using ui::WebDialogWebContentsDelegate;
+using web_modal::NativeWebContentsModalDialog;
+using web_modal::WebContentsModalDialogManager;
 
 namespace {
 
@@ -134,6 +137,10 @@ class ConstrainedWebDialogDelegateViewViews
         widget,
         GetWebContents()->GetBrowserContext());
   }
+  virtual bool ShouldShowCloseButton() const OVERRIDE {
+    // No close button if the dialog doesn't want a title bar.
+    return impl_->GetWebDialogDelegate()->ShouldShowDialogTitle();
+  }
 
   virtual ui::ModalType GetModalType() const OVERRIDE {
 #if defined(USE_ASH)
@@ -149,8 +156,10 @@ class ConstrainedWebDialogDelegateViewViews
     if (!GetWidget())
       return;
 
-    GetWidget()->CenterWindow(
-        GetWidget()->non_client_view()->GetPreferredSize());
+    if (!views::DialogDelegate::UseNewStyle()) {
+      GetWidget()->CenterWindow(
+          GetWidget()->non_client_view()->GetPreferredSize());
+    }
     views::WidgetDelegate::OnWidgetMove();
   }
 

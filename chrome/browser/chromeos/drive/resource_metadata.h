@@ -163,15 +163,16 @@ class ResourceMetadata {
   // Synchronous version of SetLargestChangestampOnUIThread.
   FileError SetLargestChangestamp(int64 value);
 
-  // Adds |entry| to the metadata tree, based on its parent_resource_id.
+  // Runs AddEntry() on blocking pool. Upon completion, the |callback| will be
+  // called with the new file path.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void AddEntryOnUIThread(const ResourceEntry& entry,
                           const FileMoveCallback& callback);
 
-  // Synchronous version of AddEntryOnUIThread.
-  FileError AddEntry(const ResourceEntry& entry,
-                     base::FilePath* out_file_path);
+  // Adds |entry| to the metadata tree based on its parent_resource_id
+  // synchronously.
+  FileError AddEntry(const ResourceEntry& entry);
 
   // Moves entry specified by |file_path| to the directory specified by
   // |directory_path| and calls the callback asynchronously. Removes the entry
@@ -255,11 +256,6 @@ class ResourceMetadata {
   // |entry_map|. The changestamp of the directory will be updated per
   // |directory_fetch_info|. |callback| is called with the directory path.
   // |callback| must not be null.
-  //
-  // TODO(satorux): For "fast fetch" crbug.com/178348, this function should
-  // be able to update child directories too. The existing directories should
-  // remain as-is, but the new directories should be added with changestamp
-  // set to zero, which will be fast fetched.
   // Must be called on the UI thread.
   void RefreshDirectoryOnUIThread(
       const DirectoryFetchInfo& directory_fetch_info,
@@ -275,6 +271,12 @@ class ResourceMetadata {
   // Synchronous version of GetChildDirectoriesOnUIThread().
   scoped_ptr<std::set<base::FilePath> > GetChildDirectories(
       const std::string& resource_id);
+
+  // Returns the resource id of the resource named |base_name| directly under
+  // the directory with |parent_resource_id|.
+  // If not found, empty string will be returned.
+  std::string GetChildResourceId(
+      const std::string& parent_resource_id, const std::string& base_name);
 
   // Returns an object to iterate over entries.
   scoped_ptr<Iterator> GetIterator();
@@ -354,10 +356,6 @@ class ResourceMetadata {
 
   // Removes the entry and its descendants.
   bool RemoveEntryRecursively(const std::string& resource_id);
-
-  // Converts the children as a vector of ResourceEntry.
-  scoped_ptr<ResourceEntryVector> DirectoryChildrenToProtoVector(
-      const std::string& directory_resource_id);
 
   const base::FilePath data_directory_path_;
 

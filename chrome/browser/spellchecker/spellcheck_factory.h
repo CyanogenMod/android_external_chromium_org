@@ -7,14 +7,15 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class SpellcheckService;
+class Profile;
 
 // Entry into the SpellCheck system.
 //
 // Internally, this owns all SpellcheckService objects.
-class SpellcheckServiceFactory : public ProfileKeyedServiceFactory {
+class SpellcheckServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the spell check host. This will create the SpellcheckService if it
   // does not already exist.
@@ -33,8 +34,8 @@ class SpellcheckServiceFactory : public ProfileKeyedServiceFactory {
   SpellcheckServiceFactory();
   virtual ~SpellcheckServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
   virtual void RegisterUserPrefs(
       user_prefs::PrefRegistrySyncable* registry) OVERRIDE;

@@ -5,14 +5,14 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_SHELL_WINDOW_REGISTRY_H_
 #define CHROME_BROWSER_EXTENSIONS_SHELL_WINDOW_REGISTRY_H_
 
-#include <set>
+#include <list>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 #include "ui/gfx/native_widget_types.h"
 
 class Profile;
@@ -32,7 +32,7 @@ namespace extensions {
 // page, shell windows, tray view, panels etc.) and other app level behaviour
 // (e.g. notifications the app is interested in, lifetime of the background
 // page).
-class ShellWindowRegistry : public ProfileKeyedService {
+class ShellWindowRegistry : public BrowserContextKeyedService {
  public:
   class Observer {
    public:
@@ -47,8 +47,8 @@ class ShellWindowRegistry : public ProfileKeyedService {
     virtual ~Observer() {}
   };
 
-  typedef std::set<ShellWindow*> ShellWindowSet;
-  typedef ShellWindowSet::const_iterator const_iterator;
+  typedef std::list<ShellWindow*> ShellWindowList;
+  typedef ShellWindowList::const_iterator const_iterator;
   typedef std::set<std::string> InspectedWindowSet;
 
   explicit ShellWindowRegistry(Profile* profile);
@@ -60,14 +60,16 @@ class ShellWindowRegistry : public ProfileKeyedService {
 
   void AddShellWindow(ShellWindow* shell_window);
   void ShellWindowIconChanged(ShellWindow* shell_window);
+  // Called by |shell_window| when it is activated.
+  void ShellWindowActivated(ShellWindow* shell_window);
   void RemoveShellWindow(ShellWindow* shell_window);
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
   // Returns a set of windows owned by the application identified by app_id.
-  ShellWindowSet GetShellWindowsForApp(const std::string& app_id) const;
-  const ShellWindowSet& shell_windows() const { return shell_windows_; }
+  ShellWindowList GetShellWindowsForApp(const std::string& app_id) const;
+  const ShellWindowList& shell_windows() const { return shell_windows_; }
 
   // Helper functions to find shell windows with particular attributes.
   ShellWindow* GetShellWindowForRenderViewHost(
@@ -98,11 +100,7 @@ class ShellWindowRegistry : public ProfileKeyedService {
   // ShellWindow::WindowType, or 0 for any window type.
   static bool IsShellWindowRegisteredInAnyProfile(int window_type_mask);
 
- protected:
-  void OnDevToolsStateChanged(content::DevToolsAgentHost*, bool attached);
-
- private:
-  class Factory : public ProfileKeyedServiceFactory {
+  class Factory : public BrowserContextKeyedServiceFactory {
    public:
     static ShellWindowRegistry* GetForProfile(Profile* profile, bool create);
 
@@ -113,17 +111,29 @@ class ShellWindowRegistry : public ProfileKeyedService {
     Factory();
     virtual ~Factory();
 
-    // ProfileKeyedServiceFactory
-    virtual ProfileKeyedService* BuildServiceInstanceFor(
+    // BrowserContextKeyedServiceFactory
+    virtual BrowserContextKeyedService* BuildServiceInstanceFor(
         content::BrowserContext* profile) const OVERRIDE;
-    virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+    virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
     virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
     virtual content::BrowserContext* GetBrowserContextToUse(
         content::BrowserContext* context) const OVERRIDE;
   };
 
+ protected:
+  void OnDevToolsStateChanged(content::DevToolsAgentHost*, bool attached);
+
+ private:
+  // Ensures the specified |shell_window| is included in |shell_windows_|.
+  // Otherwise adds |shell_window| to the back of |shell_windows_|.
+  void AddShellWindowToList(ShellWindow* shell_window);
+
+  // Bring |shell_window| to the front of |shell_windows_|. If it is not in the
+  // list, add it first.
+  void BringToFront(ShellWindow* shell_window);
+
   Profile* profile_;
-  ShellWindowSet shell_windows_;
+  ShellWindowList shell_windows_;
   InspectedWindowSet inspected_windows_;
   ObserverList<Observer> observers_;
   base::Callback<void(content::DevToolsAgentHost*, bool)> devtools_callback_;

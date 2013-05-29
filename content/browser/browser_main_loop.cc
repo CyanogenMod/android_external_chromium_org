@@ -60,8 +60,6 @@
 #include "base/android/jni_android.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
 #include "content/browser/device_orientation/data_fetcher_impl_android.h"
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
 #endif
 
 #if defined(OS_WIN)
@@ -69,6 +67,7 @@
 #include <commctrl.h>
 #include <shellapi.h>
 
+#include "base/win/text_services_message_filter.h"
 #include "content/browser/system_message_window_win.h"
 #include "content/common/sandbox_win.h"
 #include "net/base/winsock_init.h"
@@ -160,6 +159,9 @@ static void GLibLogHandler(const gchar* log_domain,
     }
   } else if (strstr(message, "Unable to retrieve the file info for")) {
     LOG(ERROR) << "GTK File code error: " << message;
+  } else if (strstr(message, "Could not find the icon") &&
+             strstr(log_domain, "Gtk")) {
+    LOG(ERROR) << "GTK icon error: " << message;
   } else if (strstr(message, "Theme file for default has no") ||
              strstr(message, "Theme directory") ||
              strstr(message, "theme pixmap") ||
@@ -402,6 +404,17 @@ void BrowserMainLoop::MainMessageLoopStart() {
 
 #if defined(OS_WIN)
   system_message_window_.reset(new SystemMessageWindowWin);
+
+  if (base::win::IsTSFAwareRequired()) {
+    // Create a TSF message filter for the message loop. MessageLoop takes
+    // ownership of the filter.
+    scoped_ptr<base::win::TextServicesMessageFilter> tsf_message_filter(
+      new base::win::TextServicesMessageFilter);
+    if (tsf_message_filter->Init()) {
+      MessageLoopForUI::current()->SetMessageFilter(
+        tsf_message_filter.PassAs<MessageLoopForUI::MessageFilter>());
+    }
+  }
 #endif
 
   if (parts_)
@@ -716,26 +729,15 @@ void BrowserMainLoop::InitializeMainThread() {
       new BrowserThreadImpl(BrowserThread::UI, base::MessageLoop::current()));
 }
 
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-namespace {
-void SetHighThreadPriority() {
-  int nice_value = -6; // High priority.
-  setpriority(PRIO_PROCESS, base::PlatformThread::CurrentId(), nice_value);
-}
-}
-#endif
-
 void BrowserMainLoop::BrowserThreadsStarted() {
   TRACE_EVENT0("startup", "BrowserMainLoop::BrowserThreadsStarted")
 #if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-  BrowserThread::PostTask(BrowserThread::UI,
-                          FROM_HERE,
-                          base::Bind(&SetHighThreadPriority));
-  BrowserThread::PostTask(BrowserThread::IO,
-                          FROM_HERE,
-                          base::Bind(&SetHighThreadPriority));
+  // Up the priority of anything that touches with display tasks
+  // (this thread is UI thread, and io_thread_ is for IPCs).
+  io_thread_->SetPriority(base::kThreadPriority_Display);
+  base::PlatformThread::SetThreadPriority(
+      base::PlatformThread::CurrentHandle(),
+      base::kThreadPriority_Display);
 #endif
 
 #if !defined(OS_IOS)

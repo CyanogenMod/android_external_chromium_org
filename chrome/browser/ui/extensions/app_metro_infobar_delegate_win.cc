@@ -22,7 +22,6 @@
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "win8/util/win8_util.h"
 
 namespace chrome {
@@ -39,11 +38,11 @@ void AppMetroInfoBarDelegateWin::Create(
       profile, chrome::HOST_DESKTOP_TYPE_NATIVE);
 
   // Create a new tab at about:blank, and add the infobar.
-  content::OpenURLParams params(
-      GURL(chrome::kAboutBlankURL),
-      content::Referrer(),
-      NEW_FOREGROUND_TAB,
-      content::PAGE_TRANSITION_LINK, false);
+  content::OpenURLParams params(GURL(content::kAboutBlankURL),
+                                content::Referrer(),
+                                NEW_FOREGROUND_TAB,
+                                content::PAGE_TRANSITION_LINK,
+                                false);
   content::WebContents* web_contents = browser->OpenURL(params);
   InfoBarService* info_bar_service =
       InfoBarService::FromWebContents(web_contents);
@@ -69,9 +68,8 @@ AppMetroInfoBarDelegateWin::AppMetroInfoBarDelegateWin(
 
 AppMetroInfoBarDelegateWin::~AppMetroInfoBarDelegateWin() {}
 
-gfx::Image* AppMetroInfoBarDelegateWin::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      chrome::GetAppListIconResourceId());
+int AppMetroInfoBarDelegateWin::GetIconID() const {
+  return chrome::GetAppListIconResourceId();
 }
 
 string16 AppMetroInfoBarDelegateWin::GetMessageText() const {

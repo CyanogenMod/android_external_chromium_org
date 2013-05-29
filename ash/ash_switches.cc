@@ -17,12 +17,6 @@ namespace switches {
 const char kAshAnimateFromBootSplashScreen[] =
     "ash-animate-from-boot-splash-screen";
 
-// Variation of boot animation that uses Tween::EASE_OUT_2.
-const char kAshBootAnimationFunction2[] = "ash-boot-animation-function2";
-
-// Variation of boot animation that uses Tween::EASE_OUT_3.
-const char kAshBootAnimationFunction3[] = "ash-boot-animation-function3";
-
 // Constrains the pointer movement within a root window on desktop.
 const char kAshConstrainPointerToRoot[] = "ash-constrain-pointer-to-root";
 
@@ -42,9 +36,6 @@ const char kAshDisableAutoMaximizing[] = "ash-disable-auto-maximizing";
 const char kAshDisableAutoWindowPlacement[] =
     "ash-enable-auto-window-placement";
 
-// Disables boot animation v2, go back to v1.
-const char kAshDisableBootAnimation2[] = "ash-disable-boot-animation2";
-
 // Disables the limitter to throttle how quickly a user
 // can change display settings.
 const char kAshDisableDisplayChangeLimiter[] =
@@ -55,10 +46,6 @@ const char kAshDisableNewAudioHandler[] = "ash-disable-new-audio-handler";
 
 // If present new lock animations are enabled.
 const char kAshDisableNewLockAnimations[] = "ash-disable-new-lock-animations";
-
-// Disable new network handlers in the status area.
-const char kAshDisableNewNetworkStatusArea[] =
-    "ash-disable-new-network-status-area";
 
 // Disable the per application grouping version of the launcher.
 const char kAshDisablePerAppLauncher[] = "ash-disable-per-app-launcher";
@@ -88,6 +75,11 @@ const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
 // Enable immersive fullscreen mode, regardless of default setting.
 const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
 
+#if defined(OS_CHROMEOS)
+// Enable compositor based mirroring.
+const char kAshEnableSoftwareMirroring[] = "ash-enable-software-mirroring";
+#endif
+
 #if defined(OS_LINUX)
 // Enable memory monitoring.
 const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
@@ -104,6 +96,9 @@ const char kAshEnableTrayDragging[] = "ash-enable-tray-dragging";
 
 // Enable workspace switching via a three finger vertical scroll.
 const char kAshEnableWorkspaceScrubbing[] = "ash-enable-workspace-scrubbing";
+
+// Forces chrome to use mirror mode when an external display is connected.
+const char kAshForceMirrorMode[] = "ash-force-mirror-mode";
 
 // Sets a window size, optional position, and optional scale factor.
 // "1024x768" creates a window of size 1024x768.

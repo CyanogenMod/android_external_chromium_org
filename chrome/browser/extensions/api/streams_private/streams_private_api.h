@@ -12,8 +12,8 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/extension_function.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/extensions/extension.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -36,7 +36,8 @@ class StreamsPrivateAPI : public ProfileKeyedAPI,
 
   void ExecuteMimeTypeHandler(const std::string& extension_id,
                               const content::WebContents* web_contents,
-                              scoped_ptr<content::StreamHandle> stream);
+                              scoped_ptr<content::StreamHandle> stream,
+                              int64 expected_content_size);
 
   // ProfileKeyedAPI implementation.
   static ProfileKeyedAPIFactory<StreamsPrivateAPI>* GetFactoryInstance();

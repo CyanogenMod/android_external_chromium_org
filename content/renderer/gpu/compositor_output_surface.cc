@@ -18,11 +18,6 @@
 #include "ipc/ipc_sync_channel.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
-#endif
-
 using WebKit::WebGraphicsContext3D;
 
 namespace {
@@ -43,7 +38,7 @@ IPC::ForwardingMessageFilter* CompositorOutputSurface::CreateFilter(
     ViewMsg_UpdateVSyncParameters::ID,
     ViewMsg_SwapCompositorFrameAck::ID,
 #if defined(OS_ANDROID)
-    ViewMsg_DidVSync::ID
+    ViewMsg_BeginFrame::ID
 #endif
   };
 
@@ -62,7 +57,7 @@ CompositorOutputSurface::CompositorOutputSurface(
           RenderThreadImpl::current()->compositor_output_surface_filter()),
       routing_id_(routing_id),
       prefers_smoothness_(false),
-      main_thread_id_(base::PlatformThread::CurrentId()) {
+      main_thread_handle_(base::PlatformThread::CurrentHandle()) {
   DCHECK(output_surface_filter_);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   capabilities_.has_parent_compositor = command_line->HasSwitch(
@@ -105,7 +100,7 @@ void CompositorOutputSurface::SendFrameToParentCompositor(
 }
 
 void CompositorOutputSurface::SwapBuffers(
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   WebGraphicsContext3DCommandBufferImpl* command_buffer =
       static_cast<WebGraphicsContext3DCommandBufferImpl*>(context3d());
   CommandBufferProxyImpl* command_buffer_proxy =
@@ -117,7 +112,7 @@ void CompositorOutputSurface::SwapBuffers(
 }
 
 void CompositorOutputSurface::PostSubBuffer(
-    gfx::Rect rect, const cc::LatencyInfo& latency_info) {
+    gfx::Rect rect, const ui::LatencyInfo& latency_info) {
   WebGraphicsContext3DCommandBufferImpl* command_buffer =
       static_cast<WebGraphicsContext3DCommandBufferImpl*>(context3d());
   CommandBufferProxyImpl* command_buffer_proxy =
@@ -136,7 +131,7 @@ void CompositorOutputSurface::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateVSyncParameters, OnUpdateVSyncParameters);
     IPC_MESSAGE_HANDLER(ViewMsg_SwapCompositorFrameAck, OnSwapAck);
 #if defined(OS_ANDROID)
-    IPC_MESSAGE_HANDLER(ViewMsg_DidVSync, OnDidVSync);
+    IPC_MESSAGE_HANDLER(ViewMsg_BeginFrame, OnBeginFrame);
 #endif
   IPC_END_MESSAGE_MAP()
 }
@@ -148,14 +143,14 @@ void CompositorOutputSurface::OnUpdateVSyncParameters(
 }
 
 #if defined(OS_ANDROID)
-void CompositorOutputSurface::EnableVSyncNotification(bool enable) {
+void CompositorOutputSurface::SetNeedsBeginFrame(bool enable) {
   DCHECK(CalledOnValidThread());
-  Send(new ViewHostMsg_SetVSyncNotificationEnabled(routing_id_, enable));
+  Send(new ViewHostMsg_SetNeedsBeginFrame(routing_id_, enable));
 }
 
-void CompositorOutputSurface::OnDidVSync(base::TimeTicks frame_time) {
+void CompositorOutputSurface::OnBeginFrame(base::TimeTicks frame_time) {
   DCHECK(CalledOnValidThread());
-  client_->DidVSync(frame_time);
+  client_->BeginFrame(frame_time);
 }
 #endif  // defined(OS_ANDROID)
 
@@ -169,18 +164,17 @@ bool CompositorOutputSurface::Send(IPC::Message* message) {
 
 namespace {
 #if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-  void SetThreadsPriorityToIdle(base::PlatformThreadId id) {
-    int nice_value = 10; // Idle priority.
-    setpriority(PRIO_PROCESS, id, nice_value);
+  void SetThreadPriorityToIdle(base::PlatformThreadHandle handle) {
+    base::PlatformThread::SetThreadPriority(
+       handle, base::kThreadPriority_Background);
   }
-  void SetThreadsPriorityToDefault(base::PlatformThreadId id) {
-    int nice_value = 0; // Default priority.
-    setpriority(PRIO_PROCESS, id, nice_value);
+  void SetThreadPriorityToDefault(base::PlatformThreadHandle handle) {
+    base::PlatformThread::SetThreadPriority(
+       handle, base::kThreadPriority_Normal);
   }
 #else
-  void SetThreadsPriorityToIdle(base::PlatformThreadId id) {}
-  void SetThreadsPriorityToDefault(base::PlatformThreadId id) {}
+  void SetThreadPriorityToIdle(base::PlatformThreadHandle handle) {}
+  void SetThreadPriorityToDefault(base::PlatformThreadHandle handle) {}
 #endif
 }
 
@@ -198,13 +192,13 @@ void CompositorOutputSurface::UpdateSmoothnessTakesPriority(
   // Throttle the main thread's priority.
   if (prefers_smoothness_ == false &&
       ++g_prefer_smoothness_count == 1) {
-    SetThreadsPriorityToIdle(main_thread_id_);
+    SetThreadPriorityToIdle(main_thread_handle_);
   }
   // If this is the last surface to stop preferring smoothness,
   // Reset the main thread's priority to the default.
   if (prefers_smoothness_ == true &&
       --g_prefer_smoothness_count == 0) {
-    SetThreadsPriorityToDefault(main_thread_id_);
+    SetThreadPriorityToDefault(main_thread_handle_);
   }
   prefers_smoothness_ = prefers_smoothness;
 }

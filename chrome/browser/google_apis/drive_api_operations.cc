@@ -10,6 +10,7 @@
 #include "base/values.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/operation_util.h"
+#include "chrome/browser/google_apis/time_util.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -76,11 +77,11 @@ void ParseFileResourceWithUploadRangeAndRun(
 //============================== GetAboutOperation =============================
 
 GetAboutOperation::GetAboutOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const GetAboutResourceCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter,
+    : GetDataOperation(runner, url_request_context_getter,
                        base::Bind(&ParseJsonAndRun<AboutResource>, callback)),
       url_generator_(url_generator) {
   DCHECK(!callback.is_null());
@@ -95,11 +96,11 @@ GURL GetAboutOperation::GetURL() const {
 //============================== GetApplistOperation ===========================
 
 GetApplistOperation::GetApplistOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const GetDataCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter, callback),
+    : GetDataOperation(runner, url_request_context_getter, callback),
       url_generator_(url_generator) {
   DCHECK(!callback.is_null());
 }
@@ -113,14 +114,14 @@ GURL GetApplistOperation::GetURL() const {
 //============================ GetChangelistOperation ==========================
 
 GetChangelistOperation::GetChangelistOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     bool include_deleted,
     int64 start_changestamp,
     int max_results,
     const GetDataCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter, callback),
+    : GetDataOperation(runner, url_request_context_getter, callback),
       url_generator_(url_generator),
       include_deleted_(include_deleted),
       start_changestamp_(start_changestamp),
@@ -138,13 +139,13 @@ GURL GetChangelistOperation::GetURL() const {
 //============================= GetFilelistOperation ===========================
 
 GetFilelistOperation::GetFilelistOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const std::string& search_string,
     int max_results,
     const GetDataCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter, callback),
+    : GetDataOperation(runner, url_request_context_getter, callback),
       url_generator_(url_generator),
       search_string_(search_string),
       max_results_(max_results) {
@@ -160,12 +161,12 @@ GURL GetFilelistOperation::GetURL() const {
 //=============================== GetFileOperation =============================
 
 GetFileOperation::GetFileOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const std::string& file_id,
     const FileResourceCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter,
+    : GetDataOperation(runner, url_request_context_getter,
                        base::Bind(&ParseJsonAndRun<FileResource>, callback)),
       url_generator_(url_generator),
       file_id_(file_id) {
@@ -183,11 +184,11 @@ namespace drive {
 //======================= ContinueGetFileListOperation =========================
 
 ContinueGetFileListOperation::ContinueGetFileListOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const GURL& url,
     const GetDataCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter, callback),
+    : GetDataOperation(runner, url_request_context_getter, callback),
       url_(url) {
   DCHECK(!callback.is_null());
 }
@@ -201,13 +202,13 @@ GURL ContinueGetFileListOperation::GetURL() const {
 //========================== CreateDirectoryOperation ==========================
 
 CreateDirectoryOperation::CreateDirectoryOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const std::string& parent_resource_id,
     const std::string& directory_name,
     const FileResourceCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter,
+    : GetDataOperation(runner, url_request_context_getter,
                        base::Bind(&ParseJsonAndRun<FileResource>, callback)),
       url_generator_(url_generator),
       parent_resource_id_(parent_resource_id),
@@ -252,13 +253,13 @@ bool CreateDirectoryOperation::GetContentData(std::string* upload_content_type,
 //=========================== RenameResourceOperation ==========================
 
 RenameResourceOperation::RenameResourceOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const std::string& resource_id,
     const std::string& new_name,
     const EntryActionCallback& callback)
-    : EntryActionOperation(registry, url_request_context_getter, callback),
+    : EntryActionOperation(runner, url_request_context_getter, callback),
       url_generator_(url_generator),
       resource_id_(resource_id),
       new_name_(new_name) {
@@ -295,19 +296,74 @@ bool RenameResourceOperation::GetContentData(std::string* upload_content_type,
   return true;
 }
 
-//=========================== CopyResourceOperation ============================
+//=========================== TouchResourceOperation ===========================
 
-CopyResourceOperation::CopyResourceOperation(
-    OperationRegistry* registry,
+TouchResourceOperation::TouchResourceOperation(
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const std::string& resource_id,
-    const std::string& new_name,
+    const base::Time& modified_date,
+    const base::Time& last_viewed_by_me_date,
     const FileResourceCallback& callback)
-    : GetDataOperation(registry, url_request_context_getter,
+    : GetDataOperation(runner, url_request_context_getter,
                        base::Bind(&ParseJsonAndRun<FileResource>, callback)),
       url_generator_(url_generator),
       resource_id_(resource_id),
+      modified_date_(modified_date),
+      last_viewed_by_me_date_(last_viewed_by_me_date) {
+  DCHECK(!modified_date.is_null());
+  DCHECK(!last_viewed_by_me_date.is_null());
+  DCHECK(!callback.is_null());
+}
+
+TouchResourceOperation::~TouchResourceOperation() {}
+
+net::URLFetcher::RequestType TouchResourceOperation::GetRequestType() const {
+  return net::URLFetcher::PATCH;
+}
+
+std::vector<std::string>
+TouchResourceOperation::GetExtraRequestHeaders() const {
+  std::vector<std::string> headers;
+  headers.push_back(util::kIfMatchAllHeader);
+  return headers;
+}
+
+GURL TouchResourceOperation::GetURL() const {
+  return url_generator_.GetFileTouchUrl(resource_id_);
+}
+
+bool TouchResourceOperation::GetContentData(std::string* upload_content_type,
+                                            std::string* upload_content) {
+  *upload_content_type = kContentTypeApplicationJson;
+
+  base::DictionaryValue root;
+  root.SetString("modifiedDate", util::FormatTimeAsString(modified_date_));
+  root.SetString("lastViewedByMeDate",
+                 util::FormatTimeAsString(last_viewed_by_me_date_));
+  base::JSONWriter::Write(&root, upload_content);
+
+  DVLOG(1) << "TouchResource data: " << *upload_content_type << ", ["
+           << *upload_content << "]";
+  return true;
+}
+
+//=========================== CopyResourceOperation ============================
+
+CopyResourceOperation::CopyResourceOperation(
+    OperationRunner* runner,
+    net::URLRequestContextGetter* url_request_context_getter,
+    const DriveApiUrlGenerator& url_generator,
+    const std::string& resource_id,
+    const std::string& parent_resource_id,
+    const std::string& new_name,
+    const FileResourceCallback& callback)
+    : GetDataOperation(runner, url_request_context_getter,
+                       base::Bind(&ParseJsonAndRun<FileResource>, callback)),
+      url_generator_(url_generator),
+      resource_id_(resource_id),
+      parent_resource_id_(parent_resource_id),
       new_name_(new_name) {
   DCHECK(!callback.is_null());
 }
@@ -329,6 +385,16 @@ bool CopyResourceOperation::GetContentData(std::string* upload_content_type,
 
   base::DictionaryValue root;
   root.SetString("title", new_name_);
+
+  if (!parent_resource_id_.empty()) {
+    // Set the parent resource (destination directory) of the new resource.
+    base::ListValue* parents = new base::ListValue;
+    root.Set("parents", parents);
+    base::DictionaryValue* parent_value = new base::DictionaryValue;
+    parents->Append(parent_value);
+    parent_value->SetString("id", parent_resource_id_);
+  }
+
   base::JSONWriter::Write(&root, upload_content);
 
   DVLOG(1) << "CopyResource data: " << *upload_content_type << ", ["
@@ -339,12 +405,12 @@ bool CopyResourceOperation::GetContentData(std::string* upload_content_type,
 //=========================== TrashResourceOperation ===========================
 
 TrashResourceOperation::TrashResourceOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const std::string& resource_id,
     const EntryActionCallback& callback)
-    : EntryActionOperation(registry, url_request_context_getter, callback),
+    : EntryActionOperation(runner, url_request_context_getter, callback),
       url_generator_(url_generator),
       resource_id_(resource_id) {
   DCHECK(!callback.is_null());
@@ -363,13 +429,13 @@ net::URLFetcher::RequestType TrashResourceOperation::GetRequestType() const {
 //========================== InsertResourceOperation ===========================
 
 InsertResourceOperation::InsertResourceOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const std::string& parent_resource_id,
     const std::string& resource_id,
     const EntryActionCallback& callback)
-    : EntryActionOperation(registry, url_request_context_getter, callback),
+    : EntryActionOperation(runner, url_request_context_getter, callback),
       url_generator_(url_generator),
       parent_resource_id_(parent_resource_id),
       resource_id_(resource_id) {
@@ -402,13 +468,13 @@ bool InsertResourceOperation::GetContentData(std::string* upload_content_type,
 //========================== DeleteResourceOperation ===========================
 
 DeleteResourceOperation::DeleteResourceOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const std::string& parent_resource_id,
     const std::string& resource_id,
     const EntryActionCallback& callback)
-    : EntryActionOperation(registry, url_request_context_getter, callback),
+    : EntryActionOperation(runner, url_request_context_getter, callback),
       url_generator_(url_generator),
       parent_resource_id_(parent_resource_id),
       resource_id_(resource_id) {
@@ -429,7 +495,7 @@ net::URLFetcher::RequestType DeleteResourceOperation::GetRequestType() const {
 //======================= InitiateUploadNewFileOperation =======================
 
 InitiateUploadNewFileOperation::InitiateUploadNewFileOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const base::FilePath& drive_file_path,
@@ -438,7 +504,7 @@ InitiateUploadNewFileOperation::InitiateUploadNewFileOperation(
     const std::string& parent_resource_id,
     const std::string& title,
     const InitiateUploadCallback& callback)
-    : InitiateUploadOperationBase(registry,
+    : InitiateUploadOperationBase(runner,
                                   url_request_context_getter,
                                   callback,
                                   drive_file_path,
@@ -490,7 +556,7 @@ bool InitiateUploadNewFileOperation::GetContentData(
 //===================== InitiateUploadExistingFileOperation ====================
 
 InitiateUploadExistingFileOperation::InitiateUploadExistingFileOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DriveApiUrlGenerator& url_generator,
     const base::FilePath& drive_file_path,
@@ -499,7 +565,7 @@ InitiateUploadExistingFileOperation::InitiateUploadExistingFileOperation(
     const std::string& resource_id,
     const std::string& etag,
     const InitiateUploadCallback& callback)
-    : InitiateUploadOperationBase(registry,
+    : InitiateUploadOperationBase(runner,
                                   url_request_context_getter,
                                   callback,
                                   drive_file_path,
@@ -532,9 +598,8 @@ InitiateUploadExistingFileOperation::GetExtraRequestHeaders() const {
 //============================ ResumeUploadOperation ===========================
 
 ResumeUploadOperation::ResumeUploadOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
-    UploadMode upload_mode,
     const base::FilePath& drive_file_path,
     const GURL& upload_location,
     int64 start_position,
@@ -544,9 +609,8 @@ ResumeUploadOperation::ResumeUploadOperation(
     const base::FilePath& local_file_path,
     const UploadRangeCallback& callback,
     const ProgressCallback& progress_callback)
-    : ResumeUploadOperationBase(registry,
+    : ResumeUploadOperationBase(runner,
                                 url_request_context_getter,
-                                upload_mode,
                                 drive_file_path,
                                 upload_location,
                                 start_position,
@@ -570,6 +634,31 @@ void ResumeUploadOperation::OnURLFetchUploadProgress(
     const net::URLFetcher* source, int64 current, int64 total) {
   if (!progress_callback_.is_null())
     progress_callback_.Run(current, total);
+}
+
+//========================== GetUploadStatusOperation ==========================
+
+GetUploadStatusOperation::GetUploadStatusOperation(
+    OperationRunner* runner,
+    net::URLRequestContextGetter* url_request_context_getter,
+    const base::FilePath& drive_file_path,
+    const GURL& upload_url,
+    int64 content_length,
+    const UploadRangeCallback& callback)
+  : GetUploadStatusOperationBase(runner,
+                                 url_request_context_getter,
+                                 drive_file_path,
+                                 upload_url,
+                                 content_length),
+    callback_(callback) {
+  DCHECK(!callback.is_null());
+}
+
+GetUploadStatusOperation::~GetUploadStatusOperation() {}
+
+void GetUploadStatusOperation::OnRangeOperationComplete(
+    const UploadRangeResponse& response, scoped_ptr<base::Value> value) {
+  ParseFileResourceWithUploadRangeAndRun(callback_, response, value.Pass());
 }
 
 }  // namespace drive

@@ -594,7 +594,7 @@ TEST_F(FramePainterTest, GetHeaderOpacity) {
   EXPECT_EQ(FramePainter::kSoloWindowOpacity,
             p1.GetHeaderOpacity(FramePainter::ACTIVE,
                                 IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
-                                NULL));
+                                0));
 
   // Create a second widget and painter.
   scoped_ptr<Widget> w2(CreateTestWidget());
@@ -608,42 +608,50 @@ TEST_F(FramePainterTest, GetHeaderOpacity) {
   EXPECT_EQ(FramePainter::kActiveWindowOpacity,
             p2.GetHeaderOpacity(FramePainter::ACTIVE,
                                 IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
-                                NULL));
+                                0));
 
   // Inactive window has inactive window opacity.
   EXPECT_EQ(FramePainter::kInactiveWindowOpacity,
             p2.GetHeaderOpacity(FramePainter::INACTIVE,
                                 IDR_AURA_WINDOW_HEADER_BASE_INACTIVE,
-                                NULL));
+                                0));
 
-  // Custom overlay image is drawn completely opaque.
-  gfx::ImageSkia custom_overlay;
-  EXPECT_EQ(255,
-            p1.GetHeaderOpacity(FramePainter::ACTIVE,
-                                IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
-                                &custom_overlay));
-
-  // Regular maximized window is fully transparent.
+  // Regular maximized windows are fully opaque.
   ash::wm::MaximizeWindow(w1->GetNativeWindow());
-  EXPECT_EQ(0,
-            p1.GetHeaderOpacity(FramePainter::ACTIVE,
-                                IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
-                                NULL));
-
-  // Windows with custom overlays are fully opaque when maximized.
   EXPECT_EQ(255,
             p1.GetHeaderOpacity(FramePainter::ACTIVE,
                                 IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
-                                &custom_overlay));
+                                0));
+}
 
-  // The maximized window frame should take on the active/inactive opacity
-  // while the user is cycling through workspaces.
-  w1->GetNativeWindow()->GetRootWindow()->SetProperty(
+// Test that the minimal header style is used in the proper situations.
+TEST_F(FramePainterTest, MinimalHeaderStyle) {
+  // Create a widget and a painter for it.
+  scoped_ptr<Widget> w(CreateTestWidget());
+  FramePainter p;
+  ImageButton size(NULL);
+  ImageButton close(NULL);
+  p.Init(w.get(), NULL, &size, &close, FramePainter::SIZE_BUTTON_MAXIMIZES);
+  w->Show();
+
+  // Regular non-maximized windows should not use the minimal header style.
+  EXPECT_FALSE(p.ShouldUseMinimalHeaderStyle(FramePainter::THEMED_NO));
+
+  // Regular maximized windows should use the minimal header style.
+  w->Maximize();
+  EXPECT_TRUE(p.ShouldUseMinimalHeaderStyle(FramePainter::THEMED_NO));
+
+  // Test cases where the maximized window should not use the minimal header
+  // style.
+  EXPECT_FALSE(p.ShouldUseMinimalHeaderStyle(FramePainter::THEMED_YES));
+
+  SetTrackedByWorkspace(w->GetNativeWindow(), false);
+  EXPECT_FALSE(p.ShouldUseMinimalHeaderStyle(FramePainter::THEMED_NO));
+  SetTrackedByWorkspace(w->GetNativeWindow(), true);
+
+  w->GetNativeWindow()->GetRootWindow()->SetProperty(
       ash::internal::kCyclingThroughWorkspacesKey, true);
-  EXPECT_EQ(FramePainter::kInactiveWindowOpacity,
-            p1.GetHeaderOpacity(FramePainter::INACTIVE,
-                                IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
-                                NULL));
+  EXPECT_FALSE(p.ShouldUseMinimalHeaderStyle(FramePainter::THEMED_NO));
 }
 
 }  // namespace ash

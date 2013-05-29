@@ -18,19 +18,15 @@ namespace switches {
 
 // Please keep alphabetized.
 ASH_EXPORT extern const char kAshAnimateFromBootSplashScreen[];
-ASH_EXPORT extern const char kAshBootAnimationFunction2[];
-ASH_EXPORT extern const char kAshBootAnimationFunction3[];
 ASH_EXPORT extern const char kAshConstrainPointerToRoot[];
 ASH_EXPORT extern const char kAshCopyHostBackgroundAtBoot[];
 ASH_EXPORT extern const char kAshDebugShortcuts[];
 ASH_EXPORT extern const char kAshDisableAutoMaximizing[];
 ASH_EXPORT extern const char kAshDisableAutoWindowPlacement[];
-ASH_EXPORT extern const char kAshDisableBootAnimation2[];
 ASH_EXPORT extern const char kAshDisableDisplayChangeLimiter[];
 ASH_EXPORT extern const char kAshDisableImmersiveFullscreen[];
 ASH_EXPORT extern const char kAshDisableNewAudioHandler[];
 ASH_EXPORT extern const char kAshDisableNewLockAnimations[];
-ASH_EXPORT extern const char kAshDisableNewNetworkStatusArea[];
 ASH_EXPORT extern const char kAshDisablePerAppLauncher[];
 ASH_EXPORT extern const char kAshDisableUIScaling[];
 ASH_EXPORT extern const char kAshDisableDisplayRotation[];
@@ -38,6 +34,9 @@ ASH_EXPORT extern const char kAshDragAndDropAppListToLauncher[];
 ASH_EXPORT extern const char kAshEnableAudioDeviceMenu[];
 ASH_EXPORT extern const char kAshEnableAdvancedGestures[];
 ASH_EXPORT extern const char kAshEnableBrightnessControl[];
+#if defined(OS_CHROMEOS)
+ASH_EXPORT extern const char kAshEnableSoftwareMirroring[];
+#endif
 #if defined(OS_LINUX)
 ASH_EXPORT extern const char kAshEnableMemoryMonitor[];
 #endif
@@ -46,6 +45,7 @@ ASH_EXPORT extern const char kAshEnableOak[];
 ASH_EXPORT extern const char kAshEnableStickyEdges[];
 ASH_EXPORT extern const char kAshEnableTrayDragging[];
 ASH_EXPORT extern const char kAshEnableWorkspaceScrubbing[];
+ASH_EXPORT extern const char kAshForceMirrorMode[];
 ASH_EXPORT extern const char kAshHostWindowBounds[];
 ASH_EXPORT extern const char kAshImmersiveHideTabIndicators[];
 ASH_EXPORT extern const char kAshSecondaryDisplayLayout[];

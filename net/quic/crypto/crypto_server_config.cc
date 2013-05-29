@@ -4,11 +4,13 @@
 
 #include "net/quic/crypto/crypto_server_config.h"
 
+#include <stdlib.h>
+
 #include "base/stl_util.h"
 #include "crypto/hkdf.h"
 #include "crypto/secure_hash.h"
-#include "net/quic/crypto/aes_128_gcm_decrypter.h"
-#include "net/quic/crypto/aes_128_gcm_encrypter.h"
+#include "net/quic/crypto/aes_128_gcm_12_decrypter.h"
+#include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/quic/crypto/cert_compressor.h"
 #include "net/quic/crypto/crypto_framer.h"
 #include "net/quic/crypto/crypto_server_config_protobuf.h"
@@ -40,25 +42,16 @@ const char QuicCryptoServerConfig::TESTING[] = "secret string for testing";
 
 QuicCryptoServerConfig::QuicCryptoServerConfig(
     StringPiece source_address_token_secret)
-    // AES-GCM is used to encrypt and authenticate source address tokens. The
-    // full, 96-bit nonce is used but we must ensure that an attacker cannot
-    // obtain two source address tokens with the same nonce. This occurs with
-    // probability 0.5 after 2**48 values. We assume that obtaining 2**48
-    // source address tokens is not possible: at a rate of 10M packets per
-    // second, it would still take the attacker a year to obtain the needed
-    // number of packets.
-    //
-    // TODO(agl): switch to an encrypter with a larger nonce space (i.e.
-    // Salsa20+Poly1305).
     : strike_register_lock_(),
-      source_address_token_encrypter_(new Aes128GcmEncrypter),
-      source_address_token_decrypter_(new Aes128GcmDecrypter) {
+      strike_register_max_entries_(1 << 10),
+      strike_register_window_secs_(600),
+      source_address_token_future_secs_(3600),
+      source_address_token_lifetime_secs_(86400) {
   crypto::HKDF hkdf(source_address_token_secret, StringPiece() /* no salt */,
                     "QUIC source address token key",
-                    source_address_token_encrypter_->GetKeySize(),
+                    CryptoSecretBoxer::GetKeySize(),
                     0 /* no fixed IV needed */);
-  source_address_token_encrypter_->SetKey(hkdf.server_write_key());
-  source_address_token_decrypter_->SetKey(hkdf.server_write_key());
+  source_address_token_boxer_.SetKey(hkdf.server_write_key());
 }
 
 QuicCryptoServerConfig::~QuicCryptoServerConfig() {
@@ -69,7 +62,6 @@ QuicCryptoServerConfig::~QuicCryptoServerConfig() {
 QuicServerConfigProtobuf* QuicCryptoServerConfig::DefaultConfig(
     QuicRandom* rand,
     const QuicClock* clock,
-    const CryptoHandshakeMessage& extra_tags,
     uint64 expiry_time)  {
   CryptoHandshakeMessage msg;
 
@@ -101,8 +93,6 @@ QuicServerConfigProtobuf* QuicCryptoServerConfig::DefaultConfig(
   msg.SetTaglist(kAEAD, kAESG, 0);
   msg.SetValue(kVERS, static_cast<uint16>(0));
   msg.SetStringPiece(kPUBS, encoded_public_values);
-  msg.Insert(extra_tags.tag_value_map().begin(),
-             extra_tags.tag_value_map().end());
 
   if (expiry_time == 0) {
     const QuicWallTime now = clock->WallNow();
@@ -277,10 +267,9 @@ CryptoHandshakeMessage* QuicCryptoServerConfig::AddConfig(
 CryptoHandshakeMessage* QuicCryptoServerConfig::AddDefaultConfig(
     QuicRandom* rand,
     const QuicClock* clock,
-    const CryptoHandshakeMessage& extra_tags,
     uint64 expiry_time) {
-  scoped_ptr<QuicServerConfigProtobuf> config(DefaultConfig(
-      rand, clock, extra_tags, expiry_time));
+  scoped_ptr<QuicServerConfigProtobuf> config(
+      DefaultConfig(rand, clock, expiry_time));
   return AddConfig(config.get());
 }
 
@@ -295,7 +284,10 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
     string* error_details) const {
   DCHECK(error_details);
 
-  CHECK(!configs_.empty());
+  if (configs_.empty()) {
+    *error_details = "No configurations loaded";
+    return QUIC_CRYPTO_INTERNAL_ERROR;
+  }
 
   // FIXME(agl): we should use the client's SCID, not just the active config.
   map<ServerConfigID, Config*>::const_iterator it =
@@ -305,6 +297,11 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
     return QUIC_CRYPTO_INTERNAL_ERROR;
   }
   const Config* const config(it->second);
+
+  if (client_hello.size() < kClientHelloMinimumSize) {
+    *error_details = "Client hello too small";
+    return QUIC_CRYPTO_INVALID_VALUE_LENGTH;
+  }
 
   const QuicWallTime now = clock->WallNow();
   bool valid_source_address_token = false;
@@ -334,10 +331,10 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
 
     if (strike_register_.get() == NULL) {
       strike_register_.reset(new StrikeRegister(
-          // TODO(agl): these magic numbers should come from config.
-          1024 /* max entries */,
+          strike_register_max_entries_,
           static_cast<uint32>(now.ToUNIXSeconds()),
-          600 /* window secs */, config->orbit));
+          strike_register_window_secs_,
+          config->orbit));
     }
     unique_by_strike_register = strike_register_->Insert(
         reinterpret_cast<const uint8*>(client_nonce.data()),
@@ -351,7 +348,11 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
   out->Clear();
 
   StringPiece sni;
-  client_hello.GetStringPiece(kSNI, &sni);
+  if (client_hello.GetStringPiece(kSNI, &sni) &&
+      !CryptoUtils::IsValidSNI(sni)) {
+    *error_details = "Invalid SNI name";
+    return QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER;
+  }
 
   StringPiece scid;
   if (!client_hello.GetStringPiece(kSCID, &scid) ||
@@ -401,7 +402,7 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
 
         const string compressed = CertCompressor::CompressChain(
             *certs, their_common_set_hashes, their_cached_cert_hashes,
-            config->common_cert_set_.get());
+            config->common_cert_sets.get());
 
         // kMaxUnverifiedSize is the number of bytes that the certificate chain
         // and signature can consume before we will demand a valid
@@ -433,12 +434,12 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
   }
 
   size_t key_exchange_index;
-  if (!CryptoUtils::FindMutualTag(config->aead, their_aeads, num_their_aeads,
-                                  CryptoUtils::LOCAL_PRIORITY, &params->aead,
-                                  NULL) ||
-      !CryptoUtils::FindMutualTag(
+  if (!QuicUtils::FindMutualTag(config->aead, their_aeads, num_their_aeads,
+                                QuicUtils::LOCAL_PRIORITY, &params->aead,
+                                NULL) ||
+      !QuicUtils::FindMutualTag(
           config->kexs, their_key_exchanges, num_their_key_exchanges,
-          CryptoUtils::LOCAL_PRIORITY, &params->key_exchange,
+          QuicUtils::LOCAL_PRIORITY, &params->key_exchange,
           &key_exchange_index)) {
     *error_details = "Unsupported AEAD or KEXS";
     return QUIC_CRYPTO_NO_SUPPORT;
@@ -458,6 +459,12 @@ QuicErrorCode QuicCryptoServerConfig::ProcessClientHello(
   }
 
   params->server_config_id = scid.as_string();
+  if (!sni.empty()) {
+    scoped_ptr<char[]> sni_tmp(new char[sni.length() + 1]);
+    memcpy(sni_tmp.get(), sni.data(), sni.length());
+    sni_tmp[sni.length()] = 0;
+    params->sni = CryptoUtils::NormalizeHostname(sni_tmp.get());
+  }
 
   string hkdf_suffix;
   const QuicData& client_hello_serialized = client_hello.GetSerialized();
@@ -523,6 +530,28 @@ void QuicCryptoServerConfig::SetEphemeralKeySource(
   ephemeral_key_source_.reset(ephemeral_key_source);
 }
 
+void QuicCryptoServerConfig::set_strike_register_max_entries(
+    uint32 max_entries) {
+  DCHECK(!strike_register_.get());
+  strike_register_max_entries_ = max_entries;
+}
+
+void QuicCryptoServerConfig::set_strike_register_window_secs(
+    uint32 window_secs) {
+  DCHECK(!strike_register_.get());
+  strike_register_window_secs_ = window_secs;
+}
+
+void QuicCryptoServerConfig::set_source_address_token_future_secs(
+    uint32 future_secs) {
+  source_address_token_future_secs_ = future_secs;
+}
+
+void QuicCryptoServerConfig::set_source_address_token_lifetime_secs(
+    uint32 lifetime_secs) {
+  source_address_token_lifetime_secs_ = lifetime_secs;
+}
+
 string QuicCryptoServerConfig::NewSourceAddressToken(
     const IPEndPoint& ip,
     QuicRandom* rand,
@@ -531,63 +560,23 @@ string QuicCryptoServerConfig::NewSourceAddressToken(
   source_address_token.set_ip(ip.ToString());
   source_address_token.set_timestamp(now.ToUNIXSeconds());
 
-  string plaintext = source_address_token.SerializeAsString();
-  char nonce[12];
-  DCHECK_EQ(sizeof(nonce),
-            source_address_token_encrypter_->GetNoncePrefixSize() +
-            sizeof(QuicPacketSequenceNumber));
-  rand->RandBytes(nonce, sizeof(nonce));
-
-  size_t ciphertext_size =
-      source_address_token_encrypter_->GetCiphertextSize(plaintext.size());
-  string result;
-  result.resize(sizeof(nonce) + ciphertext_size);
-  memcpy(&result[0], &nonce, sizeof(nonce));
-
-  if (!source_address_token_encrypter_->Encrypt(
-          StringPiece(nonce, sizeof(nonce)), StringPiece(), plaintext,
-          reinterpret_cast<unsigned char*>(&result[sizeof(nonce)]))) {
-    DCHECK(false);
-    return string();
-  }
-
-  return result;
+  return source_address_token_boxer_.Box(
+      rand, source_address_token.SerializeAsString());
 }
 
 bool QuicCryptoServerConfig::ValidateSourceAddressToken(
     StringPiece token,
     const IPEndPoint& ip,
     QuicWallTime now) const {
-  char nonce[12];
-  DCHECK_EQ(sizeof(nonce),
-            source_address_token_encrypter_->GetNoncePrefixSize() +
-            sizeof(QuicPacketSequenceNumber));
-
-  if (token.size() <= sizeof(nonce)) {
-    return false;
-  }
-  memcpy(&nonce, token.data(), sizeof(nonce));
-  token.remove_prefix(sizeof(nonce));
-
-  unsigned char plaintext_stack[128];
-  scoped_ptr<unsigned char[]> plaintext_heap;
-  unsigned char* plaintext;
-  if (token.size() <= sizeof(plaintext_stack)) {
-    plaintext = plaintext_stack;
-  } else {
-    plaintext_heap.reset(new unsigned char[token.size()]);
-    plaintext = plaintext_heap.get();
-  }
-  size_t plaintext_length;
-
-  if (!source_address_token_decrypter_->Decrypt(
-          StringPiece(nonce, sizeof(nonce)), StringPiece(), token, plaintext,
-          &plaintext_length)) {
+  string storage;
+  StringPiece plaintext;
+  if (!source_address_token_boxer_.Unbox(token, &storage, &plaintext)) {
     return false;
   }
 
   SourceAddressToken source_address_token;
-  if (!source_address_token.ParseFromArray(plaintext, plaintext_length)) {
+  if (!source_address_token.ParseFromArray(plaintext.data(),
+                                           plaintext.size())) {
     return false;
   }
 
@@ -600,15 +589,13 @@ bool QuicCryptoServerConfig::ValidateSourceAddressToken(
       QuicWallTime::FromUNIXSeconds(source_address_token.timestamp()));
   const QuicTime::Delta delta(now.AbsoluteDifference(timestamp));
 
-  // TODO(agl): consider whether and how these magic values should be moved to
-  // a config.
-  if (now.IsBefore(timestamp) && delta.ToSeconds() > 3600) {
-    // We only allow timestamps to be from an hour in the future.
+  if (now.IsBefore(timestamp) &&
+      delta.ToSeconds() > source_address_token_future_secs_) {
     return false;
   }
 
-  if (now.IsAfter(timestamp) && delta.ToSeconds() > 86400) {
-    // We allow one day into the past.
+  if (now.IsAfter(timestamp) &&
+      delta.ToSeconds() > source_address_token_lifetime_secs_) {
     return false;
   }
 

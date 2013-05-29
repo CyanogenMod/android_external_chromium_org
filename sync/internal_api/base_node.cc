@@ -215,6 +215,10 @@ int64 BaseNode::GetFirstChildId() const {
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
 }
 
+void BaseNode::GetChildIds(std::vector<int64>* result) const {
+  GetEntry()->GetChildHandles(result);
+}
+
 int BaseNode::GetTotalNodeCount() const {
   syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
 
@@ -333,6 +337,11 @@ const sync_pb::ManagedUserSettingSpecifics&
     BaseNode::GetManagedUserSettingSpecifics() const {
   DCHECK_EQ(GetModelType(), MANAGED_USER_SETTINGS);
   return GetEntitySpecifics().managed_user_setting();
+}
+
+const sync_pb::ManagedUserSpecifics& BaseNode::GetManagedUserSpecifics() const {
+  DCHECK_EQ(GetModelType(), MANAGED_USERS);
+  return GetEntitySpecifics().managed_user();
 }
 
 const sync_pb::DeviceInfoSpecifics& BaseNode::GetDeviceInfoSpecifics() const {

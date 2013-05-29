@@ -77,12 +77,14 @@
         'base/animation/throb_animation.h',
         'base/animation/tween.cc',
         'base/animation/tween.h',
+        'base/base_window.h',
         'base/clipboard/clipboard.cc',
         'base/clipboard/clipboard.h',
         'base/clipboard/clipboard_android.cc',
         'base/clipboard/clipboard_android_initialization.h',
         'base/clipboard/clipboard_aura.cc',
         'base/clipboard/clipboard_aurax11.cc',
+        'base/clipboard/clipboard_constants.cc',
         'base/clipboard/clipboard_gtk.cc',
         'base/clipboard/clipboard_mac.mm',
         'base/clipboard/clipboard_sourcetag.h',
@@ -132,6 +134,9 @@
         'base/cursor/cursor_x11.cc',
         'base/cursor/cursors_aura.cc',
         'base/cursor/cursors_aura.h',
+        'base/default_theme_provider.cc',
+        'base/default_theme_provider.h',
+        'base/default_theme_provider_mac.mm',
         'base/dragdrop/cocoa_dnd_util.h',
         'base/dragdrop/cocoa_dnd_util.mm',
         'base/dragdrop/desktop_selection_provider_aurax11.h',
@@ -225,6 +230,8 @@
         'base/keycodes/keyboard_code_conversion_x.h',
         'base/keycodes/keyboard_codes.h',
         'base/keycodes/usb_keycode_map.h',
+        'base/latency_info.cc',
+        'base/latency_info.h',
         'base/l10n/l10n_font_util.cc',
         'base/l10n/l10n_font_util.h',
         'base/l10n/l10n_util.cc',
@@ -263,6 +270,8 @@
         'base/models/tree_model.h',
         'base/models/tree_node_iterator.h',
         'base/models/tree_node_model.h',
+        'base/ozone/surface_factory_ozone.cc',
+        'base/ozone/surface_factory_ozone.h',
         'base/range/range.cc',
         'base/range/range.h',
         'base/range/range_mac.mm',
@@ -581,8 +590,6 @@
             ['include', '(^|/)ios/'],
             ['include', '^gfx/'],
             ['exclude', '^gfx/codec/jpeg_codec\\.cc$'],
-            ['exclude', '^gfx/pango_util\\.'],
-            ['exclude', '^gfx/platform_font_pango\\.'],
             ['include', '^base/animation/'],
             ['include', '^base/l10n/'],
             ['include', '^base/layout'],
@@ -640,7 +647,12 @@
             'base/x/selection_utils.h',
           ]
         }],
-        
+        ['use_pango==0', {
+          'sources/': [
+            ['exclude', '^gfx/pango_util\\.'],
+            ['exclude', '^gfx/platform_font_pango\\.'],
+          ],
+        }],
         ['use_aura==0 or OS!="linux"', {
           'sources!': [
             'base/resource/resource_bundle_auralinux.cc',
@@ -661,7 +673,6 @@
             # font_gtk.cc uses fontconfig.
             '../build/linux/system.gyp:fontconfig',
             '../build/linux/system.gyp:glib',
-            '../build/linux/system.gyp:pangocairo',
           ],
           'conditions': [
             ['toolkit_views==0', {
@@ -678,6 +689,11 @@
               # 'sources/' rather than 'sources!'.
               'sources/': [
                 ['include', '^base/dragdrop/os_exchange_data.cc'],
+              ],
+            }],
+            ['use_pango==1', {
+              'dependencies': [
+                '../build/linux/system.gyp:pangocairo',
               ],
             }],
           ],
@@ -720,10 +736,6 @@
           ],
           'sources!': [
             'base/touch/touch_device.cc',
-            'gfx/pango_util.h',
-            'gfx/pango_util.cc',
-            'gfx/platform_font_pango.cc',
-            'gfx/platform_font_pango.h',
           ],
           'include_dirs': [
             '../',
@@ -776,10 +788,6 @@
           'sources!': [
             'base/dragdrop/drag_utils.cc',
             'base/dragdrop/drag_utils.h',
-            'gfx/pango_util.h',
-            'gfx/pango_util.cc',
-            'gfx/platform_font_pango.h',
-            'gfx/platform_font_pango.cc',
           ],
           'link_settings': {
             'libraries': [
@@ -849,10 +857,6 @@
             'base/dragdrop/drag_utils.cc',
             'base/dragdrop/drag_utils.h',
             'base/touch/touch_device.cc',
-            'gfx/pango_util.cc',
-            'gfx/pango_util.h',
-            'gfx/platform_font_pango.cc',
-            'gfx/platform_font_pango.h',
           ],
           'dependencies': [
             'ui_jni_headers',

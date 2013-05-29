@@ -60,7 +60,8 @@ class LoginDisplayWebUIHandler {
   // Show sign-in screen for the given credentials.
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) = 0;
-  virtual void SetGaiaOriginForTesting(const std::string& arg) = 0;
+  // TODO(achuith): Get rid of this in favor of --gaia-url. crbug.com/240502
+  virtual void SetGaiaUrlForTesting(const GURL& gaia_url) = 0;
  protected:
   virtual ~LoginDisplayWebUIHandler() {}
 };
@@ -159,7 +160,6 @@ class SigninScreenHandler
       public LoginDisplayWebUIHandler,
       public SystemKeyEventListener::CapsLockObserver,
       public content::NotificationObserver,
-      public NetworkStateInformerDelegate,
       public NetworkStateInformer::NetworkStateInformerObserver {
  public:
   SigninScreenHandler(
@@ -180,10 +180,9 @@ class SigninScreenHandler
 
   void SetNativeWindowDelegate(NativeWindowDelegate* native_window_delegate);
 
-  // NetworkStateInformerDelegate implementation:
+  // NetworkStateInformer::NetworkStateInformerObserver implementation:
   virtual void OnNetworkReady() OVERRIDE;
 
-  // NetworkStateInformer::NetworkStateInformerObserver implementation:
   virtual void UpdateState(NetworkStateInformer::State state,
                            ErrorScreenActor::ErrorReason reason) OVERRIDE;
 
@@ -247,7 +246,7 @@ class SigninScreenHandler
   virtual void ShowErrorScreen(LoginDisplay::SigninError error_id) OVERRIDE;
   virtual void ShowSigninScreenForCreds(const std::string& username,
                                         const std::string& password) OVERRIDE;
-  virtual void SetGaiaOriginForTesting(const std::string& arg) OVERRIDE;
+  virtual void SetGaiaUrlForTesting(const GURL& gaia_url) OVERRIDE;
 
   // SystemKeyEventListener::CapsLockObserver overrides.
   virtual void OnCapsLockChange(bool enabled) OVERRIDE;
@@ -271,6 +270,12 @@ class SigninScreenHandler
   // sign-in (allow BWSI and allow whitelist) are changed.
   void UpdateAuthExtension();
   void UpdateAddButtonStatus();
+
+  // Fill |params| that are passed to JS..
+  void UpdateAuthParams(DictionaryValue* params);
+
+  // Restore input focus to current user pod.
+  void RefocusCurrentPod();
 
   // WebUI message handlers.
   void HandleCompleteAuthentication(const std::string& email,
@@ -424,9 +429,7 @@ class SigninScreenHandler
 
   // Set to true once |LOGIN_WEBUI_VISIBLE| notification is observed.
   bool webui_visible_;
-
-  // True when signin UI is shown to user (either sign in form or user pods).
-  bool login_ui_active_;
+  bool preferences_changed_delayed_;
 
   ErrorScreenActor* error_screen_actor_;
 
@@ -445,7 +448,7 @@ class SigninScreenHandler
   bool has_pending_auth_ui_;
 
   // Testing helper, specifies new value for gaia url.
-  std::string gaia_origin_for_test_;
+  GURL gaia_url_for_test_;
 
   DISALLOW_COPY_AND_ASSIGN(SigninScreenHandler);
 };

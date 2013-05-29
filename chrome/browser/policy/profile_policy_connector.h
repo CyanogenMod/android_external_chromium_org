@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_method_call_status.h"
@@ -28,9 +28,9 @@ class DeviceLocalAccountPolicyProvider;
 class ManagedModePolicyProvider;
 class PolicyService;
 
-// A ProfileKeyedService that creates and manages the per-Profile policy
+// A BrowserContextKeyedService that creates and manages the per-Profile policy
 // components.
-class ProfilePolicyConnector : public ProfileKeyedService {
+class ProfilePolicyConnector : public BrowserContextKeyedService {
  public:
   explicit ProfilePolicyConnector(Profile* profile);
   virtual ~ProfilePolicyConnector();
@@ -41,7 +41,7 @@ class ProfilePolicyConnector : public ProfileKeyedService {
 
   void InitForTesting(scoped_ptr<PolicyService> service);
 
-  // ProfileKeyedService:
+  // BrowserContextKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // This is never NULL.

@@ -7,6 +7,7 @@
 #include <map>
 
 #include "base/stl_util.h"
+#include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -18,7 +19,7 @@
 #include "ui/gfx/size.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_constants.h"
+#include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_util.h"
 #include "ui/message_center/views/message_view.h"
 #include "ui/message_center/views/notification_view.h"
@@ -36,20 +37,17 @@
 #include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
-
 namespace message_center {
 
 namespace {
 
 const int kMinScrollViewHeight = 100;
-const int kFooterMargin = 16;
-const int kFooterHeight = 24;
+const int kFooterLeftMargin = 17;
+const int kFooterRightMargin = 14;
+const int kButtonSize = 40;
 const SkColor kNoNotificationsTextColor = SkColorSetRGB(0xb4, 0xb4, 0xb4);
-const SkColor kMessageCenterBackgroundColor = SkColorSetRGB(0xf1, 0xf1, 0xf1);
 const SkColor kBorderDarkColor = SkColorSetRGB(0xaa, 0xaa, 0xaa);
 const SkColor kTransparentColor = SkColorSetARGB(0, 0, 0, 0);
-const SkColor kFooterDelimiterColor = SkColorSetRGB(0xcc, 0xcc, 0xcc);
-const SkColor kFooterTextColor = SkColorSetRGB(0x7b, 0x7b, 0x7b);
 const SkColor kButtonTextHighlightColor = SkColorSetRGB(0x2a, 0x2a, 0x2a);
 const SkColor kButtonTextHoverColor = SkColorSetRGB(0x2a, 0x2a, 0x2a);
 
@@ -89,9 +87,9 @@ PoorMessageCenterButtonBar::PoorMessageCenterButtonBar(
                      views::GridLayout::USE_PREF, 0, 0);
   columns->AddPaddingColumn(0, 4);
 
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& resource_bundle = ui::ResourceBundle::GetSharedInstance();
   views::LabelButton* close_all_button = new views::LabelButton(
-      this, rb.GetLocalizedString(IDS_MESSAGE_CENTER_CLEAR_ALL));
+      this, resource_bundle.GetLocalizedString(IDS_MESSAGE_CENTER_CLEAR_ALL));
   close_all_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
   close_all_button->set_request_focus_on_press(false);
   close_all_button->SetTextColor(views::Button::STATE_NORMAL, kFooterTextColor);
@@ -112,17 +110,17 @@ void PoorMessageCenterButtonBar::ButtonPressed(views::Button* sender,
 
 // NotificationCenterButton ////////////////////////////////////////////////////
 
-class NotificationCenterButton : public views::LabelButton {
+class NotificationCenterButton : public views::ToggleImageButton {
  public:
   NotificationCenterButton(views::ButtonListener* listener,
-                           const string16& text);
-
-  // Overridden from views::LabelButton:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+                           int normal_id,
+                           int hover_id,
+                           int pressed_id,
+                           int text_id);
 
  protected:
   // Overridden from views::View:
-  virtual void OnPaintBorder(gfx::Canvas* canvas) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
 
  private:
@@ -131,23 +129,24 @@ class NotificationCenterButton : public views::LabelButton {
 
 NotificationCenterButton::NotificationCenterButton(
     views::ButtonListener* listener,
-    const string16& text)
-    : views::LabelButton(listener, text) {
-  set_border(views::Border::CreateEmptyBorder(0, 16, 0, 16));
-  set_min_size(gfx::Size(0, kFooterHeight));
-  SetTextColor(STATE_NORMAL, kFooterTextColor);
-  SetTextColor(STATE_HOVERED, kButtonTextHoverColor);
+    int normal_id,
+    int hover_id,
+    int pressed_id,
+    int text_id)
+    : views::ToggleImageButton(listener) {
+  ui::ResourceBundle& resource_bundle = ui::ResourceBundle::GetSharedInstance();
+  SetImage(STATE_NORMAL, resource_bundle.GetImageSkiaNamed(normal_id));
+  SetImage(STATE_HOVERED, resource_bundle.GetImageSkiaNamed(hover_id));
+  SetImage(STATE_PRESSED, resource_bundle.GetImageSkiaNamed(pressed_id));
+  SetImageAlignment(views::ImageButton::ALIGN_CENTER,
+                    views::ImageButton::ALIGN_MIDDLE);
+  SetTooltipText(resource_bundle.GetLocalizedString(text_id));
+  set_focusable(true);
+  set_request_focus_on_press(false);
 }
 
 gfx::Size NotificationCenterButton::GetPreferredSize() {
-  // Returns an empty size when invisible, to trim its space in the GridLayout.
-  return visible() ? views::LabelButton::GetPreferredSize() : gfx::Size();
-}
-
-void NotificationCenterButton::OnPaintBorder(gfx::Canvas* canvas) {
-  // Just paint the left border.
-  canvas->DrawLine(gfx::Point(0, 0), gfx::Point(0, height()),
-                   kFooterDelimiterColor);
+  return gfx::Size(kButtonSize, kButtonSize);
 }
 
 void NotificationCenterButton::OnPaintFocusBorder(gfx::Canvas* canvas) {
@@ -174,8 +173,8 @@ class RichMessageCenterButtonBar : public MessageCenterButtonBar,
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
-  views::Label* notification_label_;
   NotificationCenterButton* settings_button_;
+  NotificationCenterButton* quiet_mode_button_;
 
   DISALLOW_COPY_AND_ASSIGN(RichMessageCenterButtonBar);
 };
@@ -189,42 +188,69 @@ RichMessageCenterButtonBar::RichMessageCenterButtonBar(
       1, 0, 0, 0, kFooterDelimiterColor));
 
 
-  notification_label_ = new views::Label(l10n_util::GetStringUTF16(
+  views::Label* notification_label = new views::Label(l10n_util::GetStringUTF16(
       IDS_MESSAGE_CENTER_FOOTER_TITLE));
-  notification_label_->SetAutoColorReadabilityEnabled(false);
-  notification_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  notification_label_->SetElideBehavior(views::Label::ELIDE_AT_END);
-  notification_label_->SetEnabledColor(kFooterTextColor);
-  AddChildView(notification_label_);
-  settings_button_ = new NotificationCenterButton(
-      this, l10n_util::GetStringUTF16(
-          IDS_MESSAGE_CENTER_SETTINGS_BUTTON_LABEL));
-  settings_button_->set_focusable(true);
-  settings_button_->set_request_focus_on_press(false);
-  AddChildView(settings_button_);
-  NotificationCenterButton* close_all_button = new NotificationCenterButton(
-      this, l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_CLEAR_ALL));
-  close_all_button->set_focusable(true);
-  close_all_button->set_request_focus_on_press(false);
-  AddChildView(close_all_button);
+  notification_label->SetAutoColorReadabilityEnabled(false);
+  notification_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  notification_label->SetEnabledColor(kRegularTextColor);
+  AddChildView(notification_label);
 
+  views::View* button_container = new views::View;
+  button_container->SetLayoutManager(
+      new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0));
+  quiet_mode_button_ = new NotificationCenterButton(
+      this,
+      IDR_NOTIFICATION_PAUSE,
+      IDR_NOTIFICATION_PAUSE_HOVER,
+      IDR_NOTIFICATION_PAUSE_PRESSED,
+      IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP);
+  ui::ResourceBundle& resource_bundle = ui::ResourceBundle::GetSharedInstance();
+  quiet_mode_button_->SetToggledImage(
+      views::Button::STATE_NORMAL,
+      resource_bundle.GetImageSkiaNamed(IDR_NOTIFICATION_PAUSE_PRESSED));
+  quiet_mode_button_->SetToggledImage(
+      views::Button::STATE_HOVERED,
+      resource_bundle.GetImageSkiaNamed(IDR_NOTIFICATION_PAUSE_PRESSED));
+  quiet_mode_button_->SetToggledImage(
+      views::Button::STATE_PRESSED,
+      resource_bundle.GetImageSkiaNamed(IDR_NOTIFICATION_PAUSE_PRESSED));
+  quiet_mode_button_->SetToggledTooltipText(resource_bundle.GetLocalizedString(
+      IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOGGLED_TOOLTIP));
+  quiet_mode_button_->SetToggled(message_center->IsQuietMode());
+  button_container->AddChildView(quiet_mode_button_);
+
+  NotificationCenterButton* close_all_button = new NotificationCenterButton(
+      this,
+      IDR_NOTIFICATION_CLEAR_ALL,
+      IDR_NOTIFICATION_CLEAR_ALL_HOVER,
+      IDR_NOTIFICATION_CLEAR_ALL_PRESSED,
+      IDS_MESSAGE_CENTER_CLEAR_ALL);
+  button_container->AddChildView(close_all_button);
+  set_close_all_button(close_all_button);
+  settings_button_ = new NotificationCenterButton(
+      this,
+      IDR_NOTIFICATION_SETTINGS,
+      IDR_NOTIFICATION_SETTINGS_HOVER,
+      IDR_NOTIFICATION_SETTINGS_PRESSED,
+      IDS_MESSAGE_CENTER_SETTINGS_BUTTON_LABEL);
+  button_container->AddChildView(settings_button_);
+
+  gfx::ImageSkia* settings_image =
+      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          IDR_NOTIFICATION_SETTINGS);
+  int image_margin = std::max(0, (kButtonSize - settings_image->width()) / 2);
   views::GridLayout* layout = new views::GridLayout(this);
   SetLayoutManager(layout);
   layout->SetInsets(
-      kMarginBetweenItems, kFooterMargin, kMarginBetweenItems, 0);
+      0, kFooterLeftMargin, 0, std::max(0, kFooterRightMargin - image_margin));
   views::ColumnSet* column = layout->AddColumnSet(0);
   column->AddColumn(views::GridLayout::FILL, views::GridLayout::FILL,
                     1.0f, views::GridLayout::USE_PREF, 0, 0);
   column->AddColumn(views::GridLayout::LEADING, views::GridLayout::FILL,
-                    0, views::GridLayout::FIXED,
-                    settings_button_->GetPreferredSize().width(), 0);
-  column->AddColumn(views::GridLayout::LEADING, views::GridLayout::FILL,
                     0, views::GridLayout::USE_PREF, 0, 0);
   layout->StartRow(0, 0);
-  layout->AddView(notification_label_);
-  layout->AddView(settings_button_);
-  layout->AddView(close_all_button);
-  set_close_all_button(close_all_button);
+  layout->AddView(notification_label);
+  layout->AddView(button_container);
 }
 
 // Overridden from views::View:
@@ -235,13 +261,20 @@ void RichMessageCenterButtonBar::ChildVisibilityChanged(views::View* child) {
 // Overridden from views::ButtonListener:
 void RichMessageCenterButtonBar::ButtonPressed(views::Button* sender,
                                                const ui::Event& event) {
-  if (sender == close_all_button())
+  if (sender == close_all_button()) {
     message_center()->RemoveAllNotifications(true);  // Action by user.
-  else if (sender == settings_button_)
+  } else if (sender == settings_button_) {
     message_center()->ShowNotificationSettingsDialog(
         GetWidget()->GetNativeView());
-  else
+  } else if (sender == quiet_mode_button_) {
+    if (message_center()->IsQuietMode())
+      message_center()->SetQuietMode(false);
+    else
+      message_center()->EnterQuietModeWithExpire(base::TimeDelta::FromDays(1));
+    quiet_mode_button_->SetToggled(message_center()->IsQuietMode());
+  } else {
     NOTREACHED();
+  }
 }
 
 // BoundedScrollView ///////////////////////////////////////////////////////////
@@ -516,7 +549,6 @@ void RichMessageListView::UpdateNotificationAt(views::View* view, int i) {
     deleting_views_.erase(child);
   if (deleted_when_done_.find(child) != deleted_when_done_.end())
     deleted_when_done_.erase(child);
-  animator_->StopAnimatingView(child);
   delete child;
   AddChildViewAt(view, i);
   view->SetBounds(old_bounds.x(), old_bounds.y(), old_bounds.width(),
@@ -610,7 +642,8 @@ int RichMessageListView::GetActualIndex(int index) {
 }
 
 bool RichMessageListView::IsValidChild(views::View* child) {
-  return deleting_views_.find(child) == deleting_views_.end() &&
+  return child->visible() &&
+      deleting_views_.find(child) == deleting_views_.end() &&
       deleted_when_done_.find(child) == deleted_when_done_.end();
 }
 
@@ -642,11 +675,14 @@ void RichMessageListView::DoUpdateIfPossible() {
   }
 
   if (!last_child || reposition_top_ < last_child->bounds().y()) {
-    int top = std::max(reposition_top_, child_area.y());
+    const int initial_top = std::max(reposition_top_, child_area.y());
+    int top = initial_top;
     for (int i = 0; i < child_count(); ++i) {
       views::View* child = child_at(i);
-      if (child->bounds().y() < top)
+      if (adding_views_.find(child) == adding_views_.end() &&
+          child->bounds().y() < initial_top) {
         continue;
+      }
       int height = child->GetHeightForWidth(width);
       AnimateChild(child, top, height);
       if (IsValidChild(child))
@@ -732,6 +768,11 @@ MessageCenterView::MessageCenterView(MessageCenter* message_center,
 
   message_list_view_ = IsRichNotificationEnabled() ?
       new RichMessageListView() : new MessageListView();
+  no_notifications_message_view_ = new NoNotificationMessageView();
+  // Set the default visibility to false, otherwise the notification has slide
+  // in animation when the center is shown.
+  no_notifications_message_view_->SetVisible(false);
+  message_list_view_->AddChildView(no_notifications_message_view_);
   scroller_->SetContents(message_list_view_);
 
   AddChildView(scroller_);
@@ -745,7 +786,6 @@ MessageCenterView::~MessageCenterView() {
 void MessageCenterView::SetNotifications(
     const NotificationList::Notifications& notifications)  {
   message_views_.clear();
-  message_list_view_->RemoveAllChildViews(true);
   int index = 0;
   for (NotificationList::Notifications::const_iterator iter =
            notifications.begin(); iter != notifications.end();
@@ -785,9 +825,6 @@ void MessageCenterView::OnMouseExited(const ui::MouseEvent& event) {
 }
 
 void MessageCenterView::OnNotificationAdded(const std::string& id) {
-  if (message_views_.empty())
-    message_list_view_->RemoveAllChildViews(true);
-
   int index = 0;
   const NotificationList::Notifications& notifications =
       message_center_->GetNotifications();
@@ -810,12 +847,21 @@ void MessageCenterView::OnNotificationRemoved(const std::string& id,
     if (message_views_[i]->notification_id() == id) {
       if (by_user) {
         message_list_view_->SetRepositionTarget(message_views_[i]->bounds());
-        if (message_views_.size() > 1 &&
-            message_views_[i]->IsCloseButtonFocused()) {
-          size_t next_index = i + 1;
-          if (next_index >= message_views_.size())
-            next_index = message_views_.size() - 2;
-          message_views_[next_index]->RequestFocusOnCloseButton();
+        // Moves the keyboard focus to the next notification if the removed
+        // notification is focused so that the user can dismiss notifications
+        // without re-focusing by tab key.
+        if (message_views_.size() > 1) {
+          views::View* focused_view = GetFocusManager()->GetFocusedView();
+          if (message_views_[i]->IsCloseButtonFocused() ||
+              focused_view == message_views_[i]) {
+            size_t next_index = i + 1;
+            if (next_index >= message_views_.size())
+              next_index = message_views_.size() - 2;
+            if (focused_view == message_views_[i])
+              message_views_[next_index]->RequestFocus();
+            else
+              message_views_[next_index]->RequestFocusOnCloseButton();
+          }
         }
       }
       message_list_view_->RemoveNotificationAt(i);
@@ -861,10 +907,11 @@ void MessageCenterView::AddNotificationAt(const Notification& notification,
 
 void MessageCenterView::NotificationsChanged() {
   if (!message_views_.empty()) {
+    no_notifications_message_view_->SetVisible(false);
     button_bar_->SetCloseAllVisible(true);
     scroller_->set_focusable(true);
-  } else if (!message_list_view_->has_children()) {
-    message_list_view_->AddChildView(new NoNotificationMessageView());
+  } else {
+    no_notifications_message_view_->SetVisible(true);
     button_bar_->SetCloseAllVisible(false);
     scroller_->set_focusable(false);
   }
@@ -874,7 +921,6 @@ void MessageCenterView::NotificationsChanged() {
 }
 
 void MessageCenterView::SetNotificationViewForTest(views::View* view) {
-  message_list_view_->RemoveAllChildViews(true);
   message_list_view_->AddNotificationAt(view, 0);
 }
 

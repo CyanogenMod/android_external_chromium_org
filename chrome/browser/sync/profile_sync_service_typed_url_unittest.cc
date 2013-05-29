@@ -21,7 +21,6 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service_factory.h"
@@ -40,6 +39,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/profile_mock.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "googleurl/src/gurl.h"
@@ -101,7 +101,8 @@ class HistoryServiceMock : public HistoryService {
   virtual ~HistoryServiceMock() {}
 };
 
-ProfileKeyedService* BuildHistoryService(content::BrowserContext* profile) {
+BrowserContextKeyedService* BuildHistoryService(
+    content::BrowserContext* profile) {
   return new HistoryServiceMock(static_cast<Profile*>(profile));
 }
 
@@ -229,7 +230,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
       sync_service_->RegisterDataTypeController(data_type_controller);
 
       sync_service_->Initialize();
-      MessageLoop::current()->Run();
+      base::MessageLoop::current()->Run();
     }
     return model_associator;
   }

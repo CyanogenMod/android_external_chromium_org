@@ -51,7 +51,7 @@ int32_t PPB_Graphics3D_Shared::ResizeBuffers(int32_t width, int32_t height) {
     return PP_ERROR_BADARGUMENT;
 
   ScopedNoLocking already_locked(this);
-  gles2_impl()->ResizeCHROMIUM(width, height);
+  gles2_impl()->ResizeCHROMIUM(width, height, 1.f);
   // TODO(alokp): Check if resize succeeded and return appropriate error code.
   return PP_OK;
 }
@@ -129,7 +129,9 @@ bool PPB_Graphics3D_Shared::CreateGLES2Impl(
       share_gles2 ? share_gles2->share_group() : NULL,
       transfer_buffer_.get(),
       false,
-      true));
+      true,
+      NULL  // Do not use GpuMemoryBuffers.
+      ));
 
   if (!gles2_impl_->Initialize(
       transfer_buffer_size,

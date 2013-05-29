@@ -109,13 +109,6 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   // BitcodeToNative has completed (and the finish_callback called).
   nacl::DescWrapper* ReleaseTranslatedFD() { return translated_fd_.release(); }
 
-  // Looks up a file descriptor for an url that was already downloaded.
-  // This is used for getting the descriptor for llc and ld nexes as well
-  // as the libraries and object files used by the linker.
-  int32_t GetLoadedFileDesc(int32_t pp_error,
-                            const nacl::string& url,
-                            const nacl::string& component);
-
   // Run |translate_notify_callback_| with an error condition that is not
   // PPAPI specific.  Also set ErrorInfo report.
   void ReportNonPpapiError(PluginErrorCode err, const nacl::string& message);
@@ -165,8 +158,10 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
                    const PnaclOptions& pnacl_options,
                    const pp::CompletionCallback& translate_notify_callback);
 
+  // Callback for when the resource info JSON file has been read.
+  void ResourceInfoWasRead(int32_t pp_error);
+
   // Callback for when llc and ld have been downloaded.
-  // This is the first callback invoked in response to BitcodeToNative.
   void ResourcesDidLoad(int32_t pp_error);
 
   // Callbacks for temporary file related stages.

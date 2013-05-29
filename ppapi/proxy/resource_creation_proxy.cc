@@ -14,7 +14,7 @@
 #include "ppapi/proxy/file_chooser_resource.h"
 #include "ppapi/proxy/file_io_resource.h"
 #include "ppapi/proxy/file_system_resource.h"
-#include "ppapi/proxy/flash_device_id_resource.h"
+#include "ppapi/proxy/flash_drm_resource.h"
 #include "ppapi/proxy/flash_font_file_resource.h"
 #include "ppapi/proxy/flash_menu_resource.h"
 #include "ppapi/proxy/graphics_2d_resource.h"
@@ -33,13 +33,13 @@
 #include "ppapi/proxy/ppb_network_monitor_private_proxy.h"
 #include "ppapi/proxy/ppb_tcp_server_socket_private_proxy.h"
 #include "ppapi/proxy/ppb_tcp_socket_private_proxy.h"
-#include "ppapi/proxy/ppb_url_loader_proxy.h"
 #include "ppapi/proxy/ppb_video_decoder_proxy.h"
 #include "ppapi/proxy/ppb_x509_certificate_private_proxy.h"
 #include "ppapi/proxy/printing_resource.h"
 #include "ppapi/proxy/talk_resource.h"
 #include "ppapi/proxy/truetype_font_resource.h"
 #include "ppapi/proxy/udp_socket_private_resource.h"
+#include "ppapi/proxy/url_loader_resource.h"
 #include "ppapi/proxy/url_request_info_resource.h"
 #include "ppapi/proxy/url_response_info_resource.h"
 #include "ppapi/proxy/video_capture_resource.h"
@@ -80,6 +80,11 @@ PP_Resource ResourceCreationProxy::CreateFileRef(PP_Instance instance,
                                                  PP_Resource file_system,
                                                  const char* path) {
   return PPB_FileRef_Proxy::CreateProxyResource(instance, file_system, path);
+}
+
+PP_Resource ResourceCreationProxy::CreateFileRef(
+    const PPB_FileRef_CreateInfo& create_info) {
+  return PPB_FileRef_Proxy::DeserializeFileRef(create_info);
 }
 
 PP_Resource ResourceCreationProxy::CreateFileSystem(
@@ -166,7 +171,7 @@ PP_Resource ResourceCreationProxy::CreateTrueTypeFont(
 }
 
 PP_Resource ResourceCreationProxy::CreateURLLoader(PP_Instance instance) {
-  return PPB_URLLoader_Proxy::CreateProxyResource(instance);
+    return (new URLLoaderResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateURLRequestInfo(
@@ -341,8 +346,8 @@ PP_Resource ResourceCreationProxy::CreateBuffer(PP_Instance instance,
   return PPB_Buffer_Proxy::CreateProxyResource(instance, size);
 }
 
-PP_Resource ResourceCreationProxy::CreateFlashDeviceID(PP_Instance instance) {
-  return (new FlashDeviceIDResource(GetConnection(), instance))->GetReference();
+PP_Resource ResourceCreationProxy::CreateFlashDRM(PP_Instance instance) {
+  return (new FlashDRMResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateFlashFontFile(

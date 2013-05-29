@@ -14,9 +14,7 @@
 #include "content/browser/android/content_video_view.h"
 #include "content/public/browser/render_view_host_observer.h"
 #include "googleurl/src/gurl.h"
-#if defined(GOOGLE_TV)
 #include "media/base/android/demuxer_stream_player_params.h"
-#endif
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/media_player_manager.h"
 #include "ui/gfx/rect_f.h"
@@ -34,8 +32,6 @@ class MediaPlayerManagerImpl
     : public RenderViewHostObserver,
       public media::MediaPlayerManager {
  public:
-  // Create a MediaPlayerManagerImpl object for the |render_view_host|.
-  explicit MediaPlayerManagerImpl(RenderViewHost* render_view_host);
   virtual ~MediaPlayerManagerImpl();
 
   // RenderViewHostObserver overrides.
@@ -48,43 +44,50 @@ class MediaPlayerManagerImpl
   void ExitFullscreen(bool release_media_player);
   void SetVideoSurface(jobject surface);
 
-  // An internal method that checks for current time routinely and generates
-  // time update events.
-  void OnTimeUpdate(int player_id, base::TimeDelta current_time);
-
-  // Callbacks needed by media::MediaPlayerAndroid.
-  void OnMediaMetadataChanged(int player_id, base::TimeDelta duration,
-                              int width, int height, bool success);
-  void OnPlaybackComplete(int player_id);
-  void OnMediaInterrupted(int player_id);
-  void OnBufferingUpdate(int player_id, int percentage);
-  void OnSeekComplete(int player_id, base::TimeDelta current_time);
-  void OnError(int player_id, int error);
-  void OnVideoSizeChanged(int player_id, int width, int height);
-
-#if defined(GOOGLE_TV)
-  // Callbacks needed by media::DemuxerStreamPlayer.
-  void OnReadFromDemuxer(
-      int player_id, media::DemuxerStream::Type type, bool seek_done);
-#endif
-
   // media::MediaPlayerManager overrides.
+  virtual void OnTimeUpdate(
+      int player_id, base::TimeDelta current_time) OVERRIDE;
+  virtual void OnMediaMetadataChanged(
+      int player_id,
+      base::TimeDelta duration,
+      int width,
+      int height,
+      bool success) OVERRIDE;
+  virtual void OnPlaybackComplete(int player_id) OVERRIDE;
+  virtual void OnMediaInterrupted(int player_id) OVERRIDE;
+  virtual void OnBufferingUpdate(int player_id, int percentage) OVERRIDE;
+  virtual void OnSeekComplete(
+      int player_id, base::TimeDelta current_time) OVERRIDE;
+  virtual void OnError(int player_id, int error) OVERRIDE;
+  virtual void OnVideoSizeChanged(
+      int player_id, int width, int height) OVERRIDE;
+  virtual void OnReadFromDemuxer(
+      int player_id,
+      media::DemuxerStream::Type type,
+      bool seek_done) OVERRIDE;
   virtual void RequestMediaResources(
       media::MediaPlayerAndroid* player) OVERRIDE;
   virtual void ReleaseMediaResources(
       media::MediaPlayerAndroid* player) OVERRIDE;
   virtual media::MediaResourceGetter* GetMediaResourceGetter() OVERRIDE;
-
-  // Release all the players managed by this object.
-  void DestroyAllMediaPlayers();
+  virtual media::MediaPlayerAndroid* GetFullscreenPlayer() OVERRIDE;
+  virtual media::MediaPlayerAndroid* GetPlayer(int player_id) OVERRIDE;
+  virtual void DestroyAllMediaPlayers() OVERRIDE;
+  virtual void OnMediaSeekRequest(int player_id, base::TimeDelta time_to_seek,
+                                  bool request_surface) OVERRIDE;
 
 #if defined(GOOGLE_TV)
   void AttachExternalVideoSurface(int player_id, jobject surface);
   void DetachExternalVideoSurface(int player_id);
 #endif
 
-  media::MediaPlayerAndroid* GetFullscreenPlayer();
-  media::MediaPlayerAndroid* GetPlayer(int player_id);
+ protected:
+  friend MediaPlayerManager* MediaPlayerManager::Create(
+      content::RenderViewHost*);
+
+  // The instance of this class is supposed to be created by either Create()
+  // method of MediaPlayerManager or the derived classes constructors.
+  explicit MediaPlayerManagerImpl(RenderViewHost* render_view_host);
 
  private:
   // Message handlers.
@@ -98,15 +101,17 @@ class MediaPlayerManagerImpl
   void OnPause(int player_id);
   void OnReleaseResources(int player_id);
   void OnDestroyPlayer(int player_id);
-#if defined(GOOGLE_TV)
-  void OnNotifyExternalSurface(
-      int player_id, bool is_request, const gfx::RectF& rect);
   void OnDemuxerReady(
       int player_id,
       const media::MediaPlayerHostMsg_DemuxerReady_Params& params);
   void OnReadFromDemuxerAck(
       int player_id,
       const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params);
+  void OnMediaSeekRequestAck(int player_id);
+
+#if defined(GOOGLE_TV)
+  void OnNotifyExternalSurface(
+      int player_id, bool is_request, const gfx::RectF& rect);
 #endif
 
   // An array of managed players.

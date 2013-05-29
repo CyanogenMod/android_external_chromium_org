@@ -11,11 +11,10 @@
 #include "base/shared_memory.h"
 #include "base/stl_util.h"
 #include "content/common/child_process_messages.h"
-#include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/gpu_video_decode_accelerator_host.h"
+#include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/plugin_messages.h"
 #include "content/common/view_messages.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
@@ -212,7 +211,7 @@ void CommandBufferProxyImpl::Flush(int32 put_offset) {
 }
 
 void CommandBufferProxyImpl::SetLatencyInfo(
-    const cc::LatencyInfo& latency_info) {
+    const ui::LatencyInfo& latency_info) {
   if (last_state_.error != gpu::error::kNoError)
     return;
   Send(new GpuCommandBufferMsg_SetLatencyInfo(route_id_, latency_info));
@@ -409,6 +408,9 @@ bool CommandBufferProxyImpl::EnsureBackbuffer() {
 }
 
 uint32 CommandBufferProxyImpl::InsertSyncPoint() {
+  if (last_state_.error != gpu::error::kNoError)
+    return 0;
+
   uint32 sync_point = 0;
   Send(new GpuCommandBufferMsg_InsertSyncPoint(route_id_, &sync_point));
   return sync_point;

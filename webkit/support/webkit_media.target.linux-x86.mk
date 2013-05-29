@@ -26,6 +26,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	webkit/media/android/audio_decoder_android.cc \
+	webkit/media/android/media_source_delegate.cc \
 	webkit/media/android/webmediaplayer_android.cc \
 	webkit/media/android/webmediaplayer_manager_android.cc \
 	webkit/media/android/webmediaplayer_proxy_android.cc \
@@ -35,12 +36,13 @@ LOCAL_SRC_FILES := \
 	webkit/media/cache_util.cc \
 	webkit/media/crypto/key_systems.cc \
 	webkit/media/crypto/key_systems_info.cc \
-	webkit/media/crypto/ppapi_decryptor.cc \
 	webkit/media/crypto/proxy_decryptor.cc \
 	webkit/media/media_stream_audio_renderer.cc \
 	webkit/media/simple_video_frame_provider.cc \
+	webkit/media/texttrack_impl.cc \
 	webkit/media/video_frame_provider.cc \
 	webkit/media/webaudiosourceprovider_impl.cc \
+	webkit/media/webinbandtexttrack_impl.cc \
 	webkit/media/webmediaplayer_ms.cc \
 	webkit/media/webmediaplayer_params.cc \
 	webkit/media/webmediaplayer_util.cc \
@@ -96,6 +98,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -148,14 +151,14 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/skia/ext \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

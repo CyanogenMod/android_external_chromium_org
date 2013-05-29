@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/browser/policy/proto/chromeos/chrome_device_policy.pb.h"
@@ -29,9 +30,10 @@ namespace chromeos {
 class CrosSettingsTest : public testing::Test {
  protected:
   CrosSettingsTest()
-      : message_loop_(MessageLoop::TYPE_UI),
+      : message_loop_(base::MessageLoop::TYPE_UI),
         ui_thread_(content::BrowserThread::UI, &message_loop_),
         local_state_(TestingBrowserProcess::GetGlobal()),
+        settings_(DeviceSettingsService::Get()),
         weak_factory_(this) {}
 
   virtual ~CrosSettingsTest() {}
@@ -87,7 +89,7 @@ class CrosSettingsTest : public testing::Test {
     response.set_policy_data_signature("false");
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
 
   ScopedTestingLocalState local_state_;

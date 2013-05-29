@@ -40,9 +40,10 @@
 #include "ui/views/widget/widget.h"
 
 using chromeos::DeviceState;
+using chromeos::NetworkConnectionHandler;
+using chromeos::NetworkHandler;
 using chromeos::NetworkState;
 using chromeos::NetworkStateHandler;
-using chromeos::NetworkConnectionHandler;
 
 namespace ash {
 namespace internal {
@@ -169,7 +170,7 @@ void NetworkStateListDetailedView::ManagerChanged() {
 
 void NetworkStateListDetailedView::NetworkListChanged() {
   NetworkStateList network_list;
-  NetworkStateHandler::Get()->GetNetworkList(&network_list);
+  NetworkHandler::Get()->network_state_handler()->GetNetworkList(&network_list);
   UpdateNetworks(network_list);
   UpdateNetworkList();
   UpdateHeaderButtons();
@@ -197,7 +198,7 @@ void NetworkStateListDetailedView::Init() {
   CreateHeaderButtons();
 
   NetworkStateList network_list;
-  NetworkStateHandler::Get()->GetNetworkList(&network_list);
+  NetworkHandler::Get()->network_state_handler()->GetNetworkList(&network_list);
   UpdateNetworks(network_list);
   UpdateNetworkList();
   UpdateHeaderButtons();
@@ -222,7 +223,7 @@ void NetworkStateListDetailedView::ButtonPressed(views::Button* sender,
   // If the info bubble was visible, close it when some other item is clicked.
   ResetInfoBubble();
 
-  NetworkStateHandler* handler = NetworkStateHandler::Get();
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   ash::SystemTrayDelegate* delegate =
       ash::Shell::GetInstance()->system_tray_delegate();
   if (sender == button_wifi_) {
@@ -237,7 +238,7 @@ void NetworkStateListDetailedView::ButtonPressed(views::Button* sender,
   } else if (sender == button_mobile_) {
     ToggleMobile();
   } else if (sender == settings_) {
-    delegate->ShowNetworkSettings();
+    delegate->ShowNetworkSettings("");
   } else if (sender == proxy_settings_) {
     delegate->ChangeProxySettings();
   } else if (sender == other_mobile_) {
@@ -266,8 +267,18 @@ void NetworkStateListDetailedView::OnViewClicked(views::View* sender) {
 
   std::map<views::View*, std::string>::iterator found =
       network_map_.find(sender);
-  if (found != network_map_.end())
-    ConnectToNetwork(found->second);
+  if (found != network_map_.end()) {
+    const std::string& service_path = found->second;
+    const NetworkState* network = NetworkHandler::Get()->
+        network_state_handler()->GetNetworkState(service_path);
+    if (!network ||
+        network->IsConnectedState() || network->IsConnectingState()) {
+      Shell::GetInstance()->system_tray_delegate()->ShowNetworkSettings(
+          service_path);
+    } else {
+      ConnectToNetwork(service_path);
+    }
+  }
 }
 
 // Create UI components.
@@ -362,7 +373,7 @@ void NetworkStateListDetailedView::CreateNetworkExtra() {
 // Update UI components.
 
 void NetworkStateListDetailedView::UpdateHeaderButtons() {
-  NetworkStateHandler* handler = NetworkStateHandler::Get();
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   if (button_wifi_)
     UpdateTechnologyButton(button_wifi_, flimflam::kTypeWifi);
   if (button_mobile_) {
@@ -379,7 +390,8 @@ void NetworkStateListDetailedView::UpdateTechnologyButton(
     TrayPopupHeaderButton* button,
     const std::string& technology) {
   NetworkStateHandler::TechnologyState state =
-      NetworkStateHandler::Get()->GetTechnologyState(technology);
+      NetworkHandler::Get()->network_state_handler()->
+      GetTechnologyState(technology);
   if (state == NetworkStateHandler::TECHNOLOGY_UNAVAILABLE) {
     button->SetVisible(false);
     return;
@@ -417,7 +429,7 @@ void NetworkStateListDetailedView::UpdateNetworks(
 }
 
 void NetworkStateListDetailedView::UpdateNetworkList() {
-  NetworkStateHandler* handler = NetworkStateHandler::Get();
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
 
   // First, update state for all networks
   bool animating = false;
@@ -536,7 +548,7 @@ bool NetworkStateListDetailedView::UpdateNetworkListEntries(
     std::set<std::string>* new_service_paths) {
   bool needs_relayout = false;
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  NetworkStateHandler* handler = NetworkStateHandler::Get();
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
 
   // Insert child views
   int index = 0;
@@ -625,7 +637,7 @@ void NetworkStateListDetailedView::UpdateNetworkExtra() {
     return;
 
   View* layout_parent = NULL;  // All these buttons have the same parent.
-  NetworkStateHandler* handler = NetworkStateHandler::Get();
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   if (other_wifi_) {
     DCHECK(turn_on_wifi_);
     NetworkStateHandler::TechnologyState state =
@@ -707,7 +719,7 @@ bool NetworkStateListDetailedView::ResetInfoBubble() {
 
 views::View* NetworkStateListDetailedView::CreateNetworkInfoView() {
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-  NetworkStateHandler* handler = NetworkStateHandler::Get();
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
 
   std::string ip_address("0.0.0.0");
   const NetworkState* network = handler->DefaultNetwork();
@@ -730,7 +742,6 @@ views::View* NetworkStateListDetailedView::CreateNetworkInfoView() {
         handler->FormattedHardwareAddressForType(flimflam::kTypeVPN);
   }
 
-  // GetNetworkAddresses returns empty strings if no information is available.
   if (!ip_address.empty()) {
     container->AddChildView(CreateInfoBubbleLine(bundle.GetLocalizedString(
         IDS_ASH_STATUS_TRAY_IP), ip_address));
@@ -760,17 +771,19 @@ views::View* NetworkStateListDetailedView::CreateNetworkInfoView() {
 
 void NetworkStateListDetailedView::ConnectToNetwork(
     const std::string& service_path) {
-  const NetworkState* network =
-      NetworkStateHandler::Get()->GetNetworkState(service_path);
+  const NetworkState* network = NetworkHandler::Get()->network_state_handler()->
+      GetNetworkState(service_path);
   if (!network)
     return;
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kUseNewNetworkConfigurationHandlers)) {
-    NetworkConnectionHandler::Get()->ConnectToNetwork(
+    const bool ignore_error_state = false;
+    NetworkHandler::Get()->network_connection_handler()->ConnectToNetwork(
         service_path,
         base::Bind(&base::DoNothing),
         base::Bind(&NetworkStateListDetailedView::OnConnectFailed,
-                   AsWeakPtr(), service_path));
+                   AsWeakPtr(), service_path),
+        ignore_error_state);
   } else {
     Shell::GetInstance()->system_tray_delegate()->ConnectToNetwork(
         service_path);
@@ -781,18 +794,27 @@ void NetworkStateListDetailedView::OnConnectFailed(
     const std::string& service_path,
     const std::string& error_name,
     scoped_ptr<base::DictionaryValue> error_data) {
-  VLOG(1) << "ConnectFailed: " << error_name;
-  // This will show the settings UI for a connected/ing network or a connect
-  // dialog for unconfigured networks.
-  // TODO(stevenjb): Change the API to explicitly show network settings or
-  // connect dialog (i.e. explicitly handle different error types).
-  Shell::GetInstance()->system_tray_delegate()->ConnectToNetwork(
+  if (error_name == NetworkConnectionHandler::kErrorNotFound)
+    return;
+  if (error_name == NetworkConnectionHandler::kErrorPassphraseRequired) {
+    // TODO(stevenjb): Add inline UI to handle passphrase entry here.
+    Shell::GetInstance()->system_tray_delegate()->ConfigureNetwork(
+        service_path);
+    return;
+  }
+  if (error_name == NetworkConnectionHandler::kErrorCertificateRequired ||
+      error_name == NetworkConnectionHandler::kErrorConfigurationRequired) {
+    Shell::GetInstance()->system_tray_delegate()->ConfigureNetwork(
+        service_path);
+    return;
+  }
+  Shell::GetInstance()->system_tray_delegate()->ShowNetworkSettings(
       service_path);
 }
 
 void NetworkStateListDetailedView::CallRequestScan() {
   VLOG(1) << "Requesting Network Scan.";
-  NetworkStateHandler::Get()->RequestScan();
+  NetworkHandler::Get()->network_state_handler()->RequestScan();
   // Periodically request a scan while this UI is open.
   base::MessageLoopForUI::current()->PostDelayedTask(
       FROM_HERE,
@@ -801,7 +823,7 @@ void NetworkStateListDetailedView::CallRequestScan() {
 }
 
 void NetworkStateListDetailedView::ToggleMobile() {
-  NetworkStateHandler* handler = NetworkStateHandler::Get();
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   bool enabled =
       handler->IsTechnologyEnabled(NetworkStateHandler::kMatchTypeMobile);
   if (enabled) {
@@ -816,9 +838,7 @@ void NetworkStateListDetailedView::ToggleMobile() {
       return;
     }
     if (!mobile->sim_lock_type().empty() || mobile->IsSimAbsent()) {
-      // TODO(stevenjb): Rename ToggleMobile() to ShowMobileSimDialog()
-      // when NetworkListDetailedView is deprecated. crbug.com/222540.
-      ash::Shell::GetInstance()->system_tray_delegate()->ToggleMobile();
+      ash::Shell::GetInstance()->system_tray_delegate()->ShowMobileSimDialog();
     } else {
       handler->SetTechnologyEnabled(
           NetworkStateHandler::kMatchTypeMobile, true,

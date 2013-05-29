@@ -33,6 +33,7 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/net/connectivity_state_helper.h"
+#include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
@@ -41,6 +42,7 @@
 #include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -760,6 +762,7 @@ void ExistingUserController::OnLoginSuccess(
                                     display_email_,
                                     using_oauth,
                                     has_cookies,
+                                    false,          // Start session for user.
                                     this);
 
   display_email_.clear();
@@ -826,6 +829,9 @@ void ExistingUserController::OnOffTheRecordLoginSuccess() {
 }
 
 void ExistingUserController::OnPasswordChangeDetected() {
+  is_login_in_progress_ = false;
+  offline_failed_ = false;
+
   // Must not proceed without signature verification.
   if (CrosSettingsProvider::TRUSTED != cros_settings_->PrepareTrustedValues(
       base::Bind(&ExistingUserController::OnPasswordChangeDetected,
@@ -858,6 +864,9 @@ void ExistingUserController::OnPasswordChangeDetected() {
 }
 
 void ExistingUserController::WhiteListCheckFailed(const std::string& email) {
+  is_login_in_progress_ = false;
+  offline_failed_ = false;
+
   ShowError(IDS_LOGIN_ERROR_WHITELIST, email);
 
   // Reenable clicking on other windows and status area.
@@ -878,6 +887,8 @@ void ExistingUserController::PolicyLoadFailed() {
   ShowError(IDS_LOGIN_ERROR_OWNER_KEY_LOST, "");
 
   // Reenable clicking on other windows and status area.
+  is_login_in_progress_ = false;
+  offline_failed_ = false;
   login_display_->SetUIEnabled(true);
 
   display_email_.clear();
@@ -905,10 +916,20 @@ void ExistingUserController::ActivateWizard(const std::string& screen_name) {
 }
 
 void ExistingUserController::ConfigurePublicSessionAutoLogin() {
-  if (!cros_settings_->GetString(
-          kAccountsPrefDeviceLocalAccountAutoLoginId,
-          &public_session_auto_login_username_)) {
-    public_session_auto_login_username_.clear();
+  std::string auto_login_account_id;
+  cros_settings_->GetString(kAccountsPrefDeviceLocalAccountAutoLoginId,
+                            &auto_login_account_id);
+  const std::vector<policy::DeviceLocalAccount> device_local_accounts =
+      policy::GetDeviceLocalAccounts(cros_settings_);
+
+  public_session_auto_login_username_.clear();
+  for (std::vector<policy::DeviceLocalAccount>::const_iterator
+           it = device_local_accounts.begin();
+       it != device_local_accounts.end(); ++it) {
+    if (it->account_id == auto_login_account_id) {
+      public_session_auto_login_username_ = it->user_id;
+      break;
+    }
   }
 
   const User* user =
@@ -1007,8 +1028,16 @@ void ExistingUserController::InitializeStartUrls() const {
     customization->ApplyCustomization();
   }
 
-  for (size_t i = 0; i < start_urls.size(); ++i) {
-    CommandLine::ForCurrentProcess()->AppendArg(start_urls[i]);
+
+  // Don't open default Chrome window for the first login of a new
+  // user because it will hide the Getting Started App window (which is
+  // launched automatically in that situation).
+  if (UserManager::Get()->IsCurrentUserNew()) {
+    CommandLine::ForCurrentProcess()->AppendSwitch(::switches::kSilentLaunch);
+  } else {
+    for (size_t i = 0; i < start_urls.size(); ++i) {
+      CommandLine::ForCurrentProcess()->AppendArg(start_urls[i]);
+    }
   }
 }
 

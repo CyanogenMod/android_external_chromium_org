@@ -47,8 +47,8 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
 #include "ui/base/layout.h"
-#include "webkit/user_agent/user_agent.h"
-#include "webkit/user_agent/user_agent_util.h"
+#include "webkit/common/user_agent/user_agent.h"
+#include "webkit/common/user_agent/user_agent_util.h"
 
 namespace content {
 
@@ -489,7 +489,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
     version.SetString("Browser",
                       content::GetContentClient()->GetProduct());
     version.SetString("User-Agent",
-                      webkit_glue::GetUserAgent(GURL(chrome::kAboutBlankURL)));
+                      webkit_glue::GetUserAgent(GURL(kAboutBlankURL)));
     SendJson(connection_id, net::HTTP_OK, &version, std::string());
     return;
   }

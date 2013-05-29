@@ -9,14 +9,16 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_system_service.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_write_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,7 +28,7 @@
 #include "chromeos/chromeos_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
-#include "webkit/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/file_system_url.h"
 
 using content::BrowserThread;
 
@@ -57,15 +59,46 @@ const int kReadOnlyFilePermissions = base::PLATFORM_FILE_OPEN |
                                      base::PLATFORM_FILE_ASYNC;
 
 FileSystemInterface* GetFileSystem(Profile* profile) {
-  DriveSystemService* system_service =
-      DriveSystemServiceFactory::GetForProfile(profile);
-  return system_service ? system_service->file_system() : NULL;
+  DriveIntegrationService* integration_service =
+      DriveIntegrationServiceFactory::GetForProfile(profile);
+  return integration_service ? integration_service->file_system() : NULL;
 }
 
 FileWriteHelper* GetFileWriteHelper(Profile* profile) {
-  DriveSystemService* system_service =
-      DriveSystemServiceFactory::GetForProfile(profile);
-  return system_service ? system_service->file_write_helper() : NULL;
+  DriveIntegrationService* integration_service =
+      DriveIntegrationServiceFactory::GetForProfile(profile);
+  return integration_service ? integration_service->file_write_helper() : NULL;
+}
+
+std::string ReadStringFromGDocFile(const base::FilePath& file_path,
+                                   const std::string& key) {
+  const int64 kMaxGDocSize = 4096;
+  int64 file_size = 0;
+  if (!file_util::GetFileSize(file_path, &file_size) ||
+      file_size > kMaxGDocSize) {
+    DLOG(INFO) << "File too large to be a GDoc file " << file_path.value();
+    return std::string();
+  }
+
+  JSONFileValueSerializer reader(file_path);
+  std::string error_message;
+  scoped_ptr<base::Value> root_value(reader.Deserialize(NULL, &error_message));
+  if (!root_value) {
+    DLOG(INFO) << "Failed to parse " << file_path.value() << "as JSON."
+               << " error = " << error_message;
+    return std::string();
+  }
+
+  base::DictionaryValue* dictionary_value = NULL;
+  std::string result;
+  if (!root_value->GetAsDictionary(&dictionary_value) ||
+      !dictionary_value->GetString(key, &result)) {
+    DLOG(INFO) << "No value for the given key is stored in "
+               << file_path.value() << ". key = " << key;
+    return std::string();
+  }
+
+  return result;
 }
 
 }  // namespace
@@ -263,11 +296,6 @@ std::string EscapeUtf8FileName(const std::string& input) {
   return input;
 }
 
-std::string ExtractResourceIdFromUrl(const GURL& url) {
-  return net::UnescapeURLComponent(url.ExtractFileName(),
-                                   net::UnescapeRule::URL_SPECIAL_CHARS);
-}
-
 void ParseCacheFilePath(const base::FilePath& path,
                         std::string* resource_id,
                         std::string* md5,
@@ -351,6 +379,8 @@ FileError GDataToFileError(google_apis::GDataErrorCode status) {
       return FILE_ERROR_ACCESS_DENIED;
     case google_apis::HTTP_NOT_FOUND:
       return FILE_ERROR_NOT_FOUND;
+    case google_apis::HTTP_NOT_IMPLEMENTED:
+      return FILE_ERROR_INVALID_OPERATION;
     case google_apis::GDATA_PARSE_ERROR:
     case google_apis::GDATA_FILE_ERROR:
       return FILE_ERROR_ABORT;
@@ -387,6 +417,30 @@ void ConvertPlatformFileInfoToResourceEntry(
 }
 
 void EmptyFileOperationCallback(FileError error) {
+}
+
+bool CreateGDocFile(const base::FilePath& file_path,
+                    const GURL& url,
+                    const std::string& resource_id) {
+  std::string content = base::StringPrintf(
+      "{\"url\": \"%s\", \"resource_id\": \"%s\"}",
+      url.spec().c_str(), resource_id.c_str());
+  return file_util::WriteFile(file_path, content.data(), content.size()) ==
+      static_cast<int>(content.size());
+}
+
+bool HasGDocFileExtension(const base::FilePath& file_path) {
+  return google_apis::ResourceEntry::ClassifyEntryKindByFileExtension(
+      file_path) &
+      google_apis::ResourceEntry::KIND_OF_HOSTED_DOCUMENT;
+}
+
+GURL ReadUrlFromGDocFile(const base::FilePath& file_path) {
+  return GURL(ReadStringFromGDocFile(file_path, "url"));
+}
+
+std::string ReadResourceIdFromGDocFile(const base::FilePath& file_path) {
+  return ReadStringFromGDocFile(file_path, "resource_id");
 }
 
 }  // namespace util

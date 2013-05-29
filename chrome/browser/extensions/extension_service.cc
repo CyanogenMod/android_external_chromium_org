@@ -27,12 +27,12 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "base/version.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/app_runtime/app_runtime_api.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
-#include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
@@ -103,19 +103,20 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/common/pepper_plugin_info.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error_factory.h"
-#include "webkit/database/database_tracker.h"
-#include "webkit/database/database_util.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/browser/database/database_util.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/extensions/install_limiter.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
 #endif
 
 using content::BrowserContext;
@@ -184,8 +185,6 @@ ExtensionService::NaClModuleInfo::~NaClModuleInfo() {
 }
 
 // ExtensionService.
-
-const char ExtensionService::kInstallDirectoryName[] = "Extensions";
 
 const char ExtensionService::kLocalAppSettingsDirectoryName[] =
     "Local App Settings";
@@ -338,7 +337,8 @@ ExtensionService::ExtensionService(Profile* profile,
                                    extensions::ExtensionPrefs* extension_prefs,
                                    extensions::Blacklist* blacklist,
                                    bool autoupdate_enabled,
-                                   bool extensions_enabled)
+                                   bool extensions_enabled,
+                                   extensions::OneShotEvent* ready)
     : extensions::Blacklist::Observer(blacklist),
       profile_(profile),
       system_(extensions::ExtensionSystem::Get(profile)),
@@ -350,7 +350,7 @@ ExtensionService::ExtensionService(Profile* profile,
       extensions_enabled_(extensions_enabled),
       show_extensions_prompts_(true),
       install_updates_when_idle_(true),
-      ready_(false),
+      ready_(ready),
       toolbar_model_(this),
       menu_manager_(profile),
       event_routers_initialized_(false),
@@ -410,7 +410,6 @@ ExtensionService::ExtensionService(Profile* profile,
                                       g_browser_process->local_state()));
 
   if (extensions_enabled_) {
-    CHECK(!ProfileManager::IsImportProcess(*command_line));
     extensions::ExternalProviderImpl::CreateExternalProviders(
         this, profile_, &external_extension_providers_);
   }
@@ -562,13 +561,10 @@ const Extension* ExtensionService::GetExtensionById(
 void ExtensionService::Init() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  DCHECK(!ready_);  // Can't redo init.
+  DCHECK(!is_ready());  // Can't redo init.
   DCHECK_EQ(extensions_.size(), 0u);
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-
-  CHECK(!ProfileManager::IsImportProcess(*cmd_line));
-
   if (cmd_line->HasSwitch(switches::kInstallFromWebstore) ||
       cmd_line->HasSwitch(switches::kLimitedInstallFromWebstore)) {
     // The sole purpose of this launch is to install a new extension from CWS
@@ -585,12 +581,13 @@ void ExtensionService::Init() {
       // import process.
 
       extensions::InstalledLoader(this).LoadAllExtensions();
+      SetReadyAndNotifyListeners();
       RegisterForImportFinished();
     } else {
-      // In this case, LoadAllExtensions() calls OnLoadedInstalledExtensions(),
-      // which calls SetReadyAndNotifyListeners().
+      // In this case, LoadAllExtensions() calls OnLoadedInstalledExtensions().
       component_loader_->LoadAll();
       extensions::InstalledLoader(this).LoadAllExtensions();
+      SetReadyAndNotifyListeners();
 
       // TODO(erikkay) this should probably be deferred to a future point
       // rather than running immediately at startup.
@@ -737,13 +734,6 @@ void ExtensionService::ReloadExtensionWithEvents(
   }
 
   on_load_events_[extension_id] = events;
-  if (events & EVENT_RESTARTED) {
-    extensions::app_file_handler_util::GetSavedFileEntries(
-        extension_prefs_,
-        extension_id,
-        &on_restart_file_entries_[extension_id]);
-  }
-
 
   if (delayed_updates_for_idle_.Contains(extension_id)) {
     FinishDelayedInstallation(extension_id);
@@ -1006,7 +996,7 @@ void ExtensionService::GrantPermissions(const Extension* extension) {
 
 // static
 void ExtensionService::RecordPermissionMessagesHistogram(
-    const Extension* e, const char* histogram) {
+    const Extension* extension, const char* histogram) {
   // Since this is called from multiple sources, and since the histogram macros
   // use statics, we need to manually lookup the histogram ourselves.
   base::HistogramBase* counter = base::LinearHistogram::FactoryGet(
@@ -1016,7 +1006,8 @@ void ExtensionService::RecordPermissionMessagesHistogram(
       PermissionMessage::kEnumBoundary + 1,
       base::HistogramBase::kUmaTargetedHistogramFlag);
 
-  PermissionMessages permissions = e->GetPermissionMessages();
+  PermissionMessages permissions =
+      extensions::PermissionsData::GetPermissionMessages(extension);
   if (permissions.empty()) {
     counter->Add(PermissionMessage::kNone);
   } else {
@@ -1077,7 +1068,8 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
   // If the extension has permission to load chrome://favicon/ resources we need
   // to make sure that the FaviconSource is registered with the
   // ChromeURLDataManager.
-  if (extension->HasHostPermission(GURL(chrome::kChromeUIFaviconURL))) {
+  if (extensions::PermissionsData::HasHostPermission(
+          extension, GURL(chrome::kChromeUIFaviconURL))) {
     FaviconSource* favicon_source = new FaviconSource(profile_,
                                                       FaviconSource::FAVICON);
     content::URLDataSource::Add(profile_, favicon_source);
@@ -1085,14 +1077,16 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
 
 #if !defined(OS_ANDROID)
   // Same for chrome://theme/ resources.
-  if (extension->HasHostPermission(GURL(chrome::kChromeUIThemeURL))) {
+  if (extensions::PermissionsData::HasHostPermission(
+          extension, GURL(chrome::kChromeUIThemeURL))) {
     ThemeSource* theme_source = new ThemeSource(profile_);
     content::URLDataSource::Add(profile_, theme_source);
   }
 #endif
 
   // Same for chrome://thumb/ resources.
-  if (extension->HasHostPermission(GURL(chrome::kChromeUIThumbnailURL))) {
+  if (extensions::PermissionsData::HasHostPermission(
+          extension, GURL(chrome::kChromeUIThumbnailURL))) {
     ThumbnailSource* thumbnail_source = new ThumbnailSource(profile_);
     content::URLDataSource::Add(profile_, thumbnail_source);
   }
@@ -1235,7 +1229,7 @@ extensions::ContentSettingsStore* ExtensionService::GetContentSettingsStore() {
 }
 
 bool ExtensionService::is_ready() {
-  return ready_;
+  return ready_->is_signaled();
 }
 
 base::SequencedTaskRunner* ExtensionService::GetFileTaskRunner() {
@@ -1911,6 +1905,11 @@ void ExtensionService::UnloadExtension(
     return;
   }
 
+  // If uninstalling let RuntimeEventRouter know.
+  if (reason == extension_misc::UNLOAD_REASON_UNINSTALL)
+    extensions::RuntimeEventRouter::OnExtensionUninstalled(
+        profile_, extension_id);
+
   // Keep information about the extension so that we can reload it later
   // even if it's not permanently installed.
   unloaded_extension_paths_[extension->id()] = extension->path();
@@ -1959,6 +1958,8 @@ void ExtensionService::ReloadExtensions() {
   UnloadAllExtensions();
   component_loader_->LoadAll();
   extensions::InstalledLoader(this).LoadAllExtensions();
+  // Don't call SetReadyAndNotifyListeners() since tests call this multiple
+  // times.
 }
 
 void ExtensionService::GarbageCollectExtensions() {
@@ -1969,7 +1970,7 @@ void ExtensionService::GarbageCollectExtensions() {
     // Don't garbage collect while there are pending installations, which may
     // be using the temporary installation directory. Try to garbage collect
     // again later.
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&ExtensionService::GarbageCollectExtensions, AsWeakPtr()),
         base::TimeDelta::FromSeconds(kGarbageCollectRetryDelay));
@@ -2017,7 +2018,7 @@ void ExtensionService::SyncExtensionChangeIfNeeded(const Extension& extension) {
 }
 
 void ExtensionService::SetReadyAndNotifyListeners() {
-  ready_ = true;
+  ready_->Signal();
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSIONS_READY,
       content::Source<Profile>(profile_),
@@ -2029,8 +2030,6 @@ void ExtensionService::OnLoadedInstalledExtensions() {
     updater_->Start();
 
   OnBlacklistUpdated();
-
-  SetReadyAndNotifyListeners();
 }
 
 void ExtensionService::AddExtension(const Extension* extension) {
@@ -2197,18 +2196,21 @@ void ExtensionService::CheckPermissionsIncrease(const Extension* extension,
   // can upgrade without requiring this user's approval.
   int disable_reasons = extension_prefs_->GetDisableReasons(extension->id());
 
-  bool is_default_app_install =
-      (!is_extension_upgrade && extension->was_installed_by_default());
+  bool auto_grant_permission =
+      (!is_extension_upgrade && extension->was_installed_by_default()) ||
+      chrome::IsRunningInForcedAppMode();
   // Silently grant all active permissions to default apps only on install.
   // After install they should behave like other apps.
-  if (is_default_app_install)
+  // Silently grant all active permissions to apps install in kiosk mode on both
+  // install and update.
+  if (auto_grant_permission)
     GrantPermissions(extension);
 
   bool is_privilege_increase = false;
   // We only need to compare the granted permissions to the current permissions
   // if the extension is not allowed to silently increase its permissions.
-  if (!(extension->CanSilentlyIncreasePermissions() ||
-        is_default_app_install)) {
+  if (!extensions::PermissionsData::CanSilentlyIncreasePermissions(extension) &&
+      !auto_grant_permission) {
     // Add all the recognized permissions if the granted permissions list
     // hasn't been initialized yet.
     scoped_refptr<PermissionSet> granted_permissions =
@@ -2427,8 +2429,15 @@ void ExtensionService::FinishDelayedInstallation(
 }
 
 void ExtensionService::FinishInstallation(const Extension* extension) {
-  bool is_update = GetInstalledExtension(extension->id()) != NULL;
-  extensions::InstalledExtensionInfo details(extension, is_update);
+  const extensions::Extension* existing_extension =
+      GetInstalledExtension(extension->id());
+  bool is_update = false;
+  std::string old_name;
+  if (existing_extension) {
+    is_update = true;
+    old_name = existing_extension->name();
+  }
+  extensions::InstalledExtensionInfo details(extension, is_update, old_name);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_INSTALLED,
       content::Source<Profile>(profile_),
@@ -2645,7 +2654,7 @@ void ExtensionService::Observe(int type,
       // at all, but never half-crashed.  We do it in a PostTask so
       // that other handlers of this notification will still have
       // access to the Extension and ExtensionHost.
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(
               &ExtensionService::TrackTerminatedExtension,
@@ -2713,7 +2722,7 @@ void ExtensionService::Observe(int type,
       if (delayed_updates_for_idle_.Contains(extension_id)) {
         // We were waiting for this extension to become idle, it now might have,
         // so maybe finish installation.
-        MessageLoop::current()->PostDelayedTask(
+        base::MessageLoop::current()->PostDelayedTask(
             FROM_HERE,
             base::Bind(&ExtensionService::MaybeFinishDelayedInstallation,
                        AsWeakPtr(), extension_id),
@@ -2906,14 +2915,8 @@ void ExtensionService::DoPostLoadTasks(const Extension* extension) {
       queue->AddPendingTask(profile(), extension->id(),
                             base::Bind(&ExtensionService::LaunchApplication));
     if (events_to_fire & EVENT_RESTARTED) {
-      SavedFileEntryMap::iterator it =
-          on_restart_file_entries_.find(extension->id());
-      if (it == on_restart_file_entries_.end())
-        NOTREACHED();
       queue->AddPendingTask(profile(), extension->id(),
-                            base::Bind(&ExtensionService::RestartApplication,
-                                       it->second));
-      on_restart_file_entries_.erase(it);
+                            base::Bind(&ExtensionService::RestartApplication));
     }
   }
 
@@ -2935,14 +2938,13 @@ void ExtensionService::LaunchApplication(
 
 // static
 void ExtensionService::RestartApplication(
-    std::vector<extensions::app_file_handler_util::SavedFileEntry> file_entries,
     extensions::ExtensionHost* extension_host) {
   if (!extension_host)
     return;
 
 #if !defined(OS_ANDROID)
-  extensions::RestartPlatformAppWithFileEntries(
-      extension_host->profile(), extension_host->extension(), file_entries);
+  extensions::RestartPlatformApp(
+      extension_host->profile(), extension_host->extension());
 #endif
 }
 

@@ -35,14 +35,15 @@ TEST(ContentLayerTest, ContentLayerPainterWithDeviceScale) {
   float contents_scale = 2.f;
   gfx::Rect content_rect(10, 10, 100, 100);
   gfx::Rect opaque_rect_in_layer_space(5, 5, 20, 20);
-  gfx::RectF opaque_rect_in_content_space = gfx::ScaleRect(
+  gfx::Rect opaque_rect_in_content_space = gfx::ScaleToEnclosingRect(
       opaque_rect_in_layer_space, contents_scale, contents_scale);
   MockContentLayerClient client(opaque_rect_in_layer_space);
   FakeRenderingStatsInstrumentation stats_instrumentation;
   scoped_refptr<BitmapContentLayerUpdater> updater =
       BitmapContentLayerUpdater::Create(
           ContentLayerPainter::Create(&client).PassAs<LayerPainter>(),
-          &stats_instrumentation);
+          &stats_instrumentation,
+          0);
 
   gfx::Rect resulting_opaque_rect;
   updater->PrepareToUpdate(content_rect,
@@ -52,8 +53,8 @@ TEST(ContentLayerTest, ContentLayerPainterWithDeviceScale) {
                            &resulting_opaque_rect,
                            NULL);
 
-  EXPECT_RECT_EQ(gfx::ToEnclosingRect(opaque_rect_in_content_space),
-                 resulting_opaque_rect);
+  EXPECT_EQ(opaque_rect_in_content_space.ToString(),
+            resulting_opaque_rect.ToString());
 }
 
 }  // namespace

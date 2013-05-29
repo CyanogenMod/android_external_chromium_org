@@ -18,15 +18,17 @@
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/rendering_benchmark.h"
 #include "content/renderer/skia_benchmarking_extension.h"
-#include "third_party/skia/include/core/SkGraphics.h"
-#include "third_party/skia/include/core/SkPicture.h"
-#include "third_party/skia/include/core/SkStream.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebViewBenchmarkSupport.h"
+#include "third_party/skia/include/core/SkData.h"
+#include "third_party/skia/include/core/SkGraphics.h"
+#include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkPixelRef.h"
+#include "third_party/skia/include/core/SkStream.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "v8/include/v8.h"
-#include "webkit/compositor_bindings/web_rendering_stats_impl.h"
+#include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 
 using WebKit::WebCanvas;
 using WebKit::WebFrame;
@@ -38,13 +40,20 @@ using WebKit::WebViewBenchmarkSupport;
 
 const char kGpuBenchmarkingExtensionName[] = "v8/GpuBenchmarking";
 
-static bool PNGEncodeBitmapToStream(SkWStream* stream, const SkBitmap& bm) {
+static SkData* EncodeBitmapToData(size_t* offset, const SkBitmap& bm) {
+    SkPixelRef* pr = bm.pixelRef();
+    if (pr != NULL) {
+        SkData* data = pr->refEncodedData();
+        if (data != NULL) {
+            *offset = bm.pixelRefOffset();
+            return data;
+        }
+    }
     std::vector<unsigned char> vector;
     if (gfx::PNGCodec::EncodeBGRASkBitmap(bm, true, &vector)) {
-        if (stream->write(&vector.front() , vector.size()))
-            return true;
+        return SkData::NewWithCopy(&vector.front() , vector.size());
     }
-    return false;
+    return NULL;
 }
 
 namespace {
@@ -75,7 +84,7 @@ class SkPictureRecorder : public WebViewBenchmarkSupport::PaintClient {
     DCHECK(!filepath.empty());
     SkFILEWStream file(filepath.c_str());
     DCHECK(file.isValid());
-    picture_.serialize(&file, &PNGEncodeBitmapToStream);
+    picture_.serialize(&file, &EncodeBitmapToData);
   }
 
  private:
@@ -129,6 +138,10 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "  native function SetNeedsDisplayOnAllLayers();"
           "  return SetNeedsDisplayOnAllLayers();"
           "};"
+          "chrome.gpuBenchmarking.setRasterizeOnlyVisibleContent = function() {"
+          "  native function SetRasterizeOnlyVisibleContent();"
+          "  return SetRasterizeOnlyVisibleContent();"
+          "};"
           "chrome.gpuBenchmarking.renderingStats = function() {"
           "  native function GetRenderingStats();"
           "  return GetRenderingStats();"
@@ -166,6 +179,8 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       v8::Handle<v8::String> name) OVERRIDE {
     if (name->Equals(v8::String::New("SetNeedsDisplayOnAllLayers")))
       return v8::FunctionTemplate::New(SetNeedsDisplayOnAllLayers);
+    if (name->Equals(v8::String::New("SetRasterizeOnlyVisibleContent")))
+      return v8::FunctionTemplate::New(SetRasterizeOnlyVisibleContent);
     if (name->Equals(v8::String::New("GetRenderingStats")))
       return v8::FunctionTemplate::New(GetRenderingStats);
     if (name->Equals(v8::String::New("PrintToSkPicture")))
@@ -199,6 +214,29 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return v8::Undefined();
 
     compositor->SetNeedsDisplayOnAllLayers();
+
+    return v8::Undefined();
+  }
+
+  static v8::Handle<v8::Value> SetRasterizeOnlyVisibleContent(
+      const v8::Arguments& args) {
+    WebFrame* web_frame = WebFrame::frameForCurrentContext();
+    if (!web_frame)
+      return v8::Undefined();
+
+    WebView* web_view = web_frame->view();
+    if (!web_view)
+      return v8::Undefined();
+
+    RenderViewImpl* render_view_impl = RenderViewImpl::FromWebView(web_view);
+    if (!render_view_impl)
+      return v8::Undefined();
+
+    RenderWidgetCompositor* compositor = render_view_impl->compositor();
+    if (!compositor)
+      return v8::Undefined();
+
+    compositor->SetRasterizeOnlyVisibleContent();
 
     return v8::Undefined();
   }

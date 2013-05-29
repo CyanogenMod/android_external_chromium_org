@@ -279,6 +279,8 @@ virtual void RegisterSharedIdsCHROMIUM(
 virtual GLboolean EnableFeatureCHROMIUM(const char* feature) OVERRIDE;
 virtual void* MapBufferCHROMIUM(GLuint target, GLenum access) OVERRIDE;
 virtual GLboolean UnmapBufferCHROMIUM(GLuint target) OVERRIDE;
+virtual void* MapImageCHROMIUM(GLuint image_id, GLenum access) OVERRIDE;
+virtual void UnmapImageCHROMIUM(GLuint image_id) OVERRIDE;
 virtual void* MapBufferSubDataCHROMIUM(
     GLuint target, GLintptr offset, GLsizeiptr size, GLenum access) OVERRIDE;
 virtual void UnmapBufferSubDataCHROMIUM(const void* mem) OVERRIDE;
@@ -286,7 +288,8 @@ virtual void* MapTexSubImage2DCHROMIUM(
     GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
     GLsizei height, GLenum format, GLenum type, GLenum access) OVERRIDE;
 virtual void UnmapTexSubImage2DCHROMIUM(const void* mem) OVERRIDE;
-virtual void ResizeCHROMIUM(GLuint width, GLuint height) OVERRIDE;
+virtual void ResizeCHROMIUM(
+    GLuint width, GLuint height, GLfloat scale_factor) OVERRIDE;
 virtual const GLchar* GetRequestableExtensionsCHROMIUM() OVERRIDE;
 virtual void RequestExtensionCHROMIUM(const char* extension) OVERRIDE;
 virtual void RateLimitOffscreenContextCHROMIUM() OVERRIDE;
@@ -297,6 +300,11 @@ virtual void GetProgramInfoCHROMIUM(
     GLuint program, GLsizei bufsize, GLsizei* size, void* info) OVERRIDE;
 virtual GLuint CreateStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
 virtual void DestroyStreamTextureCHROMIUM(GLuint texture) OVERRIDE;
+virtual GLuint CreateImageCHROMIUM(
+    GLsizei width, GLsizei height, GLenum internalformat) OVERRIDE;
+virtual void DestroyImageCHROMIUM(GLuint image_id) OVERRIDE;
+virtual void GetImageParameterivCHROMIUM(
+    GLuint image_id, GLenum pname, GLint* params) OVERRIDE;
 virtual void GetTranslatedShaderSourceANGLE(
     GLuint shader, GLsizei bufsize, GLsizei* length, char* source) OVERRIDE;
 virtual void PostSubBufferCHROMIUM(

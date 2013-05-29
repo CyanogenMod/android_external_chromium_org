@@ -39,6 +39,7 @@
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_io_data.h"
+#include "chrome/browser/search/instant_extended_context_menu_observer.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -79,6 +80,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_restriction.h"
 #include "content/public/common/ssl_status.h"
+#include "content/public/common/url_utils.h"
 #include "extensions/browser/view_type_utils.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -90,10 +92,6 @@
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/favicon_size.h"
 #include "webkit/glue/webmenuitem.h"
-
-#ifdef FILE_MANAGER_EXTENSION
-#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
-#endif
 
 using WebKit::WebContextMenuData;
 using WebKit::WebMediaPlayerAction;
@@ -348,19 +346,6 @@ void AddCustomItemsToMenu(const std::vector<WebMenuItem>& items,
   }
 }
 
-bool ShouldShowTranslateItem(const GURL& page_url) {
-  if (page_url.SchemeIs("chrome"))
-    return false;
-
-#ifdef FILE_MANAGER_EXTENSION
-  if (page_url.SchemeIs("chrome-extension") &&
-      page_url.DomainIs(kFileBrowserDomain))
-    return false;
-#endif
-
-  return true;
-}
-
 void DevToolsInspectElementAt(RenderViewHost* rvh, int x, int y) {
   DevToolsWindow::InspectElement(rvh, x, y);
 }
@@ -403,7 +388,8 @@ RenderViewContextMenu::RenderViewContextMenu(
       speech_input_submenu_model_(this),
       protocol_handler_submenu_model_(this),
       protocol_handler_registry_(
-          ProtocolHandlerRegistryFactory::GetForProfile(profile_)) {
+          ProtocolHandlerRegistryFactory::GetForProfile(profile_)),
+      command_executed_(false) {
 }
 
 RenderViewContextMenu::~RenderViewContextMenu() {
@@ -646,7 +632,13 @@ void RenderViewContextMenu::InitMenu() {
     print_preview_menu_observer_.reset(
         new PrintPreviewContextMenuObserver(source_web_contents_));
   }
+  if (!instant_extended_observer_.get()) {
+    instant_extended_observer_.reset(
+        new InstantExtendedContextMenuObserver(
+            source_web_contents_, params_.page_url));
+  }
   observers_.AddObserver(print_preview_menu_observer_.get());
+  observers_.AddObserver(instant_extended_observer_.get());
 }
 
 const Extension* RenderViewContextMenu::GetExtension() const {
@@ -914,7 +906,7 @@ void RenderViewContextMenu::AppendPageItems() {
                                   IDS_CONTENT_CONTEXT_SAVEPAGEAS);
   menu_model_.AddItemWithStringId(IDC_PRINT, IDS_CONTENT_CONTEXT_PRINT);
 
-  if (ShouldShowTranslateItem(params_.page_url)) {
+  if (TranslateManager::IsTranslatableURL(params_.page_url)) {
     std::string locale = g_browser_process->GetApplicationLocale();
     locale = TranslateManager::GetLanguageCode(locale);
     string16 language = l10n_util::GetDisplayNameForLocale(locale, locale,
@@ -1206,17 +1198,10 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       // target languages are identical.  This is to give a way to user to
       // translate a page that might contains text fragments in a different
       // language.
-      return !!(params_.edit_flags & WebContextMenuData::CanTranslate) &&
-             translate_tab_helper->language_state().page_translatable() &&
+      return ((params_.edit_flags & WebContextMenuData::CanTranslate) != 0) &&
              !original_lang.empty() &&  // Did we receive the page language yet?
-             // Only allow translating languages we explitly support and the
-             // unknown language (in which case the page language is detected on
-             // the server side).
-             (original_lang == chrome::kUnknownLanguageCode ||
-                 TranslateManager::IsSupportedLanguage(original_lang)) &&
              !translate_tab_helper->language_state().IsPageTranslated() &&
              !source_web_contents_->GetInterstitialPage() &&
-             TranslateManager::IsTranslatableURL(params_.page_url) &&
              // There are some application locales which can't be used as a
              // target language for translation.
              TranslateManager::IsSupportedLanguage(target_lang);
@@ -1334,7 +1319,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       // different (like having "view-source:" on the front).
       NavigationEntry* active_entry =
           source_web_contents_->GetController().GetActiveEntry();
-      return download_util::IsSavableURL(
+      return content::IsSavableURL(
           (active_entry) ? active_entry->GetURL() : GURL());
     }
 
@@ -1461,6 +1446,7 @@ bool RenderViewContextMenu::IsCommandIdChecked(int id) const {
 }
 
 void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
+  command_executed_ = true;
   // If this command is is added by one of our observers, we dispatch it to the
   // observer.
   ObserverListBase<RenderViewContextMenuObserver>::Iterator it(observers_);
@@ -1789,7 +1775,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
 
     case IDC_CONTENT_CONTEXT_VIEWFRAMESOURCE:
       source_web_contents_->ViewFrameSource(params_.frame_url,
-                                            params_.frame_content_state);
+                                            params_.frame_page_state);
       break;
 
     case IDC_CONTENT_CONTEXT_VIEWFRAMEINFO: {
@@ -1961,6 +1947,12 @@ void RenderViewContextMenu::MenuClosed(ui::SimpleMenuModel* source) {
       chrome::NOTIFICATION_RENDER_VIEW_CONTEXT_MENU_CLOSED,
       content::Source<RenderViewContextMenu>(this),
       content::NotificationService::NoDetails());
+
+  if (!command_executed_) {
+    FOR_EACH_OBSERVER(RenderViewContextMenuObserver,
+                      observers_,
+                      OnMenuCancel());
+  }
 }
 
 bool RenderViewContextMenu::IsDevCommandEnabled(int id) const {

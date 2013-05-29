@@ -284,9 +284,10 @@ TEST_PPAPI_NACL(Graphics2D_BindNull)
 // These tests fail with the test compositor which is what's used by default for
 // browser tests on Windows Aura. Renable when the software compositor is
 // available.
-TEST_PPAPI_IN_PROCESS(Graphics3D)
+// In-process and NaCl tests are having flaky failures on Win: crbug.com/242252
+TEST_PPAPI_IN_PROCESS(DISABLED_Graphics3D)
 TEST_PPAPI_OUT_OF_PROCESS(Graphics3D)
-TEST_PPAPI_NACL(Graphics3D)
+TEST_PPAPI_NACL(DISABLED_Graphics3D)
 #endif
 
 TEST_PPAPI_IN_PROCESS(ImageData)
@@ -557,6 +558,9 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, PostMessage) {
       LIST_TEST(PostMessage_SendInInit)
       LIST_TEST(PostMessage_SendingData)
       LIST_TEST(PostMessage_SendingArrayBuffer)
+      LIST_TEST(DISABLED_PostMessage_SendingArray)
+      LIST_TEST(DISABLED_PostMessage_SendingDictionary)
+      LIST_TEST(DISABLED_PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
       LIST_TEST(PostMessage_ExtraParam)
@@ -567,6 +571,9 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, PostMessage) {
       LIST_TEST(PostMessage_SendInInit)
       LIST_TEST(PostMessage_SendingData)
       LIST_TEST(PostMessage_SendingArrayBuffer)
+      LIST_TEST(PostMessage_SendingArray)
+      LIST_TEST(PostMessage_SendingDictionary)
+      LIST_TEST(PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
       LIST_TEST(PostMessage_ExtraParam)
@@ -578,6 +585,9 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, PostMessage) {
       LIST_TEST(PostMessage_SendInInit)
       LIST_TEST(PostMessage_SendingData)
       LIST_TEST(PostMessage_SendingArrayBuffer)
+      LIST_TEST(PostMessage_SendingArray)
+      LIST_TEST(PostMessage_SendingDictionary)
+      LIST_TEST(PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
       LIST_TEST(PostMessage_ExtraParam)
@@ -589,6 +599,9 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(PostMessage)) {
       LIST_TEST(PostMessage_SendInInit)
       LIST_TEST(PostMessage_SendingData)
       LIST_TEST(PostMessage_SendingArrayBuffer)
+      LIST_TEST(PostMessage_SendingArray)
+      LIST_TEST(PostMessage_SendingDictionary)
+      LIST_TEST(PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
       LIST_TEST(PostMessage_ExtraParam)
@@ -600,6 +613,9 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, PostMessage) {
       LIST_TEST(PostMessage_SendInInit)
       LIST_TEST(PostMessage_SendingData)
       LIST_TEST(PostMessage_SendingArrayBuffer)
+      LIST_TEST(PostMessage_SendingArray)
+      LIST_TEST(PostMessage_SendingDictionary)
+      LIST_TEST(PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
       LIST_TEST(PostMessage_ExtraParam)
@@ -696,7 +712,9 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileIO) {
 }
 
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(FileRef)
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(FileRef)
+// OutOfProcessPPAPITest.FileRef times out fairly often.
+// http://crbug.com/241646
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(DISABLED_FileRef)
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
@@ -713,7 +731,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef) {
       LIST_TEST(DISABLED_FileRef_ReadDirectoryEntries)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, FileRef) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(FileRef)) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
       LIST_TEST(FileRef_GetFileSystemType)
@@ -1177,7 +1195,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_PageHideShow) {
 
   // Make a new tab to cause the original one to hide, this should trigger the
   // next phase of the test.
-  chrome::NavigateParams params(browser(), GURL(chrome::kAboutBlankURL),
+  chrome::NavigateParams params(browser(), GURL(content::kAboutBlankURL),
                                 content::PAGE_TRANSITION_LINK);
   params.disposition = NEW_FOREGROUND_TAB;
   ui_test_utils::NavigateToURL(&params);
@@ -1300,7 +1318,7 @@ TEST_PPAPI_OUT_OF_PROCESS(MAYBE_FlashFullscreen)
 TEST_PPAPI_OUT_OF_PROCESS(PDF)
 // Only implemented on Windows and ChromeOS currently.
 #if (defined(OS_WIN) && defined(ENABLE_RLZ)) || defined(OS_CHROMEOS)
-TEST_PPAPI_OUT_OF_PROCESS(FlashDeviceID)
+TEST_PPAPI_OUT_OF_PROCESS(FlashDRM)
 #endif
 
 TEST_PPAPI_IN_PROCESS(TalkPrivate)

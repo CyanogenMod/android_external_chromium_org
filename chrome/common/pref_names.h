@@ -21,7 +21,6 @@ extern const char kDefaultAppsInstalled[];
 extern const char kDisableScreenshots[];
 extern const char kHomePageIsNewTabPage[];
 extern const char kHomePage[];
-extern const char kHomePageChanged[];
 extern const char kManagedModeLocalPassphrase[];
 extern const char kManagedModeLocalSalt[];
 extern const char kManagedModeManualHosts[];
@@ -389,6 +388,7 @@ extern const char kBlockThirdPartyCookies[];
 extern const char kClearSiteDataOnExit[];
 extern const char kDefaultZoomLevel[];
 extern const char kPerHostZoomLevels[];
+extern const char kAutofillDialogAutofillDefault[];
 extern const char kAutofillDialogPayWithoutWallet[];
 extern const char kEditBookmarksEnabled[];
 
@@ -406,9 +406,6 @@ extern const char kImportHomepage[];
 extern const char kImportSearchEngine[];
 extern const char kImportSavedPasswords[];
 
-extern const char kEnterpriseWebStoreURL[];
-extern const char kEnterpriseWebStoreName[];
-
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
 extern const char kLocalProfileId[];
 extern const char kPasswordsUseLocalProfileId[];
@@ -424,6 +421,8 @@ extern const char kPrintingEnabled[];
 extern const char kPrintPreviewDisabled[];
 
 extern const char kDefaultManagedModeFilteringBehavior[];
+
+extern const char kManagedUsers[];
 
 extern const char kMessageCenterDisabledExtensionIds[];
 extern const char kMessageCenterDisabledSystemComponentIds[];
@@ -475,6 +474,13 @@ extern const char kProfileCreatedByVersion[];
 
 extern const char kProfileMetrics[];
 extern const char kProfilePrefix[];
+
+extern const char kResetDefaultSearchEngine[];
+extern const char kResetHomepage[];
+extern const char kResetContentSettings[];
+extern const char kResetCookiesAndSiteData[];
+extern const char kResetExtensions[];
+extern const char kResetExtensionsHandling[];
 
 extern const char kStabilityExitedCleanly[];
 extern const char kStabilityStatsVersion[];
@@ -633,6 +639,7 @@ extern const char kSyncFaviconImages[];
 extern const char kSyncFaviconTracking[];
 extern const char kSyncHistoryDeleteDirectives[];
 extern const char kSyncManagedUserSettings[];
+extern const char kSyncManagedUsers[];
 extern const char kSyncPasswords[];
 extern const char kSyncPreferences[];
 extern const char kSyncPriorityPreferences[];
@@ -744,7 +751,9 @@ extern const char kManagedNotificationsBlockedForUrls[];
 extern const char kManagedAutoSelectCertificateForUrls[];
 
 extern const char kAudioCaptureAllowed[];
+extern const char kAudioCaptureAllowedUrls[];
 extern const char kVideoCaptureAllowed[];
+extern const char kVideoCaptureAllowedUrls[];
 
 #if defined(OS_CHROMEOS)
 extern const char kDeviceSettingsCache[];
@@ -829,6 +838,7 @@ extern const char kShelfAlignment[];
 extern const char kShelfAlignmentLocal[];
 extern const char kShelfAutoHideBehavior[];
 extern const char kShelfAutoHideBehaviorLocal[];
+extern const char kShelfChromeIconIndex[];
 extern const char kPinnedLauncherApps[];
 extern const char kShowLogoutButtonInTray[];
 extern const char kShelfPreferences[];

@@ -100,6 +100,8 @@ SimpleEntryImpl::SimpleEntryImpl(SimpleBackendImpl* backend,
       path_(path),
       key_(key),
       entry_hash_(entry_hash),
+      last_used_(Time::Now()),
+      last_modified_(last_used_),
       open_count_(0),
       state_(STATE_UNINITIALIZED),
       synchronous_entry_(NULL) {
@@ -240,7 +242,7 @@ int SimpleEntryImpl::ReadData(int stream_index,
     RecordReadResult(READ_RESULT_INVALID_ARGUMENT);
     return net::ERR_INVALID_ARGUMENT;
   }
-  if (pending_operations_.empty() && (offset >= data_size_[stream_index] ||
+  if (pending_operations_.empty() && (offset >= GetDataSize(stream_index) ||
                                       offset < 0 || !buf_len)) {
     RecordReadResult(READ_RESULT_NONBLOCK_EMPTY_RETURN);
     return 0;
@@ -416,6 +418,7 @@ void SimpleEntryImpl::OpenEntryInternal(const CompletionCallback& callback,
     return;
   }
   DCHECK_EQ(STATE_UNINITIALIZED, state_);
+  DCHECK(!synchronous_entry_);
   state_ = STATE_IO_PENDING;
   const base::TimeTicks start_time = base::TimeTicks::Now();
   typedef SimpleSynchronousEntry* PointerToSimpleSynchronousEntry;
@@ -442,6 +445,7 @@ void SimpleEntryImpl::CreateEntryInternal(const CompletionCallback& callback,
     return;
   }
   DCHECK_EQ(STATE_UNINITIALIZED, state_);
+  DCHECK(!synchronous_entry_);
 
   state_ = STATE_IO_PENDING;
 
@@ -477,8 +481,8 @@ void SimpleEntryImpl::CloseInternal() {
     state_ = STATE_IO_PENDING;
     for (int i = 0; i < kSimpleEntryFileCount; ++i) {
       if (have_written_[i]) {
-        if (data_size_[i] == crc32s_end_offset_[i]) {
-          int32 crc = data_size_[i] == 0 ? crc32(0, Z_NULL, 0) : crc32s_[i];
+        if (GetDataSize(i) == crc32s_end_offset_[i]) {
+          int32 crc = GetDataSize(i) == 0 ? crc32(0, Z_NULL, 0) : crc32s_[i];
           crc32s_to_write->push_back(CRCRecord(i, true, crc));
         } else {
           crc32s_to_write->push_back(CRCRecord(i, false, 0));
@@ -486,7 +490,7 @@ void SimpleEntryImpl::CloseInternal() {
       }
     }
   } else {
-    DCHECK_EQ(STATE_FAILURE, state_);
+    DCHECK(STATE_UNINITIALIZED == state_ || STATE_FAILURE == state_);
   }
 
   if (synchronous_entry_) {
@@ -519,7 +523,7 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
     return;
   }
   DCHECK_EQ(STATE_READY, state_);
-  if (offset >= data_size_[stream_index] || offset < 0 || !buf_len) {
+  if (offset >= GetDataSize(stream_index) || offset < 0 || !buf_len) {
     RecordReadResult(READ_RESULT_FAST_EMPTY_RETURN);
     // If there is nothing to read, we bail out before setting state_ to
     // STATE_IO_PENDING.
@@ -589,7 +593,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
     data_size_[stream_index] = offset + buf_len;
   } else {
     data_size_[stream_index] = std::max(offset + buf_len,
-                                        data_size_[stream_index]);
+                                        GetDataSize(stream_index));
   }
 
   // Since we don't know the correct values for |last_used_| and
@@ -629,7 +633,6 @@ void SimpleEntryImpl::CreationOperationComplete(
           completion_callback, net::ERR_FAILED));
     }
     MakeUninitialized();
-    state_ = STATE_FAILURE;
     return;
   }
   // If out_entry is NULL, it means we already called ReturnEntryToCaller from
@@ -691,7 +694,7 @@ void SimpleEntryImpl::ReadOperationComplete(
     crc32s_[stream_index] = crc32_combine(current_crc, *read_crc32, *result);
     crc32s_end_offset_[stream_index] += *result;
     if (!have_written_[stream_index] &&
-        data_size_[stream_index] == crc32s_end_offset_[stream_index]) {
+        GetDataSize(stream_index) == crc32s_end_offset_[stream_index]) {
       // We have just read a file from start to finish, and so we have
       // computed a crc of the entire file. We can check it now. If a cache
       // entry has a single reader, the normal pattern is to read from start
@@ -757,7 +760,8 @@ void SimpleEntryImpl::ChecksumOperationComplete(
 void SimpleEntryImpl::CloseOperationComplete() {
   DCHECK(!synchronous_entry_);
   DCHECK_EQ(0, open_count_);
-  DCHECK(STATE_IO_PENDING == state_ || STATE_FAILURE == state_);
+  DCHECK(STATE_IO_PENDING == state_ || STATE_FAILURE == state_ ||
+         STATE_UNINITIALIZED == state_);
   MakeUninitialized();
   RunNextOperationIfNeeded();
 }

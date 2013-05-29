@@ -340,11 +340,6 @@
         https://chrome.google.com/webstore?hl=[GRITLANGCODE]&amp;category=theme
       </message>
 
-      <!-- The URL for the content packs gallery. -->
-      <message name="IDS_GET_CONTENT_PACKS_URL" translateable="false">
-        https://chrome.google.com/webstore?hl=[GRITLANGCODE]
-      </message>
-
       <!-- The URL for the webstore. -->
       <message name="IDS_WEBSTORE_URL" translateable="false">
         https://chrome.google.com/webstore?hl=[GRITLANGCODE]
@@ -355,7 +350,7 @@
       <message name="IDS_CHROME_WELCOME_URL" translateable="false">
         http://www.google.com/chrome/intl/[GRITLANGCODE]/welcome.html
       </message>
-      <if expr="pp_ifdef('android') or pp_ifdef('ios')">
+      <if expr="is_android or pp_ifdef('ios')">
         <message name="IDS_MOBILE_WELCOME_URL" translateable="false">
           chrome://welcome
         </message>

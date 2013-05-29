@@ -14,6 +14,7 @@
 #include "ui/base/events/event_utils.h"
 #include "ui/base/gestures/gesture_sequence.h"
 #include "ui/base/keycodes/keyboard_code_conversion_win.h"
+#include "ui/base/win/dpi.h"
 #include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/shell.h"
@@ -1247,10 +1248,6 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
               MAKELPARAM(UIS_CLEAR, UISF_HIDEFOCUS),
               0);
 
-  // Bug 964884: detach the IME attached to this window.
-  // We should attach IMEs only when we need to input CJK strings.
-  ImmAssociateContextEx(hwnd(), NULL, 0);
-
   if (remove_standard_frame_) {
     SetWindowLong(hwnd(), GWL_STYLE,
                   GetWindowLong(hwnd(), GWL_STYLE) & ~WS_CAPTION);
@@ -2002,8 +1999,10 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
 #if defined(USE_AURA)
       if (touch_event_type != ui::ET_UNKNOWN) {
         POINT point;
-        point.x = TOUCH_COORD_TO_PIXEL(input[i].x);
-        point.y = TOUCH_COORD_TO_PIXEL(input[i].y);
+        point.x = TOUCH_COORD_TO_PIXEL(input[i].x) /
+            ui::win::GetUndocumentedDPIScale();
+        point.y = TOUCH_COORD_TO_PIXEL(input[i].y) /
+            ui::win::GetUndocumentedDPIScale();
 
         ScreenToClient(hwnd(), &point);
 

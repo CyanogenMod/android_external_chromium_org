@@ -31,6 +31,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using autofill::AutofillWebDataService;
+using autofill::AutofillWebDataBackend;
 
 namespace browser_sync {
 
@@ -40,6 +41,19 @@ using content::BrowserThread;
 using testing::_;
 using testing::NiceMock;
 using testing::Return;
+
+class NoOpAutofillBackend : public AutofillWebDataBackend {
+ public:
+  NoOpAutofillBackend() {}
+  virtual ~NoOpAutofillBackend() {}
+  virtual WebDatabase* GetDatabase() OVERRIDE { return NULL; }
+  virtual void AddObserver(
+      autofill::AutofillWebDataServiceObserverOnDBThread* observer) OVERRIDE {}
+  virtual void RemoveObserver(
+      autofill::AutofillWebDataServiceObserverOnDBThread* observer) OVERRIDE {}
+  virtual void RemoveExpiredFormElements() OVERRIDE {}
+  virtual void NotifyOfMultipleAutofillChanges() OVERRIDE {}
+};
 
 // Fake WebDataService implementation that stubs out the database loading.
 class FakeWebDataService : public AutofillWebDataService {
@@ -120,11 +134,13 @@ class FakeWebDataService : public AutofillWebDataService {
   void CreateSyncableService() {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::DB));
     // These services are deleted in DestroySyncableService().
-    AutocompleteSyncableService::CreateForWebDataService(this);
+    AutocompleteSyncableService::CreateForWebDataServiceAndBackend(
+        this,
+        &autofill_backend_);
   }
 
   bool is_database_loaded_;
-
+  NoOpAutofillBackend autofill_backend_;
   WebDatabaseObserver* observer_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeWebDataService);
@@ -132,12 +148,12 @@ class FakeWebDataService : public AutofillWebDataService {
 
 class MockWebDataServiceWrapperSyncable : public MockWebDataServiceWrapper {
  public:
-  static ProfileKeyedService* Build(content::BrowserContext* profile) {
+  static BrowserContextKeyedService* Build(content::BrowserContext* profile) {
     return new MockWebDataServiceWrapperSyncable();
   }
 
   MockWebDataServiceWrapperSyncable()
-      : MockWebDataServiceWrapper(NULL, new FakeWebDataService()) {
+      : MockWebDataServiceWrapper(NULL, new FakeWebDataService(), NULL) {
   }
 
   virtual void Shutdown() OVERRIDE {
@@ -204,7 +220,7 @@ class SyncAutofillDataTypeControllerTest : public testing::Test {
 
  protected:
   base::WeakPtrFactory<SyncAutofillDataTypeControllerTest> weak_ptr_factory_;
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
 

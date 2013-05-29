@@ -131,7 +131,6 @@
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
 #include "chrome/browser/ui/unload_controller.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
@@ -150,7 +149,7 @@
 #include "chrome/common/search_types.h"
 #include "chrome/common/startup_metric_utils.h"
 #include "chrome/common/url_constants.h"
-#include "content/public/browser/color_chooser.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
@@ -218,6 +217,7 @@ using content::UserMetricsAction;
 using content::WebContents;
 using extensions::Extension;
 using ui::WebDialogDelegate;
+using web_modal::WebContentsModalDialogManager;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -233,14 +233,6 @@ const int kUIUpdateCoalescingTimeMS = 200;
 
 BrowserWindow* CreateBrowserWindow(Browser* browser) {
   return BrowserWindow::CreateBrowserWindow(browser);
-}
-
-bool ShouldReloadCrashedTab(WebContents* contents) {
-#if defined(OS_CHROMEOS)
-  return contents->IsCrashed();
-#else
-  return false;
-#endif
 }
 
 }  // namespace
@@ -387,9 +379,6 @@ Browser::Browser(const CreateParams& params)
       prefs::kShowBookmarkBar,
       base::Bind(&Browser::UpdateBookmarkBarState, base::Unretained(this),
                  BOOKMARK_BAR_STATE_CHANGE_PREF_CHANGE));
-  profile_pref_registrar_.Add(
-      prefs::kHomePage,
-      base::Bind(&Browser::MarkHomePageAsChanged, base::Unretained(this)));
 
   BrowserList::AddBrowser(this);
 
@@ -485,6 +474,10 @@ Browser::~Browser() {
   profile_pref_registrar_.RemoveAll();
 
   encoding_auto_detect_.Destroy();
+
+  // Destroy BrowserExtensionWindowController before the incognito profile
+  // is destroyed to make sure the chrome.windows.onRemoved event is sent.
+  extension_window_controller_.reset();
 
   if (profile_->IsOffTheRecord() &&
       !BrowserList::IsOffTheRecordSessionActiveForProfile(profile_)) {
@@ -603,8 +596,10 @@ void Browser::OnWindowClosing() {
   bool should_quit_if_last_browser =
       browser_shutdown::IsTryingToQuit() || !chrome::WillKeepAlive();
 
-  if (should_quit_if_last_browser && chrome::ShouldStartShutdown(this))
+  if (should_quit_if_last_browser &&
+      BrowserList::GetInstance(host_desktop_type_)->size() == 1) {
     browser_shutdown::OnShutdownStarting(browser_shutdown::WINDOW_CLOSE);
+  }
 
   // Don't use GetForProfileIfExisting here, we want to force creation of the
   // session service so that user can restore what was open.
@@ -631,22 +626,6 @@ void Browser::OnWindowClosing() {
       content::NotificationService::NoDetails());
 
   tab_strip_model_->CloseAllTabs();
-}
-
-void Browser::OnWindowActivated() {
-  // On some platforms we want to automatically reload tabs that are
-  // killed when the user selects them.
-  WebContents* contents = tab_strip_model_->GetActiveWebContents();
-  if (contents && ShouldReloadCrashedTab(contents)) {
-    chrome::Reload(this, CURRENT_TAB);
-    // The reload above will change the toolbar reload button into a stop
-    // button. If the user activated the window with a mouse press on the
-    // reload button itself, the reload will stop on mouse release and the page
-    // will be blank. Disable the stop command temporarily. It will be
-    // re-enabled as the page loads.
-    command_controller_->command_updater()->UpdateCommandEnabled(IDC_STOP,
-                                                                 false);
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -842,7 +821,7 @@ void Browser::JSOutOfMemoryHelper(WebContents* web_contents) {
     return;
 
   SimpleAlertInfoBarDelegate::Create(
-      infobar_service, NULL,
+      infobar_service, InfoBarDelegate::kNoIconID,
       l10n_util::GetStringUTF16(IDS_JS_OUT_OF_MEMORY_PROMPT), true);
 }
 
@@ -1025,21 +1004,8 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
                                int reason) {
   content::RecordAction(UserMetricsAction("ActiveTabChanged"));
 
-  // On some platforms we want to automatically reload tabs that are
-  // killed when the user selects them.
-  bool did_reload = false;
-  if ((reason & CHANGE_REASON_USER_GESTURE) &&
-      ShouldReloadCrashedTab(new_contents)) {
-    LOG(WARNING) << "Reloading killed tab at " << index;
-    static int reload_count = 0;
-    UMA_HISTOGRAM_CUSTOM_COUNTS(
-        "Tabs.SadTab.ReloadCount", ++reload_count, 1, 1000, 50);
-    chrome::Reload(this, CURRENT_TAB);
-    did_reload = true;
-  }
-
   // Discarded tabs always get reloaded.
-  if (!did_reload && tab_strip_model_->IsTabDiscarded(index)) {
+  if (tab_strip_model_->IsTabDiscarded(index)) {
     LOG(WARNING) << "Reloading discarded tab at " << index;
     static int reload_count = 0;
     UMA_HISTOGRAM_CUSTOM_COUNTS(
@@ -1443,9 +1409,9 @@ void Browser::ViewSourceForTab(WebContents* source, const GURL& page_url) {
 
 void Browser::ViewSourceForFrame(WebContents* source,
                                  const GURL& frame_url,
-                                 const std::string& frame_content_state) {
+                                 const content::PageState& frame_page_state) {
   DCHECK(source);
-  chrome::ViewSource(this, source, frame_url, frame_content_state);
+  chrome::ViewSource(this, source, frame_url, frame_page_state);
 }
 
 void Browser::ShowRepostFormWarningDialog(WebContents* source) {
@@ -1512,7 +1478,7 @@ void Browser::RendererResponsive(WebContents* source) {
 
 void Browser::WorkerCrashed(WebContents* source) {
   SimpleAlertInfoBarDelegate::Create(
-      InfoBarService::FromWebContents(source), NULL,
+      InfoBarService::FromWebContents(source), InfoBarDelegate::kNoIconID,
       l10n_util::GetStringUTF16(IDS_WEBWORKER_CRASHED_PROMPT), true);
 }
 
@@ -1531,27 +1497,8 @@ content::JavaScriptDialogManager* Browser::GetJavaScriptDialogManager() {
 }
 
 content::ColorChooser* Browser::OpenColorChooser(WebContents* web_contents,
-                                                 int color_chooser_id,
-                                                 SkColor color) {
-#if defined(OS_WIN)
-  // On Windows, only create a color chooser if one doesn't exist, because we
-  // can't close the old color chooser dialog.
-  if (!color_chooser_.get())
-    color_chooser_.reset(content::ColorChooser::Create(color_chooser_id,
-                                                       web_contents,
-                                                       color));
-#else
-  if (color_chooser_.get())
-    color_chooser_->End();
-  color_chooser_.reset(content::ColorChooser::Create(color_chooser_id,
-                                                     web_contents,
-                                                     color));
-#endif
-  return color_chooser_.get();
-}
-
-void Browser::DidEndColorChooser() {
-  color_chooser_.reset();
+                                                 SkColor initial_color) {
+  return chrome::ShowColorChooser(web_contents, initial_color);
 }
 
 void Browser::RunFileChooser(WebContents* web_contents,
@@ -1674,10 +1621,12 @@ void Browser::ConfirmAddSearchProvider(TemplateURL* template_url,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Browser, WebContentsModalDialogManagerDelegate implementation:
+// Browser, web_modal::WebContentsModalDialogManagerDelegate implementation:
 
 void Browser::SetWebContentsBlocked(content::WebContents* web_contents,
                                     bool blocked) {
+  ChromeWebModalDialogManagerDelegate::SetWebContentsBlocked(web_contents,
+                                                             blocked);
   int index = tab_strip_model_->GetIndexOfWebContents(web_contents);
   if (index == TabStripModel::kNoTab) {
     NOTREACHED();
@@ -1688,7 +1637,8 @@ void Browser::SetWebContentsBlocked(content::WebContents* web_contents,
     web_contents->GetView()->Focus();
 }
 
-WebContentsModalDialogHost* Browser::GetWebContentsModalDialogHost() {
+web_modal::WebContentsModalDialogHost*
+Browser::GetWebContentsModalDialogHost() {
   return window_->GetWebContentsModalDialogHost();
 }
 
@@ -1834,10 +1784,6 @@ void Browser::ModelChanged(const SearchModel::State& old_state,
 void Browser::OnDevToolsDisabledChanged() {
   if (profile_->GetPrefs()->GetBoolean(prefs::kDevToolsDisabled))
     content::DevToolsManager::GetInstance()->CloseAllClientHosts();
-}
-
-void Browser::MarkHomePageAsChanged() {
-  profile_->GetPrefs()->SetBoolean(prefs::kHomePageChanged, true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -71,12 +71,14 @@ LOCAL_SRC_FILES := \
 	base/debug/stack_trace_android.cc \
 	base/debug/trace_event_android.cc \
 	base/debug/trace_event_impl.cc \
+	base/debug/trace_event_impl_constants.cc \
 	base/deferred_sequenced_task_runner.cc \
 	base/environment.cc \
 	base/file_util.cc \
 	base/file_util_android.cc \
 	base/file_util_posix.cc \
 	base/files/file_path.cc \
+	base/files/file_path_constants.cc \
 	base/files/file_path_watcher.cc \
 	base/files/file_path_watcher_linux.cc \
 	base/files/file_util_proxy.cc \
@@ -137,6 +139,9 @@ LOCAL_SRC_FILES := \
 	base/process_util.cc \
 	base/process_util_linux.cc \
 	base/process_util_posix.cc \
+	base/process/process_metrics_linux.cc \
+	base/process/process_metrics_posix.cc \
+	base/process/internal_linux.cc \
 	base/profiler/scoped_profile.cc \
 	base/profiler/alternate_timer.cc \
 	base/profiler/tracked_time.cc \
@@ -149,6 +154,7 @@ LOCAL_SRC_FILES := \
 	base/sequenced_task_runner.cc \
 	base/sha1_portable.cc \
 	base/string_util.cc \
+	base/string_util_constants.cc \
 	base/string16.cc \
 	base/stringprintf.cc \
 	base/strings/string_split.cc \
@@ -173,6 +179,7 @@ LOCAL_SRC_FILES := \
 	base/task_runner.cc \
 	base/thread_task_runner_handle.cc \
 	base/threading/non_thread_safe_impl.cc \
+	base/threading/platform_thread_android.cc \
 	base/threading/platform_thread_posix.cc \
 	base/threading/post_task_and_reply_impl.cc \
 	base/threading/sequenced_worker_pool.cc \
@@ -243,6 +250,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -269,9 +277,9 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/base \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(LOCAL_PATH) \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

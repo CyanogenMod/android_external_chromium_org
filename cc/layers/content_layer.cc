@@ -95,18 +95,17 @@ void ContentLayer::CreateUpdaterIfNeeded() {
     return;
   scoped_ptr<LayerPainter> painter =
       ContentLayerPainter::Create(client_).PassAs<LayerPainter>();
-  if (layer_tree_host()->settings().accelerate_painting)
-    updater_ = SkPictureContentLayerUpdater::Create(
-        painter.Pass(),
-        rendering_stats_instrumentation());
-  else if (layer_tree_host()->settings().per_tile_painting_enabled)
+  if (layer_tree_host()->settings().per_tile_painting_enabled) {
     updater_ = BitmapSkPictureContentLayerUpdater::Create(
         painter.Pass(),
-        rendering_stats_instrumentation());
-  else
+        rendering_stats_instrumentation(),
+        id());
+  } else {
     updater_ = BitmapContentLayerUpdater::Create(
         painter.Pass(),
-        rendering_stats_instrumentation());
+        rendering_stats_instrumentation(),
+        id());
+  }
   updater_->SetOpaque(contents_opaque());
 
   unsigned texture_format =
@@ -127,6 +126,10 @@ void ContentLayer::UpdateCanUseLCDText() {
   can_use_lcd_text_last_frame_ = can_use_lcd_text();
   if (client_)
     client_->DidChangeLayerCanUseLCDText();
+}
+
+bool ContentLayer::SupportsLCDText() const {
+  return true;
 }
 
 }  // namespace cc

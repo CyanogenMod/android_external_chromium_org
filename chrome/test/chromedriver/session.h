@@ -51,6 +51,7 @@ struct Session {
 
   const std::string id;
   base::Thread thread;
+  bool detach;
   scoped_ptr<Chrome> chrome;
   std::string window;
   int sticky_modifiers;
@@ -62,7 +63,7 @@ struct Session {
   int implicit_wait;
   int page_load_timeout;
   int script_timeout;
-  std::string prompt_text;
+  scoped_ptr<std::string> prompt_text;
   scoped_ptr<Geoposition> overridden_geoposition;
   // Logs that populate from DevTools events.
   ScopedVector<WebDriverLog> devtools_logs;

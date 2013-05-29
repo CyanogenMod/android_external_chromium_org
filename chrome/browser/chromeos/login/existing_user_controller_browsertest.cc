@@ -9,14 +9,12 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/location.h"
-#include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/cros/cros_mock.h"
 #include "chrome/browser/chromeos/cros/mock_network_library.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
-#include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
 #include "chrome/browser/chromeos/login/mock_login_display.h"
 #include "chrome/browser/chromeos/login/mock_login_display_host.h"
@@ -25,6 +23,7 @@
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -70,24 +69,14 @@ const char kUsername[] = "test_user@gmail.com";
 const char kNewUsername[] = "test_new_user@gmail.com";
 const char kPassword[] = "test_password";
 
-const char kAutoLoginUsername[] = "public_session_user@localhost";
+const char kPublicSessionAccountId[] = "public_session_user@localhost";
 const int kAutoLoginNoDelay = 0;
 const int kAutoLoginShortDelay = 1;
 const int kAutoLoginLongDelay = 10000;
 
-scoped_refptr<Authenticator> CreateAuthenticator(
-    LoginStatusConsumer* consumer) {
-  return new MockAuthenticator(consumer, kUsername, kPassword);
-}
 
-scoped_refptr<Authenticator> CreateAuthenticatorNewUser(
-    LoginStatusConsumer* consumer) {
-  return new MockAuthenticator(consumer, kNewUsername, kPassword);
-}
-
-scoped_refptr<Authenticator> CreateAuthenticatorForPublicSession(
-    LoginStatusConsumer* consumer) {
-  return new MockAuthenticator(consumer, kAutoLoginUsername, "");
+ACTION_P2(CreateAuthenticator, username, password) {
+  return new MockAuthenticator(arg0, username, password);
 }
 
 // Observes a specific notification type and quits the message loop once a
@@ -130,7 +119,8 @@ class NotificationWatcher : public content::NotificationObserver {
 
 }  // namespace
 
-class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
+class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest,
+                                   public testing::WithParamInterface<bool> {
  protected:
   ExistingUserControllerTest()
       : mock_network_library_(NULL),
@@ -192,6 +182,8 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(switches::kLoginManager);
+    if (GetParam())
+      command_line->AppendSwitch(::switches::kMultiProfiles);
   }
 
   virtual void SetUpUserManager() {
@@ -296,17 +288,17 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(ExistingUserControllerTest);
 };
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, ExistingUserLogin) {
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerTest, ExistingUserLogin) {
   // This is disabled twice: once right after signin but before checking for
   // auto-enrollment, and again after doing an ownership status check.
   EXPECT_CALL(*mock_login_display_, SetUIEnabled(false))
       .Times(2);
   EXPECT_CALL(*mock_login_utils_, CreateAuthenticator(_))
       .Times(1)
-      .WillOnce(WithArg<0>(Invoke(CreateAuthenticator)));
+      .WillOnce(WithArg<0>(CreateAuthenticator(kUsername, kPassword)));
   EXPECT_CALL(*mock_login_utils_,
               PrepareProfile(UserContext(kUsername, kPassword, "", kUsername),
-                             _, _, _, _))
+                             _, _, _, _, _))
       .Times(1)
       .WillOnce(InvokeWithoutArgs(&profile_prepared_cb_,
                                   &base::Callback<void(void)>::Run));
@@ -330,7 +322,7 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, ExistingUserLogin) {
   content::RunAllPendingInMessageLoop();
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, AutoEnrollAfterSignIn) {
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerTest, AutoEnrollAfterSignIn) {
   EXPECT_CALL(*mock_login_display_host_,
               StartWizardPtr(WizardController::kEnrollmentScreenName,
                              _))
@@ -357,7 +349,7 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, AutoEnrollAfterSignIn) {
   content::RunAllPendingInMessageLoop();
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest,
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerTest,
                        NewUserDontAutoEnrollAfterSignIn) {
   EXPECT_CALL(*mock_login_display_host_,
               StartWizardPtr(WizardController::kEnrollmentScreenName,
@@ -369,13 +361,13 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest,
       .Times(1);
   EXPECT_CALL(*mock_login_utils_, CreateAuthenticator(_))
       .Times(1)
-      .WillOnce(WithArg<0>(Invoke(CreateAuthenticatorNewUser)));
+      .WillOnce(WithArg<0>(CreateAuthenticator(kNewUsername, kPassword)));
   EXPECT_CALL(*mock_login_utils_,
               PrepareProfile(UserContext(kNewUsername,
                                          kPassword,
                                          std::string(),
                                          kNewUsername),
-                             _, _, _, _))
+                             _, _, _, _, _))
       .Times(1)
       .WillOnce(InvokeWithoutArgs(&profile_prepared_cb_,
                                   &base::Callback<void(void)>::Run));
@@ -413,25 +405,28 @@ MATCHER_P(HasDetails, expected, "") {
 class ExistingUserControllerPublicSessionTest
     : public ExistingUserControllerTest {
  protected:
-  ExistingUserControllerPublicSessionTest() {
+  ExistingUserControllerPublicSessionTest()
+      : public_session_user_id_(policy::GenerateDeviceLocalAccountUserId(
+            kPublicSessionAccountId,
+            policy::DeviceLocalAccount::TYPE_PUBLIC_SESSION)) {
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
     ExistingUserControllerTest::SetUpOnMainThread();
 
     // Wait for the public session user to be created.
-    if (!chromeos::UserManager::Get()->IsKnownUser(kAutoLoginUsername)) {
+    if (!chromeos::UserManager::Get()->IsKnownUser(public_session_user_id_)) {
       NotificationWatcher(
           chrome::NOTIFICATION_USER_LIST_CHANGED,
           base::Bind(&chromeos::UserManager::IsKnownUser,
                      base::Unretained(chromeos::UserManager::Get()),
-                     kAutoLoginUsername)).Run();
+                     public_session_user_id_)).Run();
     }
 
     // Wait for the device local account policy to be installed.
     policy::CloudPolicyStore* store = TestingBrowserProcess::GetGlobal()->
         browser_policy_connector()->GetDeviceLocalAccountPolicyService()->
-        GetBrokerForAccount(kAutoLoginUsername)->core()->store();
+        GetBrokerForUser(public_session_user_id_)->core()->store();
     if (!store->has_policy()) {
       policy::MockCloudPolicyStoreObserver observer;
 
@@ -452,21 +447,22 @@ class ExistingUserControllerPublicSessionTest
     em::ChromeDeviceSettingsProto& proto(device_policy()->payload());
     em::DeviceLocalAccountInfoProto* account =
         proto.mutable_device_local_accounts()->add_account();
-    account->set_account_id(kAutoLoginUsername);
+    account->set_account_id(kPublicSessionAccountId);
     account->set_type(
         em::DeviceLocalAccountInfoProto::ACCOUNT_TYPE_PUBLIC_SESSION);
     RefreshDevicePolicy();
 
     // Setup the device local account policy.
     policy::UserPolicyBuilder device_local_account_policy;
-    device_local_account_policy.policy_data().set_username(kAutoLoginUsername);
+    device_local_account_policy.policy_data().set_username(
+        kPublicSessionAccountId);
     device_local_account_policy.policy_data().set_policy_type(
         policy::dm_protocol::kChromePublicAccountPolicyType);
     device_local_account_policy.policy_data().set_settings_entity_id(
-        kAutoLoginUsername);
+        kPublicSessionAccountId);
     device_local_account_policy.Build();
     session_manager_client()->set_device_local_account_policy(
-        kAutoLoginUsername,
+        kPublicSessionAccountId,
         device_local_account_policy.GetBlob());
   }
 
@@ -487,17 +483,15 @@ class ExistingUserControllerPublicSessionTest
   }
 
   void ExpectSuccessfulLogin(const std::string& username,
-                             const std::string& password,
-                             scoped_refptr<Authenticator> create_authenticator(
-                                 LoginStatusConsumer* consumer)) {
+                             const std::string& password) {
     EXPECT_CALL(*mock_login_display_, SetUIEnabled(false))
         .Times(AnyNumber());
     EXPECT_CALL(*mock_login_utils_, CreateAuthenticator(_))
         .Times(1)
-        .WillOnce(WithArg<0>(Invoke(create_authenticator)));
+        .WillOnce(WithArg<0>(CreateAuthenticator(username, password)));
     EXPECT_CALL(*mock_login_utils_,
                 PrepareProfile(UserContext(username, password, "", username),
-                               _, _, _, _))
+                               _, _, _, _, _))
         .Times(1)
         .WillOnce(InvokeWithoutArgs(&profile_prepared_cb_,
                                     &base::Callback<void(void)>::Run));
@@ -581,11 +575,13 @@ class ExistingUserControllerPublicSessionTest
     existing_user_controller()->OnPublicSessionAutoLoginTimerFire();
   }
 
+  const std::string public_session_user_id_;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(ExistingUserControllerPublicSessionTest);
 };
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
                        ConfigureAutoLoginUsingPolicy) {
   existing_user_controller()->OnSigninScreenReady();
   EXPECT_EQ("", auto_login_username());
@@ -593,8 +589,8 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   EXPECT_FALSE(auto_login_timer());
 
   // Set the policy.
-  SetAutoLoginPolicy(kAutoLoginUsername, kAutoLoginLongDelay);
-  EXPECT_EQ(kAutoLoginUsername, auto_login_username());
+  SetAutoLoginPolicy(kPublicSessionAccountId, kAutoLoginLongDelay);
+  EXPECT_EQ(public_session_user_id_, auto_login_username());
   EXPECT_EQ(kAutoLoginLongDelay, auto_login_delay());
   ASSERT_TRUE(auto_login_timer());
   EXPECT_TRUE(auto_login_timer()->IsRunning());
@@ -607,25 +603,23 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   EXPECT_FALSE(auto_login_timer()->IsRunning());
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
                        AutoLoginNoDelay) {
   // Set up mocks to check login success.
-  ExpectSuccessfulLogin(kAutoLoginUsername, "",
-                        CreateAuthenticatorForPublicSession);
+  ExpectSuccessfulLogin(public_session_user_id_, "");
   existing_user_controller()->OnSigninScreenReady();
 
   // Start auto-login and wait for login tasks to complete.
-  SetAutoLoginPolicy(kAutoLoginUsername, kAutoLoginNoDelay);
+  SetAutoLoginPolicy(kPublicSessionAccountId, kAutoLoginNoDelay);
   content::RunAllPendingInMessageLoop();
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
                        AutoLoginShortDelay) {
   // Set up mocks to check login success.
-  ExpectSuccessfulLogin(kAutoLoginUsername, "",
-                        CreateAuthenticatorForPublicSession);
+  ExpectSuccessfulLogin(public_session_user_id_, "");
   existing_user_controller()->OnSigninScreenReady();
-  SetAutoLoginPolicy(kAutoLoginUsername, kAutoLoginShortDelay);
+  SetAutoLoginPolicy(kPublicSessionAccountId, kAutoLoginShortDelay);
   ASSERT_TRUE(auto_login_timer());
   // Don't assert that timer is running: with the short delay sometimes
   // the trigger happens before the assert.  We've already tested that
@@ -643,13 +637,13 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   content::RunAllPendingInMessageLoop();
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
                        LoginStopsAutoLogin) {
   // Set up mocks to check login success.
-  ExpectSuccessfulLogin(kUsername, kPassword, CreateAuthenticator);
+  ExpectSuccessfulLogin(kUsername, kPassword);
 
   existing_user_controller()->OnSigninScreenReady();
-  SetAutoLoginPolicy(kAutoLoginUsername, kAutoLoginLongDelay);
+  SetAutoLoginPolicy(kPublicSessionAccountId, kAutoLoginLongDelay);
   ASSERT_TRUE(auto_login_timer());
 
   // Login and check that it stopped the timer.
@@ -666,18 +660,18 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   EXPECT_FALSE(auto_login_timer()->IsRunning());
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
                        GuestModeLoginStopsAutoLogin) {
   EXPECT_CALL(*mock_login_display_, SetUIEnabled(false))
       .Times(1);
   EXPECT_CALL(*mock_login_utils_, CreateAuthenticator(_))
       .Times(1)
-      .WillOnce(WithArg<0>(Invoke(CreateAuthenticator)));
+      .WillOnce(WithArg<0>(CreateAuthenticator(kUsername, kPassword)));
   EXPECT_CALL(*mock_login_utils_, CompleteOffTheRecordLogin(_))
       .Times(1);
 
   existing_user_controller()->OnSigninScreenReady();
-  SetAutoLoginPolicy(kAutoLoginUsername, kAutoLoginLongDelay);
+  SetAutoLoginPolicy(kPublicSessionAccountId, kAutoLoginLongDelay);
   ASSERT_TRUE(auto_login_timer());
 
   // Login and check that it stopped the timer.
@@ -694,15 +688,15 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   EXPECT_FALSE(auto_login_timer()->IsRunning());
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
                        CompleteLoginStopsAutoLogin) {
   // Set up mocks to check login success.
-  ExpectSuccessfulLogin(kUsername, kPassword, CreateAuthenticator);
+  ExpectSuccessfulLogin(kUsername, kPassword);
   EXPECT_CALL(*mock_login_display_host_, OnCompleteLogin())
       .Times(1);
 
   existing_user_controller()->OnSigninScreenReady();
-  SetAutoLoginPolicy(kAutoLoginUsername, kAutoLoginLongDelay);
+  SetAutoLoginPolicy(kPublicSessionAccountId, kAutoLoginLongDelay);
   ASSERT_TRUE(auto_login_timer());
 
   // Check that login completes and stops the timer.
@@ -719,17 +713,16 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   EXPECT_FALSE(auto_login_timer()->IsRunning());
 }
 
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
+IN_PROC_BROWSER_TEST_P(ExistingUserControllerPublicSessionTest,
                        PublicSessionLoginStopsAutoLogin) {
   // Set up mocks to check login success.
-  ExpectSuccessfulLogin(kAutoLoginUsername, "",
-                        CreateAuthenticatorForPublicSession);
+  ExpectSuccessfulLogin(public_session_user_id_, "");
   existing_user_controller()->OnSigninScreenReady();
-  SetAutoLoginPolicy(kAutoLoginUsername, kAutoLoginLongDelay);
+  SetAutoLoginPolicy(kPublicSessionAccountId, kAutoLoginLongDelay);
   ASSERT_TRUE(auto_login_timer());
 
   // Login and check that it stopped the timer.
-  existing_user_controller()->LoginAsPublicAccount(kAutoLoginUsername);
+  existing_user_controller()->LoginAsPublicAccount(public_session_user_id_);
   EXPECT_TRUE(is_login_in_progress());
   ASSERT_TRUE(auto_login_timer());
   EXPECT_FALSE(auto_login_timer()->IsRunning());
@@ -741,5 +734,13 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerPublicSessionTest,
   ASSERT_TRUE(auto_login_timer());
   EXPECT_FALSE(auto_login_timer()->IsRunning());
 }
+
+INSTANTIATE_TEST_CASE_P(ExistingUserControllerTestInstantiation,
+                        ExistingUserControllerTest,
+                        testing::Bool());
+
+INSTANTIATE_TEST_CASE_P(ExistingUserControllerPublicSessionTestInstantiation,
+                        ExistingUserControllerPublicSessionTest,
+                        testing::Bool());
 
 }  // namespace chromeos

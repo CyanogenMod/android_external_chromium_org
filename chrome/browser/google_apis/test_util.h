@@ -26,8 +26,9 @@ class Value;
 
 namespace net {
 namespace test_server {
-struct HttpRequest;
+class BasicHttpResponse;
 class HttpResponse;
+struct HttpRequest;
 }
 }
 
@@ -89,14 +90,8 @@ bool CreateFileOfSpecifiedSize(const base::FilePath& temp_dir,
 scoped_ptr<base::Value> LoadJSONFile(const std::string& relative_path);
 
 // Returns a HttpResponse created from the given file path.
-scoped_ptr<net::test_server::HttpResponse> CreateHttpResponseFromFile(
+scoped_ptr<net::test_server::BasicHttpResponse> CreateHttpResponseFromFile(
     const base::FilePath& file_path);
-
-// Does nothing for ReAuthenticateCallback(). This function should be used
-// if it is not expected to reach this method as there won't be any
-// authentication failures in the test.
-void DoNothingForReAuthenticateCallback(
-    AuthenticatedOperationInterface* operation);
 
 // Handles a request for downloading a file. Reads a file from the test
 // directory and returns the content. Also, copies the |request| to the memory
@@ -293,7 +288,7 @@ void AppendProgressCallbackResult(std::vector<ProgressInfo>* progress_values,
                                   int64 progress,
                                   int64 total);
 
-// Helpeer utility for recording the content via GetContentCallback.
+// Helper utility for recording the content via GetContentCallback.
 class TestGetContentCallback {
  public:
   TestGetContentCallback();

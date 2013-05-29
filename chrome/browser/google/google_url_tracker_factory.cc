@@ -9,15 +9,15 @@
 #include "chrome/browser/google/google_url_tracker_navigation_helper_impl.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 
 // static
 GoogleURLTracker* GoogleURLTrackerFactory::GetForProfile(Profile* profile) {
   return static_cast<GoogleURLTracker*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -26,14 +26,15 @@ GoogleURLTrackerFactory* GoogleURLTrackerFactory::GetInstance() {
 }
 
 GoogleURLTrackerFactory::GoogleURLTrackerFactory()
-    : ProfileKeyedServiceFactory("GoogleURLTracker",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "GoogleURLTracker",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 GoogleURLTrackerFactory::~GoogleURLTrackerFactory() {
 }
 
-ProfileKeyedService* GoogleURLTrackerFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* GoogleURLTrackerFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   scoped_ptr<GoogleURLTrackerNavigationHelper> nav_helper(
       new GoogleURLTrackerNavigationHelperImpl());
@@ -58,7 +59,7 @@ content::BrowserContext* GoogleURLTrackerFactory::GetBrowserContextToUse(
   return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
-bool GoogleURLTrackerFactory::ServiceIsCreatedWithProfile() const {
+bool GoogleURLTrackerFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

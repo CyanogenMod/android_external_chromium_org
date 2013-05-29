@@ -4,11 +4,9 @@
 
 #include "ash/system/chromeos/network/network_state_notifier.h"
 
-#include "ash/ash_switches.h"
 #include "ash/shell.h"
 #include "ash/system/chromeos/network/network_observer.h"
 #include "ash/system/tray/system_tray_notifier.h"
-#include "base/command_line.h"
 #include "base/string16.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -19,12 +17,11 @@
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using chromeos::NetworkHandler;
 using chromeos::NetworkState;
 using chromeos::NetworkStateHandler;
 
 namespace {
-
-const char kLogModule[] = "NetworkStateNotifier";
 
 const int kMinTimeBetweenOutOfCreditsNotifySeconds = 10 * 60;
 
@@ -111,15 +108,12 @@ namespace internal {
 
 NetworkStateNotifier::NetworkStateNotifier()
     : cellular_out_of_credits_(false) {
-  if (!NetworkStateHandler::Get())
-    return;
-  NetworkStateHandler::Get()->AddObserver(this);
+  NetworkHandler::Get()->network_state_handler()->AddObserver(this);
   InitializeNetworks();
 }
 
 NetworkStateNotifier::~NetworkStateNotifier() {
-  if (NetworkStateHandler::Get())
-    NetworkStateHandler::Get()->RemoveObserver(this);
+  NetworkHandler::Get()->network_state_handler()->RemoveObserver(this);
 }
 
 void NetworkStateNotifier::DefaultNetworkChanged(const NetworkState* network) {
@@ -134,7 +128,7 @@ void NetworkStateNotifier::DefaultNetworkChanged(const NetworkState* network) {
 
 void NetworkStateNotifier::NetworkConnectionStateChanged(
     const NetworkState* network) {
-  NetworkStateHandler* handler = NetworkStateHandler::Get();
+  NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   std::string prev_state;
   std::string new_state = network->connection_state();
   CachedStateMap::iterator iter = cached_state_.find(network->path());
@@ -158,8 +152,7 @@ void NetworkStateNotifier::NetworkConnectionStateChanged(
   if (network->path() != handler->connecting_network())
     return;  // Only show notifications for explicitly connected networks
 
-  chromeos::network_event_log::AddEntry(
-      kLogModule, "ConnectionFailure", network->path());
+  NET_LOG_EVENT("ConnectionFailure", network->path());
 
   std::vector<string16> no_links;
   ash::NetworkObserver::NetworkType network_type = GetAshNetworkType(network);
@@ -176,10 +169,6 @@ void NetworkStateNotifier::NetworkConnectionStateChanged(
 void NetworkStateNotifier::NetworkPropertiesUpdated(
     const NetworkState* network) {
   DCHECK(network);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          ash::switches::kAshDisableNewNetworkStatusArea)) {
-    return;
-  }
   // Trigger "Out of credits" notification if the cellular network is the most
   // recent default network (i.e. we have not switched to another network).
   if (network->type() == flimflam::kTypeCellular &&
@@ -214,7 +203,7 @@ void NetworkStateNotifier::NotificationLinkClicked(
   if (message_type == ash::NetworkObserver::ERROR_OUT_OF_CREDITS) {
     if (!cellular_network_.empty()) {
       // This will trigger the activation / portal code.
-      Shell::GetInstance()->system_tray_delegate()->ConnectToNetwork(
+      Shell::GetInstance()->system_tray_delegate()->ConfigureNetwork(
           cellular_network_);
     }
     ash::Shell::GetInstance()->system_tray_notifier()->
@@ -224,7 +213,7 @@ void NetworkStateNotifier::NotificationLinkClicked(
 
 void NetworkStateNotifier::InitializeNetworks() {
   NetworkStateList network_list;
-  NetworkStateHandler::Get()->GetNetworkList(&network_list);
+  NetworkHandler::Get()->network_state_handler()->GetNetworkList(&network_list);
   VLOG(1) << "NetworkStateNotifier:InitializeNetworks: "
           << network_list.size();
   for (NetworkStateList::iterator iter = network_list.begin();
@@ -234,7 +223,7 @@ void NetworkStateNotifier::InitializeNetworks() {
     cached_state_[network->path()] = network->connection_state();
   }
   const NetworkState* default_network =
-      NetworkStateHandler::Get()->DefaultNetwork();
+      NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
   if (default_network && default_network->IsConnectedState())
     last_active_network_ = default_network->path();
 }

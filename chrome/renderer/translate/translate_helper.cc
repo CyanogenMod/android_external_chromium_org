@@ -22,7 +22,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "v8/include/v8.h"
-#include "webkit/glue/dom_operations.h"
 
 #if defined(ENABLE_LANGUAGE_DETECTION)
 #include "third_party/cld/encodings/compact_lang_det/win/cld_unicodetext.h"
@@ -68,33 +67,6 @@ const LanguageCodeSynonym kLanguageCodeSynonyms[] = {
   {"tl", "fil"},
 };
 
-void GetMetaElementsWithAttribute(WebDocument* document,
-                                  const WebString& attribute_name,
-                                  const WebString& attribute_value,
-                                  std::vector<WebElement>* meta_elements) {
-  DCHECK(document);
-  DCHECK(meta_elements);
-
-  meta_elements->clear();
-  WebElement head = document->head();
-  if (head.isNull() || !head.hasChildNodes())
-    return;
-
-  WebNodeList children = head.childNodes();
-  for (size_t i = 0; i < children.length(); ++i) {
-    WebNode node = children.item(i);
-    if (!node.isElementNode())
-      continue;
-    WebElement element = node.to<WebElement>();
-    if (!element.hasTagName("meta"))
-      continue;
-    WebString value = element.getAttribute(attribute_name);
-    if (value.isNull() || value != attribute_value)
-      continue;
-    meta_elements->push_back(element);
-  }
-}
-
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -121,14 +93,41 @@ void TranslateHelper::PageCaptured(const string16& contents) {
   // language of the intended audience (a distinction really only
   // relevant for things like langauge textbooks).  This distinction
   // shouldn't affect translation.
-  WebDocument document = GetMainFrame()->document();
+  WebFrame* main_frame = GetMainFrame();
+  if (!main_frame)
+    return;
+  WebDocument document = main_frame->document();
   std::string content_language = document.contentLanguage().utf8();
-  std::string language = DeterminePageLanguage(content_language, contents);
+  WebElement html_element = document.documentElement();
+  std::string html_lang;
+  // |html_element| can be null element, e.g. in
+  // BrowserTest.WindowOpenClose.
+  if (!html_element.isNull())
+    html_lang = html_element.getAttribute("lang").utf8();
+  std::string cld_language;
+  bool is_cld_reliable;
+  std::string language = DeterminePageLanguage(
+      content_language, html_lang, contents, &cld_language, &is_cld_reliable);
+
   if (language.empty())
     return;
 
+  language_determined_time_ = base::TimeTicks::Now();
+
+  // TODO(toyoshim): Add |html_lang| to LanguageDetectionDetails.
+  GURL url(document.url());
+  LanguageDetectionDetails details;
+  details.time = base::Time::Now();
+  details.url = url;
+  details.content_language = content_language;
+  details.cld_language = cld_language;
+  details.is_cld_reliable = is_cld_reliable;
+  details.adopted_language = language;
+
   Send(new ChromeViewHostMsg_TranslateLanguageDetermined(
-      routing_id(), language, IsPageTranslatable(&document)));
+      routing_id(),
+      details,
+      IsTranslationAllowed(&document) && !language.empty()));
 }
 
 void TranslateHelper::CancelPendingTranslation() {
@@ -141,7 +140,8 @@ void TranslateHelper::CancelPendingTranslation() {
 
 #if defined(ENABLE_LANGUAGE_DETECTION)
 // static
-std::string TranslateHelper::DetermineTextLanguage(const string16& text) {
+std::string TranslateHelper::DetermineTextLanguage(const string16& text,
+                                                   bool* is_cld_reliable) {
   std::string language = chrome::kUnknownLanguageCode;
   int num_languages = 0;
   int text_bytes = 0;
@@ -149,6 +149,9 @@ std::string TranslateHelper::DetermineTextLanguage(const string16& text) {
   Language cld_language =
       DetectLanguageOfUnicodeText(NULL, text.c_str(), true, &is_reliable,
                                   &num_languages, NULL, &text_bytes);
+  if (is_cld_reliable != NULL)
+    *is_cld_reliable = is_reliable;
+
   // We don't trust the result if the CLD reports that the detection is not
   // reliable, or if the actual text used to detect the language was less than
   // 100 bytes (short texts can often lead to wrong results).
@@ -326,29 +329,58 @@ void TranslateHelper::ResetInvalidLanguageCode(std::string* code) {
 }
 
 // static
-std::string TranslateHelper::DeterminePageLanguage(const std::string& code,
-                                                   const string16& contents) {
-#if defined(ENABLE_LANGUAGE_DETECTION)
-  base::TimeTicks begin_time = base::TimeTicks::Now();
-  std::string cld_language = DetermineTextLanguage(contents);
-  TranslateHelperMetrics::ReportLanguageDetectionTime(begin_time,
-                                                      base::TimeTicks::Now());
-  ConvertLanguageCodeSynonym(&cld_language);
-  VLOG(9) << "CLD determined language code: " << cld_language;
-#endif  // defined(ENABLE_LANGUAGE_DETECTION)
-
+void TranslateHelper::ApplyLanguageCodeCorrection(std::string* code) {
   // Correct well-known format errors.
-  std::string language = code;
-  CorrectLanguageCodeTypo(&language);
+  CorrectLanguageCodeTypo(code);
 
   // Convert language code synonym firstly because sometime synonym code is in
   // invalid format, e.g. 'fil'. After validation, such a 3 characters language
   // gets converted to an empty string.
-  ConvertLanguageCodeSynonym(&language);
-  ResetInvalidLanguageCode(&language);
-  VLOG(9) << "Content-Language based language code: " << language;
+  ConvertLanguageCodeSynonym(code);
+  ResetInvalidLanguageCode(code);
+}
 
-  TranslateHelperMetrics::ReportContentLanguage(code, language);
+// static
+std::string TranslateHelper::DeterminePageLanguage(const std::string& code,
+                                                   const std::string& html_lang,
+                                                   const string16& contents,
+                                                   std::string* cld_language_p,
+                                                   bool* is_cld_reliable_p) {
+#if defined(ENABLE_LANGUAGE_DETECTION)
+  base::TimeTicks begin_time = base::TimeTicks::Now();
+  bool is_cld_reliable;
+  std::string cld_language = DetermineTextLanguage(contents, &is_cld_reliable);
+  TranslateHelperMetrics::ReportLanguageDetectionTime(begin_time,
+                                                      base::TimeTicks::Now());
+
+  if (cld_language_p != NULL)
+    *cld_language_p = cld_language;
+  if (is_cld_reliable_p != NULL)
+    *is_cld_reliable_p = is_cld_reliable;
+  ConvertLanguageCodeSynonym(&cld_language);
+#endif  // defined(ENABLE_LANGUAGE_DETECTION)
+
+  // Check if html lang attribute is valid.
+  std::string modified_html_lang;
+  if (!html_lang.empty()) {
+    modified_html_lang = html_lang;
+    ApplyLanguageCodeCorrection(&modified_html_lang);
+    TranslateHelperMetrics::ReportHtmlLang(html_lang, modified_html_lang);
+    VLOG(9) << "html lang based language code: " << modified_html_lang;
+  }
+
+  // Check if Content-Language is valid.
+  std::string modified_code;
+  if (!code.empty()) {
+    modified_code = code;
+    ApplyLanguageCodeCorrection(&modified_code);
+    TranslateHelperMetrics::ReportContentLanguage(code, modified_code);
+  }
+
+  // Adopt |modified_html_lang| if it is valid. Otherwise, adopt
+  // |modified_code|.
+  std::string language = modified_html_lang.empty() ? modified_code :
+                                                      modified_html_lang;
 
 #if defined(ENABLE_LANGUAGE_DETECTION)
   // If |language| is empty, just use CLD result even though it might be
@@ -370,7 +402,6 @@ std::string TranslateHelper::DeterminePageLanguage(const std::string& code,
     // is written in another language with confidence.
     // In this case, Chrome doesn't rely on any of the language codes, and
     // gives up suggesting a translation.
-    VLOG(9) << "CLD disagreed with the Content-Language value with confidence.";
     return std::string(chrome::kUnknownLanguageCode);
   } else {
     TranslateHelperMetrics::ReportLanguageVerification(
@@ -385,17 +416,34 @@ std::string TranslateHelper::DeterminePageLanguage(const std::string& code,
 }
 
 // static
-bool TranslateHelper::IsPageTranslatable(WebDocument* document) {
-  std::vector<WebElement> meta_elements;
-  GetMetaElementsWithAttribute(document,
-                               WebString::fromUTF8("name"),
-                               WebString::fromUTF8("google"),
-                               &meta_elements);
-  std::vector<WebElement>::const_iterator iter;
-  for (iter = meta_elements.begin(); iter != meta_elements.end(); ++iter) {
-    WebString attribute = iter->getAttribute("value");
-    if (attribute.isNull())  // We support both 'value' and 'content'.
-      attribute = iter->getAttribute("content");
+bool TranslateHelper::IsTranslationAllowed(WebDocument* document) {
+  WebElement head = document->head();
+  if (head.isNull() || !head.hasChildNodes())
+    return true;
+
+  const WebString meta(ASCIIToUTF16("meta"));
+  const WebString name(ASCIIToUTF16("name"));
+  const WebString google(ASCIIToUTF16("google"));
+  const WebString value(ASCIIToUTF16("value"));
+  const WebString content(ASCIIToUTF16("content"));
+
+  WebNodeList children = head.childNodes();
+  for (size_t i = 0; i < children.length(); ++i) {
+    WebNode node = children.item(i);
+    if (!node.isElementNode())
+      continue;
+    WebElement element = node.to<WebElement>();
+    // Check if a tag is <meta>.
+    if (!element.hasTagName(meta))
+      continue;
+    // Check if the tag contains name="google".
+    WebString attribute = element.getAttribute(name);
+    if (attribute.isNull() || attribute != google)
+      continue;
+    // Check if the tag contains value="notranslate", or content="notranslate".
+    attribute = element.getAttribute(value);
+    if (attribute.isNull())
+      attribute = element.getAttribute(content);
     if (attribute.isNull())
       continue;
     if (LowerCaseEqualsASCII(attribute, "notranslate"))
@@ -418,7 +466,8 @@ void TranslateHelper::OnTranslatePage(int page_id,
                                       const std::string& translate_script,
                                       const std::string& source_lang,
                                       const std::string& target_lang) {
-  if (render_view()->GetPageId() != page_id)
+  WebFrame* main_frame = GetMainFrame();
+  if (!main_frame || render_view()->GetPageId() != page_id)
     return;  // We navigated away, nothing to do.
 
   if (translation_pending_ && page_id == page_id_ &&
@@ -438,6 +487,12 @@ void TranslateHelper::OnTranslatePage(int page_id,
   source_lang_ = (source_lang != chrome::kUnknownLanguageCode) ?
                   source_lang : kAutoDetectionLanguage;
   target_lang_ = target_lang;
+
+  TranslateHelperMetrics::ReportUserActionDuration(language_determined_time_,
+                                                   base::TimeTicks::Now());
+
+  GURL url(main_frame->document().url());
+  TranslateHelperMetrics::ReportPageScheme(url.scheme());
 
   if (!IsTranslateLibAvailable()) {
     // Evaluate the script to add the translation related method to the global
@@ -569,12 +624,10 @@ void TranslateHelper::NotifyBrowserTranslationFailed(
 
 WebFrame* TranslateHelper::GetMainFrame() {
   WebView* web_view = render_view()->GetWebView();
-  if (!web_view) {
-    // When the WebView is going away, the render view should have called
-    // CancelPendingTranslation() which should have stopped any pending work, so
-    // that case should not happen.
-    NOTREACHED();
+
+  // When the tab is going to be closed, the web_view can be NULL.
+  if (!web_view)
     return NULL;
-  }
+
   return web_view->mainFrame();
 }

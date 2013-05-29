@@ -24,6 +24,7 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
+#include "chrome/browser/favicon/favicon_types.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -52,11 +53,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/webui/web_ui_util.h"
-
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#endif
 
 using chrome::AppLaunchParams;
 using chrome::OpenApplication;
@@ -108,11 +104,6 @@ void AppLauncherHandler::CreateAppInfo(
   bool enabled = service->IsExtensionEnabled(extension->id()) &&
       !service->GetTerminatedExtension(extension->id());
   extension->GetBasicInfo(enabled, value);
-
-#if defined(ENABLE_MANAGED_USERS)
-  scoped_ptr<ScopedExtensionElevation> elevation =
-      GetScopedElevation(extension->id(), service);
-#endif
 
   value->SetBoolean("mayDisable", extensions::ExtensionSystem::Get(
       service->profile())->management_policy()->UserMayModifySettings(
@@ -536,11 +527,6 @@ void AppLauncherHandler::HandleUninstallApp(const ListValue* args) {
   if (!extension)
     return;
 
-#if defined(ENABLE_MANAGED_USERS)
-  scoped_ptr<ScopedExtensionElevation> elevation =
-      GetScopedElevation(extension->id(), extension_service_);
-#endif
-
   if (!extensions::ExtensionSystem::Get(extension_service_->profile())->
           management_policy()->UserMayModifySettings(extension, NULL)) {
     LOG(ERROR) << "Attempt to uninstall an extension that is non-usermanagable "
@@ -669,7 +655,7 @@ void AppLauncherHandler::HandleGenerateAppForLink(const ListValue* args) {
   favicon_service->GetFaviconImageForURL(
       FaviconService::FaviconForURLParams(profile,
                                           launch_url,
-                                          history::FAVICON,
+                                          chrome::FAVICON,
                                           gfx::kFaviconSize),
       base::Bind(&AppLauncherHandler::OnFaviconForApp,
                  base::Unretained(this),
@@ -699,7 +685,7 @@ void AppLauncherHandler::StopShowingAppLauncherPromo(
 
 void AppLauncherHandler::OnFaviconForApp(
     scoped_ptr<AppInstallInfo> install_info,
-    const history::FaviconImageResult& image_result) {
+    const chrome::FaviconImageResult& image_result) {
   scoped_ptr<WebApplicationInfo> web_app(new WebApplicationInfo());
   web_app->is_bookmark_app = install_info->is_bookmark_app;
   web_app->title = install_info->title;
@@ -769,6 +755,28 @@ void AppLauncherHandler::RecordAppLaunchType(
 }
 
 // static
+void AppLauncherHandler::RecordAppListSearchLaunch(const Extension* extension) {
+  extension_misc::AppLaunchBucket bucket =
+      extension_misc::APP_LAUNCH_APP_LIST_SEARCH;
+  if (extension->id() == extension_misc::kWebStoreAppId)
+    bucket = extension_misc::APP_LAUNCH_APP_LIST_SEARCH_WEBSTORE;
+  else if (extension->id() == extension_misc::kChromeAppId)
+    bucket = extension_misc::APP_LAUNCH_APP_LIST_SEARCH_CHROME;
+  AppLauncherHandler::RecordAppLaunchType(bucket, extension->GetType());
+}
+
+// static
+void AppLauncherHandler::RecordAppListMainLaunch(const Extension* extension) {
+  extension_misc::AppLaunchBucket bucket =
+      extension_misc::APP_LAUNCH_APP_LIST_MAIN;
+  if (extension->id() == extension_misc::kWebStoreAppId)
+    bucket = extension_misc::APP_LAUNCH_APP_LIST_MAIN_WEBSTORE;
+  else if (extension->id() == extension_misc::kChromeAppId)
+    bucket = extension_misc::APP_LAUNCH_APP_LIST_MAIN_CHROME;
+  AppLauncherHandler::RecordAppLaunchType(bucket, extension->GetType());
+}
+
+// static
 void AppLauncherHandler::RecordWebStoreLaunch() {
   RecordAppLaunchType(extension_misc::APP_LAUNCH_NTP_WEBSTORE,
       extensions::Manifest::TYPE_HOSTED_APP);
@@ -788,19 +796,6 @@ void AppLauncherHandler::RecordAppLaunchByUrl(
 
   RecordAppLaunchType(bucket, extensions::Manifest::TYPE_HOSTED_APP);
 }
-
-#if defined(ENABLE_MANAGED_USERS)
-// static
-scoped_ptr<ScopedExtensionElevation> AppLauncherHandler::GetScopedElevation(
-    const std::string& extension_id, ExtensionService* service) {
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(service->profile());
-  scoped_ptr<ScopedExtensionElevation> elevation(
-      new ScopedExtensionElevation(managed_user_service));
-  elevation->AddExtension(extension_id);
-  return elevation.Pass();
-}
-#endif
 
 void AppLauncherHandler::PromptToEnableApp(const std::string& extension_id) {
   if (!extension_id_prompting_.empty())

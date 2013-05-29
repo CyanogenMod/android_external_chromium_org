@@ -215,32 +215,35 @@ class PepperPluginDelegateImpl
   virtual bool MakeDirectory(
       const GURL& path,
       bool recursive,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool Query(
       const GURL& path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const MetadataCallback& success_callback,
+      const StatusCallback& error_callback) OVERRIDE;
   virtual bool ReadDirectoryEntries(
       const GURL& path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const ReadDirectoryCallback& success_callback,
+      const StatusCallback& error_callback) OVERRIDE;
   virtual bool Touch(
       const GURL& path,
       const base::Time& last_access_time,
       const base::Time& last_modified_time,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool SetLength(
       const GURL& path,
       int64_t length,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool Delete(
       const GURL& path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool Rename(
       const GURL& file_path,
       const GURL& new_file_path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const StatusCallback& callback) OVERRIDE;
   virtual bool ReadDirectory(
       const GURL& directory_path,
-      fileapi::FileSystemCallbackDispatcher* dispatcher) OVERRIDE;
+      const ReadDirectoryCallback& success_callback,
+      const StatusCallback& error_callback) OVERRIDE;
   virtual void QueryAvailableSpace(
       const GURL& origin,
       quota::StorageType type,
@@ -321,6 +324,9 @@ class PepperPluginDelegateImpl
       PP_DeviceType_Dev type,
       const EnumerateDevicesCallback& callback) OVERRIDE;
   virtual void StopEnumerateDevices(int request_id) OVERRIDE;
+  virtual void HandleDocumentLoad(
+      webkit::ppapi::PluginInstance* instance,
+      const WebKit::WebURLResponse& response) OVERRIDE;
 
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -350,6 +356,7 @@ class PepperPluginDelegateImpl
   void OnTCPServerSocketListenACK(uint32 plugin_dispatcher_id,
                                   PP_Resource socket_resource,
                                   uint32 socket_id,
+                                  const PP_NetAddress_Private& local_addr,
                                   int32_t status);
   void OnTCPServerSocketAcceptACK(uint32 plugin_dispatcher_id,
                                   uint32 socket_id,

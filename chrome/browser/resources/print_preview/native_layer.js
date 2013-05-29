@@ -153,12 +153,12 @@ cr.define('print_preview', function() {
              'Trying to generate preview when ticket is not valid');
 
       var ticket = {
-        'pageRange': printTicketStore.getDocumentPageRanges(),
-        'landscape': printTicketStore.isLandscapeEnabled(),
+        'pageRange': printTicketStore.pageRange.getDocumentPageRanges(),
+        'landscape': printTicketStore.landscape.getValue(),
         'color': printTicketStore.color.getValue() ?
             NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY,
-        'headerFooterEnabled': printTicketStore.isHeaderFooterEnabled(),
-        'marginsType': printTicketStore.getMarginsType(),
+        'headerFooterEnabled': printTicketStore.headerFooter.getValue(),
+        'marginsType': printTicketStore.marginsType.getValue(),
         'isFirstRequest': requestId == 0,
         'requestID': requestId,
         'previewModifiable': documentInfo.isModifiable,
@@ -182,14 +182,14 @@ cr.define('print_preview', function() {
       };
 
       // Set 'cloudPrintID' only if the destination is not local.
-      if (!destination.isLocal) {
+      if (destination && !destination.isLocal) {
         ticket['cloudPrintID'] = destination.id;
       }
 
-      if (printTicketStore.hasMarginsCapability() &&
-          printTicketStore.getMarginsType() ==
+      if (printTicketStore.marginsType.isCapabilityAvailable() &&
+          printTicketStore.marginsType.getValue() ==
               print_preview.ticket_items.MarginsType.Value.CUSTOM) {
-        var customMargins = printTicketStore.getCustomMargins();
+        var customMargins = printTicketStore.customMargins.getValue();
         var orientationEnum =
             print_preview.ticket_items.CustomMargins.Orientation;
         ticket['marginsCustom'] = {
@@ -224,13 +224,13 @@ cr.define('print_preview', function() {
              'Trying to print when ticket is not valid');
 
       var ticket = {
-        'pageRange': printTicketStore.getDocumentPageRanges(),
-        'pageCount': printTicketStore.getPageNumberSet().size,
-        'landscape': printTicketStore.isLandscapeEnabled(),
+        'pageRange': printTicketStore.pageRange.getDocumentPageRanges(),
+        'pageCount': printTicketStore.pageRange.getPageNumberSet().size,
+        'landscape': printTicketStore.landscape.getValue(),
         'color': printTicketStore.color.getValue() ?
             NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY,
-        'headerFooterEnabled': printTicketStore.isHeaderFooterEnabled(),
-        'marginsType': printTicketStore.getMarginsType(),
+        'headerFooterEnabled': printTicketStore.headerFooter.getValue(),
+        'marginsType': printTicketStore.marginsType.getValue(),
         'generateDraftData': true, // TODO(rltoscano): What should this be?
         'duplex': printTicketStore.duplex.getValue() ?
             NativeLayer.DuplexMode.LONG_EDGE : NativeLayer.DuplexMode.SIMPLEX,
@@ -255,10 +255,10 @@ cr.define('print_preview', function() {
         ticket['cloudPrintID'] = destination.id;
       }
 
-      if (printTicketStore.hasMarginsCapability() &&
-          printTicketStore.getMarginsType() ==
-              print_preview.ticket_items.MarginsType.Value.CUSTOM) {
-        var customMargins = printTicketStore.getCustomMargins();
+      if (printTicketStore.marginsType.isCapabilityAvailable() &&
+          printTicketStore.marginsType.isValueEqual(
+              print_preview.ticket_items.MarginsType.Value.CUSTOM)) {
+        var customMargins = printTicketStore.customMargins.getValue();
         var orientationEnum =
             print_preview.ticket_items.CustomMargins.Orientation;
         ticket['marginsCustom'] = {
@@ -286,9 +286,11 @@ cr.define('print_preview', function() {
       chrome.send('showSystemDialog');
     },
 
-    /** Shows Google Cloud Print's web-based print dialog. */
-    startShowCloudPrintDialog: function() {
-      chrome.send('printWithCloudPrint');
+    /** Shows Google Cloud Print's web-based print dialog.
+     * @param {number} pageCount Number of pages to print.
+     */
+    startShowCloudPrintDialog: function(pageCount) {
+      chrome.send('printWithCloudPrintDialog', [pageCount]);
     },
 
     /** Closes the print preview dialog. */
@@ -344,8 +346,8 @@ cr.define('print_preview', function() {
           unitType,
           initialSettings['previewModifiable'] || false,
           initialSettings['initiatorTabTitle'] || '',
-          initialSettings['documentHasSelection'] || null,
-          initialSettings['shouldPrintSelectionOnly'] || null,
+          initialSettings['documentHasSelection'] || false,
+          initialSettings['shouldPrintSelectionOnly'] || false,
           initialSettings['printerName'] || null,
           initialSettings['appState'] || null);
 

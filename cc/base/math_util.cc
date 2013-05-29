@@ -526,6 +526,36 @@ scoped_ptr<base::Value> MathUtil::AsValue(gfx::Size s) {
   return res.PassAs<base::Value>();
 }
 
+scoped_ptr<base::Value> MathUtil::AsValue(gfx::Rect r) {
+  scoped_ptr<base::ListValue> res(new base::ListValue());
+  res->AppendInteger(r.x());
+  res->AppendInteger(r.y());
+  res->AppendInteger(r.width());
+  res->AppendInteger(r.height());
+  return res.PassAs<base::Value>();
+}
+
+bool MathUtil::FromValue(const base::Value* raw_value, gfx::Rect* out_rect) {
+  const ListValue* value = NULL;
+  if (!raw_value->GetAsList(&value))
+    return false;
+
+  if (value->GetSize() != 4)
+    return false;
+
+  int x, y, w, h;
+  bool ok = true;
+  ok &= value->GetInteger(0, &x);
+  ok &= value->GetInteger(1, &y);
+  ok &= value->GetInteger(2, &w);
+  ok &= value->GetInteger(3, &h);
+  if (!ok)
+    return false;
+
+  *out_rect = gfx::Rect(x, y, w, h);
+  return true;
+}
+
 scoped_ptr<base::Value> MathUtil::AsValue(gfx::PointF pt) {
   scoped_ptr<base::ListValue> res(new base::ListValue());
   res->AppendDouble(pt.x());

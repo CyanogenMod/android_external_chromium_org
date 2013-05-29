@@ -65,8 +65,9 @@ static void StartOnUIThread(
   DownloadItem* item = download_manager->StartDownload(
       info.Pass(), stream.Pass());
 
+  // |item| can be NULL if the download has been removed.
   if (!started_cb.is_null())
-    started_cb.Run(item, net::OK);
+    started_cb.Run(item, item ? net::OK : net::ERR_ABORTED);
 }
 
 }  // namespace
@@ -102,7 +103,6 @@ bool DownloadResourceHandler::OnUploadProgress(int request_id,
   return true;
 }
 
-// Not needed, as this event handler ought to be the final resource.
 bool DownloadResourceHandler::OnRequestRedirected(
     int request_id,
     const GURL& url,
@@ -127,6 +127,10 @@ bool DownloadResourceHandler::OnResponseStarted(
 
   // If it's a download, we don't want to poison the cache with it.
   request_->StopCaching();
+
+  // Lower priority as well, so downloads don't contend for resources
+  // with main frames.
+  request_->SetPriority(net::IDLE);
 
   std::string content_disposition;
   request_->GetResponseHeaderByName("content-disposition",

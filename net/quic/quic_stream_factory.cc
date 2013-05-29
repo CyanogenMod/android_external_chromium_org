@@ -146,9 +146,6 @@ int QuicStreamFactory::Job::DoResolveHostComplete(int rv) {
   if (rv != OK)
     return rv;
 
-  if (address_list_.empty())
-    return ERR_NAME_NOT_RESOLVED;
-
   DCHECK(!factory_->HasActiveSession(host_port_proxy_pair_));
   io_state_ = STATE_CONNECT;
   return OK;
@@ -375,10 +372,9 @@ QuicClientSession* QuicStreamFactory::CreateSession(
           DatagramSocket::DEFAULT_BIND, base::Bind(&base::RandInt),
           net_log.net_log(), net_log.source());
   socket->Connect(addr);
-  socket->GetLocalAddress(&addr);
 
   QuicConnectionHelper* helper = new QuicConnectionHelper(
-      MessageLoop::current()->message_loop_proxy(),
+      base::MessageLoop::current()->message_loop_proxy(),
       clock_.get(), random_generator_, socket);
 
   QuicConnection* connection = new QuicConnection(guid, addr, helper, false);
@@ -390,8 +386,12 @@ QuicClientSession* QuicStreamFactory::CreateSession(
   QuicClientSession* session =
       new QuicClientSession(connection, socket, this,
                             quic_crypto_client_stream_factory_,
-                            host_port_proxy_pair.first.host(),
+                            host_port_proxy_pair.first.host(), QuicConfig(),
                             crypto_config, net_log.net_log());
+  session->config()->SetDefaults();
+  session->config()->set_idle_connection_state_lifetime(
+      QuicTime::Delta::FromSeconds(30),
+      QuicTime::Delta::FromSeconds(30));
   all_sessions_.insert(session);  // owning pointer
   return session;
 }

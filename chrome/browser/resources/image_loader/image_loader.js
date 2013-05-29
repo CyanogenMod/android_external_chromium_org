@@ -21,15 +21,39 @@ var ImageLoader = function() {
    */
   this.cache_ = new ImageLoader.Cache();
 
+  /**
+   * Manages pending requests and runs them in order of priorities.
+   * @type {ImageLoader.Worker}
+   * @private
+   */
+  this.worker_ = new ImageLoader.Worker();
+
+  // Grant permissions to the local file system.
   chrome.fileBrowserPrivate.requestLocalFileSystem(function(filesystem) {
     // TODO(mtomasz): Handle.
   });
 
+  // Initialize the cache database, then start handling requests.
+  this.cache_.initialize(function() {
+    this.worker_.start();
+  }.bind(this));
+
   chrome.extension.onMessageExternal.addListener(function(request,
                                                           sender,
                                                           sendResponse) {
-    if (ImageLoader.ALLOWED_CLIENTS.indexOf(sender.id) !== -1)
-      return this.onMessage_(sender.id, request, sendResponse);
+    if (ImageLoader.ALLOWED_CLIENTS.indexOf(sender.id) !== -1) {
+      // Sending a response may fail if the receiver already went offline.
+      // This is not an error, but a normal and quite common situation.
+      var failSafeSendResponse = function(response) {
+        try {
+          sendResponse(response);
+        }
+        catch (e) {
+          // Ignore the error.
+        }
+      };
+      return this.onMessage_(sender.id, request, failSafeSendResponse);
+    }
   }.bind(this));
 };
 
@@ -63,9 +87,10 @@ ImageLoader.prototype.onMessage_ = function(senderId, request, callback) {
     }
     return false;  // No callback calls.
   } else {
-    // Start a task.
-    this.requests_[requestId] =
-        new ImageLoader.Request(this.cache_, request, callback);
+    // Create a request task and add it to the worker (queue).
+    var requestTask = new ImageLoader.Request(this.cache_, request, callback);
+    this.requests_[requestId] = requestTask;
+    this.worker_.add(requestTask);
     return true;  // Request will call the callback.
   }
 };
@@ -230,17 +255,56 @@ ImageLoader.Request = function(cache, request, callback) {
    */
   this.context_ = this.canvas_.getContext('2d');
 
-  // Process the request. Try to load from cache. If it fails, then download.
+  /**
+   * Callback to be called once downloading is finished.
+   * @type {function()}
+   * @private
+   */
+  this.downloadCallback_ = null;
+};
+
+/**
+ * Returns priority of the request. The higher priority, the faster it will
+ * be handled. The highest priority is 0. The default one is 2.
+ *
+ * @return {number} Priority.
+ */
+ImageLoader.Request.prototype.getPriority = function() {
+  return (this.request_.priority !== undefined) ? this.request_.priority : 2;
+};
+
+/**
+ * Tries to load the image from cache if exists and sends the response.
+ *
+ * @param {function()} onSuccess Success callback.
+ * @param {function()} onFailure Failure callback.
+ */
+ImageLoader.Request.prototype.loadFromCacheAndProcess = function(
+    onSuccess, onFailure) {
   this.loadFromCache_(
-      this.sendImageData_.bind(this),
-      function() {  // Failure, not in cache.
-        this.downloadOriginal_(this.onImageLoad_.bind(this),
-                               this.onImageError_.bind(this));
-      }.bind(this));
+      function(data) {  // Found in cache.
+        this.sendImageData_(data);
+        onSuccess();
+      }.bind(this),
+      onFailure);  // Not found in cache.
+};
+
+/**
+ * Tries to download the image, resizes and sends the response.
+ * @param {function()} callback Completion callback.
+ */
+ImageLoader.Request.prototype.downloadAndProcess = function(callback) {
+  if (this.downloadCallback_)
+    throw new Error('Downloading already started.');
+
+  this.downloadCallback_ = callback;
+  this.downloadOriginal_(this.onImageLoad_.bind(this),
+                         this.onImageError_.bind(this));
 };
 
 /**
  * Fetches the image from the persistent cache.
+ *
  * @param {function()} onSuccess Success callback.
  * @param {function()} onFailure Failure callback.
  * @private
@@ -270,6 +334,7 @@ ImageLoader.Request.prototype.loadFromCache_ = function(onSuccess, onFailure) {
 
 /**
  * Saves the image to the persistent cache.
+ *
  * @param {string} data The image's data.
  * @private
  */
@@ -287,6 +352,7 @@ ImageLoader.Request.prototype.saveToCache_ = function(data) {
 
 /**
  * Downloads an image directly or for remote resources using the XmlHttpRequest.
+ *
  * @param {function()} onSuccess Success callback.
  * @param {function()} onFailure Failure callback.
  * @private
@@ -296,7 +362,7 @@ ImageLoader.Request.prototype.downloadOriginal_ = function(
   this.image_.onload = onSuccess;
   this.image_.onerror = onFailure;
 
-  if (window.harness || !this.request_.url.match(/^https?:/)) {
+  if (!this.request_.url.match(/^https?:/)) {
     // Download directly.
     this.image_.src = this.request_.url;
     return;
@@ -363,24 +429,28 @@ ImageLoader.Request.prototype.sendImageData_ = function(data) {
  * Handler, when contents are loaded into the image element. Performs resizing
  * and finalizes the request process.
  *
+ * @param {function()} callback Completion callback.
  * @private
  */
-ImageLoader.Request.prototype.onImageLoad_ = function() {
+ImageLoader.Request.prototype.onImageLoad_ = function(callback) {
   ImageLoader.resize(this.image_, this.canvas_, this.request_);
   this.sendImage_();
   this.cleanup_();
+  this.downloadCallback_();
 };
 
 /**
  * Handler, when loading of the image fails. Sends a failure response and
  * finalizes the request process.
  *
+ * @param {function()} callback Completion callback.
  * @private
  */
-ImageLoader.Request.prototype.onImageError_ = function() {
+ImageLoader.Request.prototype.onImageError_ = function(callback) {
   this.sendResponse_({status: 'error',
                       taskId: this.request_.taskId});
   this.cleanup_();
+  this.downloadCallback_();
 };
 
 /**
@@ -388,6 +458,10 @@ ImageLoader.Request.prototype.onImageError_ = function() {
  */
 ImageLoader.Request.prototype.cancel = function() {
   this.cleanup_();
+
+  // If downloading has started, then call the callback.
+  if (this.downloadCallback_)
+    this.downloadCallback_();
 };
 
 /**
@@ -412,6 +486,147 @@ ImageLoader.Request.prototype.cleanup_ = function() {
 };
 
 /**
+ * Worker for requests. Fetches requests from a queue and processes them
+ * synchronously, taking into account priorities. The highest priority is 0.
+ */
+ImageLoader.Worker = function() {
+  /**
+   * List of requests waiting to be checked. If these items are available in
+   * cache, then they are processed immediately after starting the worker.
+   * However, if they have to be downloaded, then these requests are moved
+   * to pendingRequests_.
+   *
+   * @type {ImageLoader.Request}
+   * @private
+   */
+  this.newRequests_ = [];
+
+  /**
+   * List of pending requests for images to be downloaded.
+   * @type {ImageLoader.Request}
+   * @private
+   */
+  this.pendingRequests_ = [];
+
+  /**
+   * List of requests being processed.
+   * @type {ImageLoader.Request}
+   * @private
+   */
+  this.activeRequests_ = [];
+
+  /**
+   * If the worker has been started.
+   * @type {boolean}
+   * @private
+   */
+  this.started_ = false;
+};
+
+/**
+ * Maximum download requests to be run in parallel.
+ * @type {number}
+ * @const
+ */
+ImageLoader.Worker.MAXIMUM_IN_PARALLEL = 5;
+
+/**
+ * Adds a request to the internal priority queue and executes it when requests
+ * with higher priorities are finished. If the result is cached, then it is
+ * processed immediately once the worker is started.
+ *
+ * @param {ImageLoader.Request} request Request object.
+ */
+ImageLoader.Worker.prototype.add = function(request) {
+  if (!this.started_) {
+    this.newRequests_.push(request);
+    return;
+  }
+
+  // Already started, so cache is available. Items available in cache will
+  // be served immediately, other enqueued.
+  this.serveCachedOrEnqueue_(request);
+};
+
+/**
+ * Serves cached image or adds the request to the pending list.
+ *
+ * @param {ImageLoader.Request} request Request object.
+ * @private
+ */
+ImageLoader.Worker.prototype.serveCachedOrEnqueue_ = function(request) {
+  request.loadFromCacheAndProcess(function() {}, function() {
+    // Not available in cache.
+    this.pendingRequests_.push(request);
+
+    // Sort requests by priorities.
+    this.pendingRequests_.sort(function(a, b) {
+      return a.getPriority() - b.getPriority();
+    });
+
+    // Continue handling the most important requests (if started).
+    if (this.started_)
+      this.continue_();
+  }.bind(this));
+};
+
+/**
+ * Starts handling requests.
+ */
+ImageLoader.Worker.prototype.start = function() {
+  this.started_ = true;
+
+  // Process tasks added before worker has been started.
+  for (var index = 0; index < this.newRequests_.length; index++) {
+    this.serveCachedOrEnqueue_(this.newRequests_[index]);
+  }
+  this.newRequests_ = [];
+
+  // Start serving enqueued requests.
+  this.continue_();
+};
+
+/**
+ * Processes pending requests from the queue. There is no guarantee that
+ * all of the tasks will be processed at once.
+ *
+ * @private
+ */
+ImageLoader.Worker.prototype.continue_ = function() {
+  for (var index = 0; index < this.pendingRequests_.length; index++) {
+    var request = this.pendingRequests_[index];
+
+    // Run only up to MAXIMUM_IN_PARALLEL in the same time.
+    if (Object.keys(this.activeRequests_).length ==
+        ImageLoader.Worker.MAXIMUM_IN_PARALLEL) {
+      return;
+    }
+
+    delete this.pendingRequests_.splice(index, 1);
+    this.activeRequests_.push(request);
+
+    request.downloadAndProcess(this.finish_.bind(this, request));
+  }
+};
+
+/**
+ * Handles finished requests.
+ *
+ * @param {ImageLoader.Request} request Finished request.
+ * @private
+ */
+ImageLoader.Worker.prototype.finish_ = function(request) {
+  var index = this.activeRequests_.indexOf(request);
+  if (index < 0)
+    console.warn('Request not found.');
+  delete this.activeRequests_.splice(index, 1);
+
+  // Continue handling the most important requests (if started).
+  if (this.started_)
+    this.continue_();
+};
+
+/**
  * Persistent cache storing images in an indexed database on the hard disk.
  * @constructor
  */
@@ -422,30 +637,6 @@ ImageLoader.Cache = function() {
    * @private
    */
   this.db_ = null;
-
-  // Establish a connection to the database or (re)create it if not available
-  // or not up to date. After changing the database's schema, increment
-  // ImageLoader.Cache.DB_VERSION to force database recreating.
-  var openRequest = window.webkitIndexedDB.open(ImageLoader.Cache.DB_NAME,
-                                                ImageLoader.Cache.DB_VERSION);
-
-  openRequest.onsuccess = function(e) {
-    this.db_ = e.target.result;
-  }.bind(this);
-
-  openRequest.onupgradeneeded = function(e) {
-    console.info('Cache database creating or upgrading.');
-    var db = e.target.result;
-    if (db.objectStoreNames.contains('metadata'))
-      db.deleteObjectStore('metadata');
-    if (db.objectStoreNames.contains('data'))
-      db.deleteObjectStore('data');
-    if (db.objectStoreNames.contains('settings'))
-      db.deleteObjectStore('settings');
-    db.createObjectStore('metadata', {keyPath: 'key'});
-    db.createObjectStore('data', {keyPath: 'key'});
-    db.createObjectStore('settings', {keyPath: 'key'});
-  };
 };
 
 /**
@@ -460,7 +651,7 @@ ImageLoader.Cache.DB_NAME = 'image-loader';
  * @type {number}
  * @const
  */
-ImageLoader.Cache.DB_VERSION = 8;
+ImageLoader.Cache.DB_VERSION = 11;
 
 /**
  * Memory limit for images data in bytes.
@@ -492,6 +683,39 @@ ImageLoader.Cache.createKey = function(request) {
                          height: request.height,
                          maxWidth: request.maxWidth,
                          maxHeight: request.maxHeight});
+};
+
+/**
+ * Initializes the cache database.
+ * @param {function()} callback Completion callback.
+ */
+ImageLoader.Cache.prototype.initialize = function(callback) {
+  // Establish a connection to the database or (re)create it if not available
+  // or not up to date. After changing the database's schema, increment
+  // ImageLoader.Cache.DB_VERSION to force database recreating.
+  var openRequest = window.webkitIndexedDB.open(ImageLoader.Cache.DB_NAME,
+                                                ImageLoader.Cache.DB_VERSION);
+
+  openRequest.onsuccess = function(e) {
+    this.db_ = e.target.result;
+    callback();
+  }.bind(this);
+
+  openRequest.onerror = callback;
+
+  openRequest.onupgradeneeded = function(e) {
+    console.info('Cache database creating or upgrading.');
+    var db = e.target.result;
+    if (db.objectStoreNames.contains('metadata'))
+      db.deleteObjectStore('metadata');
+    if (db.objectStoreNames.contains('data'))
+      db.deleteObjectStore('data');
+    if (db.objectStoreNames.contains('settings'))
+      db.deleteObjectStore('settings');
+    db.createObjectStore('metadata', {keyPath: 'key'});
+    db.createObjectStore('data', {keyPath: 'key'});
+    db.createObjectStore('settings', {keyPath: 'key'});
+  };
 };
 
 /**

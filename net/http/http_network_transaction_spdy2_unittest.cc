@@ -147,11 +147,11 @@ void TestLoadTimingReused(const net::LoadTimingInfo& load_timing_info) {
   EXPECT_FALSE(load_timing_info.send_start.is_null());
 
   EXPECT_LE(load_timing_info.send_start, load_timing_info.send_end);
-  EXPECT_LE(load_timing_info.send_end, load_timing_info.receive_headers_end);
 
-  // Set by URLRequest, at a higher level.
+  // Set at a higher level.
   EXPECT_TRUE(load_timing_info.request_start_time.is_null());
   EXPECT_TRUE(load_timing_info.request_start.is_null());
+  EXPECT_TRUE(load_timing_info.receive_headers_end.is_null());
 }
 
 // Tests LoadTimingInfo in the case a new socket is used and no PAC script is
@@ -165,16 +165,16 @@ void TestLoadTimingNotReused(const net::LoadTimingInfo& load_timing_info,
   EXPECT_TRUE(load_timing_info.proxy_resolve_end.is_null());
 
   net::ExpectConnectTimingHasTimes(load_timing_info.connect_timing,
-                                    connect_timing_flags);
+                                   connect_timing_flags);
   EXPECT_LE(load_timing_info.connect_timing.connect_end,
             load_timing_info.send_start);
 
   EXPECT_LE(load_timing_info.send_start, load_timing_info.send_end);
-  EXPECT_LE(load_timing_info.send_end, load_timing_info.receive_headers_end);
 
-  // Set by URLRequest, at a higher level.
+  // Set at a higher level.
   EXPECT_TRUE(load_timing_info.request_start_time.is_null());
   EXPECT_TRUE(load_timing_info.request_start.is_null());
+  EXPECT_TRUE(load_timing_info.receive_headers_end.is_null());
 }
 
 // Tests LoadTimingInfo in the case a socket is reused and a PAC script is
@@ -191,11 +191,11 @@ void TestLoadTimingReusedWithPac(const net::LoadTimingInfo& load_timing_info) {
   EXPECT_LE(load_timing_info.proxy_resolve_end,
             load_timing_info.send_start);
   EXPECT_LE(load_timing_info.send_start, load_timing_info.send_end);
-  EXPECT_LE(load_timing_info.send_end, load_timing_info.receive_headers_end);
 
-  // Set by URLRequest, at a higher level.
+  // Set at a higher level.
   EXPECT_TRUE(load_timing_info.request_start_time.is_null());
   EXPECT_TRUE(load_timing_info.request_start.is_null());
+  EXPECT_TRUE(load_timing_info.receive_headers_end.is_null());
 }
 
 // Tests LoadTimingInfo in the case a new socket is used and a PAC script is
@@ -216,11 +216,11 @@ void TestLoadTimingNotReusedWithPac(const net::LoadTimingInfo& load_timing_info,
             load_timing_info.send_start);
 
   EXPECT_LE(load_timing_info.send_start, load_timing_info.send_end);
-  EXPECT_LE(load_timing_info.send_end, load_timing_info.receive_headers_end);
 
-  // Set by URLRequest, at a higher level.
+  // Set at a higher level.
   EXPECT_TRUE(load_timing_info.request_start_time.is_null());
   EXPECT_TRUE(load_timing_info.request_start.is_null());
+  EXPECT_TRUE(load_timing_info.receive_headers_end.is_null());
 }
 
 }  // namespace
@@ -265,17 +265,17 @@ class HttpNetworkTransactionSpdy2Test : public PlatformTest {
 
   virtual void SetUp() {
     NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   virtual void TearDown() {
     NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     // Empty the current queue.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     PlatformTest::TearDown();
     NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     HttpStreamFactory::set_use_alternate_protocols(false);
     HttpStreamFactory::SetNextProtos(std::vector<std::string>());
   }
@@ -1343,7 +1343,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, KeepAliveEarlyClose) {
   EXPECT_EQ(ERR_CONTENT_LENGTH_MISMATCH, rv);
 
   trans.reset();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(0, GetIdleSocketCountInTransportSocketPool(session.get()));
 }
 
@@ -1381,7 +1381,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, KeepAliveEarlyClose2) {
   EXPECT_EQ(ERR_CONTENT_LENGTH_MISMATCH, rv);
 
   trans.reset();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(0, GetIdleSocketCountInTransportSocketPool(session.get()));
 }
 
@@ -2629,8 +2629,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test, HttpsProxySpdyGet) {
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
 
   // fetch http://www.google.com/ via SPDY
-  scoped_ptr<SpdyFrame> req(ConstructSpdyGet(NULL, 0, false, 1, LOWEST,
-                                                   false));
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, false));
   MockWrite spdy_writes[] = { CreateMockWrite(*req) };
 
   scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
@@ -2694,15 +2694,17 @@ TEST_F(HttpNetworkTransactionSpdy2Test, HttpsProxySpdyGetWithProxyAuth) {
   // The first request will be a bare GET, the second request will be a
   // GET with a Proxy-Authorization header.
   scoped_ptr<SpdyFrame> req_get(
-      ConstructSpdyGet(NULL, 0, false, 1, LOWEST, false));
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, false));
   const char* const kExtraAuthorizationHeaders[] = {
-    "proxy-authorization",
-    "Basic Zm9vOmJhcg==",
+    "proxy-authorization", "Basic Zm9vOmJhcg=="
   };
   scoped_ptr<SpdyFrame> req_get_authorization(
-      ConstructSpdyGet(
-          kExtraAuthorizationHeaders, arraysize(kExtraAuthorizationHeaders)/2,
-          false, 3, LOWEST, false));
+      spdy_util_.ConstructSpdyGet(kExtraAuthorizationHeaders,
+                                  arraysize(kExtraAuthorizationHeaders) / 2,
+                                  false,
+                                  3,
+                                  LOWEST,
+                                  false));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*req_get, 1),
     CreateMockWrite(*req_get_authorization, 4),
@@ -2712,8 +2714,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, HttpsProxySpdyGetWithProxyAuth) {
   // response will be a 200 response since the second request includes a valid
   // Authorization header.
   const char* const kExtraAuthenticationHeaders[] = {
-    "proxy-authenticate",
-    "Basic realm=\"MyRealm1\""
+    "proxy-authenticate", "Basic realm=\"MyRealm1\""
   };
   scoped_ptr<SpdyFrame> resp_authentication(
       ConstructSpdySynReplyError(
@@ -2796,7 +2797,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, HttpsProxySpdyConnectHttps) {
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session));
 
   // CONNECT to www.google.com:443 via SPDY
-  scoped_ptr<SpdyFrame> connect(ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> connect(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
   // fetch https://www.google.com/ via HTTP
 
   const char get[] = "GET / HTTP/1.1\r\n"
@@ -2812,12 +2813,12 @@ TEST_F(HttpNetworkTransactionSpdy2Test, HttpsProxySpdyConnectHttps) {
   scoped_ptr<SpdyFrame> wrapped_body(
       ConstructSpdyBodyFrame(1, "1234567890", 10, false));
   scoped_ptr<SpdyFrame> window_update(
-      ConstructSpdyWindowUpdate(1, wrapped_get_resp->size()));
+      spdy_util_.ConstructSpdyWindowUpdate(1, wrapped_get_resp->size()));
 
   MockWrite spdy_writes[] = {
       CreateMockWrite(*connect, 1),
       CreateMockWrite(*wrapped_get, 3),
-      CreateMockWrite(*window_update, 5)
+      CreateMockWrite(*window_update, 5),
   };
 
   MockRead spdy_reads[] = {
@@ -2881,10 +2882,11 @@ TEST_F(HttpNetworkTransactionSpdy2Test, HttpsProxySpdyConnectSpdy) {
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session));
 
   // CONNECT to www.google.com:443 via SPDY
-  scoped_ptr<SpdyFrame> connect(ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> connect(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
   // fetch https://www.google.com/ via SPDY
   const char* const kMyUrl = "https://www.google.com/";
-  scoped_ptr<SpdyFrame> get(ConstructSpdyGet(kMyUrl, false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> get(
+      spdy_util_.ConstructSpdyGet(kMyUrl, false, 1, LOWEST));
   scoped_ptr<SpdyFrame> wrapped_get(ConstructWrappedSpdyFrame(get, 1));
   scoped_ptr<SpdyFrame> conn_resp(ConstructSpdyGetSynReply(NULL, 0, 1));
   scoped_ptr<SpdyFrame> get_resp(ConstructSpdyGetSynReply(NULL, 0, 1));
@@ -2893,9 +2895,9 @@ TEST_F(HttpNetworkTransactionSpdy2Test, HttpsProxySpdyConnectSpdy) {
   scoped_ptr<SpdyFrame> body(ConstructSpdyBodyFrame(1, true));
   scoped_ptr<SpdyFrame> wrapped_body(ConstructWrappedSpdyFrame(body, 1));
   scoped_ptr<SpdyFrame> window_update_get_resp(
-      ConstructSpdyWindowUpdate(1, wrapped_get_resp->size()));
+      spdy_util_.ConstructSpdyWindowUpdate(1, wrapped_get_resp->size()));
   scoped_ptr<SpdyFrame> window_update_body(
-      ConstructSpdyWindowUpdate(1, wrapped_body->size()));
+      spdy_util_.ConstructSpdyWindowUpdate(1, wrapped_body->size()));
 
   MockWrite spdy_writes[] = {
       CreateMockWrite(*connect, 1),
@@ -2964,8 +2966,9 @@ TEST_F(HttpNetworkTransactionSpdy2Test, HttpsProxySpdyConnectFailure) {
       new HttpNetworkTransaction(DEFAULT_PRIORITY, session));
 
   // CONNECT to www.google.com:443 via SPDY
-  scoped_ptr<SpdyFrame> connect(ConstructSpdyConnect(NULL, 0, 1));
-  scoped_ptr<SpdyFrame> get(ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
+  scoped_ptr<SpdyFrame> connect(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> get(
+      spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
 
   MockWrite spdy_writes[] = {
       CreateMockWrite(*connect, 1),
@@ -3025,7 +3028,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
   request2.load_flags = 0;
 
   // CONNECT to www.google.com:443 via SPDY.
-  scoped_ptr<SpdyFrame> connect1(ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> connect1(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
   scoped_ptr<SpdyFrame> conn_resp1(ConstructSpdyGetSynReply(NULL, 0, 1));
 
   // Fetch https://www.google.com/ via HTTP.
@@ -3040,7 +3043,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
       ConstructSpdyBodyFrame(1, resp1, strlen(resp1), false));
   scoped_ptr<SpdyFrame> wrapped_body1(ConstructSpdyBodyFrame(1, "1", 1, false));
   scoped_ptr<SpdyFrame> window_update(
-      ConstructSpdyWindowUpdate(1, wrapped_get_resp1->size()));
+      spdy_util_.ConstructSpdyWindowUpdate(1, wrapped_get_resp1->size()));
 
   // CONNECT to news.google.com:443 via SPDY.
   const char* const kConnectHeaders2[] = {
@@ -3180,7 +3183,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
   request2.load_flags = 0;
 
   // CONNECT to www.google.com:443 via SPDY.
-  scoped_ptr<SpdyFrame> connect1(ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> connect1(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
   scoped_ptr<SpdyFrame> conn_resp1(ConstructSpdyGetSynReply(NULL, 0, 1));
 
   // Fetch https://www.google.com/ via HTTP.
@@ -3195,7 +3198,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
       ConstructSpdyBodyFrame(1, resp1, strlen(resp1), false));
   scoped_ptr<SpdyFrame> wrapped_body1(ConstructSpdyBodyFrame(1, "1", 1, false));
   scoped_ptr<SpdyFrame> window_update(
-      ConstructSpdyWindowUpdate(1, wrapped_get_resp1->size()));
+      spdy_util_.ConstructSpdyWindowUpdate(1, wrapped_get_resp1->size()));
 
   // Fetch https://www.google.com/2 via HTTP.
   const char get2[] = "GET /2 HTTP/1.1\r\n"
@@ -4267,13 +4270,13 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
 
   // Empty the current queue.  This is necessary because idle sockets are
   // added to the connection pool asynchronously with a PostTask.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // We now check to make sure the TCPClientSocket was not added back to
   // the pool.
   EXPECT_EQ(0, GetIdleSocketCountInTransportSocketPool(session));
   trans.reset();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   // Make sure that the socket didn't get recycled after calling the destructor.
   EXPECT_EQ(0, GetIdleSocketCountInTransportSocketPool(session));
 }
@@ -4327,7 +4330,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, RecycleSocket) {
 
   // Empty the current queue.  This is necessary because idle sockets are
   // added to the connection pool asynchronously with a PostTask.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // We now check to make sure the socket was added back to the pool.
   EXPECT_EQ(1, GetIdleSocketCountInTransportSocketPool(session));
@@ -4386,7 +4389,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, RecycleSSLSocket) {
 
   // Empty the current queue.  This is necessary because idle sockets are
   // added to the connection pool asynchronously with a PostTask.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // We now check to make sure the socket was added back to the pool.
   EXPECT_EQ(1, GetIdleSocketCountInSSLSocketPool(session));
@@ -4454,7 +4457,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, RecycleDeadSSLSocket) {
 
   // Empty the current queue.  This is necessary because idle sockets are
   // added to the connection pool asynchronously with a PostTask.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // We now check to make sure the socket was added back to the pool.
   EXPECT_EQ(1, GetIdleSocketCountInSSLSocketPool(session));
@@ -4481,7 +4484,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, RecycleDeadSSLSocket) {
 
   // Empty the current queue.  This is necessary because idle sockets are
   // added to the connection pool asynchronously with a PostTask.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // We now check to make sure the socket was added back to the pool.
   EXPECT_EQ(1, GetIdleSocketCountInSSLSocketPool(session));
@@ -4538,7 +4541,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, RecycleSocketAfterZeroContentLength) {
 
   // Empty the current queue.  This is necessary because idle sockets are
   // added to the connection pool asynchronously with a PostTask.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // We now check to make sure the socket was added back to the pool.
   EXPECT_EQ(1, GetIdleSocketCountInTransportSocketPool(session));
@@ -4708,7 +4711,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, AuthIdentityInURL) {
   EXPECT_EQ(100, response->headers->GetContentLength());
 
   // Empty the current queue.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 // Test the request-challenge-retry sequence for basic auth when there is an
@@ -4818,7 +4821,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, WrongAuthIdentityInURL) {
   EXPECT_EQ(100, response->headers->GetContentLength());
 
   // Empty the current queue.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 // Test that previously tried username/passwords for a realm get re-used.
@@ -5667,8 +5670,9 @@ TEST_F(HttpNetworkTransactionSpdy2Test, RedirectOfHttpsConnectViaSpdyProxy) {
   request.url = GURL("https://www.google.com/");
   request.load_flags = 0;
 
-  scoped_ptr<SpdyFrame> conn(ConstructSpdyConnect(NULL, 0, 1));
-  scoped_ptr<SpdyFrame> goaway(ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
+  scoped_ptr<SpdyFrame> conn(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> goaway(
+      spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
   MockWrite data_writes[] = {
     CreateMockWrite(*conn.get(), 0, SYNCHRONOUS),
   };
@@ -5773,8 +5777,9 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
   request.url = GURL("https://www.google.com/");
   request.load_flags = 0;
 
-  scoped_ptr<SpdyFrame> conn(ConstructSpdyConnect(NULL, 0, 1));
-  scoped_ptr<SpdyFrame> rst(ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
+  scoped_ptr<SpdyFrame> conn(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> rst(
+      spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
   MockWrite data_writes[] = {
     CreateMockWrite(*conn.get(), 0, SYNCHRONOUS),
     CreateMockWrite(*rst.get(), 3, SYNCHRONOUS),
@@ -5837,16 +5842,17 @@ TEST_F(HttpNetworkTransactionSpdy2Test, BasicAuthSpdyProxy) {
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
 
   // Since we have proxy, should try to establish tunnel.
-  scoped_ptr<SpdyFrame> req(ConstructSpdyConnect(NULL, 0, 1));
-  scoped_ptr<SpdyFrame> rst(ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
+  scoped_ptr<SpdyFrame> req(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> rst(
+      spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
 
   // After calling trans->RestartWithAuth(), this is the request we should
   // be issuing -- the final header line contains the credentials.
   const char* const kAuthCredentials[] = {
       "proxy-authorization", "Basic Zm9vOmJhcg==",
   };
-  scoped_ptr<SpdyFrame> connect2(
-      ConstructSpdyConnect(kAuthCredentials, arraysize(kAuthCredentials)/2, 3));
+  scoped_ptr<SpdyFrame> connect2(spdy_util_.ConstructSpdyConnect(
+      kAuthCredentials, arraysize(kAuthCredentials) / 2, 3));
   // fetch https://www.google.com/ via HTTP
   const char get[] = "GET / HTTP/1.1\r\n"
     "Host: www.google.com\r\n"
@@ -5994,11 +6000,11 @@ TEST_F(HttpNetworkTransactionSpdy2Test, CrossOriginProxyPush) {
 
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
 
-  scoped_ptr<SpdyFrame>
-      stream1_syn(ConstructSpdyGet(NULL, 0, false, 1, LOWEST, false));
+  scoped_ptr<SpdyFrame> stream1_syn(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, false));
 
   MockWrite spdy_writes[] = {
-    CreateMockWrite(*stream1_syn, 1, ASYNC)
+    CreateMockWrite(*stream1_syn, 1, ASYNC),
   };
 
   scoped_ptr<SpdyFrame>
@@ -6107,11 +6113,11 @@ TEST_F(HttpNetworkTransactionSpdy2Test, CrossOriginProxyPushCorrectness) {
 
   scoped_refptr<HttpNetworkSession> session(CreateSession(&session_deps_));
 
-  scoped_ptr<SpdyFrame>
-      stream1_syn(ConstructSpdyGet(NULL, 0, false, 1, LOWEST, false));
+  scoped_ptr<SpdyFrame> stream1_syn(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, false));
 
   scoped_ptr<SpdyFrame> push_rst(
-      ConstructSpdyRstStream(2, RST_STREAM_REFUSED_STREAM));
+      spdy_util_.ConstructSpdyRstStream(2, RST_STREAM_REFUSED_STREAM));
 
   MockWrite spdy_writes[] = {
     CreateMockWrite(*stream1_syn, 1, ASYNC),
@@ -8330,7 +8336,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test, UseAlternateProtocolForNpnSpdy) {
   ssl.SetNextProto(kProtoSPDY2);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
-  scoped_ptr<SpdyFrame> req(ConstructSpdyGet(NULL, 0, false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   MockWrite spdy_writes[] = { CreateMockWrite(*req) };
 
   scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
@@ -8426,8 +8433,10 @@ TEST_F(HttpNetworkTransactionSpdy2Test, AlternateProtocolWithSpdyLateBinding) {
   ssl.SetNextProto(kProtoSPDY2);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
-  scoped_ptr<SpdyFrame> req1(ConstructSpdyGet(NULL, 0, false, 1, LOWEST));
-  scoped_ptr<SpdyFrame> req2(ConstructSpdyGet(NULL, 0, false, 3, LOWEST));
+  scoped_ptr<SpdyFrame> req1(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
+  scoped_ptr<SpdyFrame> req2(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 3, LOWEST, true));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*req1),
     CreateMockWrite(*req2),
@@ -8656,12 +8665,13 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
   ssl.SetNextProto(kProtoSPDY2);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
-  scoped_ptr<SpdyFrame> req(ConstructSpdyGet(NULL, 0, false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   MockWrite spdy_writes[] = {
     MockWrite("CONNECT www.google.com:443 HTTP/1.1\r\n"
               "Host: www.google.com\r\n"
               "Proxy-Connection: keep-alive\r\n\r\n"),  // 0
-    CreateMockWrite(*req)  // 3
+    CreateMockWrite(*req),                              // 3
   };
 
   const char kCONNECTResponse[] = "HTTP/1.1 200 Connected\r\n\r\n";
@@ -8761,7 +8771,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
   ssl.SetNextProto(kProtoSPDY2);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
-  scoped_ptr<SpdyFrame> req(ConstructSpdyGet(NULL, 0, false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   MockWrite spdy_writes[] = { CreateMockWrite(*req) };
 
   scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
@@ -8800,9 +8811,10 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
 
   // Set up an initial SpdySession in the pool to reuse.
   HostPortPair host_port_pair("www.google.com", 443);
-  HostPortProxyPair pair(host_port_pair, ProxyServer::Direct());
+  SpdySessionKey key(host_port_pair, ProxyServer::Direct(),
+                     kPrivacyModeDisabled);
   scoped_refptr<SpdySession> spdy_session =
-      session->spdy_session_pool()->Get(pair, BoundNetLog());
+      session->spdy_session_pool()->Get(key, BoundNetLog());
   scoped_refptr<TransportSocketParams> transport_params(
       new TransportSocketParams(host_port_pair, MEDIUM, false, false,
                                 OnHostResolutionCallback()));
@@ -9528,7 +9540,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test, SpdyPostNPNServerHangup) {
   ssl.SetNextProto(kProtoSPDY2);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
-  scoped_ptr<SpdyFrame> req(ConstructSpdyGet(NULL, 0, false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   MockWrite spdy_writes[] = { CreateMockWrite(*req) };
 
   MockRead spdy_reads[] = {
@@ -9610,7 +9623,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test, SpdyAlternateProtocolThroughProxy) {
   // retry-http-when-alternate-protocol fails logic kicks in, which was more
   // complicated to set up expectations for than the SPDY session.
 
-  scoped_ptr<SpdyFrame> req(ConstructSpdyGet(NULL, 0, false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
   scoped_ptr<SpdyFrame> data(ConstructSpdyBodyFrame(1, true));
 
@@ -9745,7 +9759,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, SimpleCancel) {
   EXPECT_EQ(ERR_IO_PENDING, rv);
   trans.reset();  // Cancel the transaction here.
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 // Test a basic GET request through a proxy.
@@ -9935,8 +9949,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test, ProxyTunnelGetHangup) {
 // Test for crbug.com/55424.
 TEST_F(HttpNetworkTransactionSpdy2Test, PreconnectWithExistingSpdySession) {
 
-  scoped_ptr<SpdyFrame> req(ConstructSpdyGet(
-      "https://www.google.com", false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet("https://www.google.com", false, 1, LOWEST));
   MockWrite spdy_writes[] = { CreateMockWrite(*req) };
 
   scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
@@ -9961,9 +9975,10 @@ TEST_F(HttpNetworkTransactionSpdy2Test, PreconnectWithExistingSpdySession) {
 
   // Set up an initial SpdySession in the pool to reuse.
   HostPortPair host_port_pair("www.google.com", 443);
-  HostPortProxyPair pair(host_port_pair, ProxyServer::Direct());
+  SpdySessionKey key(host_port_pair, ProxyServer::Direct(),
+                     kPrivacyModeDisabled);
   scoped_refptr<SpdySession> spdy_session =
-      session->spdy_session_pool()->Get(pair, BoundNetLog());
+      session->spdy_session_pool()->Get(key, BoundNetLog());
   scoped_refptr<TransportSocketParams> transport_params(
       new TransportSocketParams(host_port_pair, MEDIUM, false, false,
                                 OnHostResolutionCallback()));
@@ -10376,10 +10391,10 @@ TEST_F(HttpNetworkTransactionSpdy2Test, MAYBE_UseIPConnectionPooling) {
   ssl.SetNextProto(kProtoSPDY2);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
-  scoped_ptr<SpdyFrame> host1_req(ConstructSpdyGet(
-      "https://www.google.com", false, 1, LOWEST));
-  scoped_ptr<SpdyFrame> host2_req(ConstructSpdyGet(
-      "https://www.gmail.com", false, 3, LOWEST));
+  scoped_ptr<SpdyFrame> host1_req(
+      spdy_util_.ConstructSpdyGet("https://www.google.com", false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> host2_req(
+      spdy_util_.ConstructSpdyGet("https://www.gmail.com", false, 3, LOWEST));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*host1_req, 1),
     CreateMockWrite(*host2_req, 4),
@@ -10472,10 +10487,10 @@ TEST_F(HttpNetworkTransactionSpdy2Test, UseIPConnectionPoolingAfterResolution) {
   ssl.SetNextProto(kProtoSPDY2);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
-  scoped_ptr<SpdyFrame> host1_req(ConstructSpdyGet(
-      "https://www.google.com", false, 1, LOWEST));
-  scoped_ptr<SpdyFrame> host2_req(ConstructSpdyGet(
-      "https://www.gmail.com", false, 3, LOWEST));
+  scoped_ptr<SpdyFrame> host1_req(
+      spdy_util_.ConstructSpdyGet("https://www.google.com", false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> host2_req(
+      spdy_util_.ConstructSpdyGet("https://www.gmail.com", false, 3, LOWEST));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*host1_req, 1),
     CreateMockWrite(*host2_req, 4),
@@ -10608,10 +10623,10 @@ TEST_F(HttpNetworkTransactionSpdy2Test,
   ssl.SetNextProto(kProtoSPDY2);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
-  scoped_ptr<SpdyFrame> host1_req(ConstructSpdyGet(
-      "https://www.google.com", false, 1, LOWEST));
-  scoped_ptr<SpdyFrame> host2_req(ConstructSpdyGet(
-      "https://www.gmail.com", false, 3, LOWEST));
+  scoped_ptr<SpdyFrame> host1_req(
+      spdy_util_.ConstructSpdyGet("https://www.google.com", false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> host2_req(
+      spdy_util_.ConstructSpdyGet("https://www.gmail.com", false, 3, LOWEST));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*host1_req, 1),
     CreateMockWrite(*host2_req, 4),
@@ -10740,8 +10755,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test, DoNotUseSpdySessionForHttp) {
   const std::string http_url = "http://www.google.com:443/";
 
   // SPDY GET for HTTPS URL
-  scoped_ptr<SpdyFrame> req1(ConstructSpdyGet(https_url.c_str(),
-                                              false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> req1(
+      spdy_util_.ConstructSpdyGet(https_url.c_str(), false, 1, LOWEST));
 
   MockWrite writes1[] = {
     CreateMockWrite(*req1, 0),
@@ -10796,7 +10811,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, DoNotUseSpdySessionForHttp) {
   TestCompletionCallback callback1;
   EXPECT_EQ(ERR_IO_PENDING,
             trans1.Start(&request1, callback1.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(OK, callback1.WaitForResult());
   EXPECT_TRUE(trans1.GetResponseInfo()->was_fetched_via_spdy);
@@ -10810,7 +10825,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, DoNotUseSpdySessionForHttp) {
   TestCompletionCallback callback2;
   EXPECT_EQ(ERR_IO_PENDING,
             trans2.Start(&request2, callback2.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(OK, callback2.WaitForResult());
   EXPECT_FALSE(trans2.GetResponseInfo()->was_fetched_via_spdy);
@@ -10821,9 +10836,9 @@ TEST_F(HttpNetworkTransactionSpdy2Test, DoNotUseSpdySessionForHttpOverTunnel) {
   const std::string http_url = "http://www.google.com:443/";
 
   // SPDY GET for HTTPS URL (through CONNECT tunnel)
-  scoped_ptr<SpdyFrame> connect(ConstructSpdyConnect(NULL, 0, 1));
-  scoped_ptr<SpdyFrame> req1(ConstructSpdyGet(https_url.c_str(),
-                                              false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> connect(spdy_util_.ConstructSpdyConnect(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> req1(
+      spdy_util_.ConstructSpdyGet(https_url.c_str(), false, 1, LOWEST));
 
   // SPDY GET for HTTP URL (through the proxy, but not the tunnel)
   scoped_ptr<SpdyFrame> wrapped_req1(ConstructWrappedSpdyFrame(req1, 1));
@@ -10889,7 +10904,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, DoNotUseSpdySessionForHttpOverTunnel) {
   TestCompletionCallback callback1;
   EXPECT_EQ(ERR_IO_PENDING,
             trans1.Start(&request1, callback1.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   data1.RunFor(4);
 
   EXPECT_EQ(OK, callback1.WaitForResult());
@@ -10909,7 +10924,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, DoNotUseSpdySessionForHttpOverTunnel) {
   TestCompletionCallback callback2;
   EXPECT_EQ(ERR_IO_PENDING,
             trans2.Start(&request2, callback2.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   data1.RunFor(3);
 
   EXPECT_EQ(OK, callback2.WaitForResult());
@@ -10930,11 +10945,11 @@ TEST_F(HttpNetworkTransactionSpdy2Test, UseSpdySessionForHttpWhenForced) {
   const std::string http_url = "http://www.google.com:443/";
 
   // SPDY GET for HTTPS URL
-  scoped_ptr<SpdyFrame> req1(ConstructSpdyGet(https_url.c_str(),
-                                              false, 1, LOWEST));
+  scoped_ptr<SpdyFrame> req1(
+      spdy_util_.ConstructSpdyGet(https_url.c_str(), false, 1, LOWEST));
   // SPDY GET for the HTTP URL
-  scoped_ptr<SpdyFrame> req2(ConstructSpdyGet(http_url.c_str(),
-                                              false, 3, MEDIUM));
+  scoped_ptr<SpdyFrame> req2(
+      spdy_util_.ConstructSpdyGet(http_url.c_str(), false, 3, MEDIUM));
 
   MockWrite writes[] = {
     CreateMockWrite(*req1, 1),
@@ -10972,7 +10987,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, UseSpdySessionForHttpWhenForced) {
   TestCompletionCallback callback1;
   EXPECT_EQ(ERR_IO_PENDING,
             trans1.Start(&request1, callback1.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(OK, callback1.WaitForResult());
   EXPECT_TRUE(trans1.GetResponseInfo()->was_fetched_via_spdy);
@@ -10986,7 +11001,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, UseSpdySessionForHttpWhenForced) {
   TestCompletionCallback callback2;
   EXPECT_EQ(ERR_IO_PENDING,
             trans2.Start(&request2, callback2.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(OK, callback2.WaitForResult());
   EXPECT_TRUE(trans2.GetResponseInfo()->was_fetched_via_spdy);
@@ -11035,8 +11050,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test, DoNotUseSpdySessionIfCertDoesNotMatch) {
   data1->set_connect_data(connect_data1);
 
   // SPDY GET for HTTPS URL (direct)
-  scoped_ptr<SpdyFrame> req2(ConstructSpdyGet(url2.c_str(),
-                                              false, 1, MEDIUM));
+  scoped_ptr<SpdyFrame> req2(
+      spdy_util_.ConstructSpdyGet(url2.c_str(), false, 1, MEDIUM));
 
   MockWrite writes2[] = {
     CreateMockWrite(*req2, 0),
@@ -11119,7 +11134,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, DoNotUseSpdySessionIfCertDoesNotMatch) {
   TestCompletionCallback callback2;
   EXPECT_EQ(ERR_IO_PENDING,
             trans2.Start(&request2, callback2.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   data2->RunFor(3);
 
   ASSERT_TRUE(callback2.have_result());
@@ -11142,8 +11157,8 @@ TEST_F(HttpNetworkTransactionSpdy2Test, ErrorSocketNotConnected) {
       new DeterministicSocketData(reads1, arraysize(reads1), NULL, 0));
   data1->SetStop(1);
 
-  scoped_ptr<SpdyFrame> req2(ConstructSpdyGet(https_url.c_str(),
-                                              false, 1, MEDIUM));
+  scoped_ptr<SpdyFrame> req2(
+      spdy_util_.ConstructSpdyGet(https_url.c_str(), false, 1, MEDIUM));
   MockWrite writes2[] = {
     CreateMockWrite(*req2, 0),
   };
@@ -11185,7 +11200,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, ErrorSocketNotConnected) {
   TestCompletionCallback callback1;
   EXPECT_EQ(ERR_IO_PENDING,
             trans1.Start(&request1, callback1.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(ERR_CONNECTION_CLOSED, callback1.WaitForResult());
 
   // Now, start the second request and make sure it succeeds.
@@ -11197,7 +11212,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, ErrorSocketNotConnected) {
   TestCompletionCallback callback2;
   EXPECT_EQ(ERR_IO_PENDING,
             trans2.Start(&request2, callback2.callback(), BoundNetLog()));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   data2->RunFor(3);
 
   ASSERT_TRUE(callback2.have_result());
@@ -11224,7 +11239,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, CloseIdleSpdySessionToOpenNewOne) {
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl1);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl2);
 
-  scoped_ptr<SpdyFrame> host1_req(ConstructSpdyGet(
+  scoped_ptr<SpdyFrame> host1_req(spdy_util_.ConstructSpdyGet(
       "https://www.a.com", false, 1, DEFAULT_PRIORITY));
   MockWrite spdy1_writes[] = {
     CreateMockWrite(*host1_req, 1),
@@ -11243,7 +11258,7 @@ TEST_F(HttpNetworkTransactionSpdy2Test, CloseIdleSpdySessionToOpenNewOne) {
           spdy1_writes, arraysize(spdy1_writes)));
   session_deps_.socket_factory->AddSocketDataProvider(spdy1_data.get());
 
-  scoped_ptr<SpdyFrame> host2_req(ConstructSpdyGet(
+  scoped_ptr<SpdyFrame> host2_req(spdy_util_.ConstructSpdyGet(
       "https://www.b.com", false, 1, DEFAULT_PRIORITY));
   MockWrite spdy2_writes[] = {
     CreateMockWrite(*host2_req, 1),
@@ -11279,10 +11294,10 @@ TEST_F(HttpNetworkTransactionSpdy2Test, CloseIdleSpdySessionToOpenNewOne) {
   session_deps_.socket_factory->AddSocketDataProvider(&http_data);
 
   HostPortPair host_port_pair_a("www.a.com", 443);
-  HostPortProxyPair host_port_proxy_pair_a(
-      host_port_pair_a, ProxyServer::Direct());
+  SpdySessionKey spdy_session_key_a(
+      host_port_pair_a, ProxyServer::Direct(), kPrivacyModeDisabled);
   EXPECT_FALSE(
-      session->spdy_session_pool()->HasSession(host_port_proxy_pair_a));
+      session->spdy_session_pool()->HasSession(spdy_session_key_a));
 
   TestCompletionCallback callback;
   HttpRequestInfo request1;
@@ -11308,13 +11323,13 @@ TEST_F(HttpNetworkTransactionSpdy2Test, CloseIdleSpdySessionToOpenNewOne) {
   EXPECT_EQ("hello!", response_data);
   trans.reset();
   EXPECT_TRUE(
-      session->spdy_session_pool()->HasSession(host_port_proxy_pair_a));
+      session->spdy_session_pool()->HasSession(spdy_session_key_a));
 
   HostPortPair host_port_pair_b("www.b.com", 443);
-  HostPortProxyPair host_port_proxy_pair_b(
-      host_port_pair_b, ProxyServer::Direct());
+  SpdySessionKey spdy_session_key_b(
+      host_port_pair_b, ProxyServer::Direct(), kPrivacyModeDisabled);
   EXPECT_FALSE(
-      session->spdy_session_pool()->HasSession(host_port_proxy_pair_b));
+      session->spdy_session_pool()->HasSession(spdy_session_key_b));
   HttpRequestInfo request2;
   request2.method = "GET";
   request2.url = GURL("https://www.b.com/");
@@ -11334,15 +11349,15 @@ TEST_F(HttpNetworkTransactionSpdy2Test, CloseIdleSpdySessionToOpenNewOne) {
   ASSERT_EQ(OK, ReadTransaction(trans.get(), &response_data));
   EXPECT_EQ("hello!", response_data);
   EXPECT_FALSE(
-      session->spdy_session_pool()->HasSession(host_port_proxy_pair_a));
+      session->spdy_session_pool()->HasSession(spdy_session_key_a));
   EXPECT_TRUE(
-      session->spdy_session_pool()->HasSession(host_port_proxy_pair_b));
+      session->spdy_session_pool()->HasSession(spdy_session_key_b));
 
   HostPortPair host_port_pair_a1("www.a.com", 80);
-  HostPortProxyPair host_port_proxy_pair_a1(
-      host_port_pair_a1, ProxyServer::Direct());
+  SpdySessionKey spdy_session_key_a1(
+      host_port_pair_a1, ProxyServer::Direct(), kPrivacyModeDisabled);
   EXPECT_FALSE(
-      session->spdy_session_pool()->HasSession(host_port_proxy_pair_a1));
+      session->spdy_session_pool()->HasSession(spdy_session_key_a1));
   HttpRequestInfo request3;
   request3.method = "GET";
   request3.url = GURL("http://www.a.com/");
@@ -11362,9 +11377,9 @@ TEST_F(HttpNetworkTransactionSpdy2Test, CloseIdleSpdySessionToOpenNewOne) {
   ASSERT_EQ(OK, ReadTransaction(trans.get(), &response_data));
   EXPECT_EQ("hello!", response_data);
   EXPECT_FALSE(
-      session->spdy_session_pool()->HasSession(host_port_proxy_pair_a));
+      session->spdy_session_pool()->HasSession(spdy_session_key_a));
   EXPECT_FALSE(
-      session->spdy_session_pool()->HasSession(host_port_proxy_pair_b));
+      session->spdy_session_pool()->HasSession(spdy_session_key_b));
 
   HttpStreamFactory::SetNextProtos(std::vector<std::string>());
 }

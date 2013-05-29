@@ -13,6 +13,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
+#include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
@@ -20,6 +21,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/text/bytes_formatting.h"
 
 using extensions::Extension;
 
@@ -28,13 +30,13 @@ namespace chrome {
 namespace {
 
 bool IsAttachedDevice(const std::string& device_id) {
-  if (!MediaStorageUtil::IsRemovableDevice(device_id))
+  if (!StorageInfo::IsRemovableDevice(device_id))
     return false;
 
   std::vector<StorageInfo> removable_storages =
       StorageMonitor::GetInstance()->GetAttachedStorage();
   for (size_t i = 0; i < removable_storages.size(); ++i) {
-    if (removable_storages[i].device_id == device_id)
+    if (removable_storages[i].device_id() == device_id)
       return true;
   }
   return false;
@@ -51,6 +53,41 @@ bool GalleriesVectorComparator(
     return false;
 
   return a.pref_info.AbsolutePath() < b.pref_info.AbsolutePath();
+}
+
+string16 GetDisplayNameForDevice(uint64 storage_size_in_bytes,
+                                 const string16& name) {
+  DCHECK(!name.empty());
+  return (storage_size_in_bytes == 0) ?
+      name : ui::FormatBytes(storage_size_in_bytes) + ASCIIToUTF16(" ") + name;
+}
+
+
+// For a device with |device_name| and a relative path |sub_folder|, construct
+// a display name. If |sub_folder| is empty, then just return |device_name|.
+string16 GetDisplayNameForSubFolder(const string16& device_name,
+                                    const base::FilePath& sub_folder) {
+  if (sub_folder.empty())
+    return device_name;
+  return (sub_folder.BaseName().LossyDisplayName() +
+          ASCIIToUTF16(" - ") +
+          device_name);
+}
+
+string16 GetFullProductName(const string16& vendor_name,
+                            const string16& model_name) {
+  if (vendor_name.empty() && model_name.empty())
+    return string16();
+
+  string16 product_name;
+  if (vendor_name.empty())
+    product_name = model_name;
+  else if (model_name.empty())
+    product_name = vendor_name;
+  else if (!vendor_name.empty() && !model_name.empty())
+    product_name = vendor_name + UTF8ToUTF16(", ") + model_name;
+
+  return product_name;
 }
 
 }  // namespace
@@ -103,21 +140,38 @@ string16 MediaGalleriesDialogController::GetGalleryDisplayName(
   return name;
 }
 
+// TODO(gbillock): Move this function and attendant helpers somewhere else,
+// probably to StorageInfo.
 // static
 string16 MediaGalleriesDialogController::GetGalleryDisplayNameNoAttachment(
     const MediaGalleryPrefInfo& gallery) {
+  if (!StorageInfo::IsRemovableDevice(gallery.device_id)) {
+    // For fixed storage, the name is the directory name, or, in the case
+    // of a root directory, the root directory name.
+    // TODO(gbillock): Using only the BaseName can lead to ambiguity. The
+    // tooltip resolves it. Is that enough?
+    base::FilePath path = gallery.AbsolutePath();
+    if (!gallery.display_name.empty())
+      return gallery.display_name;
+    if (path == path.DirName())
+      return path.LossyDisplayName();
+    return path.BaseName().LossyDisplayName();
+  }
+
   string16 name = gallery.display_name;
   if (name.empty())
     name = gallery.volume_label;
-  if (name.empty()) {
-    name = MediaStorageUtil::GetFullProductName(
-        UTF16ToUTF8(gallery.vendor_name), UTF16ToUTF8(gallery.model_name));
-  }
+  if (name.empty())
+    name = GetFullProductName(gallery.vendor_name, gallery.model_name);
   if (name.empty())
     name = l10n_util::GetStringUTF16(IDS_MEDIA_GALLERIES_UNLABELED_DEVICE);
 
-  return MediaStorageUtil::GetDisplayNameForDevice(gallery.total_size_in_bytes,
-                                                   name);
+  name = GetDisplayNameForDevice(gallery.total_size_in_bytes, name);
+
+  if (!gallery.path.empty())
+    name = GetDisplayNameForSubFolder(name, gallery.path);
+
+  return name;
 }
 
 // static
@@ -129,7 +183,7 @@ string16 MediaGalleriesDialogController::GetGalleryTooltip(
 // static
 bool MediaGalleriesDialogController::GetGalleryAttached(
     const MediaGalleryPrefInfo& gallery) {
-  return !MediaStorageUtil::IsRemovableDevice(gallery.device_id) ||
+  return !StorageInfo::IsRemovableDevice(gallery.device_id) ||
          IsAttachedDevice(gallery.device_id);
 }
 
@@ -137,7 +191,7 @@ bool MediaGalleriesDialogController::GetGalleryAttached(
 string16 MediaGalleriesDialogController::GetGalleryAdditionalDetails(
     const MediaGalleryPrefInfo& gallery) {
   string16 attached;
-  if (MediaStorageUtil::IsRemovableDevice(gallery.device_id)) {
+  if (StorageInfo::IsRemovableDevice(gallery.device_id)) {
     if (IsAttachedDevice(gallery.device_id)) {
       attached = l10n_util::GetStringUTF16(
           IDS_MEDIA_GALLERIES_DIALOG_DEVICE_ATTACHED);
@@ -325,12 +379,12 @@ void MediaGalleriesDialogController::FileSelected(const base::FilePath& path,
 
 void MediaGalleriesDialogController::OnRemovableStorageAttached(
     const StorageInfo& info) {
-  UpdateGalleriesOnDeviceEvent(info.device_id);
+  UpdateGalleriesOnDeviceEvent(info.device_id());
 }
 
 void MediaGalleriesDialogController::OnRemovableStorageDetached(
     const StorageInfo& info) {
-  UpdateGalleriesOnDeviceEvent(info.device_id);
+  UpdateGalleriesOnDeviceEvent(info.device_id());
 }
 
 void MediaGalleriesDialogController::OnGalleryChanged(

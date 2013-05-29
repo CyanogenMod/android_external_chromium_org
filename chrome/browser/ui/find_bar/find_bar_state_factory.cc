@@ -6,13 +6,13 @@
 
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/ui/find_bar/find_bar_state.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 FindBarState* FindBarStateFactory::GetForProfile(Profile* profile) {
   return static_cast<FindBarState*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -35,13 +35,14 @@ FindBarStateFactory* FindBarStateFactory::GetInstance() {
 }
 
 FindBarStateFactory::FindBarStateFactory()
-    : ProfileKeyedServiceFactory("FindBarState",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "FindBarState",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 FindBarStateFactory::~FindBarStateFactory() {}
 
-ProfileKeyedService* FindBarStateFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* FindBarStateFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new FindBarState;
 }

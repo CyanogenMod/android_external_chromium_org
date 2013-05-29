@@ -35,6 +35,7 @@ using content::ResourceController;
 using content::WebContents;
 using extensions::Event;
 using extensions::ExtensionSystem;
+using net::test_server::BasicHttpResponse;
 using net::test_server::HttpRequest;
 using net::test_server::HttpResponse;
 using net::test_server::EmbeddedTestServer;
@@ -45,14 +46,14 @@ namespace {
 // Test server's request handler.
 // Returns response that should be sent by the test server.
 scoped_ptr<HttpResponse> HandleRequest(const HttpRequest& request) {
-  scoped_ptr<HttpResponse> response(new HttpResponse());
+  scoped_ptr<BasicHttpResponse> response(new BasicHttpResponse());
 
   // For relative path "/doc_path.doc", return success response with MIME type
   // "application/msword".
   if (request.relative_url == "/doc_path.doc") {
     response->set_code(net::test_server::SUCCESS);
     response->set_content_type("application/msword");
-    return response.Pass();
+    return response.PassAs<HttpResponse>();
   }
 
   // For relative path "/test_path_attch.txt", return success response with
@@ -64,7 +65,7 @@ scoped_ptr<HttpResponse> HandleRequest(const HttpRequest& request) {
     response->set_content_type("plain/text");
     response->AddCustomHeader("Content-Disposition",
                               "attachment; filename=test_path.txt");
-    return response.Pass();
+    return response.PassAs<HttpResponse>();
   }
   // For relative path "/test_path_attch.txt", return success response with
   // MIME type "plain/text" and content "txt content".
@@ -72,13 +73,13 @@ scoped_ptr<HttpResponse> HandleRequest(const HttpRequest& request) {
     response->set_code(net::test_server::SUCCESS);
     response->set_content("txt content");
     response->set_content_type("plain/text");
-    return response.Pass();
+    return response.PassAs<HttpResponse>();
   }
 
   // No other requests should be handled in the tests.
   EXPECT_TRUE(false) << "NOTREACHED!";
   response->set_code(net::test_server::NOT_FOUND);
-  return response.Pass();
+  return response.PassAs<HttpResponse>();
 }
 
 // Tests to verify that resources are correctly intercepted by
@@ -138,6 +139,7 @@ class StreamsPrivateApiTest : public ExtensionApiTest {
     event_args->Append(new base::StringValue("http://foo"));
     event_args->Append(new base::StringValue("blob://bar"));
     event_args->Append(new base::FundamentalValue(10));
+    event_args->Append(new base::FundamentalValue(20));
 
     scoped_ptr<Event> event(new Event(
         "streamsPrivate.onExecuteMimeTypeHandler", event_args.Pass()));
@@ -208,7 +210,7 @@ IN_PROC_BROWSER_TEST_F(StreamsPrivateApiTest, Navigate) {
                                test_server_->GetURL("/doc_path.doc"));
 
   // Wait for the response from the test server.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // There should be no downloads started by the navigation.
   DownloadManager* download_manager = GetDownloadManager();

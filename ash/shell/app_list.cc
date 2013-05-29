@@ -236,14 +236,14 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     static_cast<WindowTypeLauncherItem*>(item)->Activate(event_flags);
   }
 
-  virtual void OpenSearchResult(const app_list::SearchResult& result,
+  virtual void OpenSearchResult(app_list::SearchResult* result,
                                 int event_flags) OVERRIDE {
     const ExampleSearchResult* example_result =
-        static_cast<const ExampleSearchResult*>(&result);
+        static_cast<const ExampleSearchResult*>(result);
     WindowTypeLauncherItem::Activate(example_result->type(), event_flags);
   }
 
-  virtual void InvokeSearchResultAction(const app_list::SearchResult& result,
+  virtual void InvokeSearchResultAction(app_list::SearchResult* result,
                                         int action_index,
                                         int event_flags) OVERRIDE {
     NOTIMPLEMENTED();
@@ -304,6 +304,10 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   virtual void OpenSettings() OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual void OpenHelp() OVERRIDE {
     // Nothing needs to be done.
   }
 

@@ -36,6 +36,7 @@ class MockDownloadItem : public DownloadItem {
   MOCK_CONST_METHOD0(GetLastReason, DownloadInterruptReason());
   MOCK_CONST_METHOD0(IsPaused, bool());
   MOCK_CONST_METHOD0(IsTemporary, bool());
+  MOCK_CONST_METHOD0(CanResume, bool());
   MOCK_CONST_METHOD0(IsPartialDownload, bool());
   MOCK_CONST_METHOD0(IsInProgress, bool());
   MOCK_CONST_METHOD0(IsCancelled, bool());
@@ -59,7 +60,6 @@ class MockDownloadItem : public DownloadItem {
   MOCK_CONST_METHOD0(GetFullPath, const base::FilePath&());
   MOCK_CONST_METHOD0(GetTargetFilePath, const base::FilePath&());
   MOCK_CONST_METHOD0(GetForcedFilePath, const base::FilePath&());
-  MOCK_CONST_METHOD0(GetUserVerifiedFilePath, base::FilePath());
   MOCK_CONST_METHOD0(GetFileNameToReportUser, base::FilePath());
   MOCK_CONST_METHOD0(GetTargetDisposition, TargetDisposition());
   MOCK_CONST_METHOD0(GetHash, const std::string&());

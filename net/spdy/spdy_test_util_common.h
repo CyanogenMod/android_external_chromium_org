@@ -6,6 +6,7 @@
 #define NET_SPDY_SPDY_TEST_UTIL_COMMON_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "crypto/ec_private_key.h"
 #include "crypto/ec_signature_creator.h"
 #include "net/base/completion_callback.h"
@@ -124,13 +125,14 @@ int CombineFrames(const SpdyFrame** frames, int num_frames,
 
 // Returns the SpdyPriority embedded in the given frame.  Returns true
 // and fills in |priority| on success.
-bool GetSpdyPriority(int version,
+bool GetSpdyPriority(SpdyMajorVersion version,
                      const SpdyFrame& frame,
                      SpdyPriority* priority);
 
 // Tries to create a stream in |session| synchronously. Returns NULL
 // on failure.
 base::WeakPtr<SpdyStream> CreateStreamSynchronously(
+    SpdyStreamType type,
     const scoped_refptr<SpdySession>& session,
     const GURL& url,
     RequestPriority priority,
@@ -254,8 +256,8 @@ class SpdySessionPoolPeer {
  public:
   explicit SpdySessionPoolPeer(SpdySessionPool* pool);
 
-  void AddAlias(const IPEndPoint& address, const HostPortProxyPair& pair);
-  void RemoveAliases(const HostPortProxyPair& pair);
+  void AddAlias(const IPEndPoint& address, const SpdySessionKey& key);
+  void RemoveAliases(const SpdySessionKey& key);
   void RemoveSpdySession(const scoped_refptr<SpdySession>& session);
   void DisableDomainAuthenticationVerification();
   void EnableSendingInitialSettings(bool enabled);
@@ -268,8 +270,10 @@ class SpdySessionPoolPeer {
 
 // TODO(ttuttle): Move these somewhere more widely-accessible; surely this is
 // not the only place that needs such functions.
-NextProto NextProtoFromSpdyVersion(int spdy_version);
-int SpdyVersionFromNextProto(NextProto next_proto);
+NextProto NextProtoFromSpdyVersion(SpdyMajorVersion spdy_version);
+// TODO(akalin): Merge this with NPNToSpdyVersion() in
+// spdy_session.cc.
+SpdyMajorVersion SpdyVersionFromNextProto(NextProto next_proto);
 
 class SpdyTestUtil {
  public:
@@ -298,6 +302,12 @@ class SpdyTestUtil {
                                 const char* const tail_headers[],
                                 int tail_header_count) const;
 
+  // Construct a generic SpdyControlFrame.
+  //
+  // Warning: extra_header_count is the number of header-value pairs in
+  // extra_headers (so half the number of elements), but tail_headers_size is
+  // the actual number of elements (both keys and values) in tail_headers.
+  // TODO(ttuttle): Fix this inconsistency.
   SpdyFrame* ConstructSpdyControlFrame(
       const char* const extra_headers[],
       int extra_header_count,
@@ -306,13 +316,88 @@ class SpdyTestUtil {
       RequestPriority request_priority,
       SpdyFrameType type,
       SpdyControlFlags flags,
-      const char* const* kHeaders,
-      int kHeadersSize,
+      const char* const* tail_headers,
+      int tail_headers_size,
       SpdyStreamId associated_stream_id) const;
+
+  // Construct an expected SPDY reply string.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.
+  // |buffer| is the buffer we're filling in.
+  // Returns the number of bytes written into |buffer|.
+  int ConstructSpdyReplyString(const char* const extra_headers[],
+                               int extra_header_count,
+                               char* buffer,
+                               int buffer_length) const;
+
+  // Construct an expected SPDY SETTINGS frame.
+  // |settings| are the settings to set.
+  // Returns the constructed frame.  The caller takes ownership of the frame.
+  SpdyFrame* ConstructSpdySettings(const SettingsMap& settings) const;
+
+  // Construct an expected SPDY CREDENTIAL frame.
+  // |credential| is the credential to send.
+  // Returns the constructed frame.  The caller takes ownership of the frame.
+  SpdyFrame* ConstructSpdyCredential(const SpdyCredential& credential) const;
+
+  // Construct a SPDY PING frame.
+  // Returns the constructed frame.  The caller takes ownership of the frame.
+  SpdyFrame* ConstructSpdyPing(uint32 ping_id) const;
+
+  // Construct a SPDY GOAWAY frame with last_good_stream_id = 0.
+  // Returns the constructed frame.  The caller takes ownership of the frame.
+  SpdyFrame* ConstructSpdyGoAway() const;
+
+  // Construct a SPDY GOAWAY frame with the specified last_good_stream_id.
+  // Returns the constructed frame.  The caller takes ownership of the frame.
+  SpdyFrame* ConstructSpdyGoAway(SpdyStreamId last_good_stream_id) const;
+
+  // Construct a SPDY WINDOW_UPDATE frame.
+  // Returns the constructed frame.  The caller takes ownership of the frame.
+  SpdyFrame* ConstructSpdyWindowUpdate(
+      SpdyStreamId stream_id,
+      uint32 delta_window_size) const;
+
+  // Construct a SPDY RST_STREAM frame.
+  // Returns the constructed frame.  The caller takes ownership of the frame.
+  SpdyFrame* ConstructSpdyRstStream(SpdyStreamId stream_id,
+                                    SpdyRstStreamStatus status) const;
+
+  // Constructs a standard SPDY GET SYN frame, optionally compressed
+  // for the url |url|.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdyGet(const char* const url,
+                              bool compressed,
+                              SpdyStreamId stream_id,
+                              RequestPriority request_priority) const;
+
+  // Constructs a standard SPDY GET SYN frame, optionally compressed.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.  If |direct| is false, the
+  // the full url will be used instead of simply the path.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdyGet(const char* const extra_headers[],
+                              int extra_header_count,
+                              bool compressed,
+                              int stream_id,
+                              RequestPriority request_priority,
+                              bool direct) const;
+
+  // Constructs a standard SPDY SYN_STREAM frame for a CONNECT request.
+  SpdyFrame* ConstructSpdyConnect(const char* const extra_headers[],
+                                  int extra_header_count,
+                                  int stream_id) const;
+
+  NextProto protocol() const { return protocol_; }
+  SpdyMajorVersion spdy_version() const { return spdy_version_; }
+  bool is_spdy2() const { return protocol_ < kProtoSPDY3; }
+  scoped_ptr<SpdyFramer> CreateFramer() const;
 
  private:
   const NextProto protocol_;
-  const int spdy_version_;
+  const SpdyMajorVersion spdy_version_;
 };
 
 }  // namespace net

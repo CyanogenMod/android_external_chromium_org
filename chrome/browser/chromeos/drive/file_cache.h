@@ -69,8 +69,6 @@ class FileCache {
   // This indexes into |FileCache::cache_paths_| vector.
   enum CacheSubDirectoryType {
     CACHE_TYPE_META = 0,       // Downloaded feeds.
-    CACHE_TYPE_OUTGOING,       // Symlinks to files in persistent or tmp dir to
-                               // be uploaded.
     CACHE_TYPE_PERSISTENT,     // Files that are pinned or modified locally,
                                // not evictable, hopefully.
     CACHE_TYPE_TMP,            // Files that don't meet criteria to be in
@@ -124,9 +122,7 @@ class FileCache {
   // Gets the cache entry for file corresponding to |resource_id| and |md5|
   // and runs |callback| with true and the entry found if entry exists in cache
   // map.  Otherwise, runs |callback| with false.
-  // |md5| can be empty if only matching |resource_id| is desired, which may
-  // happen when looking for pinned entries where symlinks' filenames have no
-  // extension and hence no md5.
+  // |md5| can be empty if only matching |resource_id| is desired.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void GetCacheEntryOnUIThread(const std::string& resource_id,
@@ -139,29 +135,50 @@ class FileCache {
                      const std::string& md5,
                      FileCacheEntry* entry);
 
-  // Iterates all files in the cache and calls |iteration_callback| for each
-  // file. |completion_callback| is run upon completion.
-  // Must be called on the UI thread.
+  // Runs Iterate() with |iteration_callback| on |blocking_task_runner_| and
+  // runs |completion_callback| upon completion.
+  // Must be called on UI thread.
   void IterateOnUIThread(const CacheIterateCallback& iteration_callback,
                          const base::Closure& completion_callback);
 
-  // Frees up disk space to store the given number of bytes, while keeping
-  // kMinFreeSpace bytes on the disk, if needed.
-  // Runs |callback| with true when we successfully manage to have enough space.
+  // Iterates all files in the cache and calls |iteration_callback| for each
+  // file. |completion_callback| is run upon completion.
+  // TODO(hashimoto): Stop using callbacks for this method. crbug.com/242818
+  void Iterate(const CacheIterateCallback& iteration_callback);
+
+
+  // Runs FreeDiskSpaceIfNeededFor() on |blocking_task_runner_|, and calls
+  // |callback| with the result asynchronously.
+  // |callback| must not be null.
   // Must be called on the UI thread.
   void FreeDiskSpaceIfNeededForOnUIThread(
       int64 num_bytes,
       const InitializeCacheCallback& callback);
 
-  // Checks if file corresponding to |resource_id| and |md5| exists in cache.
+  // Frees up disk space to store a file with |num_bytes| size content, while
+  // keeping kMinFreeSpace bytes on the disk, if needed.
+  // Returns true if we successfully manage to have enough space, otherwise
+  // false.
+  bool FreeDiskSpaceIfNeededFor(int64 num_bytes);
+
+  // Runs GetFile() on |blocking_task_runner_|, and calls |callback| with
+  // the result asynchronously.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void GetFileOnUIThread(const std::string& resource_id,
                          const std::string& md5,
                          const GetFileFromCacheCallback& callback);
 
-  // Stores |source_path| as a cache of the remote content of the file
-  // identified by |resource_id| and |md5|.
+  // Checks if file corresponding to |resource_id| and |md5| exists in cache,
+  // and returns FILE_ERROR_OK with |cache_file_path| storing the path to
+  // the file.
+  // |cache_file_path| must not be null.
+  FileError GetFile(const std::string& resource_id,
+                    const std::string& md5,
+                    base::FilePath* cache_file_path);
+
+  // Runs Store() on |blocking_task_runner_|, and calls |callback| with
+  // the result asynchronously.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void StoreOnUIThread(const std::string& resource_id,
@@ -169,6 +186,13 @@ class FileCache {
                        const base::FilePath& source_path,
                        FileOperationType file_operation_type,
                        const FileOperationCallback& callback);
+
+  // Stores |source_path| as a cache of the remote content of the file
+  // with |resource_id| and |md5|.
+  FileError Store(const std::string& resource_Id,
+                  const std::string& md5,
+                  const base::FilePath& source_path,
+                  FileOperationType file_operation_type);
 
   // Stores |source_path| to the cache and mark it as dirty, i.e., needs to be
   // uploaded to the remove server for syncing.
@@ -180,25 +204,23 @@ class FileCache {
                                       FileOperationType file_operation_type,
                                       const FileOperationCallback& callback);
 
-  // Modifies cache state, which involves the following:
-  // - moves |source_path| to |dest_path| in persistent dir if
-  //   file is not dirty
-  // - creates symlink in pinned dir that references downloaded or locally
-  //   modified file
+  // Pins the specified entry.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void PinOnUIThread(const std::string& resource_id,
                      const std::string& md5,
                      const FileOperationCallback& callback);
 
-  // Modifies cache state, which involves the following:
-  // - moves |source_path| to |dest_path| in tmp dir if file is not dirty
-  // - deletes symlink from pinned dir
+  // Runs Unpin() on |blocking_task_runner_|, and calls |callback| with the
+  // result asynchronously.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void UnpinOnUIThread(const std::string& resource_id,
                        const std::string& md5,
                        const FileOperationCallback& callback);
+
+  // Unpins the specified entry.
+  FileError Unpin(const std::string& resource_id, const std::string& md5);
 
   // Sets the state of the cache entry corresponding to |resource_id| and |md5|
   // as mounted.
@@ -214,45 +236,33 @@ class FileCache {
   void MarkAsUnmountedOnUIThread(const base::FilePath& file_path,
                                  const FileOperationCallback& callback);
 
-  // Modifies cache state, which involves the following:
-  // - moves |source_path| to |dest_path| in persistent dir, where
-  //   |source_path| has .<md5> extension and |dest_path| has .local extension
-  // - if file is pinned, updates symlink in pinned dir to reference dirty file
+  // Marks the specified entry dirty.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void MarkDirtyOnUIThread(const std::string& resource_id,
                            const std::string& md5,
                            const FileOperationCallback& callback);
 
-  // Modifies cache state, i.e. creates symlink in outgoing
-  // dir to reference dirty file in persistent dir.
+  // Commits changes for the specified dirty entry.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void CommitDirtyOnUIThread(const std::string& resource_id,
                              const std::string& md5,
                              const FileOperationCallback& callback);
 
-  // Modifies cache state, which involves the following:
-  // - moves |source_path| to |dest_path| in persistent dir if
-  //   file is pinned or tmp dir otherwise, where |source_path| has .local
-  //   extension and |dest_path| has .<md5> extension
-  // - deletes symlink in outgoing dir
-  // - if file is pinned, updates symlink in pinned dir to reference
-  //   |dest_path|
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void ClearDirtyOnUIThread(const std::string& resource_id,
-                            const std::string& md5,
-                            const FileOperationCallback& callback);
+  // Clears dirty state of the specified entry.
+  FileError ClearDirty(const std::string& resource_id,
+                       const std::string& md5);
 
-  // Does the following:
-  // - remove all delete stale cache versions corresponding to |resource_id| in
-  //   persistent, tmp and pinned directories
-  // - remove entry corresponding to |resource_id| from cache map.
-  // |callback| must not be null.
+  // Runs Remove() on |blocking_task_runner_| and runs |callback| with the
+  // result.
   // Must be called on the UI thread.
   void RemoveOnUIThread(const std::string& resource_id,
                         const FileOperationCallback& callback);
+
+  // Removes the specified cache entry and delete cache files if available.
+  // Synchronous version of RemoveOnUIThread().
+  FileError Remove(const std::string& resource_id);
 
   // Does the following:
   // - remove all the files in the cache directory.
@@ -293,8 +303,6 @@ class FileCache {
  private:
   friend class FileCacheTest;
 
-  typedef std::pair<FileError, base::FilePath> GetFileResult;
-
   // Enum defining origin of a cached file.
   enum CachedFileOrigin {
     CACHED_FILE_FROM_SERVER = 0,
@@ -327,34 +335,23 @@ class FileCache {
   // Destroys the cache on the blocking pool.
   void DestroyOnBlockingPool();
 
-  // Used to implement IterateOnUIThread().
-  void Iterate(const CacheIterateCallback& iteration_callback);
-
-  // Used to implement FreeDiskSpaceIfNeededForOnUIThread().
-  bool FreeDiskSpaceIfNeededFor(int64 num_bytes);
-
-  // Used to implement GetFileOnUIThread.
-  scoped_ptr<GetFileResult> GetFile(const std::string& resource_id,
-                                    const std::string& md5);
-
-  // Used to implement StoreOnUIThread.
-  FileError Store(const std::string& resource_id,
-                  const std::string& md5,
-                  const base::FilePath& source_path,
-                  FileOperationType file_operation_type,
-                  CachedFileOrigin origin);
+  // Used to implement Store and StoreLocallyModifiedOnUIThread.
+  // TODO(hidehiko): Merge this method with Store(), after
+  // StoreLocallyModifiedOnUIThread is removed.
+  FileError StoreInternal(const std::string& resource_id,
+                          const std::string& md5,
+                          const base::FilePath& source_path,
+                          FileOperationType file_operation_type,
+                          CachedFileOrigin origin);
 
   // Used to implement PinOnUIThread.
   FileError Pin(const std::string& resource_id,
                 const std::string& md5);
 
-  // Used to implement UnpinOnUIThread.
-  FileError Unpin(const std::string& resource_id,
-                  const std::string& md5);
-
   // Used to implement MarkAsMountedOnUIThread.
-  scoped_ptr<GetFileResult> MarkAsMounted(const std::string& resource_id,
-                                          const std::string& md5);
+  FileError MarkAsMounted(const std::string& resource_id,
+                          const std::string& md5,
+                          base::FilePath* cache_file_path);
 
   // Used to implement MarkAsUnmountedOnUIThread.
   FileError MarkAsUnmounted(const base::FilePath& file_path);
@@ -362,17 +359,6 @@ class FileCache {
   // Used to implement MarkDirtyOnUIThread.
   FileError MarkDirty(const std::string& resource_id,
                       const std::string& md5);
-
-  // Used to implement CommitDirtyOnUIThread.
-  FileError CommitDirty(const std::string& resource_id,
-                        const std::string& md5);
-
-  // Used to implement ClearDirtyOnUIThread.
-  FileError ClearDirty(const std::string& resource_id,
-                       const std::string& md5);
-
-  // Used to implement RemoveOnUIThread.
-  FileError Remove(const std::string& resource_id);
 
   // Used to implement ClearAllOnUIThread.
   bool ClearAll();

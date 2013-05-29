@@ -35,8 +35,10 @@ const char kEnableRightAlignedScheduling[] = "enable-right-aligned-scheduling";
 const char kEnableTopControlsPositionCalculation[] =
     "enable-top-controls-position-calculation";
 
-// Enable solid tile color and transparent tile metrics.
-const char kEnablePredictionBenchmarking[] = "enable-prediction-benchmarking";
+// For any layers that can get drawn directly to screen, draw them with the Skia
+// GPU backend.  Only valid with gl rendering + threaded compositing + impl-side
+// painting.
+const char kForceDirectLayerDrawing[] = "force-direct-layer-drawing";
 
 // The height of the movable top controls.
 const char kTopControlsHeight[] = "top-controls-height";
@@ -54,9 +56,6 @@ const char kNumRasterThreads[] = "num-raster-threads";
 // of pixels culled, and the number of pixels drawn, for each frame.
 const char kTraceOverdraw[] = "trace-overdraw";
 
-// Logs all rendered frames.
-const char kTraceAllRenderedFrames[] = "trace-all-rendered-frames";
-
 // Re-rasters everything multiple times to simulate a much slower machine.
 // Give a scale factor to cause raster to take that many times longer to
 // complete, such as --slow-down-raster-scale-factor=25.
@@ -73,10 +72,6 @@ const char kMaxTilesForInterestArea[] = "max-tiles-for-interest-area";
 const char kMaxUnusedResourceMemoryUsagePercentage[] =
     "max-unused-resource-memory-usage-percentage";
 
-// Causes overlay scrollbars to appear when zoomed in ChromeOS/Windows.
-const char kEnablePinchZoomScrollbars[]     = "enable-pinch-zoom-scrollbars";
-const char kDisablePinchZoomScrollbars[]    = "disable-pinch-zoom-scrollbars";
-
 // Causes the compositor to render to textures which are then sent to the parent
 // through the texture mailbox mechanism.
 // Requires --enable-compositor-frame-message.
@@ -85,6 +80,9 @@ const char kCompositeToMailbox[] = "composite-to-mailbox";
 // Check that property changes during paint do not occur.
 const char kStrictLayerPropertyChangeChecking[] =
     "strict-layer-property-change-checking";
+
+// Virtual viewport for fixed-position elements, scrollbars during pinch.
+const char kEnablePinchVirtualViewport[] = "enable-pinch-virtual-viewport";
 
 const char kEnablePartialSwap[] = "enable-partial-swap";
 // Disable partial swap which is needed for some OpenGL drivers / emulators.
@@ -136,6 +134,9 @@ const char kUIShowOccludingRects[] = "ui-show-occluding-rects";
 // is not considered to be occluding the pixels behind it.
 const char kShowNonOccludingRects[] = "show-nonoccluding-rects";
 const char kUIShowNonOccludingRects[] = "ui-show-nonoccluding-rects";
+
+// Enable the codepath that uses images within TileManager.
+const char kUseMapImage[] = "use-map-image";
 
 // Prevents the layer tree unit tests from timing out.
 const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";

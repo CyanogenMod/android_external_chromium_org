@@ -50,6 +50,8 @@ class DriveAPIService : public DriveServiceInterface,
   virtual bool CanStartOperation() const OVERRIDE;
   virtual void CancelAll() OVERRIDE;
   virtual bool CancelForFilePath(const base::FilePath& file_path) OVERRIDE;
+  virtual std::string CanonicalizeResourceId(
+      const std::string& resource_id) const OVERRIDE;
   virtual bool HasAccessToken() const OVERRIDE;
   virtual bool HasRefreshToken() const OVERRIDE;
   virtual void ClearAccessToken() OVERRIDE;
@@ -90,6 +92,11 @@ class DriveAPIService : public DriveServiceInterface,
       const DownloadActionCallback& download_action_callback,
       const GetContentCallback& get_content_callback,
       const ProgressCallback& progress_callback) OVERRIDE;
+  virtual void CopyResource(
+      const std::string& resource_id,
+      const std::string& parent_resource_id,
+      const std::string& new_name,
+      const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void CopyHostedDocument(
       const std::string& resource_id,
       const std::string& new_name,
@@ -98,6 +105,11 @@ class DriveAPIService : public DriveServiceInterface,
       const std::string& resource_id,
       const std::string& new_name,
       const EntryActionCallback& callback) OVERRIDE;
+  virtual void TouchResource(
+      const std::string& resource_id,
+      const base::Time& modified_date,
+      const base::Time& last_viewed_by_me_date,
+      const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void AddResourceToDirectory(
       const std::string& parent_resource_id,
       const std::string& resource_id,
@@ -125,7 +137,6 @@ class DriveAPIService : public DriveServiceInterface,
       const std::string& etag,
       const InitiateUploadCallback& callback) OVERRIDE;
   virtual void ResumeUpload(
-      UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_url,
       int64 start_position,
@@ -136,7 +147,6 @@ class DriveAPIService : public DriveServiceInterface,
       const UploadRangeCallback& callback,
       const ProgressCallback& progress_callback) OVERRIDE;
   virtual void GetUploadStatus(
-      UploadMode upload_mode,
       const base::FilePath& drive_file_path,
       const GURL& upload_url,
       int64 content_length,
@@ -147,8 +157,6 @@ class DriveAPIService : public DriveServiceInterface,
       const AuthorizeAppCallback& callback) OVERRIDE;
 
  private:
-  OperationRegistry* operation_registry() const;
-
   // AuthServiceObserver override.
   virtual void OnOAuth2RefreshTokenChanged() OVERRIDE;
 

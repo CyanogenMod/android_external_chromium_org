@@ -6,13 +6,13 @@
 
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/search/instant_service.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 InstantService* InstantServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<InstantService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -21,8 +21,9 @@ InstantServiceFactory* InstantServiceFactory::GetInstance() {
 }
 
 InstantServiceFactory::InstantServiceFactory()
-    : ProfileKeyedServiceFactory("InstantService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "InstantService",
+        BrowserContextDependencyManager::GetInstance()) {
   // No dependencies.
 }
 
@@ -34,7 +35,7 @@ content::BrowserContext* InstantServiceFactory::GetBrowserContextToUse(
   return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
-ProfileKeyedService* InstantServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* InstantServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new InstantService(static_cast<Profile*>(profile));
 }

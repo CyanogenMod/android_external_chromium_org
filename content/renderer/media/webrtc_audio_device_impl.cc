@@ -89,6 +89,7 @@ void WebRtcAudioDeviceImpl::CaptureData(const int16* audio_data,
     // Store the reported audio delay locally.
     input_delay_ms_ = audio_delay_milliseconds;
     output_delay_ms = output_delay_ms_;
+    DVLOG(2) << "total delay: " << input_delay_ms_ + output_delay_ms_;
 
     // Map internal volume range of [0.0, 1.0] into [0, 255] used by the
     // webrtc::VoiceEngine.
@@ -100,10 +101,6 @@ void WebRtcAudioDeviceImpl::CaptureData(const int16* audio_data,
   uint32_t new_mic_level = 0;
 
   int samples_per_sec = input_sample_rate();
-  if (samples_per_sec == 44100) {
-    // Even if the hardware runs at 44.1kHz, we use 44.0 internally.
-    samples_per_sec = 44000;
-  }
   const int samples_per_10_msec = (samples_per_sec / 100);
   int bytes_per_sample = input_audio_parameters.bits_per_sample() / 8;
   const int bytes_per_10_msec =
@@ -170,10 +167,6 @@ void WebRtcAudioDeviceImpl::RenderData(uint8* audio_data,
   DCHECK_LE(channels, output_channels());
 
   int samples_per_sec = output_sample_rate();
-  if (samples_per_sec == 44100) {
-    // Even if the hardware runs at 44.1kHz, we use 44.0 internally.
-    samples_per_sec = 44000;
-  }
   int samples_per_10_msec = (samples_per_sec / 100);
   int bytes_per_sample = output_audio_parameters_.bits_per_sample() / 8;
   const int bytes_per_10_msec =
@@ -258,8 +251,11 @@ int32_t WebRtcAudioDeviceImpl::Terminate() {
 
   // It is necessary to stop the |renderer_| before going away.
   if (renderer_) {
-    renderer_->Stop();
-    renderer_ = NULL;
+    // Grab a local reference while we call Stop(), which will trigger a call to
+    // RemoveAudioRenderer that clears our reference to the audio renderer.
+    scoped_refptr<WebRtcAudioRenderer> local_renderer(renderer_);
+    local_renderer->Stop();
+    DCHECK(!renderer_);
   }
 
   if (capturer_) {

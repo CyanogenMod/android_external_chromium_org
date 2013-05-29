@@ -20,6 +20,9 @@ using extensions::api::experimental_system_info_storage::ParseStorageUnitType;
 using extensions::api::experimental_system_info_storage::StorageUnitInfo;
 using extensions::StorageInfoProvider;
 using extensions::StorageInfo;
+using extensions::systeminfo::kStorageTypeFixed;
+using extensions::systeminfo::kStorageTypeRemovable;
+using extensions::systeminfo::kStorageTypeUnknown;
 
 struct TestUnitInfo {
   std::string id;
@@ -31,13 +34,13 @@ struct TestUnitInfo {
 };
 
 struct TestUnitInfo kTestingData[] = {
-  {"0xbeaf", "unknown", 4098, 1000, 0},
-  {"/home", "harddisk", 4098, 1000, 10},
-  {"/data", "harddisk", 10000, 1000, 4097}
+  {"0xbeaf", kStorageTypeUnknown, 4098, 1000, 0},
+  {"/home", kStorageTypeFixed, 4098, 1000, 10},
+  {"/data", kStorageTypeFixed, 10000, 1000, 4097}
 };
 
 struct TestUnitInfo kRemovableStorageData[] = {
-  {"/media/usb1", "removable", 4098, 1000, 1}
+  {"/media/usb1", kStorageTypeRemovable, 4098, 1000, 1}
 };
 
 const char kRemovableStorageDeviceName[] = "deviceName";
@@ -99,7 +102,7 @@ class SystemInfoStorageApiTest: public ExtensionApiTest {
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
-    message_loop_.reset(new MessageLoop(MessageLoop::TYPE_UI));
+    message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_UI));
   }
 
   void ProcessAttach(const std::string& device_id,
@@ -115,7 +118,7 @@ class SystemInfoStorageApiTest: public ExtensionApiTest {
   }
 
  private:
-  scoped_ptr<MessageLoop> message_loop_;
+  scoped_ptr<base::MessageLoop> message_loop_;
 };
 
 IN_PROC_BROWSER_TEST_F(SystemInfoStorageApiTest, Storage) {

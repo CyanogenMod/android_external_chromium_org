@@ -8,12 +8,12 @@
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 ManagedUserService* ManagedUserServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<ManagedUserService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -22,14 +22,15 @@ ManagedUserServiceFactory* ManagedUserServiceFactory::GetInstance() {
 }
 
 // static
-ProfileKeyedService* ManagedUserServiceFactory::BuildInstanceFor(
+BrowserContextKeyedService* ManagedUserServiceFactory::BuildInstanceFor(
     Profile* profile) {
   return new ManagedUserService(profile);
 }
 
 ManagedUserServiceFactory::ManagedUserServiceFactory()
-    : ProfileKeyedServiceFactory("ManagedUserService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "ManagedUserService",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(extensions::ExtensionSystemFactory::GetInstance());
 }
 
@@ -40,7 +41,7 @@ content::BrowserContext* ManagedUserServiceFactory::GetBrowserContextToUse(
   return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
-ProfileKeyedService* ManagedUserServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* ManagedUserServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return BuildInstanceFor(static_cast<Profile*>(profile));
 }

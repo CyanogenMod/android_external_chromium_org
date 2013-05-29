@@ -24,6 +24,11 @@ bool DummyDriveService::CancelForFilePath(const base::FilePath& file_path) {
   return true;
 }
 
+std::string DummyDriveService::CanonicalizeResourceId(
+    const std::string& resource_id) const {
+  return resource_id;
+}
+
 bool DummyDriveService::HasAccessToken() const { return true; }
 
 bool DummyDriveService::HasRefreshToken() const { return true; }
@@ -81,6 +86,12 @@ void DummyDriveService::DownloadFile(
     const GetContentCallback& get_content_callback,
     const ProgressCallback& progress_callback) {}
 
+void DummyDriveService::CopyResource(
+    const std::string& resource_id,
+    const std::string& parent_resource_id,
+    const std::string& new_name,
+    const GetResourceEntryCallback& callback) {}
+
 void DummyDriveService::CopyHostedDocument(
     const std::string& resource_id,
     const std::string& new_name,
@@ -89,6 +100,12 @@ void DummyDriveService::CopyHostedDocument(
 void DummyDriveService::RenameResource(const std::string& resource_id,
                                        const std::string& new_name,
                                        const EntryActionCallback& callback) {}
+
+void DummyDriveService::TouchResource(
+    const std::string& resource_id,
+    const base::Time& modified_date,
+    const base::Time& last_viewed_by_me_date,
+    const GetResourceEntryCallback& callback) {}
 
 void DummyDriveService::AddResourceToDirectory(
     const std::string& parent_resource_id,
@@ -122,7 +139,6 @@ void DummyDriveService::InitiateUploadExistingFile(
     const InitiateUploadCallback& callback) {}
 
 void DummyDriveService::ResumeUpload(
-    UploadMode upload_mode,
     const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 start_position,
@@ -134,7 +150,6 @@ void DummyDriveService::ResumeUpload(
     const ProgressCallback& progress_callback) {}
 
 void DummyDriveService::GetUploadStatus(
-    UploadMode upload_mode,
     const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 content_length,

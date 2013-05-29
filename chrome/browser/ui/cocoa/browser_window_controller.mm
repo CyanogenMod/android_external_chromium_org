@@ -66,10 +66,10 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
@@ -162,6 +162,7 @@ using content::OpenURLParams;
 using content::Referrer;
 using content::RenderWidgetHostView;
 using content::WebContents;
+using web_modal::WebContentsModalDialogManager;
 
 @interface NSWindow (NSPrivateApis)
 // Note: These functions are private, use -[NSObject respondsToSelector:]
@@ -664,7 +665,7 @@ enum {
     if (devtoolsWindow) {
       RenderWidgetHostView* devtoolsView =
           devtoolsWindow->web_contents()->GetRenderWidgetHostView();
-      if (devtoolsView->HasFocus()) {
+      if (devtoolsView && devtoolsView->HasFocus()) {
         devtoolsView->SetActive(false);
         return;
       }
@@ -1522,16 +1523,8 @@ enum {
 
   // Create a controller for the findbar.
   findBarCocoaController_.reset([findBarCocoaController retain]);
+  [self layoutSubviews];
   [self updateSubviewZOrder:[self inPresentationMode]];
-
-  // Place the find bar immediately below the toolbar/attached bookmark bar. In
-  // presentation mode, it hangs off the top of the screen when the bar is
-  // hidden.
-  CGFloat maxY = [self placeBookmarkBarBelowInfoBar] ?
-      NSMinY([[toolbarController_ view] frame]) :
-      NSMinY([[bookmarkBarController_ view] frame]);
-  CGFloat maxWidth = NSWidth([[[self window] contentView] frame]);
-  [findBarCocoaController_ positionFindBarViewAtMaxY:maxY maxWidth:maxWidth];
 }
 
 - (NSWindow*)createFullscreenWindow {
@@ -1974,6 +1967,11 @@ willAnimateFromState:(BookmarkBar::State)oldState
   [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
   [self updateContentOffsets];
   [self updateSubviewZOrder:[self inPresentationMode]];
+
+  // If the overlay is open then hide the infobar tip.
+  [infoBarContainerController_
+      setShouldSuppressTopInfoBarTip:[self currentInstantUIState] !=
+      browser_window_controller::kInstantUINone];
 }
 
 @end  // @implementation BrowserWindowController

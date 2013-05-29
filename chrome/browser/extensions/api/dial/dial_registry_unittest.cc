@@ -108,7 +108,7 @@ class DialRegistryTest : public testing::Test {
 
   // Must instantiate a MessageLoop for the thread, as the registry starts a
   // RepeatingTimer when there are listeners.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   void SetListenerExpectations() {
     EXPECT_CALL(registry_->mock_service(),
@@ -195,6 +195,57 @@ TEST_F(DialRegistryTest, TestDeviceExpires) {
   registry_->DoDiscovery();
   registry_->OnDiscoveryRequest(NULL);
   registry_->OnDiscoveryFinished(NULL);
+  registry_->OnListenerRemoved();
+}
+
+TEST_F(DialRegistryTest, TestExpiredDeviceIsRediscovered) {
+  std::vector<Time> discovery_times;
+  discovery_times.push_back(Time::Now());
+  discovery_times.push_back(discovery_times[0] + TimeDelta::FromSeconds(30));
+  discovery_times.push_back(discovery_times[1] + TimeDelta::FromSeconds(30));
+
+  DialDeviceData rediscovered_device("first",
+                                     GURL("http://127.0.0.1/dd.xml"),
+                                     discovery_times[2]);
+
+  SetListenerExpectations();
+
+  // TODO(mfoltz): Convert other tests to use InSequence to make expectations
+  // more obvious.
+  InSequence s;
+
+  EXPECT_CALL(registry_->mock_service(), Discover());
+  EXPECT_CALL(mock_observer_, OnDialDeviceEvent(empty_list_));
+  EXPECT_CALL(mock_observer_, OnDialDeviceEvent(list_with_first_device_));
+
+  EXPECT_CALL(registry_->mock_service(), Discover());
+  EXPECT_CALL(mock_observer_, OnDialDeviceEvent(list_with_first_device_));
+  EXPECT_CALL(mock_observer_, OnDialDeviceEvent(empty_list_));
+
+  EXPECT_CALL(registry_->mock_service(), Discover());
+  EXPECT_CALL(mock_observer_, OnDialDeviceEvent(empty_list_));
+  EXPECT_CALL(mock_observer_, OnDialDeviceEvent(list_with_first_device_));
+
+  registry_->time_ = discovery_times[0];
+  registry_->OnListenerAdded();
+  registry_->OnDiscoveryRequest(NULL);
+  registry_->OnDeviceDiscovered(NULL, first_device_);
+  registry_->OnDiscoveryFinished(NULL);
+
+  // Will expire "first" device as it is not discovered this time.
+  registry_->time_ = discovery_times[1];
+  registry_->DoDiscovery();
+  registry_->OnDiscoveryRequest(NULL);
+  registry_->OnDiscoveryFinished(NULL);
+
+  // "first" device is rediscovered 30 seconds later.  We pass a device object
+  // with a newer discovery time so it is not pruned immediately.
+  registry_->time_ = discovery_times[2];
+  registry_->DoDiscovery();
+  registry_->OnDiscoveryRequest(NULL);
+  registry_->OnDeviceDiscovered(NULL, rediscovered_device);
+  registry_->OnDiscoveryFinished(NULL);
+
   registry_->OnListenerRemoved();
 }
 

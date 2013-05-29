@@ -46,7 +46,9 @@ class OmniboxViewViews
                    Profile* profile,
                    CommandUpdater* command_updater,
                    bool popup_window_mode,
-                   LocationBarView* location_bar);
+                   LocationBarView* location_bar,
+                   const gfx::Font& font,
+                   int font_y_offset);
   virtual ~OmniboxViewViews();
 
   // Initialize, create the underlying views, etc;
@@ -105,7 +107,6 @@ class OmniboxViewViews
   virtual int GetMaxEditWidth(int entry_width) const OVERRIDE;
   virtual views::View* AddToView(views::View* parent) OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual gfx::Font GetFont() OVERRIDE;
 
   // views::TextfieldController:
   virtual void ContentsChanged(views::Textfield* sender,
@@ -169,8 +170,7 @@ class OmniboxViewViews
 
   ToolbarModel::SecurityLevel security_level_;
 
-  // Selection at the point where the user started using the
-  // arrows to move around in the popup.
+  // Selection persisted across temporary text changes, like popup suggestions.
   ui::Range saved_temporary_selection_;
 
   // Tracking state before and after a possible change.

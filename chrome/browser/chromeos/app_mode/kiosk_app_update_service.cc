@@ -11,7 +11,7 @@
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace chromeos {
 
@@ -64,8 +64,9 @@ void KioskAppUpdateService::ForceRestart() {
 }
 
 KioskAppUpdateServiceFactory::KioskAppUpdateServiceFactory()
-    : ProfileKeyedServiceFactory("KioskAppUpdateService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "KioskAppUpdateService",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(extensions::ExtensionSystemFactory::GetInstance());
 }
 
@@ -81,7 +82,7 @@ KioskAppUpdateService* KioskAppUpdateServiceFactory::GetForProfile(
     return NULL;
 
   return static_cast<KioskAppUpdateService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -89,7 +90,8 @@ KioskAppUpdateServiceFactory* KioskAppUpdateServiceFactory::GetInstance() {
   return Singleton<KioskAppUpdateServiceFactory>::get();
 }
 
-ProfileKeyedService* KioskAppUpdateServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+KioskAppUpdateServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new KioskAppUpdateService(static_cast<Profile*>(profile));
 }

@@ -11,6 +11,7 @@ import sys
 
 from telemetry.core import browser
 from telemetry.core import possible_browser
+from telemetry.core import profile_types
 from telemetry.core.chrome import adb_commands
 from telemetry.core.chrome import android_browser_backend
 from telemetry.core.platform import android_platform_backend
@@ -22,10 +23,14 @@ CHROME_PACKAGE_NAMES = {
   'android-jb-system-chrome': 'com.android.chrome'
 }
 
-ALL_BROWSER_TYPES = ','.join(['android-content-shell', 'android-webview'] +
-                             CHROME_PACKAGE_NAMES.keys())
+ALL_BROWSER_TYPES = ','.join([
+                                'android-chromium-testshell',
+                                'android-content-shell',
+                                'android-webview',
+                             ] + CHROME_PACKAGE_NAMES.keys())
 
 CONTENT_SHELL_PACKAGE = 'org.chromium.content_shell_apk'
+CHROMIUM_TESTSHELL_PACKAGE = 'org.chromium.chrome.testshell'
 WEBVIEW_PACKAGE = 'com.android.webview.chromium.shell'
 
 
@@ -45,6 +50,9 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
     return 'PossibleAndroidBrowser(browser_type=%s)' % self.browser_type
 
   def Create(self):
+    if profile_types.GetProfileCreator(self.options.profile_type):
+      raise Exception("Profile creation not currently supported on Android")
+
     backend = android_browser_backend.AndroidBrowserBackend(
         self._options, self._backend_settings)
     platform_backend = android_platform_backend.AndroidPlatformBackend(
@@ -116,6 +124,13 @@ def FindAllAvailableBrowsers(options, logging=real_logging):
         'android-content-shell',
         options, android_browser_backend.ContentShellBackendSettings(
             adb, CONTENT_SHELL_PACKAGE))
+    possible_browsers.append(b)
+
+  if 'package:' + CHROMIUM_TESTSHELL_PACKAGE in packages:
+    b = PossibleAndroidBrowser(
+        'android-chromium-testshell',
+        options, android_browser_backend.ChromiumTestShellBackendSettings(
+            adb, CHROMIUM_TESTSHELL_PACKAGE))
     possible_browsers.append(b)
 
   if 'package:' + WEBVIEW_PACKAGE in packages:

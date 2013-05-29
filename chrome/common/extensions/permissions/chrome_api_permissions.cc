@@ -141,6 +141,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kFileBrowserPrivate, "fileBrowserPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
+    { APIPermission::kIdentityPrivate, "identityPrivate",
+      APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kNetworkingPrivate, "networkingPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kManagedModePrivate, "managedModePrivate",
@@ -226,6 +228,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     // a file chooser dialog and selected a file. Selecting the file is
     // considered consent to read it.
     { APIPermission::kFileSystem, "fileSystem" },
+    { APIPermission::kFileSystemRetainFiles, "fileSystem.retainFiles" },
     { APIPermission::kFileSystemWrite, "fileSystem.write",
       APIPermissionInfo::kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE,
@@ -251,7 +254,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       IDS_EXTENSION_PROMPT_WARNING_USB,
       PermissionMessage::kUsb },
     { APIPermission::kUsbDevice, "usbDevices",
-      APIPermissionInfo::kFlagMustBeOptional, 0, PermissionMessage::kNone,
+      APIPermissionInfo::kFlagNone, 0, PermissionMessage::kNone,
       &CreateAPIPermission<UsbDevicePermission> },
     { APIPermission::kSystemIndicator, "systemIndicator",
       APIPermissionInfo::kFlagNone,

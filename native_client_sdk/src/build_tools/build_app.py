@@ -14,7 +14,7 @@ if sys.version_info < (2, 6, 0):
 
 import buildbot_common
 import build_projects
-import build_utils
+import build_version
 import easy_template
 import parse_dsc
 
@@ -76,7 +76,7 @@ def main(args):
 
   toolchains = ['newlib', 'glibc']
 
-  pepper_ver = str(int(build_utils.ChromeMajorVersion()))
+  pepper_ver = str(int(build_version.ChromeMajorVersion()))
   pepperdir = os.path.join(OUT_DIR, 'pepper_' + pepper_ver)
   app_dir = os.path.join(OUT_DIR, 'naclsdk_app')
   app_examples_dir = os.path.join(app_dir, 'examples')
@@ -104,17 +104,18 @@ def main(args):
                                 toolchains=toolchains, configs=[config],
                                 first_toolchain=True)
 
+  # Collect permissions from each example, and aggregate them.
+  all_permissions = []
+  for _, project in parse_dsc.GenerateProjects(tree):
+    all_permissions.extend(project.get('PERMISSIONS', []))
+
   template_dict = {
     'name': 'Native Client SDK',
     'description':
         'Native Client SDK examples, showing API use and key concepts.',
-    # TODO(binji): generate list of permissions from examples' DSC files.
-    'permissions': [
-      'fullscreen',
-      'pointerLock',
-      'unlimitedStorage',
-    ],
-    'version': build_utils.ChromeVersionNoTrunk()
+    'key': False,  # manifests with "key" are rejected when uploading to CWS.
+    'permissions': all_permissions,
+    'version': build_version.ChromeVersionNoTrunk()
   }
   easy_template.RunTemplateFile(
       os.path.join(sdk_resources_dir, 'manifest.json.template'),

@@ -60,9 +60,9 @@ void CloseBalloon(const std::string id) {
 }
 
 void ScheduleCloseBalloon(const std::string& extension_id) {
-  if (!MessageLoop::current())  // For unit_tests
+  if (!base::MessageLoop::current())  // For unit_tests
     return;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&CloseBalloon, kNotificationPrefix + extension_id));
 }
 
@@ -103,6 +103,8 @@ class CrashNotificationDelegate : public NotificationDelegate {
     // http://crbug.com/78167
     ScheduleCloseBalloon(extension_id_);
   }
+
+  virtual bool HasClickedListener() OVERRIDE { return true; }
 
   virtual std::string id() const OVERRIDE {
     return kNotificationPrefix + extension_id_;
@@ -372,7 +374,7 @@ void BackgroundContentsService::Observe(
       // notifications for this extension to be cancelled by
       // DesktopNotificationService. For this reason, instead of showing the
       // balloon right now, we schedule it to show a little later.
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE, base::Bind(&ShowBalloon, extension, profile));
       break;
     }

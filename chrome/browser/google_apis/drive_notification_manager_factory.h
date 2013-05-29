@@ -6,7 +6,9 @@
 #define CHROME_BROWSER_GOOGLE_APIS_DRIVE_NOTIFICATION_MANAGER_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace google_apis {
 
@@ -14,7 +16,8 @@ class DriveNotificationManager;
 
 // Singleton that owns all DriveNotificationManager and associates them with
 // profiles.
-class DriveNotificationManagerFactory : public ProfileKeyedServiceFactory {
+class DriveNotificationManagerFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   static DriveNotificationManager* GetForProfile(Profile* profile);
 
@@ -26,8 +29,8 @@ class DriveNotificationManagerFactory : public ProfileKeyedServiceFactory {
   DriveNotificationManagerFactory();
   virtual ~DriveNotificationManagerFactory();
 
-  // ProfileKeyedServiceFactory implementation.
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory implementation.
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 };
 

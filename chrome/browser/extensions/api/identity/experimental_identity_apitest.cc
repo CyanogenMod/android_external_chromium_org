@@ -68,7 +68,7 @@ class SendResponseDelegate :
     response_.reset(new bool);
     *response_ = success;
     if (should_post_quit_) {
-      MessageLoopForUI::current()->Quit();
+      base::MessageLoopForUI::current()->Quit();
     }
   }
 
@@ -177,7 +177,7 @@ class TestOAuth2MintTokenFlow : public OAuth2MintTokenFlow {
   OAuth2MintTokenFlow::Delegate* delegate_;
 };
 
-ProfileKeyedService* IdentityAPITestFactory(Profile* profile) {
+BrowserContextKeyedService* IdentityAPITestFactory(Profile* profile) {
   return new IdentityAPI(profile);
 }
 

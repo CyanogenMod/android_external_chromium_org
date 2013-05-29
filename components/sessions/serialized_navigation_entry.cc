@@ -12,7 +12,6 @@
 #include "sync/protocol/session_specifics.pb.h"
 #include "sync/util/time.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
-#include "webkit/glue/glue_serialize.h"
 
 using content::NavigationEntry;
 
@@ -26,7 +25,8 @@ SerializedNavigationEntry::SerializedNavigationEntry()
       transition_type_(content::PAGE_TRANSITION_TYPED),
       has_post_data_(false),
       post_id_(-1),
-      is_overriding_user_agent_(false) {}
+      is_overriding_user_agent_(false),
+      blocked_state_(STATE_INVALID) {}
 
 SerializedNavigationEntry::~SerializedNavigationEntry() {}
 
@@ -40,7 +40,7 @@ SerializedNavigationEntry SerializedNavigationEntry::FromNavigationEntry(
   navigation.referrer_ = entry.GetReferrer();
   navigation.virtual_url_ = entry.GetVirtualURL();
   navigation.title_ = entry.GetTitle();
-  navigation.content_state_ = entry.GetContentState();
+  navigation.page_state_ = entry.GetPageState();
   navigation.transition_type_ = entry.GetTransitionType();
   navigation.has_post_data_ = entry.GetHasPostData();
   navigation.post_id_ = entry.GetPostID();
@@ -68,7 +68,8 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
                         WebKit::WebReferrerPolicyDefault);
   navigation.virtual_url_ = GURL(sync_data.virtual_url());
   navigation.title_ = UTF8ToUTF16(sync_data.title());
-  navigation.content_state_ = sync_data.state();
+  navigation.page_state_ =
+      content::PageState::CreateFromEncodedData(sync_data.state());
 
   uint32 transition = 0;
   if (sync_data.has_page_transition()) {
@@ -142,6 +143,10 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
   if (sync_data.has_favicon_url())
     navigation.favicon_url_ = GURL(sync_data.favicon_url());
 
+  // We shouldn't sync session data for managed users down at the moment.
+  DCHECK(!sync_data.has_blocked_state());
+  DCHECK_EQ(0, sync_data.content_pack_categories_size());
+
   return navigation;
 }
 
@@ -200,7 +205,7 @@ enum TypeMask {
 // index_
 // virtual_url_
 // title_
-// content_state_
+// page_state_
 // transition_type_
 //
 // Added on later:
@@ -223,12 +228,12 @@ void SerializedNavigationEntry::WriteToPickle(int max_size,
 
   WriteString16ToPickle(pickle, &bytes_written, max_size, title_);
 
-  std::string content_state = content_state_;
-  if (has_post_data_) {
-    content_state =
-        webkit_glue::RemovePasswordDataFromHistoryState(content_state);
-  }
-  WriteStringToPickle(pickle, &bytes_written, max_size, content_state);
+  content::PageState page_state = page_state_;
+  if (has_post_data_)
+    page_state = page_state.RemovePasswordData();
+
+  WriteStringToPickle(pickle, &bytes_written, max_size,
+                      page_state.ToEncodedData());
 
   pickle->WriteInt(transition_type_);
 
@@ -254,15 +259,16 @@ void SerializedNavigationEntry::WriteToPickle(int max_size,
 
 bool SerializedNavigationEntry::ReadFromPickle(PickleIterator* iterator) {
   *this = SerializedNavigationEntry();
-  std::string virtual_url_spec;
+  std::string virtual_url_spec, page_state_data;
   int transition_type_int = 0;
   if (!iterator->ReadInt(&index_) ||
       !iterator->ReadString(&virtual_url_spec) ||
       !iterator->ReadString16(&title_) ||
-      !iterator->ReadString(&content_state_) ||
+      !iterator->ReadString(&page_state_data) ||
       !iterator->ReadInt(&transition_type_int))
     return false;
   virtual_url_ = GURL(virtual_url_spec);
+  page_state_ = content::PageState::CreateFromEncodedData(page_state_data);
   transition_type_ = static_cast<content::PageTransition>(transition_type_int);
 
   // type_mask did not always exist in the written stream. As such, we
@@ -328,7 +334,7 @@ scoped_ptr<NavigationEntry> SerializedNavigationEntry::ToNavigationEntry(
           browser_context));
 
   entry->SetTitle(title_);
-  entry->SetContentState(content_state_);
+  entry->SetPageState(page_state_);
   entry->SetPageID(page_id);
   entry->SetHasPostData(has_post_data_);
   entry->SetPostID(post_id_);
@@ -336,6 +342,10 @@ scoped_ptr<NavigationEntry> SerializedNavigationEntry::ToNavigationEntry(
   entry->SetIsOverridingUserAgent(is_overriding_user_agent_);
   entry->SetTimestamp(timestamp_);
   entry->SetExtraData(kSearchTermsKey, search_terms_);
+
+  // These fields should have default values.
+  DCHECK_EQ(STATE_INVALID, blocked_state_);
+  DCHECK_EQ(0u, content_pack_categories_.size());
 
   return entry.Pass();
 }
@@ -432,6 +442,17 @@ sync_pb::TabNavigation SerializedNavigationEntry::ToSyncData() const {
 
   if (favicon_url_.is_valid())
     sync_data.set_favicon_url(favicon_url_.spec());
+
+  if (blocked_state_ != STATE_INVALID) {
+    sync_data.set_blocked_state(
+        static_cast<sync_pb::TabNavigation_BlockedState>(blocked_state_));
+  }
+
+  for (std::set<std::string>::const_iterator it =
+           content_pack_categories_.begin();
+       it != content_pack_categories_.end(); ++it) {
+    sync_data.add_content_pack_categories(*it);
+  }
 
   return sync_data;
 }

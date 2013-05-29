@@ -15,10 +15,6 @@
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/google_apis/gdata_wapi_operations.h"
 
-namespace google_apis {
-class ResourceEntry;
-}
-
 namespace drive {
 
 class FileSystemObserver;
@@ -126,10 +122,12 @@ typedef base::Callback<void(const FileSystemMetadata&)>
 enum ContextType {
   USER_INITIATED,
   BACKGROUND,
+  // Indicates the number of values of this enum.
+  NUM_CONTEXT_TYPES,
 };
 
-struct DriveClientContext {
-  explicit DriveClientContext(ContextType in_type) : type(in_type) {}
+struct ClientContext {
+  explicit ClientContext(ContextType in_type) : type(in_type) {}
   ContextType type;
 };
 
@@ -138,12 +136,14 @@ struct DriveClientContext {
 // SEARCH_METADATA_EXCLUDE_HOSTED_DOCUMENTS excludes the hosted documents.
 // SEARCH_METADATA_EXCLUDE_DIRECTORIES excludes the directories from the result.
 // SEARCH_METADATA_SHARED_WITH_ME targets only "shared-with-me" entries.
-// TODO(haruki): Add option for offline.
+// SEARCH_METADATA_OFFLINE targets only "offline" entries. This option can not
+// be used with other options.
 enum SearchMetadataOptions {
   SEARCH_METADATA_ALL = 0,
   SEARCH_METADATA_EXCLUDE_HOSTED_DOCUMENTS = 1,
   SEARCH_METADATA_EXCLUDE_DIRECTORIES = 1 << 1,
   SEARCH_METADATA_SHARED_WITH_ME = 1 << 2,
+  SEARCH_METADATA_OFFLINE = 1 << 3,
 };
 
 // Drive file system abstraction layer.
@@ -287,6 +287,18 @@ class FileSystemInterface {
                           bool is_exclusive,
                           const FileOperationCallback& callback) = 0;
 
+  // Touches the file at |file_path| by updating the timestamp to
+  // |last_access_time| and |last_modified_time|.
+  // Upon completion, invokes |callback|.
+  // Note that, differently from unix touch command, this doesn't create a file
+  // if the target file doesn't exist.
+  //
+  // |last_access_time|, |last_modified_time| and |callback| must not be null.
+  virtual void TouchFile(const base::FilePath& file_path,
+                         const base::Time& last_access_time,
+                         const base::Time& last_modified_time,
+                         const FileOperationCallback& callback) = 0;
+
   // Pins a file at |file_path|.
   //
   // |callback| must not be null.
@@ -315,7 +327,7 @@ class FileSystemInterface {
   // |get_content_callback| may be null.
   virtual void GetFileByResourceId(
       const std::string& resource_id,
-      const DriveClientContext& context,
+      const ClientContext& context,
       const GetFileCallback& get_file_callback,
       const google_apis::GetContentCallback& get_content_callback) = 0;
 
@@ -346,7 +358,7 @@ class FileSystemInterface {
   // |callback| must not be null.
   virtual void UpdateFileByResourceId(
       const std::string& resource_id,
-      const DriveClientContext& context,
+      const ClientContext& context,
       const FileOperationCallback& callback) = 0;
 
   // Finds an entry (a file or a directory) by |file_path|. This call will also
@@ -402,7 +414,7 @@ class FileSystemInterface {
   // on the preference. |callback| must not be null. Must be called on UI
   // thread. Empty |query| matches any base name. i.e. returns everything.
   virtual void SearchMetadata(const std::string& query,
-                              int  options,
+                              int options,
                               int at_most_num_matches,
                               const SearchMetadataCallback& callback) = 0;
 
@@ -432,9 +444,7 @@ class FileSystemInterface {
   // Gets the cache entry for file corresponding to |resource_id| and |md5|
   // and runs |callback| with true and the found entry if the entry exists
   // in the cache map. Otherwise, runs |callback| with false.
-  // |md5| can be empty if only matching |resource_id| is desired, which may
-  // happen when looking for pinned entries where symlinks' filenames have no
-  // extension and hence no md5.
+  // |md5| can be empty if only matching |resource_id| is desired.
   // |callback| must not be null.
   virtual void GetCacheEntryByResourceId(
       const std::string& resource_id,

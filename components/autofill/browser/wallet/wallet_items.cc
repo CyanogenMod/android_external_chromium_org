@@ -222,13 +222,6 @@ bool WalletItems::MaskedInstrument::operator!=(
   return !(*this == other);
 }
 
-bool WalletItems::HasRequiredAction(RequiredAction action) const {
-  DCHECK(ActionAppliesToWalletItems(action));
-  return std::find(required_actions_.begin(),
-                   required_actions_.end(),
-                   action) != required_actions_.end();
-}
-
 const WalletItems::MaskedInstrument* WalletItems::GetInstrumentById(
     const std::string& object_id) const {
   if (object_id.empty())
@@ -240,6 +233,13 @@ const WalletItems::MaskedInstrument* WalletItems::GetInstrumentById(
   }
 
   return NULL;
+}
+
+bool WalletItems::HasRequiredAction(RequiredAction action) const {
+  DCHECK(ActionAppliesToWalletItems(action));
+  return std::find(required_actions_.begin(),
+                   required_actions_.end(),
+                   action) != required_actions_.end();
 }
 
 base::string16 WalletItems::MaskedInstrument::DisplayName() const {
@@ -324,8 +324,7 @@ base::string16 WalletItems::MaskedInstrument::GetInfo(
       return address().recipient_name();
 
     case CREDIT_CARD_NUMBER:
-      // TODO(dbeam): show these as XXXX-#### and non-editable in the UI.
-      return last_four_digits();
+      return DisplayName();
 
     case CREDIT_CARD_EXP_4_DIGIT_YEAR:
       return base::IntToString16(expiration_year());

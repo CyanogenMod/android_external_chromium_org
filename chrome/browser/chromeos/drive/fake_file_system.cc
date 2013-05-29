@@ -122,6 +122,13 @@ void FakeFileSystem::CreateFile(const base::FilePath& file_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
+void FakeFileSystem::TouchFile(const base::FilePath& file_path,
+                               const base::Time& last_access_time,
+                               const base::Time& last_modified_time,
+                               const FileOperationCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+}
+
 void FakeFileSystem::Pin(const base::FilePath& file_path,
                          const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -139,7 +146,7 @@ void FakeFileSystem::GetFileByPath(const base::FilePath& file_path,
 
 void FakeFileSystem::GetFileByResourceId(
     const std::string& resource_id,
-    const DriveClientContext& context,
+    const ClientContext& context,
     const GetFileCallback& get_file_callback,
     const google_apis::GetContentCallback& get_content_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -162,7 +169,7 @@ void FakeFileSystem::GetFileContentByPath(
 
 void FakeFileSystem::UpdateFileByResourceId(
     const std::string& resource_id,
-    const DriveClientContext& context,
+    const ClientContext& context,
     const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }

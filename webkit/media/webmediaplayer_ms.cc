@@ -19,12 +19,12 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/media/media_stream_audio_renderer.h"
 #include "webkit/media/media_stream_client.h"
 #include "webkit/media/video_frame_provider.h"
 #include "webkit/media/webmediaplayer_delegate.h"
 #include "webkit/media/webmediaplayer_util.h"
+#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using WebKit::WebCanvas;
 using WebKit::WebMediaPlayer;
@@ -142,18 +142,20 @@ void WebMediaPlayerMS::play() {
   DVLOG(1) << "WebMediaPlayerMS::play";
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  if (video_frame_provider_ && paused_)
-    video_frame_provider_->Play();
+  if (paused_) {
+    if (video_frame_provider_)
+      video_frame_provider_->Play();
 
-  if (audio_renderer_ && paused_)
-    audio_renderer_->Play();
+    if (audio_renderer_)
+      audio_renderer_->Play();
+
+    if (delegate_)
+      delegate_->DidPlay(this);
+  }
 
   paused_ = false;
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PLAY));
-
-  if (delegate_)
-    delegate_->DidPlay(this);
 }
 
 void WebMediaPlayerMS::pause() {
@@ -163,15 +165,17 @@ void WebMediaPlayerMS::pause() {
   if (video_frame_provider_)
     video_frame_provider_->Pause();
 
-  if (audio_renderer_ && !paused_)
-    audio_renderer_->Pause();
+  if (!paused_) {
+    if (audio_renderer_)
+      audio_renderer_->Pause();
+
+    if (delegate_)
+      delegate_->DidPause(this);
+  }
 
   paused_ = true;
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PAUSE));
-
-  if (delegate_)
-    delegate_->DidPause(this);
 }
 
 bool WebMediaPlayerMS::supportsFullscreen() const {
@@ -302,7 +306,7 @@ void WebMediaPlayerMS::setSize(const WebSize& size) {
 
 void WebMediaPlayerMS::paint(WebCanvas* canvas,
                              const WebRect& rect,
-                             uint8_t alpha) {
+                             unsigned char alpha) {
   DVLOG(3) << "WebMediaPlayerMS::paint";
   DCHECK(thread_checker_.CalledOnValidThread());
 

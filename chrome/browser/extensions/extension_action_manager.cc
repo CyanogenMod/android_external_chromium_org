@@ -10,14 +10,14 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/extensions/api/extension_action/page_action_handler.h"
 #include "chrome/common/extensions/api/extension_action/script_badge_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/feature_switch.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 
@@ -25,13 +25,13 @@ namespace extensions {
 
 namespace {
 
-// ProfileKeyedServiceFactory for ExtensionActionManager.
-class ExtensionActionManagerFactory : public ProfileKeyedServiceFactory {
+// BrowserContextKeyedServiceFactory for ExtensionActionManager.
+class ExtensionActionManagerFactory : public BrowserContextKeyedServiceFactory {
  public:
-  // ProfileKeyedServiceFactory implementation:
+  // BrowserContextKeyedServiceFactory implementation:
   static ExtensionActionManager* GetForProfile(Profile* profile) {
     return static_cast<ExtensionActionManager*>(
-        GetInstance()->GetServiceForProfile(profile, true));
+        GetInstance()->GetServiceForBrowserContext(profile, true));
   }
 
   static ExtensionActionManagerFactory* GetInstance();
@@ -40,11 +40,12 @@ class ExtensionActionManagerFactory : public ProfileKeyedServiceFactory {
   friend struct DefaultSingletonTraits<ExtensionActionManagerFactory>;
 
   ExtensionActionManagerFactory()
-      : ProfileKeyedServiceFactory("ExtensionActionManager",
-                                   ProfileDependencyManager::GetInstance()) {
+      : BrowserContextKeyedServiceFactory(
+          "ExtensionActionManager",
+          BrowserContextDependencyManager::GetInstance()) {
   }
 
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE {
     return new ExtensionActionManager(static_cast<Profile*>(profile));
   }

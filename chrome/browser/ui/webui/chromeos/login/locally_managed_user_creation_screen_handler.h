@@ -64,11 +64,11 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
   void ShowIntroPage();
   void ShowManagerSelectionPage();
   void ShowUsernamePage();
-  void ShowProgressPage();
+  void ShowProgress(const string16& message);
   void ShowTutorialPage();
 
   void ShowManagerInconsistentStateErrorPage();
-  void ShowErrorPage(const string16& message, bool recoverable);
+  void ShowErrorPage(const string16& message);
 
   // BaseScreenHandler implementation:
   virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;

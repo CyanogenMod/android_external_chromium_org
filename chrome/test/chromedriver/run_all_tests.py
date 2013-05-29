@@ -9,12 +9,11 @@ import optparse
 import os
 import sys
 
-_THIS_DIR = os.path.abspath(os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(_THIS_DIR, os.pardir, 'pylib'))
+import archive
+import chrome_paths
+import util
 
-from common import chrome_paths
-from common import util
-import continuous_archive
+_THIS_DIR = os.path.abspath(os.path.dirname(__file__))
 
 
 def _AppendEnvironmentPath(env_name, path):
@@ -37,8 +36,18 @@ def _AddToolsToSystemPathForWindows():
 
 def _GenerateTestCommand(script, chromedriver, chrome=None,
                          chrome_version=None, android_package=None):
+  python = sys.executable
+  if util.IsMac():
+    # In Mac, chromedriver2.so is a 32-bit build, so run with 32-bit python.
+    # /usr/bin/python* are universal binaries, meaning they have multiple
+    # binaries in one file.
+    # To force to run with i386, there are two options:
+    # 1) run a versioned python (e.g., 2.6) and use arch -i386.
+    # 2) set VERSIONER_PYTHON_PREFER_32_BIT=yes and run unversioned python
+    os.environ['VERSIONER_PYTHON_PREFER_32_BIT'] = 'yes'
+    python = 'python'
   cmd = [
-      sys.executable,
+      python,
       os.path.join(_THIS_DIR, script),
       '--chromedriver=' + chromedriver,
   ]
@@ -53,41 +62,38 @@ def _GenerateTestCommand(script, chromedriver, chrome=None,
 
 
 def RunPythonTests(chromedriver, chrome=None, chrome_version=None,
-                   android_package=None):
+                   chrome_version_name=None, android_package=None):
   version_info = ''
-  if chrome_version:
-    version_info = '(v%s)' % chrome_version
-  print '@@@BUILD_STEP chromedriver2_python_tests%s@@@' % version_info
-  if util.IsMac():
-    # In Mac, chromedriver2.so is a 32-bit build, so run with the 32-bit python.
-    os.environ['VERSIONER_PYTHON_PREFER_32_BIT'] = 'yes'
+  if chrome_version_name:
+    version_info = '(v%s)' % chrome_version_name
+  util.MarkBuildStepStart('python_tests%s' % version_info)
   code = util.RunCommand(
       _GenerateTestCommand('run_py_tests.py', chromedriver, chrome,
                            chrome_version, android_package))
   if code:
-    print '\n@@@STEP_FAILURE@@@'
+    util.MarkBuildStepError()
   return code
 
 
 def RunJavaTests(chromedriver, chrome=None, chrome_version=None,
-                 android_package=None):
+                 chrome_version_name=None, android_package=None):
   version_info = ''
-  if chrome_version:
-    version_info = '(v%s)' % chrome_version
-  print '@@@BUILD_STEP chromedriver2_java_tests%s@@@' % version_info
+  if chrome_version_name:
+    version_info = '(v%s)' % chrome_version_name
+  util.MarkBuildStepStart('java_tests%s' % version_info)
   code = util.RunCommand(
       _GenerateTestCommand('run_java_tests.py', chromedriver, chrome,
                            chrome_version, android_package))
   if code:
-    print '@@@STEP_FAILURE@@@'
+    util.MarkBuildStepError()
   return code
 
 
 def RunCppTests(cpp_tests):
-  print '@@@BUILD_STEP chromedriver2_tests@@@'
+  util.MarkBuildStepStart('chromedriver2_tests')
   code = util.RunCommand([cpp_tests])
   if code:
-    print '@@@STEP_FAILURE@@@'
+    util.MarkBuildStepError()
   return code
 
 
@@ -110,13 +116,6 @@ def main():
       'linux': 'libchromedriver2.so',
   }
   chromedriver_name = chromedriver_map[util.GetPlatformName()]
-
-  chrome_map = {
-      'win': 'chrome.exe',
-      'mac': 'Chromium.app/Contents/MacOS/Chromium',
-      'linux': 'chrome',
-  }
-  chrome_name = chrome_map[util.GetPlatformName()]
 
   if util.IsWindows():
     cpp_tests_name = 'chromedriver2_tests.exe'
@@ -150,31 +149,33 @@ def main():
                          android_package=options.android_package)
     return code1 or code2
   else:
-    chrome_tip_of_tree = os.path.join(build_dir, chrome_name)
-    cpp_tests = os.path.join(build_dir, cpp_tests_name)
-
-    chrome_26 = continuous_archive.DownloadChrome(
-        continuous_archive.CHROME_26_REVISION, util.MakeTempDir())
-    chrome_27 = continuous_archive.DownloadChrome(
-        continuous_archive.CHROME_27_REVISION, util.MakeTempDir())
-    chrome_28 = continuous_archive.DownloadChrome(
-        continuous_archive.CHROME_28_REVISION, util.MakeTempDir())
-    chrome_path_versions = [
-        {'path': chrome_tip_of_tree, 'version': 'HEAD'},
-        {'path': chrome_28, 'version': '28'},
-        {'path': chrome_27, 'version': '27'},
-        {'path': chrome_26, 'version': '26'},
+    latest_snapshot_revision = archive.GetLatestRevision(archive.Site.SNAPSHOT)
+    versions = [
+        ['HEAD', latest_snapshot_revision],
+        ['28', archive.CHROME_28_REVISION],
+        ['27', archive.CHROME_27_REVISION],
+        ['26', archive.CHROME_26_REVISION]
     ]
     code = 0
-    for chrome in chrome_path_versions:
-      if options.chrome_version and chrome['version'] != options.chrome_version:
+    for version in versions:
+      if options.chrome_version and version[0] != options.chrome_version:
         continue
-
-      code1 = RunPythonTests(chromedriver, chrome=chrome['path'],
-                             chrome_version=chrome['version'])
-      code2 = RunJavaTests(chromedriver_server, chrome=chrome['path'],
-                           chrome_version=chrome['version'])
+      download_site = archive.Site.CONTINUOUS
+      version_name = version[0]
+      if version_name == 'HEAD':
+        version_name = version[1]
+        download_site = archive.Site.SNAPSHOT
+      chrome_path = archive.DownloadChrome(version[1],
+                                           util.MakeTempDir(),
+                                           download_site)
+      code1 = RunPythonTests(chromedriver, chrome=chrome_path,
+                             chrome_version=version[0],
+                             chrome_version_name=version_name)
+      code2 = RunJavaTests(chromedriver_server, chrome=chrome_path,
+                           chrome_version=version[0],
+                           chrome_version_name=version_name)
       code = code or code1 or code2
+    cpp_tests = os.path.join(build_dir, cpp_tests_name)
     return RunCppTests(cpp_tests) or code
 
 

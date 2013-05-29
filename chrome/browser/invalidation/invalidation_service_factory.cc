@@ -9,22 +9,22 @@
 #include "chrome/browser/invalidation/p2p_invalidation_service.h"
 #include "chrome/browser/invalidation/ticl_invalidation_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 class TokenService;
 
 namespace invalidation {
 
 // TODO(rlarocque): Re-enable this once InvalidationFrontend can
-// extend ProfileKeyedService.
+// extend BrowserContextKeyedService.
 // // static
 // InvalidationFrontend* InvalidationServiceFactory::GetForProfile(
 //     Profile* profile) {
 //   return static_cast<InvalidationFrontend*>(
-//       GetInstance()->GetServiceForProfile(profile, true));
+//       GetInstance()->GetServiceForBrowserContext(profile, true));
 // }
 
 // static
@@ -33,8 +33,9 @@ InvalidationServiceFactory* InvalidationServiceFactory::GetInstance() {
 }
 
 InvalidationServiceFactory::InvalidationServiceFactory()
-    : ProfileKeyedServiceFactory("InvalidationService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "InvalidationService",
+        BrowserContextDependencyManager::GetInstance()) {
 #if !defined(OS_ANDROID)
   DependsOn(SigninManagerFactory::GetInstance());
   DependsOn(TokenServiceFactory::GetInstance());
@@ -44,12 +45,12 @@ InvalidationServiceFactory::InvalidationServiceFactory()
 InvalidationServiceFactory::~InvalidationServiceFactory() {}
 
 // static
-ProfileKeyedService*
+BrowserContextKeyedService*
 InvalidationServiceFactory::BuildP2PInvalidationServiceFor(Profile* profile) {
   return new P2PInvalidationService(profile);
 }
 
-ProfileKeyedService* InvalidationServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* InvalidationServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
 #if defined(OS_ANDROID)

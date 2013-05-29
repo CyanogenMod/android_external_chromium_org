@@ -23,7 +23,6 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
-#include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
@@ -36,8 +35,6 @@
 #include "chrome/browser/intranet_redirect_detector.h"
 #include "chrome/browser/invalidation/invalidator_storage.h"
 #include "chrome/browser/io_thread.h"
-#include "chrome/browser/managed_mode/managed_mode.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/browser/metrics/metrics_log.h"
@@ -101,6 +98,12 @@
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/policy_statistics_collector.h"
 #include "chrome/browser/policy/url_blacklist_manager.h"
+#endif
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_mode.h"
+#include "chrome/browser/managed_mode/managed_user_registration_service.h"
+#include "chrome/browser/managed_mode/managed_user_service.h"
 #endif
 
 #if defined(OS_MACOSX)
@@ -211,6 +214,10 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   WebCacheManager::RegisterPrefs(registry);
   chrome_variations::VariationsService::RegisterPrefs(registry);
 
+#if defined(ENABLE_MANAGED_USERS)
+  ManagedMode::RegisterPrefs(registry);
+#endif
+
 #if defined(ENABLE_PLUGINS)
   PluginFinder::RegisterPrefs(registry);
 #endif
@@ -241,7 +248,6 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   BackgroundModeManager::RegisterPrefs(registry);
   RegisterBrowserPrefs(registry);
   RegisterDefaultBrowserPromptPrefs(registry);
-  ManagedMode::RegisterPrefs(registry);
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -288,7 +294,6 @@ void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
       registry);
   chrome_browser_net::Predictor::RegisterUserPrefs(registry);
   DownloadPrefs::RegisterUserPrefs(registry);
-  extensions::ComponentLoader::RegisterUserPrefs(registry);
   extensions::ExtensionPrefs::RegisterUserPrefs(registry);
   ExtensionWebUI::RegisterUserPrefs(registry);
   first_run::RegisterUserPrefs(registry);
@@ -319,6 +324,7 @@ void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 #if defined(ENABLE_MANAGED_USERS)
   ManagedUserService::RegisterUserPrefs(registry);
+  ManagedUserRegistrationService::RegisterUserPrefs(registry);
 #endif
 
 #if defined(ENABLE_NOTIFICATIONS)
@@ -438,7 +444,8 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
   }
 
   if (!(current_version & GOOGLE_URL_TRACKER_PREFS)) {
-    GoogleURLTrackerFactory::GetInstance()->RegisterUserPrefsOnProfile(profile);
+    GoogleURLTrackerFactory::GetInstance()->RegisterUserPrefsOnBrowserContext(
+        profile);
     registry->RegisterStringPref(prefs::kLastKnownGoogleURL,
                                  GoogleURLTracker::kDefaultGoogleHomepage);
     if (local_state->HasPrefPath(prefs::kLastKnownGoogleURL)) {

@@ -163,6 +163,8 @@ bool ShouldSendCharEventForKeyboardCode(ui::KeyboardCode keycode) {
   }
 }
 
+bool default_override_redirect = false;
+
 }  // namespace
 
 namespace internal {
@@ -357,6 +359,7 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = None;
+  swa.override_redirect = default_override_redirect;
   xwindow_ = XCreateWindow(
       xdisplay_, x_root_window_,
       bounds.x(), bounds.y(), bounds.width(), bounds.height(),
@@ -364,7 +367,7 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
       CopyFromParent,  // depth
       InputOutput,
       CopyFromParent,  // visual
-      CWBackPixmap,
+      CWBackPixmap | CWOverrideRedirect,
       &swa);
   base::MessagePumpAuraX11::Current()->AddDispatcherForWindow(this, xwindow_);
   base::MessagePumpAuraX11::Current()->AddDispatcherForRootWindow(this);
@@ -942,10 +945,6 @@ void RootWindowHostX11::DispatchXI2Event(const base::NativeEvent& event) {
 
   switch (type) {
     case ui::ET_TOUCH_MOVED:
-      num_coalesced = ui::CoalescePendingMotionEvents(xev, &last_event);
-      if (num_coalesced > 0)
-        xev = &last_event;
-      // fallthrough
     case ui::ET_TOUCH_PRESSED:
     case ui::ET_TOUCH_CANCELLED:
     case ui::ET_TOUCH_RELEASED: {
@@ -1099,4 +1098,11 @@ gfx::Size RootWindowHost::GetNativeScreenSize() {
   return gfx::Size(DisplayWidth(xdisplay, 0), DisplayHeight(xdisplay, 0));
 }
 
+namespace test {
+
+void SetUseOverrideRedirectWindowByDefault(bool override_redirect) {
+  default_override_redirect = override_redirect;
+}
+
+}  // namespace test
 }  // namespace aura

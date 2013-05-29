@@ -24,8 +24,8 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/clipboard/clipboard.h"
-#include "webkit/database/database_tracker.h"
-#include "webkit/fileapi/external_mount_points.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
 #endif // !OS_IOS
 
 using base::UserDataAdapter;
@@ -156,18 +156,18 @@ DownloadManager* BrowserContext::GetDownloadManager(
   if (!context->GetUserData(kDownloadManagerKeyName)) {
     ResourceDispatcherHostImpl* rdh = ResourceDispatcherHostImpl::Get();
     DCHECK(rdh);
-    scoped_refptr<DownloadManager> download_manager =
+    DownloadManager* download_manager =
         new DownloadManagerImpl(
             GetContentClient()->browser()->GetNetLog(), context);
 
     context->SetUserData(
         kDownloadManagerKeyName,
-        new UserDataAdapter<DownloadManager>(download_manager));
+        download_manager);
     download_manager->SetDelegate(context->GetDownloadManagerDelegate());
   }
 
-  return UserDataAdapter<DownloadManager>::Get(
-      context, kDownloadManagerKeyName);
+  return static_cast<DownloadManager*>(
+      context->GetUserData(kDownloadManagerKeyName));
 }
 
 // static

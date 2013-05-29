@@ -48,10 +48,10 @@ const QuicByteCount kMaxPacketSize = 1200;
 // Maximum number of open streams per connection.
 const size_t kDefaultMaxStreamsPerConnection = 100;
 
-// Number of bytes reserved for guid in the packet header.
-const size_t kQuicGuidSize = 8;
 // Number of bytes reserved for public flags in the packet header.
 const size_t kPublicFlagsSize = 1;
+// Number of bytes reserved for guid in the packet header.
+const size_t kQuicGuidSize = 8;
 // Number of bytes reserved for version number in the packet header.
 const size_t kQuicVersionSize = 4;
 // Number of bytes reserved for sequence number in the packet header.
@@ -93,7 +93,10 @@ const QuicStreamId kCryptoStreamId = 1;
 // Value which indicates this packet is not FEC protected.
 const uint8 kNoFecOffset = 0xFF;
 
-const int64 kDefaultTimeoutUs = 600000000;  // 10 minutes.
+// This is the default network timeout a for connection till the crypto
+// handshake succeeds and the negotiated timeout from the handshake is received.
+const int64 kDefaultInitialTimeoutSecs = 30;  // 30 secs.
+const int64 kDefaultTimeoutSecs = 60 * 10;  // 10 minutes.
 
 enum Retransmission {
   NOT_RETRANSMISSION,
@@ -120,7 +123,12 @@ enum QuicPacketPublicFlags {
   PACKET_PUBLIC_FLAGS_NONE = 0,
   PACKET_PUBLIC_FLAGS_VERSION = 1 << 0,  // Packet header contains version info.
   PACKET_PUBLIC_FLAGS_RST = 1 << 1,  // Packet is a public reset packet.
-  PACKET_PUBLIC_FLAGS_MAX = (1 << 2) - 1  // All bits set.
+  // Packet header guid length in bytes.
+  PACKET_PUBLIC_FLAGS_0BYTE_GUID = 0,
+  PACKET_PUBLIC_FLAGS_1BYTE_GUID = 1 << 2,
+  PACKET_PUBLIC_FLAGS_4BYTE_GUID = 1 << 3,
+  PACKET_PUBLIC_FLAGS_8BYTE_GUID = 1 << 3 | 1 << 2,
+  PACKET_PUBLIC_FLAGS_MAX = (1 << 4) - 1  // All bits set.
 };
 
 enum QuicPacketPrivateFlags {
@@ -173,6 +181,8 @@ enum QuicErrorCode {
   QUIC_INVALID_ACK_DATA,
   // Version negotiation packet is malformed.
   QUIC_INVALID_VERSION_NEGOTIATION_PACKET,
+  // Public RST packet is malformed.
+  QUIC_INVALID_PUBLIC_RST_PACKET,
   // There was an error decrypting.
   QUIC_DECRYPTION_FAILURE,
   // There was an error encrypting.
@@ -195,12 +205,22 @@ enum QuicErrorCode {
   QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED,
   // The Header ID for a stream was too far from the previous.
   QUIC_INVALID_HEADER_ID,
-
+  // Negotiable parameter received during handshake had invalid value.
+  QUIC_INVALID_NEGOTIATED_VALUE,
+  // There was an error decompressing data.
+  QUIC_DECOMPRESSION_FAILURE,
   // We hit our prenegotiated (or default) timeout
   QUIC_CONNECTION_TIMED_OUT,
+  // There was an error encountered migrating addresses
+  QUIC_ERROR_MIGRATING_ADDRESS,
+  // There was an error while writing the packet.
+  QUIC_PACKET_WRITE_ERROR,
+
 
   // Crypto errors.
 
+  // Hanshake failed.
+  QUIC_HANDSHAKE_FAILED,
   // Handshake message contained out of order tags.
   QUIC_CRYPTO_TAGS_OUT_OF_ORDER,
   // Handshake message contained too many entries.
@@ -258,7 +278,7 @@ const QuicTag kUnsupportedVersion = -1;
 // Each time the wire format changes, this need needs to be incremented.
 // At some point, we will actually freeze the wire format and make an official
 // version number, but this works for now.
-const QuicTag kQuicVersion1 = TAG('Q', '0', '0', '1');
+const QuicTag kQuicVersion1 = TAG('Q', '0', '0', '4');
 #undef TAG
 
 // MakeQuicTag returns a value given the four bytes. For example:

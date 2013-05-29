@@ -14,11 +14,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/device_settings_service.h"
-#endif
-
 namespace extensions {
 namespace {
 
@@ -26,14 +21,10 @@ using base::test::ParseJson;
 using testing::HasSubstr;
 
 TEST(DeclarativeContentActionTest, InvalidCreation) {
-#if defined OS_CHROMEOS
-  chromeos::ScopedTestDeviceSettingsService device_settings_service;
-  chromeos::ScopedTestCrosSettings cros_settings;
-#endif
   TestExtensionEnvironment env;
   std::string error;
   bool bad_message = false;
-  scoped_ptr<ContentAction> result;
+  scoped_refptr<const ContentAction> result;
 
   // Test wrong data type passed.
   error.clear();
@@ -61,15 +52,11 @@ TEST(DeclarativeContentActionTest, InvalidCreation) {
 }
 
 TEST(DeclarativeContentActionTest, ShowPageAction) {
-#if defined OS_CHROMEOS
-  chromeos::ScopedTestDeviceSettingsService device_settings_service;
-  chromeos::ScopedTestCrosSettings cros_settings;
-#endif
   TestExtensionEnvironment env;
 
   std::string error;
   bool bad_message = false;
-  scoped_ptr<ContentAction> result = ContentAction::Create(
+  scoped_refptr<const ContentAction> result = ContentAction::Create(
       *ParseJson("{\n"
                  "  \"instanceType\": \"declarativeContent.ShowPageAction\",\n"
                  "}"),

@@ -271,12 +271,6 @@ be available for now. -->
         <message name="IDS_SHORTCUT_NEW_WINDOW" desc="The text label of the New window shortcut context menu entry as of Windows 8">
           New window
         </message>
-        <message name="IDS_MISSING_WINDOWS_SYSTEM_FILES_TITLE" desc="Title string on an error dialog to notify that the system is missing some Windows system files">
-          Windows error detected
-        </message>
-        <message name="IDS_MISSING_WINDOWS_SYSTEM_FILES_MESSAGE" desc="Warning message on an error dialog to notify that the system is missing some Windows system files">
-          Your computer is missing some important Windows system files, so Chromium will be unable to function correctly.
-        </message>
       </if>
       <message name="IDS_CERT_ERROR_COMMON_NAME_INVALID_EXTRA_INFO_2" desc="2nd paragraph of extra information for an unsafe common name in an X509 certificate">
         In this case, the address listed in the certificate does not match the address of the website your browser tried to go to. One possible reason for this is that your communications are being intercepted by an attacker who is presenting a certificate for a different website, which would cause a mismatch. Another possible reason is that the server is set up to return the same certificate for multiple websites, including the one you are attempting to visit, even though that certificate is not valid for all of those websites. Chromium can say for sure that you reached &lt;strong&gt;<ph name="DOMAIN2">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but cannot verify that that is the same site as &lt;strong&gt;<ph name="DOMAIN">$2<ex>www.paypal.com</ex></ph>&lt;/strong&gt; which you intended to reach. If you proceed, Chromium will not check for any further name mismatches.
@@ -478,12 +472,12 @@ Chromium is unable to recover your settings.
       <message name="IDS_CRASH_RECOVERY_CONTENT" desc="Text content telling the user the browser has crashed.">
         Whoa! Chromium has crashed. Relaunch now?
       </message>
-      <if expr="not pp_ifdef('android')">
+      <if expr="not is_android">
         <message name="IDS_PASSWORD_MANAGER_SAVE_PASSWORD_PROMPT" desc="Info bar message to save a password">
           Do you want Chromium to save your password?
         </message>
       </if>
-      <if expr="pp_ifdef('android')">
+      <if expr="is_android">
         <message name="IDS_PASSWORD_MANAGER_SAVE_PASSWORD_PROMPT" desc="Mobile: Info bar message to save a password">
           Do you want Chromium to save your password for this site?
         </message>
@@ -669,11 +663,6 @@ Chromium is unable to recover your settings.
         Chromium is configured to automatically launch when you start your computer.
       </message>
 
-       <!-- Managed user settings page -->
-      <message name="IDS_SIGNIN_SYNC_ALLOWED" desc="A checkbox in the Managed User Settings dialog for enabling sign in and sync.">
-        Allow signing into Chromium.
-      </message>
-
       <!-- about:flags -->
       <if expr="not pp_ifdef('chromeos')">
         <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to relaunch Chromium. Shown next to a button that says 'Relaunch Now'.">
@@ -690,19 +679,24 @@ Chromium is unable to recover your settings.
       </if>
 
       <!-- Obsolete System info bar -->
-      <message name="IDS_SYSTEM_OBSOLETE_MESSAGE" desc="Message shown when your OS is no longer supported. This messages is followed by a 'Learn more' link.">
+      <message name="IDS_SYSTEM_OBSOLETE_MESSAGE" desc="Message shown when your OS is no longer supported. This message is followed by a 'Learn more' link.">
          Chromium has stopped updating and no longer supports this version of your operating system.
       </message>
 
+      <!-- Google API keys info bar -->
+      <message name="IDS_MISSING_GOOGLE_API_KEYS" desc="Message shown when Google API keys are missing. This message is followed by a 'Learn more' link.">
+        Google API keys are missing. Some functionality of Chromium will be disabled.
+      </message>
+
       <!-- about:memory -->
-      <if expr="not pp_ifdef('android')">
+      <if expr="not is_android">
         <message name="IDS_MEMORY_USAGE_SUMMARY_DESC" desc="Describes the browser summary table in the about memory page, which shows memory usage for Chromium and any other active browsers." translateable="false">
 Summary of memory used by currently active browsers. For browsers which use multiple processes, memory reflects aggregate memory used across all browser processes.
 
 For Chromium, processes used to display diagnostics information (such as this "about:memory") are excluded.
         </message>
       </if>
-      <if expr="pp_ifdef('android')">
+      <if expr="is_android">
         <message name="IDS_MEMORY_USAGE_SUMMARY_DESC" desc="Describes the browser summary table in the about memory page, which shows memory usage for Chromium." translateable="false">
 Summary of memory used by Chromium. Since Chromium uses multiple processes, memory reflects aggregate memory used across all browser processes.
 
@@ -903,11 +897,11 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
           and deselect any proxies that have been selected.
         </message>
       </if>
-      <if expr="pp_ifdef('android') or pp_ifdef('ios')">
+      <if expr="is_android or pp_ifdef('ios')">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Instructions for disabling use of a proxy server (leave empty for Android and iOS).">
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos') and is_posix and not is_macosx and not pp_ifdef('android') and not pp_ifdef('ios')">
+      <if expr="not pp_ifdef('chromeos') and is_posix and not is_macosx and not is_android and not pp_ifdef('ios')">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Linux instructions for disabling use of a proxy server.">
           Go to
           the Chromium menu &gt;

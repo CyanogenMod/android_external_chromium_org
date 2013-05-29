@@ -7,13 +7,16 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace predictors {
 
 class ResourcePrefetchPredictor;
 
-class ResourcePrefetchPredictorFactory : public ProfileKeyedServiceFactory {
+class ResourcePrefetchPredictorFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   static ResourcePrefetchPredictor* GetForProfile(Profile* profile);
   static ResourcePrefetchPredictorFactory* GetInstance();
@@ -24,8 +27,8 @@ class ResourcePrefetchPredictorFactory : public ProfileKeyedServiceFactory {
   ResourcePrefetchPredictorFactory();
   virtual ~ResourcePrefetchPredictorFactory();
 
-  // RefcountedProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // RefcountedBrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ResourcePrefetchPredictorFactory);

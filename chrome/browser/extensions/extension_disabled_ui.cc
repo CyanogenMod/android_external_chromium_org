@@ -18,6 +18,7 @@
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
+#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/global_error/global_error.h"
@@ -26,6 +27,9 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "chrome/common/extensions/permissions/permission_set.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -34,10 +38,15 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/size.h"
 
 using extensions::Extension;
 
 namespace {
+
+static const int kIconSize = extension_misc::EXTENSION_ICON_SMALL;
 
 static base::LazyInstance<
     std::bitset<IDC_EXTENSION_DISABLED_LAST -
@@ -130,7 +139,8 @@ class ExtensionDisabledGlobalError : public GlobalError,
                                      public ExtensionUninstallDialog::Delegate {
  public:
   ExtensionDisabledGlobalError(ExtensionService* service,
-                               const Extension* extension);
+                               const Extension* extension,
+                               const gfx::Image& icon);
   virtual ~ExtensionDisabledGlobalError();
 
   // GlobalError implementation.
@@ -140,6 +150,7 @@ class ExtensionDisabledGlobalError : public GlobalError,
   virtual string16 MenuItemLabel() OVERRIDE;
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
   virtual bool HasBubbleView() OVERRIDE;
+  virtual gfx::Image GetBubbleViewIcon() OVERRIDE;
   virtual string16 GetBubbleViewTitle() OVERRIDE;
   virtual std::vector<string16> GetBubbleViewMessages() OVERRIDE;
   virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
@@ -160,6 +171,7 @@ class ExtensionDisabledGlobalError : public GlobalError,
  private:
   ExtensionService* service_;
   const Extension* extension_;
+  gfx::Image icon_;
 
   // How the user responded to the error; used for metrics.
   enum UserResponse {
@@ -181,11 +193,22 @@ class ExtensionDisabledGlobalError : public GlobalError,
 // TODO(yoz): create error at startup for disabled extensions.
 ExtensionDisabledGlobalError::ExtensionDisabledGlobalError(
     ExtensionService* service,
-    const Extension* extension)
+    const Extension* extension,
+    const gfx::Image& icon)
     : service_(service),
       extension_(extension),
+      icon_(icon),
       user_response_(IGNORED),
       menu_command_id_(GetMenuCommandID()) {
+  if (icon_.IsEmpty()) {
+    icon_ = gfx::Image(
+        gfx::ImageSkiaOperations::CreateResizedImage(
+            extension_->is_app() ?
+                extensions::IconsInfo::GetDefaultAppIcon() :
+                extensions::IconsInfo::GetDefaultExtensionIcon(),
+            skia::ImageOperations::RESIZE_BEST,
+            gfx::Size(kIconSize, kIconSize)));
+  }
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(service->profile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
@@ -224,22 +247,35 @@ bool ExtensionDisabledGlobalError::HasBubbleView() {
    return true;
 }
 
+gfx::Image ExtensionDisabledGlobalError::GetBubbleViewIcon() {
+  return icon_;
+}
+
 string16 ExtensionDisabledGlobalError::GetBubbleViewTitle() {
   return l10n_util::GetStringFUTF16(IDS_EXTENSION_DISABLED_ERROR_TITLE,
                                     UTF8ToUTF16(extension_->name()));
 }
 
 std::vector<string16> ExtensionDisabledGlobalError::GetBubbleViewMessages() {
-  string16 message = l10n_util::GetStringFUTF16(
+  std::vector<string16> messages;
+  messages.push_back(l10n_util::GetStringFUTF16(
       extension_->is_app() ?
       IDS_APP_DISABLED_ERROR_LABEL : IDS_EXTENSION_DISABLED_ERROR_LABEL,
-      UTF8ToUTF16(extension_->name()));
-  return std::vector<string16>(1, message);
+      UTF8ToUTF16(extension_->name())));
+  messages.push_back(l10n_util::GetStringUTF16(
+      IDS_EXTENSION_PROMPT_WILL_NOW_HAVE_ACCESS_TO));
+  std::vector<string16> permission_warnings =
+      extension_->GetActivePermissions()->GetWarningMessages(
+          extension_->GetType());
+  for (size_t i = 0; i < permission_warnings.size(); ++i) {
+    messages.push_back(l10n_util::GetStringFUTF16(
+        IDS_EXTENSION_PERMISSION_LINE, permission_warnings[i]));
+  }
+  return messages;
 }
 
 string16 ExtensionDisabledGlobalError::GetBubbleViewAcceptButtonLabel() {
-  return l10n_util::GetStringUTF16(
-      IDS_EXTENSION_DISABLED_ERROR_ENABLE_BUTTON);
+  return l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_RE_ENABLE_BUTTON);
 }
 
 string16 ExtensionDisabledGlobalError::GetBubbleViewCancelButtonLabel() {
@@ -251,9 +287,10 @@ void ExtensionDisabledGlobalError::OnBubbleViewDidClose(Browser* browser) {
 
 void ExtensionDisabledGlobalError::BubbleViewAcceptButtonPressed(
     Browser* browser) {
-  scoped_ptr<ExtensionInstallPrompt> install_ui(
-      ExtensionInstallUI::CreateInstallPromptWithBrowser(browser));
-  new ExtensionDisabledDialogDelegate(service_, install_ui.Pass(), extension_);
+  // Delay extension reenabling so this bubble closes properly.
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&ExtensionService::GrantPermissionsAndEnableExtension,
+                 service_->AsWeakPtr(), extension_));
 }
 
 void ExtensionDisabledGlobalError::BubbleViewCancelButtonPressed(
@@ -263,7 +300,7 @@ void ExtensionDisabledGlobalError::BubbleViewCancelButtonPressed(
       ExtensionUninstallDialog::Create(service_->profile(), browser, this));
   // Delay showing the uninstall dialog, so that this function returns
   // immediately, to close the bubble properly. See crbug.com/121544.
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&ExtensionUninstallDialog::ConfirmUninstall,
                  uninstall_dialog_->AsWeakPtr(), extension_));
 #endif  // !defined(OS_ANDROID)
@@ -308,10 +345,28 @@ void ExtensionDisabledGlobalError::Observe(
 
 namespace extensions {
 
+void AddExtensionDisabledErrorWithIcon(base::WeakPtr<ExtensionService> service,
+                                       const std::string& extension_id,
+                                       const gfx::Image& icon) {
+  if (!service.get())
+    return;
+  const Extension* extension = service->GetInstalledExtension(extension_id);
+  if (extension) {
+    GlobalErrorServiceFactory::GetForProfile(service->profile())->
+        AddGlobalError(new ExtensionDisabledGlobalError(
+            service, extension, icon));
+  }
+}
+
 void AddExtensionDisabledError(ExtensionService* service,
                                const Extension* extension) {
-  GlobalErrorServiceFactory::GetForProfile(service->profile())->
-      AddGlobalError(new ExtensionDisabledGlobalError(service, extension));
+  extensions::ExtensionResource image = extensions::IconsInfo::GetIconResource(
+      extension, kIconSize, ExtensionIconSet::MATCH_BIGGER);
+  gfx::Size size(kIconSize, kIconSize);
+  ImageLoader::Get(service->profile())->LoadImageAsync(
+      extension, image, size,
+      base::Bind(&AddExtensionDisabledErrorWithIcon,
+                 service->AsWeakPtr(), extension->id()));
 }
 
 void ShowExtensionDisabledDialog(ExtensionService* service,

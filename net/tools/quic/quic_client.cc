@@ -57,16 +57,18 @@ QuicClient::QuicClient(IPEndPoint server_address,
 
 QuicClient::~QuicClient() {
   if (connected()) {
-    session()->connection()
-        ->SendConnectionClosePacket(QUIC_PEER_GOING_AWAY, std::string());
+    session()->connection()->SendConnectionClosePacket(
+        QUIC_PEER_GOING_AWAY, string());
   }
 }
 
 bool QuicClient::Initialize() {
+  DCHECK(!initialized_);
+
   epoll_server_.set_timeout_in_us(50 * 1000);
   crypto_config_.SetDefaults();
-  int address_family = server_address_.GetSockAddrFamily();
 
+  int address_family = server_address_.GetSockAddrFamily();
   fd_ = socket(address_family, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
   if (fd_ < 0) {
     LOG(ERROR) << "CreateSocket() failed: " << strerror(errno);
@@ -167,6 +169,7 @@ void QuicClient::Disconnect() {
   epoll_server_.UnregisterFD(fd_);
   close(fd_);
   fd_ = -1;
+  initialized_ = false;
 }
 
 void QuicClient::SendRequestsAndWaitForResponse(int argc, char *argv[]) {

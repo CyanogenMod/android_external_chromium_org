@@ -86,6 +86,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
 #include "chrome/browser/storage_monitor/storage_monitor_chromeos.h"
+#include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -106,16 +107,10 @@
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
 #include "chromeos/login/login_state.h"
-#include "chromeos/network/cert_loader.h"
-#include "chromeos/network/geolocation_handler.h"
-#include "chromeos/network/managed_network_configuration_handler.h"
 #include "chromeos/network/network_change_notifier_chromeos.h"
 #include "chromeos/network/network_change_notifier_factory_chromeos.h"
-#include "chromeos/network/network_configuration_handler.h"
-#include "chromeos/network/network_connection_handler.h"
-#include "chromeos/network/network_event_log.h"
-#include "chromeos/network/network_profile_handler.h"
-#include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/network_handler.h"
+#include "chromeos/power/power_manager_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/power_save_blocker.h"
@@ -136,7 +131,7 @@ void ChromeOSVersionCallback(const std::string& version) {
 
 #endif
 
-class MessageLoopObserver : public MessageLoopForUI::Observer {
+class MessageLoopObserver : public base::MessageLoopForUI::Observer {
   virtual base::EventStatus WillProcessEvent(
       const base::NativeEvent& event) OVERRIDE {
     return base::EVENT_CONTINUE;
@@ -189,6 +184,7 @@ class StubLogin : public LoginStatusConsumer,
                                         std::string(),  // display_email
                                         using_oauth,
                                         false,          // has_cookies
+                                        true,           // has_active_session
                                         this);
     } else if (!pending_requests) {
       delete this;
@@ -220,25 +216,7 @@ bool ShouldAutoLaunchKioskApp(const CommandLine& command_line) {
 void OptionallyRunChromeOSLoginManager(const CommandLine& parsed_command_line,
                                        Profile* profile) {
   if (parsed_command_line.HasSwitch(switches::kLoginManager)) {
-    std::string first_screen =
-        parsed_command_line.GetSwitchValueASCII(switches::kLoginScreen);
-    std::string size_arg =
-        parsed_command_line.GetSwitchValueASCII(switches::kLoginScreenSize);
-    gfx::Size size(0, 0);
-    // Allow the size of the login window to be set explicitly. If not set,
-    // default to the entire screen. This is mostly useful for testing.
-    if (size_arg.size()) {
-      std::vector<std::string> dimensions;
-      base::SplitString(size_arg, ',', &dimensions);
-      if (dimensions.size() == 2) {
-        int width, height;
-        if (base::StringToInt(dimensions[0], &width) &&
-            base::StringToInt(dimensions[1], &height))
-          size.SetSize(width, height);
-      }
-    }
-
-    ShowLoginWizard(first_screen, size);
+    ShowLoginWizard(std::string());
 
     if (KioskModeSettings::Get()->IsKioskModeEnabled())
       InitializeKioskModeScreensaver();
@@ -269,8 +247,8 @@ void OptionallyRunChromeOSLoginManager(const CommandLine& parsed_command_line,
 
 void RunAutoLaunchKioskApp() {
   // KioskAppLauncher deletes itself when done.
-  (new KioskAppLauncher(
-      KioskAppManager::Get()->GetAutoLaunchApp()))->Start();
+  (new KioskAppLauncher(KioskAppManager::Get(),
+                        KioskAppManager::Get()->GetAutoLaunchApp()))->Start();
 
   // Login screen is skipped but 'login-prompt-visible' signal is still needed.
   LOG(INFO) << "Kiosk app auto launch >> login-prompt-visible";
@@ -313,8 +291,6 @@ class DBusServices {
     CrosDBusService::Initialize();
 
     LoginState::Initialize();
-    CertLoader::Initialize();
-    CertLibrary::Initialize();
     CryptohomeLibrary::Initialize();
 
     // This function and SystemKeyEventListener use InputMethodManager.
@@ -328,15 +304,8 @@ class DBusServices {
 
     // Always initialize these handlers which should not conflict with
     // NetworkLibrary.
-    network_event_log::Initialize();
-    GeolocationHandler::Initialize();
-    NetworkStateHandler::Initialize();
-
-    NetworkProfileHandler* profile_handler =
-        NetworkProfileHandler::Initialize();
-    NetworkConfigurationHandler::Initialize();
-    ManagedNetworkConfigurationHandler::Initialize(profile_handler);
-    NetworkConnectionHandler::Initialize();
+    NetworkHandler::Initialize();
+    CertLibrary::Initialize();
 
     // Initialize the network change notifier for Chrome OS. The network
     // change notifier starts to monitor changes from the power manager and
@@ -378,21 +347,14 @@ class DBusServices {
     if (cros_initialized_ && CrosLibrary::Get())
       CrosLibrary::Shutdown();
 
-    ManagedNetworkConfigurationHandler::Shutdown();
-    NetworkConfigurationHandler::Shutdown();
-    NetworkConnectionHandler::Shutdown();
-    NetworkProfileHandler::Shutdown();
-
-    NetworkStateHandler::Shutdown();
-    GeolocationHandler::Shutdown();
-    network_event_log::Shutdown();
+    CertLibrary::Shutdown();
+    NetworkHandler::Shutdown();
 
     cryptohome::AsyncMethodCaller::Shutdown();
     disks::DiskMountManager::Shutdown();
     input_method::Shutdown();
+
     CryptohomeLibrary::Shutdown();
-    CertLibrary::Shutdown();
-    CertLoader::Shutdown();
     LoginState::Shutdown();
 
     CrosDBusService::Shutdown();
@@ -486,7 +448,7 @@ void ChromeBrowserMainPartsChromeos::PreMainMessageLoopStart() {
 }
 
 void ChromeBrowserMainPartsChromeos::PostMainMessageLoopStart() {
-  MessageLoopForUI* message_loop = MessageLoopForUI::current();
+  base::MessageLoopForUI* message_loop = base::MessageLoopForUI::current();
   message_loop->AddObserver(g_message_loop_observer.Pointer());
 
   dbus_services_.reset(new internal::DBusServices(parameters()));
@@ -504,6 +466,8 @@ void ChromeBrowserMainPartsChromeos::PreMainMessageLoopRun() {
     AudioHandler::Initialize(
        AudioPrefHandler::Create(g_browser_process->local_state()));
   }
+
+  PowerManagerHandler::Initialize();
 
   if (!StartupUtils::IsOobeCompleted())
     system::StatisticsProvider::GetInstance()->LoadOemManifest();
@@ -576,13 +540,13 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
       !parsed_command_line().HasSwitch(switches::kLoginPassword)) {
     std::string username =
         parsed_command_line().GetSwitchValueASCII(switches::kLoginUser);
-    VLOG(1) << "Relaunching browser for user: " << username;
     UserManager* user_manager = UserManager::Get();
-    // TODO(nkostylev): Get user username_hash (cryptohome mount point)
-    // from a separate cmd line switch.
+    // In case of multi-profiles --login-profile will contain user_id_hash.
     std::string username_hash =
         parsed_command_line().GetSwitchValueASCII(switches::kLoginProfile);
     user_manager->UserLoggedIn(username, username_hash, true);
+    VLOG(1) << "Relaunching browser for user: " << username
+            << " with hash: " << username_hash;
 
     // Redirects Chrome logging to the user data dir.
     logging::RedirectChromeLogging(parsed_command_line());
@@ -637,6 +601,15 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   // -- This used to be in ChromeBrowserMainParts::PreMainMessageLoopRun()
   // -- just after CreateProfile().
 
+  // Initialize the Ash Shell after the Default Profile has been created and
+  // before ash dependent systems are initialized.
+  chrome::OpenAsh();
+
+  // Restarting Chrome inside existing user session. Possible cases:
+  // 1. Chrome is restarted after crash.
+  // 2. Chrome is started in browser_tests skipping the login flow
+  // 3. Chrome is started on dev machine
+  //    i.e. not on Chrome OS device w/o login flow.
   if (parsed_command_line().HasSwitch(switches::kLoginUser) &&
       !parsed_command_line().HasSwitch(switches::kLoginPassword)) {
     // Make sure we flip every profile to not share proxies if the user hasn't
@@ -648,6 +621,12 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
 
     // This is done in LoginUtils::OnProfileCreated during normal login.
     LoginUtils::Get()->InitRlzDelayed(profile());
+
+    // Now is the good time to retrieve other logged in users for this session.
+    // First user has been already marked as logged in and active in
+    // PreProfileInit(). Chrome should tread other user in a session as active
+    // in the background.
+    UserManager::Get()->RestoreActiveSessions();
   }
 
   // Make sure the NetworkConfigurationUpdater is ready so that it pushes ONC
@@ -819,6 +798,8 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
     AudioHandler::Shutdown();
   }
 
+  PowerManagerHandler::Shutdown();
+
   WebSocketProxyController::Shutdown();
 
   // Let classes unregister themselves as observers of the ash::Shell singleton
@@ -849,9 +830,14 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // Clean up dependency on CrosSettings and stop pending data fetches.
   KioskAppManager::Shutdown();
 
+  chrome::CloseAsh();
+
   ChromeBrowserMainPartsLinux::PostMainMessageLoopRun();
 
-  // Destroy the UserManager after ash has been destroyed.
+  // Destroy the UserManager after ash has been destroyed and
+  // ChromeBrowserMainPartsLinux::PostMainMessageLoopRun run.  The latter might
+  // trigger MergeSessionThrottle::ShouldShowMergeSessionPage, which requires
+  // the UserManager to exist.
   UserManager::Destroy();
 }
 

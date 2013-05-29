@@ -24,7 +24,7 @@
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_final_status.h"
 #include "chrome/browser/prerender/prerender_origin.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
@@ -78,7 +78,7 @@ class PrerenderTracker;
 class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
                          public base::NonThreadSafe,
                          public content::NotificationObserver,
-                         public ProfileKeyedService {
+                         public BrowserContextKeyedService {
  public:
   // NOTE: New values need to be appended, since they are used in histograms.
   enum PrerenderManagerMode {
@@ -111,7 +111,7 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
 
   virtual ~PrerenderManager();
 
-  // From ProfileKeyedService:
+  // From BrowserContextKeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // Entry points for adding prerenders.

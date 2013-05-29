@@ -52,15 +52,14 @@ void WebRtcLoggingMessageFilter::OnChannelClosing() {
   logging_handler_->OnFilterRemoved();
 }
 
-void WebRtcLoggingMessageFilter::SetDelegate(
-    WebRtcLoggingHandlerImpl* logging_handler) {
+void WebRtcLoggingMessageFilter::InitLogging(
+    WebRtcLoggingHandlerImpl* logging_handler,
+    const std::string& app_session_id,
+    const std::string& app_url) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
   DCHECK(!logging_handler_);
   logging_handler_ = logging_handler;
-}
-
-void WebRtcLoggingMessageFilter::OpenLog() {
-  Send(new WebRtcLoggingMsg_OpenLog());
+  Send(new WebRtcLoggingMsg_OpenLog(app_session_id, app_url));
 }
 
 void WebRtcLoggingMessageFilter::OnLogOpened(

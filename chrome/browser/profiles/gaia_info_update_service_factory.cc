@@ -6,13 +6,14 @@
 
 #include "chrome/browser/profiles/gaia_info_update_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 
 GAIAInfoUpdateServiceFactory::GAIAInfoUpdateServiceFactory()
-    : ProfileKeyedServiceFactory("GAIAInfoUpdateService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "GAIAInfoUpdateService",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 GAIAInfoUpdateServiceFactory::~GAIAInfoUpdateServiceFactory() {}
@@ -21,7 +22,7 @@ GAIAInfoUpdateServiceFactory::~GAIAInfoUpdateServiceFactory() {}
 GAIAInfoUpdateService* GAIAInfoUpdateServiceFactory::GetForProfile(
     Profile* profile) {
   return static_cast<GAIAInfoUpdateService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -29,7 +30,8 @@ GAIAInfoUpdateServiceFactory* GAIAInfoUpdateServiceFactory::GetInstance() {
   return Singleton<GAIAInfoUpdateServiceFactory>::get();
 }
 
-ProfileKeyedService* GAIAInfoUpdateServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+GAIAInfoUpdateServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
   if (!GAIAInfoUpdateService::ShouldUseGAIAProfileInfo(profile))

@@ -13,8 +13,8 @@
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "chrome/browser/common/cancelable_request.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
 #include "chrome/common/cancelable_task_tracker.h"
+#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
 
 class PasswordStore;
 class PasswordStoreConsumer;
@@ -40,7 +40,7 @@ void UpdateLogin(PasswordStore* store, const content::PasswordForm& form);
 // The login request/manipulation API is not threadsafe and must be used
 // from the UI thread.
 class PasswordStore
-    : public RefcountedProfileKeyedService,
+    : public RefcountedBrowserContextKeyedService,
       public CancelableRequestProvider {
  public:
   typedef base::Callback<

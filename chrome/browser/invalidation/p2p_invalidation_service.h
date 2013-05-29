@@ -4,7 +4,7 @@
 
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/invalidation/invalidation_frontend.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "sync/notifier/object_id_invalidation_map.h"
 
 #ifndef CHROME_BROWSER_INVALIDATION_P2P_INVALIDATION_SERVICE_H_
@@ -23,13 +23,13 @@ namespace invalidation {
 // only in tests, where we're unable to connect to a real invalidations server.
 class P2PInvalidationService
     : public base::NonThreadSafe,
-      public ProfileKeyedService,
+      public BrowserContextKeyedService,
       public InvalidationFrontend {
  public:
   explicit P2PInvalidationService(Profile* profile);
   virtual ~P2PInvalidationService();
 
-  // Overrides ProfileKeyedService method.
+  // Overrides BrowserContextKeyedService method.
   virtual void Shutdown() OVERRIDE;
 
   // InvalidationFrontend implementation.

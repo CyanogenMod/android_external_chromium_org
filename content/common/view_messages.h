@@ -22,6 +22,7 @@
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/javascript_message_type.h"
+#include "content/public/common/page_state.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/renderer_preferences.h"
@@ -162,10 +163,11 @@ IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(page_url)
   IPC_STRUCT_TRAITS_MEMBER(keyword_url)
   IPC_STRUCT_TRAITS_MEMBER(frame_url)
-  IPC_STRUCT_TRAITS_MEMBER(frame_content_state)
+  IPC_STRUCT_TRAITS_MEMBER(frame_page_state)
   IPC_STRUCT_TRAITS_MEMBER(media_flags)
   IPC_STRUCT_TRAITS_MEMBER(selection_text)
   IPC_STRUCT_TRAITS_MEMBER(misspelled_word)
+  IPC_STRUCT_TRAITS_MEMBER(misspelling_hash)
   IPC_STRUCT_TRAITS_MEMBER(dictionary_suggestions)
   IPC_STRUCT_TRAITS_MEMBER(speech_input_enabled)
   IPC_STRUCT_TRAITS_MEMBER(spellcheck_enabled)
@@ -415,7 +417,7 @@ IPC_STRUCT_BEGIN_WITH_PARENT(ViewHostMsg_FrameNavigate_Params,
   IPC_STRUCT_MEMBER(bool, was_fetched_via_proxy)
 
   // Serialized history item state to store in the navigation entry.
-  IPC_STRUCT_MEMBER(std::string, content_state)
+  IPC_STRUCT_MEMBER(content::PageState, page_state)
 
   // Original request's URL.
   IPC_STRUCT_MEMBER(GURL, original_request_url)
@@ -601,7 +603,7 @@ IPC_STRUCT_BEGIN(ViewMsg_Navigate_Params)
   IPC_STRUCT_MEMBER(content::PageTransition, transition)
 
   // Opaque history state (received by ViewHostMsg_UpdateState).
-  IPC_STRUCT_MEMBER(std::string, state)
+  IPC_STRUCT_MEMBER(content::PageState, page_state)
 
   // Type of navigation.
   IPC_STRUCT_MEMBER(ViewMsg_Navigate_Type::Value, navigation_type)
@@ -802,17 +804,22 @@ IPC_MESSAGE_ROUTED0(ViewMsg_TimezoneChange)
 // Tells the render view to close.
 IPC_MESSAGE_ROUTED0(ViewMsg_Close)
 
-// Tells the render view to change its size.  A ViewHostMsg_PaintRect message
+IPC_STRUCT_BEGIN(ViewMsg_Resize_Params)
+  IPC_STRUCT_MEMBER(WebKit::WebScreenInfo, screen_info)
+  IPC_STRUCT_MEMBER(gfx::Size, new_size)
+  IPC_STRUCT_MEMBER(gfx::Size, physical_backing_size)
+  IPC_STRUCT_MEMBER(float, overdraw_bottom_height)
+  IPC_STRUCT_MEMBER(gfx::Rect, resizer_rect)
+  IPC_STRUCT_MEMBER(bool, is_fullscreen)
+IPC_STRUCT_END()
+
+// Tells the render view to change its size.  A ViewHostMsg_UpdateRect message
 // is generated in response provided new_size is not empty and not equal to
-// the view's current size.  The generated ViewHostMsg_PaintRect message will
+// the view's current size.  The generated ViewHostMsg_UpdateRect message will
 // have the IS_RESIZE_ACK flag set. It also receives the resizer rect so that
 // we don't have to fetch it every time WebKit asks for it.
-IPC_MESSAGE_ROUTED5(ViewMsg_Resize,
-                    gfx::Size /* new_size */,
-                    gfx::Size /* physical_backing_size */,
-                    float /* overdraw_bottom_height */,
-                    gfx::Rect /* resizer_rect */,
-                    bool /* is_fullscreen */)
+IPC_MESSAGE_ROUTED1(ViewMsg_Resize,
+                    ViewMsg_Resize_Params /* params */)
 
 // Tells the render view that the resize rect has changed.
 IPC_MESSAGE_ROUTED1(ViewMsg_ChangeResizeRect,
@@ -824,7 +831,7 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WasHidden)
 
 // Tells the render view that it is no longer hidden (see WasHidden), and the
 // render view is expected to respond with a full repaint if needs_repainting
-// is true.  In that case, the generated ViewHostMsg_PaintRect message will
+// is true.  In that case, the generated ViewHostMsg_UpdateRect message will
 // have the IS_RESTORE_ACK flag set.  If needs_repainting is false, then this
 // message does not trigger a message in response.
 IPC_MESSAGE_ROUTED1(ViewMsg_WasShown,
@@ -1123,9 +1130,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_Repaint,
 // started.
 IPC_MESSAGE_ROUTED0(ViewMsg_MoveOrResizeStarted)
 
-IPC_MESSAGE_ROUTED1(ViewMsg_ScreenInfoChanged,
-                    WebKit::WebScreenInfo /* screen_info */)
-
 IPC_MESSAGE_ROUTED2(ViewMsg_UpdateScreenRects,
                     gfx::Rect /* view_screen_rect */,
                     gfx::Rect /* window_screen_rect */)
@@ -1278,9 +1282,8 @@ IPC_MESSAGE_ROUTED3(ViewMsg_UpdateTopControlsState,
 
 IPC_MESSAGE_ROUTED0(ViewMsg_ShowImeIfNeeded)
 
-// Sent by the browser when the display vsync signal was triggered and the
-// renderer should generate a new frame.
-IPC_MESSAGE_ROUTED1(ViewMsg_DidVSync,
+// Sent by the browser when the renderer should generate a new frame.
+IPC_MESSAGE_ROUTED1(ViewMsg_BeginFrame,
                     base::TimeTicks /* frame_time */)
 
 #elif defined(OS_MACOSX)
@@ -1419,6 +1422,11 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_UpdateScreenRects_ACK)
 IPC_MESSAGE_ROUTED1(ViewHostMsg_RequestMove,
                     gfx::Rect /* position */)
 
+// Sent by the renderer process to notify the browser that the web page has
+// programmatically scrolled.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_DidProgrammaticallyScroll,
+                    gfx::Vector2d /* scroll_point */)
+
 // Notifies the browser that a frame in the view has changed. This message
 // has a lot of parameters and is packed/unpacked by functions defined in
 // render_messages.h.
@@ -1485,7 +1493,7 @@ IPC_MESSAGE_ROUTED4(ViewHostMsg_MediaNotification,
 // page_id: unique ID that allows us to distinguish between history entries.
 IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateState,
                     int32 /* page_id */,
-                    std::string /* state */)
+                    content::PageState /* state */)
 
 // Notifies the browser that a document has been loaded in a frame.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DocumentLoadedInFrame,
@@ -2017,15 +2025,22 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_UpdateFrameName,
                     bool /* is_top_level */,
                     std::string /* name */)
 
+
+IPC_STRUCT_BEGIN(ViewHostMsg_CompositorSurfaceBuffersSwapped_Params)
+  IPC_STRUCT_MEMBER(int32, surface_id)
+  IPC_STRUCT_MEMBER(uint64, surface_handle)
+  IPC_STRUCT_MEMBER(int32, route_id)
+  IPC_STRUCT_MEMBER(gfx::Size, size)
+  IPC_STRUCT_MEMBER(float, scale_factor)
+  IPC_STRUCT_MEMBER(int32, gpu_process_host_id)
+IPC_STRUCT_END()
+
 // This message is synthesized by GpuProcessHost to pass through a swap message
 // to the RenderWidgetHelper. This allows GetBackingStore to block for either a
 // software or GPU frame.
-IPC_MESSAGE_ROUTED5(ViewHostMsg_CompositorSurfaceBuffersSwapped,
-                    int32 /* surface id */,
-                    uint64 /* surface_handle */,
-                    int32 /* route_id */,
-                    gfx::Size /* size */,
-                    int32 /* gpu_process_host_id */)
+IPC_MESSAGE_ROUTED1(
+    ViewHostMsg_CompositorSurfaceBuffersSwapped,
+    ViewHostMsg_CompositorSurfaceBuffersSwapped_Params /* params */)
 
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SwapCompositorFrame,
                     cc::CompositorFrame /* frame */)
@@ -2247,10 +2262,10 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_RunWebAudioMediaCodec,
                      base::FileDescriptor /* pcm_output */,
                      size_t /* data_size*/)
 
-// Sent by renderer to request a ViewMsg_VSync message for upcoming display
-// vsync events. If |enabled| is true, the vsync message will continue to be be
-// delivered until the notification is disabled.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SetVSyncNotificationEnabled,
+// Sent by renderer to request a ViewMsg_BeginFrame message for upcoming
+// display events. If |enabled| is true, the BeginFrame message will continue
+// to be be delivered until the notification is disabled.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrame,
                     bool /* enabled */)
 
 #elif defined(OS_MACOSX)
@@ -2261,7 +2276,25 @@ IPC_SYNC_MESSAGE_CONTROL1_3(ViewHostMsg_LoadFont,
                            base::SharedMemoryHandle /* font data */,
                            uint32 /* font id */)
 
-// On OSX, we cannot allocated shared memory from within the sandbox, so
+// Informs the browser that a plugin has gained or lost focus.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_PluginFocusChanged,
+                    bool, /* focused */
+                    int /* plugin_id */)
+
+// Instructs the browser to start plugin IME.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
+
+#elif defined(OS_WIN)
+// Request that the given font characters be loaded by the browser so it's
+// cached by the OS. Please see RenderMessageFilter::OnPreCacheFontCharacters
+// for details.
+IPC_SYNC_MESSAGE_CONTROL2_0(ViewHostMsg_PreCacheFontCharacters,
+                            LOGFONT /* font_data */,
+                            string16 /* characters */)
+#endif
+
+#if defined(OS_POSIX)
+// On POSIX, we cannot allocated shared memory from within the sandbox, so
 // this call exists for the renderer to ask the browser to allocate memory
 // on its behalf. We return a file descriptor to the POSIX shared memory.
 // If the |cache_in_browser| flag is |true|, then a copy of the shmem is kept
@@ -2279,22 +2312,6 @@ IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_AllocTransportDIB,
 // renderer is finished with them.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_FreeTransportDIB,
                      TransportDIB::Id /* DIB id */)
-
-// Informs the browser that a plugin has gained or lost focus.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_PluginFocusChanged,
-                    bool, /* focused */
-                    int /* plugin_id */)
-
-// Instructs the browser to start plugin IME.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
-
-#elif defined(OS_WIN)
-// Request that the given font characters be loaded by the browser so it's
-// cached by the OS. Please see RenderMessageFilter::OnPreCacheFontCharacters
-// for details.
-IPC_SYNC_MESSAGE_CONTROL2_0(ViewHostMsg_PreCacheFontCharacters,
-                            LOGFONT /* font_data */,
-                            string16 /* characters */)
 #endif
 
 // Adding a new message? Stick to the sort order above: first platform

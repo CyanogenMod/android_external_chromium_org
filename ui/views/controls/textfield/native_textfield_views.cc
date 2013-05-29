@@ -547,14 +547,17 @@ void NativeTextfieldViews::ClearSelection() {
 }
 
 void NativeTextfieldViews::UpdateBorder() {
-  if (textfield_->draw_border()) {
-    gfx::Insets insets = GetInsets();
-    textfield_->SetHorizontalMargins(insets.left(), insets.right());
-    textfield_->SetVerticalMargins(insets.top(), insets.bottom());
-  } else {
-    textfield_->SetHorizontalMargins(0, 0);
-    textfield_->SetVerticalMargins(0, 0);
-  }
+  // By default, if a caller calls Textfield::RemoveBorder() and does not set
+  // any explicit margins, they should get zero margins.  But also call
+  // UpdateXXXMargins() so we respect any explicitly-set margins.
+  //
+  // NOTE: If someday Textfield supports toggling |draw_border_| back on, we'll
+  // need to update this conditional to set the insets to their default values.
+  if (!textfield_->draw_border())
+    text_border_->SetInsets(0, 0, 0, 0);
+  UpdateHorizontalMargins();
+  UpdateVerticalMargins();
+  UpdateBorderColor();
 }
 
 void NativeTextfieldViews::UpdateBorderColor() {
@@ -614,7 +617,6 @@ void NativeTextfieldViews::UpdateHorizontalMargins() {
   if (!textfield_->GetHorizontalMargins(&left, &right))
     return;
   gfx::Insets inset = GetInsets();
-
   text_border_->SetInsets(inset.top(), left, inset.bottom(), right);
   OnBoundsChanged(GetBounds());
 }
@@ -626,6 +628,11 @@ void NativeTextfieldViews::UpdateVerticalMargins() {
   gfx::Insets inset = GetInsets();
   text_border_->SetInsets(top, inset.left(), bottom, inset.right());
   OnBoundsChanged(GetBounds());
+}
+
+void NativeTextfieldViews::UpdateVerticalAlignment() {
+  GetRenderText()->SetVerticalAlignment(textfield_->vertical_alignment());
+  SchedulePaint();
 }
 
 bool NativeTextfieldViews::SetFocus() {
@@ -1161,39 +1168,40 @@ bool NativeTextfieldViews::HandleKeyEvent(const ui::KeyEvent& key_event) {
       return false;
 
     OnBeforeUserAction();
-    bool editable = !textfield_->read_only();
-    bool readable = !textfield_->IsObscured();
-    bool shift = key_event.IsShiftDown();
-    bool control = key_event.IsControlDown();
+    const bool editable = !textfield_->read_only();
+    const bool readable = !textfield_->IsObscured();
+    const bool shift = key_event.IsShiftDown();
+    const bool control = key_event.IsControlDown();
+    const bool alt = key_event.IsAltDown();
     bool text_changed = false;
     bool cursor_changed = false;
     switch (key_code) {
       case ui::VKEY_Z:
-        if (control && !shift && editable)
+        if (control && !shift && !alt && editable)
           cursor_changed = text_changed = model_->Undo();
-        else if (control && shift && editable)
+        else if (control && shift && !alt && editable)
           cursor_changed = text_changed = model_->Redo();
         break;
       case ui::VKEY_Y:
-        if (control && editable)
+        if (control && !alt && editable)
           cursor_changed = text_changed = model_->Redo();
         break;
       case ui::VKEY_A:
-        if (control) {
+        if (control && !alt) {
           model_->SelectAll(false);
           cursor_changed = true;
         }
         break;
       case ui::VKEY_X:
-        if (control && editable && readable)
+        if (control && !alt && editable && readable)
           cursor_changed = text_changed = Cut();
         break;
       case ui::VKEY_C:
-        if (control && readable)
+        if (control && !alt && readable)
           Copy();
         break;
       case ui::VKEY_V:
-        if (control && editable)
+        if (control && !alt && editable)
           cursor_changed = text_changed = Paste();
         break;
       case ui::VKEY_RIGHT:
@@ -1201,7 +1209,7 @@ bool NativeTextfieldViews::HandleKeyEvent(const ui::KeyEvent& key_event) {
         // We should ignore the alt-left/right keys because alt key doesn't make
         // any special effects for them and they can be shortcut keys such like
         // forward/back of the browser history.
-        if (key_event.IsAltDown())
+        if (alt)
           break;
         size_t cursor_position = model_->GetCursorPosition();
         model_->MoveCursor(
@@ -1251,9 +1259,9 @@ bool NativeTextfieldViews::HandleKeyEvent(const ui::KeyEvent& key_event) {
         text_changed = true;
         break;
       case ui::VKEY_INSERT:
-        if (control && !shift)
+        if (control && !shift && readable)
           Copy();
-        else if (shift && !control)
+        else if (shift && !control && editable)
           cursor_changed = text_changed = Paste();
         break;
       default:
@@ -1356,7 +1364,7 @@ void NativeTextfieldViews::OnAfterUserAction() {
 }
 
 bool NativeTextfieldViews::Cut() {
-  if (model_->Cut()) {
+  if (!textfield_->read_only() && !textfield_->IsObscured() && model_->Cut()) {
     TextfieldController* controller = textfield_->GetController();
     if (controller)
       controller->OnAfterCutOrCopy();
@@ -1366,7 +1374,7 @@ bool NativeTextfieldViews::Cut() {
 }
 
 bool NativeTextfieldViews::Copy() {
-  if (model_->Copy()) {
+  if (!textfield_->IsObscured() && model_->Copy()) {
     TextfieldController* controller = textfield_->GetController();
     if (controller)
       controller->OnAfterCutOrCopy();
@@ -1376,6 +1384,9 @@ bool NativeTextfieldViews::Copy() {
 }
 
 bool NativeTextfieldViews::Paste() {
+  if (textfield_->read_only())
+    return false;
+
   const string16 original_text = GetText();
   const bool success = model_->Paste();
 

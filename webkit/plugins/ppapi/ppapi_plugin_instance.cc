@@ -40,6 +40,7 @@
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/shared_impl/scoped_pp_resource.h"
 #include "ppapi/shared_impl/time_conversion.h"
+#include "ppapi/shared_impl/url_request_info_data.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
@@ -50,6 +51,7 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
@@ -70,7 +72,6 @@
 #include "ui/base/range/range.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
-#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/content_decryptor_delegate.h"
@@ -85,10 +86,10 @@
 #include "webkit/plugins/ppapi/ppb_buffer_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_3d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
-#include "webkit/plugins/ppapi/ppb_url_loader_impl.h"
 #include "webkit/plugins/ppapi/ppp_pdf.h"
 #include "webkit/plugins/ppapi/url_request_info_util.h"
 #include "webkit/plugins/sad_plugin.h"
+#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 #if defined(OS_MACOSX)
 #include "printing/metafile_impl.h"
@@ -134,7 +135,11 @@ using WebKit::WebPrintParams;
 using WebKit::WebPrintScalingOption;
 using WebKit::WebScopedUserGesture;
 using WebKit::WebString;
+using WebKit::WebURLError;
+using WebKit::WebURLLoader;
+using WebKit::WebURLLoaderClient;
 using WebKit::WebURLRequest;
+using WebKit::WebURLResponse;
 using WebKit::WebUserGestureIndicator;
 using WebKit::WebUserGestureToken;
 using WebKit::WebView;
@@ -319,6 +324,51 @@ PluginInstance* PluginInstance::Create(PluginDelegate* delegate,
                             plugin_url);
 }
 
+PluginInstance::NaClDocumentLoader::NaClDocumentLoader()
+    : finished_loading_(false) {
+}
+
+PluginInstance::NaClDocumentLoader::~NaClDocumentLoader(){
+}
+
+void PluginInstance::NaClDocumentLoader::ReplayReceivedData(
+    WebURLLoaderClient* document_loader) {
+  for (std::list<std::string>::iterator it = data_.begin();
+       it != data_.end(); ++it) {
+    document_loader->didReceiveData(NULL, it->c_str(), it->length(),
+                                    0 /* encoded_data_length */);
+  }
+  if (finished_loading_) {
+    document_loader->didFinishLoading(NULL,
+                                      0 /* finish_time */);
+  }
+  if (error_.get()) {
+    document_loader->didFail(NULL, *error_);
+  }
+}
+
+void PluginInstance::NaClDocumentLoader::didReceiveData(
+    WebURLLoader* loader,
+    const char* data,
+    int data_length,
+    int encoded_data_length) {
+  data_.push_back(std::string(data, data_length));
+}
+
+void PluginInstance::NaClDocumentLoader::didFinishLoading(
+    WebURLLoader* loader,
+    double finish_time) {
+  DCHECK(!finished_loading_);
+  finished_loading_ = true;
+}
+
+void PluginInstance::NaClDocumentLoader::didFail(
+    WebURLLoader* loader,
+    const WebURLError& error) {
+  DCHECK(!error_.get());
+  error_.reset(new WebURLError(error));
+}
+
 PluginInstance::GamepadImpl::GamepadImpl(PluginDelegate* delegate)
     : Resource(::ppapi::Resource::Untracked()),
       delegate_(delegate) {
@@ -385,18 +435,25 @@ PluginInstance::PluginInstance(
       text_input_caret_set_(false),
       selection_caret_(0),
       selection_anchor_(0),
-      pending_user_gesture_(0.0) {
+      pending_user_gesture_(0.0),
+      document_loader_(NULL),
+      nacl_document_load_(false),
+      npp_(new NPP_t) {
   pp_instance_ = HostGlobals::Get()->AddInstance(this);
 
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
   DCHECK(delegate);
   module_->InstanceCreated(this);
   delegate_->InstanceCreated(this);
-  message_channel_.reset(new MessageChannel(this));
 
   view_data_.is_page_visible = delegate->IsPageVisible();
-
   resource_creation_ = delegate_->CreateResourceCreationAPI(this);
+
+  // TODO(bbudge) remove this when the trusted NaCl plugin has been removed.
+  // We must defer certain plugin events for NaCl instances since we switch
+  // from the in-process to the out-of-process proxy after instantiating them.
+  if (module->name() == "Native Client")
+    nacl_document_load_ = true;
 }
 
 PluginInstance::~PluginInstance() {
@@ -576,6 +633,8 @@ static void SetGPUHistogram(const ::ppapi::Preferences& prefs,
 bool PluginInstance::Initialize(const std::vector<std::string>& arg_names,
                                 const std::vector<std::string>& arg_values,
                                 bool full_frame) {
+  message_channel_.reset(new MessageChannel(this));
+
   full_frame_ = full_frame;
 
   UpdateTouchEventRequest();
@@ -596,13 +655,27 @@ bool PluginInstance::Initialize(const std::vector<std::string>& arg_names,
   return success;
 }
 
-bool PluginInstance::HandleDocumentLoad(PPB_URLLoader_Impl* loader) {
-  if (!document_loader_)
-    document_loader_ = loader;
-  DCHECK(loader == document_loader_.get());
-
-  return PP_ToBool(instance_interface_->HandleDocumentLoad(
-      pp_instance(), loader->pp_resource()));
+bool PluginInstance::HandleDocumentLoad(
+    const WebKit::WebURLResponse& response) {
+  DCHECK(!document_loader_);
+  if (!nacl_document_load_) {
+    if (module()->is_crashed()) {
+      // Don't create a resource for a crashed plugin.
+      container()->element().document().frame()->stopLoading();
+      return false;
+    }
+    delegate()->HandleDocumentLoad(this, response);
+    // If the load was not abandoned, document_loader_ will now be set. It's
+    // possible that the load was canceled by now and document_loader_ was
+    // already nulled out.
+  } else {
+    // The NaCl proxy isn't available, so save the response and record document
+    // load notifications for later replay.
+    nacl_document_response_ = response;
+    nacl_document_loader_.reset(new NaClDocumentLoader());
+    document_loader_ = nacl_document_loader_.get();
+  }
+  return true;
 }
 
 bool PluginInstance::SendCompositionEventToPlugin(PP_InputEvent_Type type,
@@ -1327,7 +1400,7 @@ int PluginInstance::PrintBegin(const WebPrintParams& print_params) {
   if (!num_pages)
     return 0;
   current_print_settings_ = print_settings;
-  canvas_ = NULL;
+  canvas_.clear();
   ranges_.clear();
   return num_pages;
 }
@@ -1345,7 +1418,7 @@ bool PluginInstance::PrintPage(int page_number, WebKit::WebCanvas* canvas) {
 #endif
   if (save_for_later) {
     ranges_.push_back(page_range);
-    canvas_ = canvas;
+    canvas_ = skia::SharePtr(canvas);
     return true;
   } else {
     return PrintPageHelper(&page_range, 1, canvas);
@@ -1384,7 +1457,7 @@ void PluginInstance::PrintEnd() {
   scoped_refptr<PluginInstance> ref(this);
   if (!ranges_.empty())
     PrintPageHelper(&(ranges_.front()), ranges_.size(), canvas_.get());
-  canvas_ = NULL;
+  canvas_.clear();
   ranges_.clear();
 
   DCHECK(plugin_print_interface_);
@@ -2452,9 +2525,18 @@ PP_NaClResult PluginInstance::ResetAsProxied(
   view_change_weak_ptr_factory_.InvalidateWeakPtrs();
   SendDidChangeView();
 
-  // If we received HandleDocumentLoad, re-send it now via the proxy.
-  if (document_loader_)
-    HandleDocumentLoad(document_loader_.get());
+  DCHECK(nacl_document_load_);
+  nacl_document_load_ = false;
+  if (!nacl_document_response_.isNull()) {
+    document_loader_ = NULL;
+    // Pass the response to the new proxy.
+    HandleDocumentLoad(nacl_document_response_);
+    nacl_document_response_ = WebKit::WebURLResponse();
+    // Replay any document load events we've received to the real loader.
+    nacl_document_loader_->ReplayReceivedData(document_loader_);
+    nacl_document_loader_.reset(NULL);
+  }
+
   return PP_NACL_OK;
 }
 
@@ -2462,6 +2544,10 @@ bool PluginInstance::IsValidInstanceOf(PluginModule* module) {
   DCHECK(module);
   return module == module_.get() ||
          module == original_module_.get();
+}
+
+NPP PluginInstance::instanceNPP() {
+  return npp_.get();
 }
 
 void PluginInstance::DoSetCursor(WebCursorInfo* cursor) {

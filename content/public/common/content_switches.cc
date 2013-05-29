@@ -219,6 +219,14 @@ const char kDisableWebRTC[]                 = "disable-webrtc";
 const char kDisableWebAudio[]               = "disable-webaudio";
 #endif
 
+#if defined(ENABLE_WEBRTC)
+// Enables WebRTC AEC recordings.
+const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
+
+// Enable WebRTC DataChannels SCTP wire protocol support.
+const char kEnableSCTPDataChannels[]        = "enable-sctp-data-channels";
+#endif
+
 // Enables Web MIDI API.
 const char kEnableWebMIDI[]                 = "enable-web-midi";
 
@@ -234,20 +242,13 @@ const char kDisableXSSAuditor[]             = "disable-xss-auditor";
 // Specifies if the |DOMAutomationController| needs to be bound in the
 // renderer. This binding happens on per-frame basis and hence can potentially
 // be a performance bottleneck. One should only enable it when automating dom
-// based tests. Also enables sending/receiving renderer automation messages
-// through the |AutomationRenderViewHelper|.
-//
-// TODO(kkania): Rename this to enable-renderer-automation after moving the
-// |DOMAutomationController| to the |AutomationRenderViewHelper|.
+// based tests.
 const char kDomAutomationController[]       = "dom-automation";
 
 // Loosen security. Needed for tests using some of the functionality of
 // |DOMAutomationController|.
 const char kReduceSecurityForDomAutomationTests[] =
     "reduce-security-for-dom-automation-tests";
-
-// Enable hardware accelerated page painting.
-const char kEnableAcceleratedPainting[]     = "enable-accelerated-painting";
 
 // Enable gpu-accelerated SVG/W3C filters.
 const char kEnableAcceleratedFilters[]      = "enable-accelerated-filters";
@@ -289,6 +290,18 @@ const char kDisableCompositingForFixedPosition[] =
      "disable-fixed-position-compositing";
 const char kEnableHighDpiCompositingForFixedPosition[] =
      "enable-high-dpi-fixed-position-compositing";
+
+// Enable/Disable the creation of compositing layers for RenderLayers with a
+// transition on a property that supports accelerated animation (that is,
+// opacity, -webkit-transform, and -webkit-filter), even when no animation is
+// running. These options allow for three possible scenarios:
+//  1. Default (enabled only if we dectect a highDPI display)
+//  2. Enabled always.
+//  3. Disabled always.
+const char kEnableCompositingForTransition[] =
+     "enable-transition-compositing";
+const char kDisableCompositingForTransition[] =
+     "disable-transition-compositing";
 
 // Enables CSS3 custom filters
 const char kEnableCssShaders[]              = "enable-css-shaders";
@@ -603,6 +616,9 @@ const char kRendererCmdPrefix[]             = "renderer-cmd-prefix";
 // Causes the process to run as renderer instead of as browser.
 const char kRendererProcess[]               = "renderer";
 
+// Enable the Vtune profiler support.
+const char kEnableVtune[]                   = "enable-vtune-support";
+
 // Overrides the default/calculated limit to the number of renderer processes.
 // Very high values for this setting can lead to high memory/resource usage
 // or instability.
@@ -752,6 +768,9 @@ const char kNetworkCountryIso[] = "network-country-iso";
 
 // Set to enable compatibility with legacy WebView synchronous APIs.
 const char kEnableWebViewSynchronousAPIs[] = "enable-webview-synchronous-apis";
+
+// Disable overscroll edge effects like those found in Android views.
+const char kDisableOverscrollEdgeEffect[] = "disable-overscroll-edge-effect";
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -774,6 +793,12 @@ const char kDisableSoftwareRasterizer[]     = "disable-software-rasterizer";
 #if defined(USE_AURA)
 // Forces usage of the test compositor. Needed to run ui tests on bots.
 extern const char kTestCompositor[]         = "test-compositor";
+#endif
+
+#ifndef NDEBUG
+// Dumps dependency information about our browser context keyed services
+// into a dot file in the browser context directory.
+const char kDumpBrowserContextDependencyGraph[] = "dump-browser-context-graph";
 #endif
 
 // Sets the tile size used by composited layers.

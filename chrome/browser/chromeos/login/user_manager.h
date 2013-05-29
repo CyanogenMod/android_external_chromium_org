@@ -53,6 +53,9 @@ class UserManager {
     // on user_id hash would be accessing up-to-date value.
     virtual void ActiveUserHashChanged(const std::string& hash) = 0;
 
+    // Called when UserManager finishes restoring user sessions after crash.
+    virtual void PendingUserSessionsRestoreFinished() = 0;
+
    protected:
     virtual ~UserSessionStateObserver();
   };
@@ -60,11 +63,18 @@ class UserManager {
   // Username for stub login when not running on ChromeOS.
   static const char kStubUser[];
 
+  // Magic e-mail addresses are bad. They exist here because some code already
+  // depends on them and it is hard to figure out what. Any user types added in
+  // the future should be identified by a new |UserType|, not a new magic e-mail
+  // address.
+  // Username for Guest session user.
+  static const char kGuestUserName[];
+
   // Domain that is used for all locally managed users.
   static const char kLocallyManagedUserDomain[];
 
-  // Domain that is used for kiosk app robot.
-  static const char kKioskAppUserDomain[];
+  // The retail mode user has a magic, domainless e-mail address.
+  static const char kRetailModeUserName[];
 
   // Creates the singleton instance. This method is not thread-safe and must be
   // called from the main UI thread.
@@ -103,6 +113,11 @@ class UserManager {
   // Returns a list of users who are currently logged in.
   virtual const UserList& GetLoggedInUsers() const = 0;
 
+  // Returns a list of users who are currently logged in in the LRU order -
+  // so the active user is the first one in the list. If there is no user logged
+  // in, the current user will be returned.
+  virtual const UserList& GetLRULoggedInUsers() = 0;
+
   // Indicates that a user with the given |email| has just logged in. The
   // persistent list is updated accordingly if the user is not ephemeral.
   // |browser_restart| is true when reloading Chrome after crash to distinguish
@@ -121,6 +136,13 @@ class UserManager {
   // but SessionStarted() will return false.
   // Fires NOTIFICATION_SESSION_STARTED.
   virtual void SessionStarted() = 0;
+
+  // Usually is called when Chrome is restarted after a crash and there's an
+  // active session. First user (one that is passed with --login-user) Chrome
+  // session has been already restored at this point. This method asks session
+  // manager for all active user sessions, marks them as logged in
+  // and notifies observers.
+  virtual void RestoreActiveSessions() = 0;
 
   // Creates locally managed user with given display name, and id (e-mail), and
   // sets |display_name| for created user and stores it to
@@ -238,6 +260,10 @@ class UserManager {
   // browser_creator.LaunchBrowser(...) was called after sign in
   // or restart after crash.
   virtual bool IsSessionStarted() const = 0;
+
+  // Returns true iff browser has been restarted after crash and UserManager
+  // finished restoring user sessions.
+  virtual bool UserSessionsRestored() const = 0;
 
   // Returns merge session status.
   virtual MergeSessionState GetMergeSessionState() const = 0;

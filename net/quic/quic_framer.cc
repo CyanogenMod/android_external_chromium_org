@@ -102,12 +102,22 @@ size_t QuicFramer::GetMinGoAwayFrameSize() {
       kQuicStreamIdSize;
 }
 
+// static
+// TODO(satyamshekhar): 16 - Crypto hash for integrity. Not a static value. Use
+// QuicEncrypter::GetMaxPlaintextSize.
+// 16 is a conservative estimate in the case of AEAD_AES_128_GCM_12, which uses
+// 12-byte tags.
+size_t QuicFramer::GetMaxUnackedPackets(bool include_version) {
+  return (kMaxPacketSize - GetPacketHeaderSize(include_version) -
+          GetMinAckFrameSize() - 16) / kSequenceNumberSize;
+}
+
 bool QuicFramer::IsSupportedVersion(QuicTag version) {
   return version == kQuicVersion1;
 }
 
 size_t QuicFramer::GetVersionNegotiationPacketSize(size_t number_versions) {
-  return kQuicGuidSize + kPublicFlagsSize +
+  return kPublicFlagsSize + kQuicGuidSize +
       number_versions * kQuicVersionSize;
 }
 
@@ -266,12 +276,13 @@ QuicEncryptedPacket* QuicFramer::ConstructPublicResetPacket(
   size_t len = GetPublicResetPacketSize();
   QuicDataWriter writer(len);
 
-  if (!writer.WriteUInt64(packet.public_header.guid)) {
+  uint8 flags = static_cast<uint8>(PACKET_PUBLIC_FLAGS_RST |
+                                   PACKET_PUBLIC_FLAGS_8BYTE_GUID);
+  if (!writer.WriteUInt8(flags)) {
     return NULL;
   }
 
-  uint8 flags = static_cast<uint8>(PACKET_PUBLIC_FLAGS_RST);
-  if (!writer.WriteUInt8(flags)) {
+  if (!writer.WriteUInt64(packet.public_header.guid)) {
     return NULL;
   }
 
@@ -294,12 +305,13 @@ QuicEncryptedPacket* QuicFramer::ConstructVersionNegotiationPacket(
   size_t len = GetVersionNegotiationPacketSize(supported_versions.size());
   QuicDataWriter writer(len);
 
-  if (!writer.WriteUInt64(header.guid)) {
+  uint8 flags = static_cast<uint8>(PACKET_PUBLIC_FLAGS_VERSION |
+                                   PACKET_PUBLIC_FLAGS_8BYTE_GUID);
+  if (!writer.WriteUInt8(flags)) {
     return NULL;
   }
 
-  uint8 flags = static_cast<uint8>(PACKET_PUBLIC_FLAGS_VERSION);
-  if (!writer.WriteUInt8(flags)) {
+  if (!writer.WriteUInt64(header.guid)) {
     return NULL;
   }
 
@@ -313,6 +325,8 @@ QuicEncryptedPacket* QuicFramer::ConstructVersionNegotiationPacket(
 }
 
 bool QuicFramer::ProcessPacket(const QuicEncryptedPacket& packet) {
+  // TODO(satyamshekhar): Don't RaiseError (and close the connection) for
+  // invalid (unauthenticated) packets.
   DCHECK(!reader_.get());
   reader_.reset(new QuicDataReader(packet.data(), packet.length()));
 
@@ -409,15 +423,14 @@ bool QuicFramer::ProcessPublicResetPacket(
     const QuicPacketPublicHeader& public_header) {
   QuicPublicResetPacket packet(public_header);
   if (!reader_->ReadUInt64(&packet.nonce_proof)) {
-    // TODO(satyamshekhar): Raise error.
     set_detailed_error("Unable to read nonce proof.");
-    return false;
+    return RaiseError(QUIC_INVALID_PUBLIC_RST_PACKET);
   }
   // TODO(satyamshekhar): validate nonce to protect against DoS.
 
   if (!reader_->ReadUInt48(&packet.rejected_sequence_number)) {
     set_detailed_error("Unable to read rejected sequence number.");
-    return false;
+    return RaiseError(QUIC_INVALID_PUBLIC_RST_PACKET);
   }
   visitor_->OnPublicResetPacket(packet);
   return true;
@@ -431,8 +444,9 @@ bool QuicFramer::ProcessRevivedPacket(QuicPacketHeader* header,
 
   header->entropy_hash = GetPacketEntropyHash(*header);
 
-  // TODO(satyamshekhar): Don't process if the visitor refuses the header.
-  visitor_->OnPacketHeader(*header);
+  if (!visitor_->OnPacketHeader(*header)) {
+    return true;
+  }
 
   if (payload.length() > kMaxPacketSize) {
     set_detailed_error("Revived packet too large.");
@@ -453,10 +467,6 @@ bool QuicFramer::ProcessRevivedPacket(QuicPacketHeader* header,
 
 bool QuicFramer::WritePacketHeader(const QuicPacketHeader& header,
                                    QuicDataWriter* writer) {
-  if (!writer->WriteUInt64(header.public_header.guid)) {
-    return false;
-  }
-
   uint8 flags = 0;
   if (header.public_header.reset_flag) {
     flags |= PACKET_PUBLIC_FLAGS_RST;
@@ -464,7 +474,12 @@ bool QuicFramer::WritePacketHeader(const QuicPacketHeader& header,
   if (header.public_header.version_flag) {
     flags |= PACKET_PUBLIC_FLAGS_VERSION;
   }
+  flags |= PACKET_PUBLIC_FLAGS_8BYTE_GUID;
   if (!writer->WriteUInt8(flags)) {
+    return false;
+  }
+
+  if (!writer->WriteUInt64(header.public_header.guid)) {
     return false;
   }
 
@@ -528,11 +543,6 @@ QuicPacketSequenceNumber QuicFramer::CalculatePacketSequenceNumberFromWire(
 }
 
 bool QuicFramer::ProcessPublicHeader(QuicPacketPublicHeader* public_header) {
-  if (!reader_->ReadUInt64(&public_header->guid)) {
-    set_detailed_error("Unable to read GUID.");
-    return false;
-  }
-
   uint8 public_flags;
   if (!reader_->ReadBytes(&public_flags, 1)) {
     set_detailed_error("Unable to read public flags.");
@@ -544,12 +554,23 @@ bool QuicFramer::ProcessPublicHeader(QuicPacketPublicHeader* public_header) {
     return false;
   }
 
+  if ((public_flags & PACKET_PUBLIC_FLAGS_8BYTE_GUID) !=
+          PACKET_PUBLIC_FLAGS_8BYTE_GUID) {
+    set_detailed_error("Only full length guids (8 bytes) currently supported.");
+    return false;
+  }
+
   public_header->reset_flag = (public_flags & PACKET_PUBLIC_FLAGS_RST) != 0;
   public_header->version_flag =
       (public_flags & PACKET_PUBLIC_FLAGS_VERSION) != 0;
 
   if (public_header->reset_flag && public_header->version_flag) {
     set_detailed_error("Got version flag in reset packet");
+    return false;
+  }
+
+  if (!reader_->ReadUInt64(&public_header->guid)) {
+    set_detailed_error("Unable to read GUID.");
     return false;
   }
 
@@ -570,6 +591,16 @@ bool QuicFramer::ProcessPublicHeader(QuicPacketPublicHeader* public_header) {
 bool QuicFramer::ReadGuidFromPacket(const QuicEncryptedPacket& packet,
                                     QuicGuid* guid) {
   QuicDataReader reader(packet.data(), packet.length());
+  uint8 public_flags;
+  if (!reader.ReadBytes(&public_flags, 1)) {
+    return false;
+  }
+  // Ensure it's an 8 byte guid.
+  if ((public_flags & PACKET_PUBLIC_FLAGS_8BYTE_GUID) !=
+          PACKET_PUBLIC_FLAGS_8BYTE_GUID) {
+    return false;
+  }
+
   return reader.ReadUInt64(guid);
 }
 
@@ -704,6 +735,13 @@ bool QuicFramer::ProcessFrameData() {
         if (!ProcessConnectionCloseFrame(&frame)) {
           return RaiseError(QUIC_INVALID_CONNECTION_CLOSE_DATA);
         }
+
+        if (!visitor_->OnAckFrame(frame.ack_frame)) {
+          DLOG(INFO) << "Visitor asked to stopped further processing.";
+          // Returning true since there was no parsing error.
+          return true;
+        }
+
         if (!visitor_->OnConnectionCloseFrame(frame)) {
           DLOG(INFO) << "Visitor asked to stopped further processing.";
           // Returning true since there was no parsing error.
@@ -988,12 +1026,6 @@ bool QuicFramer::ProcessConnectionCloseFrame(QuicConnectionCloseFrame* frame) {
     return false;
   }
 
-  if (!visitor_->OnAckFrame(frame->ack_frame)) {
-    DLOG(INFO) << "Visitor asked to stopped further processing.";
-    // Returning true since there was no parsing error.
-    return true;
-  }
-
   return true;
 }
 
@@ -1104,9 +1136,9 @@ QuicEncryptedPacket* QuicFramer::EncryptPacket(
 
 size_t QuicFramer::GetMaxPlaintextSize(size_t ciphertext_size) {
   // In order to keep the code simple, we don't have the current encryption
-  // level to hand. At the moment, all AEADs have a tag-length of 16 bytes so
-  // that doesn't matter but we take the minimum plaintext length just to be
-  // safe.
+  // level to hand. At the moment, the NullEncrypter has a tag length of 16
+  // bytes and AES-GCM has a tag length of 12. We take the minimum plaintext
+  // length just to be safe.
   size_t min_plaintext_size = ciphertext_size;
 
   for (int i = ENCRYPTION_NONE; i < NUM_ENCRYPTION_LEVELS; i++) {

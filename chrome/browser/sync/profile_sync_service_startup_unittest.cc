@@ -105,7 +105,8 @@ class ProfileSyncServiceStartupTest : public testing::Test {
     ui_loop_.RunUntilIdle();
   }
 
-  static ProfileKeyedService* BuildService(content::BrowserContext* profile) {
+  static BrowserContextKeyedService* BuildService(
+      content::BrowserContext* profile) {
     return new TestProfileSyncService(
         new ProfileSyncComponentsFactoryMock(),
         static_cast<Profile*>(profile),
@@ -131,7 +132,7 @@ class ProfileSyncServiceStartupTest : public testing::Test {
     return data_type_manager;
   }
 
-  MessageLoop ui_loop_;
+  base::MessageLoop ui_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread file_thread_;
@@ -152,14 +153,14 @@ class ProfileSyncServiceStartupCrosTest : public ProfileSyncServiceStartupTest {
     sync_->set_synchronous_sync_configuration();
   }
 
-  static ProfileKeyedService* BuildCrosService(
+  static BrowserContextKeyedService* BuildCrosService(
       content::BrowserContext* context) {
     Profile* profile = static_cast<Profile*>(context);
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile);
     profile->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                    "test_user");
-    signin->Initialize(profile);
+    signin->Initialize(profile, NULL);
     EXPECT_FALSE(signin->GetAuthenticatedUsername().empty());
     return new TestProfileSyncService(
         new ProfileSyncComponentsFactoryMock(),
@@ -170,7 +171,8 @@ class ProfileSyncServiceStartupCrosTest : public ProfileSyncServiceStartupTest {
   }
 };
 
-ProfileKeyedService* BuildFakeTokenService(content::BrowserContext* profile) {
+BrowserContextKeyedService* BuildFakeTokenService(
+    content::BrowserContext* profile) {
   return new FakeTokenService();
 }
 
@@ -178,7 +180,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
   // We've never completed startup.
   profile_->GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);
   SigninManagerFactory::GetForProfile(
-      profile_.get())->Initialize(profile_.get());
+      profile_.get())->Initialize(profile_.get(), NULL);
   CreateSyncService();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
   EXPECT_CALL(*data_type_manager, Configure(_, _)).Times(0);
@@ -228,7 +230,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartNoCredentials) {
  // We've never completed startup.
   profile_->GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);
   SigninManagerFactory::GetForProfile(
-      profile_.get())->Initialize(profile_.get());
+      profile_.get())->Initialize(profile_.get(), NULL);
   TokenService* token_service = static_cast<TokenService*>(
       TokenServiceFactory::GetInstance()->SetTestingFactoryAndUse(
           profile_.get(), BuildFakeTokenService));
@@ -278,7 +280,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartInvalidCredentials) {
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                   "test_user");
   SigninManagerFactory::GetForProfile(
-      profile_.get())->Initialize(profile_.get());
+      profile_.get())->Initialize(profile_.get(), NULL);
   CreateSyncService();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
   EXPECT_CALL(*data_type_manager, Configure(_, _)).Times(0);
@@ -316,7 +318,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartInvalidCredentials) {
   token_service->IssueAuthTokenForTest(
       GaiaConstants::kSyncService, "sync_token");
   sync_->SetSetupInProgress(false);
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   // Verify we successfully finish startup and configuration.
   EXPECT_TRUE(sync_->ShouldPushChanges());
@@ -362,7 +364,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartNormal) {
   // Pre load the tokens
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, "test_user");
   SigninManagerFactory::GetForProfile(profile_.get())->Initialize(
-      profile_.get());
+      profile_.get(), NULL);
   CreateSyncService();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
   EXPECT_CALL(*data_type_manager, Configure(_, _));
@@ -393,7 +395,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartRecoverDatatypePrefs) {
   // Pre load the tokens
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, "test_user");
   SigninManagerFactory::GetForProfile(profile_.get())->Initialize(
-      profile_.get());
+      profile_.get(), NULL);
   CreateSyncService();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
   EXPECT_CALL(*data_type_manager, Configure(_, _));
@@ -420,7 +422,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartDontRecoverDatatypePrefs) {
   // Pre load the tokens
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, "test_user");
   SigninManagerFactory::GetForProfile(profile_.get())->Initialize(
-      profile_.get());
+      profile_.get(), NULL);
   CreateSyncService();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
   EXPECT_CALL(*data_type_manager, Configure(_, _));
@@ -440,7 +442,7 @@ TEST_F(ProfileSyncServiceStartupTest, ManagedStartup) {
   // Service should not be started by Initialize() since it's managed.
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, "test_user");
   SigninManagerFactory::GetForProfile(profile_.get())->Initialize(
-      profile_.get());
+      profile_.get(), NULL);
   CreateSyncService();
 
   // Disable sync through policy.
@@ -457,7 +459,7 @@ TEST_F(ProfileSyncServiceStartupTest, ManagedStartup) {
 TEST_F(ProfileSyncServiceStartupTest, SwitchManaged) {
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, "test_user");
   SigninManagerFactory::GetForProfile(profile_.get())->Initialize(
-      profile_.get());
+      profile_.get(), NULL);
   CreateSyncService();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
   EXPECT_CALL(*data_type_manager, Configure(_, _));
@@ -486,7 +488,7 @@ TEST_F(ProfileSyncServiceStartupTest, SwitchManaged) {
 TEST_F(ProfileSyncServiceStartupTest, StartFailure) {
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, "test_user");
   SigninManagerFactory::GetForProfile(profile_.get())->Initialize(
-      profile_.get());
+      profile_.get(), NULL);
   CreateSyncService();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
   DataTypeManager::ConfigureStatus status = DataTypeManager::ABORTED;
@@ -516,7 +518,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartDownloadFailed) {
   // Pre load the tokens
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, "test_user");
   SigninManagerFactory::GetForProfile(profile_.get())->Initialize(
-      profile_.get());
+      profile_.get(), NULL);
   CreateSyncService();
 
   profile_->GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);

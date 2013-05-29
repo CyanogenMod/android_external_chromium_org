@@ -4,6 +4,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/favicon/favicon_handler.h"
+#include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "content/public/browser/favicon_status.h"
@@ -47,12 +48,12 @@ void FillBitmap(int w, int h, std::vector<unsigned char>* output) {
 
 void SetFaviconBitmapResult(
     const GURL& icon_url,
-    history::IconType icon_type,
+    chrome::IconType icon_type,
     bool expired,
-    std::vector<history::FaviconBitmapResult>* favicon_bitmap_results) {
+    std::vector<chrome::FaviconBitmapResult>* favicon_bitmap_results) {
   scoped_refptr<base::RefCountedBytes> data(new base::RefCountedBytes());
   FillBitmap(gfx::kFaviconSize, gfx::kFaviconSize, &data->data());
-  history::FaviconBitmapResult bitmap_result;
+  chrome::FaviconBitmapResult bitmap_result;
   bitmap_result.expired = expired;
   bitmap_result.bitmap_data = data;
   // Use a pixel size other than (0,0) as (0,0) has a special meaning.
@@ -65,8 +66,8 @@ void SetFaviconBitmapResult(
 
 void SetFaviconBitmapResult(
     const GURL& icon_url,
-    std::vector<history::FaviconBitmapResult>* favicon_bitmap_results) {
-  SetFaviconBitmapResult(icon_url, history::FAVICON, false /* expired */,
+    std::vector<chrome::FaviconBitmapResult>* favicon_bitmap_results) {
+  SetFaviconBitmapResult(icon_url, chrome::FAVICON, false /* expired */,
                          favicon_bitmap_results);
 }
 
@@ -150,7 +151,7 @@ class HistoryRequestHandler {
   const GURL icon_url_;
   const int icon_type_;
   const std::vector<unsigned char> bitmap_data_;
-  std::vector<history::FaviconBitmapResult> history_results_;
+  std::vector<chrome::FaviconBitmapResult> history_results_;
   FaviconService::FaviconResultsCallback callback_;
 
  private:
@@ -244,7 +245,7 @@ class TestFaviconHandler : public FaviconHandler {
   virtual void UpdateFaviconMappingAndFetch(
       const GURL& page_url,
       const GURL& icon_url,
-      history::IconType icon_type,
+      chrome::IconType icon_type,
       const FaviconService::FaviconResultsCallback& callback,
       CancelableTaskTracker* tracker) OVERRIDE {
     history_handler_.reset(new HistoryRequestHandler(page_url, icon_url,
@@ -253,7 +254,7 @@ class TestFaviconHandler : public FaviconHandler {
 
   virtual void GetFavicon(
       const GURL& icon_url,
-      history::IconType icon_type,
+      chrome::IconType icon_type,
       const FaviconService::FaviconResultsCallback& callback,
       CancelableTaskTracker* tracker) OVERRIDE {
     history_handler_.reset(new HistoryRequestHandler(GURL(), icon_url,
@@ -277,7 +278,7 @@ class TestFaviconHandler : public FaviconHandler {
 
   virtual void SetHistoryFavicons(const GURL& page_url,
                                   const GURL& icon_url,
-                                  history::IconType icon_type,
+                                  chrome::IconType icon_type,
                                   const gfx::Image& image) OVERRIDE {
     scoped_refptr<base::RefCountedMemory> bytes = image.As1xPNGBytes();
     std::vector<unsigned char> bitmap_data(bytes->front(),
@@ -352,6 +353,14 @@ class FaviconHandlerTest : public ChromeRenderViewHostTestHarness {
     ChromeRenderViewHostTestHarness::SetUp();
   }
 
+  virtual void TearDown() OVERRIDE {
+    Profile* profile = Profile::FromBrowserContext(
+        web_contents()->GetBrowserContext());
+    FaviconServiceFactory::GetInstance()->SetTestingFactory(
+      profile, NULL);
+    ChromeRenderViewHostTestHarness::TearDown();
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(FaviconHandlerTest);
 };
@@ -372,7 +381,7 @@ TEST_F(FaviconHandlerTest, GetFaviconFromHistory) {
   ASSERT_TRUE(history_handler);
   EXPECT_EQ(page_url, history_handler->page_url_);
   EXPECT_EQ(GURL(), history_handler->icon_url_);
-  EXPECT_EQ(history::FAVICON, history_handler->icon_type_);
+  EXPECT_EQ(chrome::FAVICON, history_handler->icon_type_);
 
   SetFaviconBitmapResult(icon_url, &history_handler->history_results_);
 
@@ -413,10 +422,10 @@ TEST_F(FaviconHandlerTest, DownloadFavicon) {
   ASSERT_TRUE(history_handler);
   EXPECT_EQ(page_url, history_handler->page_url_);
   EXPECT_EQ(GURL(), history_handler->icon_url_);
-  EXPECT_EQ(history::FAVICON, history_handler->icon_type_);
+  EXPECT_EQ(chrome::FAVICON, history_handler->icon_type_);
 
   // Set icon data expired
-  SetFaviconBitmapResult(icon_url, history::FAVICON, true /* expired */,
+  SetFaviconBitmapResult(icon_url, chrome::FAVICON, true /* expired */,
                          &history_handler->history_results_);
   // Send history response.
   history_handler->InvokeCallback();
@@ -480,7 +489,7 @@ TEST_F(FaviconHandlerTest, UpdateAndDownloadFavicon) {
   ASSERT_TRUE(history_handler);
   EXPECT_EQ(page_url, history_handler->page_url_);
   EXPECT_EQ(GURL(), history_handler->icon_url_);
-  EXPECT_EQ(history::FAVICON, history_handler->icon_type_);
+  EXPECT_EQ(chrome::FAVICON, history_handler->icon_type_);
 
   // Set valid icon data.
   SetFaviconBitmapResult(icon_url, &history_handler->history_results_);
@@ -561,15 +570,15 @@ TEST_F(FaviconHandlerTest, FaviconInHistoryInvalid) {
   ASSERT_TRUE(history_handler);
   EXPECT_EQ(page_url, history_handler->page_url_);
   EXPECT_EQ(GURL(), history_handler->icon_url_);
-  EXPECT_EQ(history::FAVICON, history_handler->icon_type_);
+  EXPECT_EQ(chrome::FAVICON, history_handler->icon_type_);
 
   // Set non empty but invalid data.
-  history::FaviconBitmapResult bitmap_result;
+  chrome::FaviconBitmapResult bitmap_result;
   bitmap_result.expired = false;
   // Empty bitmap data is invalid.
   bitmap_result.bitmap_data = new base::RefCountedBytes();
   bitmap_result.pixel_size = gfx::Size(gfx::kFaviconSize, gfx::kFaviconSize);
-  bitmap_result.icon_type = history::FAVICON;
+  bitmap_result.icon_type = chrome::FAVICON;
   bitmap_result.icon_url = icon_url;
   history_handler->history_results_.clear();
   history_handler->history_results_.push_back(bitmap_result);
@@ -633,7 +642,7 @@ TEST_F(FaviconHandlerTest, UpdateFavicon) {
   ASSERT_TRUE(history_handler);
   EXPECT_EQ(page_url, history_handler->page_url_);
   EXPECT_EQ(GURL(), history_handler->icon_url_);
-  EXPECT_EQ(history::FAVICON, history_handler->icon_type_);
+  EXPECT_EQ(chrome::FAVICON, history_handler->icon_type_);
 
   SetFaviconBitmapResult(icon_url, &history_handler->history_results_);
 
@@ -695,7 +704,7 @@ TEST_F(FaviconHandlerTest, Download2ndFaviconURLCandidate) {
   ASSERT_TRUE(history_handler);
   EXPECT_EQ(page_url, history_handler->page_url_);
   EXPECT_EQ(GURL(), history_handler->icon_url_);
-  EXPECT_EQ(history::TOUCH_PRECOMPOSED_ICON | history::TOUCH_ICON,
+  EXPECT_EQ(chrome::TOUCH_PRECOMPOSED_ICON | chrome::TOUCH_ICON,
             history_handler->icon_type_);
 
   // Icon not found.
@@ -767,7 +776,7 @@ TEST_F(FaviconHandlerTest, Download2ndFaviconURLCandidate) {
   download_handler->Reset();
 
   // Simulates getting a expired icon from history.
-  SetFaviconBitmapResult(new_icon_url, history::TOUCH_ICON,
+  SetFaviconBitmapResult(new_icon_url, chrome::TOUCH_ICON,
       true /* expired */, &history_handler->history_results_);
   history_handler->InvokeCallback();
 
@@ -807,7 +816,7 @@ TEST_F(FaviconHandlerTest, UpdateDuringDownloading) {
   ASSERT_TRUE(history_handler);
   EXPECT_EQ(page_url, history_handler->page_url_);
   EXPECT_EQ(GURL(), history_handler->icon_url_);
-  EXPECT_EQ(history::TOUCH_PRECOMPOSED_ICON | history::TOUCH_ICON,
+  EXPECT_EQ(chrome::TOUCH_PRECOMPOSED_ICON | chrome::TOUCH_ICON,
             history_handler->icon_type_);
 
   // Icon not found.
@@ -890,8 +899,8 @@ TEST_F(FaviconHandlerTest, UpdateDuringDownloading) {
   // Simulates getting the icon from history.
   scoped_ptr<HistoryRequestHandler> handler;
   handler.reset(new HistoryRequestHandler(page_url, latest_icon_url,
-                                          history::TOUCH_ICON, callback));
-  SetFaviconBitmapResult(latest_icon_url, history::TOUCH_ICON,
+                                          chrome::TOUCH_ICON, callback));
+  SetFaviconBitmapResult(latest_icon_url, chrome::TOUCH_ICON,
       false /* expired */, &handler->history_results_);
   handler->InvokeCallback();
 
@@ -1018,6 +1027,81 @@ TEST_F(FaviconHandlerTest, FirstFavicon) {
   EXPECT_FALSE(handler.GetEntry()->GetFavicon().image.IsEmpty());
   EXPECT_EQ(gfx::kFaviconSize,
             handler.GetEntry()->GetFavicon().image.ToSkBitmap()->width());
+}
+
+static BrowserContextKeyedService* BuildFaviconService(
+    content::BrowserContext* profile) {
+  return new FaviconService(NULL);
+}
+
+// Test that Favicon is not requested repeatedly during the same session if
+// server returns HTTP 404 status.
+TEST_F(FaviconHandlerTest, UnableToDownloadFavicon) {
+  const GURL missing_icon_url("http://www.google.com/favicon.ico");
+  const GURL another_icon_url("http://www.youtube.com/favicon.ico");
+
+  Profile* profile = Profile::FromBrowserContext(
+      web_contents()->GetBrowserContext());
+
+  FaviconServiceFactory::GetInstance()->SetTestingFactory(
+      profile, BuildFaviconService);
+  FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
+      profile, Profile::IMPLICIT_ACCESS);
+
+  FaviconTabHelper::CreateForWebContents(web_contents());
+  FaviconTabHelper* favicon_tab_helper =
+      FaviconTabHelper::FromWebContents(web_contents());
+
+  std::vector<SkBitmap> empty_icons;
+  int download_id = 0;
+
+  // Try to download missing icon.
+  download_id = favicon_tab_helper->StartDownload(missing_icon_url, 0);
+  EXPECT_NE(0, download_id);
+  EXPECT_FALSE(favicon_service->WasUnableToDownloadFavicon(missing_icon_url));
+
+  // Report download failure with HTTP 503 status.
+  favicon_tab_helper->DidDownloadFavicon(download_id, 503, missing_icon_url,
+      0, empty_icons);
+  // Icon is not marked as UnableToDownload as HTTP status is not 404.
+  EXPECT_FALSE(favicon_service->WasUnableToDownloadFavicon(missing_icon_url));
+
+  // Try to download again.
+  download_id = favicon_tab_helper->StartDownload(missing_icon_url, 0);
+  EXPECT_NE(0, download_id);
+  EXPECT_FALSE(favicon_service->WasUnableToDownloadFavicon(missing_icon_url));
+
+  // Report download failure with HTTP 404 status.
+  favicon_tab_helper->DidDownloadFavicon(download_id, 404, missing_icon_url,
+      0, empty_icons);
+  // Icon is marked as UnableToDownload.
+  EXPECT_TRUE(favicon_service->WasUnableToDownloadFavicon(missing_icon_url));
+
+  // Try to download again.
+  download_id = favicon_tab_helper->StartDownload(missing_icon_url, 0);
+  // Download is not started and Icon is still marked as UnableToDownload.
+  EXPECT_EQ(0, download_id);
+  EXPECT_TRUE(favicon_service->WasUnableToDownloadFavicon(missing_icon_url));
+
+  // Try to download another icon.
+  download_id = favicon_tab_helper->StartDownload(another_icon_url, 0);
+  // Download is started as another icon URL is not same as missing_icon_url.
+  EXPECT_NE(0, download_id);
+  EXPECT_FALSE(favicon_service->WasUnableToDownloadFavicon(another_icon_url));
+
+  // Clear the list of missing icons.
+  favicon_service->ClearUnableToDownloadFavicons();
+  EXPECT_FALSE(favicon_service->WasUnableToDownloadFavicon(missing_icon_url));
+  EXPECT_FALSE(favicon_service->WasUnableToDownloadFavicon(another_icon_url));
+
+  // Try to download again.
+  download_id = favicon_tab_helper->StartDownload(missing_icon_url, 0);
+  EXPECT_NE(0, download_id);
+  // Report download success with HTTP 200 status.
+  favicon_tab_helper->DidDownloadFavicon(download_id, 200, missing_icon_url,
+      0, empty_icons);
+  // Icon is not marked as UnableToDownload as HTTP status is not 404.
+  EXPECT_FALSE(favicon_service->WasUnableToDownloadFavicon(missing_icon_url));
 }
 
 }  // namespace.

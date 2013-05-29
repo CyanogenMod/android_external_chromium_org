@@ -24,13 +24,13 @@
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper_delegate.h"
 #include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/chrome_web_modal_dialog_manager_delegate.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper_delegate.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
-#include "chrome/browser/ui/web_contents_modal_dialog_manager_delegate.h"
 #include "chrome/browser/ui/zoom/zoom_observer.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
@@ -63,7 +63,6 @@ class TabStripModel;
 class TabStripModelDelegate;
 struct SearchMode;
 struct WebApplicationInfo;
-class WebContentsModalDialogHost;
 
 namespace chrome {
 class BrowserCommandController;
@@ -72,6 +71,7 @@ class UnloadController;
 
 namespace content {
 class NavigationController;
+class PageState;
 class SessionStorageNamespace;
 }
 
@@ -90,11 +90,15 @@ struct SelectedFileInfo;
 class WebDialogDelegate;
 }
 
+namespace web_modal {
+class WebContentsModalDialogHost;
+}
+
 class Browser : public TabStripModelObserver,
                 public content::WebContentsDelegate,
                 public CoreTabHelperDelegate,
                 public SearchEngineTabHelperDelegate,
-                public WebContentsModalDialogManagerDelegate,
+                public ChromeWebModalDialogManagerDelegate,
                 public BlockedContentTabHelperDelegate,
                 public BookmarkTabHelperDelegate,
                 public ZoomObserver,
@@ -294,11 +298,6 @@ class Browser : public TabStripModelObserver,
   // Invoked when the window containing us is closing. Performs the necessary
   // cleanup.
   void OnWindowClosing();
-
-  // OnWindowActivationChanged handling ///////////////////////////////////////
-
-  // Invoked when the window containing us is activated.
-  void OnWindowActivated();
 
   // In-progress download termination handling /////////////////////////////////
 
@@ -556,7 +555,7 @@ class Browser : public TabStripModelObserver,
   virtual void ViewSourceForFrame(
       content::WebContents* source,
       const GURL& frame_url,
-      const std::string& frame_content_state) OVERRIDE;
+      const content::PageState& frame_page_state) OVERRIDE;
   virtual void ShowRepostFormWarningDialog(
       content::WebContents* source) OVERRIDE;
   virtual bool ShouldCreateWebContents(
@@ -582,10 +581,7 @@ class Browser : public TabStripModelObserver,
   virtual content::JavaScriptDialogManager*
       GetJavaScriptDialogManager() OVERRIDE;
   virtual content::ColorChooser* OpenColorChooser(
-      content::WebContents* web_contents,
-      int color_chooser_id,
-      SkColor color) OVERRIDE;
-  virtual void DidEndColorChooser() OVERRIDE;
+      content::WebContents* web_contents, SkColor color) OVERRIDE;
   virtual void RunFileChooser(
       content::WebContents* web_contents,
       const content::FileChooserParams& params) OVERRIDE;
@@ -642,7 +638,7 @@ class Browser : public TabStripModelObserver,
   // Overridden from WebContentsModalDialogManagerDelegate:
   virtual void SetWebContentsBlocked(content::WebContents* web_contents,
                                      bool blocked) OVERRIDE;
-  virtual WebContentsModalDialogHost*
+  virtual web_modal::WebContentsModalDialogHost*
       GetWebContentsModalDialogHost() OVERRIDE;
 
   // Overridden from BlockedContentTabHelperDelegate:
@@ -679,9 +675,6 @@ class Browser : public TabStripModelObserver,
 
   // Handle changes to kDevTools preference.
   void OnDevToolsDisabledChanged();
-
-  // Set the preference that indicates that the home page has been changed.
-  void MarkHomePageAsChanged();
 
   // UI update coalescing and handling ////////////////////////////////////////
 
@@ -915,10 +908,6 @@ class Browser : public TabStripModelObserver,
 
   // True if the browser window has been shown at least once.
   bool window_has_shown_;
-
-  // Currently open color chooser. Non-NULL after OpenColorChooser is called and
-  // before DidEndColorChooser is called.
-  scoped_ptr<content::ColorChooser> color_chooser_;
 
   DISALLOW_COPY_AND_ASSIGN(Browser);
 };

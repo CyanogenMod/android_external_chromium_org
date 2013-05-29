@@ -10,6 +10,7 @@
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
+#include "chrome/browser/google_apis/operation_runner.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -92,9 +93,9 @@ void ParseJson(const std::string& json, const ParseJsonCallback& callback) {
 //============================ UrlFetchOperationBase ===========================
 
 UrlFetchOperationBase::UrlFetchOperationBase(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter)
-    : OperationRegistry::Operation(registry),
+    : OperationRegistry::Operation(runner->operation_registry()),
       url_request_context_getter_(url_request_context_getter),
       re_authenticate_count_(0),
       started_(false),
@@ -104,10 +105,10 @@ UrlFetchOperationBase::UrlFetchOperationBase(
 }
 
 UrlFetchOperationBase::UrlFetchOperationBase(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const base::FilePath& path)
-    : OperationRegistry::Operation(registry, path),
+    : OperationRegistry::Operation(runner->operation_registry(), path),
       url_request_context_getter_(url_request_context_getter),
       re_authenticate_count_(0),
       started_(false),
@@ -308,10 +309,10 @@ UrlFetchOperationBase::GetWeakPtr() {
 //============================ EntryActionOperation ============================
 
 EntryActionOperation::EntryActionOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const EntryActionCallback& callback)
-    : UrlFetchOperationBase(registry, url_request_context_getter),
+    : UrlFetchOperationBase(runner, url_request_context_getter),
       callback_(callback) {
   DCHECK(!callback_.is_null());
 }
@@ -332,10 +333,10 @@ void EntryActionOperation::RunCallbackOnPrematureFailure(GDataErrorCode code) {
 //============================== GetDataOperation ==============================
 
 GetDataOperation::GetDataOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const GetDataCallback& callback)
-    : UrlFetchOperationBase(registry, url_request_context_getter),
+    : UrlFetchOperationBase(runner, url_request_context_getter),
       callback_(callback),
       weak_ptr_factory_(this) {
   DCHECK(!callback_.is_null());
@@ -405,13 +406,13 @@ void GetDataOperation::RunCallbackOnSuccess(GDataErrorCode fetch_error_code,
 //========================= InitiateUploadOperationBase ========================
 
 InitiateUploadOperationBase::InitiateUploadOperationBase(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const InitiateUploadCallback& callback,
     const base::FilePath& drive_file_path,
     const std::string& content_type,
     int64 content_length)
-    : UrlFetchOperationBase(registry,
+    : UrlFetchOperationBase(runner,
                             url_request_context_getter,
                             drive_file_path),
       callback_(callback),
@@ -484,15 +485,13 @@ UploadRangeResponse::~UploadRangeResponse() {
 //========================== UploadRangeOperationBase ==========================
 
 UploadRangeOperationBase::UploadRangeOperationBase(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
-    const UploadMode upload_mode,
     const base::FilePath& drive_file_path,
     const GURL& upload_url)
-    : UrlFetchOperationBase(registry,
+    : UrlFetchOperationBase(runner,
                             url_request_context_getter,
                             drive_file_path),
-      upload_mode_(upload_mode),
       drive_file_path_(drive_file_path),
       upload_url_(upload_url),
       last_chunk_completed_(false),
@@ -574,17 +573,11 @@ void UploadRangeOperationBase::OnDataParsed(GDataErrorCode code,
 
   // For a new file, HTTP_CREATED is returned.
   // For an existing file, HTTP_SUCCESS is returned.
-  if ((upload_mode_ == UPLOAD_NEW_FILE && code == HTTP_CREATED) ||
-      (upload_mode_ == UPLOAD_EXISTING_FILE && code == HTTP_SUCCESS)) {
+  if (code == HTTP_CREATED || code == HTTP_SUCCESS)
     last_chunk_completed_ = true;
-  }
 
   OnRangeOperationComplete(UploadRangeResponse(code, -1, -1), value.Pass());
   OnProcessURLFetchResultsComplete(last_chunk_completed_);
-}
-
-void UploadRangeOperationBase::NotifyStartToOperationRegistry() {
-  NotifyResume();
 }
 
 void UploadRangeOperationBase::NotifySuccessToOperationRegistry() {
@@ -603,9 +596,8 @@ void UploadRangeOperationBase::RunCallbackOnPrematureFailure(
 //========================== ResumeUploadOperationBase =========================
 
 ResumeUploadOperationBase::ResumeUploadOperationBase(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
-    UploadMode upload_mode,
     const base::FilePath& drive_file_path,
     const GURL& upload_location,
     int64 start_position,
@@ -613,9 +605,8 @@ ResumeUploadOperationBase::ResumeUploadOperationBase(
     int64 content_length,
     const std::string& content_type,
     const base::FilePath& local_file_path)
-    : UploadRangeOperationBase(registry,
+    : UploadRangeOperationBase(runner,
                                url_request_context_getter,
-                               upload_mode,
                                drive_file_path,
                                upload_location),
       start_position_(start_position),
@@ -672,18 +663,20 @@ bool ResumeUploadOperationBase::GetContentFile(
   return true;
 }
 
+void ResumeUploadOperationBase::NotifyStartToOperationRegistry() {
+  NotifyResume();
+}
+
 //======================== GetUploadStatusOperationBase ========================
 
 GetUploadStatusOperationBase::GetUploadStatusOperationBase(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
-    UploadMode upload_mode,
     const base::FilePath& drive_file_path,
     const GURL& upload_url,
     int64 content_length)
-  : UploadRangeOperationBase(registry,
+  : UploadRangeOperationBase(runner,
                              url_request_context_getter,
-                             upload_mode,
                              drive_file_path,
                              upload_url),
     content_length_(content_length) {}
@@ -708,7 +701,7 @@ GetUploadStatusOperationBase::GetExtraRequestHeaders() const {
 //============================ DownloadFileOperation ===========================
 
 DownloadFileOperation::DownloadFileOperation(
-    OperationRegistry* registry,
+    OperationRunner* runner,
     net::URLRequestContextGetter* url_request_context_getter,
     const DownloadActionCallback& download_action_callback,
     const GetContentCallback& get_content_callback,
@@ -716,7 +709,7 @@ DownloadFileOperation::DownloadFileOperation(
     const GURL& download_url,
     const base::FilePath& drive_file_path,
     const base::FilePath& output_file_path)
-    : UrlFetchOperationBase(registry,
+    : UrlFetchOperationBase(runner,
                             url_request_context_getter,
                             drive_file_path),
       download_action_callback_(download_action_callback),

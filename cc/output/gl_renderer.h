@@ -45,7 +45,8 @@ class CC_EXPORT GLRenderer
   static scoped_ptr<GLRenderer> Create(RendererClient* client,
                                        OutputSurface* output_surface,
                                        ResourceProvider* resource_provider,
-                                       int highp_threshold_min);
+                                       int highp_threshold_min,
+                                       bool use_skia_gpu_backend);
 
   virtual ~GLRenderer();
 
@@ -60,7 +61,7 @@ class CC_EXPORT GLRenderer
 
   virtual void DoNoOp() OVERRIDE;
   // Puts backbuffer onscreen.
-  virtual void SwapBuffers(const LatencyInfo& latency_info) OVERRIDE;
+  virtual void SwapBuffers(const ui::LatencyInfo& latency_info) OVERRIDE;
 
   virtual void GetFramebufferPixels(void* pixels, gfx::Rect rect) OVERRIDE;
 
@@ -77,6 +78,8 @@ class CC_EXPORT GLRenderer
                           const char* file,
                           int line);
 
+  bool CanUseSkiaGPUBackend() const;
+
  protected:
   GLRenderer(RendererClient* client,
              OutputSurface* output_surface,
@@ -85,6 +88,7 @@ class CC_EXPORT GLRenderer
 
   bool IsBackbufferDiscarded() const { return is_backbuffer_discarded_; }
   bool Initialize();
+  void InitializeGrContext();
 
   const gfx::QuadF& SharedGeometryQuad() const { return shared_geometry_quad_; }
   const GeometryBinding* SharedGeometry() const {
@@ -93,7 +97,7 @@ class CC_EXPORT GLRenderer
 
   void GetFramebufferPixelsAsync(gfx::Rect rect,
                                  bool flipped_y,
-                                 CopyRenderPassCallback callback);
+                                 scoped_ptr<CopyOutputRequest> request);
   bool GetFramebufferTexture(ScopedResource* resource, gfx::Rect device_rect);
   void ReleaseRenderPassTextures();
 
@@ -112,7 +116,7 @@ class CC_EXPORT GLRenderer
   virtual void EnsureScissorTestDisabled() OVERRIDE;
   virtual void CopyCurrentRenderPassToBitmap(
       DrawingFrame* frame,
-      const CopyRenderPassCallback& callback) OVERRIDE;
+      scoped_ptr<CopyOutputRequest> request) OVERRIDE;
   virtual void FinishDrawingQuadList() OVERRIDE;
 
  private:
@@ -151,6 +155,8 @@ class CC_EXPORT GLRenderer
                         const YUVVideoDrawQuad* quad);
   void DrawPictureQuad(const DrawingFrame* frame,
                        const PictureDrawQuad* quad);
+  void DrawPictureQuadDirectToBackbuffer(const DrawingFrame* frame,
+                                         const PictureDrawQuad* quad);
 
   void SetShaderOpacity(float opacity, int alpha_location);
   void SetShaderQuadF(const gfx::QuadF& quad, int quad_location);
@@ -187,7 +193,8 @@ class CC_EXPORT GLRenderer
   bool InitializeSharedObjects();
   void CleanupSharedObjects();
 
-  typedef base::Callback<void(bool success)>
+  typedef base::Callback<void(scoped_ptr<CopyOutputRequest> copy_request,
+                              bool success)>
       AsyncGetFramebufferPixelsCleanupCallback;
   void DoGetFramebufferPixels(
       uint8* pixels,
@@ -203,8 +210,11 @@ class CC_EXPORT GLRenderer
   void PassOnSkBitmap(
       scoped_ptr<SkBitmap> bitmap,
       scoped_ptr<SkAutoLockPixels> lock,
-      const CopyRenderPassCallback& callback,
+      scoped_ptr<CopyOutputRequest> request,
       bool success);
+
+  void ReinitializeGrCanvas();
+  void ReinitializeGLState();
 
   // WebKit::
   // WebGraphicsContext3D::WebGraphicsMemoryAllocationChangedCallbackCHROMIUM
@@ -391,6 +401,9 @@ class CC_EXPORT GLRenderer
 
   OutputSurface* output_surface_;
   WebKit::WebGraphicsContext3D* context_;
+
+  skia::RefPtr<GrContext> gr_context_;
+  skia::RefPtr<SkCanvas> sk_canvas_;
 
   gfx::Rect swap_buffer_rect_;
   gfx::Rect scissor_rect_;

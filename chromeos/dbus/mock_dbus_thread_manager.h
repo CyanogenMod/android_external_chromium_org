@@ -20,13 +20,11 @@ class Bus;
 namespace chromeos {
 
 class DBusThreadManagerObserver;
-class MockBluetoothAdapterClient;
-class MockBluetoothDeviceClient;
-class MockBluetoothInputClient;
-class MockBluetoothManagerClient;
-class MockBluetoothNodeClient;
-class MockBluetoothOutOfBandClient;
-class MockCrosDisksClient;
+class FakeBluetoothAdapterClient;
+class FakeBluetoothAgentManagerClient;
+class FakeBluetoothDeviceClient;
+class FakeBluetoothInputClient;
+class FakeBluetoothProfileManagerClient;
 class MockCryptohomeClient;
 class MockShillDeviceClient;
 class MockShillIPConfigClient;
@@ -34,18 +32,8 @@ class MockShillManagerClient;
 class MockShillProfileClient;
 class MockShillServiceClient;
 class MockGsmSMSClient;
-class MockImageBurnerClient;
 class MockPowerManagerClient;
 class MockSessionManagerClient;
-class MockSystemClockClient;
-class MockUpdateEngineClient;
-class MockIBusClient;
-class MockIBusConfigClient;
-class MockIBusEngineFactoryService;
-class MockIBusEngineService;
-class MockIBusInputContextClient;
-class MockIBusPanelService;
-class PowerPolicyController;
 
 // This class provides a mock DBusThreadManager with mock clients
 // installed. You can customize the behaviors of mock clients with
@@ -63,12 +51,6 @@ class MockDBusThreadManager : public DBusThreadManager {
                                  const base::Closure& closure));
   MOCK_METHOD0(GetSystemBus, dbus::Bus*(void));
   MOCK_METHOD0(GetIBusBus, dbus::Bus*(void));
-  MOCK_METHOD0(GetBluetoothAdapterClient, BluetoothAdapterClient*(void));
-  MOCK_METHOD0(GetBluetoothDeviceClient, BluetoothDeviceClient*(void));
-  MOCK_METHOD0(GetBluetoothInputClient, BluetoothInputClient*(void));
-  MOCK_METHOD0(GetBluetoothManagerClient, BluetoothManagerClient*(void));
-  MOCK_METHOD0(GetBluetoothNodeClient, BluetoothNodeClient*(void));
-  MOCK_METHOD0(GetBluetoothOutOfBandClient, BluetoothOutOfBandClient*(void));
   MOCK_METHOD0(GetCrasAudioClient, CrasAudioClient*(void));
   MOCK_METHOD0(GetCrosDisksClient, CrosDisksClient*(void));
   MOCK_METHOD0(GetCryptohomeClient, CryptohomeClient*(void));
@@ -109,26 +91,20 @@ class MockDBusThreadManager : public DBusThreadManager {
                void(const dbus::ObjectPath& object_path));
   MOCK_METHOD0(GetIBusPanelService, IBusPanelService*(void));
 
-  MockBluetoothAdapterClient* mock_bluetooth_adapter_client() {
-    return mock_bluetooth_adapter_client_.get();
+  FakeBluetoothAdapterClient* fake_bluetooth_adapter_client() {
+    return fake_bluetooth_adapter_client_.get();
   }
-  MockBluetoothDeviceClient* mock_bluetooth_device_client() {
-    return mock_bluetooth_device_client_.get();
+  FakeBluetoothAgentManagerClient* fake_bluetooth_agent_manager_client() {
+    return fake_bluetooth_agent_manager_client_.get();
   }
-  MockBluetoothInputClient* mock_bluetooth_input_client() {
-    return mock_bluetooth_input_client_.get();
+  FakeBluetoothDeviceClient* fake_bluetooth_device_client() {
+    return fake_bluetooth_device_client_.get();
   }
-  MockBluetoothManagerClient* mock_bluetooth_manager_client() {
-    return mock_bluetooth_manager_client_.get();
+  FakeBluetoothInputClient* fake_bluetooth_input_client() {
+    return fake_bluetooth_input_client_.get();
   }
-  MockBluetoothNodeClient* mock_bluetooth_node_client() {
-    return mock_bluetooth_node_client_.get();
-  }
-  MockBluetoothOutOfBandClient* mock_bluetooth_out_of_band_client() {
-    return mock_bluetooth_out_of_band_client_.get();
-  }
-  MockCrosDisksClient* mock_cros_disks_client() {
-    return mock_cros_disks_client_.get();
+  FakeBluetoothProfileManagerClient* fake_bluetooth_profile_manager_client() {
+    return fake_bluetooth_profile_manager_client_.get();
   }
   MockCryptohomeClient* mock_cryptohome_client() {
     return mock_cryptohome_client_.get();
@@ -151,20 +127,8 @@ class MockDBusThreadManager : public DBusThreadManager {
   MockGsmSMSClient* mock_gsm_sms_client() {
     return mock_gsm_sms_client_.get();
   }
-  MockImageBurnerClient* mock_image_burner_client() {
-    return mock_image_burner_client_.get();
-  }
-  MockPowerManagerClient* mock_power_manager_client() {
-    return mock_power_manager_client_.get();
-  }
   MockSessionManagerClient* mock_session_manager_client() {
     return mock_session_manager_client_.get();
-  }
-  MockSystemClockClient* mock_system_clock_client() {
-    return mock_system_clock_client_.get();
-  }
-  MockUpdateEngineClient* mock_update_engine_client() {
-    return mock_update_engine_client_.get();
   }
 
  private:
@@ -172,13 +136,13 @@ class MockDBusThreadManager : public DBusThreadManager {
   // their c'tors.
   ObserverList<DBusThreadManagerObserver> observers_;
 
-  scoped_ptr<MockBluetoothAdapterClient> mock_bluetooth_adapter_client_;
-  scoped_ptr<MockBluetoothDeviceClient> mock_bluetooth_device_client_;
-  scoped_ptr<MockBluetoothInputClient> mock_bluetooth_input_client_;
-  scoped_ptr<MockBluetoothManagerClient> mock_bluetooth_manager_client_;
-  scoped_ptr<MockBluetoothNodeClient> mock_bluetooth_node_client_;
-  scoped_ptr<MockBluetoothOutOfBandClient> mock_bluetooth_out_of_band_client_;
-  scoped_ptr<MockCrosDisksClient> mock_cros_disks_client_;
+  scoped_ptr<FakeBluetoothAdapterClient> fake_bluetooth_adapter_client_;
+  scoped_ptr<FakeBluetoothAgentManagerClient>
+      fake_bluetooth_agent_manager_client_;
+  scoped_ptr<FakeBluetoothDeviceClient> fake_bluetooth_device_client_;
+  scoped_ptr<FakeBluetoothInputClient> fake_bluetooth_input_client_;
+  scoped_ptr<FakeBluetoothProfileManagerClient>
+      fake_bluetooth_profile_manager_client_;
   scoped_ptr<MockCryptohomeClient> mock_cryptohome_client_;
   scoped_ptr<MockShillDeviceClient> mock_shill_device_client_;
   scoped_ptr<MockShillIPConfigClient> mock_shill_ipconfig_client_;
@@ -186,12 +150,7 @@ class MockDBusThreadManager : public DBusThreadManager {
   scoped_ptr<MockShillProfileClient> mock_shill_profile_client_;
   scoped_ptr<MockShillServiceClient> mock_shill_service_client_;
   scoped_ptr<MockGsmSMSClient> mock_gsm_sms_client_;
-  scoped_ptr<MockImageBurnerClient> mock_image_burner_client_;
-  scoped_ptr<MockPowerManagerClient> mock_power_manager_client_;
   scoped_ptr<MockSessionManagerClient> mock_session_manager_client_;
-  scoped_ptr<MockSystemClockClient> mock_system_clock_client_;
-  scoped_ptr<MockUpdateEngineClient> mock_update_engine_client_;
-  scoped_ptr<PowerPolicyController> power_policy_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(MockDBusThreadManager);
 };

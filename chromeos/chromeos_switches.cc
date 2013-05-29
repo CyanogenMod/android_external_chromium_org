@@ -82,9 +82,6 @@ const char kEnableChromeAudioSwitching[] = "enable-chrome-audio-switching";
 const char kEnableChromeCaptivePortalDetector[] =
     "enable-chrome-captive-portal-detector";
 
-// Enable experimental Bluetooth features.
-const char kEnableExperimentalBluetooth[] = "enable-experimental-bluetooth";
-
 // Disables the new NetworkChangeNotifier which uses NetworkStateHandler.
 const char kDisableNewNetworkChangeNotifier[] =
     "disable-new-network-change-notifier";
@@ -103,8 +100,13 @@ const char kEnableTouchpadThreeFingerClick[]
 const char kEnableTouchpadThreeFingerSwipe[]
     = "enable-touchpad-three-finger-swipe";
 
-// Enable Kiosk mode for ChromeOS.
+// Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
+// than the kiosk app mode.
 const char kEnableKioskMode[]               = "enable-kiosk-mode";
+
+// Enable kiosk app settings UI.
+// TODO(xiyuan): Remove this flag after http://crbug.com/228860.
+const char kEnableKioskAppSettings[]        = "enable-kiosk-app-settings";
 
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[]       = "enable-request-tablet-site";
@@ -160,16 +162,6 @@ const char kLoginPassword[]                 = "login-password";
 // Specifies the profile to use once a chromeos user is logged in.
 const char kLoginProfile[]                  = "login-profile";
 
-// Allows to override the first login screen. The value should be the name of
-// the first login screen to show (see
-// chrome/browser/chromeos/login/login_wizard_view.cc for actual names).
-// Ignored if kLoginManager is not specified. TODO(avayvod): Remove when the
-// switch is no longer needed for testing.
-const char kLoginScreen[]                   = "login-screen";
-
-// Controls the initial login screen size. Pass width,height.
-const char kLoginScreenSize[]               = "login-screen-size";
-
 // Specifies the user which is already logged in.
 const char kLoginUser[]                     = "login-user";
 
@@ -199,5 +191,5 @@ const char kStubCrosSettings[]              = "stub-cros-settings";
 const char kUseNewNetworkConfigurationHandlers[] =
     "use-new-network-configuration-handlers";
 
-} // namespace switches
+}  // namespace switches
 }  // namespace chromeos

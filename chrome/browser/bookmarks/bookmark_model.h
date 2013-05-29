@@ -17,8 +17,8 @@
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/cancelable_task_tracker.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
@@ -41,7 +41,7 @@ namespace bookmark_utils {
 struct TitleMatch;
 }
 
-namespace history {
+namespace chrome {
 struct FaviconImageResult;
 }
 
@@ -230,7 +230,7 @@ class BookmarkPermanentNode : public BookmarkNode {
 // BookmarkModelFactory.
 class BookmarkModel : public content::NotificationObserver,
                       public BookmarkService,
-                      public ProfileKeyedService {
+                      public BrowserContextKeyedService {
  public:
   explicit BookmarkModel(Profile* profile);
   virtual ~BookmarkModel();
@@ -473,7 +473,7 @@ class BookmarkModel : public content::NotificationObserver,
   // Notification that a favicon has finished loading. If we can decode the
   // favicon, FaviconLoaded is invoked.
   void OnFaviconDataAvailable(BookmarkNode* node,
-                              const history::FaviconImageResult& image_result);
+                              const chrome::FaviconImageResult& image_result);
 
   // Invoked from the node to load the favicon. Requests the favicon from the
   // favicon service.

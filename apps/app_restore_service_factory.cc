@@ -5,22 +5,16 @@
 #include "apps/app_restore_service_factory.h"
 
 #include "apps/app_restore_service.h"
+#include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace apps {
 
 // static
 AppRestoreService* AppRestoreServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<AppRestoreService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
-}
-
-// static
-void AppRestoreServiceFactory::ResetForProfile(Profile* profile) {
-  AppRestoreServiceFactory* factory = GetInstance();
-  factory->ProfileShutdown(profile);
-  factory->ProfileDestroyed(profile);
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 AppRestoreServiceFactory* AppRestoreServiceFactory::GetInstance() {
@@ -28,19 +22,21 @@ AppRestoreServiceFactory* AppRestoreServiceFactory::GetInstance() {
 }
 
 AppRestoreServiceFactory::AppRestoreServiceFactory()
-    : ProfileKeyedServiceFactory("AppRestoreService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "AppRestoreService",
+        BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(extensions::ShellWindowRegistry::Factory::GetInstance());
 }
 
 AppRestoreServiceFactory::~AppRestoreServiceFactory() {
 }
 
-ProfileKeyedService* AppRestoreServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* AppRestoreServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new AppRestoreService(static_cast<Profile*>(profile));
 }
 
-bool AppRestoreServiceFactory::ServiceIsCreatedWithProfile() const {
+bool AppRestoreServiceFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

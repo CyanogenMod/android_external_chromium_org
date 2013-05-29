@@ -32,8 +32,9 @@
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/download/download_util.h"
-#include "chrome/browser/extensions/activity_log.h"
+#include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
+#include "chrome/browser/extensions/browser_permissions_policy_delegate.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
@@ -58,6 +59,7 @@
 #include "chrome/browser/prerender/prerender_message_filter.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/printing/printing_message_filter.h"
+#include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -82,6 +84,7 @@
 #include "chrome/browser/user_style_sheet_watcher.h"
 #include "chrome/browser/user_style_sheet_watcher_factory.h"
 #include "chrome/browser/validation_message_message_filter.h"
+#include "chrome/browser/webview/webview_guest.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -478,6 +481,9 @@ namespace chrome {
 ChromeContentBrowserClient::ChromeContentBrowserClient() {
   for (size_t i = 0; i < arraysize(kPredefinedAllowedSocketOrigins); ++i)
     allowed_socket_origins_.insert(kPredefinedAllowedSocketOrigins[i]);
+
+  permissions_policy_delegate_.reset(
+      new extensions::BrowserPermissionsPolicyDelegate());
 }
 
 ChromeContentBrowserClient::~ChromeContentBrowserClient() {
@@ -539,6 +545,8 @@ content::BrowserMainParts* ChromeContentBrowserClient::CreateBrowserMainParts(
   NOTREACHED();
   main_parts = new ChromeBrowserMainParts(parameters);
 #endif
+
+  chrome::AddProfilesExtraParts(main_parts);
 
   // Construct additional browser parts. Stages are called in the order in
   // which they are added.
@@ -692,6 +700,7 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
   // TODO(fsamuel): This should be replaced with WebViewGuest or AdViewGuest
   // once they are ready.
   extensions::TabHelper::CreateForWebContents(guest_web_contents);
+  new WebViewGuest(guest_web_contents, embedder_web_contents, extension->id());
 }
 
 void ChromeContentBrowserClient::RenderProcessHostCreated(
@@ -720,9 +729,7 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
   host->GetChannel()->AddFilter(
       new prerender::PrerenderMessageFilter(id, profile));
   host->GetChannel()->AddFilter(new ValidationMessageMessageFilter(id));
-#if !defined(OS_ANDROID)
   host->GetChannel()->AddFilter(new TtsMessageFilter(id, profile));
-#endif
 
   host->Send(new ChromeViewMsg_SetIsIncognitoProcess(
       profile->IsOffTheRecord()));
@@ -1044,6 +1051,11 @@ void ChromeContentBrowserClient::SiteInstanceGotProcess(
         SigninManagerFactory::GetForProfile(profile);
     if (signin_manager)
       signin_manager->SetSigninProcess(site_instance->GetProcess()->GetID());
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ExtensionInfoMap::SetSigninProcess,
+                   extensions::ExtensionSystem::Get(profile)->info_map(),
+                   site_instance->GetProcess()->GetID()));
   }
 #endif
 
@@ -1256,7 +1268,9 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 
     // Please keep this in alphabetical order.
     static const char* const kSwitchNames[] = {
+      autofill::switches::kDisableInteractiveAutocomplete,
       autofill::switches::kEnableExperimentalFormFilling,
+      autofill::switches::kEnableInteractiveAutocomplete,
       switches::kAllowHTTPBackgroundPage,
       switches::kAllowLegacyExtensionManifests,
       switches::kAllowScriptingGallery,
@@ -1272,7 +1286,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableBenchmarking,
       switches::kEnableExperimentalExtensionApis,
       switches::kEnableIPCFuzzing,
-      switches::kEnableInteractiveAutocomplete,
       switches::kEnableNaCl,
       switches::kEnableNetBenchmarking,
       switches::kEnablePasswordGeneration,
@@ -1523,13 +1536,13 @@ void ChromeContentBrowserClient::AllowCertificateError(
     bool overridable,
     bool strict_enforcement,
     const base::Callback<void(bool)>& callback,
-    bool* cancel_request) {
+    content::CertificateRequestResultType* result) {
   if (resource_type != ResourceType::MAIN_FRAME) {
     // A sub-resource has a certificate error.  The user doesn't really
     // have a context for making the right decision, so block the
     // request hard, without an info bar to allow showing the insecure
     // content.
-    *cancel_request = true;
+    *result = content::CERTIFICATE_REQUEST_RESULT_TYPE_DENY;
     return;
   }
 
@@ -1548,7 +1561,7 @@ void ChromeContentBrowserClient::AllowCertificateError(
     if (prerender_manager->prerender_tracker()->TryCancel(
             render_process_id, render_view_id,
             prerender::FINAL_STATUS_SSL_ERROR)) {
-      *cancel_request = true;
+      *result = content::CERTIFICATE_REQUEST_RESULT_TYPE_CANCEL;
       return;
     }
   }

@@ -70,8 +70,8 @@ const float kAnimateCloseDuration = 0.12;
   [[closeButton_ cell] setImageID:IDR_CLOSE_1
                    forButtonState:image_button_cell::kDisabledState];
 
-  if (delegate_->GetIcon()) {
-    [image_ setImage:delegate_->GetIcon()->ToNSImage()];
+  if (!delegate_->GetIcon().IsEmpty()) {
+    [image_ setImage:delegate_->GetIcon().ToNSImage()];
   } else {
     // No icon, remove it from the view and grow the textfield to include the
     // space.
@@ -203,6 +203,10 @@ const float kAnimateCloseDuration = 0.12;
   [cancelButton_ removeFromSuperview];
   cancelButton_ = nil;
   [label_.get() setFrame:labelFrame];
+}
+
+- (void)setHasTip:(BOOL)hasTip {
+  [infoBarView_ setHasTip:hasTip];
 }
 
 - (void)disablePopUpMenu:(NSMenu*)menu {

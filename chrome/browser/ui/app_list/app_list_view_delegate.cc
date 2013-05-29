@@ -12,11 +12,13 @@
 #include "chrome/browser/ui/app_list/apps_model_builder.h"
 #include "chrome/browser/ui/app_list/chrome_app_list_item.h"
 #include "chrome/browser/ui/app_list/chrome_signin_delegate.h"
-#include "chrome/browser/ui/app_list/search_builder.h"
+#include "chrome/browser/ui/app_list/search/search_controller.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/url_constants.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
 
 #if defined(USE_ASH)
@@ -37,11 +39,8 @@ void AppListViewDelegate::SetModel(app_list::AppListModel* model) {
                                              controller_.get()));
     apps_builder_->Build();
 
-    search_builder_.reset(new SearchBuilder(profile_,
-                                            model->search_box(),
-                                            model->results(),
-                                            apps_builder_.get(),
-                                            controller_.get()));
+    search_controller_.reset(new app_list::SearchController(
+        profile_, model->search_box(), model->results(), controller_.get()));
 
     signin_delegate_.reset(new ChromeSigninDelegate(profile_));
 
@@ -51,7 +50,7 @@ void AppListViewDelegate::SetModel(app_list::AppListModel* model) {
 #endif
   } else {
     apps_builder_.reset();
-    search_builder_.reset();
+    search_controller_.reset();
 #if defined(USE_ASH)
     app_sync_ui_state_watcher_.reset();
 #endif
@@ -70,28 +69,26 @@ void AppListViewDelegate::ActivateAppListItem(
 }
 
 void AppListViewDelegate::StartSearch() {
-  if (search_builder_.get())
-    search_builder_->StartSearch();
+  if (search_controller_.get())
+    search_controller_->Start();
 }
 
 void AppListViewDelegate::StopSearch() {
-  if (search_builder_.get())
-    search_builder_->StopSearch();
+  if (search_controller_.get())
+    search_controller_->Stop();
 }
 
 void AppListViewDelegate::OpenSearchResult(
-    const app_list::SearchResult& result,
+    app_list::SearchResult* result,
     int event_flags) {
-  if (search_builder_.get())
-    search_builder_->OpenResult(result, event_flags);
+  search_controller_->OpenResult(result, event_flags);
 }
 
 void AppListViewDelegate::InvokeSearchResultAction(
-    const app_list::SearchResult& result,
+    app_list::SearchResult* result,
     int action_index,
     int event_flags) {
-  if (search_builder_.get())
-    search_builder_->InvokeResultAction(result, action_index, event_flags);
+  search_controller_->InvokeResultAction(result, action_index, event_flags);
 }
 
 void AppListViewDelegate::Dismiss()  {
@@ -137,6 +134,18 @@ void AppListViewDelegate::OpenSettings() {
       extension_misc::kSettingsAppId);
   DCHECK(extension);
   controller_->ActivateApp(profile_, extension, 0);
+}
+
+void AppListViewDelegate::OpenHelp() {
+  chrome::HostDesktopType desktop = chrome::GetHostDesktopTypeForNativeWindow(
+      controller_->GetAppListWindow());
+  Browser* browser = chrome::FindOrCreateTabbedBrowser(
+      profile_, desktop);
+  browser->OpenURL(content::OpenURLParams(GURL(chrome::kAppLauncherHelpURL),
+                                          content::Referrer(),
+                                          NEW_FOREGROUND_TAB,
+                                          content::PAGE_TRANSITION_LINK,
+                                          false));
 }
 
 void AppListViewDelegate::OpenFeedback() {

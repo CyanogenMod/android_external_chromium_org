@@ -83,7 +83,7 @@ int MenuItemView::item_right_margin_;
 int MenuItemView::pref_menu_height_;
 
 // static
-const char MenuItemView::kViewClassName[] = "views/MenuItemView";
+const char MenuItemView::kViewClassName[] = "MenuItemView";
 
 MenuItemView::MenuItemView(MenuDelegate* delegate)
     : delegate_(delegate),
@@ -888,7 +888,7 @@ void MenuItemView::PaintAccelerator(gfx::Canvas* canvas,
       font,
       GetNativeTheme()->GetSystemColor(render_selection ?
           ui::NativeTheme::kColorId_SelectedMenuItemForegroundColor :
-          ui::NativeTheme::kColorId_TextButtonDisabledColor),
+          ui::NativeTheme::kColorId_ButtonDisabledColor),
       accel_bounds.x(),
       accel_bounds.y(),
       accel_bounds.width(),

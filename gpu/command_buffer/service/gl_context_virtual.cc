@@ -43,6 +43,7 @@ bool GLContextVirtual::Initialize(
   }
 
   shared_context_->SetupForVirtualization();
+  shared_context_->MakeVirtuallyCurrent(this, compatible_surface);
   return true;
 }
 
@@ -53,9 +54,12 @@ void GLContextVirtual::Destroy() {
 }
 
 bool GLContextVirtual::MakeCurrent(gfx::GLSurface* surface) {
-  if (decoder_.get() && decoder_->initialized())
+  // TODO(epenner): We should avoid bypassing MakeVirtuallyCurrent() below
+  // (return false or DCHECK when !decoder). To do this we must reorder
+  // tear-down in GpuCommandBufferStub::Destroy().
+  if (decoder_.get())
     shared_context_->MakeVirtuallyCurrent(this, surface);
-  else
+  else if (!IsCurrent(surface))
     shared_context_->MakeCurrent(surface);
   return true;
 }

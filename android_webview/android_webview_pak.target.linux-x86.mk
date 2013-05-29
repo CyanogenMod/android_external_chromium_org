@@ -20,8 +20,8 @@ GYP_TARGET_DEPENDENCIES := \
 
 ### Rules for action "repack_android_webview_pack":
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: $(LOCAL_PATH)/tools/grit/grit/format/repack.py $(gyp_shared_intermediate_dir)/content/content_resources.pak $(gyp_shared_intermediate_dir)/net/net_resources.pak $(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_100_percent.pak $(gyp_shared_intermediate_dir)/webkit/devtools_resources.pak $(gyp_shared_intermediate_dir)/webkit/webkit_chromium_resources.pak $(gyp_shared_intermediate_dir)/webkit/webkit_resources_100_percent.pak $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: android_webview_android_webview_gyp_android_webview_pak_target_repack_android_webview_pack ($@)"

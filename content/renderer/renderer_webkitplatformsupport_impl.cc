@@ -13,18 +13,17 @@
 #include "base/utf_string_conversions.h"
 #include "content/common/database_util.h"
 #include "content/common/file_utilities_messages.h"
-#include "content/common/fileapi/webblobregistry_impl.h"
-#include "content/common/fileapi/webfilesystem_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
-#include "content/common/indexed_db/proxy_webidbfactory_impl.h"
 #include "content/common/mime_registry_messages.h"
-#include "content/common/npobject_util.h"
 #include "content/common/thread_safe_sender.h"
 #include "content/common/view_messages.h"
 #include "content/common/webmessageportchannel_impl.h"
+#include "content/common_child/fileapi/webfilesystem_impl.h"
+#include "content/common_child/indexed_db/proxy_webidbfactory_impl.h"
+#include "content/common_child/npobject_util.h"
+#include "content/common_child/webblobregistry_impl.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/gpu_info.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
@@ -35,6 +34,7 @@
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/websharedworkerrepository_impl.h"
 #include "googleurl/src/gurl.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_hardware_config.h"
@@ -49,11 +49,11 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "webkit/base/file_path_string_conversions.h"
+#include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/gpu/webgraphicscontext3d_provider_impl.h"
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
@@ -289,10 +289,14 @@ void RendererWebKitPlatformSupportImpl::prefetchHostName(
   if (hostname.isEmpty())
     return;
 
-  std::string hostname_utf8;
-  UTF16ToUTF8(hostname.data(), hostname.length(), &hostname_utf8);
+  std::string hostname_utf8 = UTF16ToUTF8(hostname);
   GetContentClient()->renderer()->PrefetchHostName(
       hostname_utf8.data(), hostname_utf8.length());
+}
+
+WebKit::WebPrescientNetworking*
+RendererWebKitPlatformSupportImpl::prescientNetworking() {
+  return GetContentClient()->renderer()->GetPrescientNetworking();
 }
 
 bool
@@ -619,7 +623,7 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
   if (!host)
     return false;
 
-  const GPUInfo& gpu_info = host->gpu_info();
+  const gpu::GPUInfo& gpu_info = host->gpu_info();
   if (gpu_info.can_lose_context || gpu_info.software_rendering)
     return false;
 
@@ -883,33 +887,6 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
 
 //------------------------------------------------------------------------------
 
-WebKit::WebGraphicsContext3D* RendererWebKitPlatformSupportImpl::
-    sharedOffscreenGraphicsContext3D() {
-  if (!shared_offscreen_context_ ||
-      shared_offscreen_context_->DestroyedOnMainThread()) {
-    shared_offscreen_context_ =
-        RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
-  }
-  if (!shared_offscreen_context_)
-    return NULL;
-  return shared_offscreen_context_->Context3d();
-}
-
-WebKit::WebCompositorSupport*
-RendererWebKitPlatformSupportImpl::compositorSupport() {
-  return &compositor_support_;
-}
-
-//------------------------------------------------------------------------------
-
-GrContext* RendererWebKitPlatformSupportImpl::sharedOffscreenGrContext() {
-  if (!shared_offscreen_context_)
-    return NULL;
-  return shared_offscreen_context_->GrContext();
-}
-
-//------------------------------------------------------------------------------
-
 WebKit::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     createSharedOffscreenGraphicsContext3DProvider() {
   if (!shared_offscreen_context_ ||
@@ -921,6 +898,13 @@ WebKit::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     return NULL;
   return new webkit::gpu::WebGraphicsContext3DProviderImpl(
       shared_offscreen_context_);
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebCompositorSupport*
+RendererWebKitPlatformSupportImpl::compositorSupport() {
+  return &compositor_support_;
 }
 
 }  // namespace content

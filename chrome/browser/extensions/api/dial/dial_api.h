@@ -11,17 +11,17 @@
 #include "chrome/browser/extensions/api/dial/dial_device_data.h"
 #include "chrome/browser/extensions/api/dial/dial_registry.h"
 #include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
+#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
 
 namespace extensions {
 
 class DialRegistry;
 
-// Dial API which is a ref-counted ProfileKeyedService that manages the DIAL
-// registry. It takes care of creating the registry on the IO thread and
-// is an observer of the registry. It makes sure devices events are sent out
+// Dial API which is a ref-counted BrowserContextKeyedService that manages
+// the DIAL registry. It takes care of creating the registry on the IO thread
+// and is an observer of the registry. It makes sure devices events are sent out
 // to extension listeners on the right thread.
-class DialAPI : public RefcountedProfileKeyedService,
+class DialAPI : public RefcountedBrowserContextKeyedService,
                 public EventRouter::Observer,
                 public DialRegistry::Observer {
  public:
@@ -39,7 +39,7 @@ class DialAPI : public RefcountedProfileKeyedService,
  private:
   virtual ~DialAPI();
 
-  // RefcountedProfileKeyedService:
+  // RefcountedBrowserContextKeyedService:
   virtual void ShutdownOnUIThread() OVERRIDE;
 
   // EventRouter::Observer:

@@ -25,6 +25,7 @@
         '../third_party/libxml/libxml.gyp:*',
         '../third_party/sqlite/sqlite.gyp:*',
         '../third_party/zlib/zlib.gyp:*',
+        '../ui/snapshot/snapshot.gyp:*',
         '../ui/ui.gyp:*',
         '../url/url.gyp:*',
         '../webkit/support/webkit_support.gyp:*',
@@ -62,7 +63,7 @@
             '../third_party/re2/re2.gyp:re2',
             '../third_party/WebKit/public/all.gyp:*',
             '../v8/tools/gyp/v8.gyp:*',
-            '../webkit/compositor_bindings/compositor_bindings_tests.gyp:*',
+            '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:*',
             '../webkit/webkit.gyp:*',
             '<(libjpeg_gyp_path):*',
           ],
@@ -233,7 +234,7 @@
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
-            '../webkit/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
+            '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
         }],
         ['OS=="win"', {
@@ -376,6 +377,7 @@
           'target_name': 'chromium_builder_qa',
           'type': 'none',
           'dependencies': [
+            '../chrome/chrome.gyp:chrome',
             # Dependencies of pyauto_functional tests.
             '../remoting/remoting.gyp:remoting_webapp',
           ],
@@ -392,6 +394,16 @@
                 '../remoting/remoting.gyp:remoting_me2me_host_archive',
               ],
             }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service',
+              ],
+            }],
+            ['OS=="win" and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service_win64',
+              ],
+            }],
             ['OS=="win" and component != "shared_library" and wix_exists == "True" and sas_dll_exists == "True"', {
               'dependencies': [
                 '../remoting/remoting.gyp:remoting_host_installation',
@@ -403,9 +415,8 @@
           'target_name': 'chromium_builder_perf_av',
           'type': 'none',
           'dependencies': [
+            'all_webkit', # to run layout tests
             'chromium_builder_qa',  # needed for perf pyauto tests
-            '../content/content.gyp:content_shell',
-            '../webkit/webkit.gyp:pull_in_DumpRenderTree',  # to run layout tests
           ],
         },  # target_name: chromium_builder_perf_av
         {
@@ -422,6 +433,13 @@
             '../third_party/libjingle/libjingle.gyp:peerconnection_server',
             '../third_party/webrtc/tools/tools.gyp:frame_analyzer',
             '../third_party/webrtc/tools/tools.gyp:rgba_to_i420_converter',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service',
+              ],
+            }],
           ],
         },  # target_name: chromium_builder_webrtc
         {
@@ -478,7 +496,7 @@
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../ui/ui.gyp:ui_unittests',
             '../url/url.gyp:googleurl_unittests',
-            '../webkit/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
+            '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
         },
         {
@@ -509,7 +527,7 @@
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../ui/ui.gyp:ui_unittests',
             '../url/url.gyp:googleurl_unittests',
-            '../webkit/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
+            '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
         },
         {
@@ -536,8 +554,7 @@
           'dependencies': [
             '../chrome/chrome.gyp:chrome',
             '../net/net.gyp:dns_fuzz_stub',
-            '../content/content.gyp:content_shell',
-            '../webkit/webkit.gyp:pull_in_DumpRenderTree',
+            'all_webkit',
           ],
         },
         {
@@ -608,7 +625,7 @@
             '../ui/ui.gyp:ui_unittests',
             '../ui/views/views.gyp:views_unittests',
             '../url/url.gyp:googleurl_unittests',
-            '../webkit/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
+            '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
             '../webkit/webkit.gyp:pull_in_copy_TestNetscapePlugIn',
           ],
           'conditions': [
@@ -694,9 +711,7 @@
           'target_name': 'webkit_builder_win',
           'type': 'none',
           'dependencies': [
-            '../webkit/webkit.gyp:pull_in_webkit_unit_tests',
-            '../content/content.gyp:content_shell',
-            '../webkit/webkit.gyp:pull_in_DumpRenderTree',
+            'all_webkit',
           ],
         },
       ],  # targets
@@ -781,12 +796,13 @@
             '../ui/compositor/compositor.gyp:*',
             '../ui/message_center/message_center.gyp:*',
             '../ui/ui.gyp:ui_unittests',
+            '../ui/snapshot/snapshot.gyp:snapshot_unittests',
             '../ui/views/views.gyp:views',
             '../ui/views/views.gyp:views_examples_with_content_exe',
             '../ui/views/views.gyp:views_unittests',
             '../ui/keyboard/keyboard.gyp:*',
-            '../webkit/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
-            '../webkit/webkit.gyp:pull_in_webkit_unit_tests',
+            '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
+            'all_webkit',
           ],
           'conditions': [
             ['OS=="win"', {

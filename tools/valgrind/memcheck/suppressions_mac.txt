@@ -1643,8 +1643,8 @@
 {
    bug_96684a
    Memcheck:Uninitialized
-   fun:_ZN7content16P2PSocketHostTcp4SendERKN3net10IPEndPointERKSt6vectorIcSaIcEE
-   fun:*SocketHostTcpTest_*_Test8TestBodyEv
+   fun:_ZN7content20P2PSocketHostTcpBase4SendERKN3net10IPEndPointERKSt6vectorIcSaIcEE
+   fun:*SocketHost*TcpTest_*_Test8TestBodyEv
 }
 {
    bug_96684b
@@ -2352,4 +2352,29 @@
    fun:fnmatch$UNIX2003
    fun:_ZN9file_util14FileEnumerator4NextEv
    fun:_ZN10disk_cache11SimpleIndex15RestoreFromDiskERKN4base8FilePathE
+}
+{
+   bug_244102
+   Memcheck:Unaddressable
+   ...
+   fun:_ZN5media12_GLOBAL__N_117ScreenCapturerMac10GlBlitFastERKN6webrtc12DesktopFrameERKNS2_13DesktopRegionE
+   fun:_ZN5media12_GLOBAL__N_117ScreenCapturerMac7CaptureERKN6webrtc13DesktopRegionE
+   fun:_ZN5media19ScreenCaptureDevice4Core9DoCaptureEv
+   fun:_ZN5media19ScreenCaptureDevice4Core7DoStartEv
+}
+{
+   bug_244420
+   Memcheck:Uninitialized
+   ...
+   fun:_ZN9talk_baseL8ToStringIyEESsRKT_
+   fun:_ZN7content23VideoDestinationHandler4OpenEPNS_28MediaStreamDependencyFactoryEPNS_28MediaStreamRegistryInterfaceERKSsPPNS_20FrameWriterInterfaceE
+   fun:_ZN7content37VideoDestinationHandlerTest_Open_Test8TestBodyEv
+}
+{
+   bug_244437
+   Memcheck:Uninitialized
+   fun:_ZN5mediaL23FromInterleavedInternalIssLs0EEEvPKviiPNS_8AudioBusEff
+   fun:_ZN5media8AudioBus22FromInterleavedPartialEPKviii
+   fun:_ZN5media8AudioBus15FromInterleavedEPKvii
+   fun:_ZN7content19WebRtcAudioRenderer14SourceCallbackEiPN5media8AudioBusE
 }

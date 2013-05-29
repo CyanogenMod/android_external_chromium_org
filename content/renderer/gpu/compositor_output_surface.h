@@ -50,10 +50,10 @@ class CompositorOutputSurface
   // cc::OutputSurface implementation.
   virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
   virtual void SendFrameToParentCompositor(cc::CompositorFrame*) OVERRIDE;
-  virtual void PostSubBuffer(gfx::Rect rect, const cc::LatencyInfo&) OVERRIDE;
-  virtual void SwapBuffers(const cc::LatencyInfo&) OVERRIDE;
+  virtual void PostSubBuffer(gfx::Rect rect, const ui::LatencyInfo&) OVERRIDE;
+  virtual void SwapBuffers(const ui::LatencyInfo&) OVERRIDE;
 #if defined(OS_ANDROID)
-  virtual void EnableVSyncNotification(bool enable) OVERRIDE;
+  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
 #endif
 
   // TODO(epenner): This seems out of place here and would be a better fit
@@ -88,7 +88,7 @@ class CompositorOutputSurface
   void OnUpdateVSyncParameters(
       base::TimeTicks timebase, base::TimeDelta interval);
 #if defined(OS_ANDROID)
-  void OnDidVSync(base::TimeTicks frame_time);
+  void OnBeginFrame(base::TimeTicks frame_time);
 #endif
   bool Send(IPC::Message* message);
 
@@ -97,7 +97,7 @@ class CompositorOutputSurface
   scoped_refptr<IPC::SyncMessageFilter> message_sender_;
   int routing_id_;
   bool prefers_smoothness_;
-  base::PlatformThreadId main_thread_id_;
+  base::PlatformThreadHandle main_thread_handle_;
 };
 
 }  // namespace content

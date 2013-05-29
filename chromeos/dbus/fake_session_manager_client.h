@@ -37,6 +37,8 @@ class FakeSessionManagerClient : public chromeos::SessionManagerClient {
   virtual void NotifyLockScreenShown() OVERRIDE;
   virtual void RequestUnlockScreen() OVERRIDE;
   virtual void NotifyLockScreenDismissed() OVERRIDE;
+  virtual void RetrieveActiveSessions(
+      const ActiveSessionsCallback& callback) OVERRIDE;
   virtual void RetrieveDevicePolicy(
       const RetrievePolicyCallback& callback) OVERRIDE;
   virtual void RetrievePolicyForUser(
@@ -91,6 +93,7 @@ class FakeSessionManagerClient : public chromeos::SessionManagerClient {
   std::map<std::string, std::string> user_policies_;
   std::map<std::string, std::string> device_local_account_policy_;
   ObserverList<Observer> observers_;
+  SessionManagerClient::ActiveSessionsMap user_sessions_;
 
   int emit_login_prompt_ready_call_count_;
   int notify_lock_screen_shown_call_count_;

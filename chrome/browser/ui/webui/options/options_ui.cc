@@ -35,12 +35,12 @@
 #include "chrome/browser/ui/webui/options/language_dictionary_overlay_handler.h"
 #include "chrome/browser/ui/webui/options/language_options_handler.h"
 #include "chrome/browser/ui/webui/options/manage_profile_handler.h"
-#include "chrome/browser/ui/webui/options/managed_user_passphrase_handler.h"
-#include "chrome/browser/ui/webui/options/managed_user_settings_handler.h"
+#include "chrome/browser/ui/webui/options/managed_user_learn_more_handler.h"
 #include "chrome/browser/ui/webui/options/media_devices_selection_handler.h"
 #include "chrome/browser/ui/webui/options/media_galleries_handler.h"
 #include "chrome/browser/ui/webui/options/options_sync_setup_handler.h"
 #include "chrome/browser/ui/webui/options/password_manager_handler.h"
+#include "chrome/browser/ui/webui/options/reset_profile_settings_handler.h"
 #include "chrome/browser/ui/webui/options/search_engine_manager_handler.h"
 #include "chrome/browser/ui/webui/options/startup_pages_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
@@ -269,10 +269,9 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
   AddOptionsPageUIHandler(localized_strings,
                           new LanguageDictionaryOverlayHandler());
   AddOptionsPageUIHandler(localized_strings, new ManageProfileHandler());
-  AddOptionsPageUIHandler(localized_strings,
-                          new ManagedUserPassphraseHandler());
-  AddOptionsPageUIHandler(localized_strings, new ManagedUserSettingsHandler());
+  AddOptionsPageUIHandler(localized_strings, new ManagedUserLearnMoreHandler());
   AddOptionsPageUIHandler(localized_strings, new PasswordManagerHandler());
+  AddOptionsPageUIHandler(localized_strings, new ResetProfileSettingsHandler());
   AddOptionsPageUIHandler(localized_strings, new SearchEngineManagerHandler());
   AddOptionsPageUIHandler(localized_strings, new ImportDataHandler());
   AddOptionsPageUIHandler(localized_strings, new StartupPagesHandler());
@@ -355,12 +354,12 @@ void OptionsUI::ProcessAutocompleteSuggestions(
     base::ListValue* const suggestions) {
   for (size_t i = 0; i < result.size(); ++i) {
     const AutocompleteMatch& match = result.match_at(i);
-    AutocompleteMatch::Type type = match.type;
-    if (type != AutocompleteMatch::HISTORY_URL &&
-        type != AutocompleteMatch::HISTORY_TITLE &&
-        type != AutocompleteMatch::HISTORY_BODY &&
-        type != AutocompleteMatch::HISTORY_KEYWORD &&
-        type != AutocompleteMatch::NAVSUGGEST)
+    AutocompleteMatchType::Type type = match.type;
+    if (type != AutocompleteMatchType::HISTORY_URL &&
+        type != AutocompleteMatchType::HISTORY_TITLE &&
+        type != AutocompleteMatchType::HISTORY_BODY &&
+        type != AutocompleteMatchType::HISTORY_KEYWORD &&
+        type != AutocompleteMatchType::NAVSUGGEST)
       continue;
     base::DictionaryValue* entry = new base::DictionaryValue();
     entry->SetString("title", match.description);

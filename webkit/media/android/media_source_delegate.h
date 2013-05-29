@@ -14,6 +14,7 @@
 #include "media/base/demuxer.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/ranges.h"
+#include "media/base/text_track.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayer.h"
 
 namespace media {
@@ -39,14 +40,23 @@ class MediaSourceDelegate : public media::DemuxerHost {
   typedef base::Callback<void(WebKit::WebMediaPlayer::NetworkState)>
       UpdateNetworkStateCB;
 
+  // Helper class used by scoped_ptr to destroy an instance of
+  // MediaSourceDelegate.
+  class Destroyer {
+   public:
+    inline void operator()(void* media_source_delegate) const {
+      static_cast<MediaSourceDelegate*>(media_source_delegate)->Destroy();
+    }
+  };
+
   MediaSourceDelegate(WebKit::WebFrame* frame,
                       WebKit::WebMediaPlayerClient* client,
                       WebMediaPlayerProxyAndroid* proxy,
                       int player_id,
                       media::MediaLog* media_log);
-  virtual ~MediaSourceDelegate();
-
-  void Initialize(scoped_ptr<WebKit::WebMediaSource> media_source,
+  // Initialize the MediaSourceDelegate. |media_source| will be owned by
+  // this object after this call.
+  void Initialize(WebKit::WebMediaSource* media_source,
                   const UpdateNetworkStateCB& update_network_state_cb);
 
   const WebKit::WebTimeRanges& Buffered();
@@ -72,11 +82,19 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   void Seek(base::TimeDelta time);
 
+  void CancelPendingSeek();
+
   // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
   // If it's the first request after the seek, |seek_done| will be true.
   void OnReadFromDemuxer(media::DemuxerStream::Type type, bool seek_done);
 
+  // Called by the Destroyer to destroy an instance of this object.
+  void Destroy();
+
  private:
+  // This is private to enforce use of the Destroyer.
+  virtual ~MediaSourceDelegate();
+
   // Methods inherited from DemuxerHost.
   virtual void SetTotalBytes(int64 total_bytes) OVERRIDE;
   virtual void AddBufferedByteRange(int64 start, int64 end) OVERRIDE;
@@ -87,6 +105,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   // Callbacks for ChunkDemuxer & Decryptor.
   void OnDemuxerInitDone(media::PipelineStatus status);
+  void OnDemuxerStopDone();
   void OnDemuxerOpened();
   void OnKeyAdded(const std::string& key_system, const std::string& session_id);
   void OnKeyError(const std::string& key_system,
@@ -103,6 +122,9 @@ class MediaSourceDelegate : public media::DemuxerHost {
                  scoped_ptr<uint8[]> init_data,
                  int init_data_size);
   void OnDecryptorReady(media::Decryptor*);
+  scoped_ptr<media::TextTrack> OnAddTextTrack(media::TextKind kind,
+                                              const std::string& label,
+                                              const std::string& language);
 
   // Reads an access unit from the demuxer stream |stream| and stores it in
   // the |index|th access unit in |params|.
@@ -121,7 +143,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   base::WeakPtrFactory<MediaSourceDelegate> weak_this_;
 
-  WebKit::WebMediaPlayerClient* const client_;
+  WebKit::WebMediaPlayerClient* client_;
   WebMediaPlayerProxyAndroid* proxy_;
   int player_id_;
 
@@ -157,4 +179,3 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
 }  // namespace webkit_media
 #endif  // WEBKIT_MEDIA_ANDROID_MEDIA_SOURCE_DELEGATE_H_
-

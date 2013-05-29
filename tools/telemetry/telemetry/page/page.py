@@ -8,6 +8,36 @@ import urlparse
 
 from telemetry.core import util
 
+def _UrlPathJoin(*args):
+  """Joins each path in |args| for insertion into a URL path.
+
+  This is distinct from os.path.join in that:
+  1. Forward slashes are always used.
+  2. Paths beginning with '/' are not treated as absolute.
+
+  For example:
+    _UrlPathJoin('a', 'b') => 'a/b'
+    _UrlPathJoin('a/', 'b') => 'a/b'
+    _UrlPathJoin('a', '/b') => 'a/b'
+    _UrlPathJoin('a/', '/b') => 'a/b'
+  """
+  if not args:
+    return ''
+  if len(args) == 1:
+    return str(args[0])
+  else:
+    args = [str(arg).replace('\\', '/') for arg in args]
+    work = [args[0]]
+    for arg in args[1:]:
+      if not arg:
+        continue
+      if arg.startswith('/'):
+        work.append(arg[1:])
+      else:
+        work.append(arg)
+    joined = reduce(os.path.join, work)
+  return joined.replace('\\', '/')
+
 class Page(object):
   def __init__(self, url, page_set, attributes=None, base_dir=None):
     parsed_url = urlparse.urlparse(url)
@@ -38,23 +68,16 @@ class Page(object):
 
     raise AttributeError()
 
-  # NOTE: This assumes the page_set file uses 'file:///' instead of 'file://',
-  # otherwise the '/' will be missing between page_set.base_dir and
-  # parsed_url.path.
   @property
   def serving_dirs_and_file(self):
     parsed_url = urlparse.urlparse(self.url)
-
-    # Don't use os.path.join otherwise netloc and path can't point to relative
-    # directories.
-    assert parsed_url.path[0] == '/'
-
-    path = self.base_dir + parsed_url.netloc + parsed_url.path
+    path = _UrlPathJoin(self.base_dir, parsed_url.netloc, parsed_url.path)
 
     if hasattr(self.page_set, 'serving_dirs'):
       url_base_dir = os.path.commonprefix(self.page_set.serving_dirs)
-      base_path = self.base_dir + '/' + url_base_dir
-      return ([self.base_dir + '/' + d for d in self.page_set.serving_dirs],
+      base_path = _UrlPathJoin(self.base_dir, url_base_dir)
+      return ([_UrlPathJoin(self.base_dir, d)
+               for d in self.page_set.serving_dirs],
               path.replace(base_path, ''))
 
     return os.path.split(path)

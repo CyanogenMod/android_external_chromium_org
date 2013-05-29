@@ -9,7 +9,7 @@
 #include "ppapi/c/private/ppb_flash_device_id.h"
 #include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/enter.h"
-#include "ppapi/thunk/ppb_flash_device_id_api.h"
+#include "ppapi/thunk/ppb_flash_drm_api.h"
 #include "ppapi/thunk/ppb_instance_api.h"
 #include "ppapi/thunk/resource_creation_api.h"
 #include "ppapi/thunk/thunk.h"
@@ -24,14 +24,14 @@ PP_Resource Create(PP_Instance instance) {
   EnterResourceCreation enter(instance);
   if (enter.failed())
     return 0;
-  return enter.functions()->CreateFlashDeviceID(instance);
+  return enter.functions()->CreateFlashDRM(instance);
 }
 
 int32_t GetDeviceID(PP_Resource device_id,
                     struct PP_Var* id,
                     struct PP_CompletionCallback callback) {
   VLOG(4) << "PPB_Flash_DeviceID::GetDeviceID()";
-  EnterResource<PPB_Flash_DeviceID_API> enter(device_id, callback, true);
+  EnterResource<PPB_Flash_DRM_API> enter(device_id, callback, true);
   if (enter.failed())
     return enter.retval();
   return enter.SetResult(enter.object()->GetDeviceID(id, enter.callback()));

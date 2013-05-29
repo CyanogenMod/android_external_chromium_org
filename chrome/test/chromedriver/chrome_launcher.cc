@@ -4,6 +4,9 @@
 
 #include "chrome/test/chromedriver/chrome_launcher.h"
 
+#include <algorithm>
+#include <vector>
+
 #include "base/base64.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -11,6 +14,7 @@
 #include "base/format_macros.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/logging.h"
 #include "base/process.h"
 #include "base/process_util.h"
 #include "base/string_util.h"
@@ -24,8 +28,10 @@
 #include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_finder.h"
+#include "chrome/test/chromedriver/chrome/device_manager.h"
 #include "chrome/test/chromedriver/chrome/devtools_http_client.h"
 #include "chrome/test/chromedriver/chrome/embedded_automation_extension.h"
+#include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/user_data_dir.h"
 #include "chrome/test/chromedriver/chrome/version.h"
@@ -141,11 +147,12 @@ Status WaitForDevToolsAndCheckVersion(
     int port,
     URLRequestContextGetter* context_getter,
     const SyncWebSocketFactory& socket_factory,
+    Log* log,
     scoped_ptr<DevToolsHttpClient>* user_client,
     std::string* version,
     int* build_no) {
   scoped_ptr<DevToolsHttpClient> client(new DevToolsHttpClient(
-      port, context_getter, socket_factory));
+      port, context_getter, socket_factory, log));
 
   base::Time deadline = base::Time::Now() + base::TimeDelta::FromSeconds(20);
   std::string devtools_version;
@@ -156,7 +163,7 @@ Status WaitForDevToolsAndCheckVersion(
       break;
     if (status.code() != kChromeNotReachable)
       return status;
-    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
+    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
   }
   if (status.IsError())
     return status;
@@ -171,7 +178,7 @@ Status WaitForDevToolsAndCheckVersion(
       *user_client = client.Pass();
       return Status(kOk);
     }
-    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
+    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
   }
   return Status(kUnknownError, "unable to discover open pages");
 }
@@ -180,6 +187,7 @@ Status LaunchDesktopChrome(
     URLRequestContextGetter* context_getter,
     int port,
     const SyncWebSocketFactory& socket_factory,
+    Log* log,
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
     scoped_ptr<Chrome>* chrome) {
@@ -199,9 +207,16 @@ Status LaunchDesktopChrome(
                                             capabilities.log_path));
     options.environ = &environ;
   }
+  if (capabilities.detach)
+    options.new_process_group = true;
 #endif
 
-  LOG(INFO) << "Launching chrome: " << command.GetCommandLineString();
+#if defined(OS_WIN)
+  std::string command_string = base::WideToUTF8(command.GetCommandLineString());
+#else
+  std::string command_string = command.GetCommandLineString();
+#endif
+  log->AddEntry(Log::kLog, "Launching chrome: " + command_string);
   base::ProcessHandle process;
   if (!base::LaunchProcess(command, options, &process))
     return Status(kUnknownError, "chrome failed to start");
@@ -210,7 +225,7 @@ Status LaunchDesktopChrome(
   std::string version;
   int build_no;
   Status status = WaitForDevToolsAndCheckVersion(
-      port, context_getter, socket_factory, &devtools_client, &version,
+      port, context_getter, socket_factory, log, &devtools_client, &version,
       &build_no);
 
   if (status.IsError()) {
@@ -247,9 +262,14 @@ Status LaunchDesktopChrome(
     }
     return status;
   }
-  chrome->reset(new ChromeDesktopImpl(
-      devtools_client.Pass(), version, build_no, devtools_event_listeners,
-      process, &user_data_dir, &extension_dir));
+  chrome->reset(new ChromeDesktopImpl(devtools_client.Pass(),
+                                      version,
+                                      build_no,
+                                      devtools_event_listeners,
+                                      log,
+                                      process,
+                                      &user_data_dir,
+                                      &extension_dir));
   return Status(kOk);
 }
 
@@ -257,38 +277,51 @@ Status LaunchAndroidChrome(
     URLRequestContextGetter* context_getter,
     int port,
     const SyncWebSocketFactory& socket_factory,
+    Log* log,
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
     scoped_ptr<Chrome>* chrome) {
-  // TODO(frankf): Figure out how this should be installed to
-  // make this work for all platforms.
-  base::FilePath adb_commands(FILE_PATH_LITERAL("adb_commands.py"));
-  CommandLine command(adb_commands);
-  command.AppendSwitchASCII("package", capabilities.android_package);
-  command.AppendSwitch("launch");
-  command.AppendSwitchASCII("port", base::IntToString(port));
-
-  std::string output;
-  if (!base::GetAppOutput(command, &output)) {
-    if (output.empty())
-      return Status(
-          kUnknownError,
-          "failed to run adb_commands.py. Make sure it is set in PATH.");
-    else
-      return Status(kUnknownError, "android app failed to start.\n" + output);
+  DeviceManager device_mgr;
+  std::vector<std::string> devices;
+  Status status = device_mgr.GetDevices(&devices);
+  if (devices.empty())
+    return Status(kUnknownError, "No devices attached");
+  std::string device_serial;
+  if (!capabilities.device_serial.empty()) {
+    if (std::find(devices.begin(), devices.end(), capabilities.device_serial) ==
+        devices.end())
+      return Status(kUnknownError,
+          "Invalid device serial: " + capabilities.device_serial);
+    device_serial = capabilities.device_serial;
+  } else if (devices.size() == 1) {
+    device_serial = devices[0];
+  } else {
+    return Status(kUnknownError,
+        "No device serial supplied with multiple devices connected");
   }
+  status = device_mgr.StartChrome(
+      device_serial, capabilities.android_package, port);
+  if (!status.IsOk())
+    return status;
 
   scoped_ptr<DevToolsHttpClient> devtools_client;
   std::string version;
   int build_no;
-  Status status = WaitForDevToolsAndCheckVersion(
-      port, context_getter, socket_factory, &devtools_client, &version,
-      &build_no);
+  status = WaitForDevToolsAndCheckVersion(port,
+                                          context_getter,
+                                          socket_factory,
+                                          log,
+                                          &devtools_client,
+                                          &version,
+                                          &build_no);
   if (status.IsError())
     return status;
 
-  chrome->reset(new ChromeAndroidImpl(
-      devtools_client.Pass(), version, build_no, devtools_event_listeners));
+  chrome->reset(new ChromeAndroidImpl(devtools_client.Pass(),
+                                      version,
+                                      build_no,
+                                      devtools_event_listeners,
+                                      log));
   return Status(kOk);
 }
 
@@ -298,16 +331,17 @@ Status LaunchChrome(
     URLRequestContextGetter* context_getter,
     int port,
     const SyncWebSocketFactory& socket_factory,
+    Log* log,
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
     scoped_ptr<Chrome>* chrome) {
   if (capabilities.IsAndroid()) {
     return LaunchAndroidChrome(
-        context_getter, port, socket_factory, capabilities,
+        context_getter, port, socket_factory, log, capabilities,
         devtools_event_listeners, chrome);
   } else {
     return LaunchDesktopChrome(
-        context_getter, port, socket_factory, capabilities,
+        context_getter, port, socket_factory, log, capabilities,
         devtools_event_listeners, chrome);
   }
 }
@@ -358,7 +392,12 @@ Status ProcessExtensions(const std::vector<std::string>& extensions,
     Status status = UnpackAutomationExtension(temp_dir, &automation_extension);
     if (status.IsError())
       return status;
-    extension_paths.push_back(automation_extension.value());
+    if (command->HasSwitch("disable-extensions")) {
+      command->AppendSwitchNative("load-component-extension",
+                                  automation_extension.value());
+    } else {
+      extension_paths.push_back(automation_extension.value());
+    }
   }
 
   if (extension_paths.size()) {

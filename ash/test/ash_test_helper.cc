@@ -17,6 +17,11 @@
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
+#include "chromeos/power/power_manager_handler.h"
+#endif
+
+#if defined(USE_X11)
+#include "ui/aura/root_window_host_x11.h"
 #endif
 
 namespace ash {
@@ -26,6 +31,9 @@ AshTestHelper::AshTestHelper(base::MessageLoopForUI* message_loop)
     : message_loop_(message_loop),
       test_shell_delegate_(NULL) {
   CHECK(message_loop_);
+#if defined(USE_X11)
+  aura::test::SetUseOverrideRedirectWindowByDefault(true);
+#endif
 }
 
 AshTestHelper::~AshTestHelper() {
@@ -50,6 +58,7 @@ void AshTestHelper::SetUp() {
     // created in AshTestBase tests.
     chromeos::CrasAudioHandler::InitializeForTesting();
   }
+  chromeos::PowerManagerHandler::Initialize();
 #endif
 
   ash::Shell::CreateInstance(test_shell_delegate_);
@@ -70,6 +79,7 @@ void AshTestHelper::TearDown() {
 #if defined(OS_CHROMEOS)
   if (ash::switches::UseNewAudioHandler())
     chromeos::CrasAudioHandler::Shutdown();
+  chromeos::PowerManagerHandler::Shutdown();
 #endif
 
   aura::Env::DeleteInstance();

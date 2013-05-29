@@ -706,14 +706,14 @@ void GpuProcessHost::EstablishGpuChannel(
 
   // If GPU features are already blacklisted, no need to establish the channel.
   if (!GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(NULL)) {
-    callback.Run(IPC::ChannelHandle(), GPUInfo());
+    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
     return;
   }
 
   if (Send(new GpuMsg_EstablishChannel(client_id, share_context))) {
     channel_requests_.push(callback);
   } else {
-    callback.Run(IPC::ChannelHandle(), GPUInfo());
+    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
   }
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
@@ -768,9 +768,14 @@ void GpuProcessHost::DeleteImage(int client_id,
   Send(new GpuMsg_DeleteImage(client_id, image_id, sync_point));
 }
 
-void GpuProcessHost::OnInitialized(bool result) {
+void GpuProcessHost::OnInitialized(bool result, const gpu::GPUInfo& gpu_info) {
   UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessInitialized", result);
   initialized_ = result;
+
+#if defined(OS_WIN)
+  if (kind_ == GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED)
+    AcceleratedPresenter::SetAdapterLUID(gpu_info.adapter_luid);
+#endif
 }
 
 void GpuProcessHost::OnChannelEstablished(
@@ -793,7 +798,7 @@ void GpuProcessHost::OnChannelEstablished(
   if (!channel_handle.name.empty() &&
       !GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(NULL)) {
     Send(new GpuMsg_CloseChannel(channel_handle));
-    callback.Run(IPC::ChannelHandle(), GPUInfo());
+    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
     RouteOnUIThread(GpuHostMsg_OnLogMessage(
         logging::LOG_WARNING,
         "WARNING",
@@ -925,13 +930,17 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
   // will forward to the RenderWidgetHostView via RenderProcessHostImpl and
   // RenderWidgetHostImpl.
   scoped_completion_runner.Release();
+
+  ViewHostMsg_CompositorSurfaceBuffersSwapped_Params view_params;
+  view_params.surface_id = params.surface_id;
+  view_params.surface_handle = params.surface_handle;
+  view_params.route_id = params.route_id;
+  view_params.size = params.size;
+  view_params.scale_factor = params.scale_factor;
+  view_params.gpu_process_host_id = host_id_;
   helper->DidReceiveBackingStoreMsg(ViewHostMsg_CompositorSurfaceBuffersSwapped(
       render_widget_id,
-      params.surface_id,
-      params.surface_handle,
-      params.route_id,
-      params.size,
-      host_id_));
+      view_params));
 }
 #endif  // OS_MACOSX
 
@@ -1126,6 +1135,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableGpuSandbox,
     switches::kEnableLogging,
+    switches::kEnableShareGroupAsyncTextureUpload,
     switches::kEnableVirtualGLContexts,
     switches::kGpuStartupDialog,
     switches::kLoggingLevel,
@@ -1189,7 +1199,7 @@ void GpuProcessHost::SendOutstandingReplies() {
   while (!channel_requests_.empty()) {
     EstablishChannelCallback callback = channel_requests_.front();
     channel_requests_.pop();
-    callback.Run(IPC::ChannelHandle(), GPUInfo());
+    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
   }
 
   while (!create_command_buffer_requests_.empty()) {
@@ -1211,7 +1221,7 @@ void GpuProcessHost::BlockLiveOffscreenContexts() {
 
 std::string GpuProcessHost::GetShaderPrefixKey() {
   if (shader_prefix_key_.empty()) {
-    GPUInfo info = GpuDataManagerImpl::GetInstance()->GetGPUInfo();
+    gpu::GPUInfo info = GpuDataManagerImpl::GetInstance()->GetGPUInfo();
 
     std::string in_str = GetContentClient()->GetProduct() + "-" +
         info.gl_vendor + "-" + info.gl_renderer + "-" +

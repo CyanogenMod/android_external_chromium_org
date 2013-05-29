@@ -67,6 +67,7 @@
 #include "ppapi/c/private/ppb_flash_fullscreen.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_flash_device_id.h"
+#include "ppapi/c/private/ppb_flash_drm.h"
 #include "ppapi/c/private/ppb_flash_menu.h"
 #include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_print.h"
@@ -104,7 +105,6 @@
 #include "ppapi/proxy/ppb_tcp_server_socket_private_proxy.h"
 #include "ppapi/proxy/ppb_tcp_socket_private_proxy.h"
 #include "ppapi/proxy/ppb_testing_proxy.h"
-#include "ppapi/proxy/ppb_url_loader_proxy.h"
 #include "ppapi/proxy/ppb_var_deprecated_proxy.h"
 #include "ppapi/proxy/ppb_video_decoder_proxy.h"
 #include "ppapi/proxy/ppb_x509_certificate_private_proxy.h"
@@ -244,7 +244,6 @@ InterfaceList::InterfaceList() {
   // Do not add more stuff here, they should be added to interface_list*.h
   // TODO(brettw) remove these.
   AddPPB(PPB_Instance_Proxy::GetInfoPrivate(), PERMISSION_PRIVATE);
-  AddPPB(PPB_URLLoader_Proxy::GetTrustedInfo(), PERMISSION_PRIVATE);
   AddPPB(PPB_Var_Deprecated_Proxy::GetInfo(), PERMISSION_DEV);
 
   // TODO(tomfinegan): Figure out where to put these once we refactor things

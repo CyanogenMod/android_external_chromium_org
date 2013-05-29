@@ -11,8 +11,8 @@
 
 #include "base/basictypes.h"
 #include "base/threading/platform_thread.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/usb/usb_device.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "third_party/libusb/src/libusb/libusb.h"
 
 class UsbEventHandler;
@@ -22,7 +22,7 @@ typedef libusb_context* PlatformUsbContext;
 // used to manage and dispatch USB events. It is also responsbile for device
 // discovery on the system, which allows it to re-use device handles to prevent
 // competition for the same USB device.
-class UsbService : public ProfileKeyedService {
+class UsbService : public BrowserContextKeyedService {
  public:
   UsbService();
   virtual ~UsbService();

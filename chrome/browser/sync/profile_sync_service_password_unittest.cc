@@ -78,16 +78,16 @@ ACTION_P(AcquireSyncTransaction, password_test_service) {
 }
 
 static void QuitMessageLoop() {
-  MessageLoop::current()->Quit();
+  base::MessageLoop::current()->Quit();
 }
 
 class NullPasswordStore : public MockPasswordStore {
  public:
   NullPasswordStore() {}
 
-  static scoped_refptr<RefcountedProfileKeyedService> Build(
+  static scoped_refptr<RefcountedBrowserContextKeyedService> Build(
       content::BrowserContext* profile) {
-    return scoped_refptr<RefcountedProfileKeyedService>();
+    return scoped_refptr<RefcountedBrowserContextKeyedService>();
   }
 
  protected:
@@ -129,7 +129,7 @@ class PasswordTestProfileSyncService : public TestProfileSyncService {
     QuitMessageLoop();
   }
 
-  static ProfileKeyedService* Build(content::BrowserContext* context) {
+  static BrowserContextKeyedService* Build(content::BrowserContext* context) {
     Profile* profile = static_cast<Profile*>(context);
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile);
@@ -248,12 +248,12 @@ class ProfileSyncServicePasswordTest : public AbstractProfileSyncServiceTest {
 
       sync_service_->RegisterDataTypeController(data_type_controller);
       sync_service_->Initialize();
-      MessageLoop::current()->Run();
+      base::MessageLoop::current()->Run();
       FlushLastDBTask();
 
       sync_service_->SetEncryptionPassphrase("foo",
                                              ProfileSyncService::IMPLICIT);
-      MessageLoop::current()->Run();
+      base::MessageLoop::current()->Run();
     }
   }
 

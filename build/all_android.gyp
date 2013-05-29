@@ -100,6 +100,7 @@
             '../components/components.gyp:components_unittests_apk',
             '../content/content.gyp:content_browsertests_apk',
             '../content/content.gyp:content_unittests_apk',
+            '../content/content.gyp:video_decode_accelerator_unittest_apk',
             '../gpu/gpu.gyp:gl_tests_apk',
             '../gpu/gpu.gyp:gpu_unittests_apk',
             '../ipc/ipc.gyp:ipc_tests_apk',
@@ -112,7 +113,7 @@
             '../android_webview/android_webview.gyp:android_webview_test_apk',
             '../chrome/chrome.gyp:chromium_testshell_test_apk',
             '../chrome/chrome.gyp:chromium_testshell_uiautomator_tests',
-            '../webkit/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests_apk'
+            '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests_apk'
           ],
         }],
       ],

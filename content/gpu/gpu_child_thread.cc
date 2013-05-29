@@ -13,18 +13,13 @@
 #include "build/build_config.h"
 #include "content/common/child_process.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/gpu/gpu_info_collector.h"
 #include "content/gpu/gpu_watchdog_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "gpu/config/gpu_info_collector.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "ui/gl/gl_implementation.h"
-
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
-#endif
 
 namespace content {
 namespace {
@@ -54,7 +49,7 @@ bool GpuProcessLogMessageHandler(int severity,
 
 GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
                                bool dead_on_arrival,
-                               const GPUInfo& gpu_info)
+                               const gpu::GPUInfo& gpu_info)
     : dead_on_arrival_(dead_on_arrival),
       gpu_info_(gpu_info),
       in_browser_process_(false) {
@@ -123,7 +118,7 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
 }
 
 void GpuChildThread::OnInitialize() {
-  Send(new GpuHostMsg_Initialized(!dead_on_arrival_));
+  Send(new GpuHostMsg_Initialized(!dead_on_arrival_, gpu_info_));
 
   if (dead_on_arrival_) {
     VLOG(1) << "Exiting GPU process due to errors during initialization";
@@ -132,9 +127,9 @@ void GpuChildThread::OnInitialize() {
   }
 
 #if defined(OS_ANDROID)
-  // TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-  int nice_value = -6; // High priority
-  setpriority(PRIO_PROCESS, base::PlatformThread::CurrentId(), nice_value);
+  base::PlatformThread::SetThreadPriority(
+      base::PlatformThread::CurrentHandle(),
+      base::kThreadPriority_Display);
 #endif
 
   // We don't need to pipe log messages if we are running the GPU thread in
@@ -176,15 +171,15 @@ void GpuChildThread::OnCollectGraphicsInfo() {
          in_browser_process_);
 #endif  // OS_WIN
 
-  if (!gpu_info_collector::CollectContextGraphicsInfo(&gpu_info_))
-    VLOG(1) << "gpu_info_collector::CollectGraphicsInfo failed";
+  if (!gpu::CollectContextGraphicsInfo(&gpu_info_))
+    VLOG(1) << "gpu::CollectGraphicsInfo failed";
   GetContentClient()->SetGpuInfo(gpu_info_);
 
 #if defined(OS_WIN)
   // This is slow, but it's the only thing the unsandboxed GPU process does,
   // and GpuDataManager prevents us from sending multiple collecting requests,
   // so it's OK to be blocking.
-  gpu_info_collector::GetDxDiagnostics(&gpu_info_.dx_diagnostics);
+  gpu::GetDxDiagnostics(&gpu_info_.dx_diagnostics);
   gpu_info_.finalized = true;
 #endif  // OS_WIN
 

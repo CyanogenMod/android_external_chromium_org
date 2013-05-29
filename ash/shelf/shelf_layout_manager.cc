@@ -212,9 +212,7 @@ bool ShelfLayoutManager::SetAlignment(ShelfAlignment alignment) {
     return false;
 
   alignment_ = alignment;
-  if (shelf_->launcher())
-    shelf_->launcher()->SetAlignment(alignment);
-  shelf_->status_area_widget()->SetShelfAlignment(alignment);
+  shelf_->SetAlignment(alignment);
   LayoutShelf();
   return true;
 }
@@ -296,21 +294,15 @@ void ShelfLayoutManager::UpdateVisibilityState() {
     WorkspaceWindowState window_state(workspace_controller_->GetWindowState());
     switch (window_state) {
       case WORKSPACE_WINDOW_STATE_FULL_SCREEN:
-      {
-        aura::Window* fullscreen_window =
-            GetRootWindowController(root_window_)->GetFullscreenWindow();
-        if (fullscreen_window->GetProperty(kFullscreenUsesMinimalChromeKey)) {
-          DCHECK_NE(auto_hide_behavior_, SHELF_AUTO_HIDE_ALWAYS_HIDDEN);
+        if (FullscreenWithMinimalChrome()) {
           SetState(SHELF_AUTO_HIDE);
         } else {
           SetState(SHELF_HIDDEN);
         }
         break;
-      }
       case WORKSPACE_WINDOW_STATE_MAXIMIZED:
         SetState(CalculateShelfVisibility());
         break;
-
       case WORKSPACE_WINDOW_STATE_WINDOW_OVERLAPS_SHELF:
       case WORKSPACE_WINDOW_STATE_DEFAULT:
         SetState(CalculateShelfVisibility());
@@ -440,17 +432,21 @@ void ShelfLayoutManager::CompleteGestureDrag(const ui::GestureEvent& gesture) {
     CancelGestureDrag();
     return;
   }
-
+  if (shelf_) {
+    shelf_->Deactivate();
+    shelf_->status_area_widget()->Deactivate();
+  }
   gesture_drag_auto_hide_state_ =
       gesture_drag_auto_hide_state_ == SHELF_AUTO_HIDE_SHOWN ?
       SHELF_AUTO_HIDE_HIDDEN : SHELF_AUTO_HIDE_SHOWN;
-  if (shelf_)
-    shelf_->Deactivate();
-  shelf_->status_area_widget()->Deactivate();
   if (gesture_drag_auto_hide_state_ == SHELF_AUTO_HIDE_HIDDEN &&
       auto_hide_behavior_ != SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS) {
     gesture_drag_status_ = GESTURE_DRAG_NONE;
-    SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
+    if (!FullscreenWithMinimalChrome()) {
+      SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
+    } else {
+      UpdateVisibilityState();
+    }
   } else if (gesture_drag_auto_hide_state_ == SHELF_AUTO_HIDE_SHOWN &&
              auto_hide_behavior_ != SHELF_AUTO_HIDE_BEHAVIOR_NEVER) {
     gesture_drag_status_ = GESTURE_DRAG_NONE;
@@ -517,6 +513,18 @@ void ShelfLayoutManager::OnWindowActivated(aura::Window* gained_active,
 bool ShelfLayoutManager::IsHorizontalAlignment() const {
   return alignment_ == SHELF_ALIGNMENT_BOTTOM ||
          alignment_ == SHELF_ALIGNMENT_TOP;
+}
+
+bool ShelfLayoutManager::FullscreenWithMinimalChrome() const {
+  RootWindowController* controller = GetRootWindowController(root_window_);
+  if (!controller)
+    return false;
+  aura::Window* window = controller->GetFullscreenWindow();
+  if (!window)
+    return false;
+  if (!window->GetProperty(kFullscreenUsesMinimalChromeKey))
+    return false;
+  return true;
 }
 
 // static
@@ -643,9 +651,9 @@ void ShelfLayoutManager::GetShelfSize(int* width, int* height) {
   gfx::Size status_size(
       shelf_->status_area_widget()->GetWindowBoundsInScreen().size());
   if (IsHorizontalAlignment())
-    *height = std::max(kLauncherPreferredSize, status_size.height());
+    *height = kLauncherPreferredSize;
   else
-    *width = std::max(kLauncherPreferredSize, status_size.width());
+    *width = kLauncherPreferredSize;
 }
 
 void ShelfLayoutManager::AdjustBoundsBasedOnAlignment(int inset,
@@ -697,7 +705,7 @@ void ShelfLayoutManager::CalculateTargetBounds(
       gfx::Rect(available_bounds.x(), available_bounds.y(),
                     available_bounds.width(), shelf_height));
 
-  int status_inset = (kLauncherPreferredSize -
+  int status_inset = std::max(0, kLauncherPreferredSize -
       PrimaryAxisValue(status_size.height(), status_size.width()));
 
   target_bounds->status_bounds_in_shelf = SelectValueForShelfAlignment(
@@ -741,8 +749,10 @@ void ShelfLayoutManager::CalculateTargetBounds(
       gfx::Rect(base::i18n::IsRTL() ? status_size.width() : 0, 0,
                     shelf_width - status_size.width(),
                     target_bounds->shelf_bounds_in_root.height()),
-      gfx::Rect(0, 0, shelf_width, shelf_height - status_size.height()),
-      gfx::Rect(0, 0, shelf_width, shelf_height - status_size.height()),
+      gfx::Rect(0, 0, target_bounds->shelf_bounds_in_root.width(),
+                shelf_height - status_size.height()),
+      gfx::Rect(0, 0, target_bounds->shelf_bounds_in_root.width(),
+                shelf_height - status_size.height()),
       gfx::Rect(base::i18n::IsRTL() ? status_size.width() : 0, 0,
                     shelf_width - status_size.width(),
                     target_bounds->shelf_bounds_in_root.height()));
@@ -801,11 +811,15 @@ void ShelfLayoutManager::UpdateTargetBoundsForGesture(
     target_bounds->status_bounds_in_shelf.set_y(status_y.y());
   } else {
     // Move and size the launcher with the gesture.
-    int shelf_width = target_bounds->shelf_bounds_in_root.width() - translate;
+    int shelf_width = target_bounds->shelf_bounds_in_root.width();
+    if (alignment_ == SHELF_ALIGNMENT_RIGHT)
+      shelf_width -= translate;
+    else
+      shelf_width += translate;
     shelf_width = std::max(shelf_width, kAutoHideSize);
     target_bounds->shelf_bounds_in_root.set_width(shelf_width);
     if (alignment_ == SHELF_ALIGNMENT_RIGHT) {
-      target_bounds->shelf_bounds_in_root.set_y(
+      target_bounds->shelf_bounds_in_root.set_x(
           available_bounds.right() - shelf_width);
     }
 
@@ -920,9 +934,9 @@ void ShelfLayoutManager::UpdateHitTestBounds() {
 bool ShelfLayoutManager::IsShelfWindow(aura::Window* window) {
   if (!window)
     return false;
-  return (shelf_ &&
-          shelf_->GetNativeWindow()->Contains(window)) ||
-      (shelf_->status_area_widget()->GetNativeWindow()->Contains(window));
+  return (shelf_ && shelf_->GetNativeWindow()->Contains(window)) ||
+      (shelf_->status_area_widget() &&
+       shelf_->status_area_widget()->GetNativeWindow()->Contains(window));
 }
 
 int ShelfLayoutManager::GetWorkAreaSize(const State& state, int size) const {

@@ -7,19 +7,20 @@
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/single_thread_task_runner.h"
+#include "base/task_runner_util.h"
 #include "chrome/browser/media_galleries/fileapi/filtering_file_enumerator.h"
 #include "chrome/browser/media_galleries/fileapi/media_file_system_mount_point_provider.h"
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "chrome/browser/media_galleries/fileapi/mtp_device_async_delegate.h"
 #include "chrome/browser/media_galleries/fileapi/mtp_device_map_service.h"
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
-#include "webkit/blob/shareable_file_reference.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/fileapi/native_file_util.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_operation_context.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/browser/fileapi/native_file_util.h"
+#include "webkit/common/blob/shareable_file_reference.h"
 
 using fileapi::FileSystemOperationContext;
 using fileapi::FileSystemURL;
@@ -318,34 +319,31 @@ void DeviceMediaAsyncFileUtil::OnDidCreateSnapshotFile(
     const base::FilePath& platform_path) {
   if (callback.is_null())
     return;
-  base::PlatformFileError* error = new base::PlatformFileError;
-  media_task_runner->PostTaskAndReply(
-          FROM_HERE,
-          base::Bind(&NativeMediaFileUtil::IsMediaFile, platform_path,
-                     base::Unretained(error)),
-          base::Bind(&DeviceMediaAsyncFileUtil::OnDidCheckMedia,
-                     weak_ptr_factory_.GetWeakPtr(),
-                     callback, make_scoped_refptr(media_task_runner),
-                     file_info,
-                     ShareableFileReference::GetOrCreate(
-                         platform_path,
-                         ShareableFileReference::DELETE_ON_FINAL_RELEASE,
-                         media_task_runner),
-                     base::Owned(error)));
+  base::PostTaskAndReplyWithResult(
+      media_task_runner,
+      FROM_HERE,
+      base::Bind(&NativeMediaFileUtil::IsMediaFile, platform_path),
+      base::Bind(&DeviceMediaAsyncFileUtil::OnDidCheckMedia,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback,
+                 file_info,
+                 ShareableFileReference::GetOrCreate(
+                     platform_path,
+                     ShareableFileReference::DELETE_ON_FINAL_RELEASE,
+                     media_task_runner)));
 }
 
 void DeviceMediaAsyncFileUtil::OnDidCheckMedia(
     const AsyncFileUtil::CreateSnapshotFileCallback& callback,
-    base::SequencedTaskRunner* media_task_runner,
     const base::PlatformFileInfo& file_info,
     scoped_refptr<webkit_blob::ShareableFileReference> platform_file,
-    base::PlatformFileError* error) {
+    base::PlatformFileError error) {
   if (callback.is_null())
     return;
   base::FilePath platform_path(platform_file.get()->path());
-  if (*error != base::PLATFORM_FILE_OK)
+  if (error != base::PLATFORM_FILE_OK)
     platform_file = NULL;
-  callback.Run(*error, file_info, platform_path, platform_file);
+  callback.Run(error, file_info, platform_path, platform_file);
 }
 
 void DeviceMediaAsyncFileUtil::OnCreateSnapshotFileError(

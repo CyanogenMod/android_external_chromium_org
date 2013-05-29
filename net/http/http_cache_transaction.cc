@@ -10,6 +10,7 @@
 #include <unistd.h>
 #endif
 
+#include <algorithm>
 #include <string>
 
 #include "base/bind.h"
@@ -17,6 +18,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/rand_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
@@ -24,6 +26,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/upload_data_stream.h"
@@ -488,9 +491,21 @@ bool HttpCache::Transaction::GetLoadTimingInfo(
     LoadTimingInfo* load_timing_info) const {
   if (network_trans_)
     return network_trans_->GetLoadTimingInfo(load_timing_info);
-  // Don't modify |load_timing_info| when reading from the cache instead of the
-  // network.
-  return false;
+
+  if (old_network_trans_load_timing_) {
+    *load_timing_info = *old_network_trans_load_timing_;
+    return true;
+  }
+
+  if (first_cache_access_since_.is_null())
+    return false;
+
+  // If the cache entry was opened, return that time.
+  load_timing_info->send_start = first_cache_access_since_;
+  // This time doesn't make much sense when reading from the cache, so just use
+  // the same time as send_start.
+  load_timing_info->send_end = first_cache_access_since_;
+  return true;
 }
 
 void HttpCache::Transaction::SetPriority(RequestPriority priority) {
@@ -826,6 +841,9 @@ int HttpCache::Transaction::DoSendRequest() {
   if (rv != OK)
     return rv;
 
+  // Old load timing information, if any, is now obsolete.
+  old_network_trans_load_timing_.reset();
+
   ReportNetworkActionStart();
   next_state_ = STATE_SEND_REQUEST_COMPLETE;
   rv = network_trans_->Start(request_, io_callback_, net_log_);
@@ -907,7 +925,7 @@ int HttpCache::Transaction::DoSuccessfulSendRequest() {
     // the new response.
     UpdateTransactionPattern(PATTERN_NOT_COVERED);
     response_ = HttpResponseInfo();
-    network_trans_.reset();
+    ResetNetworkTransaction();
     new_response_ = NULL;
     next_state_ = STATE_SEND_REQUEST;
     return OK;
@@ -1259,13 +1277,13 @@ int HttpCache::Transaction::DoUpdateCachedResponseComplete(int result) {
     }
     // We no longer need the network transaction, so destroy it.
     final_upload_progress_ = network_trans_->GetUploadProgress();
-    network_trans_.reset();
+    ResetNetworkTransaction();
   } else if (entry_ && handling_206_ && truncated_ &&
              partial_->initial_validation()) {
     // We just finished the validation of a truncated entry, and the server
     // is willing to resume the operation. Now we go back and start serving
     // the first part to the user.
-    network_trans_.reset();
+    ResetNetworkTransaction();
     new_response_ = NULL;
     next_state_ = STATE_START_PARTIAL_CACHE_VALIDATION;
     partial_->SetRangeToStartDownload();
@@ -2170,7 +2188,8 @@ void HttpCache::Transaction::FailRangeRequest() {
 }
 
 int HttpCache::Transaction::SetupEntryForRead() {
-  network_trans_.reset();
+  if (network_trans_)
+    ResetNetworkTransaction();
   if (partial_.get()) {
     if (truncated_ || is_sparse_ || !invalid_range_) {
       // We are going to return the saved response headers to the caller, so
@@ -2284,6 +2303,14 @@ void HttpCache::Transaction::DoneWritingToEntry(bool success) {
 
 int HttpCache::Transaction::OnCacheReadError(int result, bool restart) {
   DLOG(ERROR) << "ReadData failed: " << result;
+  const int result_for_histogram = std::max(0, -result);
+  if (restart) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("HttpCache.ReadErrorRestartable",
+                                result_for_histogram);
+  } else {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("HttpCache.ReadErrorNonRestartable",
+                                result_for_histogram);
+  }
 
   // Avoid using this entry in the future.
   if (cache_)
@@ -2319,7 +2346,7 @@ int HttpCache::Transaction::DoPartialNetworkReadCompleted(int result) {
 
   if (result == 0) {
     // We need to move on to the next range.
-    network_trans_.reset();
+    ResetNetworkTransaction();
     next_state_ = STATE_START_PARTIAL_CACHE_VALIDATION;
   }
   return result;
@@ -2398,7 +2425,7 @@ void HttpCache::Transaction::OnIOComplete(int result) {
 
 void HttpCache::Transaction::ScheduleDelayedLoop(base::TimeDelta delay,
                                                  int result) {
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&HttpCache::Transaction::RunDelayedLoop,
                  weak_factory_.GetWeakPtr(),
@@ -2559,6 +2586,15 @@ int HttpCache::Transaction::ResetCacheIOStart(int return_value) {
   if (return_value == ERR_IO_PENDING)
     cache_io_start_ = base::TimeTicks::Now();
   return return_value;
+}
+
+void HttpCache::Transaction::ResetNetworkTransaction() {
+  DCHECK(!old_network_trans_load_timing_);
+  DCHECK(network_trans_);
+  LoadTimingInfo load_timing;
+  if (network_trans_->GetLoadTimingInfo(&load_timing))
+    old_network_trans_load_timing_.reset(new LoadTimingInfo(load_timing));
+  network_trans_.reset();
 }
 
 }  // namespace net

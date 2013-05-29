@@ -49,6 +49,7 @@ extern const char kAppModeOAuth2Token[];
 extern const char kAppsNewInstallBubble[];
 extern const char kAppsNoThrob[];
 extern const char kAppsUseNativeFrame[];
+extern const char kAuthExtensionPath[];
 extern const char kAuthNegotiateDelegateWhitelist[];
 extern const char kAuthSchemes[];
 extern const char kAuthServerWhitelist[];
@@ -150,6 +151,7 @@ extern const char kEnableComponentCloudPolicy[];
 extern const char kEnableContacts[];
 extern const char kEnableDesktopGuestMode[];
 extern const char kEnableDevToolsExperiments[];
+extern const char kEnableDraggableMenuButton[];
 extern const char kEnableExperimentalExtensionApis[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
@@ -157,7 +159,6 @@ extern const char kEnableExtensionActivityUI[];
 extern const char kEnableFileCookies[];
 extern const char kEnableGoogleNowIntegration[];
 extern const char kEnableInstantExtendedAPI[];
-extern const char kEnableInteractiveAutocomplete[];
 extern const char kEnableIPCFuzzing[];
 extern const char kEnableIPPooling[];
 extern const char kEnableIPv6[];
@@ -178,10 +179,10 @@ extern const char kEnablePasswordGeneration[];
 extern const char kEnablePnacl[];
 extern const char kEnableProfiling[];
 extern const char kEnableQuic[];
+extern const char kEnableResetProfileSettings[];
 extern const char kEnableResourceContentSettings[];
 extern const char kEnableSdch[];
 extern const char kDisableSpdy31[];
-extern const char kEnableSpdy4a1[];
 extern const char kEnableSpdyCredentialFrames[];
 extern const char kEnableSpellingAutoCorrect[];
 extern const char kEnableStackedTabStrip[];
@@ -225,8 +226,6 @@ extern const char kHostResolverParallelism[];
 extern const char kHostResolverRetryAttempts[];
 extern const char kHstsHosts[];
 extern const char kIgnoreUrlFetcherCertRequests[];
-extern const char kImport[];
-extern const char kImportFromFile[];
 extern const char kIncognito[];
 extern const char kInstallFromWebstore[];
 extern const char kInstantProcess[];
@@ -238,9 +237,9 @@ extern const char kLimitedInstallFromWebstore[];
 extern const char kLoadAndLaunchApp[];
 extern const char kLoadComponentExtension[];
 extern const char kLoadExtension[];
-extern const char kUninstallExtension[];
 extern const char kLogNetLog[];
 extern const char kMakeDefaultBrowser[];
+extern const char kManagedUserSyncToken[];
 extern const char kManaged[];
 extern const char kMediaCacheSize[];
 extern const char kMemoryProfiling[];
@@ -375,6 +374,7 @@ extern const char kTrackActiveVisitTime[];
 extern const char kTranslateScriptURL[];
 extern const char kTrustedSpdyProxy[];
 extern const char kTryChromeAgain[];
+extern const char kUninstallExtension[];
 extern const char kUninstall[];
 extern const char kUnlimitedStorage[];
 extern const char kUseSimpleCacheBackend[];
@@ -389,7 +389,6 @@ extern const char kVariationsServerURL[];
 extern const char kVersion[];
 extern const char kViewerConnection[];
 extern const char kVisitURLs[];
-extern const char kWebIntentsNativeServicesEnabled[];
 extern const char kWhitelistedExtensionID[];
 extern const char kWindowPosition[];
 extern const char kWindowSize[];
@@ -422,6 +421,7 @@ extern const char kPasswordStore[];
 #endif
 
 #if defined(OS_MACOSX)
+extern const char kEnableAppListShim[];
 extern const char kEnableExposeForTabs[];
 extern const char kKeychainReauthorize[];
 extern const char kRelauncherProcess[];
@@ -429,6 +429,7 @@ extern const char kUseMockKeychain[];
 #endif
 
 #if defined(OS_WIN)
+extern const char kDisableAppList[];
 extern const char kEnableAppList[];
 extern const char kForceImmersive[];
 extern const char kForceDesktop[];
@@ -441,7 +442,6 @@ extern const char kWaitForMutex[];
 #ifndef NDEBUG
 extern const char kFileManagerExtensionPath[];
 extern const char kImageLoaderExtensionPath[];
-extern const char kDumpProfileDependencyGraph[];
 #endif
 
 #if defined(GOOGLE_CHROME_BUILD)

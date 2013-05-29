@@ -11,10 +11,10 @@
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 
 namespace drive {
-
 namespace internal {
+
+class FileCache;
 class ResourceMetadata;
-}  // namespace internal
 
 // Searches the local resource metadata, and returns the entries
 // |at_most_num_matches| that contain |query| in their base names. Search is
@@ -25,21 +25,25 @@ class ResourceMetadata;
 // be the same one as |resource_metadata| uses.
 void SearchMetadata(
     scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
-    internal::ResourceMetadata* resource_metadata,
+    ResourceMetadata* resource_metadata,
+    FileCache* cache,
     const std::string& query,
     int search_options,
     int at_most_num_matches,
     const SearchMetadataCallback& callback);
 
-// Finds |query| in |text| while ignoring case. Returns true if |query| is
-// found. Returns false if |query| is not found, or empty. |highlighted_text|
-// will have the original text with matched portions highlighted with <b> tag
-// (multiple portions can be highlighted). Meta characters are escaped like
-// &lt;. The original contents of |highlighted| will be lost.
+// Finds |query| in |text| while ignoring cases or accents. Cases of non-ASCII
+// characters are also ignored; they are compared in the 'Primary Level' of
+// http://userguide.icu-project.org/collation/concepts.
+// Returns true if |query| is found. |highlighted_text| will have the original
+// text with matched portions highlighted with <b> tag (only the first match
+// is highlighted). Meta characters are escaped like &lt;. The original
+// contents of |highlighted| will be lost.
 bool FindAndHighlight(const std::string& text,
                       const std::string& query,
                       std::string* highlighted_text);
 
+}  // namespace internal
 }  // namespace drive
 
 #endif  // CHROME_BROWSER_CHROMEOS_DRIVE_SEARCH_METADATA_H_

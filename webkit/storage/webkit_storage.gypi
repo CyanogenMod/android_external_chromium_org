@@ -5,11 +5,13 @@
 {
   'includes': [
     '../appcache/webkit_appcache.gypi',
-    '../blob/webkit_blob.gypi',
-    '../database/webkit_database.gypi',
     '../dom_storage/webkit_dom_storage.gypi',
-    '../fileapi/webkit_fileapi.gypi',
     '../quota/webkit_quota.gypi',
+
+    # TODO(kinuko): Deprecate this when we have a new target for
+    # webkit_browser.  crbug.com/239710
+    '../browser/webkit_browser.gypi',
+    '../common/webkit_common.gypi',
   ],
   'targets': [
     {
@@ -32,16 +34,20 @@
       'sources': [
         '../storage/webkit_storage_export.h',
         '<@(webkit_appcache_sources)',
-        '<@(webkit_blob_sources)',
-        '<@(webkit_database_sources)',
         '<@(webkit_dom_storage_sources)',
-        '<@(webkit_fileapi_sources)',
         '<@(webkit_quota_sources)',
+
+        # TODO(kinuko): Deprecate them when we have new targets for
+        # browser|common|renderer.  crbug.com/239710
+        '<@(webkit_browser_storage_sources)',
+        '<@(webkit_common_storage_sources)',
+        '../renderer/fileapi/webfilewriter_base.cc',
+        '../renderer/fileapi/webfilewriter_base.h',
       ],
       'conditions': [
         ['chromeos==1', {
           'sources': [
-            '<@(webkit_fileapi_chromeos_sources)',
+            '<@(webkit_browser_fileapi_chromeos_sources)',
           ],
         }],
       ],

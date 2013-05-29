@@ -108,6 +108,7 @@ class Notification {
 
   void Display() const { delegate()->Display(); }
   void Error() const { delegate()->Error(); }
+  bool HasClickedListener() const { return delegate()->HasClickedListener(); }
   void Click() const { delegate()->Click(); }
   void ButtonClick(int index) const { delegate()->ButtonClick(index); }
   void Close(bool by_user) const { delegate()->Close(by_user); }
@@ -121,9 +122,9 @@ class Notification {
     return delegate()->GetRenderViewHost();
   }
 
- private:
   NotificationDelegate* delegate() const { return delegate_.get(); }
 
+ private:
   // The type of notification we'd like displayed.
   message_center::NotificationType type_;
 

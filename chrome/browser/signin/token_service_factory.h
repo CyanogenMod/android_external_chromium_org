@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_SIGNIN_TOKEN_SERVICE_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class TokenService;
 class Profile;
@@ -14,7 +14,7 @@ class Profile;
 // Singleton that owns all TokenServices and associates them with Profiles.
 // Listens for the Profile's destruction notification and cleans up the
 // associated TokenService.
-class TokenServiceFactory : public ProfileKeyedServiceFactory {
+class TokenServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the instance of TokenService associated with this profile
   // (creating one if none exists). Returns NULL if this profile cannot have a
@@ -30,8 +30,8 @@ class TokenServiceFactory : public ProfileKeyedServiceFactory {
   TokenServiceFactory();
   virtual ~TokenServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory:
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(TokenServiceFactory);

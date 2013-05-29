@@ -6,15 +6,15 @@
 
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/user_style_sheet_watcher.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 scoped_refptr<UserStyleSheetWatcher>
 UserStyleSheetWatcherFactory::GetForProfile(
     Profile* profile) {
   return static_cast<UserStyleSheetWatcher*>(
-      GetInstance()->GetServiceForProfile(profile, true).get());
+      GetInstance()->GetServiceForBrowserContext(profile, true).get());
 }
 
 // static
@@ -23,14 +23,15 @@ UserStyleSheetWatcherFactory* UserStyleSheetWatcherFactory::GetInstance() {
 }
 
 UserStyleSheetWatcherFactory::UserStyleSheetWatcherFactory()
-    : RefcountedProfileKeyedServiceFactory(
-          "UserStyleSheetWatcher", ProfileDependencyManager::GetInstance()) {
+    : RefcountedBrowserContextKeyedServiceFactory(
+        "UserStyleSheetWatcher",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 UserStyleSheetWatcherFactory::~UserStyleSheetWatcherFactory() {
 }
 
-scoped_refptr<RefcountedProfileKeyedService>
+scoped_refptr<RefcountedBrowserContextKeyedService>
 UserStyleSheetWatcherFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);

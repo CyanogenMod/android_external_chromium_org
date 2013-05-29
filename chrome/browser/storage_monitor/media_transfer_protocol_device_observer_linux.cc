@@ -61,8 +61,8 @@ std::string GetDeviceIdFromStorageInfo(const MtpStorageInfo& storage_info) {
   // part of unique id along with vendor, model and volume information.
   const std::string vendor_id = base::UintToString(storage_info.vendor_id());
   const std::string model_id = base::UintToString(storage_info.product_id());
-  return MediaStorageUtil::MakeDeviceId(
-      MediaStorageUtil::MTP_OR_PTP,
+  return StorageInfo::MakeDeviceId(
+      StorageInfo::MTP_OR_PTP,
       kVendorModelVolumeStoragePrefix + vendor_id + ":" + model_id + ":" +
           storage_info.volume_identifier() + ":" + storage_id);
 }
@@ -157,6 +157,8 @@ MediaTransferProtocolDeviceObserverLinux::
 bool MediaTransferProtocolDeviceObserverLinux::GetStorageInfoForPath(
     const base::FilePath& path,
     StorageInfo* storage_info) const {
+  DCHECK(storage_info);
+
   if (!path.IsAbsolute())
     return false;
 
@@ -173,8 +175,7 @@ bool MediaTransferProtocolDeviceObserverLinux::GetStorageInfoForPath(
   if (info_it == storage_map_.end())
     return false;
 
-  if (storage_info)
-    *storage_info = info_it->second;
+  *storage_info = info_it->second;
   return true;
 }
 
@@ -209,7 +210,7 @@ void MediaTransferProtocolDeviceObserverLinux::StorageChanged(
         storage_map_.find(GetDeviceLocationFromStorageName(storage_name));
     if (it == storage_map_.end())
       return;
-    notifications_->ProcessDetach(it->second.device_id);
+    notifications_->ProcessDetach(it->second.device_id());
     storage_map_.erase(it);
   }
 }

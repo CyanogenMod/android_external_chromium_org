@@ -248,7 +248,8 @@ void GpuProcessHostUIShim::OnLogMessage(
       level, header, message);
 }
 
-void GpuProcessHostUIShim::OnGraphicsInfoCollected(const GPUInfo& gpu_info) {
+void GpuProcessHostUIShim::OnGraphicsInfoCollected(
+    const gpu::GPUInfo& gpu_info) {
   // OnGraphicsInfoCollected is sent back after the GPU process successfully
   // initializes GL.
   TRACE_EVENT0("test_gpu", "OnGraphicsInfoCollected");
@@ -342,7 +343,7 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
   view->AcceleratedSurfaceBuffersSwapped(params, host_id_);
 }
 
-void GpuProcessHostUIShim::OnFrameDrawn(const cc::LatencyInfo& latency_info) {
+void GpuProcessHostUIShim::OnFrameDrawn(const ui::LatencyInfo& latency_info) {
 }
 
 void GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer(

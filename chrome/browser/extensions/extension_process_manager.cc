@@ -431,7 +431,7 @@ int ExtensionProcessManager::DecrementLazyKeepaliveCount(
   int& count = background_page_data_[extension->id()].lazy_keepalive_count;
   DCHECK_GT(count, 0);
   if (--count == 0) {
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&ExtensionProcessManager::OnLazyBackgroundPageIdle,
                    weak_ptr_factory_.GetWeakPtr(), extension->id(),
@@ -494,7 +494,7 @@ void ExtensionProcessManager::OnShouldSuspendAck(
 void ExtensionProcessManager::OnSuspendAck(const std::string& extension_id) {
   background_page_data_[extension_id].is_closing = true;
   int sequence_id = background_page_data_[extension_id].close_sequence_id;
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ExtensionProcessManager::CloseLazyBackgroundPageNow,
                  weak_ptr_factory_.GetWeakPtr(), extension_id, sequence_id),
@@ -580,7 +580,8 @@ void ExtensionProcessManager::Observe(
 
     case chrome::NOTIFICATION_EXTENSION_LOADED: {
       Profile* profile = content::Source<Profile>(source).ptr();
-      ExtensionService* service = profile->GetExtensionService();
+      ExtensionService* service =
+          extensions::ExtensionSystem::Get(profile)->extension_service();
       if (service->is_ready()) {
         const Extension* extension =
             content::Details<const Extension>(details).ptr();

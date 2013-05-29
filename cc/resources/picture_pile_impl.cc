@@ -74,13 +74,26 @@ PicturePileImpl* PicturePileImpl::GetCloneForDrawingOnThread(
   return clones_for_drawing_.clones_[thread_index];
 }
 
-void PicturePileImpl::Raster(
+void PicturePileImpl::RasterDirect(
     SkCanvas* canvas,
     gfx::Rect canvas_rect,
     float contents_scale,
     RasterStats* raster_stats) {
+  RasterCommon(canvas, NULL, canvas_rect, contents_scale, raster_stats);
+}
 
-  DCHECK(contents_scale >= min_contents_scale_);
+void PicturePileImpl::RasterForAnalysis(
+    skia::AnalysisCanvas* canvas,
+    gfx::Rect canvas_rect,
+    float contents_scale) {
+  RasterCommon(canvas, canvas, canvas_rect, contents_scale, NULL);
+}
+
+void PicturePileImpl::RasterToBitmap(
+    SkCanvas* canvas,
+    gfx::Rect canvas_rect,
+    float contents_scale,
+    RasterStats* raster_stats) {
 
   canvas->save();
   canvas->translate(-canvas_rect.x(), -canvas_rect.y());
@@ -90,6 +103,17 @@ void PicturePileImpl::Raster(
   gfx::Rect total_content_rect(gfx::ToCeiledSize(total_content_size));
   gfx::Rect content_rect = total_content_rect;
   content_rect.Intersect(canvas_rect);
+
+#ifndef NDEBUG
+  // Any non-painted areas will be left in this color.
+  canvas->clear(DebugColors::NonPaintedFillColor());
+#endif  // NDEBUG
+
+  // TODO(enne): this needs to be rolled together with the border clear
+  SkPaint paint;
+  paint.setAntiAlias(false);
+  paint.setXfermodeMode(SkXfermode::kClear_Mode);
+  canvas->drawRect(gfx::RectToSkRect(content_rect), paint);
 
   // Clear one texel inside the right/bottom edge of the content rect,
   // as it may only be partially covered by the picture playback.
@@ -111,12 +135,33 @@ void PicturePileImpl::Raster(
     canvas->drawColor(background_color_, SkXfermode::kSrc_Mode);
   }
 
+  canvas->restore();
+
+  RasterCommon(canvas, NULL, canvas_rect, contents_scale, raster_stats);
+}
+
+void PicturePileImpl::RasterCommon(
+    SkCanvas* canvas,
+    SkDrawPictureCallback* callback,
+    gfx::Rect canvas_rect,
+    float contents_scale,
+    RasterStats* raster_stats) {
+  DCHECK(contents_scale >= min_contents_scale_);
+
+  canvas->translate(-canvas_rect.x(), -canvas_rect.y());
+
+  gfx::SizeF total_content_size = gfx::ScaleSize(tiling_.total_size(),
+                                                 contents_scale);
+  gfx::Rect total_content_rect(gfx::ToCeiledSize(total_content_size));
+  gfx::Rect content_rect = total_content_rect;
+  content_rect.Intersect(canvas_rect);
+
   // Rasterize the collection of relevant picture piles.
-  gfx::Rect layer_rect = gfx::ToEnclosingRect(
-      gfx::ScaleRect(content_rect, 1.f / contents_scale));
+  gfx::Rect layer_rect = gfx::ScaleToEnclosingRect(
+      content_rect, 1.f / contents_scale);
 
   canvas->clipRect(gfx::RectToSkRect(content_rect),
-                   SkRegion::kReplace_Op);
+                   SkRegion::kIntersect_Op);
   Region unclipped(content_rect);
 
   if (raster_stats) {
@@ -144,8 +189,8 @@ void PicturePileImpl::Raster(
       // of the picture's layer rect.  The min_contents_scale enforces that
       // enough buffer pixels have been added such that the enclosed rect
       // encompasses all invalidated pixels at any larger scale level.
-      gfx::Rect content_clip = gfx::ToEnclosedRect(
-          gfx::ScaleRect((*i)->LayerRect(), contents_scale));
+      gfx::Rect content_clip = gfx::ScaleToEnclosedRect(
+          (*i)->LayerRect(), contents_scale);
       DCHECK(!content_clip.IsEmpty()) <<
           "Layer rect: " << (*i)->LayerRect().ToString() <<
           "Contents scale: " << contents_scale;
@@ -163,7 +208,8 @@ void PicturePileImpl::Raster(
         if (raster_stats)
           start_time = base::TimeTicks::HighResNow();
 
-        (*i)->Raster(canvas, content_clip, contents_scale, enable_lcd_text_);
+        (*i)->Raster(
+            canvas, callback, content_clip, contents_scale, enable_lcd_text_);
 
         if (raster_stats) {
           base::TimeDelta duration = base::TimeTicks::HighResNow() - start_time;
@@ -217,8 +263,6 @@ void PicturePileImpl::Raster(
 
   // We should always paint some part of |content_rect|.
   DCHECK(!unclipped.Contains(content_rect));
-
-  canvas->restore();
 }
 
 skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
@@ -234,7 +278,7 @@ skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
       layer_rect.height(),
       SkPicture::kUsePathBoundsForClip_RecordingFlag);
 
-  Raster(canvas, layer_rect, 1.0, NULL);
+  RasterToBitmap(canvas, layer_rect, 1.0, NULL);
   picture->endRecording();
 
   return picture;
@@ -246,8 +290,8 @@ void PicturePileImpl::AnalyzeInRect(gfx::Rect content_rect,
   DCHECK(analysis);
   TRACE_EVENT0("cc", "PicturePileImpl::AnalyzeInRect");
 
-  gfx::Rect layer_rect = gfx::ToEnclosingRect(
-      gfx::ScaleRect(content_rect, 1.0f / contents_scale));
+  gfx::Rect layer_rect = gfx::ScaleToEnclosingRect(
+      content_rect, 1.0f / contents_scale);
 
   layer_rect.Intersect(gfx::Rect(tiling_.total_size()));
 
@@ -258,7 +302,7 @@ void PicturePileImpl::AnalyzeInRect(gfx::Rect content_rect,
   skia::AnalysisDevice device(empty_bitmap);
   skia::AnalysisCanvas canvas(&device);
 
-  Raster(&canvas, layer_rect, 1.0f, NULL);
+  RasterForAnalysis(&canvas, layer_rect, 1.0f);
 
   analysis->is_solid_color = canvas.getColorIfSolid(&analysis->solid_color);
   analysis->has_text = canvas.hasText();
@@ -277,8 +321,8 @@ PicturePileImpl::PixelRefIterator::PixelRefIterator(
     float contents_scale,
     const PicturePileImpl* picture_pile)
     : picture_pile_(picture_pile),
-      layer_rect_(gfx::ToEnclosingRect(
-          gfx::ScaleRect(content_rect, 1.f / contents_scale))),
+      layer_rect_(gfx::ScaleToEnclosingRect(
+          content_rect, 1.f / contents_scale)),
       tile_iterator_(&picture_pile_->tiling_, layer_rect_),
       picture_list_(NULL) {
   // Early out if there isn't a single tile.

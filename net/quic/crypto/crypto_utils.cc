@@ -5,6 +5,8 @@
 #include "net/quic/crypto/crypto_utils.h"
 
 #include "crypto/hkdf.h"
+#include "googleurl/src/url_canon.h"
+#include "net/base/net_util.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/quic_decrypter.h"
@@ -18,52 +20,6 @@ using std::string;
 namespace net {
 
 // static
-bool CryptoUtils::FindMutualTag(const QuicTagVector& our_tags_vector,
-                                const QuicTag* their_tags,
-                                size_t num_their_tags,
-                                Priority priority,
-                                QuicTag* out_result,
-                                size_t* out_index) {
-  if (our_tags_vector.empty()) {
-    return false;
-  }
-  const size_t num_our_tags = our_tags_vector.size();
-  const QuicTag* our_tags = &our_tags_vector[0];
-
-  size_t num_priority_tags, num_inferior_tags;
-  const QuicTag* priority_tags;
-  const QuicTag* inferior_tags;
-  if (priority == LOCAL_PRIORITY) {
-    num_priority_tags = num_our_tags;
-    priority_tags = our_tags;
-    num_inferior_tags = num_their_tags;
-    inferior_tags = their_tags;
-  } else {
-    num_priority_tags = num_their_tags;
-    priority_tags = their_tags;
-    num_inferior_tags = num_our_tags;
-    inferior_tags = our_tags;
-  }
-
-  for (size_t i = 0; i < num_priority_tags; i++) {
-    for (size_t j = 0; j < num_inferior_tags; j++) {
-      if (priority_tags[i] == inferior_tags[j]) {
-        *out_result = priority_tags[i];
-        if (out_index) {
-          if (priority == LOCAL_PRIORITY) {
-            *out_index = j;
-          } else {
-            *out_index = i;
-          }
-        }
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 void CryptoUtils::GenerateNonce(QuicWallTime now,
                                 QuicRandom* random_generator,
                                 StringPiece orbit,
@@ -88,6 +44,39 @@ void CryptoUtils::GenerateNonce(QuicWallTime now,
                               kNonceSize - bytes_written);
 }
 
+// static
+bool CryptoUtils::IsValidSNI(StringPiece sni) {
+  // TODO(rtenneti): Support RFC2396 hostname.
+  // NOTE: Microsoft does NOT enforce this spec, so if we throw away hostnames
+  // based on the above spec, we may be losing some hostnames that windows
+  // would consider valid. By far the most common hostname character NOT
+  // accepted by the above spec is '_'.
+  url_canon::CanonHostInfo host_info;
+  string canonicalized_host(CanonicalizeHost(sni.as_string(), &host_info));
+  return !host_info.IsIPAddress() &&
+      IsCanonicalizedHostCompliant(canonicalized_host, "") &&
+      sni.find_last_of('.') != string::npos;
+}
+
+// static
+string CryptoUtils::NormalizeHostname(const char* hostname) {
+  url_canon::CanonHostInfo host_info;
+  string host(CanonicalizeHost(hostname, &host_info));
+
+  // Walk backwards over the string, stopping at the first trailing dot.
+  size_t host_end = host.length();
+  while (host_end != 0 && host[host_end - 1] == '.') {
+    host_end--;
+  }
+
+  // Erase the trailing dots.
+  if (host_end != host.length()) {
+    host.erase(host_end, host.length() - host_end);
+  }
+  return host;
+}
+
+// static
 void CryptoUtils::DeriveKeys(StringPiece premaster_secret,
                              QuicTag aead,
                              StringPiece client_nonce,

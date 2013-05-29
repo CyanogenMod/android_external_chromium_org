@@ -6,6 +6,7 @@
 
 #include "base/i18n/case_conversion.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
+#include "chrome/browser/favicon/favicon_changed_details.h"
 #include "chrome/browser/history/android/android_time.h"
 #include "chrome/browser/history/android/android_urls_sql_handler.h"
 #include "chrome/browser/history/android/bookmark_model_sql_handler.h"
@@ -334,7 +335,7 @@ bool AndroidProviderBackend::UpdateHistoryAndBookmarks(
   *updated_count = ids_set.size();
 
   scoped_ptr<URLsModifiedDetails> modified(new URLsModifiedDetails);
-  scoped_ptr<FaviconChangeDetails> favicon(new FaviconChangeDetails);
+  scoped_ptr<FaviconChangedDetails> favicon(new FaviconChangedDetails);
 
   for (TableIDRows::const_iterator i = ids_set.begin(); i != ids_set.end();
        ++i) {
@@ -390,11 +391,11 @@ AndroidURLID AndroidProviderBackend::InsertHistoryAndBookmark(
     return false;
   modified->changed_urls.push_back(url_row);
 
-  scoped_ptr<FaviconChangeDetails> favicon;
+  scoped_ptr<FaviconChangedDetails> favicon;
   // No favicon should be changed if the thumbnail_db_ is not available.
   if (row.is_value_set_explicitly(HistoryAndBookmarkRow::FAVICON) &&
       row.favicon_valid() && thumbnail_db_) {
-    favicon.reset(new FaviconChangeDetails);
+    favicon.reset(new FaviconChangedDetails);
     if (!favicon.get())
       return false;
     favicon->urls.insert(url_row.url());
@@ -807,7 +808,7 @@ bool AndroidProviderBackend::UpdateFavicon() {
   if (!thumbnail_db_)
     return true;
 
-  if (!thumbnail_db_->InitIconMappingEnumerator(FAVICON, &enumerator))
+  if (!thumbnail_db_->InitIconMappingEnumerator(chrome::FAVICON, &enumerator))
     return false;
 
   IconMapping icon_mapping;
@@ -975,14 +976,14 @@ bool AndroidProviderBackend::SimulateUpdateURL(
   new_row.set_title(statement->statement()->ColumnString16(3));
 
   scoped_ptr<URLsDeletedDetails> deleted_details(new URLsDeletedDetails);
-  scoped_ptr<FaviconChangeDetails> favicon_details(new FaviconChangeDetails);
+  scoped_ptr<FaviconChangedDetails> favicon_details(new FaviconChangedDetails);
   scoped_ptr<URLsModifiedDetails> modified(new URLsModifiedDetails);
   URLRow old_url_row;
   if (!history_db_->GetURLRow(ids[0].url_id, &old_url_row))
     return false;
   deleted_details->rows.push_back(old_url_row);
 
-  FaviconID favicon_id = statement->statement()->ColumnInt64(4);
+  chrome::FaviconID favicon_id = statement->statement()->ColumnInt64(4);
   if (favicon_id) {
     std::vector<FaviconBitmap> favicon_bitmaps;
     if (!thumbnail_db_ ||
@@ -1104,7 +1105,7 @@ bool AndroidProviderBackend::DeleteHistoryInternal(
     bool delete_bookmarks,
     HistoryNotifications* notifications) {
   scoped_ptr<URLsDeletedDetails> deleted_details(new URLsDeletedDetails);
-  scoped_ptr<FaviconChangeDetails> favicon(new FaviconChangeDetails);
+  scoped_ptr<FaviconChangedDetails> favicon(new FaviconChangedDetails);
   for (TableIDRows::const_iterator i = urls.begin(); i != urls.end(); ++i) {
     URLRow url_row;
     if (!history_db_->GetURLRow(i->url_id, &url_row))

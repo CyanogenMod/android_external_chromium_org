@@ -11,7 +11,6 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "cc/debug/debug_colors.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/raster_worker_pool.h"
@@ -105,16 +104,36 @@ scoped_ptr<base::Value> TileManagerBinPriorityAsValue(
   }
 }
 
-TileManager::TileManager(
+// static
+scoped_ptr<TileManager> TileManager::Create(
     TileManagerClient* client,
     ResourceProvider* resource_provider,
     size_t num_raster_threads,
     bool use_color_estimator,
-    bool prediction_benchmarking,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation)
+    RenderingStatsInstrumentation* rendering_stats_instrumentation,
+    bool use_map_image) {
+  scoped_ptr<RasterWorkerPool> raster_worker_pool =
+      RasterWorkerPool::Create(num_raster_threads);
+  return make_scoped_ptr(new TileManager(client,
+                                         resource_provider,
+                                         raster_worker_pool.Pass(),
+                                         num_raster_threads,
+                                         use_color_estimator,
+                                         rendering_stats_instrumentation,
+                                         use_map_image));
+}
+
+TileManager::TileManager(
+    TileManagerClient* client,
+    ResourceProvider* resource_provider,
+    scoped_ptr<RasterWorkerPool> raster_worker_pool,
+    size_t num_raster_threads,
+    bool use_color_estimator,
+    RenderingStatsInstrumentation* rendering_stats_instrumentation,
+    bool use_map_image)
     : client_(client),
       resource_pool_(ResourcePool::Create(resource_provider)),
-      raster_worker_pool_(RasterWorkerPool::Create(this, num_raster_threads)),
+      raster_worker_pool_(raster_worker_pool.Pass()),
       manage_tiles_pending_(false),
       manage_tiles_call_count_(0),
       bytes_pending_upload_(0),
@@ -122,10 +141,10 @@ TileManager::TileManager(
       ever_exceeded_memory_budget_(false),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       use_color_estimator_(use_color_estimator),
-      prediction_benchmarking_(prediction_benchmarking),
       did_initialize_visible_tile_(false),
       pending_tasks_(0),
       max_pending_tasks_(kMaxNumPendingTasksPerThread * num_raster_threads) {
+  raster_worker_pool_->SetClient(this);
 }
 
 TileManager::~TileManager() {
@@ -152,18 +171,21 @@ void TileManager::SetGlobalState(
 
 void TileManager::RegisterTile(Tile* tile) {
   DCHECK(std::find(tiles_.begin(), tiles_.end(), tile) == tiles_.end());
+  DCHECK(!tile->required_for_activation());
   tiles_.push_back(tile);
   ScheduleManageTiles();
 }
 
 void TileManager::UnregisterTile(Tile* tile) {
-  for (TileVector::iterator it = tiles_that_need_to_be_rasterized_.begin();
-       it != tiles_that_need_to_be_rasterized_.end(); it++) {
-    if (*it == tile) {
-      tiles_that_need_to_be_rasterized_.erase(it);
-      break;
-    }
-  }
+  TileVector::iterator raster_iter =
+      std::find(tiles_that_need_to_be_rasterized_.begin(),
+                tiles_that_need_to_be_rasterized_.end(),
+                tile);
+  if (raster_iter != tiles_that_need_to_be_rasterized_.end())
+    tiles_that_need_to_be_rasterized_.erase(raster_iter);
+
+  tiles_that_need_to_be_initialized_for_activation_.erase(tile);
+
   DCHECK(std::find(tiles_.begin(), tiles_.end(), tile) != tiles_.end());
   FreeResourcesForTile(tile);
   tiles_.erase(std::remove(tiles_.begin(), tiles_.end(), tile));
@@ -179,6 +201,9 @@ class BinComparator {
 
     if (ams.bin[LOW_PRIORITY_BIN] != bms.bin[LOW_PRIORITY_BIN])
       return ams.bin[LOW_PRIORITY_BIN] < bms.bin[LOW_PRIORITY_BIN];
+
+    if (ams.required_for_activation != bms.required_for_activation)
+      return ams.required_for_activation;
 
     if (ams.resolution != bms.resolution)
       return ams.resolution < bms.resolution;
@@ -255,6 +280,8 @@ void TileManager::AssignBinsToTiles() {
         prio[HIGH_PRIORITY_BIN].time_to_visible_in_seconds;
     mts.distance_to_visible_in_pixels =
         prio[HIGH_PRIORITY_BIN].distance_to_visible_in_pixels;
+    mts.required_for_activation =
+        prio[HIGH_PRIORITY_BIN].required_for_activation;
     mts.bin[HIGH_PRIORITY_BIN] = BinFromTilePriority(prio[HIGH_PRIORITY_BIN]);
     mts.bin[LOW_PRIORITY_BIN] = BinFromTilePriority(prio[LOW_PRIORITY_BIN]);
     mts.gpu_memmgr_stats_bin = BinFromTilePriority(tile->combined_priority());
@@ -269,13 +296,10 @@ void TileManager::AssignBinsToTiles() {
     for (int i = 0; i < NUM_BIN_PRIORITIES; ++i)
       mts.bin[i] = bin_map[mts.bin[i]];
   }
-
-  TRACE_COUNTER_ID1("cc", "TileCount", this, tiles_.size());
 }
 
 void TileManager::SortTiles() {
   TRACE_EVENT0("cc", "TileManager::SortTiles");
-  TRACE_COUNTER_ID1("cc", "TileCount", this, tiles_.size());
 
   // Sort by bin, resolution and time until needed.
   std::sort(tiles_.begin(), tiles_.end(), BinComparator());
@@ -283,7 +307,6 @@ void TileManager::SortTiles() {
 
 void TileManager::ManageTiles() {
   TRACE_EVENT0("cc", "TileManager::ManageTiles");
-  TRACE_COUNTER_ID1("cc", "TileCount", this, tiles_.size());
 
   manage_tiles_pending_ = false;
   ++manage_tiles_call_count_;
@@ -303,23 +326,25 @@ void TileManager::ManageTiles() {
 void TileManager::CheckForCompletedTileUploads() {
   while (!tiles_with_pending_upload_.empty()) {
     Tile* tile = tiles_with_pending_upload_.front();
-    DCHECK(tile->drawing_info().resource_);
+    DCHECK(tile->tile_version().resource_);
 
     // Set pixel tasks complete in the order they are posted.
     if (!resource_pool_->resource_provider()->DidSetPixelsComplete(
-          tile->drawing_info().resource_->id())) {
+          tile->tile_version().resource_->id())) {
       break;
     }
 
     // It's now safe to release the pixel buffer.
     resource_pool_->resource_provider()->ReleasePixelBuffer(
-        tile->drawing_info().resource_->id());
+        tile->tile_version().resource_->id());
 
     bytes_pending_upload_ -= tile->bytes_consumed_if_allocated();
+    bool was_forced = tile->tile_version().forced_upload_;
     // Reset forced_upload_ since we now got the upload completed notification.
-    tile->drawing_info().forced_upload_ = false;
-    tile->drawing_info().memory_state_ = USING_RELEASABLE_MEMORY;
-    DidFinishTileInitialization(tile);
+    tile->tile_version().forced_upload_ = false;
+    tile->tile_version().memory_state_ = USING_RELEASABLE_MEMORY;
+    if (!was_forced)
+      DidFinishTileInitialization(tile);
 
     tiles_with_pending_upload_.pop();
   }
@@ -330,13 +355,13 @@ void TileManager::CheckForCompletedTileUploads() {
 void TileManager::AbortPendingTileUploads() {
   while (!tiles_with_pending_upload_.empty()) {
     Tile* tile = tiles_with_pending_upload_.front();
-    DCHECK(tile->drawing_info().resource_);
+    DCHECK(tile->tile_version().resource_);
 
     resource_pool_->resource_provider()->AbortSetPixels(
-        tile->drawing_info().resource_->id());
+        tile->tile_version().resource_->id());
     resource_pool_->resource_provider()->ReleasePixelBuffer(
-        tile->drawing_info().resource_->id());
-    tile->drawing_info().memory_state_ = USING_RELEASABLE_MEMORY;
+        tile->tile_version().resource_->id());
+    tile->tile_version().memory_state_ = USING_RELEASABLE_MEMORY;
 
     FreeResourcesForTile(tile);
 
@@ -347,19 +372,20 @@ void TileManager::AbortPendingTileUploads() {
 
 void TileManager::ForceTileUploadToComplete(Tile* tile) {
   DCHECK(tile);
-  if (tile->drawing_info().resource_ &&
-      tile->drawing_info().memory_state_ == USING_UNRELEASABLE_MEMORY &&
-      !tile->drawing_info().forced_upload_) {
+  if (tile->tile_version().resource_ &&
+      tile->tile_version().memory_state_ == USING_UNRELEASABLE_MEMORY &&
+      !tile->tile_version().forced_upload_) {
     resource_pool_->resource_provider()->
-        ForceSetPixelsToComplete(tile->drawing_info().resource_->id());
+        ForceSetPixelsToComplete(tile->tile_version().resource_->id());
 
     // We have to set the memory state to be unreleasable, to ensure
     // that the tile will not be freed until we get the upload finished
     // notification. However, setting |forced_upload_| to true makes
     // this tile ready to draw.
-    tile->drawing_info().memory_state_ = USING_UNRELEASABLE_MEMORY;
-    tile->drawing_info().forced_upload_ = true;
+    tile->tile_version().memory_state_ = USING_UNRELEASABLE_MEMORY;
+    tile->tile_version().forced_upload_ = true;
     DidFinishTileInitialization(tile);
+    DCHECK(tile->tile_version().IsReadyToDraw());
   }
 
   if (did_initialize_visible_tile_) {
@@ -379,7 +405,7 @@ void TileManager::GetMemoryStats(
        it != tiles_.end();
        ++it) {
     const Tile* tile = *it;
-    if (!tile->drawing_info().requires_resource())
+    if (!tile->tile_version().requires_resource())
       continue;
 
     const ManagedTileState& mts = tile->managed_state();
@@ -388,7 +414,7 @@ void TileManager::GetMemoryStats(
       *memory_required_bytes += tile_bytes;
     if (mts.gpu_memmgr_stats_bin != NEVER_BIN)
       *memory_nice_to_have_bytes += tile_bytes;
-    if (tile->drawing_info().memory_state_ != NOT_ALLOWED_TO_USE_MEMORY)
+    if (tile->tile_version().memory_state_ != NOT_ALLOWED_TO_USE_MEMORY)
       *memory_used_bytes += tile_bytes;
   }
 }
@@ -428,6 +454,14 @@ scoped_ptr<base::Value> TileManager::GetMemoryRequirementsAsValue() const {
   return requirements.PassAs<base::Value>();
 }
 
+void TileManager::AddRequiredTileForActivation(Tile* tile) {
+  DCHECK(std::find(tiles_that_need_to_be_initialized_for_activation_.begin(),
+                   tiles_that_need_to_be_initialized_for_activation_.end(),
+                   tile) ==
+         tiles_that_need_to_be_initialized_for_activation_.end());
+  tiles_that_need_to_be_initialized_for_activation_.insert(tile);
+}
+
 void TileManager::DidFinishDispatchingWorkerPoolCompletionCallbacks() {
   // If a flush is needed, do it now before starting to dispatch more tasks.
   if (has_performed_uploads_since_last_flush_) {
@@ -445,6 +479,7 @@ void TileManager::AssignGpuMemoryToTiles() {
   // Now give memory out to the tiles until we're out, and build
   // the needs-to-be-rasterized queue.
   tiles_that_need_to_be_rasterized_.clear();
+  tiles_that_need_to_be_initialized_for_activation_.clear();
 
   // By clearing the tiles_that_need_to_be_rasterized_ vector list
   // above we move all tiles currently waiting for raster to idle state.
@@ -454,7 +489,7 @@ void TileManager::AssignGpuMemoryToTiles() {
        it != tiles_.end();
        ++it) {
     const Tile* tile = *it;
-    if (tile->drawing_info().memory_state_ == USING_UNRELEASABLE_MEMORY)
+    if (tile->tile_version().memory_state_ == USING_UNRELEASABLE_MEMORY)
       unreleasable_bytes += tile->bytes_consumed_if_allocated();
   }
 
@@ -473,12 +508,23 @@ void TileManager::AssignGpuMemoryToTiles() {
        ++it) {
     Tile* tile = *it;
     ManagedTileState& mts = tile->managed_state();
-    ManagedTileState::DrawingInfo& drawing_info = tile->drawing_info();
+    ManagedTileState::TileVersion& tile_version = tile->tile_version();
 
-    // If this tile doesn't need a resource, or if the memory
-    // is unreleasable, then we do not need to do anything.
-    if (!drawing_info.requires_resource() ||
-        drawing_info.memory_state_ == USING_UNRELEASABLE_MEMORY) {
+    // If this tile doesn't need a resource, then nothing to do.
+    if (!tile_version.requires_resource())
+      continue;
+
+    // If the memory is unreleasable, then we do not need to do anything.
+    if (tile_version.memory_state_ == USING_UNRELEASABLE_MEMORY) {
+      if (tile->required_for_activation()) {
+        AddRequiredTileForActivation(tile);
+        // If after rasterizing, this tile has become required or the client has
+        // changed its mind about forcing tiles, do that now.
+        if (!tile->tile_version().forced_upload_ &&
+            client_->ShouldForceTileUploadsRequiredForActivationToComplete()) {
+          ForceTileUploadToComplete(tile);
+        }
+      }
       continue;
     }
 
@@ -486,25 +532,27 @@ void TileManager::AssignGpuMemoryToTiles() {
     // If the tile is not needed, free it up.
     if (mts.is_in_never_bin_on_both_trees()) {
       FreeResourcesForTile(tile);
-      drawing_info.memory_state_ = NOT_ALLOWED_TO_USE_MEMORY;
+      tile_version.memory_state_ = NOT_ALLOWED_TO_USE_MEMORY;
       continue;
     }
     // Tile is OOM.
     if (tile_bytes > bytes_left) {
       FreeResourcesForTile(tile);
-      tile->drawing_info().set_rasterize_on_demand();
+      tile->tile_version().set_rasterize_on_demand();
       if (mts.tree_bin[PENDING_TREE] == NOW_BIN) {
         tiles_requiring_memory_but_oomed.push_back(tile);
         bytes_oom_in_now_bin_on_pending_tree += tile_bytes;
       }
       continue;
     }
-    drawing_info.set_use_resource();
+    tile_version.set_use_resource();
     bytes_left -= tile_bytes;
-    if (!drawing_info.resource_ &&
-        drawing_info.memory_state_ == CAN_USE_MEMORY) {
+    if (!tile_version.resource_ &&
+        tile_version.memory_state_ == CAN_USE_MEMORY) {
       tiles_that_need_to_be_rasterized_.push_back(tile);
     }
+    if (!tile_version.resource_ && tile->required_for_activation())
+      AddRequiredTileForActivation(tile);
   }
 
   // In OOM situation, we iterate tiles_, remove the memory for active tree
@@ -514,13 +562,14 @@ void TileManager::AssignGpuMemoryToTiles() {
     for (TileVector::iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
       Tile* tile = *it;
       ManagedTileState& mts = tile->managed_state();
-      ManagedTileState::DrawingInfo& drawing_info = tile->drawing_info();
-      if ((drawing_info.memory_state_ == CAN_USE_MEMORY ||
-           drawing_info.memory_state_ == USING_RELEASABLE_MEMORY) &&
+      ManagedTileState::TileVersion& tile_version = tile->tile_version();
+      if ((tile_version.memory_state_ == CAN_USE_MEMORY ||
+           tile_version.memory_state_ == USING_RELEASABLE_MEMORY) &&
           mts.tree_bin[PENDING_TREE] == NEVER_BIN &&
           mts.tree_bin[ACTIVE_TREE] != NOW_BIN) {
+        DCHECK(!tile->required_for_activation());
         FreeResourcesForTile(tile);
-        drawing_info.set_rasterize_on_demand();
+        tile_version.set_rasterize_on_demand();
         bytes_freed += tile->bytes_consumed_if_allocated();
         TileVector::iterator it = std::find(
                 tiles_that_need_to_be_rasterized_.begin(),
@@ -540,9 +589,11 @@ void TileManager::AssignGpuMemoryToTiles() {
       size_t bytes_needed = tile->bytes_consumed_if_allocated();
       if (bytes_needed > bytes_freed)
         continue;
-      tile->drawing_info().set_use_resource();
+      tile->tile_version().set_use_resource();
       bytes_freed -= bytes_needed;
       tiles_that_need_to_be_rasterized_.push_back(tile);
+      if (tile->required_for_activation())
+        AddRequiredTileForActivation(tile);
     }
   }
 
@@ -569,12 +620,12 @@ void TileManager::AssignGpuMemoryToTiles() {
 }
 
 void TileManager::FreeResourcesForTile(Tile* tile) {
-  DCHECK(tile->drawing_info().memory_state_ != USING_UNRELEASABLE_MEMORY);
-  if (tile->drawing_info().resource_) {
+  DCHECK(tile->tile_version().memory_state_ != USING_UNRELEASABLE_MEMORY);
+  if (tile->tile_version().resource_) {
     resource_pool_->ReleaseResource(
-        tile->drawing_info().resource_.Pass());
+        tile->tile_version().resource_.Pass());
   }
-  tile->drawing_info().memory_state_ = NOT_ALLOWED_TO_USE_MEMORY;
+  tile->tile_version().memory_state_ = NOT_ALLOWED_TO_USE_MEMORY;
 }
 
 bool TileManager::CanDispatchRasterTask(Tile* tile) const {
@@ -596,7 +647,7 @@ void TileManager::DispatchMoreTasks() {
   while (!tiles_that_need_to_be_rasterized_.empty()) {
     Tile* tile = tiles_that_need_to_be_rasterized_.back();
 
-    DCHECK(tile->drawing_info().requires_resource());
+    DCHECK(tile->tile_version().requires_resource());
 
     if (DispatchImageDecodeTasksForTile(tile)) {
       tiles_with_image_decoding_tasks.push_back(tile);
@@ -671,6 +722,7 @@ void TileManager::DispatchOneImageDecodeTask(
   raster_worker_pool_->PostTaskAndReply(
       base::Bind(&TileManager::RunImageDecodeTask,
                  pixel_ref,
+                 tile->layer_id(),
                  rendering_stats_instrumentation_),
       base::Bind(&TileManager::OnImageDecodeTaskCompleted,
                  base::Unretained(this),
@@ -692,10 +744,10 @@ scoped_ptr<ResourcePool::Resource> TileManager::PrepareTileForRaster(
     Tile* tile) {
   scoped_ptr<ResourcePool::Resource> resource = resource_pool_->AcquireResource(
       tile->tile_size_.size(),
-      tile->drawing_info().resource_format_);
+      tile->tile_version().resource_format_);
   resource_pool_->resource_provider()->AcquirePixelBuffer(resource->id());
 
-  tile->drawing_info().memory_state_ = USING_UNRELEASABLE_MEMORY;
+  tile->tile_version().memory_state_ = USING_UNRELEASABLE_MEMORY;
 
   return resource.Pass();
 }
@@ -745,12 +797,12 @@ TileManager::RasterTaskMetadata TileManager::GetRasterTaskMetadata(
     const Tile& tile) const {
   RasterTaskMetadata metadata;
   const ManagedTileState& mts = tile.managed_state();
-  metadata.prediction_benchmarking = prediction_benchmarking_;
   metadata.is_tile_in_pending_tree_now_bin =
       mts.tree_bin[PENDING_TREE] == NOW_BIN;
   metadata.tile_resolution = mts.resolution;
   metadata.layer_id = tile.layer_id();
   metadata.tile_id = &tile;
+  metadata.source_frame_number = tile.source_frame_number();
   return metadata;
 }
 
@@ -766,14 +818,14 @@ void TileManager::OnRasterTaskCompleted(
   // Release raster resources.
   resource_pool_->resource_provider()->UnmapPixelBuffer(resource->id());
 
-  tile->drawing_info().memory_state_ = USING_RELEASABLE_MEMORY;
+  tile->tile_version().memory_state_ = USING_RELEASABLE_MEMORY;
 
   ManagedTileState& managed_tile_state = tile->managed_state();
   managed_tile_state.picture_pile_analysis = *analysis;
   managed_tile_state.picture_pile_analyzed = true;
 
   if (analysis->is_solid_color) {
-    tile->drawing_info().set_solid_color(analysis->solid_color);
+    tile->tile_version().set_solid_color(analysis->solid_color);
     resource_pool_->resource_provider()->ReleasePixelBuffer(resource->id());
     resource_pool_->ReleaseResource(resource.Pass());
     DidFinishTileInitialization(tile);
@@ -790,17 +842,21 @@ void TileManager::OnRasterTaskCompleted(
     AssignGpuMemoryToTiles();
 
   // Finish resource initialization we're still using memory.
-  if (tile->drawing_info().memory_state_ == USING_RELEASABLE_MEMORY) {
+  if (tile->tile_version().memory_state_ == USING_RELEASABLE_MEMORY) {
     // Tile resources can't be freed until upload has completed.
-    tile->drawing_info().memory_state_ = USING_UNRELEASABLE_MEMORY;
+    tile->tile_version().memory_state_ = USING_UNRELEASABLE_MEMORY;
 
     resource_pool_->resource_provider()->BeginSetPixels(resource->id());
     has_performed_uploads_since_last_flush_ = true;
 
-    tile->drawing_info().resource_ = resource.Pass();
+    tile->tile_version().resource_ = resource.Pass();
 
     bytes_pending_upload_ += tile->bytes_consumed_if_allocated();
     tiles_with_pending_upload_.push(tile);
+
+    if (tile->required_for_activation() &&
+        client_->ShouldForceTileUploadsRequiredForActivationToComplete())
+      ForceTileUploadToComplete(tile);
   } else {
     resource_pool_->resource_provider()->ReleasePixelBuffer(resource->id());
     resource_pool_->ReleaseResource(resource.Pass());
@@ -810,6 +866,12 @@ void TileManager::OnRasterTaskCompleted(
 void TileManager::DidFinishTileInitialization(Tile* tile) {
   if (tile->priority(ACTIVE_TREE).distance_to_visible_in_pixels == 0)
     did_initialize_visible_tile_ = true;
+  if (tile->required_for_activation()) {
+    // It's possible that a tile required for activation is not in this list
+    // if it was marked as being required after being dispatched for
+    // rasterization but before AssignGPUMemory was called again.
+    tiles_that_need_to_be_initialized_for_activation_.erase(tile);
+  }
 }
 
 void TileManager::DidTileTreeBinChange(Tile* tile,
@@ -843,35 +905,18 @@ void TileManager::RunAnalyzeTask(
   DCHECK(analysis);
   DCHECK(stats_instrumentation);
 
+  base::TimeTicks start_time = stats_instrumentation->StartRecording();
   picture_pile->AnalyzeInRect(rect, contents_scale, analysis);
+  base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
 
   // Record the solid color prediction.
   UMA_HISTOGRAM_BOOLEAN("Renderer4.SolidColorTilesAnalyzed",
                         analysis->is_solid_color);
-  stats_instrumentation->AddTileAnalysisResult(analysis->is_solid_color);
+  stats_instrumentation->AddTileAnalysisResult(duration,
+                                               analysis->is_solid_color);
 
   // Clear the flag if we're not using the estimator.
   analysis->is_solid_color &= use_color_estimator;
-
-  if (metadata.prediction_benchmarking) {
-    gfx::Rect layer_rect = gfx::ToEnclosingRect(
-        gfx::ScaleRect(rect, 1.0f / contents_scale));
-
-    SkDevice device(
-        SkBitmap::kARGB_8888_Config, layer_rect.width(), layer_rect.height());
-    SkCanvas canvas(&device);
-    picture_pile->Raster(&canvas, layer_rect, 1.0f, NULL);
-
-    const SkBitmap bitmap = device.accessBitmap(false);
-    DCHECK_EQ(bitmap.rowBytes(),
-              static_cast<size_t>(bitmap.width() * bitmap.bytesPerPixel()));
-
-    RecordSolidColorPredictorResults(
-        reinterpret_cast<SkPMColor*>(bitmap.getPixels()),
-        bitmap.getSize() / bitmap.bytesPerPixel(),
-        analysis->is_solid_color,
-        SkPreMultiplyColor(analysis->solid_color));
-  }
 }
 
 scoped_ptr<base::Value> TileManager::RasterTaskMetadata::AsValue() const {
@@ -880,6 +925,7 @@ scoped_ptr<base::Value> TileManager::RasterTaskMetadata::AsValue() const {
   res->SetBoolean("is_tile_in_pending_tree_now_bin",
                   is_tile_in_pending_tree_now_bin);
   res->Set("resolution", TileResolutionAsValue(tile_resolution).release());
+  res->SetInteger("source_frame_number", source_frame_number);
   return res.PassAs<base::Value>();
 }
 
@@ -895,7 +941,8 @@ void TileManager::RunRasterTask(
   TRACE_EVENT1(
       "cc", "TileManager::RunRasterTask",
       "metadata", TracedValue::FromValue(metadata.AsValue().release()));
-  devtools_instrumentation::ScopedRasterTask raster_task(metadata.layer_id);
+  devtools_instrumentation::ScopedLayerTask raster_task(
+      devtools_instrumentation::kRasterTask, metadata.layer_id);
 
   DCHECK(picture_pile);
   DCHECK(analysis);
@@ -913,14 +960,9 @@ void TileManager::RunRasterTask(
   SkDevice device(bitmap);
   SkCanvas canvas(&device);
 
-#ifndef NDEBUG
-  // Any non-painted areas will be left in this color.
-  canvas.clear(DebugColors::NonPaintedFillColor());
-#endif  // NDEBUG
-
   if (stats_instrumentation->record_rendering_stats()) {
     PicturePileImpl::RasterStats raster_stats;
-    picture_pile->Raster(&canvas, rect, contents_scale, &raster_stats);
+    picture_pile->RasterToBitmap(&canvas, rect, contents_scale, &raster_stats);
     stats_instrumentation->AddRaster(
         raster_stats.total_rasterize_time,
         raster_stats.best_rasterize_time,
@@ -934,53 +976,22 @@ void TileManager::RunRasterTask(
         100000,
         100);
   } else {
-    picture_pile->Raster(&canvas, rect, contents_scale, NULL);
+    picture_pile->RasterToBitmap(&canvas, rect, contents_scale, NULL);
   }
 }
 
 // static
 void TileManager::RunImageDecodeTask(
     skia::LazyPixelRef* pixel_ref,
+    int layer_id,
     RenderingStatsInstrumentation* stats_instrumentation) {
   TRACE_EVENT0("cc", "TileManager::RunImageDecodeTask");
+  devtools_instrumentation::ScopedLayerTask image_decode_task(
+      devtools_instrumentation::kImageDecodeTask, layer_id);
   base::TimeTicks start_time = stats_instrumentation->StartRecording();
   pixel_ref->Decode();
   base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
   stats_instrumentation->AddDeferredImageDecode(duration);
-}
-
-// static
-void TileManager::RecordSolidColorPredictorResults(
-    const SkPMColor* actual_colors,
-    size_t color_count,
-    bool is_predicted_solid,
-    SkPMColor predicted_color) {
-  DCHECK_GT(color_count, 0u);
-
-  bool is_actually_solid = true;
-
-  SkPMColor actual_color = *actual_colors;
-  for (unsigned int i = 0; i < color_count; ++i) {
-    SkPMColor current_color = actual_colors[i];
-    if (current_color == actual_color)
-      continue;
-
-    is_actually_solid = false;
-    break;
-  }
-
-  HISTOGRAM_BOOLEAN("Renderer4.ColorPredictor.WrongActualNotSolid",
-                    is_predicted_solid && !is_actually_solid);
-  HISTOGRAM_BOOLEAN("Renderer4.ColorPredictor.WrongActualSolid",
-                    !is_predicted_solid && is_actually_solid);
-  HISTOGRAM_BOOLEAN("Renderer4.ColorPredictor.WrongColor",
-                    is_predicted_solid && predicted_color != actual_color);
-  HISTOGRAM_BOOLEAN("Renderer4.ColorPredictor.Accuracy",
-                    is_predicted_solid == is_actually_solid &&
-                    (!is_predicted_solid || predicted_color == actual_color));
-  HISTOGRAM_BOOLEAN("Renderer4.ColorPredictor.IsCorrectSolid",
-                    is_predicted_solid == is_actually_solid &&
-                    (is_predicted_solid && predicted_color == actual_color));
 }
 
 }  // namespace cc

@@ -55,12 +55,12 @@ class MockWebContentsDelegate : public content::WebContentsDelegate {
 //   EXPECT_CALL(mock_fooclass_instance, Foo(callback))
 //     .WillOnce(ScheduleCallback(false));
 ACTION_P(ScheduleCallback, result) {
-  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(arg0, result));
+  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(arg0, result));
 }
 
 // Similar to ScheduleCallback, but binds 2 arguments.
 ACTION_P2(ScheduleCallback2, result0, result1) {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(arg0, result0, result1));
 }
 
@@ -101,8 +101,8 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
       OVERRIDE {
     // Pretend the path reservation succeeded without any change to
     // |target_path|.
-    MessageLoop::current()->PostTask(FROM_HERE,
-                                     base::Bind(callback, virtual_path, true));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(callback, virtual_path, true));
   }
 
   virtual void PromptUserForDownloadPath(
@@ -169,7 +169,7 @@ class ChromeDownloadManagerDelegateTest :
   base::ScopedTempDir test_download_dir_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
-  scoped_refptr<content::MockDownloadManager> download_manager_;
+  scoped_ptr<content::MockDownloadManager> download_manager_;
   scoped_refptr<TestChromeDownloadManagerDelegate> delegate_;
   MockWebContentsDelegate web_contents_delegate_;
 };
@@ -232,8 +232,6 @@ content::MockDownloadItem*
       .WillByDefault(Return(false));
   ON_CALL(*item, IsDangerous())
       .WillByDefault(Return(false));
-  ON_CALL(*item, IsInProgress())
-      .WillByDefault(Return(true));
   ON_CALL(*item, IsTemporary())
       .WillByDefault(Return(false));
   EXPECT_CALL(*download_manager_, GetDownload(id))

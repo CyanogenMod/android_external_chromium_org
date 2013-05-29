@@ -29,6 +29,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/net/referrer.h"
+#include "chrome/browser/net/timed_cache.h"
 #include "chrome/browser/net/url_info.h"
 #include "chrome/common/net/predictor_common.h"
 #include "net/base/host_port_pair.h"
@@ -91,6 +92,13 @@ class Predictor {
   // avoidance will kick in and all speculations in the queue will be discarded.
   static const int kMaxSpeculativeResolveQueueDelayMs;
 
+  // We don't bother learning to preconnect via a GET if the original URL
+  // navigation was so long ago, that a preconnection would have been dropped
+  // anyway.  We believe most servers will drop the connection in 10 seconds, so
+  // we currently estimate this time-till-drop at 10 seconds.
+  // TODO(jar): We should do a persistent field trial to validate/optimize this.
+  static const int kMaxUnusedSocketLifetimeSecondsWithoutAGet;
+
   // |max_concurrent| specifies how many concurrent (parallel) prefetches will
   // be performed. Host lookups will be issued through |host_resolver|.
   explicit Predictor(bool preconnect_enabled);
@@ -117,7 +125,8 @@ class Predictor {
   void AnticipateOmniboxUrl(const GURL& url, bool preconnectable);
 
   // Preconnect a URL and all of its subresource domains.
-  void PreconnectUrlAndSubresources(const GURL& url);
+  void PreconnectUrlAndSubresources(const GURL& url,
+                                    const GURL& first_party_for_cookies);
 
   static UrlList GetPredictedUrlListAtStartup(PrefService* user_prefs,
                                               PrefService* local_state);
@@ -219,6 +228,18 @@ class Predictor {
 
   void EnablePredictorOnIOThread(bool enable);
 
+  // May be called from either the IO or UI thread and will PostTask
+  // to the IO thread if necessary.
+  void PreconnectUrl(const GURL& url, const GURL& first_party_for_cookies,
+                     UrlInfo::ResolutionMotivation motivation, int count);
+
+  void PreconnectUrlOnIOThread(const GURL& url,
+                               const GURL& first_party_for_cookies,
+                               UrlInfo::ResolutionMotivation motivation,
+                               int count);
+
+  void RecordPreconnectNavigationStats(const GURL& url);
+
   // ------------- End IO thread methods.
 
   // The following methods may be called on either the IO or UI threads.
@@ -228,7 +249,8 @@ class Predictor {
   // more-embedded resources on a page).  This method will actually post a task
   // to do the actual work, so as not to jump ahead of the frame navigation that
   // instigated this activity.
-  void PredictFrameSubresources(const GURL& url);
+  void PredictFrameSubresources(const GURL& url,
+                                const GURL& first_party_for_cookies);
 
   // Put URL in canonical form, including a scheme, host, and port.
   // Returns GURL::EmptyGURL() if the scheme is not http/https or if the url
@@ -383,7 +405,8 @@ class Predictor {
   // Perform actual resolution or preconnection to subresources now.  This is
   // an internal worker method that is reached via a post task from
   // PredictFrameSubresources().
-  void PrepareFrameSubresources(const GURL& url);
+  void PrepareFrameSubresources(const GURL& url,
+                                const GURL& first_party_for_cookies);
 
   // Access method for use by async lookup request to pass resolution result.
   void OnLookupFinished(LookupRequest* request, const GURL& url, bool found);
@@ -485,6 +508,8 @@ class Predictor {
 
   // The time when the last preconnection was requested to a search service.
   base::TimeTicks last_omnibox_preconnect_;
+
+  TimedCache recent_preconnects_;
 
   // For each URL that we might navigate to (that we've "learned about")
   // we have a Referrer list. Each Referrer list has all hostnames we might

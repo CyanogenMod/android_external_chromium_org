@@ -38,15 +38,19 @@ class NetworkConnectionHandlerTest : public testing::Test {
     DBusThreadManager::Get()->GetShillServiceClient()->GetTestInterface()
         ->ClearServices();
     message_loop_.RunUntilIdle();
-    NetworkStateHandler::Initialize();
-    NetworkConfigurationHandler::Initialize();
-    NetworkConnectionHandler::Initialize();
+    network_state_handler_.reset(NetworkStateHandler::InitializeForTest());
+    network_configuration_handler_.reset(
+        NetworkConfigurationHandler::InitializeForTest(
+            network_state_handler_.get()));
+    network_connection_handler_.reset(new NetworkConnectionHandler);
+    network_connection_handler_->Init(network_state_handler_.get(),
+                                      network_configuration_handler_.get());
   }
 
   virtual void TearDown() OVERRIDE {
-    NetworkConnectionHandler::Shutdown();
-    NetworkConfigurationHandler::Shutdown();
-    NetworkStateHandler::Shutdown();
+    network_connection_handler_.reset();
+    network_configuration_handler_.reset();
+    network_state_handler_.reset();
     DBusThreadManager::Shutdown();
   }
 
@@ -66,17 +70,19 @@ class NetworkConnectionHandlerTest : public testing::Test {
   }
 
   void Connect(const std::string& service_path) {
-    NetworkConnectionHandler::Get()->ConnectToNetwork(
+    const bool ignore_error_state = false;
+    network_connection_handler_->ConnectToNetwork(
         service_path,
         base::Bind(&NetworkConnectionHandlerTest::SuccessCallback,
                    base::Unretained(this)),
         base::Bind(&NetworkConnectionHandlerTest::ErrorCallback,
-                   base::Unretained(this)));
+                   base::Unretained(this)),
+        ignore_error_state);
     message_loop_.RunUntilIdle();
   }
 
   void Disconnect(const std::string& service_path) {
-    NetworkConnectionHandler::Get()->DisconnectNetwork(
+    network_connection_handler_->DisconnectNetwork(
         service_path,
         base::Bind(&NetworkConnectionHandlerTest::SuccessCallback,
                    base::Unretained(this)),
@@ -111,6 +117,9 @@ class NetworkConnectionHandlerTest : public testing::Test {
     return result;
   }
 
+  scoped_ptr<NetworkStateHandler> network_state_handler_;
+  scoped_ptr<NetworkConfigurationHandler> network_configuration_handler_;
+  scoped_ptr<NetworkConnectionHandler> network_connection_handler_;
   MessageLoopForUI message_loop_;
   std::string result_;
 

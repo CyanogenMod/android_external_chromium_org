@@ -4,8 +4,15 @@
 
 #include "net/quic/quic_utils.h"
 
+#include <ctype.h>
+
 #include "base/logging.h"
 #include "base/port.h"
+#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+
+using base::StringPiece;
+using std::string;
 
 namespace net {
 
@@ -46,6 +53,53 @@ uint128 QuicUtils::FNV1a_128_Hash(const char* data, int len) {
   }
 
   return hash;
+}
+
+// static
+bool QuicUtils::FindMutualTag(const QuicTagVector& our_tags_vector,
+                              const QuicTag* their_tags,
+                              size_t num_their_tags,
+                              Priority priority,
+                              QuicTag* out_result,
+                              size_t* out_index) {
+  if (our_tags_vector.empty()) {
+    return false;
+  }
+  const size_t num_our_tags = our_tags_vector.size();
+  const QuicTag* our_tags = &our_tags_vector[0];
+
+  size_t num_priority_tags, num_inferior_tags;
+  const QuicTag* priority_tags;
+  const QuicTag* inferior_tags;
+  if (priority == LOCAL_PRIORITY) {
+    num_priority_tags = num_our_tags;
+    priority_tags = our_tags;
+    num_inferior_tags = num_their_tags;
+    inferior_tags = their_tags;
+  } else {
+    num_priority_tags = num_their_tags;
+    priority_tags = their_tags;
+    num_inferior_tags = num_our_tags;
+    inferior_tags = our_tags;
+  }
+
+  for (size_t i = 0; i < num_priority_tags; i++) {
+    for (size_t j = 0; j < num_inferior_tags; j++) {
+      if (priority_tags[i] == inferior_tags[j]) {
+        *out_result = priority_tags[i];
+        if (out_index) {
+          if (priority == LOCAL_PRIORITY) {
+            *out_index = j;
+          } else {
+            *out_index = i;
+          }
+        }
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // static
@@ -100,11 +154,13 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_INVALID_GOAWAY_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_ACK_DATA);
     RETURN_STRING_LITERAL(QUIC_INVALID_VERSION_NEGOTIATION_PACKET);
+    RETURN_STRING_LITERAL(QUIC_INVALID_PUBLIC_RST_PACKET);
     RETURN_STRING_LITERAL(QUIC_DECRYPTION_FAILURE);
     RETURN_STRING_LITERAL(QUIC_ENCRYPTION_FAILURE);
     RETURN_STRING_LITERAL(QUIC_PACKET_TOO_LARGE);
     RETURN_STRING_LITERAL(QUIC_PACKET_FOR_NONEXISTENT_STREAM);
     RETURN_STRING_LITERAL(QUIC_PEER_GOING_AWAY);
+    RETURN_STRING_LITERAL(QUIC_HANDSHAKE_FAILED);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_TAGS_OUT_OF_ORDER);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_TOO_MANY_ENTRIES);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_TOO_MANY_REJECTS);
@@ -124,7 +180,11 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_INVALID_VERSION);
     RETURN_STRING_LITERAL(QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
     RETURN_STRING_LITERAL(QUIC_INVALID_HEADER_ID);
+    RETURN_STRING_LITERAL(QUIC_INVALID_NEGOTIATED_VALUE);
+    RETURN_STRING_LITERAL(QUIC_DECOMPRESSION_FAILURE);
     RETURN_STRING_LITERAL(QUIC_CONNECTION_TIMED_OUT);
+    RETURN_STRING_LITERAL(QUIC_ERROR_MIGRATING_ADDRESS);
+    RETURN_STRING_LITERAL(QUIC_PACKET_WRITE_ERROR);
     RETURN_STRING_LITERAL(QUIC_PROOF_INVALID);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_DUPLICATE_TAG);
     RETURN_STRING_LITERAL(QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT);
@@ -137,6 +197,74 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
   // any of the QuicErrorCodes. This can happen when the ConnectionClose
   // frame sent by the peer (attacker) has invalid error code.
   return "INVALID_ERROR_CODE";
+}
+
+// static
+const char* QuicUtils::EncryptionLevelToString(EncryptionLevel level) {
+  switch (level) {
+    RETURN_STRING_LITERAL(ENCRYPTION_NONE);
+    RETURN_STRING_LITERAL(ENCRYPTION_INITIAL);
+    RETURN_STRING_LITERAL(ENCRYPTION_FORWARD_SECURE);
+    RETURN_STRING_LITERAL(NUM_ENCRYPTION_LEVELS);
+  }
+  return "INVALID_ENCRYPTION_LEVEL";
+}
+
+// static
+string QuicUtils::TagToString(QuicTag tag) {
+  char chars[4];
+  bool ascii = true;
+  const QuicTag orig_tag = tag;
+
+  for (size_t i = 0; i < sizeof(chars); i++) {
+    chars[i] = tag;
+    if (chars[i] == 0 && i == 3) {
+      chars[i] = ' ';
+    }
+    if (!isprint(static_cast<unsigned char>(chars[i]))) {
+      ascii = false;
+      break;
+    }
+    tag >>= 8;
+  }
+
+  if (ascii) {
+    return string(chars, sizeof(chars));
+  }
+
+  return base::UintToString(orig_tag);
+}
+
+// static
+string QuicUtils::StringToHexASCIIDump(StringPiece in_buffer) {
+  int offset = 0;
+  const int kBytesPerLine = 16;   // Max bytes dumped per line
+  const char* buf = in_buffer.data();
+  int bytes_remaining = in_buffer.size();
+  string s;   // our output
+  const char* p = buf;
+  while (bytes_remaining > 0) {
+    const int line_bytes = std::min(bytes_remaining, kBytesPerLine);
+    base::StringAppendF(&s, "0x%04x:  ", offset);  // Do the line header
+    for (int i = 0; i < kBytesPerLine; ++i) {
+      if (i < line_bytes) {
+        base::StringAppendF(&s, "%02x", static_cast<unsigned char>(p[i]));
+      } else {
+        s += "  ";    // two-space filler instead of two-space hex digits
+      }
+      if (i % 2) s += ' ';
+    }
+    s += ' ';
+    for (int i = 0; i < line_bytes; ++i) {  // Do the ASCII dump
+      s+= (p[i] >  32 && p[i] < 127) ? p[i] : '.';
+    }
+
+    bytes_remaining -= line_bytes;
+    offset += line_bytes;
+    p += line_bytes;
+    s += '\n';
+  }
+  return s;
 }
 
 }  // namespace net

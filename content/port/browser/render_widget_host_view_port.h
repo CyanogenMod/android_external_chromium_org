@@ -282,6 +282,9 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   virtual void GestureEventAck(int gesture_event_type) = 0;
 
+  virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
+                              gfx::Vector2dF current_fling_velocity) = 0;
+
   virtual void SetPopupType(WebKit::WebPopupType popup_type) = 0;
   virtual WebKit::WebPopupType GetPopupType() = 0;
 
@@ -310,6 +313,11 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
 #if defined(OS_WIN) && !defined(USE_AURA)
   virtual void WillWmDestroy() = 0;
+#endif
+
+#if defined(OS_WIN) && defined(USE_AURA)
+  virtual void SetParentNativeViewAccessible(
+      gfx::NativeViewAccessible accessible_parent) = 0;
 #endif
 };
 

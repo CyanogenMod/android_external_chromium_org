@@ -48,18 +48,16 @@
 #
 # START OVERRIDES HERE
 
-# In r8961 the way Skia draws rotated rects was changed. This resulted
-# in a change to the following
-crbug.com/237634 virtual/gpu/fast/canvas/image-pattern-rotate.html [ ImageOnlyFailure ]
-crbug.com/237634 virtual/gpu/fast/canvas/image-object-in-canvas.html [ ImageOnlyFailure ]
+# the new image is better and results from improved AA ellipse drawing
+# implemented in r9162 (https://chromiumcodereview.appspot.com/14938004)
+crbug.com/241761 virtual/gpu/fast/canvas/canvas-composite-transformclip.html [ ImageOnlyFailure ]
 
-# Font metric calculations were fixed in r9005
-crbug.com/238630 css2.1/t100801-c548-ln-ht-02-b-ag.html [ Failure ]
+# Skia r9262 (don't overclamp cubics (see skbug.com/1316)) changed
+# the way curves are drawn. The changes to this image are imperceptible
+crbug.com/243726 svg/as-background-image/svg-as-background-6.html [ ImageOnlyFailure ]
 
-# Windows font metric handling has changed
-crbug.com/239436  svg/batik/text/textEffect3.svg [ ImageOnlyFailure ]
-crbug.com/239436  svg/transforms/animated-path-inside-transformed-html.xhtml [ ImageOnlyFailure ]
-crbug.com/239436  svg/transforms/text-with-pattern-inside-transformed-html.xhtml [ ImageOnlyFailure ]
-crbug.com/239436  svg/transforms/text-with-pattern-with-svg-transform.svg [ ImageOnlyFailure ]
+# Skia r9279 improved hairline rendering of quadratics and slightly
+# changed this layout test
+crbug.com/244401 virtual/gpu/fast/canvas/quadraticCurveTo.xml [ ImageOnlyFailure ]
 
 # END OVERRIDES HERE (this line ensures that the file is newline-terminated)

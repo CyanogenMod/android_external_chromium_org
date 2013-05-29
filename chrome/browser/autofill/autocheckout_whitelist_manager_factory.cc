@@ -8,8 +8,8 @@
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "components/autofill/browser/autocheckout/whitelist_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace autofill {
 namespace autocheckout {
@@ -51,7 +51,7 @@ WhitelistManager*
 WhitelistManagerFactory::GetForProfile(Profile* profile) {
   WhitelistManagerService* service =
       static_cast<WhitelistManagerService*>(
-          GetInstance()->GetServiceForProfile(profile, true));
+          GetInstance()->GetServiceForBrowserContext(profile, true));
   // service can be NULL for tests.
   return service ? service->GetWhitelistManager() : NULL;
 }
@@ -63,14 +63,15 @@ WhitelistManagerFactory::GetInstance() {
 }
 
 WhitelistManagerFactory::WhitelistManagerFactory()
-    : ProfileKeyedServiceFactory("AutocheckoutWhitelistManager",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "AutocheckoutWhitelistManager",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 WhitelistManagerFactory::~WhitelistManagerFactory() {
 }
 
-ProfileKeyedService*
+BrowserContextKeyedService*
 WhitelistManagerFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   WhitelistManagerService* service =

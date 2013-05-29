@@ -13,9 +13,6 @@
 #include <algorithm>
 #include <fcntl.h>
 #include <sys/stat.h>
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#endif
 #include <sys/types.h>
 #include <time.h>
 #ifdef HAVE_UNISTD_H
@@ -43,15 +40,6 @@ static const char kProcSelfMapsHeader[] = "\nMAPPED_LIBRARIES:\n";
 
 static const char kVirtualLabel[] = "virtual";
 static const char kCommittedLabel[] = "committed";
-
-const char* DeepHeapProfile::kMapsRegionTypeDict[] = {
-  "absent",
-  "anonymous",
-  "file-exec",
-  "file-nonexec",
-  "stack",
-  "other",
-};
 
 namespace {
 
@@ -232,7 +220,9 @@ DeepHeapProfile::~DeepHeapProfile() {
 
 // Global malloc() should not be used in this function.
 // Use LowLevelAlloc if required.
-int DeepHeapProfile::FillOrderedProfile(char raw_buffer[], int buffer_size) {
+int DeepHeapProfile::FillOrderedProfile(const char* reason,
+                                        char raw_buffer[],
+                                        int buffer_size) {
   TextBuffer buffer(raw_buffer, buffer_size);
   TextBuffer global_buffer(profiler_buffer_, kProfilerBufferSize);
 
@@ -240,17 +230,9 @@ int DeepHeapProfile::FillOrderedProfile(char raw_buffer[], int buffer_size) {
   int64 starting_cycles = CycleClock::Now();
 #endif
 
-  // Get the time before starting snapshot.  gettimeofday() and localtime_r()
-  // acquire the timezone lock which may invoke malloc.
-  struct tm local_time;
-#ifdef HAVE_SYS_TIME_H
-  struct timeval time_value;
-  gettimeofday(&time_value, NULL);
-  localtime_r(&time_value.tv_sec, &local_time);
-#else
+  // Get the time before starting snapshot.
+  // TODO(dmikurube): Consider gettimeofday if available.
   time_t time_value = time(NULL);
-  localtime_r(&time_value, &local_time);
-#endif
 
   ++dump_count_;
 
@@ -283,22 +265,14 @@ int DeepHeapProfile::FillOrderedProfile(char raw_buffer[], int buffer_size) {
   buffer.AppendString(kMetaInformationHeader, 0);
 
   buffer.AppendString("Time: ", 0);
-  buffer.AppendInt(local_time.tm_year + 1900, 4, true);
-  buffer.AppendChar('/');
-  buffer.AppendInt(local_time.tm_mon + 1, 2, true);
-  buffer.AppendChar('/');
-  buffer.AppendInt(local_time.tm_mday, 2, true);
-  buffer.AppendChar(' ');
-  buffer.AppendInt(local_time.tm_hour, 2, true);
-  buffer.AppendChar(':');
-  buffer.AppendInt(local_time.tm_min, 2, true);
-  buffer.AppendChar(':');
-  buffer.AppendInt(local_time.tm_sec, 2, true);
-#ifdef HAVE_SYS_TIME_H
-  buffer.AppendChar('.');
-  buffer.AppendInt(static_cast<int>(time_value.tv_usec / 1000), 3, true);
-#endif
+  buffer.AppendUnsignedLong(time_value, 0);
   buffer.AppendChar('\n');
+
+  if (reason != NULL) {
+    buffer.AppendString("Reason: ", 0);
+    buffer.AppendString(reason, 0);
+    buffer.AppendChar('\n');
+  }
 
   // Fill buffer with the global stats.
   buffer.AppendString(kMMapListHeader, 0);
@@ -350,63 +324,79 @@ void DeepHeapProfile::TextBuffer::Write(RawFD fd) {
 }
 
 // TODO(dmikurube): These Append* functions should not use snprintf.
-bool DeepHeapProfile::TextBuffer::AppendChar(char v) {
-  return ForwardCursor(snprintf(buffer_ + cursor_, size_ - cursor_, "%c", v));
+bool DeepHeapProfile::TextBuffer::AppendChar(char value) {
+  return ForwardCursor(snprintf(buffer_ + cursor_, size_ - cursor_,
+                                "%c", value));
 }
 
-bool DeepHeapProfile::TextBuffer::AppendString(const char* s, int d) {
+bool DeepHeapProfile::TextBuffer::AppendString(const char* value, int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%s", s);
+  if (width == 0)
+    appended = snprintf(position, available, "%s", value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*s", d, s);
+    appended = snprintf(position, available, "%*s",
+                        width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendInt(int v, int d, bool leading_zero) {
+bool DeepHeapProfile::TextBuffer::AppendInt(int value, int width,
+                                            bool leading_zero) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%d", v);
+  if (width == 0)
+    appended = snprintf(position, available, "%d", value);
   else if (leading_zero)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%0*d", d, v);
+    appended = snprintf(position, available, "%0*d", width, value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*d", d, v);
+    appended = snprintf(position, available, "%*d", width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendLong(long v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendLong(long value, int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%ld", v);
+  if (width == 0)
+    appended = snprintf(position, available, "%ld", value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*ld", d, v);
+    appended = snprintf(position, available, "%*ld", width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendUnsignedLong(unsigned long v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendUnsignedLong(unsigned long value,
+                                                     int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%lu", v);
+  if (width == 0)
+    appended = snprintf(position, available, "%lu", value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*lu", d, v);
+    appended = snprintf(position, available, "%*lu", width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendInt64(int64 v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendInt64(int64 value, int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%"PRId64, v);
+  if (width == 0)
+    appended = snprintf(position, available, "%"PRId64, value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*"PRId64, d, v);
+    appended = snprintf(position, available, "%*"PRId64, width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendPtr(uint64 v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendPtr(uint64 value, int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%"PRIx64, v);
+  if (width == 0)
+    appended = snprintf(position, available, "%"PRIx64, value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%0*"PRIx64, d, v);
+    appended = snprintf(position, available, "%0*"PRIx64, width, value);
   return ForwardCursor(appended);
 }
 
@@ -768,9 +758,10 @@ void DeepHeapProfile::GlobalStats::SnapshotMaps(
             mmap_dump_buffer->AppendString(" - ", 0);
             mmap_dump_buffer->AppendPtr(last_address_of_unhooked + 1, 0);
             mmap_dump_buffer->AppendString("  unhooked ", 0);
-            mmap_dump_buffer->AppendString(kMapsRegionTypeDict[type], 0);
-            mmap_dump_buffer->AppendString(" ", 0);
             mmap_dump_buffer->AppendInt64(committed_size, 0);
+            mmap_dump_buffer->AppendString(" / ", 0);
+            mmap_dump_buffer->AppendInt64(
+                last_address_of_unhooked - cursor + 1, 0);
             mmap_dump_buffer->AppendString("\n", 0);
           }
           cursor = last_address_of_unhooked + 1;
@@ -781,6 +772,17 @@ void DeepHeapProfile::GlobalStats::SnapshotMaps(
             mmap_dump_buffer) {
           bool trailing = mmap_iter->start_addr < vma_start_addr;
           bool continued = mmap_iter->end_addr - 1 > vma_last_addr;
+          uint64 partial_first_address, partial_last_address;
+          if (trailing)
+            partial_first_address = vma_start_addr;
+          else
+            partial_first_address = mmap_iter->start_addr;
+          if (continued)
+            partial_last_address = vma_last_addr;
+          else
+            partial_last_address = mmap_iter->end_addr - 1;
+          uint64 committed_size = memory_residence_info_getter->CommittedSize(
+              partial_first_address, partial_last_address);
           mmap_dump_buffer->AppendString(trailing ? " (" : "  ", 0);
           mmap_dump_buffer->AppendPtr(mmap_iter->start_addr, 0);
           mmap_dump_buffer->AppendString(trailing ? ")" : " ", 0);
@@ -789,7 +791,10 @@ void DeepHeapProfile::GlobalStats::SnapshotMaps(
           mmap_dump_buffer->AppendPtr(mmap_iter->end_addr, 0);
           mmap_dump_buffer->AppendString(continued ? ")" : " ", 0);
           mmap_dump_buffer->AppendString(" hooked ", 0);
-          mmap_dump_buffer->AppendString(kMapsRegionTypeDict[type], 0);
+          mmap_dump_buffer->AppendInt64(committed_size, 0);
+          mmap_dump_buffer->AppendString(" / ", 0);
+          mmap_dump_buffer->AppendInt64(
+              partial_last_address - partial_first_address + 1, 0);
           mmap_dump_buffer->AppendString(" @ ", 0);
           if (deep_bucket != NULL) {
             mmap_dump_buffer->AppendInt(deep_bucket->id, 0, false);

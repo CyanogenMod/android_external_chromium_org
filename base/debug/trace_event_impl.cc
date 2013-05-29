@@ -40,10 +40,13 @@ class DeleteTraceLogForTesting {
   }
 };
 
+// Not supported in split-dll build. http://crbug.com/237249
+#if !defined(CHROME_SPLIT_DLL)
 // The thread buckets for the sampling profiler.
 BASE_EXPORT TRACE_EVENT_API_ATOMIC_WORD g_trace_state0;
 BASE_EXPORT TRACE_EVENT_API_ATOMIC_WORD g_trace_state1;
 BASE_EXPORT TRACE_EVENT_API_ATOMIC_WORD g_trace_state2;
+#endif
 
 namespace base {
 namespace debug {
@@ -829,6 +832,10 @@ const char* TraceLog::GetCategoryGroupName(
 void TraceLog::EnableIncludedCategoryGroup(int category_index) {
   bool is_enabled = category_filter_.IsCategoryGroupEnabled(
       g_category_groups[category_index]);
+  SetCategoryGroupEnabled(category_index, is_enabled);
+}
+
+void TraceLog::SetCategoryGroupEnabled(int category_index, bool is_enabled) {
   g_category_group_enabled[category_index] =
       is_enabled ? TraceLog::CATEGORY_ENABLED : 0;
 
@@ -876,7 +883,7 @@ const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(
         // thereby enabling this category group.
         EnableIncludedCategoryGroup(new_index);
       } else {
-        g_category_group_enabled[new_index] = 0;
+        SetCategoryGroupEnabled(new_index, false);
       }
       category_group_enabled = &g_category_group_enabled[new_index];
     } else {
@@ -928,6 +935,8 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
   category_filter_ = CategoryFilter(category_filter);
   EnableIncludedCategoryGroups();
 
+  // Not supported in split-dll build. http://crbug.com/237249
+#if !defined(CHROME_SPLIT_DLL)
   if (options & ENABLE_SAMPLING) {
     sampling_thread_.reset(new TraceSamplingThread);
     sampling_thread_->RegisterSampleBucket(
@@ -947,6 +956,7 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
       DCHECK(false) << "failed to create thread";
     }
   }
+#endif
 }
 
 const CategoryFilter& TraceLog::GetCurrentCategoryFilter() {
@@ -973,7 +983,7 @@ void TraceLog::SetDisabled() {
     lock_.Release();
     PlatformThread::Join(sampling_thread_handle_);
     lock_.Acquire();
-    sampling_thread_handle_ = 0;
+    sampling_thread_handle_ = PlatformThreadHandle();
     sampling_thread_.reset();
   }
 
@@ -987,7 +997,7 @@ void TraceLog::SetDisabled() {
   watch_category_ = NULL;
   watch_event_name_ = "";
   for (int i = 0; i < g_category_index; i++)
-    g_category_group_enabled[i] = 0;
+    SetCategoryGroupEnabled(i, false);
   AddThreadNameMetadataEvents();
 }
 
@@ -1318,9 +1328,6 @@ bool CategoryFilter::DoesCategoryGroupContainCategory(
   }
   return false;
 }
-
-// Enable everything but debug and test categories by default.
-const char* CategoryFilter::kDefaultCategoryFilterString = "-*Debug,-*Test";
 
 CategoryFilter::CategoryFilter(const std::string& filter_string) {
   if (!filter_string.empty())

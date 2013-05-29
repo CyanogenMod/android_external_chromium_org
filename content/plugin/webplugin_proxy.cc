@@ -11,9 +11,9 @@
 #include "base/memory/scoped_handle.h"
 #include "base/shared_memory.h"
 #include "build/build_config.h"
-#include "content/common/npobject_proxy.h"
-#include "content/common/npobject_util.h"
-#include "content/common/plugin_messages.h"
+#include "content/common_child/npobject_proxy.h"
+#include "content/common_child/npobject_util.h"
+#include "content/common_child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/public/common/content_client.h"
@@ -36,6 +36,7 @@
 #endif
 
 #if defined(OS_WIN)
+#include "content/common/plugin_process_messages.h"
 #include "content/public/common/sandbox_init.h"
 #endif
 
@@ -523,7 +524,7 @@ void WebPluginProxy::SetWindowlessBuffers(
                                   &windowless_contexts_[1]);
 }
 
-#elif defined(USE_X11)
+#elif defined(TOOLKIT_GTK)
 
 void WebPluginProxy::CreateDIBAndCanvasFromHandle(
     const TransportDIB::Handle& dib_handle,
@@ -589,7 +590,7 @@ void WebPluginProxy::SetWindowlessBuffers(
   }
 }
 
-#elif defined(OS_ANDROID)
+#else
 
 void WebPluginProxy::SetWindowlessBuffers(
     const TransportDIB::Handle& windowless_buffer0,

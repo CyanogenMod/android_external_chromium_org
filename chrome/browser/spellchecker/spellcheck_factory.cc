@@ -8,9 +8,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/render_process_host.h"
 #include "grit/locale_settings.h"
@@ -18,7 +18,7 @@
 // static
 SpellcheckService* SpellcheckServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<SpellcheckService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -38,7 +38,7 @@ SpellcheckService* SpellcheckServiceFactory::GetForRenderProcessId(
 SpellcheckService* SpellcheckServiceFactory::GetForProfileWithoutCreating(
     Profile* profile) {
   return static_cast<SpellcheckService*>(
-      GetInstance()->GetServiceForProfile(profile, false));
+      GetInstance()->GetServiceForBrowserContext(profile, false));
 }
 
 // static
@@ -47,15 +47,16 @@ SpellcheckServiceFactory* SpellcheckServiceFactory::GetInstance() {
 }
 
 SpellcheckServiceFactory::SpellcheckServiceFactory()
-    : ProfileKeyedServiceFactory("SpellcheckService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "SpellcheckService",
+        BrowserContextDependencyManager::GetInstance()) {
   // TODO(erg): Uncomment these as they are initialized.
   // DependsOn(RequestContextFactory::GetInstance());
 }
 
 SpellcheckServiceFactory::~SpellcheckServiceFactory() {}
 
-ProfileKeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
 

@@ -13,7 +13,7 @@
 #include "chrome/browser/storage_monitor/image_capture_device_manager.h"
 #include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/fileapi/async_file_util.h"
+#include "webkit/browser/fileapi/async_file_util.h"
 
 namespace chrome {
 
@@ -379,7 +379,7 @@ void MTPDeviceDelegateImplMac::NotifyReadDir() {
       base::FilePath relative_path;
       read_path.AppendRelativePath(file_paths_[i], &relative_path);
       base::PlatformFileInfo info = file_info_[file_paths_[i].value()];
-      base::FileUtilProxy::Entry entry;
+      fileapi::DirectoryEntry entry;
       entry.name = relative_path.value();
       entry.is_directory = info.is_directory;
       entry.size = info.size;
@@ -472,11 +472,10 @@ void CreateMTPDeviceAsyncDelegate(
     const CreateMTPDeviceAsyncDelegateCallback& cb) {
   std::string device_name = base::FilePath(device_location).BaseName().value();
   std::string device_id;
-  MediaStorageUtil::Type type;
-  bool cracked = MediaStorageUtil::CrackDeviceId(device_name,
-                                                 &type, &device_id);
+  StorageInfo::Type type;
+  bool cracked = StorageInfo::CrackDeviceId(device_name, &type, &device_id);
   DCHECK(cracked);
-  DCHECK_EQ(MediaStorageUtil::MAC_IMAGE_CAPTURE, type);
+  DCHECK_EQ(StorageInfo::MAC_IMAGE_CAPTURE, type);
 
   cb.Run(new MTPDeviceDelegateImplMac(device_id, device_location));
 }

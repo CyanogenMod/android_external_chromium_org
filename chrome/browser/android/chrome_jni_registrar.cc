@@ -18,6 +18,7 @@
 #include "chrome/browser/lifetime/application_lifetime_android.h"
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/search_engines/template_url_service_android.h"
+#include "chrome/browser/speech/tts_android.h"
 #include "chrome/browser/sync/profile_sync_service_android.h"
 #include "chrome/browser/ui/android/autofill/autofill_dialog_view_android.h"
 #include "chrome/browser/ui/android/autofill/autofill_popup_view_android.h"
@@ -38,42 +39,42 @@ namespace android {
 
 static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   // Register JNI for components we depend on.
-  { "NavigationInterception", components::RegisterNavigationInterceptionJni },
+  { "NavigationInterception",
+    navigation_interception::RegisterNavigationInterceptionJni },
   { "WebContentsDelegateAndroid",
-      components::RegisterWebContentsDelegateAndroidJni },
-  { "RegisterAuxiliaryProfileLoader",
-      autofill::RegisterAutofillAndroidJni },
+    components::RegisterWebContentsDelegateAndroidJni },
+  { "RegisterAuxiliaryProfileLoader", autofill::RegisterAutofillAndroidJni },
   // Register JNI for chrome classes.
-  { "ApplicationLifetime", RegisterApplicationLifetimeAndroid},
+  { "ApplicationLifetime", RegisterApplicationLifetimeAndroid },
   { "AutofillDialog",
-      autofill::AutofillDialogViewAndroid::RegisterAutofillDialogViewAndroid},
+    autofill::AutofillDialogViewAndroid::RegisterAutofillDialogViewAndroid },
   { "AutofillPopup",
-      autofill::AutofillPopupViewAndroid::RegisterAutofillPopupViewAndroid},
-  { "CertificateViewer", RegisterCertificateViewer},
+    autofill::AutofillPopupViewAndroid::RegisterAutofillPopupViewAndroid },
+  { "CertificateViewer", RegisterCertificateViewer },
   { "ChromeBrowserProvider",
-      ChromeBrowserProvider::RegisterChromeBrowserProvider },
+    ChromeBrowserProvider::RegisterChromeBrowserProvider },
   { "ChromeHttpAuthHandler",
-      ChromeHttpAuthHandler::RegisterChromeHttpAuthHandler },
+    ChromeHttpAuthHandler::RegisterChromeHttpAuthHandler },
   { "ChromeWebContentsDelegateAndroid",
-      RegisterChromeWebContentsDelegateAndroid },
+    RegisterChromeWebContentsDelegateAndroid },
   { "ContentViewUtil", RegisterContentViewUtil },
   { "DevToolsServer", RegisterDevToolsServer },
   { "IntentHelper", RegisterIntentHelper },
   { "JavascriptAppModalDialog",
-      JavascriptAppModalDialogAndroid::RegisterJavascriptAppModalDialog },
+    JavascriptAppModalDialogAndroid::RegisterJavascriptAppModalDialog },
   { "NavigationPopup", NavigationPopup::RegisterNavigationPopup },
   { "PersonalDataManagerAndroid",
-      autofill::PersonalDataManagerAndroid::Register},
+    autofill::PersonalDataManagerAndroid::Register },
   { "ProfileAndroid", ProfileAndroid::RegisterProfileAndroid },
   { "ProfileSyncService", ProfileSyncServiceAndroid::Register },
   { "SqliteCursor", SQLiteCursor::RegisterSqliteCursor },
-  { "SSLClientCertificateRequest",
-      RegisterSSLClientCertificateRequestAndroid },
+  { "SSLClientCertificateRequest", RegisterSSLClientCertificateRequestAndroid },
   { "StatusTray", StatusTrayAndroid::Register },
   { "TabAndroid", TabAndroid::RegisterTabAndroid },
   { "TemplateUrlServiceAndroid", TemplateUrlServiceAndroid::Register },
+  { "TtsPlatformImpl", TtsPlatformImplAndroid::Register },
   { "WebsiteSettingsPopupAndroid",
-      WebsiteSettingsPopupAndroid::RegisterWebsiteSettingsPopupAndroid },
+    WebsiteSettingsPopupAndroid::RegisterWebsiteSettingsPopupAndroid },
 };
 
 bool RegisterJni(JNIEnv* env) {

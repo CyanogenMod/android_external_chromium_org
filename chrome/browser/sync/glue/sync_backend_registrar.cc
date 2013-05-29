@@ -55,31 +55,33 @@ bool IsOnThreadForGroup(syncer::ModelType type, syncer::ModelSafeGroup group) {
 
 SyncBackendRegistrar::SyncBackendRegistrar(
     const std::string& name, Profile* profile,
-    MessageLoop* sync_loop) :
+    base::MessageLoop* sync_loop) :
     name_(name),
     profile_(profile),
     sync_loop_(sync_loop),
-    ui_worker_(new UIModelWorker()),
+    ui_worker_(new UIModelWorker(this)),
     stopped_on_ui_thread_(false) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   CHECK(profile_);
   DCHECK(sync_loop_);
-  workers_[syncer::GROUP_DB] = new DatabaseModelWorker();
-  workers_[syncer::GROUP_FILE] = new FileModelWorker();
+  workers_[syncer::GROUP_DB] = new DatabaseModelWorker(this);
+  workers_[syncer::GROUP_FILE] = new FileModelWorker(this);
   workers_[syncer::GROUP_UI] = ui_worker_;
-  workers_[syncer::GROUP_PASSIVE] = new syncer::PassiveModelWorker(sync_loop_);
+  workers_[syncer::GROUP_PASSIVE] = new syncer::PassiveModelWorker(sync_loop_,
+                                                                   this);
 
   HistoryService* history_service =
       HistoryServiceFactory::GetForProfile(profile, Profile::IMPLICIT_ACCESS);
   if (history_service) {
     workers_[syncer::GROUP_HISTORY] =
-        new HistoryModelWorker(history_service->AsWeakPtr());
+        new HistoryModelWorker(history_service->AsWeakPtr(), this);
   }
 
   scoped_refptr<PasswordStore> password_store =
       PasswordStoreFactory::GetForProfile(profile, Profile::IMPLICIT_ACCESS);
   if (password_store) {
-    workers_[syncer::GROUP_PASSWORD] = new PasswordModelWorker(password_store);
+    workers_[syncer::GROUP_PASSWORD] = new PasswordModelWorker(password_store,
+                                                               this);
   }
 }
 
@@ -175,7 +177,7 @@ void SyncBackendRegistrar::StopOnUIThread() {
 }
 
 void SyncBackendRegistrar::OnSyncerShutdownComplete() {
-  DCHECK_EQ(MessageLoop::current(), sync_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
   ui_worker_->OnSyncerShutdownComplete();
 }
 
@@ -293,6 +295,10 @@ bool SyncBackendRegistrar::IsCurrentThreadSafeForModel(
   lock_.AssertAcquired();
   return IsOnThreadForGroup(model_type,
                             GetGroupForModelType(model_type, routing_info_));
+}
+
+void SyncBackendRegistrar::OnWorkerLoopDestroyed(syncer::ModelSafeGroup group) {
+  // Do nothing for now.
 }
 
 }  // namespace browser_sync

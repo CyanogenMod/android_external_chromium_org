@@ -20,12 +20,13 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemEntry.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/blob/blob_storage_controller.h"
-#include "webkit/fileapi/file_permission_policy.h"
-#include "webkit/fileapi/file_system_mount_point_provider.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/file_system_util.h"
-#include "webkit/fileapi/mock_file_system_context.h"
+#include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/browser/fileapi/file_permission_policy.h"
+#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/mock_file_system_context.h"
+#include "webkit/common/fileapi/directory_entry.h"
+#include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/tools/test_shell/simple_file_writer.h"
 
 using base::WeakPtr;
@@ -43,6 +44,7 @@ using WebKit::WebVector;
 
 using webkit_blob::BlobData;
 using webkit_blob::BlobStorageController;
+using fileapi::DirectoryEntry;
 using fileapi::FileSystemContext;
 using fileapi::FileSystemOperation;
 using fileapi::FileSystemTaskRunners;
@@ -97,9 +99,12 @@ void SimpleFileSystem::OpenFileSystem(
     return;
   }
 
+  fileapi::OpenFileSystemMode mode =
+      create ? fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT
+             : fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT;
   GURL origin_url(frame->document().securityOrigin().toString());
   file_system_context_->OpenFileSystem(
-      origin_url, static_cast<fileapi::FileSystemType>(type), create,
+      origin_url, static_cast<fileapi::FileSystemType>(type), mode,
       OpenFileSystemHandler(callbacks));
 }
 
@@ -343,12 +348,12 @@ void SimpleFileSystem::DidGetMetadata(WebFileSystemCallbacks* callbacks,
 void SimpleFileSystem::DidReadDirectory(
     WebFileSystemCallbacks* callbacks,
     base::PlatformFileError result,
-    const std::vector<base::FileUtilProxy::Entry>& entries,
+    const std::vector<DirectoryEntry>& entries,
     bool has_more) {
   if (result == base::PLATFORM_FILE_OK) {
     std::vector<WebFileSystemEntry> web_entries_vector;
-    for (std::vector<base::FileUtilProxy::Entry>::const_iterator it =
-            entries.begin(); it != entries.end(); ++it) {
+    for (std::vector<DirectoryEntry>::const_iterator it = entries.begin();
+         it != entries.end(); ++it) {
       WebFileSystemEntry entry;
       entry.name = webkit_base::FilePathStringToWebString(it->name);
       entry.isDirectory = it->is_directory;

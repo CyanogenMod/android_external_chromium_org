@@ -77,6 +77,10 @@
 #include "sync/util/cryptographer.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_service.h"
+#endif
+
 #if defined(OS_ANDROID)
 #include "sync/internal_api/public/read_transaction.h"
 #endif
@@ -185,8 +189,8 @@ bool ProfileSyncService::IsSyncEnabledAndLoggedIn() {
   if (IsManaged() || sync_prefs_.IsStartSuppressed())
     return false;
 
-  // Sync is logged in if there is a non-empty authenticated username.
-  return !signin_->GetAuthenticatedUsername().empty();
+  // Sync is logged in if there is a non-empty effective username.
+  return !GetEffectiveUsername().empty();
 }
 
 bool ProfileSyncService::IsSyncTokenAvailable() {
@@ -234,7 +238,7 @@ void ProfileSyncService::Initialize() {
 
   RegisterAuthNotifications();
 
-  if (!HasSyncSetupCompleted() || signin_->GetAuthenticatedUsername().empty()) {
+  if (!HasSyncSetupCompleted() || GetEffectiveUsername().empty()) {
     // Clean up in case of previous crash / setup abort / signout.
     DisableForUser();
   }
@@ -420,7 +424,7 @@ void ProfileSyncService::InitSettings() {
 
 SyncCredentials ProfileSyncService::GetCredentials() {
   SyncCredentials credentials;
-  credentials.email = signin_->GetAuthenticatedUsername();
+  credentials.email = GetEffectiveUsername();
   DCHECK(!credentials.email.empty());
   TokenService* service = TokenServiceFactory::GetForProfile(profile_);
   if (service->HasTokenForService(GaiaConstants::kSyncService)) {
@@ -510,26 +514,30 @@ void ProfileSyncService::StartUp(StartUpDeferredOption deferred_option) {
 
   DCHECK(IsSyncEnabledAndLoggedIn());
 
-  last_synced_time_ = sync_prefs_.GetLastSyncedTime();
-
-  DCHECK(start_up_time_.is_null());
-  start_up_time_ = base::Time::Now();
+  if (start_up_time_.is_null()) {
+    start_up_time_ = base::Time::Now();
+    last_synced_time_ = sync_prefs_.GetLastSyncedTime();
 
 #if defined(OS_CHROMEOS)
-  std::string bootstrap_token = sync_prefs_.GetEncryptionBootstrapToken();
-  if (bootstrap_token.empty()) {
-    sync_prefs_.SetEncryptionBootstrapToken(
-        sync_prefs_.GetSpareBootstrapToken());
-  }
+    std::string bootstrap_token = sync_prefs_.GetEncryptionBootstrapToken();
+    if (bootstrap_token.empty()) {
+      sync_prefs_.SetEncryptionBootstrapToken(
+          sync_prefs_.GetSpareBootstrapToken());
+    }
 #endif
 
-  if (!sync_global_error_) {
+    if (!sync_global_error_) {
 #if !defined(OS_ANDROID)
-    sync_global_error_.reset(new SyncGlobalError(this, signin()));
+      sync_global_error_.reset(new SyncGlobalError(this, signin()));
 #endif
-    GlobalErrorServiceFactory::GetForProfile(profile_)->AddGlobalError(
-        sync_global_error_.get());
-    AddObserver(sync_global_error_.get());
+      GlobalErrorServiceFactory::GetForProfile(profile_)->AddGlobalError(
+          sync_global_error_.get());
+      AddObserver(sync_global_error_.get());
+    }
+  } else {
+    // We don't care to prevent multiple calls to StartUp in deferred mode
+    // because it's fast and has no side effects.
+    DCHECK_EQ(STARTUP_BACKEND_DEFERRED, deferred_option);
   }
 
   if (deferred_option == STARTUP_BACKEND_DEFERRED &&
@@ -720,6 +728,7 @@ void ProfileSyncService::ShutdownImpl(bool sync_disabled) {
   weak_factory_.InvalidateWeakPtrs();
 
   // Clear various flags.
+  start_up_time_ = base::Time();
   expect_sync_configuration_aborted_ = false;
   is_auth_in_progress_ = false;
   backend_initialized_ = false;
@@ -731,6 +740,7 @@ void ProfileSyncService::ShutdownImpl(bool sync_disabled) {
   encrypt_everything_ = false;
   encrypted_types_ = syncer::SyncEncryptionHandler::SensitiveTypes();
   passphrase_required_reason_ = syncer::REASON_PASSPHRASE_NOT_REQUIRED;
+  start_up_time_ = base::Time();
   // Revert to "no auth error".
   if (last_auth_error_.state() != GoogleServiceAuthError::NONE)
     UpdateAuthErrorState(GoogleServiceAuthError::AuthErrorNone());
@@ -831,7 +841,7 @@ void ProfileSyncService::OnUnrecoverableErrorImpl(
       << " -- ProfileSyncService unusable: " << message;
 
   // Shut all data types down.
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&ProfileSyncService::ShutdownImpl, weak_factory_.GetWeakPtr(),
                  delete_sync_database));
 }
@@ -854,7 +864,7 @@ void ProfileSyncService::DisableBrokenDatatype(
   failed_datatypes_handler_.UpdateFailedDatatypes(errors,
       FailedDatatypesHandler::RUNTIME);
 
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&ProfileSyncService::ReconfigureDatatypeManager,
                  weak_factory_.GetWeakPtr()));
 }
@@ -891,7 +901,6 @@ void ProfileSyncService::OnBackendInitialized(
   } else {
     UMA_HISTOGRAM_LONG_TIMES("Sync.BackendInitializeRestoreTime", delta);
   }
-  start_up_time_ = base::Time();
 
   if (!success) {
     // Something went unexpectedly wrong.  Play it safe: stop syncing at once
@@ -958,7 +967,7 @@ void ProfileSyncService::OnSyncCycleCompleted() {
     // model associator listens too. Also consider somehow plumbing the current
     // server time as last reported by CheckServerReachable, so we don't have to
     // rely on the local clock, which may be off significantly.
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(FROM_HERE,
         base::Bind(&browser_sync::SessionModelAssociator::DeleteStaleSessions,
                    GetSessionModelAssociator()->AsWeakPtr()));
   }
@@ -1085,21 +1094,8 @@ void ProfileSyncService::OnConnectionStatusChange(
 }
 
 void ProfileSyncService::OnStopSyncingPermanently() {
-  UpdateAuthErrorState(AuthError(AuthError::SERVICE_UNAVAILABLE));
   sync_prefs_.SetStartSuppressed(true);
   DisableForUser();
-
-  // Signout doesn't exist as a concept on Chrome OS. It currently does
-  // on other auto-start platforms (like Android, though we should probably
-  // use SigninManagerBase there as well), but we don't want to sign the
-  // user out on auto-start platforms if sync was disabled.
-  // TODO(tim): Platform specific refactoring here is bug 237866.
-#if !defined(OS_CHROMEOS)
-  SigninManager* signin = SigninManagerFactory::GetForProfile(profile_);
-
-  if (!auto_start_enabled_)  // Skip signout on ChromeOS/Android.
-    signin->SignOut();
-#endif
 }
 
 void ProfileSyncService::OnPassphraseRequired(
@@ -1224,6 +1220,8 @@ void ProfileSyncService::OnActionableError(const SyncProtocolError& error) {
       break;
     case syncer::DISABLE_SYNC_ON_CLIENT:
       OnStopSyncingPermanently();
+      // TODO(rsimha): Re-evaluate whether to also sign out the user here after
+      // a dashboard clear. See http://crbug.com/240436.
       break;
     default:
       NOTREACHED();
@@ -1304,7 +1302,7 @@ void ProfileSyncService::OnConfigureDone(
   }
 
   // Now handle partial success and full success.
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&ProfileSyncService::OnSyncConfigureDone,
                  weak_factory_.GetWeakPtr(), result));
 
@@ -1475,7 +1473,7 @@ const browser_sync::user_selectable_type::UserSelectableSyncType
     browser_sync::user_selectable_type::PROXY_TABS
   };
 
-  COMPILE_ASSERT(27 == syncer::MODEL_TYPE_COUNT, UpdateCustomConfigHistogram);
+  COMPILE_ASSERT(28 == syncer::MODEL_TYPE_COUNT, UpdateCustomConfigHistogram);
 
   if (!sync_everything) {
     const syncer::ModelTypeSet current_types = GetPreferredDataTypes();
@@ -2102,24 +2100,14 @@ void ProfileSyncService::UpdateInvalidatorRegistrarState() {
   invalidator_registrar_->UpdateInvalidatorState(effective_state);
 }
 
-void ProfileSyncService::ResetForTest() {
-  Profile* profile = profile_;
-  SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile);
-  ProfileSyncService::StartBehavior behavior =
-      browser_defaults::kSyncAutoStarts ? ProfileSyncService::AUTO_START
-                                        : ProfileSyncService::MANUAL_START;
+std::string ProfileSyncService::GetEffectiveUsername() {
+#if defined(ENABLE_MANAGED_USERS)
+  if (ManagedUserService::ProfileIsManaged(profile_)) {
+    DCHECK_EQ(std::string(), signin_->GetAuthenticatedUsername());
+    return ManagedUserService::GetManagedUserPseudoEmail();
+  }
+#endif
 
-  // We call the destructor and placement new here because we want to explicitly
-  // recreate a new ProfileSyncService instance at the same memory location as
-  // the old one. Doing so is fine because this code is run only from within
-  // integration tests, and the message loop is not running at this point.
-  // See http://stackoverflow.com/questions/6224121/is-new-this-myclass-undefined-behaviour-after-directly-calling-the-destru.
-  ProfileSyncService* old_this = this;
-  this->~ProfileSyncService();
-  new(old_this) ProfileSyncService(
-      new ProfileSyncComponentsFactoryImpl(profile,
-                                           CommandLine::ForCurrentProcess()),
-      profile,
-      signin,
-      behavior);
+  return signin_->GetAuthenticatedUsername();
 }
+

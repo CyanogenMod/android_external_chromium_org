@@ -67,6 +67,7 @@
 #include "remoting/host/usage_stats_consent.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/me2me_host_authenticator_factory.h"
+#include "remoting/protocol/pairing_registry.h"
 
 #if defined(OS_POSIX)
 #include <signal.h>
@@ -188,9 +189,6 @@ class HostProcess
 
   // Called on the network thread to set the host's Authenticator factory.
   void CreateAuthenticatorFactory();
-
-  // Asks the daemon to inject Secure Attention Sequence to the console.
-  void SendSasToConsole();
 
   // Tear down resources that run on the UI thread.
   void ShutdownOnUiThread();
@@ -466,8 +464,12 @@ void HostProcess::CreateAuthenticatorFactory() {
   scoped_ptr<protocol::AuthenticatorFactory> factory;
 
   if (token_url_.is_empty() && token_validation_url_.is_empty()) {
+    // TODO(jamiewalch): Add a pairing registry here once all the code
+    // is committed.
+    scoped_refptr<remoting::protocol::PairingRegistry> pairing_registry;
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithSharedSecret(
-        local_certificate, key_pair_, host_secret_hash_);
+        local_certificate, key_pair_, host_secret_hash_, pairing_registry);
+
   } else if (token_url_.is_valid() && token_validation_url_.is_valid()) {
     scoped_ptr<protocol::ThirdPartyHostAuthenticator::TokenValidatorFactory>
         token_validator_factory(new TokenValidatorFactoryImpl(
@@ -475,6 +477,7 @@ void HostProcess::CreateAuthenticatorFactory() {
             context_->url_request_context_getter()));
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithThirdPartyAuth(
         local_certificate, key_pair_, token_validator_factory.Pass());
+
   } else {
     // TODO(rmsousa): If the policy is bad the host should not go online. It
     // should keep running, but not connected, until the policies are fixed.
@@ -558,8 +561,6 @@ void HostProcess::StartOnUiThread() {
   // Create a desktop environment factory appropriate to the build type &
   // platform.
 #if defined(OS_WIN)
-
-#if defined(REMOTING_MULTI_PROCESS)
   IpcDesktopEnvironmentFactory* desktop_environment_factory =
       new IpcDesktopEnvironmentFactory(
           context_->audio_task_runner(),
@@ -568,16 +569,6 @@ void HostProcess::StartOnUiThread() {
           context_->network_task_runner(),
           daemon_channel_.get());
   desktop_session_connector_ = desktop_environment_factory;
-#else // !defined(REMOTING_MULTI_PROCESS)
-  DesktopEnvironmentFactory* desktop_environment_factory =
-      new SessionDesktopEnvironmentFactory(
-          context_->network_task_runner(),
-          context_->input_task_runner(),
-          context_->ui_task_runner(),
-          ui_strings,
-          base::Bind(&HostProcess::SendSasToConsole, this));
-#endif  // !defined(REMOTING_MULTI_PROCESS)
-
 #else  // !defined(OS_WIN)
   DesktopEnvironmentFactory* desktop_environment_factory =
       new Me2MeDesktopEnvironmentFactory(
@@ -592,13 +583,6 @@ void HostProcess::StartOnUiThread() {
   context_->network_task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&HostProcess::StartOnNetworkThread, this));
-}
-
-void HostProcess::SendSasToConsole() {
-  DCHECK(context_->ui_task_runner()->BelongsToCurrentThread());
-
-  if (daemon_channel_)
-    daemon_channel_->Send(new ChromotingNetworkDaemonMsg_SendSasToConsole());
 }
 
 void HostProcess::ShutdownOnUiThread() {

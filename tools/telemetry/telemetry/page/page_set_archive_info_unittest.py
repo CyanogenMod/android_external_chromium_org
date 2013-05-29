@@ -44,7 +44,8 @@ class TestPageSetArchiveInfo(unittest.TestCase):
 
     # Create the PageSetArchiveInfo object to be tested.
     self.archive_info = page_set_archive_info.PageSetArchiveInfo.FromFile(
-        self.page_set_archive_info_file, '/tmp/pageset.json')
+        self.page_set_archive_info_file,
+        os.path.join(tempfile.gettempdir(), 'pageset.json'))
 
   def tearDown(self):
     shutil.rmtree(self.tmp_dir)
@@ -72,7 +73,7 @@ class TestPageSetArchiveInfo(unittest.TestCase):
     self.assertEquals(new_temp_recording,
                       self.archive_info.WprFilePathForPage(page3))
 
-    self.archive_info.AddRecordedPages([page2])
+    self.archive_info.AddRecordedPages([page2.url])
 
     self.assertTrue(os.path.exists(os.path.join(self.tmp_dir, new_recording1)))
     self.assertFalse(os.path.exists(
@@ -86,7 +87,7 @@ class TestPageSetArchiveInfo(unittest.TestCase):
       f.write('wpr data')
 
     self.archive_info.AddNewTemporaryRecording(new_temp_recording)
-    self.archive_info.AddRecordedPages([page3])
+    self.archive_info.AddRecordedPages([page3.url])
 
     self.assertTrue(os.path.exists(os.path.join(self.tmp_dir, new_recording2)))
     self.assertFalse(os.path.exists(
@@ -129,7 +130,7 @@ class TestPageSetArchiveInfo(unittest.TestCase):
     self.assertEquals(new_temp_recording,
                       self.archive_info.WprFilePathForPage(page1))
 
-    self.archive_info.AddRecordedPages([page1])
+    self.archive_info.AddRecordedPages([page1.url])
 
     # Expected name for the recording (decided by PageSetArchiveInfo).
     new_recording = os.path.join(self.tmp_dir, 'new_000.wpr')
@@ -141,6 +142,7 @@ class TestPageSetArchiveInfo(unittest.TestCase):
     # Check that the archive info was written correctly.
     self.assertTrue(os.path.exists(self.page_set_archive_info_file))
     read_archive_info = page_set_archive_info.PageSetArchiveInfo.FromFile(
-        self.page_set_archive_info_file, '/tmp/pageset.json')
+        self.page_set_archive_info_file,
+        os.path.join(tempfile.gettempdir(), 'pageset.json'))
     self.assertEquals(new_recording,
                       read_archive_info.WprFilePathForPage(page1))

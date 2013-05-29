@@ -5,7 +5,6 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/port.h"
 #include "base/prefs/pref_service.h"
@@ -32,7 +31,6 @@
 #include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_CHROMEOS)
-#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #endif  // OS_CHROMEOS
 
@@ -122,7 +120,8 @@ class TestMetricsLog : public MetricsLog {
 
 class MetricsLogTest : public testing::Test {
  public:
-  MetricsLogTest() : message_loop_(MessageLoop::TYPE_IO) {}
+  MetricsLogTest() : message_loop_(base::MessageLoop::TYPE_IO) {}
+
  protected:
   void TestRecordEnvironment(bool proto_only) {
     TestMetricsLog log(kClientId, kSessionId);
@@ -159,11 +158,6 @@ class MetricsLogTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
 #if defined(OS_CHROMEOS)
-    if (!CommandLine::ForCurrentProcess()->HasSwitch(
-            chromeos::switches::kEnableExperimentalBluetooth))
-      CommandLine::ForCurrentProcess()->AppendSwitch(
-          chromeos::switches::kEnableExperimentalBluetooth);
-
     mock_dbus_thread_manager_ =
         new chromeos::MockDBusThreadManagerWithoutGMock();
     chromeos::DBusThreadManager::InitializeForTesting(
@@ -185,7 +179,7 @@ class MetricsLogTest : public testing::Test {
  private:
   // This is necessary because eventually some tests call base::RepeatingTimer
   // functions and a message loop is required for that.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
 #if defined(OS_CHROMEOS)
   chromeos::MockDBusThreadManagerWithoutGMock* mock_dbus_thread_manager_;

@@ -12,7 +12,13 @@ import fnmatch
 
 _REVISION_NEGATIVE_FILTER = {}
 _REVISION_NEGATIVE_FILTER['HEAD'] = [
-    'AlertsTest.*',
+    'AlertsTest.testIncludesAlertTextInUnhandledAlertException',
+    'AlertsTest.testSettingTheValueOfAnAlertThrows',
+    'AlertsTest.testShouldGetTextOfAlertOpenedInSetTimeout',
+    'AlertsTest.testShouldHandleAlertOnPageUnload',
+    'AlertsTest.testShouldHandleAlertOnWindowClose',
+    'AlertsTest.testShouldNotHandleAlertInAnotherWindow',
+    'AlertsTest.testSwitchingToMissingAlertInAClosedWindowThrows',
     'AuthenticatedPageLoadingTest.*',
     'AvailableLogsTest.driverLogShouldBeEnabledByDefault',
     'BasicMouseInterfaceTest.testContextClick',
@@ -21,12 +27,10 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     'BasicMouseInterfaceTest.testMovingMouseBackAndForthPastViewPort',
     'BasicMouseInterfaceTest.testMovingMousePastViewPort',
     'ChromeOptionsFunctionalTest.canStartChromeWithCustomOptions',
-    # https://code.google.com/p/selenium/source/diff?spec=svn5e856ea3d0ee07db00aa41293f68ce2566c16888&r=a823e0a2ead8b5430a9a92a14452d0d47cb05f61&format=side&path=/java/client/test/org/openqa/selenium/ClickScrollingTest.java&old_path=/java/client/test/org/openqa/selenium/ClickScrollingTest.java&old=ee8ae7d15794146d24a744ec96d1192ff851f0fc
     'ClickScrollingTest.testShouldBeAbleToClickOnAnElementHiddenByDoubleOverflow',
     'ClickScrollingTest.testShouldNotBeAbleToClickElementThatIsOutOfViewInANonScrollableFrame',
     'ClickScrollingTest.testShouldNotScrollIfAlreadyScrolledAndElementIsInView',
     'ClickTest.testCanClickAnImageMapArea',
-    # https://code.google.com/p/selenium/source/diff?spec=svn5e856ea3d0ee07db00aa41293f68ce2566c16888&r=9ec284bff77c06198af6097ca6703a48e1b0736b&format=side&path=/java/client/test/org/openqa/selenium/ClickTest.java&old_path=/java/client/test/org/openqa/selenium/ClickTest.java&old=5a0284c1a625ed8507f6d98857958e286a449bb7
     'ClickTest.testShouldBeAbleToClickOnAnElementInFrameGreaterThanTwoViewports',
     'CombinedInputActionsTest.testClickingOnFormElements',
     'CoordinatesTest.testShouldScrollPageAndGetCoordinatesOfAnElementThatIsOutOfViewPort',
@@ -34,18 +38,17 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     'CorrectEventFiringTest.testShouldFireFocusEventWhenClicking',
     'DragAndDropTest.testDragTooFar',
     'ExecutingAsyncJavascriptTest.includesAlertTextInUnhandledAlertException',
-    # https://code.google.com/p/selenium/source/diff?spec=svn5e856ea3d0ee07db00aa41293f68ce2566c16888&r=0e6a710cceed3037e8e44ae81579cf3ceca33fb6&format=side&path=/java/client/test/org/openqa/selenium/ExecutingAsyncJavascriptTest.java&old_path=/java/client/test/org/openqa/selenium/ExecutingAsyncJavascriptTest.java&old=ee8ae7d15794146d24a744ec96d1192ff851f0fc
     'ExecutingAsyncJavascriptTest.shouldCatchErrorsWithMessageAndStacktraceWhenExecutingInitialScript',
     'ExecutingAsyncJavascriptTest.throwsIfAlertHappensDuringScript',
     'ExecutingAsyncJavascriptTest.throwsIfAlertHappensDuringScriptWhichTimesOut',
     'ExecutingAsyncJavascriptTest.throwsIfScriptTriggersAlert',
     'ExecutingAsyncJavascriptTest.throwsIfScriptTriggersAlertWhichTimesOut',
     'ExecutingJavascriptTest.testShouldThrowExceptionIfExecutingOnNoPage',
-    # https://code.google.com/p/selenium/source/diff?spec=svn5e856ea3d0ee07db00aa41293f68ce2566c16888&r=0e6a710cceed3037e8e44ae81579cf3ceca33fb6&format=side&path=/java/client/test/org/openqa/selenium/ExecutingJavascriptTest.java&old_path=/java/client/test/org/openqa/selenium/ExecutingJavascriptTest.java&old=bf0d4b7d040315e9311efaa3a91a2a59777608da
     'ExecutingJavascriptTest.testShouldThrowAnExceptionWithMessageAndStacktraceWhenTheJavascriptIsBad',
-    'FormHandlingTest.handleFormWithJavascriptAction',
     'FormHandlingTest.testShouldNotBeAbleToSubmitAFormThatDoesNotExist',
     'FrameSwitchingTest.testShouldNotBeAbleToDoAnythingTheFrameIsDeletedFromUnderUs',
+    # Disabled until https://code.google.com/p/chromedriver/issues/detail?id=345 is fixed.
+    'I18nTest.*',
     'I18nTest.testShouldBeAbleToActivateIMEEngine',
     # Broken because AddWebStorage.java is broken.
     'LocalStorageTest.*',
@@ -63,9 +66,7 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     # Broken because AddWebStorage.java is broken.
     'SessionStorageTest.*',
     'SqlDatabaseTest.*',
-    # https://code.google.com/p/selenium/source/diff?spec=svn6bbba240f54370803189ce28149072c59f5d5312&r=6bbba240f54370803189ce28149072c59f5d5312&format=side&path=/java/client/test/org/openqa/selenium/SvgDocumentTest.java
     'SvgDocumentTest.testClickOnSvgElement',
-    # https://code.google.com/p/selenium/source/diff?spec=svn5e856ea3d0ee07db00aa41293f68ce2566c16888&r=859a1df06d56b4f2ba247f1dadbfceac8066efcb&format=side&path=/java/client/test/org/openqa/selenium/TakesScreenshotTest.java&old_path=/java/client/test/org/openqa/selenium/TakesScreenshotTest.java&old=cfea793d0410db2100a40daf88483b83d58af435
     'TakesScreenshotTest.testShouldCaptureScreenshot',
     'TakesScreenshotTest.testShouldCaptureScreenshotWithLongX',
     'TakesScreenshotTest.testShouldCaptureScreenshotWithLongY',
@@ -75,12 +76,12 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     'TextHandlingTest.testShouldNotReturnLtrMarks',
     'TextPagesTest.testShouldBeAbleToLoadASimplePageOfText',
     'TextPagesTest.testShouldThrowExceptionWhenAddingCookieToAPageThatIsNotHtml',
+    'TypingTest.testGenerateKeyPressEventEvenWhenElementPreventsDefault',
     'TypingTest.testNonPrintableCharactersShouldWorkWithContentEditableOrDesignModeSet',
     'TypingTest.testShouldBeAbleToTypeIntoContentEditableElementWithExistingValue',
     'TypingTest.testShouldNotTypeIntoElementsThatPreventKeyDownEvents',
     'TypingTest.testTypingIntoAnIFrameWithContentEditableOrDesignModeSet',
     'UnexpectedAlertBehaviorTest.*',
-    # https://code.google.com/p/selenium/source/diff?spec=svn5e856ea3d0ee07db00aa41293f68ce2566c16888&r=e923c1389b85331d2c98aaeb6bbca88bc57821cd&format=side&path=/java/client/test/org/openqa/selenium/VisibilityTest.java&old_path=/java/client/test/org/openqa/selenium/VisibilityTest.java&old=ee8ae7d15794146d24a744ec96d1192ff851f0fc
     'VisibilityTest.testElementHiddenByOverflowXIsNotVisible',
     'VisibilityTest.testElementHiddenByOverflowYIsNotVisible',
     'VisibilityTest.tooSmallAWindowWithOverflowHiddenIsNotAProblem',
@@ -89,6 +90,8 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
 _REVISION_NEGATIVE_FILTER['28'] = [] + _REVISION_NEGATIVE_FILTER['HEAD']
 _REVISION_NEGATIVE_FILTER['27'] = [] + _REVISION_NEGATIVE_FILTER['HEAD']
 _REVISION_NEGATIVE_FILTER['26'] = [
+    'AlertsTest.testHandlesTwoAlertsFromOneInteraction',
+    'AlertsTest.testShouldAllowAUserToSetTheValueOfAPrompt',
     'UploadTest.testFileUploading',
     'CorrectEventFiringTest.testUploadingFileShouldFireOnChangeEvent',
     'FormHandlingTest.testShouldBeAbleToAlterTheContentsOfAFileUploadInputElement',
@@ -102,14 +105,42 @@ _OS_NEGATIVE_FILTER['win'] = [
     'PageLoadingTest.testShouldNotHangIfDocumentOpenCallIsNeverFollowedByDocumentCloseCall',
 ]
 _OS_NEGATIVE_FILTER['linux'] = []
-_OS_NEGATIVE_FILTER['mac'] = []
+_OS_NEGATIVE_FILTER['mac'] = [
+    # https://code.google.com/p/chromedriver/issues/detail?id=26
+    'AlertsTest.testAlertShouldNotAllowAdditionalCommandsIfDismissed',
+    'AlertsTest.testShouldAllowUsersToDismissAnAlertManually',
+    'FormHandlingTest.handleFormWithJavascriptAction',
+    # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=354
+    'AlertsTest.testShouldAllowUsersToAcceptAnAlertInAFrame',
+]
 _OS_NEGATIVE_FILTER['android'] = [
-    'ChromeOptionsFunctionalTest.canStartChromeWithCustomOptions',
+    'AlertsTest.*',
+    'BasicKeyboardInterfaceTest.testBasicKeyboardInput',
+    'BasicKeyboardInterfaceTest.testBasicKeyboardInputOnActiveElement',
+    'BasicKeyboardInterfaceTest.testSendingKeyDownOnly',
+    'BasicKeyboardInterfaceTest.testSendingKeysToActiveElement',
+    'BasicKeyboardInterfaceTest.testSendingKeysWithShiftPressed',
+    'BasicKeyboardInterfaceTest.testSendingKeyUp',
+    'BasicMouseInterfaceTest.testCannotMoveToANullLocator',
+    'BasicMouseInterfaceTest.testDoubleClick',
+    'BasicMouseInterfaceTest.testDoubleClickThenGet',
+    'BasicMouseInterfaceTest.testDragAndDrop',
+    'BasicMouseInterfaceTest.testDraggingElementWithMouseFiresEvents',
+    'BasicMouseInterfaceTest.testDraggingElementWithMouseMovesItToAnotherList',
+    'BasicMouseInterfaceTest.testMoveAndClick',
+    'BasicMouseInterfaceTest.testShouldClickElementInIFrame',
     'ClickScrollingTest.testShouldBeAbleToClickElementThatIsOutOfViewInANestedFrameThatIsOutOfView',
     'ClickScrollingTest.testShouldBeAbleToClickElementThatIsOutOfViewInANestedFrame',
     'ClickTest.testCanClickOnAnElementWithTopSetToANegativeNumber',
     'ClickTest.testShouldOnlyFollowHrefOnce',
+    'CombinedInputActionsTest.testCanClickOnLinks',
+    'CombinedInputActionsTest.testCanClickOnLinksWithAnOffset',
+    'CombinedInputActionsTest.testChordControlCutAndPaste',
     'CombinedInputActionsTest.testCombiningShiftAndClickResultsInANewWindow',
+    'CombinedInputActionsTest.testHoldingDownShiftKeyWhileClicking',
+    'CombinedInputActionsTest.testMouseMovementWorksWhenNavigatingToAnotherPage',
+    'CombinedInputActionsTest.testSelectingMultipleItems',
+    'ChromeOptionsFunctionalTest.canStartChromeWithCustomOptions',
     'CoordinatesTest.testShouldGetCoordinatesInViewPortOfAnElementInAFrame',
     'CoordinatesTest.testShouldGetCoordinatesInViewPortOfAnElementInANestedFrame',
     'CoordinatesTest.testShouldGetCoordinatesOfAHiddenElement',
@@ -126,6 +157,7 @@ _OS_NEGATIVE_FILTER['android'] = [
     'ElementSelectingTest.testShouldBeAbleToToggleEnabledMultiSelectOption',
     'ExecutingAsyncJavascriptTest.shouldBeAbleToExecuteAsynchronousScripts',
     'ExecutingAsyncJavascriptTest.shouldNotTimeoutIfScriptCallsbackInsideAZeroTimeout',
+    'FormHandlingTest.handleFormWithJavascriptAction',
     'FormHandlingTest.testSendingKeyboardEventsShouldAppendTextInInputs',
     'FormHandlingTest.testSendingKeyboardEventsShouldAppendTextInInputsWithExistingValue',
     'FormHandlingTest.testSendingKeyboardEventsShouldAppendTextinTextAreas',
@@ -162,15 +194,16 @@ _OS_NEGATIVE_FILTER['android'] = [
     'TouchScrollTest.*',
     'TouchSingleTapTest.*',
     # Passes locally but not on bots??
-    'TypingTest.testShouldFireKeyDownEvents',
+    'TypingTest.*',
+
     # Test is written using local files; doesn't work on Android.
     'UploadTest.testFileUploading',
     # Not applicable on Android.
     'WindowSwitchingTest.*',
 ]
 
-def GetPassedJavaTestFilter(operating_system, chrome_version):
-  """Returns the test filter for running all passing tests.
+def GetDisabledTestMatchers(operating_system, chrome_version):
+  """Returns the list of disabled test matchers for the specific configuration.
 
   Args:
     operating_system: The operating system, one of 'linux', 'mac', 'win', or
@@ -178,10 +211,10 @@ def GetPassedJavaTestFilter(operating_system, chrome_version):
     chrome_version: Chrome version to test against, e.g., 'HEAD' or '26'.
 
   Returns:
-    Filter string, in Google Test (C++) format.
+    List of disabled test matchers, which may contain '*' wildcards.
   """
-  return '*-' + ':'.join(_OS_NEGATIVE_FILTER[operating_system] +
-                         _REVISION_NEGATIVE_FILTER[chrome_version])
+  return (_OS_NEGATIVE_FILTER[operating_system] +
+          _REVISION_NEGATIVE_FILTER[chrome_version])[:]
 
 def ApplyJavaTestFilter(operating_system, chrome_version, tests):
   """Applies the test filter to the given list of tests.

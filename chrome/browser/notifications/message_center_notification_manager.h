@@ -54,13 +54,6 @@ class MessageCenterNotificationManager
   // MessageCenterObserver
   virtual void OnNotificationRemoved(const std::string& notification_id,
                                      bool by_user) OVERRIDE;
-  virtual void OnNotificationClicked(
-      const std::string& notification_id) OVERRIDE;
-  virtual void OnNotificationButtonClicked(
-      const std::string& notification_id,
-      int button_index) OVERRIDE;
-  virtual void OnNotificationDisplayed(
-      const std::string& notification_id) OVERRIDE;
 
  private:
   class ImageDownloadsObserver {
@@ -91,6 +84,7 @@ class MessageCenterNotificationManager
     // FaviconHelper callback.
     void DownloadComplete(const SetImageCallback& callback,
                           int download_id,
+                          int http_status_code,
                           const GURL& image_url,
                           int requested_size,
                           const std::vector<SkBitmap>& bitmaps);

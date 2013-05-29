@@ -96,29 +96,39 @@ class TranslateHelper : public content::RenderViewObserver {
                            CLDAgreeWithLanguageCodeHavingCountryCode);
   FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest,
                            InvalidLanguageMetaTagProviding);
+  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, AdoptHtmlLang);
 
-  // Correct language code if it contains well-known mistakes.
+  // Corrects language code if it contains well-known mistakes.
   static void CorrectLanguageCodeTypo(std::string* code);
 
-  // Convert language code to the one used in server supporting list.
+  // Converts language code to the one used in server supporting list.
   static void ConvertLanguageCodeSynonym(std::string* code);
 
-  // Reset language code if the specified string is apparently invalid.
+  // Resets language code if the specified string is apparently invalid.
   static void ResetInvalidLanguageCode(std::string* code);
 
-  // Determine content page language from Content-Language code and contents.
+  // Applies a series of language code modification in proper order.
+  static void ApplyLanguageCodeCorrection(std::string* code);
+
+  // Determines content page language from Content-Language code and contents.
   static std::string DeterminePageLanguage(const std::string& code,
-                                           const string16& contents);
+                                           const std::string& html_lang,
+                                           const string16& contents,
+                                           std::string* cld_language,
+                                           bool* is_cld_reliable);
 
   // Returns whether the page associated with |document| is a candidate for
   // translation.  Some pages can explictly specify (via a meta-tag) that they
   // should not be translated.
-  static bool IsPageTranslatable(WebKit::WebDocument* document);
+  static bool IsTranslationAllowed(WebKit::WebDocument* document);
 
 #if defined(ENABLE_LANGUAGE_DETECTION)
   // Returns the ISO 639_1 language code of the specified |text|, or 'unknown'
   // if it failed.
-  static std::string DetermineTextLanguage(const string16& text);
+  // |is_cld_reliable| will be set as true if CLD says the detection is
+  // reliable.
+  static std::string DetermineTextLanguage(const string16& text,
+                                           bool* is_cld_reliable);
 #endif
 
   // RenderViewObserver implementation.
@@ -150,6 +160,10 @@ class TranslateHelper : public content::RenderViewObserver {
   int page_id_;
   std::string source_lang_;
   std::string target_lang_;
+
+  // Time when a page langauge is determined. This is used to know a duration
+  // time from showing infobar to requesting translation.
+  base::TimeTicks language_determined_time_;
 
   // Method factory used to make calls to TranslatePageImpl.
   base::WeakPtrFactory<TranslateHelper> weak_method_factory_;

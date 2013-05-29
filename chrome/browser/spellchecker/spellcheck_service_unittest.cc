@@ -18,7 +18,7 @@
 using content::BrowserThread;
 using chrome::spellcheck_common::WordList;
 
-static ProfileKeyedService* BuildSpellcheckService(
+static BrowserContextKeyedService* BuildSpellcheckService(
     content::BrowserContext* profile) {
   return new SpellcheckService(static_cast<Profile*>(profile));
 }
@@ -38,10 +38,10 @@ class SpellcheckServiceTest : public testing::Test {
   }
 
   virtual void TearDown() OVERRIDE {
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 

@@ -18,8 +18,8 @@ GYP_TARGET_DEPENDENCIES := \
 
 ### Rules for action "generate_gl_bindings":
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: $(LOCAL_PATH)/ui/gl/generate_bindings.py $(LOCAL_PATH)/third_party/mesa/MesaLib/include/GL/glext.h $(LOCAL_PATH)/third_party/khronos/GLES2/gl2ext.h $(LOCAL_PATH)/ui/gl/GL/glextchromium.h $(LOCAL_PATH)/gpu/GLES2/gl2chromium.h $(LOCAL_PATH)/gpu/GLES2/gl2extchromium.h $(LOCAL_PATH)/third_party/khronos/EGL/eglext.h $(LOCAL_PATH)/ui/gl/EGL/eglextchromium.h $(LOCAL_PATH)/third_party/mesa/MesaLib/include/GL/wglext.h $(LOCAL_PATH)/third_party/mesa/MesaLib/include/GL/glx.h $(LOCAL_PATH)/third_party/mesa/MesaLib/include/GL/glxext.h $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: ui_gl_gl_gyp_gl_target_generate_gl_bindings ($@)"
@@ -122,7 +122,6 @@ LOCAL_SRC_FILES := \
 	ui/gl/gl_share_group.cc \
 	ui/gl/gl_state_restorer.cc \
 	ui/gl/gl_surface.cc \
-	ui/gl/gl_surface_android.cc \
 	ui/gl/gl_surface_stub.cc \
 	ui/gl/gl_surface_osmesa.cc \
 	ui/gl/gl_switches.cc \
@@ -178,6 +177,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -233,11 +233,11 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

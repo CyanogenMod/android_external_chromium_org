@@ -25,8 +25,11 @@ MountNode::MountNode(Mount* mount)
   stat_.st_uid = USR_ID;
 
   // Mount should normally never be NULL, but may be null in tests.
+  // If NULL, at least set the inode to a valid (nonzero) value.
   if (mount_)
     mount_->OnNodeCreated(this);
+  else
+    stat_.st_ino = 1;
 }
 
 MountNode::~MountNode() {
@@ -47,6 +50,11 @@ int MountNode::FSync() {
   return 0;
 }
 
+int MountNode::FTruncate(off_t length) {
+  errno = EINVAL;
+  return -1;
+}
+
 int MountNode::GetDents(size_t offs, struct dirent* pdir, size_t count) {
   errno = ENOTDIR;
   return -1;
@@ -64,11 +72,6 @@ int MountNode::Ioctl(int request, char* arg) {
 }
 
 int MountNode::Read(size_t offs, void* buf, size_t count) {
-  errno = EINVAL;
-  return -1;
-}
-
-int MountNode::Truncate(size_t size) {
   errno = EINVAL;
   return -1;
 }
@@ -107,10 +110,6 @@ void* MountNode::MMap(void* addr, size_t length, int prot, int flags,
   }
 
   return new_addr;
-}
-
-int MountNode::Munmap(void* addr, size_t length) {
-  return _real_munmap(addr, length);
 }
 
 int MountNode::GetLinks() {

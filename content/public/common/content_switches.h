@@ -83,13 +83,16 @@ CONTENT_EXPORT extern const char kDisableWebRTC[];
 #else
 CONTENT_EXPORT extern const char kDisableWebAudio[];
 #endif
+#if defined(ENABLE_WEBRTC)
+extern const char kEnableWebRtcAecRecordings[];
+CONTENT_EXPORT extern const char kEnableSCTPDataChannels[];
+#endif
 extern const char kEnableWebMIDI[];
 extern const char kDisableWebSecurity[];
 extern const char kEnableExperimentalWebSocket[];
 extern const char kDisableXSSAuditor[];
 CONTENT_EXPORT extern const char kDomAutomationController[];
 CONTENT_EXPORT extern const char kReduceSecurityForDomAutomationTests[];
-CONTENT_EXPORT extern const char kEnableAcceleratedPainting[];
 CONTENT_EXPORT extern const char kEnableAcceleratedFilters[];
 extern const char kEnableAccessibilityLogging[];
 extern const char kEnableAudibleNotifications[];
@@ -99,6 +102,8 @@ CONTENT_EXPORT extern const char kEnableBrowserPluginDragDrop[];
 CONTENT_EXPORT extern const char kEnableCompositingForFixedPosition[];
 CONTENT_EXPORT extern const char kEnableHighDpiCompositingForFixedPosition[];
 CONTENT_EXPORT extern const char kDisableCompositingForFixedPosition[];
+CONTENT_EXPORT extern const char kEnableCompositingForTransition[];
+CONTENT_EXPORT extern const char kDisableCompositingForTransition[];
 CONTENT_EXPORT extern const char kEnableCssShaders[];
 CONTENT_EXPORT extern const char kEnableDelegatedRenderer[];
 CONTENT_EXPORT extern const char kEnableDeviceMotion[];
@@ -108,8 +113,8 @@ CONTENT_EXPORT extern const char kDisableThreadedHTMLParser[];
 CONTENT_EXPORT extern const char kEnableFixedLayout[];
 CONTENT_EXPORT extern const char kDisableFullScreen[];
 CONTENT_EXPORT extern const char kEnableTextServicesFramework[];
-extern const char kEnableGestureTapHighlight[];
-extern const char kDisableGestureTapHighlight[];
+CONTENT_EXPORT extern const char kEnableGestureTapHighlight[];
+CONTENT_EXPORT extern const char kDisableGestureTapHighlight[];
 extern const char kEnableGpuBenchmarking[];
 extern const char kEnableGpuClientTracing[];
 extern const char kEnableMemoryBenchmarking[];
@@ -184,6 +189,7 @@ CONTENT_EXPORT extern const char kRemoteDebuggingSocketName[];
 CONTENT_EXPORT extern const char kRendererAssertTest[];
 extern const char kRendererCmdPrefix[];
 CONTENT_EXPORT extern const char kRendererProcess[];
+CONTENT_EXPORT extern const char kEnableVtune[];
 extern const char kRendererProcessLimit[];
 extern const char kRendererStartupDialog[];
 extern const char kEnableAcceleratedOverflowScroll[];
@@ -231,6 +237,7 @@ extern const char kDisableMediaHistoryLogging[];
 extern const char kDisableGestureRequirementForMediaPlayback[];
 extern const char kNetworkCountryIso[];
 CONTENT_EXPORT extern const char kEnableWebViewSynchronousAPIs[];
+CONTENT_EXPORT extern const char kDisableOverscrollEdgeEffect[];
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -247,6 +254,10 @@ extern const char kDisableCarbonInterposing[];
 
 #if defined(USE_AURA)
 CONTENT_EXPORT extern const char kTestCompositor[];
+#endif
+
+#ifndef NDEBUG
+CONTENT_EXPORT extern const char kDumpBrowserContextDependencyGraph[];
 #endif
 
 extern const char kEnableWebPInAcceptHeader[];

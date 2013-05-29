@@ -84,7 +84,7 @@ class MenuManagerTest : public testing::Test {
 
  protected:
   TestingProfile profile_;
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 
@@ -489,7 +489,7 @@ class MockExtensionSystem : public TestExtensionSystem {
   DISALLOW_COPY_AND_ASSIGN(MockExtensionSystem);
 };
 
-ProfileKeyedService* BuildMockExtensionSystem(
+BrowserContextKeyedService* BuildMockExtensionSystem(
     content::BrowserContext* profile) {
   return new MockExtensionSystem(static_cast<Profile*>(profile));
 }

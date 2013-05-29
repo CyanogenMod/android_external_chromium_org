@@ -14,8 +14,8 @@
 #include "base/prefs/pref_member.h"
 #include "base/string16.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/content_settings.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
@@ -44,7 +44,8 @@ class PrefRegistrySyncable;
 
 // The DesktopNotificationService is an object, owned by the Profile,
 // which provides the creation of desktop "toasts" to web pages and workers.
-class DesktopNotificationService : public ProfileKeyedService {
+class DesktopNotificationService : public BrowserContextKeyedService,
+                                   public content::NotificationObserver {
  public:
   enum DesktopNotificationSource {
     PageNotification,
@@ -187,6 +188,11 @@ class DesktopNotificationService : public ProfileKeyedService {
   // Called when the disabled_system_component_id pref has been changed.
   void OnDisabledSystemComponentIdsChanged();
 
+  // content::NotificationObserver override.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
   // The profile which owns this object.
   Profile* profile_;
 
@@ -205,6 +211,9 @@ class DesktopNotificationService : public ProfileKeyedService {
 
   // On-memory data for the availability of system_component.
   std::set<std::string> disabled_system_component_ids_;
+
+  // Registrar for the other kind of notifications (event signaling).
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopNotificationService);
 };

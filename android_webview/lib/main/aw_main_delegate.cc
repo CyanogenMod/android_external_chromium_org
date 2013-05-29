@@ -18,17 +18,18 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_restrictions.h"
+#include "cc/base/switches.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
-#include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace android_webview {
 
 namespace {
 
-// TODO(boliu): Remove these global Allows once the underlying issues
-// are resolved. See AwMainDelegate::RunProcess below.
+// TODO(boliu): Remove these global Allows once the underlying issues are
+// resolved - http://crbug.com/240453. See AwMainDelegate::RunProcess below.
 
 base::LazyInstance<scoped_ptr<ScopedAllowWaitForLegacyWebViewApi> >
     g_allow_wait_in_ui_thread = LAZY_INSTANCE_INITIALIZER;
@@ -55,19 +56,17 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
       ::EnableVirtualizedContext();
 
   CommandLine* cl = CommandLine::ForCurrentProcess();
-
-  // Temporarily disable merged thread mode until proper hardware init is done.
-  // Currently hardware draw with incomplete init is making invalid GL calls
-  // that is crashing in graphics driver on Nexus 7.
-  if (!cl->HasSwitch("merge-ui-and-compositor-threads"))
-    cl->AppendSwitch(switches::kNoMergeUIAndRendererCompositorThreads);
-
   if (UIAndRendererCompositorThreadsNotMerged()) {
+    cl->AppendSwitch(cc::switches::kEnableCompositorFrameMessage);
     cl->AppendSwitch(switches::kEnableWebViewSynchronousAPIs);
   } else {
-    // Set the command line to enable synchronous API compatibility.
     cl->AppendSwitch(switches::kEnableSynchronousRendererCompositor);
+    cl->AppendSwitch(switches::kEnableVsyncNotification);
   }
+
+  // WebView uses the existing Android View edge effect for overscroll glow.
+  cl->AppendSwitch(switches::kDisableOverscrollEdgeEffect);
+
   return false;
 }
 

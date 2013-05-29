@@ -21,9 +21,6 @@ namespace chrome {
 
 namespace {
 
-// Sample mtp device id and unique id.
-const char kMtpDeviceId[] = "mtp:VendorModelSerial:ABC:1233:1237912873";
-const char kUniqueId[] = "VendorModelSerial:ABC:1233:1237912873";
 const char kImageCaptureDeviceId[] = "ic:xyz";
 
 }  // namespace
@@ -76,17 +73,17 @@ class MediaStorageUtilTest : public testing::Test {
   static void PostQuitToUIThread() {
     BrowserThread::PostTask(BrowserThread::UI,
                             FROM_HERE,
-                            MessageLoop::QuitClosure());
+                            base::MessageLoop::QuitClosure());
   }
 
   static void WaitForFileThread() {
     BrowserThread::PostTask(BrowserThread::FILE,
                             FROM_HERE,
                             base::Bind(&PostQuitToUIThread));
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
  private:
   chrome::test::TestStorageMonitor monitor_;
@@ -117,33 +114,6 @@ TEST_F(MediaStorageUtilTest, NonMediaDeviceAttached) {
       base::Bind(&MediaStorageUtilTest::CheckDeviceType,
                  base::Unretained(this), mount_point, false));
   message_loop_.RunUntilIdle();
-}
-
-// Test to verify |MediaStorageUtil::MakeDeviceId| functionality using a sample
-// mtp device unique id.
-TEST_F(MediaStorageUtilTest, MakeMtpDeviceId) {
-  std::string device_id =
-      MediaStorageUtil::MakeDeviceId(MediaStorageUtil::MTP_OR_PTP, kUniqueId);
-  ASSERT_EQ(kMtpDeviceId, device_id);
-}
-
-// Test to verify |MediaStorageUtil::CrackDeviceId| functionality using a sample
-// mtp device id.
-TEST_F(MediaStorageUtilTest, CrackMtpDeviceId) {
-  MediaStorageUtil::Type type;
-  std::string id;
-  ASSERT_TRUE(MediaStorageUtil::CrackDeviceId(kMtpDeviceId, &type, &id));
-  ASSERT_EQ(kUniqueId, id);
-  ASSERT_EQ(MediaStorageUtil::MTP_OR_PTP, type);
-}
-
-TEST_F(MediaStorageUtilTest, TestImageCaptureDeviceId) {
-  MediaStorageUtil::Type type;
-  std::string id;
-  EXPECT_TRUE(MediaStorageUtil::CrackDeviceId(kImageCaptureDeviceId,
-                                              &type, &id));
-  EXPECT_EQ(MediaStorageUtil::MAC_IMAGE_CAPTURE, type);
-  EXPECT_EQ("xyz", id);
 }
 
 TEST_F(MediaStorageUtilTest, CanCreateFileSystemForImageCapture) {

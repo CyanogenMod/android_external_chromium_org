@@ -17,8 +17,8 @@ GYP_TARGET_DEPENDENCIES :=
 ### Generated for rule "net_net_gyp_net_jni_headers_target_generate_jni_headers":
 # "{'inputs': ['../base/android/jni_generator/jni_generator.py'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/net/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/net/AndroidKeyStore.java', 'android/java/src/org/chromium/net/AndroidNetworkLibrary.java', 'android/java/src/org/chromium/net/GURLUtils.java', 'android/java/src/org/chromium/net/NetworkChangeNotifier.java', 'android/java/src/org/chromium/net/ProxyChangeListener.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/net/jni', '--optimize_generation', '0'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/AndroidKeyStore.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidKeyStore.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --optimize_generation 0
@@ -27,8 +27,8 @@ $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h: $(LOCAL_PATH)/net/
 net_net_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/net/jni/AndroidKeyStore_jni.h
 
 $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/AndroidNetworkLibrary.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/AndroidNetworkLibrary.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --optimize_generation 0
@@ -37,8 +37,8 @@ $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h: $(LOCAL_PATH
 net_net_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/net/jni/AndroidNetworkLibrary_jni.h
 
 $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/GURLUtils.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/GURLUtils.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --optimize_generation 0
@@ -47,8 +47,8 @@ $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h: $(LOCAL_PATH)/net/androi
 net_net_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/net/jni/GURLUtils_jni.h
 
 $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/NetworkChangeNotifier.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/NetworkChangeNotifier.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --optimize_generation 0
@@ -57,8 +57,8 @@ $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h: $(LOCAL_PATH
 net_net_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/net/jni/NetworkChangeNotifier_jni.h
 
 $(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/net/jni/ProxyChangeListener_jni.h: $(LOCAL_PATH)/net/android/java/src/org/chromium/net/ProxyChangeListener.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
 	mkdir -p $(gyp_shared_intermediate_dir)/net/jni; cd $(gyp_local_path)/net; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/net/ProxyChangeListener.java --output_dir "$(gyp_shared_intermediate_dir)/net/jni" --optimize_generation 0
@@ -132,6 +132,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -153,9 +154,9 @@ LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES := \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

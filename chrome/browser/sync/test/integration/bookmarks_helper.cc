@@ -110,7 +110,7 @@ class FaviconChangeObserver : public BookmarkModelObserver {
       const BookmarkNode* node) OVERRIDE {
     if (model == model_ && node == node_) {
       if (!wait_for_load_ || (wait_for_load_ && node->is_favicon_loaded()))
-        MessageLoopForUI::current()->Quit();
+        base::MessageLoopForUI::current()->Quit();
     }
   }
 
@@ -227,7 +227,7 @@ void SetFaviconImpl(Profile* profile,
     if (favicon_source == bookmarks_helper::FROM_UI) {
       favicon_service->SetFavicons(node->url(),
                                    icon_url,
-                                   history::FAVICON,
+                                   chrome::FAVICON,
                                    image);
     } else {
       browser_sync::BookmarkChangeProcessor::ApplyBookmarkFavicon(

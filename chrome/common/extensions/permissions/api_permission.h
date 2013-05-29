@@ -74,12 +74,14 @@ class APIPermission {
     kFileBrowserHandlerInternal,
     kFileBrowserPrivate,
     kFileSystem,
+    kFileSystemRetainFiles,
     kFileSystemWrite,
     kFontSettings,
     kFullscreen,
     kGeolocation,
     kHistory,
     kIdentity,
+    kIdentityPrivate,
     kIdle,
     kInput,
     kInputMethodPrivate,
@@ -221,10 +223,7 @@ class APIPermissionInfo {
     kFlagImpliesFullURLAccess = 1 << 1,
 
     // Indicates that extensions cannot specify the permission as optional.
-    kFlagCannotBeOptional = 1 << 3,
-
-    // Indicates that extensions must specify the permission as optional.
-    kFlagMustBeOptional = 1 << 4
+    kFlagCannotBeOptional = 1 << 3
   };
 
   typedef APIPermission* (*APIPermissionConstructor)(const APIPermissionInfo*);
@@ -262,12 +261,6 @@ class APIPermissionInfo {
   // optional permissions extension API.
   bool supports_optional() const {
     return (flags_ & kFlagCannotBeOptional) == 0;
-  }
-
-  // Returns true if this permission must be added and removed via the
-  // optional permissions extension API.
-  bool must_be_optional() const {
-    return (flags_ & kFlagMustBeOptional) != 0;
   }
 
  private:

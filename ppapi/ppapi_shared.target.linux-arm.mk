@@ -77,6 +77,7 @@ LOCAL_SRC_FILES := \
 	ppapi/shared_impl/var_tracker.cc \
 	ppapi/shared_impl/var_value_conversions.cc \
 	ppapi/shared_impl/private/net_address_private_impl.cc \
+	ppapi/shared_impl/private/net_address_private_impl_constants.cc \
 	ppapi/shared_impl/private/ppb_char_set_shared.cc \
 	ppapi/shared_impl/private/ppb_tcp_server_socket_shared.cc \
 	ppapi/shared_impl/private/ppb_x509_certificate_private_shared.cc \
@@ -108,6 +109,7 @@ LOCAL_SRC_FILES := \
 	ppapi/thunk/ppb_find_dev_thunk.cc \
 	ppapi/thunk/ppb_flash_clipboard_thunk.cc \
 	ppapi/thunk/ppb_flash_device_id_thunk.cc \
+	ppapi/thunk/ppb_flash_drm_thunk.cc \
 	ppapi/thunk/ppb_flash_file_fileref_thunk.cc \
 	ppapi/thunk/ppb_flash_file_modulelocal_thunk.cc \
 	ppapi/thunk/ppb_flash_font_file_thunk.cc \
@@ -204,6 +206,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -259,11 +262,11 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

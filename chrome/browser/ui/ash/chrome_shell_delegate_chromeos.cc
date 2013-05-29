@@ -5,17 +5,12 @@
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 
 #include "ash/keyboard_overlay/keyboard_overlay_view.h"
-#include "ash/system/chromeos/network/network_observer.h"
-#include "ash/system/tray/system_tray_notifier.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/background/ash_user_wallpaper_delegate.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/display/display_preferences.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/media_player_api.h"
@@ -24,6 +19,8 @@
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/system/ash_system_tray_delegate.h"
 #include "chrome/browser/extensions/api/terminal/terminal_extension_helper.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/speech/tts_controller.h"
 #include "chrome/browser/ui/ash/caps_lock_delegate_chromeos.h"
@@ -31,9 +28,11 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
+#include "chrome/browser/ui/extensions/native_app_window.h"
+#include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/webui/chrome_web_contents_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/browser/ui/webui/chromeos/mobile_setup_dialog.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -44,8 +43,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 
 bool ChromeShellDelegate::IsFirstRunAfterBoot() const {
   return CommandLine::ForCurrentProcess()->HasSwitch(
@@ -73,7 +70,27 @@ void ChromeShellDelegate::OpenFileManager(bool as_dialog) {
       return;
     }
   } else {
-    file_manager_util::OpenFileBrowser();
+    Profile* const profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
+    const extensions::ShellWindowRegistry* const registry =
+        extensions::ShellWindowRegistry::Get(profile);
+    const extensions::ShellWindowRegistry::ShellWindowList list =
+        registry->GetShellWindowsForApp(kFileBrowserDomain);
+    if (list.empty()) {
+      // Open the new window.
+      const ExtensionService* const service = profile->GetExtensionService();
+      if (service == NULL ||
+          !service->IsExtensionEnabledForLauncher(kFileBrowserDomain))
+        return;
+      const extensions::Extension* const extension =
+          service->GetInstalledExtension(kFileBrowserDomain);
+      // event_flags = 0 means this invokes the same behavior as the launcher
+      // item is clicked without any keyboard modifiers.
+      chrome::OpenApplication(
+          chrome::AppLaunchParams(profile, extension, 0 /* event_flags */));
+    } else {
+      // Activate the existing window.
+      list.front()->GetBaseWindow()->Activate();
+    }
   }
 }
 
@@ -92,33 +109,6 @@ void ChromeShellDelegate::OpenCrosh() {
   browser->window()->Show();
   browser->window()->Activate();
   page->GetView()->Focus();
-}
-
-void ChromeShellDelegate::OpenMobileSetup(const std::string& service_path) {
-  chromeos::NetworkLibrary* cros =
-      chromeos::CrosLibrary::Get()->GetNetworkLibrary();
-  const chromeos::CellularNetwork* cellular =
-      cros->FindCellularNetworkByPath(service_path);
-  if (cellular && !cellular->activated() &&
-      cellular->activate_over_non_cellular_network() &&
-      (!cros->connected_network() || !cros->connected_network()->online())) {
-    chromeos::NetworkTechnology technology = cellular->network_technology();
-    ash::NetworkObserver::NetworkType network_type =
-        (technology == chromeos::NETWORK_TECHNOLOGY_LTE ||
-         technology == chromeos::NETWORK_TECHNOLOGY_LTE_ADVANCED)
-        ? ash::NetworkObserver::NETWORK_CELLULAR_LTE
-        : ash::NetworkObserver::NETWORK_CELLULAR;
-    ash::Shell::GetInstance()->system_tray_notifier()->NotifySetNetworkMessage(
-        NULL,
-        ash::NetworkObserver::ERROR_CONNECT_FAILED,
-        network_type,
-        l10n_util::GetStringUTF16(IDS_NETWORK_ACTIVATION_ERROR_TITLE),
-        l10n_util::GetStringFUTF16(IDS_NETWORK_ACTIVATION_NEEDS_CONNECTION,
-                                   UTF8ToUTF16((cellular->name()))),
-        std::vector<string16>());
-    return;
-  }
-  MobileSetupDialog::Show(service_path);
 }
 
 void ChromeShellDelegate::ToggleHighContrast() {

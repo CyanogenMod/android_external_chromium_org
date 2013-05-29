@@ -64,6 +64,7 @@ const int64 Predictor::kDurationBetweenTrimmingsHours = 1;
 const int64 Predictor::kDurationBetweenTrimmingIncrementsSeconds = 15;
 const size_t Predictor::kUrlsTrimmedPerIncrement = 5u;
 const size_t Predictor::kMaxSpeculativeParallelResolves = 3;
+const int Predictor::kMaxUnusedSocketLifetimeSecondsWithoutAGet = 10;
 // To control our congestion avoidance system, which discards a queue when
 // resolutions are "taking too long," we need an expected resolution time.
 // Common average is in the range of 300-500ms.
@@ -136,6 +137,8 @@ Predictor::Predictor(bool preconnect_enabled)
       host_resolver_(NULL),
       preconnect_enabled_(preconnect_enabled),
       consecutive_omnibox_preconnect_count_(0),
+      recent_preconnects_(
+          TimeDelta::FromSeconds(kMaxUnusedSocketLifetimeSecondsWithoutAGet)),
       next_trim_time_(base::TimeTicks::Now() +
                       TimeDelta::FromHours(kDurationBetweenTrimmingsHours)) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -243,9 +246,8 @@ void Predictor::AnticipateOmniboxUrl(const GURL& url, bool preconnectable) {
           return;  // We've done a preconnect recently.
         last_omnibox_preconnect_ = now;
         const int kConnectionsNeeded = 1;
-        PreconnectOnUIThread(CanonicalizeUrl(url), motivation,
-                             kConnectionsNeeded,
-                             url_request_context_getter_);
+        PreconnectUrl(CanonicalizeUrl(url), GURL(), motivation,
+                      kConnectionsNeeded);
         return;  // Skip pre-resolution, since we'll open a connection.
       }
     } else {
@@ -273,21 +275,20 @@ void Predictor::AnticipateOmniboxUrl(const GURL& url, bool preconnectable) {
                  CanonicalizeUrl(url), motivation));
 }
 
-void Predictor::PreconnectUrlAndSubresources(const GURL& url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!predictor_enabled_)
+void Predictor::PreconnectUrlAndSubresources(const GURL& url,
+    const GURL& first_party_for_cookies) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+         BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (!predictor_enabled_ || !preconnect_enabled() ||
+      !url.is_valid() || !url.has_host())
     return;
-  if (!url.is_valid() || !url.has_host())
-    return;
-  if (preconnect_enabled()) {
-    std::string host = url.HostNoBrackets();
-    UrlInfo::ResolutionMotivation motivation(UrlInfo::EARLY_LOAD_MOTIVATED);
-    const int kConnectionsNeeded = 1;
-    PreconnectOnUIThread(CanonicalizeUrl(url), motivation,
-                         kConnectionsNeeded,
-                         url_request_context_getter_);
-    PredictFrameSubresources(url.GetWithEmptyPath());
-  }
+
+  std::string host = url.HostNoBrackets();
+  UrlInfo::ResolutionMotivation motivation(UrlInfo::EARLY_LOAD_MOTIVATED);
+  const int kConnectionsNeeded = 1;
+  PreconnectUrl(CanonicalizeUrl(url), first_party_for_cookies,
+                motivation, kConnectionsNeeded);
+  PredictFrameSubresources(url.GetWithEmptyPath(), first_party_for_cookies);
 }
 
 UrlList Predictor::GetPredictedUrlListAtStartup(
@@ -823,7 +824,43 @@ void Predictor::EnablePredictorOnIOThread(bool enable) {
   predictor_enabled_ = enable;
 }
 
-void Predictor::PredictFrameSubresources(const GURL& url) {
+void Predictor::PreconnectUrl(const GURL& url,
+                              const GURL& first_party_for_cookies,
+                              UrlInfo::ResolutionMotivation motivation,
+                              int count) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+         BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  if (BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    PreconnectUrlOnIOThread(url, first_party_for_cookies, motivation, count);
+  } else {
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&Predictor::PreconnectUrlOnIOThread,
+                   base::Unretained(this), url, first_party_for_cookies,
+                   motivation, count));
+  }
+}
+
+void Predictor::PreconnectUrlOnIOThread(
+    const GURL& url, const GURL& first_party_for_cookies,
+    UrlInfo::ResolutionMotivation motivation, int count) {
+  GURL canonical_url(CanonicalizeUrl(url));
+  recent_preconnects_.SetRecentlySeen(canonical_url);
+
+  PreconnectOnIOThread(url, first_party_for_cookies, motivation, count,
+                       url_request_context_getter_);
+}
+
+void Predictor::RecordPreconnectNavigationStats(const GURL& url) {
+  UMA_HISTOGRAM_BOOLEAN(
+      "Net.PreconnectedNavigation",
+      recent_preconnects_.WasRecentlySeen(url));
+}
+
+void Predictor::PredictFrameSubresources(const GURL& url,
+                                         const GURL& first_party_for_cookies) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!predictor_enabled_)
@@ -832,13 +869,13 @@ void Predictor::PredictFrameSubresources(const GURL& url) {
   // Add one pass through the message loop to allow current navigation to
   // proceed.
   if (BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-    PrepareFrameSubresources(url);
+    PrepareFrameSubresources(url, first_party_for_cookies);
   } else {
     BrowserThread::PostTask(
         BrowserThread::IO,
         FROM_HERE,
         base::Bind(&Predictor::PrepareFrameSubresources,
-                   base::Unretained(this), url));
+                   base::Unretained(this), url, first_party_for_cookies));
   }
 }
 
@@ -849,7 +886,8 @@ enum SubresourceValue {
   SUBRESOURCE_VALUE_MAX
 };
 
-void Predictor::PrepareFrameSubresources(const GURL& url) {
+void Predictor::PrepareFrameSubresources(const GURL& url,
+                                         const GURL& first_party_for_cookies) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK_EQ(url.GetWithEmptyPath(), url);
   Referrers::iterator it = referrers_.find(url);
@@ -861,8 +899,8 @@ void Predictor::PrepareFrameSubresources(const GURL& url) {
     // load any subresources).  If we learn about this resource, we will instead
     // provide a more carefully estimated preconnection count.
     if (preconnect_enabled_) {
-      PreconnectOnIOThread(url, UrlInfo::SELF_REFERAL_MOTIVATED, 2,
-                           url_request_context_getter_);
+      PreconnectUrlOnIOThread(url, first_party_for_cookies,
+                              UrlInfo::SELF_REFERAL_MOTIVATED, 2);
     }
     return;
   }
@@ -886,8 +924,8 @@ void Predictor::PrepareFrameSubresources(const GURL& url) {
       int count = static_cast<int>(std::ceil(connection_expectation));
       if (url.host() == future_url->first.host())
         ++count;
-      PreconnectOnIOThread(future_url->first, motivation, count,
-                           url_request_context_getter_);
+      PreconnectUrlOnIOThread(future_url->first, first_party_for_cookies,
+                              motivation, count);
     } else if (connection_expectation > kDNSPreresolutionWorthyExpectedValue) {
       evalution = PRERESOLUTION;
       future_url->second.preresolution_increment();
@@ -1032,7 +1070,7 @@ void Predictor::PostIncrementalTrimTask() {
     return;
   const TimeDelta kDurationBetweenTrimmingIncrements =
       TimeDelta::FromSeconds(kDurationBetweenTrimmingIncrementsSeconds);
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&Predictor::IncrementalTrimReferrers,
                  weak_factory_->GetWeakPtr(), false),

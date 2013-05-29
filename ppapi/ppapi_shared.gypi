@@ -112,6 +112,7 @@
           'shared_impl/var_value_conversions.h',
           # TODO(viettrungluu): Split these out; it won't be used in NaCl.
           'shared_impl/private/net_address_private_impl.cc',
+          'shared_impl/private/net_address_private_impl_constants.cc',
           'shared_impl/private/net_address_private_impl.h',
 
           'shared_impl/private/ppb_char_set_shared.cc',
@@ -164,8 +165,9 @@
           'thunk/ppb_find_dev_thunk.cc',
           'thunk/ppb_flash_clipboard_api.h',
           'thunk/ppb_flash_clipboard_thunk.cc',
-          'thunk/ppb_flash_device_id_api.h',
           'thunk/ppb_flash_device_id_thunk.cc',
+          'thunk/ppb_flash_drm_api.h',
+          'thunk/ppb_flash_drm_thunk.cc',
           'thunk/ppb_flash_file_fileref_thunk.cc',
           'thunk/ppb_flash_file_modulelocal_thunk.cc',
           'thunk/ppb_flash_font_file_api.h',
@@ -284,6 +286,7 @@
               'thunk/ppb_file_io_trusted_thunk.cc',
               'thunk/ppb_flash_clipboard_thunk.cc',
               'thunk/ppb_flash_device_id_thunk.cc',
+              'thunk/ppb_flash_drm_thunk.cc',
               'thunk/ppb_flash_file_fileref_thunk.cc',
               'thunk/ppb_flash_file_modulelocal_thunk.cc',
               'thunk/ppb_flash_font_file_thunk.cc',

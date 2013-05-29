@@ -11,6 +11,7 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "cc/animation/animation_registrar.h"
@@ -19,9 +20,6 @@
 #include "cc/base/thread.h"
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
-#include "cc/input/pinch_zoom_scrollbar.h"
-#include "cc/input/pinch_zoom_scrollbar_geometry.h"
-#include "cc/input/pinch_zoom_scrollbar_painter.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
@@ -49,7 +47,6 @@ namespace cc {
 RendererCapabilities::RendererCapabilities()
     : best_texture_format(0),
       using_partial_swap(false),
-      using_accelerated_painting(false),
       using_set_visibility(false),
       using_swap_complete_callback(false),
       using_gpu_memory_manager(false),
@@ -57,7 +54,8 @@ RendererCapabilities::RendererCapabilities()
       allow_partial_texture_updates(false),
       using_offscreen_context3d(false),
       max_texture_size(0),
-      avoid_pow2_textures(false) {}
+      avoid_pow2_textures(false),
+      using_map_image(false) {}
 
 RendererCapabilities::~RendererCapabilities() {}
 
@@ -99,7 +97,8 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       partial_texture_update_requests_(0),
-      in_paint_layer_contents_(false) {
+      in_paint_layer_contents_(false),
+      total_frames_used_for_lcd_text_metrics_(0) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
   s_num_layer_tree_instances++;
@@ -168,11 +167,6 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
   DCHECK(output_surface_lost_);
   if (success) {
     output_surface_lost_ = false;
-
-    // Update settings_ based on capabilities that we got back from the
-    // renderer.
-    settings_.accelerate_painting =
-        proxy_->GetRendererCapabilities().using_accelerated_painting;
 
     // Update settings_ based on partial update capability.
     size_t max_partial_texture_updates = 0;
@@ -359,14 +353,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
       sync_tree->ResetContentsTexturesPurged();
   }
 
-  sync_tree->SetPinchZoomHorizontalLayerId(
-      pinch_zoom_scrollbar_horizontal_ ?
-          pinch_zoom_scrollbar_horizontal_->id() : Layer::INVALID_ID);
-
-  sync_tree->SetPinchZoomVerticalLayerId(
-      pinch_zoom_scrollbar_vertical_ ?
-          pinch_zoom_scrollbar_vertical_->id() : Layer::INVALID_ID);
-
   if (!settings_.impl_side_painting) {
     // If we're not in impl-side painting, the tree is immediately
     // considered active.
@@ -376,79 +362,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   commit_number_++;
 }
 
-gfx::Size LayerTreeHost::PinchZoomScrollbarSize(
-    WebKit::WebScrollbar::Orientation orientation) const {
-  gfx::Size viewport_size = gfx::ToCeiledSize(
-      gfx::ScaleSize(device_viewport_size(), 1.f / device_scale_factor()));
-  gfx::Size size;
-  int track_width = PinchZoomScrollbarGeometry::kTrackWidth;
-  if (orientation == WebKit::WebScrollbar::Horizontal)
-    size = gfx::Size(viewport_size.width() - track_width, track_width);
-  else
-    size = gfx::Size(track_width, viewport_size.height() - track_width);
-  return size;
-}
-
-void LayerTreeHost::SetPinchZoomScrollbarsBoundsAndPosition() {
-  if (!pinch_zoom_scrollbar_horizontal_ || !pinch_zoom_scrollbar_vertical_)
-    return;
-
-  gfx::Size horizontal_size =
-      PinchZoomScrollbarSize(WebKit::WebScrollbar::Horizontal);
-  gfx::Size vertical_size =
-      PinchZoomScrollbarSize(WebKit::WebScrollbar::Vertical);
-
-  pinch_zoom_scrollbar_horizontal_->SetBounds(horizontal_size);
-  pinch_zoom_scrollbar_horizontal_->SetPosition(
-      gfx::PointF(0, vertical_size.height()));
-  pinch_zoom_scrollbar_vertical_->SetBounds(vertical_size);
-  pinch_zoom_scrollbar_vertical_->SetPosition(
-      gfx::PointF(horizontal_size.width(), 0));
-}
-
-static scoped_refptr<ScrollbarLayer> CreatePinchZoomScrollbar(
-    WebKit::WebScrollbar::Orientation orientation,
-    LayerTreeHost* owner) {
-  scoped_refptr<ScrollbarLayer> scrollbar_layer = ScrollbarLayer::Create(
-      make_scoped_ptr(new PinchZoomScrollbar(orientation, owner)).
-          PassAs<WebKit::WebScrollbar>(),
-      scoped_ptr<ScrollbarThemePainter>(new PinchZoomScrollbarPainter).Pass(),
-      scoped_ptr<WebKit::WebScrollbarThemeGeometry>(
-          new PinchZoomScrollbarGeometry).Pass(),
-      Layer::PINCH_ZOOM_ROOT_SCROLL_LAYER_ID);
-  scrollbar_layer->SetIsDrawable(true);
-  scrollbar_layer->SetOpacity(0.f);
-  return scrollbar_layer;
-}
-
-void LayerTreeHost::CreateAndAddPinchZoomScrollbars() {
-  bool needs_properties_updated = false;
-
-  if (!pinch_zoom_scrollbar_horizontal_ || !pinch_zoom_scrollbar_vertical_) {
-    pinch_zoom_scrollbar_horizontal_ =
-        CreatePinchZoomScrollbar(WebKit::WebScrollbar::Horizontal, this);
-    pinch_zoom_scrollbar_vertical_ =
-        CreatePinchZoomScrollbar(WebKit::WebScrollbar::Vertical, this);
-    needs_properties_updated = true;
-  }
-
-  DCHECK(pinch_zoom_scrollbar_horizontal_ && pinch_zoom_scrollbar_vertical_);
-
-  if (!pinch_zoom_scrollbar_horizontal_->parent())
-    root_layer_->AddChild(pinch_zoom_scrollbar_horizontal_);
-
-  if (!pinch_zoom_scrollbar_vertical_->parent())
-    root_layer_->AddChild(pinch_zoom_scrollbar_vertical_);
-
-  if (needs_properties_updated)
-    SetPinchZoomScrollbarsBoundsAndPosition();
-}
-
 void LayerTreeHost::WillCommit() {
   client_->WillCommit();
-
-  if (settings().use_pinch_zoom_scrollbars)
-    CreateAndAddPinchZoomScrollbars();
 }
 
 void LayerTreeHost::UpdateHudLayer() {
@@ -472,10 +387,6 @@ scoped_ptr<OutputSurface> LayerTreeHost::CreateOutputSurface() {
   return client_->CreateOutputSurface();
 }
 
-scoped_ptr<InputHandlerClient> LayerTreeHost::CreateInputHandlerClient() {
-  return client_->CreateInputHandlerClient();
-}
-
 scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
     LayerTreeHostImplClient* client) {
   DCHECK(proxy_->IsImplThread());
@@ -489,6 +400,7 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
     top_controls_manager_weak_ptr_ =
         host_impl->top_controls_manager()->AsWeakPtr();
   }
+  input_handler_weak_ptr_ = host_impl->AsWeakPtr();
   return host_impl.Pass();
 }
 
@@ -626,12 +538,6 @@ void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
   if (hud_layer_)
     hud_layer_->RemoveFromParent();
 
-  if (pinch_zoom_scrollbar_horizontal_)
-    pinch_zoom_scrollbar_horizontal_->RemoveFromParent();
-
-  if (pinch_zoom_scrollbar_vertical_)
-    pinch_zoom_scrollbar_vertical_->RemoveFromParent();
-
   SetNeedsFullTreeSync();
 }
 
@@ -656,7 +562,6 @@ void LayerTreeHost::SetViewportSize(gfx::Size device_viewport_size) {
 
   device_viewport_size_ = device_viewport_size;
 
-  SetPinchZoomScrollbarsBoundsAndPosition();
   SetNeedsCommit();
 }
 
@@ -686,10 +591,12 @@ void LayerTreeHost::SetVisible(bool visible) {
   if (visible_ == visible)
     return;
   visible_ = visible;
+  if (!visible)
+    ReduceMemoryUsage();
   proxy_->SetVisible(visible);
 }
 
-void LayerTreeHost::SetLatencyInfo(const LatencyInfo& latency_info) {
+void LayerTreeHost::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
   latency_info_.MergeWith(latency_info);
 }
 
@@ -761,13 +668,46 @@ static Layer* FindFirstScrollableLayer(Layer* layer) {
   return NULL;
 }
 
-const Layer* LayerTreeHost::RootScrollLayer() const {
-  return FindFirstScrollableLayer(root_layer_.get());
+class CalculateLCDTextMetricsFunctor {
+ public:
+  void operator()(Layer* layer) {
+    LayerTreeHost* layer_tree_host = layer->layer_tree_host();
+    if (!layer_tree_host)
+      return;
+
+    if (!layer->SupportsLCDText())
+      return;
+
+    bool update_total_num_cc_layers_can_use_lcd_text = false;
+    bool update_total_num_cc_layers_will_use_lcd_text = false;
+    if (layer->draw_properties().can_use_lcd_text) {
+      update_total_num_cc_layers_can_use_lcd_text = true;
+      if (layer->contents_opaque())
+        update_total_num_cc_layers_will_use_lcd_text = true;
+    }
+
+    layer_tree_host->IncrementLCDTextMetrics(
+        update_total_num_cc_layers_can_use_lcd_text,
+        update_total_num_cc_layers_will_use_lcd_text);
+  }
+};
+
+void LayerTreeHost::IncrementLCDTextMetrics(
+    bool update_total_num_cc_layers_can_use_lcd_text,
+    bool update_total_num_cc_layers_will_use_lcd_text) {
+  lcd_text_metrics_.total_num_cc_layers++;
+  if (update_total_num_cc_layers_can_use_lcd_text)
+    lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text++;
+  if (update_total_num_cc_layers_will_use_lcd_text) {
+    DCHECK(update_total_num_cc_layers_can_use_lcd_text);
+    lcd_text_metrics_.total_num_cc_layers_will_use_lcd_text++;
+  }
 }
 
 void LayerTreeHost::UpdateLayers(Layer* root_layer,
                                  ResourceUpdateQueue* queue) {
-  TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers");
+  TRACE_EVENT1("cc", "LayerTreeHost::UpdateLayers",
+               "commit_number", commit_number());
 
   LayerList update_list;
   {
@@ -786,6 +726,27 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
         settings_.can_use_lcd_text,
         settings_.layer_transforms_should_scale_layer_contents,
         &update_list);
+
+    if (total_frames_used_for_lcd_text_metrics_ <=
+        kTotalFramesToUseForLCDTextMetrics) {
+      LayerTreeHostCommon::CallFunctionForSubtree<
+          CalculateLCDTextMetricsFunctor, Layer>(root_layer);
+      total_frames_used_for_lcd_text_metrics_++;
+    }
+
+    if (total_frames_used_for_lcd_text_metrics_ ==
+        kTotalFramesToUseForLCDTextMetrics) {
+      total_frames_used_for_lcd_text_metrics_++;
+
+      UMA_HISTOGRAM_PERCENTAGE(
+          "Renderer4.LCDText.PercentageOfCandidateLayers",
+          lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text * 100.0 /
+          lcd_text_metrics_.total_num_cc_layers);
+      UMA_HISTOGRAM_PERCENTAGE(
+          "Renderer4.LCDText.PercentageOfAALayers",
+          lcd_text_metrics_.total_num_cc_layers_will_use_lcd_text * 100.0 /
+          lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text);
+    }
   }
 
   // Reset partial texture update requests.
@@ -810,6 +771,21 @@ void LayerTreeHost::TriggerPrepaint() {
   prepaint_callback_.Cancel();
   TRACE_EVENT0("cc", "LayerTreeHost::TriggerPrepaint");
   SetNeedsCommit();
+}
+
+class LayerTreeHostReduceMemoryFunctor {
+ public:
+  void operator()(Layer* layer) {
+    layer->ReduceMemoryUsage();
+  }
+};
+
+void LayerTreeHost::ReduceMemoryUsage() {
+  if (!root_layer())
+    return;
+
+  LayerTreeHostCommon::CallFunctionForSubtree<
+      LayerTreeHostReduceMemoryFunctor, Layer>(root_layer());
 }
 
 void LayerTreeHost::SetPrioritiesForSurfaces(size_t surface_memory_bytes) {
@@ -953,8 +929,7 @@ bool LayerTreeHost::PaintLayerContents(
            LayerIteratorType::Begin(&render_surface_layer_list);
        it != end;
        ++it) {
-    bool prevent_occlusion =
-        it.target_render_surface_layer()->HasRequestCopyCallback();
+    bool prevent_occlusion = it.target_render_surface_layer()->HasCopyRequest();
     occlusion_tracker.EnterLayer(it, prevent_occlusion);
 
     if (it.represents_target_render_surface()) {
@@ -1049,8 +1024,8 @@ void LayerTreeHost::SetDeviceScaleFactor(float device_scale_factor) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::UpdateTopControlsState(bool enable_hiding,
-                                           bool enable_showing,
+void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
+                                           TopControlsState current,
                                            bool animate) {
   if (!settings_.calculate_top_controls_position)
     return;
@@ -1059,8 +1034,8 @@ void LayerTreeHost::UpdateTopControlsState(bool enable_hiding,
   proxy_->ImplThread()->PostTask(
       base::Bind(&TopControlsManager::UpdateTopControlsState,
                  top_controls_manager_weak_ptr_,
-                 enable_hiding,
-                 enable_showing,
+                 constraints,
+                 current,
                  animate));
 }
 

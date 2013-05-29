@@ -27,7 +27,7 @@ ValueStore* GetStorage(
       extension_id,
       settings_namespace,
       base::Bind(&AssignStorage, &storage));
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   return storage;
 }
 
@@ -124,7 +124,7 @@ ExtensionService* MockExtensionSystem::extension_service() {
   return static_cast<ExtensionService*>(as_interface);
 }
 
-ProfileKeyedService* BuildMockExtensionSystem(
+BrowserContextKeyedService* BuildMockExtensionSystem(
     content::BrowserContext* profile) {
   return new MockExtensionSystem(static_cast<Profile*>(profile));
 }

@@ -74,6 +74,7 @@ const char* kAtomsToCache[] = {
   "_NET_WM_STATE_HIDDEN",
   "_NET_WM_STATE_MAXIMIZED_HORZ",
   "_NET_WM_STATE_MAXIMIZED_VERT",
+  "_NET_WM_WINDOW_OPACITY",
   "XdndActionAsk",
   "XdndActionCopy"
   "XdndActionLink",
@@ -637,8 +638,20 @@ bool DesktopRootWindowHostX11::IsFullscreen() const {
 }
 
 void DesktopRootWindowHostX11::SetOpacity(unsigned char opacity) {
-  // TODO(erg):
-  NOTIMPLEMENTED();
+  // X server opacity is in terms of 32 bit unsigned int space, and counts from
+  // the opposite direction.
+  unsigned int cardinality = (255 - opacity) * 0x1010101;
+
+  if (cardinality == 0xffffffff) {
+    XDeleteProperty(xdisplay_, xwindow_,
+                    atom_cache_.GetAtom("_NET_WM_WINDOW_OPACITY"));
+  } else {
+    XChangeProperty(xdisplay_, xwindow_,
+                    atom_cache_.GetAtom("_NET_WM_WINDOW_OPACITY"),
+                    XA_CARDINAL, 32,
+                    PropModeReplace,
+                    reinterpret_cast<unsigned char*>(&cardinality), 1);
+  }
 }
 
 void DesktopRootWindowHostX11::SetWindowIcons(
@@ -1046,6 +1059,15 @@ bool DesktopRootWindowHostX11::Dispatch(const base::NativeEvent& event) {
                     aura::client::UserActionClient::BACK :
                     aura::client::UserActionClient::FORWARD);
               }
+              break;
+            }
+          } else if (type == ui::ET_MOUSE_RELEASED) {
+            XIDeviceEvent* xievent =
+                static_cast<XIDeviceEvent*>(xev->xcookie.data);
+            int button = xievent->detail;
+            if (button == kBackMouseButton || button == kForwardMouseButton) {
+              // We've already passed the back/forward mouse down to the user
+              // action client; we want to swallow the corresponding release.
               break;
             }
           }

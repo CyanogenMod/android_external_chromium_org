@@ -9,10 +9,10 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebUnitTestSupport.h"
-#include "webkit/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/mocks/mock_webhyphenator.h"
+#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/support/simple_database_system.h"
 #include "webkit/support/weburl_loader_mock_factory.h"
 #include "webkit/tools/test_shell/mock_webclipboard_impl.h"
@@ -90,8 +90,6 @@ class TestWebKitPlatformSupport :
 
   virtual WebKit::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const WebKit::WebGraphicsContext3D::Attributes&);
-  virtual WebKit::WebGraphicsContext3D* sharedOffscreenGraphicsContext3D();
-  virtual GrContext* sharedOffscreenGrContext();
   virtual WebKit::WebGraphicsContext3DProvider*
       createSharedOffscreenGraphicsContext3DProvider();
   virtual bool canAccelerate2dCanvas();

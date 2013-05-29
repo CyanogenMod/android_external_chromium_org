@@ -35,24 +35,31 @@ if WINDOWS:
   _PESQ_PATH = os.path.join(_TOOLS_PATH, 'pesq.exe')
   _SOX_PATH = os.path.join(_TOOLS_PATH, 'sox.exe')
   _AUDIO_RECORDER = r'SoundRecorder.exe'
+  _FORCE_MIC_VOLUME_MAX_UTIL = os.path.join(_TOOLS_PATH,
+                                            r'force_mic_volume_max.exe')
 else:
   _PESQ_PATH = os.path.join(_TOOLS_PATH, 'pesq')
   _SOX_PATH = commands.getoutput('which sox')
   _AUDIO_RECORDER = commands.getoutput('which arecord')
+  _PACMD_PATH = commands.getoutput('which pacmd')
 
 
 class AudioRecorderThread(threading.Thread):
   """A thread that records audio out of the default audio output."""
 
-  def __init__(self, duration, output_file):
+  def __init__(self, duration, output_file, record_mono=False):
     threading.Thread.__init__(self)
     self.error = ''
     self._duration = duration
     self._output_file = output_file
+    self._record_mono = record_mono
 
   def run(self):
     """Starts audio recording."""
     if WINDOWS:
+      if self._record_mono:
+        logging.error("Mono recording not supported on Windows yet!")
+
       duration = time.strftime('%H:%M:%S', time.gmtime(self._duration))
       cmd = [_AUDIO_RECORDER, '/FILE', self._output_file, '/DURATION',
              duration]
@@ -60,8 +67,9 @@ class AudioRecorderThread(threading.Thread):
       ctypes.windll.kernel32.Wow64DisableWow64FsRedirection(
           ctypes.byref(ctypes.c_long()))
     else:
-      cmd = [_AUDIO_RECORDER, '-d', self._duration, '-f', 'dat',
-             self._output_file]
+      num_channels = 1 if self._record_mono else 2
+      cmd = [_AUDIO_RECORDER, '-d', self._duration, '-f', 'dat', '-c',
+             str(num_channels), self._output_file]
 
     cmd = [str(s) for s in cmd]
     logging.debug('Running command: %s', ' '.join(cmd))
@@ -86,6 +94,10 @@ def RunPESQ(audio_file_ref, audio_file_test, sample_rate=16000):
     A tuple of float values representing PESQ scores of the audio_file_ref and
     audio_file_test consecutively.
   """
+  # Work around a bug in PESQ when the ref file path is > 128 chars. PESQ will
+  # compute an incorrect score then (!), and the relative path to the ref file
+  # should be a lot shorter than the absolute one.
+  audio_file_ref = os.path.relpath(audio_file_ref)
   cmd = [_PESQ_PATH, '+%d' % sample_rate, audio_file_ref, audio_file_test]
   logging.debug('Running command: %s', ' '.join(cmd))
   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -130,3 +142,27 @@ def RemoveSilence(input_audio_file, output_audio_file):
   output, error = p.communicate()
   if p.returncode != 0:
     logging.error('Error removing silence from audio: %s\n%s', output, error)
+
+
+def ForceMicrophoneVolumeTo100Percent():
+  if WINDOWS:
+    # The volume max util is implemented in WebRTC in
+    # webrtc/tools/force_mic_volume_max/force_mic_volume_max.cc.
+    if not os.path.exists(_FORCE_MIC_VOLUME_MAX_UTIL):
+      raise Exception('Missing required binary %s.' %
+                      _FORCE_MIC_VOLUME_MAX_UTIL)
+    cmd = [_FORCE_MIC_VOLUME_MAX_UTIL]
+  else:
+    # The recording device id is machine-specific. We assume here it is called
+    # Monitor of render (which corresponds to the id render.monitor). You can
+    # list the available recording devices with pacmd list-sources.
+    RECORDING_DEVICE_ID = 'render.monitor'
+    HUNDRED_PERCENT_VOLUME = '65536'
+    cmd = [_PACMD_PATH, 'set-source-volume', RECORDING_DEVICE_ID,
+           HUNDRED_PERCENT_VOLUME]
+
+  logging.debug('Running command: %s', ' '.join(cmd))
+  p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  output, error = p.communicate()
+  if p.returncode != 0:
+    logging.error('Error forcing mic volume to 100%%: %s\n%s', output, error)

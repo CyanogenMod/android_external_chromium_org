@@ -6,7 +6,9 @@
 #define CHROME_BROWSER_EXTENSIONS_API_DEVELOPER_PRIVATE_DEVELOPER_PRIVATE_API_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace extensions {
 
@@ -14,7 +16,7 @@ class DeveloperPrivateAPI;
 
 // This is a singleton class which holds profileKeyed references to
 // DeveloperPrivateAPI class.
-class DeveloperPrivateAPIFactory : public ProfileKeyedServiceFactory {
+class DeveloperPrivateAPIFactory : public BrowserContextKeyedServiceFactory {
  public:
   static DeveloperPrivateAPI* GetForProfile(Profile* profile);
 
@@ -26,12 +28,12 @@ class DeveloperPrivateAPIFactory : public ProfileKeyedServiceFactory {
   DeveloperPrivateAPIFactory();
   virtual ~DeveloperPrivateAPIFactory();
 
-  // ProfileKeyedServiceFactory implementation.
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory implementation.
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };
 

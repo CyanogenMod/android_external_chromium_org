@@ -124,6 +124,7 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
   virtual gfx::Insets CalculateInsets() OVERRIDE;
   virtual void UpdateHorizontalMargins() OVERRIDE;
   virtual void UpdateVerticalMargins() OVERRIDE;
+  virtual void UpdateVerticalAlignment() OVERRIDE;
   virtual bool SetFocus() OVERRIDE;
   virtual View* GetView() OVERRIDE;
   virtual gfx::NativeView GetTestingHandle() const OVERRIDE;
@@ -291,7 +292,9 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
   // The text model.
   scoped_ptr<TextfieldViewsModel> model_;
 
-  // The reference to the border class. The object is owned by View::border_.
+  // The focusable border.  This is always non-NULL, but may not actually be
+  // drawn.  If it is not drawn, then by default it's also zero-sized unless the
+  // Textfield has explicitly-set margins.
   FocusableBorder* text_border_;
 
   // The textfield's text and drop cursor visibility.

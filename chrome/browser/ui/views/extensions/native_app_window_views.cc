@@ -281,7 +281,7 @@ void NativeAppWindowViews::InitializePanelWindow(
 #endif
 }
 
-// BaseWindow implementation.
+// ui::BaseWindow implementation.
 
 bool NativeAppWindowViews::IsActive() const {
   return window_->IsActive();
@@ -417,11 +417,11 @@ gfx::Point NativeAppWindowViews::GetDialogPosition(const gfx::Size& size) {
 }
 
 void NativeAppWindowViews::AddObserver(
-    WebContentsModalDialogHostObserver* observer) {
+    web_modal::WebContentsModalDialogHostObserver* observer) {
   observer_list_.AddObserver(observer);
 }
 void NativeAppWindowViews::RemoveObserver(
-    WebContentsModalDialogHostObserver* observer) {
+    web_modal::WebContentsModalDialogHostObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
@@ -453,12 +453,12 @@ void NativeAppWindowViews::OnViewWasResized() {
         path.moveTo(0, 0);
         path.lineTo(width, 0);
       }
+      path.lineTo(width, height - kCornerRadius - 1);
+      path.lineTo(width - kCornerRadius - 1, height);
+      path.lineTo(kCornerRadius + 1, height);
+      path.lineTo(0, height - kCornerRadius - 1);
+      path.close();
     }
-    path.lineTo(width, height - kCornerRadius - 1);
-    path.lineTo(width - kCornerRadius - 1, height);
-    path.lineTo(kCornerRadius + 1, height);
-    path.lineTo(0, height - kCornerRadius - 1);
-    path.close();
     SetWindowRgn(web_contents()->GetView()->GetNativeView(),
                  path.CreateNativeRegion(), 1);
   }
@@ -481,7 +481,7 @@ void NativeAppWindowViews::OnViewWasResized() {
     web_contents()->GetRenderViewHost()->GetView()->SetClickthroughRegion(rgn);
 #endif
 
-  FOR_EACH_OBSERVER(WebContentsModalDialogHostObserver,
+  FOR_EACH_OBSERVER(web_modal::WebContentsModalDialogHostObserver,
                     observer_list_,
                     OnPositionRequiresUpdate());
 }
@@ -609,6 +609,8 @@ void NativeAppWindowViews::OnWidgetVisibilityChanged(views::Widget* widget,
 void NativeAppWindowViews::OnWidgetActivationChanged(views::Widget* widget,
                                                      bool active) {
   shell_window_->OnNativeWindowChanged();
+  if (active)
+    shell_window_->OnNativeWindowActivated();
 }
 
 // WebContentsObserver implementation.

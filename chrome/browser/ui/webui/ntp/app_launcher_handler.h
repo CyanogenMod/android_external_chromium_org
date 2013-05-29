@@ -12,7 +12,6 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/browser/managed_mode/scoped_extension_elevation.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/extensions/extension.h"
@@ -26,6 +25,10 @@ class ExtensionEnableFlow;
 class ExtensionService;
 class PrefChangeRegistrar;
 class Profile;
+
+namespace chrome {
+struct FaviconImageResult;
+}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -113,6 +116,12 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
   static void RecordAppLaunchType(extension_misc::AppLaunchBucket bucket,
                                   extensions::Manifest::Type app_type);
 
+  // Records an app launch from the search view of the app list.
+  static void RecordAppListSearchLaunch(const extensions::Extension* extension);
+
+  // Records an app launch from the main view of the app list.
+  static void RecordAppListMainLaunch(const extensions::Extension* extension);
+
  private:
   struct AppInstallInfo {
     AppInstallInfo();
@@ -136,11 +145,6 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
                                    std::string escaped_url,
                                    extension_misc::AppLaunchBucket bucket);
 
-  // Generates a temporary elevation for a managed user which is bound to the
-  // life-time of the return value.
-  static scoped_ptr<ScopedExtensionElevation> GetScopedElevation(
-      const std::string& extension_id, ExtensionService* service);
-
   // Prompts the user to re-enable the app for |extension_id|.
   void PromptToEnableApp(const std::string& extension_id);
 
@@ -158,7 +162,7 @@ class AppLauncherHandler : public content::WebUIMessageHandler,
 
   // Continuation for installing a bookmark app after favicon lookup.
   void OnFaviconForApp(scoped_ptr<AppInstallInfo> install_info,
-                       const history::FaviconImageResult& image_result);
+                       const chrome::FaviconImageResult& image_result);
 
   // Sends |highlight_app_id_| to the js.
   void SetAppToBeHighlighted();

@@ -131,6 +131,7 @@ namespace extension_manifest_keys {
   extern const char kSpellcheckDictionaryLanguage[];
   extern const char kSpellcheckDictionaryLocale[];
   extern const char kSpellcheckDictionaryPath[];
+  extern const char kStorageManagedSchema[];
   extern const char kSuggestedKey[];
   extern const char kSystemIndicator[];
   extern const char kTheme[];
@@ -215,6 +216,7 @@ namespace extension_manifest_errors {
   extern const char kCannotClaimAllHostsInExtent[];
   extern const char kCannotClaimAllURLsInExtent[];
   extern const char kCannotScriptGallery[];
+  extern const char kCannotScriptSigninPage[];
   extern const char kCannotUninstallManagedExtension[];
   extern const char kChromeVersionTooLow[];
   extern const char kDevToolsExperimental[];

@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 
 class Profile;
 
@@ -17,7 +17,7 @@ namespace sync_file_system {
 class RemoteFileSyncService;
 class SyncFileSystemService;
 
-class SyncFileSystemServiceFactory : public ProfileKeyedServiceFactory {
+class SyncFileSystemServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static SyncFileSystemService* GetForProfile(Profile* profile);
   static SyncFileSystemService* FindForProfile(Profile* profile);
@@ -36,8 +36,8 @@ class SyncFileSystemServiceFactory : public ProfileKeyedServiceFactory {
   SyncFileSystemServiceFactory();
   virtual ~SyncFileSystemServiceFactory();
 
-  // ProfileKeyedServiceFactory overrides.
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
+  // BrowserContextKeyedServiceFactory overrides.
+  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
 
   mutable scoped_ptr<RemoteFileSyncService> mock_remote_file_service_;

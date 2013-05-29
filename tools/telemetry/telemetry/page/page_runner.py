@@ -5,6 +5,7 @@ import codecs
 import glob
 import logging
 import os
+import sys
 import time
 import traceback
 import urlparse
@@ -13,7 +14,6 @@ import random
 from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.core import exceptions
-from telemetry.page import page_measurement_results
 from telemetry.page import page_filter as page_filter_module
 from telemetry.page import page_test
 
@@ -73,48 +73,8 @@ class PageRunner(object):
     # Reorder page set based on options.
     pages = _ShuffleAndFilterPageSet(self.page_set, options)
 
-    # Check if we can run against WPR.
-    pages_without_archives = []
-    for page in pages:
-      parsed_url = urlparse.urlparse(page.url)
-      if parsed_url.scheme == 'file':
-        continue
-      if not page.archive_path:
-        if options.allow_live_sites:
-          logging.warning("""
-  No page set archive provided for the page %s. Running against live sites!
-  Results won't be repeatable or comparable.
-""", page.url)
-        else:
-          logging.warning("""
-  No page set archive provided for the page %s. Not running the page. To run
-  against live sites, pass the flag --allow-live-sites.
-""", page.url)
-          out_results.AddFailure(page, 'Page set archive not defined', '')
-          pages_without_archives.append(page)
-      elif options.wpr_mode != wpr_modes.WPR_RECORD:
-        # The page has an archive, and we're not recording.
-        if not os.path.isfile(page.archive_path):
-          if options.allow_live_sites:
-            logging.warning("""
-  The page set archive %s for page %s does not exist, running against live
-  sites! Results won't be repeatable or comparable.
-
-  To fix this, either add svn-internal to your .gclient using
-  http://goto/read-src-internal, or create a new archive using record_wpr.
-  """, os.path.relpath(page.archive_path), page.url)
-          else:
-            logging.warning("""
-  The page set archive %s for page %s does not exist. Not running the page.
-
-  To fix this, either add svn-internal to your .gclient using
-  http://goto/read-src-internal, or create a new archive using record_wpr.
-  To run against live sites, pass the flag --allow-live-sites.
-  """, os.path.relpath(page.archive_path), page.url)
-            out_results.AddFailure(page, 'Page set archive doesn\'t exist', '')
-            pages_without_archives.append(page)
-
-    pages = [page for page in pages if page not in pages_without_archives]
+    if not options.allow_live_sites:
+      pages = self._CheckArchives(options, pages, out_results)
 
     # Verify credentials path.
     credentials_path = None
@@ -152,10 +112,10 @@ class PageRunner(object):
         if (test.discard_first_result and
             not self.has_called_will_run_page_set):
           # If discarding results, substitute a dummy object.
-          results_for_current_run = (
-            page_measurement_results.PageMeasurementResults())
+          results_for_current_run = type(out_results)()
         else:
           results_for_current_run = out_results
+        results_for_current_run.StartTest(page)
         tries = 3
         while tries:
           try:
@@ -209,63 +169,88 @@ class PageRunner(object):
             if not tries:
               logging.error('Lost connection to browser 3 times. Failing.')
               raise
+        results_for_current_run.StopTest(page)
       test.DidRunPageSet(state.tab, results_for_current_run)
     finally:
       state.Close()
 
+  def _CheckArchives(self, options, pages, out_results):
+    """Returns a subset of pages that are local or have WPR archives.
+
+    Logs warnings if any are missing."""
+    pages_without_archive_path = []
+    pages_missing_archive_file = []
+
+    for page in pages:
+      parsed_url = urlparse.urlparse(page.url)
+      if parsed_url.scheme == 'chrome' or parsed_url.scheme == 'file':
+        continue
+
+      if not page.archive_path:
+        pages_without_archive_path.append(page)
+      elif options.wpr_mode != wpr_modes.WPR_RECORD:
+        if not os.path.isfile(page.archive_path):
+          pages_missing_archive_file.append(page)
+
+    for page in pages_without_archive_path:
+      out_results.StartTest(page)
+      out_results.AddErrorMessage(page, 'Page set archive not defined.')
+      out_results.StopTest(page)
+    for page in pages_missing_archive_file:
+      out_results.StartTest(page)
+      out_results.AddErrorMessage(page, 'Page set archive doesn\'t exist.')
+      out_results.StopTest(page)
+
+    if pages_without_archive_path:
+      logging.warning('No page set archive provided for some pages. '
+                      'Skipping those pages. To run against live sites, '
+                      'pass the flag --allow-live-sites.')
+      logging.warning('First 5 such pages:\n%s' % '\n'.join(
+          [page.url for page in pages_without_archive_path][:5]))
+
+    if pages_missing_archive_file:
+      logging.warning('The page set archives some pages do not exist, '
+                      'not running those pages. '
+                      'To fix this, either add svn-internal to your '
+                      '.gclient using http://goto/read-src-internal, '
+                      'or create a new archive using record_wpr.')
+      logging.warning('First 5 such pages:\n%s' % '\n'.join(
+          [page.url for page in pages_missing_archive_file][:5]))
+
+    return [page for page in pages if page not in
+            pages_without_archive_path + pages_missing_archive_file]
+
   def _RunPage(self, options, page, tab, test, results):
     if not test.CanRunForPage(page):
-      logging.warning('Skiping test: it cannot run for %s', page.url)
-      results.AddSkippedPage(page, 'Test cannot run', '')
+      logging.warning('Skipping test: it cannot run for %s', page.url)
+      results.AddSkip(page, 'Test cannot run')
       return
 
     logging.info('Running %s' % page.url)
 
     page_state = PageState()
-    try:
-      did_prepare = self._PreparePage(page, tab, page_state, test, results)
-    except util.TimeoutException, ex:
-      logging.error(str(ex) + ' Timeout occurred during page %s', page.url)
-      results.AddFailure(page, ex, traceback.format_exc())
-      return
-    except exceptions.TabCrashException, ex:
-      results.AddFailure(page, ex, traceback.format_exc())
-      raise
-    except exceptions.BrowserGoneException:
-      raise
-    except Exception, ex:
-      logging.error('Unexpected failure while running %s: %s',
-                    page.url, traceback.format_exc())
-      self._CleanUpPage(page, tab, page_state)
-      raise
-
-    if not did_prepare:
-      self._CleanUpPage(page, tab, page_state)
-      return
 
     try:
+      self._PreparePage(page, tab, page_state, test, results)
       test.Run(options, page, tab, results)
-    except page_test.Failure, ex:
-      logging.info('%s: %s', ex, page.url)
-      results.AddFailure(page, ex, traceback.format_exc())
-      return
-    except util.TimeoutException, ex:
-      logging.warning('Timed out while running %s', page.url)
-      results.AddFailure(page, ex, traceback.format_exc())
-      return
-    except exceptions.TabCrashException, ex:
-      results.AddFailure(page, ex, traceback.format_exc())
+      util.CloseConnections(tab)
+    except page_test.Failure:
+      logging.warning('%s:\n%s', page.url, traceback.format_exc())
+      results.AddFailure(page, sys.exc_info())
+    except (util.TimeoutException, exceptions.LoginException):
+      logging.error('%s:\n%s', page.url, traceback.format_exc())
+      results.AddError(page, sys.exc_info())
+    except (exceptions.TabCrashException, exceptions.BrowserGoneException):
+      logging.error('%s:\n%s', page.url, traceback.format_exc())
+      results.AddError(page, sys.exc_info())
+      # Run() catches these exceptions to relaunch the tab/browser, so re-raise.
       raise
-    except exceptions.BrowserGoneException:
+    except Exception:
       raise
-    except Exception, ex:
-      logging.error('Unexpected failure while running %s: %s',
-                    page.url, traceback.format_exc())
-      raise
+    else:
+      results.AddSuccess(page)
     finally:
       self._CleanUpPage(page, tab, page_state)
-
-    results.AddSuccess(page)
 
   def Close(self):
     pass
@@ -346,14 +331,9 @@ class PageRunner(object):
       target_side_url = page.url
 
     if page.credentials:
-      page_state.did_login = tab.browser.credentials.LoginNeeded(
-        tab, page.credentials)
-      if not page_state.did_login:
-        msg = 'Could not login to %s on %s' % (page.credentials,
-                                               target_side_url)
-        logging.info(msg)
-        results.AddFailure(page, msg, "")
-        return False
+      if not tab.browser.credentials.LoginNeeded(tab, page.credentials):
+        raise page_test.Failure('Login as ' + page.credentials + ' failed')
+      page_state.did_login = True
 
     if not self.has_called_will_run_page_set:
       self.has_called_will_run_page_set = True
@@ -366,16 +346,9 @@ class PageRunner(object):
     page.WaitToLoad(tab, 60)
     tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()
 
-    return True
-
   def _CleanUpPage(self, page, tab, page_state): # pylint: disable=R0201
     if page.credentials and page_state.did_login:
       tab.browser.credentials.LoginNoLongerNeeded(tab, page.credentials)
-    try:
-      tab.EvaluateJavaScript("""window.chrome && chrome.benchmarking &&
-                              chrome.benchmarking.closeConnections()""")
-    except Exception:
-      pass
 
   def _WaitForThermalThrottlingIfNeeded(self, platform):
     if not platform.CanMonitorThermalThrottling():

@@ -12,6 +12,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/google_apis/drive_api_util.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
@@ -54,7 +55,8 @@ ResourceEntry ConvertToResourceEntry(
       input.GetLinkByType(google_apis::Link::LINK_PARENT);
   if (parent_link) {
     output.set_parent_resource_id(
-        util::ExtractResourceIdFromUrl(parent_link->href()));
+        google_apis::drive::util::ExtractResourceIdFromUrl(
+            parent_link->href()));
   }
   // Apply mapping from an empty parent to the special dummy directory.
   if (output.parent_resource_id().empty())
@@ -72,8 +74,7 @@ ResourceEntry ConvertToResourceEntry(
   file_info->set_creation_time(input.published_time().ToInternalValue());
 
   if (input.is_file() || input.is_hosted_document()) {
-    DriveFileSpecificInfo* file_specific_info =
-        output.mutable_file_specific_info();
+    FileSpecificInfo* file_specific_info = output.mutable_file_specific_info();
     if (input.is_file()) {
       file_info->set_size(input.file_size());
       file_specific_info->set_file_md5(input.file_md5());

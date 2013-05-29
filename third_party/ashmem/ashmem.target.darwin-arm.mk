@@ -15,8 +15,8 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "generate_ashmem_shim_headers":
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_intermediate_dir)
-$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_shared_intermediate_dir := $(GYP_ABS_ANDROID_TOP_DIR)/$(gyp_shared_intermediate_dir)
+$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: $(LOCAL_PATH)/tools/generate_shim_headers/generate_shim_headers.py $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: Generating ashmem shim headers. ($@)"

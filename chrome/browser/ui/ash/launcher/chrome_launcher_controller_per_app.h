@@ -35,9 +35,9 @@
 #include "ui/aura/window_observer.h"
 
 class AppSyncUIState;
-class BaseWindow;
 class Browser;
 class BrowserLauncherItemControllerTest;
+class BrowserShortcutLauncherItemController;
 class ExtensionEnableFlow;
 class LauncherItemController;
 class Profile;
@@ -53,6 +53,10 @@ class Window;
 
 namespace content {
 class WebContents;
+}
+
+namespace ui {
+class BaseWindow;
 }
 
 // ChromeLauncherControllerPerApp manages the launcher items needed for content
@@ -255,14 +259,12 @@ class ChromeLauncherControllerPerApp
 
   // Activates a |window|. If |allow_minimize| is true and the system allows
   // it, the the window will get minimized instead.
-  virtual void ActivateWindowOrMinimizeIfActive(BaseWindow* window,
+  virtual void ActivateWindowOrMinimizeIfActive(ui::BaseWindow* window,
                                                 bool allow_minimize) OVERRIDE;
 
   // ash::LauncherDelegate overrides:
-  virtual void OnBrowserShortcutClicked(int event_flags) OVERRIDE;
   virtual void ItemSelected(const ash::LauncherItem& item,
                            const ui::Event& event) OVERRIDE;
-  virtual int GetBrowserShortcutResourceId() OVERRIDE;
   virtual string16 GetTitle(const ash::LauncherItem& item) OVERRIDE;
   virtual ui::MenuModel* CreateContextMenu(
       const ash::LauncherItem& item, aura::RootWindow* root) OVERRIDE;
@@ -344,16 +346,15 @@ class ChromeLauncherControllerPerApp
   // If |web_contents| has not loaded, returns "Net Tab".
   string16 GetAppListTitle(content::WebContents* web_contents) const;
 
-  // Get the favicon for the browser list entry for |web_contents|.
-  // Note that for incognito windows the incognito icon will be returned.
-  gfx::Image GetBrowserListIcon(content::WebContents* web_contents) const;
-
-  // Get the title for the browser list entry for |web_contents|.
-  // If |web_contents| has not loaded, returns "Net Tab".
-  string16 GetBrowserListTitle(content::WebContents* web_contents) const;
-
   // Overridden from chrome::BrowserListObserver.
   virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
+
+  // Returns true when the given |browser| is listed in the browser application
+  // list.
+  bool IsBrowserRepresentedInBrowserList(Browser* browser);
+
+  // Returns the LauncherItemController of BrowserShortcut.
+  LauncherItemController* GetBrowserShortcutLauncherItemController();
 
  protected:
   // ChromeLauncherController overrides:
@@ -439,22 +440,17 @@ class ChromeLauncherControllerPerApp
   std::vector<content::WebContents*> GetV1ApplicationsFromController(
       LauncherItemController* controller);
 
-  // Returns the list of all browsers runing.
-  // |event_flags| specifies the flags which were set by the event which
-  // triggered this menu generation. It can be used to generate different lists.
-  // TODO(skuhne): Move to wherever the BrowserLauncherItemController
-  // functionality moves to.
-  ChromeLauncherAppMenuItems GetBrowserApplicationList(int event_flags);
-
-  // Returns true when the given |browser| is listed in the browser application
-  // list.
-  bool IsBrowserRepresentedInBrowserList(Browser* browser);
+  // Create LauncherItem for Browser Shortcut.
+  ash::LauncherID CreateBrowserShortcutLauncherItem();
 
   // Check if the given |web_contents| is in incognito mode.
   bool IsIncognito(content::WebContents* web_contents) const;
 
-  // Activate a browser - or the next one in the list.
-  void ActivateOrAdvanceToNextBrowser();
+  // Update browser shortcut's index.
+  void PersistChromeItemIndex(int index);
+
+  // Get browser shortcut's index from pref.
+  int GetChromeIconIndexFromPref() const;
 
   ash::LauncherModel* model_;
 
@@ -489,6 +485,9 @@ class ChromeLauncherControllerPerApp
 
   // Launchers that are currently being observed.
   std::set<ash::Launcher*> launchers_;
+
+  // The owned browser shortcut item.
+  scoped_ptr<BrowserShortcutLauncherItemController> browser_item_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherControllerPerApp);
 };

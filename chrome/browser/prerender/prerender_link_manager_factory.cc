@@ -9,7 +9,7 @@
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace prerender {
 
@@ -17,7 +17,7 @@ namespace prerender {
 PrerenderLinkManager* PrerenderLinkManagerFactory::GetForProfile(
     Profile* profile) {
   return static_cast<PrerenderLinkManager*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -26,12 +26,14 @@ PrerenderLinkManagerFactory* PrerenderLinkManagerFactory::GetInstance() {
 }
 
 PrerenderLinkManagerFactory::PrerenderLinkManagerFactory()
-    : ProfileKeyedServiceFactory("PrerenderLinkmanager",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "PrerenderLinkmanager",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(prerender::PrerenderManagerFactory::GetInstance());
 }
 
-ProfileKeyedService* PrerenderLinkManagerFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService*
+PrerenderLinkManagerFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   PrerenderManager* prerender_manager =
       PrerenderManagerFactory::GetForProfile(static_cast<Profile*>(profile));

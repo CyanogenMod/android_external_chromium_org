@@ -28,8 +28,8 @@ TEST_F(BrowserAboutHandlerTest, WillHandleBrowserAboutURL) {
         GURL("http://google.com")
       },
       {
-        GURL(chrome::kAboutBlankURL),
-        GURL(chrome::kAboutBlankURL)
+        GURL(content::kAboutBlankURL),
+        GURL(content::kAboutBlankURL)
       },
       {
         GURL(chrome_prefix + chrome::kChromeUIMemoryHost),
@@ -60,7 +60,7 @@ TEST_F(BrowserAboutHandlerTest, WillHandleBrowserAboutURL) {
         GURL(chrome_prefix + "host/path?query#ref"),
       }
   };
-  MessageLoopForUI message_loop;
+  base::MessageLoopForUI message_loop;
   content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
   TestingProfile profile;
 

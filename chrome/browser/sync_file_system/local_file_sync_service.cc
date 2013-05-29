@@ -9,17 +9,18 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/local_change_processor.h"
+#include "chrome/browser/sync_file_system/logger.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/syncable/file_change.h"
-#include "webkit/fileapi/syncable/local_file_change_tracker.h"
-#include "webkit/fileapi/syncable/local_file_sync_context.h"
-#include "webkit/fileapi/syncable/sync_file_metadata.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/syncable/file_change.h"
+#include "webkit/browser/fileapi/syncable/local_file_change_tracker.h"
+#include "webkit/browser/fileapi/syncable/local_file_sync_context.h"
+#include "webkit/browser/fileapi/syncable/sync_file_metadata.h"
 
 using content::BrowserThread;
 using fileapi::FileSystemURL;
@@ -200,8 +201,12 @@ void LocalFileSyncService::PrepareForProcessRemoteChange(
     const extensions::Extension* extension = extension_service->GetInstalledApp(
         url.origin());
     if (!extension) {
-      LOG(WARNING) << "PrepareForProcessRemoteChange called for non-existing "
-                   << " origin:" << url.origin().spec();
+      util::Log(
+          logging::LOG_WARNING,
+          FROM_HERE,
+          "PrepareForProcessRemoteChange called for non-existing origin: %s",
+          url.origin().spec().c_str());
+
       // The extension has been uninstalled and this method is called
       // before the remote changes for the origin are removed.
       callback.Run(SYNC_STATUS_NO_CHANGE_TO_SYNC,

@@ -35,10 +35,10 @@ struct TestUnitInfo {
 };
 
 const struct TestUnitInfo kTestingData[] = {
-  {"C:", "unknown", 1000, 10, 0},
-  {"d:", "removable", 2000, 10, 1 },
-  {"/home","harddisk", 3000, 10, 2},
-  {"/", "removable", 4000, 10, 3}
+  {"C:", systeminfo::kStorageTypeUnknown, 1000, 10, 0},
+  {"d:", systeminfo::kStorageTypeRemovable, 2000, 10, 1 },
+  {"/home", systeminfo::kStorageTypeFixed, 3000, 10, 2},
+  {"/", systeminfo::kStorageTypeRemovable, 4000, 10, 3}
 };
 
 // The watching interval for unit test is 1 milliseconds.
@@ -173,7 +173,7 @@ void TestStorageInfoProvider::OnCheckWatchedStoragesFinishedForTesting() {
   // Note the QuitClosure is actually bound to QuitCurrentWhenIdle, it means
   // that the UI thread wil continue to process pending messages util idle.
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      MessageLoop::QuitClosure());
+      base::MessageLoop::QuitClosure());
 }
 
 class StorageInfoProviderTest : public testing::Test {
@@ -190,14 +190,14 @@ class StorageInfoProviderTest : public testing::Test {
   static void RunLoopAndFlushBlockingPool();
   static void RunAllPendingAndFlushBlockingPool();
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   scoped_refptr<TestStorageInfoProvider> storage_info_provider_;
   scoped_ptr<TestStorageMonitor> storage_test_notifications_;
 };
 
 StorageInfoProviderTest::StorageInfoProviderTest()
-    : message_loop_(MessageLoop::TYPE_UI),
+    : message_loop_(base::MessageLoop::TYPE_UI),
       ui_thread_(BrowserThread::UI, &message_loop_) {
 }
 

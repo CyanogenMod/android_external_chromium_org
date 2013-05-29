@@ -610,7 +610,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
     ASSERT_TRUE(popup_model->IsOpen());
 
     // Check if the default match result is Search Primary Provider.
-    ASSERT_EQ(AutocompleteMatch::SEARCH_WHAT_YOU_TYPED,
+    ASSERT_EQ(AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
               popup_model->result().default_match()->type);
 
     // Open the default match.
@@ -631,7 +631,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
     EXPECT_EQ(kSearchSingleChar, UTF16ToUTF8(omnibox_view->GetText()));
 
     // Check if the default match result is Search Primary Provider.
-    ASSERT_EQ(AutocompleteMatch::SEARCH_WHAT_YOU_TYPED,
+    ASSERT_EQ(AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
               popup_model->result().default_match()->type);
 
     // Open the default match.
@@ -681,14 +681,14 @@ class OmniboxViewTest : public InProcessBrowserTest,
   }
 
   void BasicTextOperationsTest() {
-    ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+    ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
     chrome::FocusLocationBar(browser());
 
     OmniboxView* omnibox_view = NULL;
     ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
 
     string16 old_text = omnibox_view->GetText();
-    EXPECT_EQ(UTF8ToUTF16(chrome::kAboutBlankURL), old_text);
+    EXPECT_EQ(UTF8ToUTF16(content::kAboutBlankURL), old_text);
     EXPECT_TRUE(omnibox_view->IsSelectAll());
 
     size_t start, end;
@@ -961,7 +961,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
     ASSERT_TRUE(popup_model->IsOpen());
 
     // Check if the default match result is Search Primary Provider.
-    ASSERT_EQ(AutocompleteMatch::SEARCH_WHAT_YOU_TYPED,
+    ASSERT_EQ(AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
               popup_model->result().default_match()->type);
     ASSERT_EQ(kSearchTextURL,
               popup_model->result().default_match()->destination_url.spec());
@@ -980,7 +980,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
     ASSERT_NO_FATAL_FAILURE(SendKeySequence(kSearchTextKeys));
     ASSERT_NO_FATAL_FAILURE(WaitForAutocompleteControllerDone());
     ASSERT_TRUE(popup_model->IsOpen());
-    ASSERT_EQ(AutocompleteMatch::HISTORY_KEYWORD,
+    ASSERT_EQ(AutocompleteMatchType::HISTORY_KEYWORD,
               popup_model->result().default_match()->type);
     ASSERT_EQ("http://abc.com/",
               popup_model->result().default_match()->destination_url.spec());
@@ -993,7 +993,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
         TemplateURLServiceFactory::GetForProfile(browser()->profile());
     model->SetDefaultSearchProvider(NULL);
 
-    ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+    ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
     chrome::FocusLocationBar(browser());
 
     OmniboxView* omnibox_view = NULL;
@@ -1463,16 +1463,16 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
   CtrlKeyPressedWithInlineAutocompleteTest();
 }
 
-#if defined(TOOLKIT_GTK) || defined(USE_AURA)
+#if defined(TOOLKIT_GTK) || defined(TOOLKIT_VIEWS)
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   chrome::FocusLocationBar(browser());
 
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
 
   string16 old_text = omnibox_view->GetText();
-  EXPECT_EQ(UTF8ToUTF16(chrome::kAboutBlankURL), old_text);
+  EXPECT_EQ(UTF8ToUTF16(content::kAboutBlankURL), old_text);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
 
   // Undo should clear the omnibox.
@@ -1544,8 +1544,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
   EXPECT_EQ(UTF8ToUTF16("\357\276\200"), omnibox_view->GetText());
 }
-
-#endif  // defined(TOOLKIT_GTK) || defined(USE_AURA)
+#endif  // defined(TOOLKIT_GTK) || defined(TOOLKIT_VIEWS)
 
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DoesNotUpdateAutocompleteOnBlur) {
   OmniboxView* omnibox_view = NULL;

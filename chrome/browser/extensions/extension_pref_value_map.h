@@ -14,7 +14,7 @@
 #include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_prefs_scope.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 // Non-persistent data container that is shared by ExtensionPrefStores. All
 // extension pref values (incognito and regular) are stored herein and
@@ -53,7 +53,7 @@
 // .reg_only = regular-only value
 // .inc = incognito value
 // Extension B has higher precedence than A.
-class ExtensionPrefValueMap : public ProfileKeyedService {
+class ExtensionPrefValueMap : public BrowserContextKeyedService {
  public:
   // Observer interface for monitoring ExtensionPrefValueMap.
   class Observer {
@@ -75,7 +75,7 @@ class ExtensionPrefValueMap : public ProfileKeyedService {
   ExtensionPrefValueMap();
   virtual ~ExtensionPrefValueMap();
 
-  // ProfileKeyedService implementation.
+  // BrowserContextKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   // Set an extension preference |value| for |key| of extension |ext_id|.

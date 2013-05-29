@@ -46,23 +46,6 @@ LOCAL_SRC_FILES := \
 	webkit/appcache/manifest_parser.cc \
 	webkit/appcache/view_appcache_internals_job.cc \
 	webkit/appcache/web_application_cache_host_impl.cc \
-	webkit/blob/blob_data.cc \
-	webkit/blob/blob_data_handle.cc \
-	webkit/blob/blob_storage_controller.cc \
-	webkit/blob/blob_storage_context.cc \
-	webkit/blob/blob_storage_host.cc \
-	webkit/blob/blob_url_request_job.cc \
-	webkit/blob/blob_url_request_job_factory.cc \
-	webkit/blob/local_file_stream_reader.cc \
-	webkit/blob/scoped_file.cc \
-	webkit/blob/shareable_file_reference.cc \
-	webkit/blob/view_blob_internals_job.cc \
-	webkit/database/databases_table.cc \
-	webkit/database/database_connections.cc \
-	webkit/database/database_quota_client.cc \
-	webkit/database/database_tracker.cc \
-	webkit/database/database_util.cc \
-	webkit/database/vfs_backend.cc \
 	webkit/dom_storage/dom_storage_area.cc \
 	webkit/dom_storage/dom_storage_cached_area.cc \
 	webkit/dom_storage/dom_storage_context.cc \
@@ -76,61 +59,77 @@ LOCAL_SRC_FILES := \
 	webkit/dom_storage/local_storage_database_adapter.cc \
 	webkit/dom_storage/session_storage_database.cc \
 	webkit/dom_storage/session_storage_database_adapter.cc \
-	webkit/fileapi/async_file_util_adapter.cc \
-	webkit/fileapi/cross_operation_delegate.cc \
-	webkit/fileapi/external_mount_points.cc \
-	webkit/fileapi/file_permission_policy.cc \
-	webkit/fileapi/file_system_callback_dispatcher.cc \
-	webkit/fileapi/file_system_context.cc \
-	webkit/fileapi/file_system_dir_url_request_job.cc \
-	webkit/fileapi/file_system_directory_database.cc \
-	webkit/fileapi/file_system_file_stream_reader.cc \
-	webkit/fileapi/file_system_file_util.cc \
-	webkit/fileapi/file_system_operation_context.cc \
-	webkit/fileapi/file_system_options.cc \
-	webkit/fileapi/file_system_origin_database.cc \
-	webkit/fileapi/file_system_quota_client.cc \
-	webkit/fileapi/file_system_task_runners.cc \
-	webkit/fileapi/file_system_url.cc \
-	webkit/fileapi/file_system_url_request_job.cc \
-	webkit/fileapi/file_system_url_request_job_factory.cc \
-	webkit/fileapi/file_system_usage_cache.cc \
-	webkit/fileapi/file_system_util.cc \
-	webkit/fileapi/file_writer_delegate.cc \
-	webkit/fileapi/isolated_context.cc \
-	webkit/fileapi/isolated_file_util.cc \
-	webkit/fileapi/isolated_mount_point_provider.cc \
-	webkit/fileapi/local_file_stream_writer.cc \
-	webkit/fileapi/local_file_system_operation.cc \
-	webkit/fileapi/local_file_util.cc \
-	webkit/fileapi/mount_points.cc \
-	webkit/fileapi/native_file_util.cc \
-	webkit/fileapi/obfuscated_file_util.cc \
-	webkit/fileapi/recursive_operation_delegate.cc \
-	webkit/fileapi/remove_operation_delegate.cc \
-	webkit/fileapi/sandbox_file_stream_writer.cc \
-	webkit/fileapi/sandbox_mount_point_provider.cc \
-	webkit/fileapi/sandbox_quota_observer.cc \
-	webkit/fileapi/syncable/file_change.cc \
-	webkit/fileapi/syncable/local_file_change_tracker.cc \
-	webkit/fileapi/syncable/local_file_sync_context.cc \
-	webkit/fileapi/syncable/local_file_sync_status.cc \
-	webkit/fileapi/syncable/sync_file_metadata.cc \
-	webkit/fileapi/syncable/sync_status_code.cc \
-	webkit/fileapi/syncable/syncable_file_operation_runner.cc \
-	webkit/fileapi/syncable/syncable_file_system_operation.cc \
-	webkit/fileapi/syncable/syncable_file_system_util.cc \
-	webkit/fileapi/test_mount_point_provider.cc \
-	webkit/fileapi/transient_file_util.cc \
-	webkit/fileapi/upload_file_system_file_element_reader.cc \
-	webkit/fileapi/webfilewriter_base.cc \
 	webkit/quota/quota_database.cc \
 	webkit/quota/quota_manager.cc \
 	webkit/quota/quota_status_code.cc \
 	webkit/quota/quota_task.cc \
 	webkit/quota/quota_temporary_storage_evictor.cc \
 	webkit/quota/special_storage_policy.cc \
-	webkit/quota/usage_tracker.cc
+	webkit/quota/usage_tracker.cc \
+	webkit/browser/blob/blob_data_handle.cc \
+	webkit/browser/blob/blob_storage_controller.cc \
+	webkit/browser/blob/blob_storage_context.cc \
+	webkit/browser/blob/blob_storage_host.cc \
+	webkit/browser/blob/blob_url_request_job.cc \
+	webkit/browser/blob/blob_url_request_job_factory.cc \
+	webkit/browser/blob/local_file_stream_reader.cc \
+	webkit/browser/blob/view_blob_internals_job.cc \
+	webkit/browser/database/databases_table.cc \
+	webkit/browser/database/database_quota_client.cc \
+	webkit/browser/database/database_tracker.cc \
+	webkit/browser/database/database_util.cc \
+	webkit/browser/database/vfs_backend.cc \
+	webkit/browser/fileapi/async_file_util_adapter.cc \
+	webkit/browser/fileapi/cross_operation_delegate.cc \
+	webkit/browser/fileapi/external_mount_points.cc \
+	webkit/browser/fileapi/file_permission_policy.cc \
+	webkit/browser/fileapi/file_system_context.cc \
+	webkit/browser/fileapi/file_system_dir_url_request_job.cc \
+	webkit/browser/fileapi/file_system_file_stream_reader.cc \
+	webkit/browser/fileapi/file_system_file_util.cc \
+	webkit/browser/fileapi/file_system_operation_context.cc \
+	webkit/browser/fileapi/file_system_options.cc \
+	webkit/browser/fileapi/file_system_quota_client.cc \
+	webkit/browser/fileapi/file_system_task_runners.cc \
+	webkit/browser/fileapi/file_system_url.cc \
+	webkit/browser/fileapi/file_system_url_request_job.cc \
+	webkit/browser/fileapi/file_system_url_request_job_factory.cc \
+	webkit/browser/fileapi/file_system_usage_cache.cc \
+	webkit/browser/fileapi/file_writer_delegate.cc \
+	webkit/browser/fileapi/isolated_context.cc \
+	webkit/browser/fileapi/isolated_file_util.cc \
+	webkit/browser/fileapi/isolated_mount_point_provider.cc \
+	webkit/browser/fileapi/local_file_stream_writer.cc \
+	webkit/browser/fileapi/local_file_system_operation.cc \
+	webkit/browser/fileapi/local_file_util.cc \
+	webkit/browser/fileapi/mount_points.cc \
+	webkit/browser/fileapi/native_file_util.cc \
+	webkit/browser/fileapi/obfuscated_file_util.cc \
+	webkit/browser/fileapi/recursive_operation_delegate.cc \
+	webkit/browser/fileapi/remove_operation_delegate.cc \
+	webkit/browser/fileapi/sandbox_directory_database.cc \
+	webkit/browser/fileapi/sandbox_file_stream_writer.cc \
+	webkit/browser/fileapi/sandbox_mount_point_provider.cc \
+	webkit/browser/fileapi/sandbox_origin_database.cc \
+	webkit/browser/fileapi/sandbox_quota_observer.cc \
+	webkit/browser/fileapi/syncable/file_change.cc \
+	webkit/browser/fileapi/syncable/local_file_change_tracker.cc \
+	webkit/browser/fileapi/syncable/local_file_sync_context.cc \
+	webkit/browser/fileapi/syncable/local_file_sync_status.cc \
+	webkit/browser/fileapi/syncable/sync_file_metadata.cc \
+	webkit/browser/fileapi/syncable/sync_status_code.cc \
+	webkit/browser/fileapi/syncable/syncable_file_operation_runner.cc \
+	webkit/browser/fileapi/syncable/syncable_file_system_operation.cc \
+	webkit/browser/fileapi/syncable/syncable_file_system_util.cc \
+	webkit/browser/fileapi/test_mount_point_provider.cc \
+	webkit/browser/fileapi/transient_file_util.cc \
+	webkit/browser/fileapi/upload_file_system_file_element_reader.cc \
+	webkit/common/blob/blob_data.cc \
+	webkit/common/blob/scoped_file.cc \
+	webkit/common/blob/shareable_file_reference.cc \
+	webkit/common/database/database_connections.cc \
+	webkit/common/fileapi/file_system_util.cc \
+	webkit/renderer/fileapi/webfilewriter_base.cc
 
 
 # Flags passed to both C and C++ files.
@@ -179,6 +178,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -231,8 +231,8 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
@@ -240,9 +240,9 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/leveldatabase/src \
 	$(LOCAL_PATH)/third_party/leveldatabase \
 	$(LOCAL_PATH)/third_party/sqlite \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

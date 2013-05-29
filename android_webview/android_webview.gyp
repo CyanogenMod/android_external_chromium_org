@@ -23,16 +23,6 @@
       'sources': [
         'lib/main/webview_entry_point.cc',
       ],
-      'conditions': [
-        ['android_webview_build == 1', {
-          'libraries': [
-            # The "android" gyp backend doesn't quite handle static libraries'
-            # dependencies correctly; force this to be linked as a workaround.
-            'cpufeatures.a',
-            '-lcutils',
-          ],
-        }],
-      ],
     },
     {
       'target_name': 'android_webview_pak',
@@ -86,7 +76,7 @@
         '../skia/skia.gyp:skia',
         '../gpu/gpu.gyp:gles2_implementation',
         '../ui/gl/gl.gyp:gl',
-        '../webkit/gpu/webkit_gpu.gyp:webkit_gpu',
+        '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
         'android_webview_pak',
       ],
       'include_dirs': [
@@ -95,6 +85,8 @@
         '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/',
       ],
       'sources': [
+        'browser/aw_autofill_manager_delegate.cc',
+        'browser/aw_autofill_manager_delegate.h',
         'browser/aw_browser_context.cc',
         'browser/aw_browser_context.h',
         'browser/aw_browser_main_parts.cc',
@@ -122,6 +114,8 @@
         'browser/aw_quota_manager_bridge.h',
         'browser/aw_quota_permission_context.cc',
         'browser/aw_quota_permission_context.h',
+        'browser/aw_pref_store.cc',
+        'browser/aw_pref_store.h',
         'browser/aw_request_interceptor.cc',
         'browser/aw_request_interceptor.h',
         'browser/aw_result_codes.h',
@@ -130,8 +124,6 @@
         'browser/browser_view_renderer_impl.h',
         'browser/find_helper.cc',
         'browser/find_helper.h',
-        'browser/gpu_memory_buffer_factory_impl.cc',
-        'browser/gpu_memory_buffer_factory_impl.h',
         'browser/gpu_memory_buffer_impl.cc',
         'browser/gpu_memory_buffer_impl.h',
         'browser/in_process_renderer/in_process_renderer_client.cc',

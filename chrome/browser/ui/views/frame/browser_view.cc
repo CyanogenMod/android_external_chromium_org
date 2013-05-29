@@ -42,6 +42,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
+#include "chrome/browser/ui/immersive_fullscreen_configuration.h"
 #include "chrome/browser/ui/ntp_background_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
@@ -61,6 +62,7 @@
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
+#include "chrome/browser/ui/views/frame/browser_view_layout_delegate.h"
 #include "chrome/browser/ui/views/frame/contents_container.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/frame/instant_overlay_controller_views.h"
@@ -157,6 +159,7 @@ using content::UserMetricsAction;
 using content::WebContents;
 using views::ColumnSet;
 using views::GridLayout;
+using web_modal::WebContentsModalDialogHost;
 
 namespace {
 // The height of the status bubble.
@@ -214,10 +217,12 @@ void PaintAttachedBookmarkBar(gfx::Canvas* canvas,
                               chrome::HostDesktopType host_desktop_type,
                               int toolbar_overlap) {
   // Paint background for attached state, this is fade in/out.
-  DetachableToolbarView::PaintBackgroundAttachedMode(canvas, view,
+  gfx::Point background_image_offset =
       browser_view->OffsetPointForToolbarBackgroundImage(
-          gfx::Point(view->GetMirroredX(), view->y())),
-      host_desktop_type);
+          gfx::Point(view->GetMirroredX(), view->y()));
+  DetachableToolbarView::PaintBackgroundAttachedMode(canvas,
+      view->GetThemeProvider(), view->GetLocalBounds(),
+      background_image_offset, host_desktop_type);
   if (view->height() >= toolbar_overlap) {
     // Draw the separator below bookmark bar; this is fading in/out.
     DetachableToolbarView::PaintHorizontalBorder(canvas, view, false,
@@ -248,10 +253,57 @@ bool ShouldSaveOrRestoreWindowPos() {
 // for the tab entering fullscreen).
 bool UseImmersiveFullscreenForUrl(const GURL& url) {
   bool is_browser_fullscreen = url.is_empty();
-  return is_browser_fullscreen && chrome::UseImmersiveFullscreen();
+  return is_browser_fullscreen &&
+         ImmersiveFullscreenConfiguration::UseImmersiveFullscreen();
 }
 
 }  // namespace
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Delegate implementation for BrowserViewLayout. Usually just forwards calls
+// into BrowserView.
+class BrowserViewLayoutDelegateImpl : public BrowserViewLayoutDelegate {
+ public:
+  explicit BrowserViewLayoutDelegateImpl(BrowserView* browser_view)
+      : browser_view_(browser_view) {}
+  virtual ~BrowserViewLayoutDelegateImpl() {}
+
+  // BrowserViewLayoutDelegate overrides:
+  virtual views::View* GetWindowSwitcherButton() const OVERRIDE {
+    return browser_view_->window_switcher_button();
+  }
+
+  virtual bool DownloadShelfNeedsLayout() const OVERRIDE {
+    DownloadShelfView* download_shelf = browser_view_->download_shelf_.get();
+    // Re-layout the shelf either if it is visible or if its close animation
+    // is currently running.
+    return download_shelf &&
+           (download_shelf->IsShowing() || download_shelf->IsClosing());
+  }
+
+  virtual bool IsTabStripVisible() const OVERRIDE {
+    return browser_view_->IsTabStripVisible();
+  }
+
+  virtual gfx::Rect GetBoundsForTabStrip(
+      views::View* tab_strip) const OVERRIDE {
+    return browser_view_->frame()->GetBoundsForTabStrip(tab_strip);
+  }
+
+  virtual bool IsToolbarVisible() const OVERRIDE {
+    return browser_view_->IsToolbarVisible();
+  }
+
+  virtual bool IsBookmarkBarVisible() const OVERRIDE {
+    return browser_view_->IsBookmarkBarVisible();
+  }
+
+ private:
+  BrowserView* browser_view_;
+
+  DISALLOW_COPY_AND_ASSIGN(BrowserViewLayoutDelegateImpl);
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // BookmarkExtensionBackground, private:
@@ -371,10 +423,12 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
     if (!toolbar_overlap)
       DetachableToolbarView::PaintHorizontalBorderForState(canvas, host_view_);
   } else {
-    DetachableToolbarView::PaintBackgroundAttachedMode(canvas, host_view_,
+    gfx::Point background_image_offset =
         browser_view_->OffsetPointForToolbarBackgroundImage(
-            gfx::Point(host_view_->GetMirroredX(), host_view_->y())),
-        browser_->host_desktop_type());
+            gfx::Point(host_view_->GetMirroredX(), host_view_->y()));
+    DetachableToolbarView::PaintBackgroundAttachedMode(canvas,
+        host_view_->GetThemeProvider(), host_view_->GetLocalBounds(),
+        background_image_offset, browser_->host_desktop_type());
     if (host_view_->height() >= toolbar_overlap)
       DetachableToolbarView::PaintHorizontalBorderForState(canvas, host_view_);
   }
@@ -442,15 +496,17 @@ BrowserView::~BrowserView() {
   // download views from the set of download observers (since the observed
   // downloads can be destroyed along with |browser_| and the observer
   // notifications will call back into deleted objects).
-  download_shelf_.reset();
   BrowserViewLayout* browser_view_layout = GetBrowserViewLayout();
   if (browser_view_layout)
     browser_view_layout->set_download_shelf(NULL);
+  download_shelf_.reset();
 
   // The TabStrip attaches a listener to the model. Make sure we shut down the
   // TabStrip first so that it can cleanly remove the listener.
   if (tabstrip_) {
     tabstrip_->parent()->RemoveChildView(tabstrip_);
+    if (browser_view_layout)
+      browser_view_layout->set_tab_strip(NULL);
     delete tabstrip_;
     tabstrip_ = NULL;
   }
@@ -853,22 +909,6 @@ bool BrowserView::IsFullscreen() const {
 
 bool BrowserView::IsFullscreenBubbleVisible() const {
   return fullscreen_bubble_ != NULL;
-}
-
-void BrowserView::FullScreenStateChanged() {
-  if (IsFullscreen()) {
-    if (fullscreen_request_.pending) {
-      fullscreen_request_.pending = false;
-      ProcessFullscreen(true, FOR_DESKTOP,
-                        fullscreen_request_.url,
-                        fullscreen_request_.bubble_type);
-    } else {
-      ProcessFullscreen(true, FOR_DESKTOP, GURL(),
-                        FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION);
-    }
-  } else {
-    ProcessFullscreen(false, FOR_DESKTOP, GURL(), FEB_TYPE_NONE);
-  }
 }
 
 #if defined(OS_WIN)
@@ -1705,10 +1745,8 @@ void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
     launcher_item_controller_->BrowserActivationStateChanged();
 #endif
 
-  if (active) {
+  if (active)
     BrowserList::SetLastActive(browser_.get());
-    browser_->OnWindowActivated();
-  }
 }
 
 void BrowserView::OnWindowBeginUserBoundsChange() {
@@ -1819,6 +1857,9 @@ void BrowserView::Layout() {
 
   views::View::Layout();
 
+  // TODO(jamescook): Why was this in the middle of layout code?
+  toolbar_->location_bar()->SetLocationEntryFocusable(IsToolbarVisible());
+
   // The status bubble position requires that all other layout finish first.
   LayoutStatusBubble();
 }
@@ -1879,7 +1920,39 @@ bool BrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// BrowserView, private
+// BrowserView, ImmersiveModeController::Delegate overrides:
+
+BookmarkBarView* BrowserView::GetBookmarkBar() {
+  return bookmark_bar_view_.get();
+}
+
+FullscreenController* BrowserView::GetFullscreenController() {
+  // Cannot be injected into ImmersiveModeController because it is constructed
+  // after BrowserView.
+  return browser()->fullscreen_controller();
+}
+
+void BrowserView::FocusLocationBar() {
+  SetFocusToLocationBar(false);
+}
+
+void BrowserView::FullscreenStateChanged() {
+  if (IsFullscreen()) {
+    ProcessFullscreen(true, FOR_DESKTOP, GURL(),
+                      FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION);
+  } else {
+    ProcessFullscreen(false, FOR_DESKTOP, GURL(), FEB_TYPE_NONE);
+  }
+}
+
+void BrowserView::SetImmersiveStyle(bool immersive) {
+  // Only the tab strip changes its painting style for immersive fullscreen.
+  if (tabstrip_)
+    tabstrip_->SetImmersiveStyle(immersive);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// BrowserView, InfoBarContainer::Delegate overrides:
 
 SkColor BrowserView::GetInfoBarSeparatorColor() const {
   // NOTE: Keep this in sync with ToolbarView::OnPaint()!
@@ -1927,9 +2000,6 @@ void BrowserView::InitViews() {
   // can get it later when all we have is a native view.
   GetWidget()->SetNativeWindowProperty(Profile::kProfileKey,
                                        browser_->profile());
-
-  // Initialize after |this| has a Widget and native window.
-  immersive_mode_controller_->Init(this);
 
   // Start a hung plugin window detector for this browser object (as long as
   // hang detection is not disabled).
@@ -1989,20 +2059,28 @@ void BrowserView::InitViews() {
   top_container_->AddChildView(toolbar_);
   toolbar_->Init();
 
-  overlay_container_ = new OverlayContainer(this);
+  overlay_container_ =
+      new OverlayContainer(this, immersive_mode_controller_.get());
   overlay_container_->SetVisible(false);
   AddChildView(overlay_container_);
 
   overlay_controller_.reset(
       new InstantOverlayControllerViews(browser(), overlay_container_));
 
+  immersive_mode_controller_->Init(this, GetWidget(), top_container_);
+
   BrowserViewLayout* browser_view_layout = new BrowserViewLayout;
-  browser_view_layout->Init(browser(),
+  browser_view_layout->Init(new BrowserViewLayoutDelegateImpl(this),
+                            browser(),
                             this,
+                            top_container_,
+                            tabstrip_,
+                            toolbar_,
                             infobar_container_,
                             contents_split_,
                             contents_container_,
-                            overlay_container_);
+                            overlay_container_,
+                            immersive_mode_controller_.get());
   SetLayoutManager(browser_view_layout);
 
 #if defined(OS_WIN) && !defined(USE_AURA)

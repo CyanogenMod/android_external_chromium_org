@@ -33,7 +33,6 @@
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_constants.h"
@@ -42,6 +41,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/host_zoom_map.h"
@@ -51,7 +51,7 @@
 #include "content/public/browser/web_contents.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
-#include "webkit/database/database_tracker.h"
+#include "webkit/browser/database/database_tracker.h"
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
@@ -94,7 +94,8 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(Profile* real_profile)
 }
 
 void OffTheRecordProfileImpl::Init() {
-  ProfileDependencyManager::GetInstance()->CreateProfileServices(this, false);
+  BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
+      this, false);
 
   extensions::ExtensionSystem::Get(this)->InitForOTRProfile();
 
@@ -140,7 +141,8 @@ OffTheRecordProfileImpl::~OffTheRecordProfileImpl() {
     io_data_.GetResourceContextNoInit());
 #endif
 
-  ProfileDependencyManager::GetInstance()->DestroyProfileServices(this);
+  BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
+      this);
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,

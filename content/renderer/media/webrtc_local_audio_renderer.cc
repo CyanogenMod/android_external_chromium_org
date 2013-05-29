@@ -12,6 +12,7 @@
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_bus.h"
+#include "media/base/audio_fifo.h"
 
 namespace content {
 
@@ -26,10 +27,6 @@ int WebRtcLocalAudioRenderer::Render(
   }
 
   TRACE_EVENT0("audio", "WebRtcLocalAudioRenderer::Render");
-
-  base::Time now = base::Time::Now();
-  total_render_time_ += now - last_render_time_;
-  last_render_time_ = now;
 
   DCHECK(loopback_fifo_.get() != NULL);
 
@@ -73,6 +70,10 @@ void WebRtcLocalAudioRenderer::CaptureData(const int16* audio_data,
                                     audio_source->frames(),
                                     sizeof(audio_data[0]));
       loopback_fifo_->Push(audio_source.get());
+
+      base::Time now = base::Time::Now();
+      total_render_time_ += now - last_render_time_;
+      last_render_time_ = now;
     } else {
       DVLOG(1) << "FIFO is full";
     }

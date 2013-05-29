@@ -79,7 +79,7 @@ class SyncServerStatusChecker : public net::URLFetcherDelegate {
     running_ =
         (source->GetStatus().status() == net::URLRequestStatus::SUCCESS &&
         source->GetResponseCode() == 200 && data.find("ok") == 0);
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   bool running() const { return running_; }
@@ -327,20 +327,6 @@ void SyncTest::InitializeInstance(int index) {
       GetProfile(index), Profile::EXPLICIT_ACCESS));
   ui_test_utils::WaitForTemplateURLServiceToLoad(
       TemplateURLServiceFactory::GetForProfile(GetProfile(index)));
-}
-
-void SyncTest::RestartSyncService(int index) {
-  DVLOG(1) << "Restarting profile sync service for profile " << index << ".";
-  delete clients_[index];
-  Profile* profile = GetProfile(index);
-  ProfileSyncService* service =
-      ProfileSyncServiceFactory::GetForProfile(profile);
-  service->ResetForTest();
-  clients_[index] = new ProfileSyncServiceHarness(profile,
-                                                  username_,
-                                                  password_);
-  service->Initialize();
-  GetClient(index)->AwaitSyncRestart();
 }
 
 bool SyncTest::SetupSync() {

@@ -15,6 +15,7 @@
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/login/login_state.h"
+#include "chromeos/network/network_handler.h"
 #include "net/cert/cert_database.h"
 #include "net/cert/x509_certificate.h"
 
@@ -49,11 +50,7 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
     DISALLOW_COPY_AND_ASSIGN(Observer);
   };
 
-  // Manage the global instance.
-  static void Initialize();
-  static void Shutdown();
-  static CertLoader* Get();
-  static bool IsInitialized();
+  virtual ~CertLoader();
 
   void AddObserver(CertLoader::Observer* observer);
   void RemoveObserver(CertLoader::Observer* observer);
@@ -78,11 +75,15 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
   const net::CertificateList& cert_list() const { return cert_list_; }
 
  private:
+  friend class NetworkHandler;
   CertLoader();
-  virtual ~CertLoader();
 
   void RequestCertificates();
 
+  // This is the cyclic chain of callbacks to initialize the TPM token and to
+  // kick off the update of the certificate list.
+  void InitializeTokenAndLoadCertificates();
+  void RetryTokenInitializationLater();
   void OnTpmIsEnabled(DBusMethodCallStatus call_status,
                       bool tpm_is_enabled);
   void OnPkcs11IsTpmTokenReady(DBusMethodCallStatus call_status,
@@ -90,11 +91,12 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
   void OnPkcs11GetTpmTokenInfo(DBusMethodCallStatus call_status,
                                const std::string& token_name,
                                const std::string& user_pin);
-  void InitializeTPMToken();
+  void InitializeNSSForTPMToken();
+
+  // These calls handle the updating of the certificate list after the TPM token
+  // was initialized.
   void StartLoadCertificates();
   void UpdateCertificates(net::CertificateList* cert_list);
-  void MaybeRetryRequestCertificates();
-  void RequestCertificatesTask();
 
   void NotifyCertificatesLoaded(bool initial_load);
 
@@ -108,17 +110,26 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
 
   ObserverList<Observer> observers_;
 
-  // Active request task for re-requests while waiting for TPM init.
-  base::Closure request_task_;
-
-  // Local state.
-  bool tpm_token_ready_;
   bool certificates_requested_;
   bool certificates_loaded_;
-  // The key store for the current user has been loaded. This flag is needed to
-  // ensure that the key store will not be loaded twice in the policy recovery
-  // "safe-mode".
-  bool key_store_loaded_;
+  bool certificates_update_required_;
+  bool certificates_update_running_;
+
+  // The states are traversed in this order but some might get omitted or never
+  // be left.
+  enum TPMTokenState {
+    TPM_STATE_UNKNOWN,
+    TPM_DISABLED,
+    TPM_ENABLED,
+    TPM_TOKEN_READY,
+    TPM_TOKEN_INFO_RECEIVED,
+    TPM_TOKEN_NSS_INITIALIZED,
+  };
+  TPMTokenState tpm_token_state_;
+
+  // The current request delay before the next attempt to initialize the
+  // TPM. Will be adapted after each attempt.
+  base::TimeDelta tpm_request_delay_;
 
   // Cached TPM token info.
   std::string tpm_token_name_;
@@ -130,8 +141,13 @@ class CHROMEOS_EXPORT CertLoader : public net::CertDatabase::Observer,
 
   base::ThreadChecker thread_checker_;
 
-  // TODO(stevenjb): Use multiple factories to track callback chains.
-  base::WeakPtrFactory<CertLoader> weak_ptr_factory_;
+  // This factory should be used only for callbacks during TPMToken
+  // initialization.
+  base::WeakPtrFactory<CertLoader> initialize_token_factory_;
+
+  // This factory should be used only for callbacks during updating the
+  // certificate list.
+  base::WeakPtrFactory<CertLoader> update_certificates_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CertLoader);
 };

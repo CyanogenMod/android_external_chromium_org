@@ -208,13 +208,33 @@ class TestStateController : public OutputConfigurator::StateController {
   void set_state(OutputState state) { state_ = state; }
 
   // OutputConfigurator::StateController overrides:
-  virtual OutputState GetStateForOutputs(
-      const OutputSnapshotList& outputs) const OVERRIDE { return state_; }
+  virtual OutputState GetStateForDisplayIds(
+      const std::vector<int64>& outputs) const OVERRIDE { return state_; }
 
  private:
   OutputState state_;
 
   DISALLOW_COPY_AND_ASSIGN(TestStateController);
+};
+
+class TestMirroringController
+    : public OutputConfigurator::SoftwareMirroringController {
+ public:
+  TestMirroringController() : software_mirroring_enabled_(false) {}
+  virtual ~TestMirroringController() {}
+
+  virtual void SetSoftwareMirroring(bool enabled) OVERRIDE {
+    software_mirroring_enabled_ = enabled;
+  }
+
+  bool software_mirroring_enabled() const {
+    return software_mirroring_enabled_;
+  }
+
+ private:
+  bool software_mirroring_enabled_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestMirroringController);
 };
 
 class OutputConfiguratorTest : public testing::Test {
@@ -228,6 +248,7 @@ class OutputConfiguratorTest : public testing::Test {
     configurator_.SetDelegateForTesting(
         scoped_ptr<OutputConfigurator::Delegate>(delegate_));
     configurator_.set_state_controller(&state_controller_);
+    configurator_.set_mirroring_controller(&mirroring_controller_);
 
     OutputConfigurator::OutputSnapshot* o = &outputs_[0];
     o->output = 1;
@@ -240,6 +261,7 @@ class OutputConfiguratorTest : public testing::Test {
     o->is_internal = true;
     o->is_aspect_preserving_scaling = true;
     o->touch_device_id = 0;
+    o->has_display_id = true;
 
     o = &outputs_[1];
     o->output = 2;
@@ -252,10 +274,15 @@ class OutputConfiguratorTest : public testing::Test {
     o->is_internal = false;
     o->is_aspect_preserving_scaling = true;
     o->touch_device_id = 0;
+    o->has_display_id = true;
 
     UpdateOutputs(2);
     delegate_->AddMode(kSmallModeId, kSmallModeWidth, kSmallModeHeight, false);
     delegate_->AddMode(kBigModeId, kBigModeWidth, kBigModeHeight, false);
+  }
+
+  void DisableNativeMirroring() {
+    outputs_[0].mirror_mode = outputs_[1].mirror_mode = 0L;
   }
 
  protected:
@@ -297,6 +324,7 @@ class OutputConfiguratorTest : public testing::Test {
 
   base::MessageLoop message_loop_;
   TestStateController state_controller_;
+  TestMirroringController mirroring_controller_;
   OutputConfigurator configurator_;
   TestDelegate* delegate_;  // not owned
   OutputConfigurator::TestApi test_api_;
@@ -308,19 +336,6 @@ class OutputConfiguratorTest : public testing::Test {
 };
 
 }  // namespace
-
-TEST_F(OutputConfiguratorTest, IsInternalOutputName) {
-  EXPECT_TRUE(OutputConfigurator::IsInternalOutputName("LVDS"));
-  EXPECT_TRUE(OutputConfigurator::IsInternalOutputName("eDP"));
-  EXPECT_TRUE(OutputConfigurator::IsInternalOutputName("LVDSxx"));
-  EXPECT_TRUE(OutputConfigurator::IsInternalOutputName("eDPzz"));
-
-  EXPECT_FALSE(OutputConfigurator::IsInternalOutputName("xyz"));
-  EXPECT_FALSE(OutputConfigurator::IsInternalOutputName("abcLVDS"));
-  EXPECT_FALSE(OutputConfigurator::IsInternalOutputName("cdeeDP"));
-  EXPECT_FALSE(OutputConfigurator::IsInternalOutputName("LVD"));
-  EXPECT_FALSE(OutputConfigurator::IsInternalOutputName("eD"));
-}
 
 TEST_F(OutputConfiguratorTest, ConnectSecondOutput) {
   InitWithSingleOutput();
@@ -342,6 +357,7 @@ TEST_F(OutputConfiguratorTest, ConnectSecondOutput) {
                             kBigModeId, outputs_[1].output).c_str(),
                         kUngrab, kProjectingOn, NULL),
             delegate_->GetActionsAndClear());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
 
   EXPECT_TRUE(configurator_.SetDisplayMode(STATE_DUAL_MIRROR));
   EXPECT_EQ(JoinActions(kGrab,
@@ -353,6 +369,7 @@ TEST_F(OutputConfiguratorTest, ConnectSecondOutput) {
                             outputs_[1].output).c_str(),
                         kUngrab, NULL),
             delegate_->GetActionsAndClear());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
 
   // Disconnect the second output.
   UpdateOutputs(1);
@@ -364,6 +381,42 @@ TEST_F(OutputConfiguratorTest, ConnectSecondOutput) {
                             outputs_[0].output).c_str(),
                         kUngrab, kProjectingOff, NULL),
             delegate_->GetActionsAndClear());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
+
+  // Software Mirroring
+  DisableNativeMirroring();
+  UpdateOutputs(2);
+  state_controller_.set_state(STATE_DUAL_EXTENDED);
+  EXPECT_TRUE(test_api_.SendOutputChangeEvents(true));
+  EXPECT_EQ(JoinActions(kUpdateXRandR, kGrab,
+                        GetFramebufferAction(kBigModeWidth, kDualHeight,
+                            outputs_[0].crtc, outputs_[1].crtc).c_str(),
+                        GetCrtcAction(outputs_[0].crtc, 0, 0, kSmallModeId,
+                            outputs_[0].output).c_str(),
+                        GetCrtcAction(outputs_[1].crtc, 0,
+                            kSmallModeHeight + OutputConfigurator::kVerticalGap,
+                            kBigModeId, outputs_[1].output).c_str(),
+                        kUngrab, kProjectingOn, NULL),
+            delegate_->GetActionsAndClear());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
+
+  EXPECT_TRUE(configurator_.SetDisplayMode(STATE_DUAL_MIRROR));
+  EXPECT_EQ(JoinActions(kGrab, kUngrab, NULL),
+            delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_DUAL_EXTENDED, configurator_.output_state());
+  EXPECT_TRUE(mirroring_controller_.software_mirroring_enabled());
+
+  // Disconnect the second output.
+  UpdateOutputs(1);
+  EXPECT_TRUE(test_api_.SendOutputChangeEvents(false));
+  EXPECT_EQ(JoinActions(kUpdateXRandR, kGrab,
+                        GetFramebufferAction(kSmallModeWidth, kSmallModeHeight,
+                            outputs_[0].crtc, 0).c_str(),
+                        GetCrtcAction(outputs_[0].crtc, 0, 0, kSmallModeId,
+                            outputs_[0].output).c_str(),
+                        kUngrab, kProjectingOff, NULL),
+            delegate_->GetActionsAndClear());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
 }
 
 TEST_F(OutputConfiguratorTest, SetDisplayPower) {
@@ -381,6 +434,7 @@ TEST_F(OutputConfiguratorTest, SetDisplayPower) {
                             outputs_[1].output).c_str(),
                         kUngrab, kProjectingOn, NULL),
             delegate_->GetActionsAndClear());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
 
   // Turning off the internal display should switch the external display to
   // its native mode.
@@ -395,6 +449,7 @@ TEST_F(OutputConfiguratorTest, SetDisplayPower) {
                             outputs_[1].output).c_str(),
                         kForceDPMS, kUngrab, NULL),
             delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_SINGLE, configurator_.output_state());
 
   // When all displays are turned off, the framebuffer should switch back
   // to the mirrored size.
@@ -409,6 +464,8 @@ TEST_F(OutputConfiguratorTest, SetDisplayPower) {
                             outputs_[1].output).c_str(),
                         kUngrab, NULL),
             delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_DUAL_MIRROR, configurator_.output_state());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
 
   // Turn all displays on and check that mirroring is still used.
   configurator_.SetDisplayPower(DISPLAY_POWER_ALL_ON,
@@ -422,6 +479,81 @@ TEST_F(OutputConfiguratorTest, SetDisplayPower) {
                             outputs_[1].output).c_str(),
                         kForceDPMS, kUngrab, NULL),
             delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_DUAL_MIRROR, configurator_.output_state());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
+
+  // Software Mirroring
+  DisableNativeMirroring();
+  UpdateOutputs(2);
+
+  const int kDualHeight =
+      kSmallModeHeight + OutputConfigurator::kVerticalGap + kBigModeHeight;
+
+  state_controller_.set_state(STATE_DUAL_MIRROR);
+  EXPECT_TRUE(test_api_.SendOutputChangeEvents(true));
+  // Move to extended
+  EXPECT_EQ(JoinActions(kUpdateXRandR, kGrab,
+                        GetFramebufferAction(kBigModeWidth, kDualHeight,
+                            outputs_[0].crtc, outputs_[1].crtc).c_str(),
+                        GetCrtcAction(outputs_[0].crtc, 0, 0, kSmallModeId,
+                            outputs_[0].output).c_str(),
+                        GetCrtcAction(outputs_[1].crtc, 0,
+                            kSmallModeHeight + OutputConfigurator::kVerticalGap,
+                            kBigModeId, outputs_[1].output).c_str(),
+                        kUngrab, kProjectingOn, NULL),
+            delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_DUAL_EXTENDED, configurator_.output_state());
+  EXPECT_TRUE(mirroring_controller_.software_mirroring_enabled());
+
+  // Turning off the internal display should switch the external display to
+  // its native mode.
+  configurator_.SetDisplayPower(DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
+                                OutputConfigurator::kSetDisplayPowerNoFlags);
+  EXPECT_EQ(JoinActions(kGrab,
+                        GetFramebufferAction(kBigModeWidth, kBigModeHeight,
+                            outputs_[0].crtc, outputs_[1].crtc).c_str(),
+                        GetCrtcAction(outputs_[0].crtc, 0, 0, 0,
+                            outputs_[0].output).c_str(),
+                        GetCrtcAction(outputs_[1].crtc, 0, 0, kBigModeId,
+                            outputs_[1].output).c_str(),
+                        kForceDPMS, kUngrab, NULL),
+            delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_SINGLE, configurator_.output_state());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
+
+  // When all displays are turned off, the framebuffer should switch back
+  // to the extended + software mirroring.
+  configurator_.SetDisplayPower(DISPLAY_POWER_ALL_OFF,
+                                OutputConfigurator::kSetDisplayPowerNoFlags);
+  EXPECT_EQ(JoinActions(kGrab,
+                        GetFramebufferAction(kBigModeWidth, kDualHeight,
+                            outputs_[0].crtc, outputs_[1].crtc).c_str(),
+                        GetCrtcAction(outputs_[0].crtc, 0, 0, 0,
+                            outputs_[0].output).c_str(),
+                        GetCrtcAction(outputs_[1].crtc, 0,
+                            kSmallModeHeight + OutputConfigurator::kVerticalGap,
+                            0, outputs_[1].output).c_str(),
+                        kUngrab, NULL),
+            delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_DUAL_EXTENDED, configurator_.output_state());
+  EXPECT_TRUE(mirroring_controller_.software_mirroring_enabled());
+
+  // Turn all displays on and check that mirroring is still used.
+  configurator_.SetDisplayPower(DISPLAY_POWER_ALL_ON,
+                                OutputConfigurator::kSetDisplayPowerNoFlags);
+  EXPECT_EQ(JoinActions(kGrab,
+                        GetFramebufferAction(kBigModeWidth, kDualHeight,
+                            outputs_[0].crtc, outputs_[1].crtc).c_str(),
+                        GetCrtcAction(outputs_[0].crtc, 0, 0, kSmallModeId,
+                            outputs_[0].output).c_str(),
+                        GetCrtcAction(outputs_[1].crtc, 0,
+                            kSmallModeHeight + OutputConfigurator::kVerticalGap,
+                            kBigModeId, outputs_[1].output).c_str(),
+                        kForceDPMS, kUngrab, NULL),
+            delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_DUAL_EXTENDED, configurator_.output_state());
+  EXPECT_TRUE(mirroring_controller_.software_mirroring_enabled());
+
 }
 
 TEST_F(OutputConfiguratorTest, SuspendAndResume) {
@@ -592,6 +724,23 @@ TEST_F(OutputConfiguratorTest, InvalidOutputStates) {
   EXPECT_FALSE(configurator_.SetDisplayMode(STATE_SINGLE));
   EXPECT_TRUE(configurator_.SetDisplayMode(STATE_DUAL_MIRROR));
   EXPECT_TRUE(configurator_.SetDisplayMode(STATE_DUAL_EXTENDED));
+}
+
+TEST_F(OutputConfiguratorTest, GetOutputStateForDisplays) {
+  outputs_[0].has_display_id = false;
+  UpdateOutputs(2);
+
+  configurator_.Init(false, 0);
+  configurator_.Start();
+
+  state_controller_.set_state(STATE_DUAL_MIRROR);
+  test_api_.SendOutputChangeEvents(true);
+  EXPECT_EQ(STATE_DUAL_EXTENDED, configurator_.output_state());
+
+  outputs_[0].has_display_id = true;
+  UpdateOutputs(2);
+  test_api_.SendOutputChangeEvents(true);
+  EXPECT_EQ(STATE_DUAL_MIRROR, configurator_.output_state());
 }
 
 }  // namespace chromeos

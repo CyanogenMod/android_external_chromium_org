@@ -4,7 +4,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "cc/test/fake_picture_pile_impl.h"
+#include "cc/test/skia_common.h"
 #include "skia/ext/lazy_pixel_ref.h"
+#include "skia/ext/refptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/core/SkShader.h"
@@ -12,61 +14,6 @@
 
 namespace cc {
 namespace {
-
-class TestPixelRef : public SkPixelRef {
- public:
-  // Pure virtual implementation.
-  TestPixelRef(int width, int height)
-    : pixels_(new char[4 * width * height]) {}
-  virtual SkFlattenable::Factory getFactory() OVERRIDE { return NULL; }
-  virtual void* onLockPixels(SkColorTable** color_table) OVERRIDE {
-      return pixels_.get();
-  }
-  virtual void onUnlockPixels() OVERRIDE {}
-  virtual SkPixelRef* deepCopy(
-      SkBitmap::Config config,
-      const SkIRect* subset) OVERRIDE {
-    this->ref();
-    return this;
-  }
- private:
-  scoped_ptr<char[]> pixels_;
-};
-
-class TestLazyPixelRef : public skia::LazyPixelRef {
- public:
-  // Pure virtual implementation.
-  TestLazyPixelRef(int width, int height)
-    : pixels_(new char[4 * width * height]) {}
-  virtual SkFlattenable::Factory getFactory() OVERRIDE { return NULL; }
-  virtual void* onLockPixels(SkColorTable** color_table) OVERRIDE {
-      return pixels_.get();
-  }
-  virtual void onUnlockPixels() OVERRIDE {}
-  virtual bool PrepareToDecode(const PrepareParams& params) OVERRIDE {
-    return true;
-  }
-  virtual SkPixelRef* deepCopy(
-      SkBitmap::Config config,
-      const SkIRect* subset) OVERRIDE {
-    this->ref();
-    return this;
-  }
-  virtual void Decode() OVERRIDE {}
- private:
-  scoped_ptr<char[]> pixels_;
-};
-
-void CreateBitmap(gfx::Size size, const char* uri, SkBitmap* bitmap) {
-  SkAutoTUnref<TestLazyPixelRef> lazy_pixel_ref;
-  lazy_pixel_ref.reset(new TestLazyPixelRef(size.width(), size.height()));
-  lazy_pixel_ref->setURI(uri);
-
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    size.width(),
-                    size.height());
-  bitmap->setPixelRef(lazy_pixel_ref);
-}
 
 TEST(PicturePileImplTest, AnalyzeIsSolidUnscaled) {
   gfx::Size tile_size(100, 100);
@@ -182,6 +129,21 @@ TEST(PicturePileImplTest, AnalyzeIsSolidScaled) {
   pile->AnalyzeInRect(gfx::Rect(35, 35, 10, 10), 0.1f, &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
+}
+
+TEST(PicturePileImplTest, AnalyzeIsSolidEmpty) {
+  gfx::Size tile_size(100, 100);
+  gfx::Size layer_bounds(400, 400);
+
+  scoped_refptr<FakePicturePileImpl> pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+  PicturePileImpl::Analysis analysis;
+  EXPECT_FALSE(analysis.is_solid_color);
+
+  pile->AnalyzeInRect(gfx::Rect(0, 0, 400, 400), 1.f, &analysis);
+
+  EXPECT_TRUE(analysis.is_solid_color);
+  EXPECT_EQ(analysis.solid_color, SkColorSetARGB(0, 0, 0, 0));
 }
 
 TEST(PicturePileImplTest, PixelRefIteratorEmpty) {

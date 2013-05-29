@@ -348,7 +348,7 @@ void DragDownload(const DownloadItem* download,
                   gfx::Image* icon,
                   gfx::NativeView view) {
   DCHECK(download);
-  DCHECK(download->IsComplete());
+  DCHECK_EQ(DownloadItem::COMPLETE, download->GetState());
 
   // Set up our OLE machinery
   ui::OSExchangeData data;
@@ -457,20 +457,6 @@ string16 GetProgressStatusText(DownloadItem* download) {
   }
   return l10n_util::GetStringFUTF16(IDS_DOWNLOAD_TAB_PROGRESS_STATUS,
                                     speed_text, amount, time_remaining);
-}
-
-base::FilePath GetCrDownloadPath(const base::FilePath& suggested_path) {
-  return base::FilePath(suggested_path.value() +
-                        FILE_PATH_LITERAL(".crdownload"));
-}
-
-bool IsSavableURL(const GURL& url) {
-  for (int i = 0; content::GetSavableSchemes()[i] != NULL; ++i) {
-    if (url.SchemeIs(content::GetSavableSchemes()[i])) {
-      return true;
-    }
-  }
-  return false;
 }
 
 void RecordShelfClose(int size, int in_progress, bool autoclose) {

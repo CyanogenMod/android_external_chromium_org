@@ -404,6 +404,30 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     return guest_web_contents;
   }
 
+  // Runs media_access/allow tests.
+  void MediaAccessAPIAllowTestHelper(const std::string& test_name);
+
+  // Runs media_access/deny tests, each of them are run separately otherwise
+  // they timeout (mostly on Windows).
+  void MediaAccessAPIDenyTestHelper(const std::string& test_name) {
+    ASSERT_TRUE(StartTestServer());  // For serving guest pages.
+    ExtensionTestMessageListener loaded_listener("loaded", false);
+    LoadAndLaunchPlatformApp("web_view/media_access/deny");
+    ASSERT_TRUE(loaded_listener.WaitUntilSatisfied());
+
+    content::WebContents* embedder_web_contents =
+        GetFirstShellWindowWebContents();
+    ASSERT_TRUE(embedder_web_contents);
+
+    ExtensionTestMessageListener test_run_listener("PASSED", false);
+    test_run_listener.AlsoListenForFailureMessage("FAILED");
+    EXPECT_TRUE(
+        content::ExecuteScript(
+            embedder_web_contents,
+            base::StringPrintf("startDenyTest('%s')", test_name.c_str())));
+    ASSERT_TRUE(test_run_listener.WaitUntilSatisfied());
+  }
+
  private:
   scoped_ptr<content::FakeSpeechRecognitionManager>
       fake_speech_recognition_manager_;
@@ -838,20 +862,32 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, CloseOnLoadcommit) {
   ASSERT_TRUE(done_test_listener.WaitUntilSatisfied());
 }
 
-// Disabled for being flaky: http://crbug.com/237985
-IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_MediaAccessAPIDeny) {
-  ASSERT_TRUE(StartTestServer());  // For serving guest pages.
-  ASSERT_TRUE(RunPlatformAppTest(
-      "platform_apps/web_view/media_access/deny")) << message_;
+IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIDeny_TestDeny) {
+  MediaAccessAPIDenyTestHelper("testDeny");
 }
 
-// Disabled for being flaky: http://crbug.com/238662
-#if defined(OS_CHROMEOS)
-#define MAYBE_MediaAccessAPIAllow DISABLED_MediaAccessAPIAllow
-#else
-#define MAYBE_MediaAccessAPIAllow MediaAccessAPIAllow
-#endif
-IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_MediaAccessAPIAllow) {
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       MediaAccessAPIDeny_TestDenyThenAllowThrows) {
+  MediaAccessAPIDenyTestHelper("testDenyThenAllowThrows");
+
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       MediaAccessAPIDeny_TestDenyWithPreventDefault) {
+  MediaAccessAPIDenyTestHelper("testDenyWithPreventDefault");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       MediaAccessAPIDeny_TestNoListenersImplyDeny) {
+  MediaAccessAPIDenyTestHelper("testNoListenersImplyDeny");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       MediaAccessAPIDeny_TestNoPreventDefaultImpliesDeny) {
+  MediaAccessAPIDenyTestHelper("testNoPreventDefaultImpliesDeny");
+}
+
+void WebViewTest::MediaAccessAPIAllowTestHelper(const std::string& test_name) {
   ASSERT_TRUE(StartTestServer());  // For serving guest pages.
   ExtensionTestMessageListener launched_listener("Launched", false);
   LoadAndLaunchPlatformApp("web_view/media_access/allow");
@@ -863,31 +899,40 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_MediaAccessAPIAllow) {
   MockWebContentsDelegate* mock = new MockWebContentsDelegate;
   embedder_web_contents->SetDelegate(mock);
 
-  const size_t num_tests = 4;
-  std::string test_names[num_tests] = {
-    "testAllow",
-    "testAllowAndThenDeny",
-    "testAllowTwice",
-    "testAllowAsync",
-  };
-  for (size_t i = 0; i < num_tests; ++i) {
-    ExtensionTestMessageListener done_listener("DoneMediaTest", false);
-    EXPECT_TRUE(
-        content::ExecuteScript(
-            embedder_web_contents,
-            base::StringPrintf("startAllowTest('%s')",
-                               test_names[i].c_str())));
-    done_listener.WaitUntilSatisfied();
+  ExtensionTestMessageListener done_listener("DoneMediaTest.PASSED", false);
+  done_listener.AlsoListenForFailureMessage("DoneMediaTest.FAILED");
+  EXPECT_TRUE(
+      content::ExecuteScript(
+          embedder_web_contents,
+          base::StringPrintf("startAllowTest('%s')",
+                             test_name.c_str())));
+  ASSERT_TRUE(done_listener.WaitUntilSatisfied());
 
-    std::string result;
-    EXPECT_TRUE(
-        content::ExecuteScriptAndExtractString(
-            embedder_web_contents,
-            "window.domAutomationController.send(getTestStatus())", &result));
-    ASSERT_EQ(std::string("PASSED"), result);
+  mock->WaitForSetMediaPermission();
+}
 
-    mock->WaitForSetMediaPermission();
-  }
+IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIAllow_TestAllow) {
+  MediaAccessAPIAllowTestHelper("testAllow");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIAllow_TestAllowAndThenDeny) {
+  MediaAccessAPIAllowTestHelper("testAllowAndThenDeny");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIAllow_TestAllowTwice) {
+  MediaAccessAPIAllowTestHelper("testAllowTwice");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIAllow_TestAllowAsync) {
+  MediaAccessAPIAllowTestHelper("testAllowAsync");
+}
+
+// Checks that window.screenX/screenY/screenLeft/screenTop works correctly for
+// guests.
+IN_PROC_BROWSER_TEST_F(WebViewTest, ScreenCoordinates) {
+  ASSERT_TRUE(StartTestServer());  // For serving guest pages.
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/screen_coordinates"))
+      << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognition) {

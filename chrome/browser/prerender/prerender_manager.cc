@@ -59,12 +59,6 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#endif
-
 using content::BrowserThread;
 using content::RenderViewHost;
 using content::SessionStorageNamespace;
@@ -162,7 +156,7 @@ class PrerenderManager::OnCloseWebContentsDeleter
       : manager_(manager),
         tab_(tab) {
     tab_->SetDelegate(this);
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
+    base::MessageLoop::current()->PostDelayedTask(FROM_HERE,
         base::Bind(&OnCloseWebContentsDeleter::ScheduleWebContentsForDeletion,
                    AsWeakPtr(), true),
         base::TimeDelta::FromSeconds(kDeleteWithExtremePrejudiceSeconds));
@@ -283,8 +277,8 @@ PrerenderManager::PrerenderManager(Profile* profile,
 }
 
 PrerenderManager::~PrerenderManager() {
-  // The earlier call to ProfileKeyedService::Shutdown() should have emptied
-  // these vectors already.
+  // The earlier call to BrowserContextKeyedService::Shutdown() should have
+  // emptied these vectors already.
   DCHECK(active_prerenders_.empty());
   DCHECK(to_delete_prerenders_.empty());
 }
@@ -1064,18 +1058,6 @@ PrerenderHandle* PrerenderManager::AddPrerender(
   if (!IsEnabled())
     return NULL;
 
-#if defined(ENABLE_MANAGED_USERS)
-  // Check if the url would be blocked. If yes, don't add the prerender.
-  ManagedUserService* service =
-      ManagedUserServiceFactory::GetForProfile(profile_);
-  if (service->ProfileIsManaged()) {
-    ManagedModeURLFilter* filter = service->GetURLFilterForUIThread();
-    if (filter->GetFilteringBehaviorForURL(url_arg) ==
-        ManagedModeURLFilter::BLOCK)
-      return NULL;
-  }
-#endif
-
   if ((origin == ORIGIN_LINK_REL_PRERENDER_CROSSDOMAIN ||
        origin == ORIGIN_LINK_REL_PRERENDER_SAMEDOMAIN) &&
       IsGoogleSearchResultURL(referrer.url)) {
@@ -1205,7 +1187,7 @@ void PrerenderManager::PeriodicCleanup() {
 
 void PrerenderManager::PostCleanupTask() {
   DCHECK(CalledOnValidThread());
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&PrerenderManager::PeriodicCleanup, AsWeakPtr()));
 }

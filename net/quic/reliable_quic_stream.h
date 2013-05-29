@@ -14,6 +14,7 @@
 #include "base/strings/string_piece.h"
 #include "net/base/iovec.h"
 #include "net/base/net_export.h"
+#include "net/quic/quic_spdy_compressor.h"
 #include "net/quic/quic_spdy_decompressor.h"
 #include "net/quic/quic_stream_sequencer.h"
 
@@ -76,6 +77,7 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   virtual uint32 ProcessData(const char* data, uint32 data_len) = 0;
 
   virtual bool OnDecompressedData(base::StringPiece data) OVERRIDE;
+  virtual void OnDecompressionError() OVERRIDE;
 
   // Called to close the stream from this end.
   virtual void Close(QuicRstStreamErrorCode error);
@@ -108,6 +110,8 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
 
   Visitor* visitor() { return visitor_; }
   void set_visitor(Visitor* visitor) { visitor_ = visitor; }
+
+  QuicSpdyCompressor* compressor();
 
  protected:
   // Returns a pair with the number of bytes consumed from data, and a boolean

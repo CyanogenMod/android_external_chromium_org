@@ -33,6 +33,18 @@
     "dependencies": ["permission:bookmarks"],
     "contexts": ["blessed_extension"]
   },
+  "bookmarks.export": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "contexts": ["blessed_extension"],
+    "location": "component"
+  },
+  "bookmarks.import": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "contexts": ["blessed_extension"],
+    "location": "component"
+  },
   "downloadsInternal": {
     "internal": true,
     "channel": "stable",
@@ -103,6 +115,11 @@
   },
   "runtime.sendMessage": {
     "channel": "stable",
+    "extension_types": ["extension", "packaged_app", "platform_app"],
+    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+  },
+  "runtime.setUninstallUrl": {
+    "channel": "dev",
     "extension_types": ["extension", "packaged_app", "platform_app"],
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },

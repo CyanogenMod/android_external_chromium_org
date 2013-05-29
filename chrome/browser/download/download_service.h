@@ -11,7 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 class ChromeDownloadManagerDelegate;
 class DownloadHistory;
@@ -24,7 +24,7 @@ class DownloadManager;
 }
 
 // Owning class for ChromeDownloadManagerDelegate.
-class DownloadService : public ProfileKeyedService {
+class DownloadService : public BrowserContextKeyedService {
  public:
   explicit DownloadService(Profile* profile);
   virtual ~DownloadService();

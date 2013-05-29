@@ -200,8 +200,7 @@ IN_PROC_BROWSER_TEST_F(LoginGuestTest, CursorShown) {
 // Verifies the cursor is hidden at startup on login screen.
 IN_PROC_BROWSER_TEST_F(LoginCursorTest, CursorHidden) {
   // Login screen needs to be shown explicitly when running test.
-  chromeos::ShowLoginWizard(chromeos::WizardController::kLoginScreenName,
-                            gfx::Size());
+  chromeos::ShowLoginWizard(chromeos::WizardController::kLoginScreenName);
 
   // Cursor should be hidden at startup
   EXPECT_FALSE(ash::Shell::GetInstance()->cursor_manager()->IsCursorVisible());
@@ -210,7 +209,7 @@ IN_PROC_BROWSER_TEST_F(LoginCursorTest, CursorHidden) {
   EXPECT_TRUE(ui_test_utils::SendMouseMoveSync(gfx::Point()));
   EXPECT_TRUE(ash::Shell::GetInstance()->cursor_manager()->IsCursorVisible());
 
-  MessageLoop::current()->DeleteSoon(
+  base::MessageLoop::current()->DeleteSoon(
       FROM_HERE, chromeos::LoginDisplayHostImpl::default_host());
 }
 

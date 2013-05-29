@@ -75,12 +75,11 @@ bool OutputSurface::ForcedDrawToSoftwareDevice() const {
 bool OutputSurface::BindToClient(
     cc::OutputSurfaceClient* client) {
   DCHECK(client);
+  if (context3d_ && !context3d_->makeContextCurrent())
+    return false;
   client_ = client;
   if (!context3d_)
     return true;
-  if (!context3d_->makeContextCurrent())
-    return false;
-
   string extensions_string = UTF16ToASCII(context3d_->getString(GL_EXTENSIONS));
   vector<string> extensions_list;
   base::SplitString(extensions_string, ' ', &extensions_list);
@@ -112,9 +111,9 @@ void OutputSurface::DiscardBackbuffer() {
     context3d_->discardBackbufferCHROMIUM();
 }
 
-void OutputSurface::Reshape(gfx::Size size) {
+void OutputSurface::Reshape(gfx::Size size, float scale_factor) {
   DCHECK(context3d_);
-  context3d_->reshape(size.width(), size.height());
+  context3d_->reshapeWithScaleFactor(size.width(), size.height(), scale_factor);
 }
 
 void OutputSurface::BindFramebuffer() {
@@ -122,7 +121,7 @@ void OutputSurface::BindFramebuffer() {
   context3d_->bindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void OutputSurface::SwapBuffers(const LatencyInfo& latency_info) {
+void OutputSurface::SwapBuffers(const ui::LatencyInfo& latency_info) {
   DCHECK(context3d_);
   // Note that currently this has the same effect as SwapBuffers; we should
   // consider exposing a different entry point on WebGraphicsContext3D.
@@ -130,7 +129,7 @@ void OutputSurface::SwapBuffers(const LatencyInfo& latency_info) {
 }
 
 void OutputSurface::PostSubBuffer(gfx::Rect rect,
-                                  const LatencyInfo& latency_info) {
+                                  const ui::LatencyInfo& latency_info) {
   DCHECK(context3d_);
   context3d_->postSubBufferCHROMIUM(
       rect.x(), rect.y(), rect.width(), rect.height());

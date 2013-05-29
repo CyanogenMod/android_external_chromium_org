@@ -9,9 +9,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
-
-class GURL;
 
 namespace base {
 class FilePath;
@@ -19,7 +18,6 @@ class FilePath;
 
 namespace drive {
 
-class FileSystem;
 class JobScheduler;
 class ResourceEntry;
 
@@ -37,52 +35,56 @@ class OperationObserver;
 // metadata to reflect the new state.
 class RemoveOperation {
  public:
-  RemoveOperation(JobScheduler* job_scheduler,
-                  internal::FileCache* cache,
+  RemoveOperation(OperationObserver* observer,
+                  JobScheduler* scheduler,
                   internal::ResourceMetadata* metadata,
-                  OperationObserver* observer);
-  virtual ~RemoveOperation();
+                  internal::FileCache* cache);
+  ~RemoveOperation();
 
-  // Perform the remove operation on the file at drive path |file_path|.
-  // Invokes |callback| when finished with the result of the operation.
+  // Removes the resource at |path|. If |path| is a directory and |is_recursive|
+  // is set, it recursively removes all the descendants. If |is_recursive| is
+  // not set, it succeeds only when the directory is empty.
+  //
   // |callback| must not be null.
-  virtual void Remove(const base::FilePath& file_path,
-                      bool is_recursive,
-                      const FileOperationCallback& callback);
+  void Remove(const base::FilePath& path,
+              bool is_recursive,
+              const FileOperationCallback& callback);
 
  private:
   // Part of Remove(). Called after GetResourceEntryByPath() is complete.
-  // |callback| must not be null.
-  void RemoveAfterGetResourceEntry(
-      const FileOperationCallback& callback,
-      FileError error,
-      scoped_ptr<ResourceEntry> entry);
+  void RemoveAfterGetResourceEntry(const base::FilePath& path,
+                                   bool is_recursive,
+                                   const FileOperationCallback& callback,
+                                   FileError error,
+                                   scoped_ptr<ResourceEntry> entry);
 
-  // Callback for DriveServiceInterface::DeleteResource. Removes the entry with
-  // |resource_id| from the local snapshot of the filesystem and the cache.
-  // |callback| must not be null.
-  void RemoveResourceLocally(
-      const FileOperationCallback& callback,
-      const std::string& resource_id,
-      google_apis::GDataErrorCode status);
+  // Part of Remove(). Called when is_recursive = false and trying to remove
+  // a directory. In this case the emptiness of directory must be checked.
+  void RemoveAfterReadDirectory(const std::string& resource_id,
+                                const FileOperationCallback& callback,
+                                FileError error,
+                                scoped_ptr<ResourceEntryVector> entries);
 
-  // Sends notification for directory changes. Notifies of directory changes,
-  // and runs |callback| with |error|. |callback| must not be null.
-  void NotifyDirectoryChanged(
-      const FileOperationCallback& callback,
-      FileError error,
-      const base::FilePath& directory_path);
+  // Part of Remove(). Called after server-side removal is done. Removes the
+  // entry with |resource_id| from the resource metadata and the cache.
+  void RemoveResourceLocally(const FileOperationCallback& callback,
+                             const std::string& resource_id,
+                             google_apis::GDataErrorCode status);
 
-  JobScheduler* job_scheduler_;
-  internal::FileCache* cache_;
-  internal::ResourceMetadata* metadata_;
+  // Part of Remove(). Sends notification for directory changes, and runs
+  // |callback| with |error|.
+  void NotifyDirectoryChanged(const FileOperationCallback& callback,
+                              FileError error,
+                              const base::FilePath& directory_path);
+
   OperationObserver* observer_;
+  JobScheduler* scheduler_;
+  internal::ResourceMetadata* metadata_;
+  internal::FileCache* cache_;
 
-  // WeakPtrFactory bound to the UI thread.
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate the weak pointers before any other members are destroyed.
   base::WeakPtrFactory<RemoveOperation> weak_ptr_factory_;
-
   DISALLOW_COPY_AND_ASSIGN(RemoveOperation);
 };
 

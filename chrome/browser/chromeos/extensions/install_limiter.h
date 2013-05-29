@@ -15,7 +15,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/timer.h"
 #include "chrome/browser/extensions/crx_installer.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -24,7 +24,7 @@ namespace extensions {
 // InstallLimiter defers big app installs after all small app installs and then
 // runs big app installs one by one. This improves first-time login experience.
 // See http://crbug.com/166296
-class InstallLimiter : public ProfileKeyedService,
+class InstallLimiter : public BrowserContextKeyedService,
                        public content::NotificationObserver,
                        public base::SupportsWeakPtr<InstallLimiter> {
  public:

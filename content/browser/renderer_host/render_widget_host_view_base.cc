@@ -457,15 +457,10 @@ void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
       current_device_scale_factor_ == display.device_scale_factor()) {
     return;
   }
-  bool device_scale_factor_changed =
-      current_device_scale_factor_ != display.device_scale_factor();
   current_display_area_ = display.work_area();
   current_device_scale_factor_ = display.device_scale_factor();
-  if (impl) {
+  if (impl)
     impl->NotifyScreenInfoChanged();
-    if (device_scale_factor_changed)
-      impl->WasResized();
-  }
 }
 
 SmoothScrollGesture* RenderWidgetHostViewBase::CreateSmoothScrollGesture(
@@ -513,6 +508,11 @@ void RenderWidgetHostViewBase::EndFrameSubscription() {
   RenderProcessHostImpl* render_process_host =
       static_cast<RenderProcessHostImpl*>(impl->GetProcess());
   render_process_host->EndFrameSubscription(impl->GetRoutingID());
+}
+
+void RenderWidgetHostViewBase::OnOverscrolled(
+    gfx::Vector2dF accumulated_overscroll,
+    gfx::Vector2dF current_fling_velocity) {
 }
 
 }  // namespace content

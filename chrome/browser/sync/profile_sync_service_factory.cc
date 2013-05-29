@@ -14,7 +14,6 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
@@ -27,6 +26,7 @@
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 // static
 ProfileSyncServiceFactory* ProfileSyncServiceFactory::GetInstance() {
@@ -39,17 +39,14 @@ ProfileSyncService* ProfileSyncServiceFactory::GetForProfile(
   if (!ProfileSyncService::IsSyncEnabled())
     return NULL;
 
-  // Do not start sync on the import process.
-  if (ProfileManager::IsImportProcess(*CommandLine::ForCurrentProcess()))
-    return NULL;
-
   return static_cast<ProfileSyncService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 ProfileSyncServiceFactory::ProfileSyncServiceFactory()
-    : ProfileKeyedServiceFactory("ProfileSyncService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "ProfileSyncService",
+        BrowserContextDependencyManager::GetInstance()) {
 
   // The ProfileSyncService depends on various SyncableServices being around
   // when it is shut down.  Specify those dependencies here to build the proper
@@ -68,10 +65,10 @@ ProfileSyncServiceFactory::ProfileSyncServiceFactory()
   DependsOn(BookmarkModelFactory::GetInstance());
   DependsOn(AboutSigninInternalsFactory::GetInstance());
 
-  // The following have not been converted to ProfileKeyedServices yet, and for
-  // now they are explicitly destroyed after the ProfileDependencyManager is
-  // told to DestroyProfileServices, so they will be around when the
-  // ProfileSyncService is destroyed.
+  // The following have not been converted to BrowserContextKeyedServices yet,
+  // and for now they are explicitly destroyed after the
+  // BrowserContextDependencyManager is told to DestroyBrowserContextServices,
+  // so they will be around when the ProfileSyncService is destroyed.
 
   // DependsOn(FaviconServiceFactory::GetInstance());
 }
@@ -79,7 +76,7 @@ ProfileSyncServiceFactory::ProfileSyncServiceFactory()
 ProfileSyncServiceFactory::~ProfileSyncServiceFactory() {
 }
 
-ProfileKeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
+BrowserContextKeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
 
@@ -113,5 +110,5 @@ ProfileKeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
 
 // static
 bool ProfileSyncServiceFactory::HasProfileSyncService(Profile* profile) {
-  return GetInstance()->GetServiceForProfile(profile, false) != NULL;
+  return GetInstance()->GetServiceForBrowserContext(profile, false) != NULL;
 }

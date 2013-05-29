@@ -17,6 +17,7 @@
 #include "base/message_pump_aurax11.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
+#include "chromeos/display/output_util.h"
 
 namespace chromeos {
 
@@ -28,8 +29,7 @@ const float kDpi96 = 96.0;
 const float kPixelsToMmScale = kMmInInch / kDpi96;
 
 bool IsInternalOutput(const XRROutputInfo* output_info) {
-  return OutputConfigurator::IsInternalOutputName(
-      std::string(output_info->name));
+  return IsInternalOutputName(std::string(output_info->name));
 }
 
 RRMode GetOutputNativeMode(const XRROutputInfo* output_info) {
@@ -121,6 +121,8 @@ RealOutputConfiguratorDelegate::GetOutputs() {
     if (is_connected) {
       OutputConfigurator::OutputSnapshot to_populate;
       to_populate.output = this_id;
+      to_populate.has_display_id =
+          GetDisplayId(this_id, i, &to_populate.display_id);
       (outputs.empty() ? one_info : two_info) = output_info;
 
       // Now, look up the current CRTC and any related info.
@@ -147,12 +149,11 @@ RealOutputConfiguratorDelegate::GetOutputs() {
       to_populate.is_aspect_preserving_scaling =
           IsOutputAspectPreservingScaling(this_id);
       to_populate.touch_device_id = None;
-      to_populate.index = i;
 
-      VLOG(1) << "Found display #" << outputs.size()
-              << " with output " << to_populate.output
-              << " crtc " << to_populate.crtc
-              << " current mode " << to_populate.current_mode;
+      VLOG(2) << "Found display " << outputs.size() << ":"
+              << " output=" << to_populate.output
+              << " crtc=" << to_populate.crtc
+              << " current_mode=" << to_populate.current_mode;
       outputs.push_back(to_populate);
     } else {
       XRRFreeOutputInfo(output_info);
@@ -234,12 +235,12 @@ bool RealOutputConfiguratorDelegate::GetModeDetails(RRMode mode,
 
 void RealOutputConfiguratorDelegate::ConfigureCrtc(
     OutputConfigurator::CrtcConfig* config) {
-  VLOG(1) << "ConfigureCrtc crtc: " << config->crtc
-          << ", mode " << config->mode
-          << ", output " << config->output
-          << ", x " << config->x
-          << ", y " << config->y;
   CHECK(screen_) << "Server not grabbed";
+  VLOG(1) << "ConfigureCrtc: crtc=" << config->crtc
+          << " mode=" << config->mode
+          << " output=" << config->output
+          << " x=" << config->x
+          << " y=" << config->y;
 
   RROutput* outputs = NULL;
   int num_outputs = 0;
@@ -267,8 +268,8 @@ void RealOutputConfiguratorDelegate::CreateFrameBuffer(
   CHECK(screen_) << "Server not grabbed";
   int current_width = DisplayWidth(display_, DefaultScreen(display_));
   int current_height = DisplayHeight(display_, DefaultScreen(display_));
-  VLOG(1) << "CreateFrameBuffer " << width << " x " << height
-          << " (current=" << current_width << " x " << current_height << ")";
+  VLOG(1) << "CreateFrameBuffer: new=" << width << "x" << height
+          << " current=" << current_width << "x" << current_height;
   if (width ==  current_width && height == current_height)
     return;
 
@@ -281,10 +282,12 @@ void RealOutputConfiguratorDelegate::CreateFrameBuffer(
 void RealOutputConfiguratorDelegate::ConfigureCTM(
     int touch_device_id,
     const OutputConfigurator::CoordinateTransformation& ctm) {
-  int ndevices;
+  VLOG(1) << "ConfigureCTM: id=" << touch_device_id
+          << " scale=" << ctm.x_scale << "x" << ctm.y_scale
+          << " offset=(" << ctm.x_offset << ", " << ctm.y_offset << ")";
+  int ndevices = 0;
   XIDeviceInfo* info = XIQueryDevice(display_, touch_device_id, &ndevices);
-  Atom prop = XInternAtom(
-      display_, "Coordinate Transformation Matrix", False);
+  Atom prop = XInternAtom(display_, "Coordinate Transformation Matrix", False);
   Atom float_atom = XInternAtom(display_, "FLOAT", False);
   if (ndevices == 1 && prop != None && float_atom != None) {
     Atom type;
@@ -549,7 +552,7 @@ void RealOutputConfiguratorDelegate::GetTouchscreens(
             std::abs(native_mode_height - height) <= 1.0) {
           (*outputs)[k].touch_device_id = info[i].deviceid;
 
-          VLOG(1) << "Found touchscreen for output #" << k
+          VLOG(2) << "Found touchscreen for output #" << k
                   << " id " << (*outputs)[k].touch_device_id
                   << " width " << width
                   << " height " << height;
@@ -557,7 +560,7 @@ void RealOutputConfiguratorDelegate::GetTouchscreens(
         }
       }
 
-      VLOG_IF(1, k == outputs->size())
+      VLOG_IF(2, k == outputs->size())
           << "No matching output - ignoring touchscreen"
           << " id " << info[i].deviceid
           << " width " << width

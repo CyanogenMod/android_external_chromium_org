@@ -4,9 +4,12 @@
 
 #import "chrome/browser/ui/cocoa/autofill/autofill_main_container.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "chrome/browser/ui/cocoa/autofill/autofill_dialog_constants.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_button.h"
-#import "chrome/browser/ui/cocoa/autofill/autofill_account_chooser.h"
+#import "chrome/browser/ui/cocoa/autofill/autofill_details_container.h"
 #import "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #include "grit/generated_resources.h"
 #import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
@@ -16,7 +19,6 @@
 @interface AutofillMainContainer (Private)
 - (void)buildWindowButtonsForFrame:(NSRect)frame;
 - (void)layoutButtons;
-- (void)closeSheet:(id)sender;
 @end
 
 @implementation AutofillMainContainer
@@ -31,23 +33,39 @@
 }
 
 - (void)loadView {
-  const CGFloat kAccountChooserHeight = 20.0;
-  NSRect accountChooserFrame = NSMakeRect(
-      0, -kAccountChooserHeight,
-      0, kAccountChooserHeight);
-  accountChooser_.reset([[AutofillAccountChooser alloc]
-                            initWithFrame:accountChooserFrame
-                                controller:controller_]);
-  [accountChooser_ setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
-
   [self buildWindowButtonsForFrame:NSZeroRect];
 
   scoped_nsobject<NSView> view([[NSView alloc] initWithFrame:NSZeroRect]);
   [view setAutoresizesSubviews:YES];
-  [view setSubviews:@[accountChooser_, buttonContainer_]];
-  self.view = view;
+  [view setSubviews:@[buttonContainer_]];
+  [self setView:view];
 
   [self layoutButtons];
+
+  detailsContainer_.reset(
+      [[AutofillDetailsContainer alloc] initWithController:controller_]);
+  NSSize frameSize = [[detailsContainer_ view] frame].size;
+  [[detailsContainer_ view] setFrameOrigin:
+      NSMakePoint(0, NSHeight([buttonContainer_ frame]))];
+  frameSize.height += NSHeight([buttonContainer_ frame]);
+  [[self view] setFrameSize:frameSize];
+  [[self view] addSubview:[detailsContainer_ view]];
+}
+
+- (NSSize)preferredSize {
+  // The buttons never change size, so rely on container.
+  NSSize buttonSize = [buttonContainer_ frame].size;
+  NSSize detailsSize = [detailsContainer_ preferredSize];
+
+  NSSize size = NSMakeSize(std::max(buttonSize.width, detailsSize.width),
+                           buttonSize.height + detailsSize.height);
+
+  return size;
+}
+
+- (void)performLayout {
+  // Assume that the frame for the container is set already.
+  [detailsContainer_ performLayout];
 }
 
 - (void)buildWindowButtonsForFrame:(NSRect)frame {
@@ -63,8 +81,8 @@
       [[ConstrainedWindowButton alloc] initWithFrame:NSZeroRect]);
   [button setTitle:l10n_util::GetNSStringWithFixup(IDS_CANCEL)];
   [button setKeyEquivalent:kKeyEquivalentEscape];
-  [button setTarget:self];
-  [button setAction:@selector(closeSheet:)];
+  [button setTarget:target_];
+  [button setAction:@selector(cancel:)];
   [button sizeToFit];
   [buttonContainer_ addSubview:button];
 
@@ -74,8 +92,8 @@
   [button  setTitle:l10n_util::GetNSStringWithFixup(
        IDS_AUTOFILL_DIALOG_SUBMIT_BUTTON)];
   [button setKeyEquivalent:kKeyEquivalentReturn];
-  [button setTarget:self];
-  [button setAction:@selector(closeSheet:)];
+  [button setTarget:target_];
+  [button setAction:@selector(accept:)];
   [button sizeToFit];
   [buttonContainer_ addSubview:button];
 
@@ -92,14 +110,12 @@
   [layoutTweaker tweakUI:buttonContainer_];
 }
 
-- (AutofillAccountChooser*)accountChooser {
-  return accountChooser_;
+- (AutofillSectionContainer*)sectionForId:(autofill::DialogSection)section {
+  return [detailsContainer_ sectionForId:section];
 }
 
-- (void)closeSheet:(id)sender {
-  [target_ closeSheet:sender];
+- (void)modelChanged {
+  [detailsContainer_ modelChanged];
 }
-
 
 @end
-

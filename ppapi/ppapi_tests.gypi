@@ -101,6 +101,8 @@
         'proxy/resource_message_test_sink.h',
         'shared_impl/test_globals.cc',
         'shared_impl/test_globals.h',
+        'shared_impl/unittest_utils.cc',
+        'shared_impl/unittest_utils.h',
       ],
     },
 
@@ -120,6 +122,14 @@
       'sources': [
         'proxy/ppapi_perftests.cc',
         'proxy/ppp_messaging_proxy_perftest.cc',
+      ],
+      'conditions': [
+        # See http://crbug.com/162998#c4 for why this is needed.
+        ['OS=="linux" and linux_use_tcmalloc==1', {
+          'dependencies': [
+            '../base/allocator/allocator.gyp:allocator',
+          ],
+        }],
       ],
     },
     {
@@ -458,6 +468,16 @@
       ],
       'sources': [
         'examples/video_capture/video_capture.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_video_effects',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/video_effects/video_effects.cc',
       ],
     },
     {

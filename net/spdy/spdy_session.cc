@@ -54,19 +54,19 @@ const SpdyStreamId kFirstStreamId = 1;
 // Minimum seconds that unclaimed pushed streams will be kept in memory.
 const int kMinPushedStreamLifetimeSeconds = 300;
 
-int NPNToSpdyVersion(NextProto next_proto) {
+SpdyMajorVersion NPNToSpdyVersion(NextProto next_proto) {
   switch (next_proto) {
     case kProtoSPDY2:
-      return kSpdyVersion2;
+      return SPDY2;
     case kProtoSPDY3:
     case kProtoSPDY31:
-      return kSpdyVersion3;
-    case kProtoSPDY4a1:
-      return kSpdyVersion4;
+      return SPDY3;
+    case kProtoSPDY4a2:
+      return SPDY4;
     default:
       NOTREACHED();
   }
-  return kSpdyVersion2;
+  return SPDY2;
 }
 
 base::Value* NetLogSpdySynCallback(const SpdyHeaderBlock* headers,
@@ -238,6 +238,7 @@ SpdyStreamRequest::~SpdyStreamRequest() {
 }
 
 int SpdyStreamRequest::StartRequest(
+    SpdyStreamType type,
     const scoped_refptr<SpdySession>& session,
     const GURL& url,
     RequestPriority priority,
@@ -248,6 +249,7 @@ int SpdyStreamRequest::StartRequest(
   DCHECK(!stream_);
   DCHECK(callback_.is_null());
 
+  type_ = type;
   session_ = session;
   url_ = url;
   priority_ = priority;
@@ -300,6 +302,7 @@ void SpdyStreamRequest::OnRequestCompleteFailure(int rv) {
 }
 
 void SpdyStreamRequest::Reset() {
+  type_ = SPDY_BIDIRECTIONAL_STREAM;
   session_ = NULL;
   stream_.reset();
   url_ = GURL();
@@ -308,7 +311,7 @@ void SpdyStreamRequest::Reset() {
   callback_.Reset();
 }
 
-SpdySession::SpdySession(const HostPortProxyPair& host_port_proxy_pair,
+SpdySession::SpdySession(const SpdySessionKey& spdy_session_key,
                          SpdySessionPool* spdy_session_pool,
                          HttpServerProperties* http_server_properties,
                          bool verify_domain_authentication,
@@ -324,7 +327,7 @@ SpdySession::SpdySession(const HostPortProxyPair& host_port_proxy_pair,
                          const HostPortPair& trusted_spdy_proxy,
                          NetLog* net_log)
     : weak_factory_(this),
-      host_port_proxy_pair_(host_port_proxy_pair),
+      spdy_session_key_(spdy_session_key),
       spdy_session_pool_(spdy_session_pool),
       http_server_properties_(http_server_properties),
       connection_(new ClientSocketHandle),
@@ -383,7 +386,7 @@ SpdySession::SpdySession(const HostPortProxyPair& host_port_proxy_pair,
   DCHECK(HttpStreamFactory::spdy_enabled());
   net_log_.BeginEvent(
       NetLog::TYPE_SPDY_SESSION,
-      base::Bind(&NetLogSpdySessionCallback, &host_port_proxy_pair_));
+      base::Bind(&NetLogSpdySessionCallback, &host_port_proxy_pair()));
   next_unclaimed_push_stream_sweep_time_ = time_func_() +
       base::TimeDelta::FromSeconds(kMinPushedStreamLifetimeSeconds);
   // TODO(mbelshe): consider randomization of the stream_hi_water_mark.
@@ -444,7 +447,7 @@ Error SpdySession::InitializeWithSocket(
   }
 
   DCHECK_GE(protocol, kProtoSPDY2);
-  DCHECK_LE(protocol, kProtoSPDY4a1);
+  DCHECK_LE(protocol, kProtoSPDY4a2);
   if (protocol >= kProtoSPDY31) {
     flow_control_state_ = FLOW_CONTROL_STREAM_AND_SESSION;
     session_send_window_size_ = kSpdySessionInitialWindowSize;
@@ -501,9 +504,8 @@ bool SpdySession::VerifyDomainAuthentication(const std::string& domain) {
   return !ssl_info.client_cert_sent &&
       (enable_credential_frames_ || !ssl_info.channel_id_sent ||
        ServerBoundCertService::GetDomainForHost(domain) ==
-       ServerBoundCertService::GetDomainForHost(
-           host_port_proxy_pair_.first.host())) &&
-      ssl_info.cert->VerifyNameMatch(domain);
+       ServerBoundCertService::GetDomainForHost(host_port_pair().host())) &&
+       ssl_info.cert->VerifyNameMatch(domain);
 }
 
 int SpdySession::GetPushStream(
@@ -585,10 +587,10 @@ int SpdySession::CreateStream(const SpdyStreamRequest& request,
 
   const std::string& path = request.url().PathForRequest();
   scoped_ptr<SpdyStream> new_stream(
-      new SpdyStream(this, path, request.priority(),
+      new SpdyStream(request.type(), this, path, request.priority(),
                      stream_initial_send_window_size_,
                      stream_initial_recv_window_size_,
-                     false, request.net_log()));
+                     request.net_log()));
   *stream = new_stream->GetWeakPtr();
   InsertCreatedStream(new_stream.Pass());
 
@@ -643,7 +645,7 @@ void SpdySession::ProcessPendingStreamRequests() {
         DCHECK(!ContainsKey(pending_stream_request_completions_,
                             pending_request));
         pending_stream_request_completions_.insert(pending_request);
-        MessageLoop::current()->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
             base::Bind(&SpdySession::CompleteStreamRequest,
                        weak_factory_.GetWeakPtr(), pending_request));
@@ -664,8 +666,8 @@ bool SpdySession::NeedsCredentials() const {
   return ssl_socket->WasChannelIDSent();
 }
 
-void SpdySession::AddPooledAlias(const HostPortProxyPair& alias) {
-  pooled_aliases_.insert(alias);
+void SpdySession::AddPooledAlias(const SpdySessionKey& alias_key) {
+  pooled_aliases_.insert(alias_key);
 }
 
 int SpdySession::GetProtocolVersion() const {
@@ -762,30 +764,6 @@ int SpdySession::CreateCredentialFrame(
         base::Bind(&NetLogSpdyCredentialCallback, credential.slot, &origin));
   }
   return OK;
-}
-
-scoped_ptr<SpdyFrame> SpdySession::CreateHeadersFrame(
-    SpdyStreamId stream_id,
-    const SpdyHeaderBlock& headers,
-    SpdyControlFlags flags) {
-  ActiveStreamMap::const_iterator it = active_streams_.find(stream_id);
-  CHECK(it != active_streams_.end());
-  CHECK_EQ(it->second->stream_id(), stream_id);
-
-  // Create a HEADER frame.
-  scoped_ptr<SpdyFrame> frame(
-      buffered_spdy_framer_->CreateHeaders(
-          stream_id, flags, enable_compression_, &headers));
-
-  if (net_log().IsLoggingAllEvents()) {
-    bool fin = flags & CONTROL_FLAG_FIN;
-    net_log().AddEvent(
-        NetLog::TYPE_SPDY_SESSION_SEND_HEADERS,
-        base::Bind(&NetLogSpdySynCallback,
-                   &headers, fin, /*unidirectional=*/false,
-                   stream_id, 0));
-  }
-  return frame.Pass();
 }
 
 scoped_ptr<SpdyBuffer> SpdySession::CreateDataBuffer(SpdyStreamId stream_id,
@@ -1033,7 +1011,7 @@ int SpdySession::DoLoop(int result) {
 int SpdySession::DoRead() {
   if (bytes_read_ > kMaxReadBytes) {
     state_ = STATE_DO_READ;
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&SpdySession::StartRead,
                    weak_factory_.GetWeakPtr()));
@@ -1151,7 +1129,7 @@ void SpdySession::WriteSocketLater() {
     return;
 
   delayed_write_pending_ = true;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&SpdySession::WriteSocket, weak_factory_.GetWeakPtr()));
 }
@@ -1333,17 +1311,18 @@ base::Value* SpdySession::GetInfoAsValue() const {
 
   dict->SetInteger("source_id", net_log_.source().id);
 
-  dict->SetString("host_port_pair", host_port_proxy_pair_.first.ToString());
+  dict->SetString("host_port_pair", host_port_pair().ToString());
   if (!pooled_aliases_.empty()) {
     base::ListValue* alias_list = new base::ListValue();
-    for (std::set<HostPortProxyPair>::const_iterator it =
+    for (std::set<SpdySessionKey>::const_iterator it =
              pooled_aliases_.begin();
          it != pooled_aliases_.end(); it++) {
-      alias_list->Append(new base::StringValue(it->first.ToString()));
+      alias_list->Append(new base::StringValue(
+          it->host_port_pair().ToString()));
     }
     dict->Set("aliases", alias_list);
   }
-  dict->SetString("proxy", host_port_proxy_pair_.second.ToURI());
+  dict->SetString("proxy", host_port_proxy_pair().second.ToURI());
 
   dict->SetInteger("active_streams", active_streams_.size());
 
@@ -1620,7 +1599,7 @@ bool SpdySession::Respond(const SpdyHeaderBlock& headers, SpdyStream* stream) {
   int rv = OK;
   SpdyStreamId stream_id = stream->stream_id();
   // May invalidate |stream|.
-  rv = stream->OnResponseReceived(headers);
+  rv = stream->OnResponseHeadersReceived(headers);
   if (rv < 0) {
     DCHECK_NE(rv, ERR_IO_PENDING);
     CloseActiveStream(stream_id, rv);
@@ -1721,10 +1700,11 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   }
 
   scoped_ptr<SpdyStream> stream(
-      new SpdyStream(this, gurl.PathForRequest(), request_priority,
+      new SpdyStream(SPDY_PUSH_STREAM, this, gurl.PathForRequest(),
+                     request_priority,
                      stream_initial_send_window_size_,
                      stream_initial_recv_window_size_,
-                     true, net_log_));
+                     net_log_));
   stream->set_stream_id(stream_id);
 
   DeleteExpiredPushedStreams();
@@ -2147,7 +2127,7 @@ void SpdySession::PlanToCheckPingStatus() {
     return;
 
   check_ping_status_pending_ = true;
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&SpdySession::CheckPingStatus, weak_factory_.GetWeakPtr(),
                  base::TimeTicks::Now()), hung_interval_);
@@ -2175,7 +2155,7 @@ void SpdySession::CheckPingStatus(base::TimeTicks last_check_time) {
   }
 
   // Check the status of connection after a delay.
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&SpdySession::CheckPingStatus, weak_factory_.GetWeakPtr(),
                  now),

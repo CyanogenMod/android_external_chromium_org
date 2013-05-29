@@ -11,7 +11,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/time.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -26,7 +26,7 @@ namespace extensions {
 // This class caches tokens for the current user.  It will clear tokens out
 // when the user logs out or after the specified timeout interval, or when
 // the instance of chrome shuts down.
-class TokenCacheService : public ProfileKeyedService,
+class TokenCacheService : public BrowserContextKeyedService,
                           public content::NotificationObserver {
  public:
   explicit TokenCacheService(Profile* profile);

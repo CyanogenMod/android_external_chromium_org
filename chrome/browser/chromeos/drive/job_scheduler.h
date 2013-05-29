@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_CHROMEOS_DRIVE_JOB_SCHEDULER_H_
 #define CHROME_BROWSER_CHROMEOS_DRIVE_JOB_SCHEDULER_H_
 
-#include <list>
 #include <vector>
 
 #include "base/id_map.h"
@@ -13,6 +12,7 @@
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
+#include "chrome/browser/chromeos/drive/job_queue.h"
 #include "chrome/browser/google_apis/drive_service_interface.h"
 #include "chrome/browser/google_apis/drive_uploader.h"
 #include "net/base/network_change_notifier.h"
@@ -22,8 +22,27 @@ class Profile;
 namespace drive {
 
 // The JobScheduler is responsible for queuing and scheduling drive
-// operations.  It is responsible for handling retry logic, rate limiting, as
-// concurrency as appropriate.
+// jobs.
+//
+// All jobs are processed in order of priority.
+//   - Jobs that occur as a result of a direct user action are handled
+//     immediately (i.e. the client context is USER_INITIATED).
+//   - Jobs that are done in response to state changes or server actions are run
+//     in the background (i.e. the client context is BACKGROUND).
+//
+// All jobs are retried a maximum of kMaxRetryCount when they fail due to
+// throttling or server error.  The delay before retrying a job is shared
+// between jobs.  It doubles in length on each failure, up to 16 seconds.
+//
+// Jobs are grouped into two types:
+//   - File jobs are any job that transfer the contents of files.
+//     By default, they are only run when connected to WiFi.
+//   - Metadata jobs are any jobs that operate on File metadata or
+//     the directory structure.  Up to kMaxJobCount[METADATA_QUEUE] jobs are run
+//     concurrently.
+//
+// Because jobs are executed by priority and the potential for network failures,
+// there is no guarantee of ordering of operations.
 class JobScheduler
     : public net::NetworkChangeNotifier::ConnectionTypeObserver,
       public JobListInterface {
@@ -75,7 +94,7 @@ class JobScheduler
 
   // Adds a GetResourceEntry operation to the queue.
   void GetResourceEntry(const std::string& resource_id,
-                        const DriveClientContext& context,
+                        const ClientContext& context,
                         const google_apis::GetResourceEntryCallback& callback);
 
 
@@ -83,6 +102,12 @@ class JobScheduler
   void DeleteResource(const std::string& resource_id,
                       const google_apis::EntryActionCallback& callback);
 
+  // Adds a CopyResource operation to the queue.
+  void CopyResource(
+      const std::string& resource_id,
+      const std::string& parent_resource_id,
+      const std::string& new_name,
+      const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a CopyHostedDocument operation to the queue.
   void CopyHostedDocument(
@@ -94,6 +119,12 @@ class JobScheduler
   void RenameResource(const std::string& resource_id,
                       const std::string& new_name,
                       const google_apis::EntryActionCallback& callback);
+
+  // Adds a TouchResource operation to the queue.
+  void TouchResource(const std::string& resource_id,
+                     const base::Time& modified_date,
+                     const base::Time& last_viewed_by_me_date,
+                     const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a AddResourceToDirectory operation to the queue.
   void AddResourceToDirectory(const std::string& parent_resource_id,
@@ -116,7 +147,7 @@ class JobScheduler
       const base::FilePath& virtual_path,
       const base::FilePath& local_cache_path,
       const GURL& download_url,
-      const DriveClientContext& context,
+      const ClientContext& context,
       const google_apis::DownloadActionCallback& download_action_callback,
       const google_apis::GetContentCallback& get_content_callback);
 
@@ -126,8 +157,8 @@ class JobScheduler
                      const base::FilePath& local_file_path,
                      const std::string& title,
                      const std::string& content_type,
-                     const DriveClientContext& context,
-                     const google_apis::UploadCompletionCallback& callback);
+                     const ClientContext& context,
+                     const google_apis::GetResourceEntryCallback& callback);
 
   // Adds an UploadExistingFile operation to the queue.
   void UploadExistingFile(
@@ -136,16 +167,16 @@ class JobScheduler
       const base::FilePath& local_file_path,
       const std::string& content_type,
       const std::string& etag,
-      const DriveClientContext& context,
-      const google_apis::UploadCompletionCallback& upload_completion_callback);
+      const ClientContext& context,
+      const google_apis::GetResourceEntryCallback& callback);
 
   // Adds a CreateFile operation to the queue.
   void CreateFile(const std::string& parent_resource_id,
                   const base::FilePath& drive_file_path,
                   const std::string& title,
                   const std::string& content_type,
-                  const DriveClientContext& context,
-                  const google_apis::UploadCompletionCallback& callback);
+                  const ClientContext& context,
+                  const google_apis::GetResourceEntryCallback& callback);
 
  private:
   friend class JobSchedulerTest;
@@ -163,17 +194,18 @@ class JobScheduler
     explicit JobEntry(JobType type);
     ~JobEntry();
 
-    // Returns true when |left| is in higher priority than |right|.
-    // Used for sorting entries from high priority to low priority.
-    static bool Less(const JobEntry& left, const JobEntry& right);
-
     JobInfo job_info;
 
     // Context of the job.
-    DriveClientContext context;
+    ClientContext context;
+
+    int retry_count;
 
     base::Closure task;
   };
+
+  // Parameters for DriveUploader::ResumeUploadFile.
+  struct ResumeUploadParams;
 
   // Creates a new job and add it to the job map.
   JobEntry* CreateNewJob(JobType type);
@@ -185,18 +217,12 @@ class JobScheduler
   // Adds the specified job to the queue.
   void QueueJob(JobID job_id);
 
-  // Starts the job loop, if it is not already running.
-  void StartJobLoop(QueueType queue_type);
-
   // Determines the next job that should run, and starts it.
   void DoJobLoop(QueueType queue_type);
 
-  // Checks if operations should be suspended, such as if the network is
-  // disconnected.
-  //
-  // Returns true when it should stop, and false if it should continue.
-  bool ShouldStopJobLoop(QueueType queue_type,
-                         const  DriveClientContext& context);
+  // Returns the lowest acceptable priority level of the operations that is
+  // currently allowed to start for the |queue_type|.
+  int GetCurrentAcceptedPriority(QueueType queue_type);
 
   // Increases the throttle delay if it's below the maximum value, and posts a
   // task to continue the loop after the delay.
@@ -251,10 +277,10 @@ class JobScheduler
   // Callback for job finishing with a UploadCompletionCallback.
   void OnUploadCompletionJobDone(
       JobID job_id,
-      const google_apis::UploadCompletionCallback& callback,
+      const ResumeUploadParams& resume_params,
+      const google_apis::GetResourceEntryCallback& callback,
       google_apis::GDataErrorCode error,
-      const base::FilePath& drive_path,
-      const base::FilePath& file_path,
+      const GURL& upload_location,
       scoped_ptr<google_apis::ResourceEntry> resource_entry);
 
   // Updates the progress status of the specified job.
@@ -282,9 +308,6 @@ class JobScheduler
   // Returns a string representation of QueueType.
   static std::string QueueTypeToString(QueueType type);
 
-  // Number of jobs in flight for each queue.
-  int jobs_running_[NUM_QUEUES];
-
   // The number of times operations have failed in a row, capped at
   // kMaxThrottleCount.  This is used to calculate the delay before running the
   // next task.
@@ -294,9 +317,9 @@ class JobScheduler
   bool disable_throttling_;
 
   // The queues of jobs.
-  std::list<JobID> queue_[NUM_QUEUES];
+  scoped_ptr<JobQueue> queue_[NUM_QUEUES];
 
-  // The list of unfinished (= queued or running) job info indexed by job IDs.
+  // The list of queued job info indexed by job IDs.
   typedef IDMap<JobEntry, IDMapOwnPointer> JobIDMap;
   JobIDMap job_map_;
 

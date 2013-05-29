@@ -90,13 +90,13 @@ void DerefDownloadId(
 
 void RunWithFaviconResults(
     const FaviconService::FaviconResultsCallback& callback,
-    std::vector<history::FaviconBitmapResult>* bitmap_results) {
+    std::vector<chrome::FaviconBitmapResult>* bitmap_results) {
   callback.Run(*bitmap_results);
 }
 
 // Extract history::URLRows into GURLs for VisitedLinkMaster.
 class URLIteratorFromURLRows
-    : public components::VisitedLinkMaster::URLIterator {
+    : public visitedlink::VisitedLinkMaster::URLIterator {
  public:
   explicit URLIteratorFromURLRows(const history::URLRows& url_rows)
       : itr_(url_rows.begin()),
@@ -223,7 +223,7 @@ HistoryService::HistoryService(Profile* profile)
     : weak_ptr_factory_(this),
       thread_(new base::Thread(kHistoryThreadName)),
       profile_(profile),
-      visitedlink_master_(new components::VisitedLinkMaster(
+      visitedlink_master_(new visitedlink::VisitedLinkMaster(
           profile, this, true)),
       backend_loaded_(false),
       current_backend_id_(-1),
@@ -464,7 +464,7 @@ HistoryService::Handle HistoryService::QuerySegmentDurationSince(
 void HistoryService::SetOnBackendDestroyTask(const base::Closure& task) {
   DCHECK(thread_checker_.CalledOnValidThread());
   ScheduleAndForget(PRIORITY_NORMAL, &HistoryBackend::SetOnBackendDestroyTask,
-                    MessageLoop::current(), task);
+                    base::MessageLoop::current(), task);
 }
 
 void HistoryService::AddPage(const GURL& url,
@@ -626,8 +626,8 @@ CancelableTaskTracker::TaskId HistoryService::GetFavicons(
   DCHECK(thread_checker_.CalledOnValidThread());
   LoadBackendIfNecessary();
 
-  std::vector<history::FaviconBitmapResult>* results =
-      new std::vector<history::FaviconBitmapResult>();
+  std::vector<chrome::FaviconBitmapResult>* results =
+      new std::vector<chrome::FaviconBitmapResult>();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy(),
       FROM_HERE,
@@ -647,8 +647,8 @@ CancelableTaskTracker::TaskId HistoryService::GetFaviconsForURL(
   DCHECK(thread_checker_.CalledOnValidThread());
   LoadBackendIfNecessary();
 
-  std::vector<history::FaviconBitmapResult>* results =
-      new std::vector<history::FaviconBitmapResult>();
+  std::vector<chrome::FaviconBitmapResult>* results =
+      new std::vector<chrome::FaviconBitmapResult>();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy(),
       FROM_HERE,
@@ -659,7 +659,7 @@ CancelableTaskTracker::TaskId HistoryService::GetFaviconsForURL(
 }
 
 CancelableTaskTracker::TaskId HistoryService::GetFaviconForID(
-    history::FaviconID favicon_id,
+    chrome::FaviconID favicon_id,
     int desired_size_in_dip,
     ui::ScaleFactor desired_scale_factor,
     const FaviconService::FaviconResultsCallback& callback,
@@ -667,8 +667,8 @@ CancelableTaskTracker::TaskId HistoryService::GetFaviconForID(
   DCHECK(thread_checker_.CalledOnValidThread());
   LoadBackendIfNecessary();
 
-  std::vector<history::FaviconBitmapResult>* results =
-      new std::vector<history::FaviconBitmapResult>();
+  std::vector<chrome::FaviconBitmapResult>* results =
+      new std::vector<chrome::FaviconBitmapResult>();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy(),
       FROM_HERE,
@@ -689,8 +689,8 @@ CancelableTaskTracker::TaskId HistoryService::UpdateFaviconMappingsAndFetch(
   DCHECK(thread_checker_.CalledOnValidThread());
   LoadBackendIfNecessary();
 
-  std::vector<history::FaviconBitmapResult>* results =
-      new std::vector<history::FaviconBitmapResult>();
+  std::vector<chrome::FaviconBitmapResult>* results =
+      new std::vector<chrome::FaviconBitmapResult>();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy(),
       FROM_HERE,
@@ -703,7 +703,7 @@ CancelableTaskTracker::TaskId HistoryService::UpdateFaviconMappingsAndFetch(
 void HistoryService::MergeFavicon(
     const GURL& page_url,
     const GURL& icon_url,
-    history::IconType icon_type,
+    chrome::IconType icon_type,
     scoped_refptr<base::RefCountedMemory> bitmap_data,
     const gfx::Size& pixel_size) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -716,8 +716,8 @@ void HistoryService::MergeFavicon(
 
 void HistoryService::SetFavicons(
     const GURL& page_url,
-    history::IconType icon_type,
-    const std::vector<history::FaviconBitmapData>& favicon_bitmap_data) {
+    chrome::IconType icon_type,
+    const std::vector<chrome::FaviconBitmapData>& favicon_bitmap_data) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!CanAddURL(page_url))
     return;
@@ -1009,7 +1009,7 @@ bool HistoryService::CanAddURL(const GURL& url) {
 
   // Allow all about: and chrome: URLs except about:blank, since the user may
   // like to see "chrome://memory/", etc. in their history and autocomplete.
-  if (url == GURL(chrome::kAboutBlankURL))
+  if (url == GURL(content::kAboutBlankURL))
     return false;
 
   return true;

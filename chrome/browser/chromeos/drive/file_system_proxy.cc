@@ -12,21 +12,22 @@
 #include "base/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_system_service.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/webkit_file_stream_reader_impl.h"
 #include "chrome/browser/google_apis/task_util.h"
 #include "chrome/browser/google_apis/time_util.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/blob/file_stream_reader.h"
-#include "webkit/blob/shareable_file_reference.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/file_system_util.h"
+#include "webkit/browser/blob/file_stream_reader.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/common/blob/shareable_file_reference.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 using base::MessageLoopProxy;
 using content::BrowserThread;
+using fileapi::DirectoryEntry;
 using fileapi::FileSystemURL;
 using fileapi::FileSystemOperation;
 using webkit_blob::ShareableFileReference;
@@ -153,13 +154,13 @@ void DidCloseFileForTruncate(
 
 }  // namespace
 
-base::FileUtilProxy::Entry ResourceEntryToFileUtilProxyEntry(
+DirectoryEntry ResourceEntryToDirectoryEntry(
     const ResourceEntry& resource_entry) {
   base::PlatformFileInfo file_info;
   util::ConvertResourceEntryToPlatformFileInfo(
       resource_entry.file_info(), &file_info);
 
-  base::FileUtilProxy::Entry entry;
+  DirectoryEntry entry;
   entry.name = resource_entry.base_name();
   entry.is_directory = file_info.is_directory;
   entry.size = file_info.size;
@@ -269,7 +270,7 @@ void FileSystemProxy::ReadDirectory(
         FROM_HERE,
         base::Bind(callback,
                    base::PLATFORM_FILE_ERROR_NOT_FOUND,
-                   std::vector<base::FileUtilProxy::Entry>(),
+                   std::vector<DirectoryEntry>(),
                    false));
     return;
   }
@@ -619,11 +620,18 @@ void FileSystemProxy::TouchFile(
     const FileSystemOperation::StatusCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  // TODO(kinaba,kochi): crbug.com/144369. Support this operations once we have
-  // migrated to the new Drive API.
-  MessageLoopProxy::current()->PostTask(
-      FROM_HERE,
-      base::Bind(callback, base::PLATFORM_FILE_ERROR_INVALID_OPERATION));
+  base::FilePath file_path;
+  if (!ValidateUrl(url, &file_path))
+    return;
+
+  CallFileSystemMethodOnUIThread(
+      base::Bind(&FileSystemInterface::TouchFile,
+                 base::Unretained(file_system_),
+                 file_path, last_access_time, last_modified_time,
+                 google_apis::CreateRelayCallback(
+                     base::Bind(&FileSystemProxy::OnStatusCallback,
+                                this,
+                                callback))));
 }
 
 void FileSystemProxy::CreateSnapshotFile(
@@ -800,13 +808,13 @@ void FileSystemProxy::OnReadDirectory(
 
   if (error != FILE_ERROR_OK) {
     callback.Run(FileErrorToPlatformError(error),
-                 std::vector<base::FileUtilProxy::Entry>(),
+                 std::vector<DirectoryEntry>(),
                  false);
     return;
   }
   DCHECK(resource_entries.get());
 
-  std::vector<base::FileUtilProxy::Entry> entries;
+  std::vector<DirectoryEntry> entries;
   // Convert Drive files to something File API stack can understand.
   for (size_t i = 0; i < resource_entries->size(); ++i) {
     const ResourceEntry& resource_entry = (*resource_entries)[i];
@@ -815,7 +823,7 @@ void FileSystemProxy::OnReadDirectory(
         hide_hosted_documents) {
       continue;
     }
-    entries.push_back(ResourceEntryToFileUtilProxyEntry(resource_entry));
+    entries.push_back(ResourceEntryToDirectoryEntry(resource_entry));
   }
 
   callback.Run(base::PLATFORM_FILE_OK, entries, false);

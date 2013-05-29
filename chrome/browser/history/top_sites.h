@@ -28,7 +28,6 @@ class RefCountedMemory;
 namespace history {
 
 class TopSitesCache;
-class TopSitesTest;
 
 // Interface for TopSites, which stores the data for the top "most visited"
 // sites. This includes a cache of the most visited data from history, as well
@@ -44,6 +43,9 @@ class TopSites
 
   // Initializes TopSites.
   static TopSites* Create(Profile* profile, const base::FilePath& db_name);
+
+  // Helper method to shuffle MostVisited tiles for A/B testing purposes.
+  static void MaybeShuffle(MostVisitedURLList* data);
 
   // Sets the given thumbnail for the given URL. Returns true if the thumbnail
   // was updated. False means either the URL wasn't known to us, or we felt

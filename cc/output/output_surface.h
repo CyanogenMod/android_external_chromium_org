@@ -11,6 +11,8 @@
 #include "cc/output/software_output_device.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 
+namespace ui { struct LatencyInfo; }
+
 namespace gfx {
 class Rect;
 class Size;
@@ -21,7 +23,6 @@ namespace cc {
 class CompositorFrame;
 class OutputSurfaceClient;
 class OutputSurfaceCallbacks;
-struct LatencyInfo;
 
 // Represents the output surface for a compositor. The compositor owns
 // and manages its destruction. Its lifetime is:
@@ -44,10 +45,12 @@ class CC_EXPORT OutputSurface {
   struct Capabilities {
     Capabilities()
         : has_parent_compositor(false),
-          max_frames_pending(0) {}
+          max_frames_pending(0),
+          deferred_gl_initialization(false) {}
 
     bool has_parent_compositor;
     int max_frames_pending;
+    bool deferred_gl_initialization;
   };
 
   const Capabilities& capabilities() const {
@@ -85,21 +88,21 @@ class CC_EXPORT OutputSurface {
   virtual void EnsureBackbuffer();
   virtual void DiscardBackbuffer();
 
-  virtual void Reshape(gfx::Size size);
+  virtual void Reshape(gfx::Size size, float scale_factor);
 
   virtual void BindFramebuffer();
 
-  virtual void PostSubBuffer(gfx::Rect rect, const LatencyInfo&);
-  virtual void SwapBuffers(const LatencyInfo&);
+  virtual void PostSubBuffer(gfx::Rect rect, const ui::LatencyInfo&);
+  virtual void SwapBuffers(const ui::LatencyInfo&);
 
   // Notifies frame-rate smoothness preference. If true, all non-critical
   // processing should be stopped, or lowered in priority.
   virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) {}
 
-  // Requests a vsync notification from the output surface. The notification
-  // will be delivered by calling OutputSurfaceClient::DidVSync for all future
-  // vsync events until the callback is disabled.
-  virtual void EnableVSyncNotification(bool enable_vsync) {}
+  // Requests a BeginFrame notification from the output surface. The
+  // notification will be delivered by calling
+  // OutputSurfaceClient::BeginFrame until the callback is disabled.
+  virtual void SetNeedsBeginFrame(bool enable) {}
 
  protected:
   OutputSurfaceClient* client_;

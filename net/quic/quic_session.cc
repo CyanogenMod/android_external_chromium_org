@@ -64,9 +64,12 @@ class VisitorShim : public QuicConnectionVisitorInterface {
   QuicSession* session_;
 };
 
-QuicSession::QuicSession(QuicConnection* connection, bool is_server)
+QuicSession::QuicSession(QuicConnection* connection,
+                         const QuicConfig& config,
+                         bool is_server)
     : connection_(connection),
       visitor_shim_(new VisitorShim(this)),
+      config_(config),
       max_open_streams_(kDefaultMaxStreamsPerConnection),
       next_stream_id_(is_server ? 2 : 3),
       is_server_(is_server),
@@ -213,10 +216,34 @@ bool QuicSession::IsCryptoHandshakeConfirmed() {
 }
 
 void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
-  if (event == QuicSession::HANDSHAKE_CONFIRMED) {
-    connection_->SetConnectionTimeout(
-        GetCryptoStream()->negotiated_params().idle_connection_state_lifetime);
+  switch (event) {
+    // TODO(satyamshekhar): Move the logic of setting the encrypter/decrypter
+    // to QuicSession since it is the glue.
+    case ENCRYPTION_FIRST_ESTABLISHED:
+      break;
+
+    case ENCRYPTION_REESTABLISHED:
+      // Retransmit originally packets that were sent, since they can't be
+      // decrypted by the peer.
+      connection_->RetransmitUnackedPackets(
+          QuicConnection::INITIAL_ENCRYPTION_ONLY);
+      break;
+
+    case HANDSHAKE_CONFIRMED:
+      LOG_IF(DFATAL, !config_.negotiated())
+          << "Handshake confirmed without parameter negotiation.";
+      connection_->SetConnectionTimeout(
+          config_.idle_connection_state_lifetime());
+      max_open_streams_ = config_.max_streams_per_connection();
+      break;
+
+    default:
+      LOG(ERROR) << "Got unknown handshake event: " << event;
   }
+}
+
+QuicConfig* QuicSession::config() {
+  return &config_;
 }
 
 void QuicSession::ActivateStream(ReliableQuicStream* stream) {

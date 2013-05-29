@@ -33,10 +33,12 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
+#include "ui/gfx/vector2d_f.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/glue/webcursor.h"
 
 struct ViewHostMsg_UpdateRect_Params;
+struct ViewMsg_Resize_Params;
 class ViewHostMsg_UpdateRect;
 
 namespace IPC {
@@ -141,6 +143,7 @@ class CONTENT_EXPORT RenderWidget
   virtual void closeWidgetSoon();
   virtual void show(WebKit::WebNavigationPolicy);
   virtual void runModal() {}
+  virtual void didProgrammaticallyScroll(const WebKit::WebPoint& scroll_point);
   virtual WebKit::WebRect windowRect();
   virtual void setToolTipText(const WebKit::WebString& text,
                               WebKit::WebTextDirection hint);
@@ -188,6 +191,10 @@ class CONTENT_EXPORT RenderWidget
                          int mouse_event_x,
                          int mouse_event_y);
 
+  // Notifies the host that root scroll layer has overscrolled.
+  void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
+                     gfx::Vector2dF current_fling_velocity);
+
   // Close the underlying WebWidget.
   virtual void Close();
 
@@ -203,13 +210,17 @@ class CONTENT_EXPORT RenderWidget
     SHOW_IME_IF_NEEDED
   };
 
+  // Handle common setup/teardown for handling IME events.
+  void StartHandlingImeEvent();
+  void FinishHandlingImeEvent();
+
   virtual void InstrumentWillBeginFrame() {}
   virtual void InstrumentDidBeginFrame() {}
   virtual void InstrumentDidCancelFrame() {}
   virtual void InstrumentWillComposite() {}
 
   virtual bool AllowPartialSwap() const;
-  bool SynchronouslyDisableVSync() const;
+  bool UsingSynchronousRendererCompositor() const;
 
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
@@ -281,18 +292,14 @@ class CONTENT_EXPORT RenderWidget
 
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(const WebKit::WebInputEvent* event,
-                          const cc::LatencyInfo& latency_info,
+                          const ui::LatencyInfo& latency_info,
                           bool keyboard_shortcut);
   void OnCursorVisibilityChange(bool is_visible);
   void OnMouseCaptureLost();
   virtual void OnSetFocus(bool enable);
   void OnClose();
   void OnCreatingNewAck();
-  virtual void OnResize(const gfx::Size& new_size,
-                        const gfx::Size& physical_backing_size,
-                        float overdraw_bottom_height,
-                        const gfx::Rect& resizer_rect,
-                        bool is_fullscreen);
+  virtual void OnResize(const ViewMsg_Resize_Params& params);
   void OnChangeResizeRect(const gfx::Rect& resizer_rect);
   virtual void OnWasHidden();
   virtual void OnWasShown(bool needs_repainting);
@@ -317,7 +324,6 @@ class CONTENT_EXPORT RenderWidget
   void OnSmoothScrollCompleted();
   void OnSetTextDirection(WebKit::WebTextDirection direction);
   void OnGetFPS();
-  void OnScreenInfoChanged(const WebKit::WebScreenInfo& screen_info);
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                            const gfx::Rect& window_screen_rect);
 #if defined(OS_ANDROID)
@@ -524,6 +530,12 @@ class CONTENT_EXPORT RenderWidget
   // The size of the RenderWidget.
   gfx::Size size_;
 
+  // When short-circuiting size updates, the browser might not know about the
+  // current size of the RenderWidget. To be able to correctly predict when the
+  // browser expects a resize ack, keep track of the size the browser thinks
+  // this RenderWidget should have.
+  gfx::Size size_browser_expects_;
+
   // The TransportDIB that is being used to transfer an image to the browser.
   TransportDIB* current_paint_buf_;
 
@@ -692,6 +704,9 @@ class CONTENT_EXPORT RenderWidget
 
   // Specified whether the compositor will run in its own thread.
   bool is_threaded_compositing_enabled_;
+
+  // Specifies whether overscroll notifications are forwarded to the host.
+  bool overscroll_notifications_enabled_;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

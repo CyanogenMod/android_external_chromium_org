@@ -14,6 +14,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
+#include "chrome/browser/ui/app_list/profile_loader.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -42,26 +43,18 @@ class AppListServiceImpl : public AppListService,
   Profile* profile() const { return profile_; }
   void SetProfile(Profile* new_profile);
   void InvalidatePendingProfileLoads();
+  ProfileLoader& profile_loader() { return profile_loader_; }
+  const ProfileLoader& profile_loader() const { return profile_loader_; }
 
   // Save |profile_file_path| as the app list profile in local state.
   void SaveProfilePathToLocalState(const base::FilePath& profile_file_path);
-
-  // Perform shared AppListService warmup tasks, possibly calling
-  // DoWarmupForProfile() after loading the configured profile.
-  void ScheduleWarmup();
-
-  // Return true if there is a current UI view for the app list.
-  virtual bool HasCurrentView() const;
-
-  // Called when |initial_profile| is loaded and ready to use during warmup.
-  virtual void DoWarmupForProfile(Profile* initial_profile);
 
   // Called in response to observed successful and unsuccessful signin changes.
   virtual void OnSigninStatusChanged();
 
   // AppListService overrides:
   virtual void Init(Profile* initial_profile) OVERRIDE;
-  virtual base::FilePath GetAppListProfilePath(
+  virtual base::FilePath GetProfilePath(
       const base::FilePath& user_data_dir) OVERRIDE;
 
   virtual void ShowForSavedProfile() OVERRIDE;
@@ -75,22 +68,6 @@ class AppListServiceImpl : public AppListService,
   void OnProfileLoaded(int profile_load_sequence_id,
                        Profile* profile,
                        Profile::CreateStatus status);
-
-  // Loads the profile last used with the app list and populates the view from
-  // it without showing it so that the next show is faster. Does nothing if the
-  // view already exists, or another profile is in the middle of being loaded to
-  // be shown.
-  void LoadProfileForInit();
-  void OnProfileLoadedForInit(int profile_load_sequence_id,
-                              Profile* profile,
-                              Profile::CreateStatus status);
-
-  // We need to keep the browser alive while we are loading a profile as that
-  // shows intent to show the app list. These two functions track our pending
-  // profile loads and start or end browser keep alive accordingly.
-  void IncrementPendingProfileLoads();
-  void DecrementPendingProfileLoads();
-  bool IsInitViewNeeded() const;
 
   // AppListService overrides:
   // Update the profile path stored in local prefs, load it (if not already
@@ -127,6 +104,8 @@ class AppListServiceImpl : public AppListService,
 
   base::WeakPtrFactory<AppListServiceImpl> weak_factory_;
   content::NotificationRegistrar registrar_;
+
+  ProfileLoader profile_loader_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListServiceImpl);
 };

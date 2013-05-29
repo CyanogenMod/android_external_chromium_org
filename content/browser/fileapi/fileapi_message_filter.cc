@@ -24,17 +24,18 @@
 #include "net/base/mime_util.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/blob/blob_data.h"
-#include "webkit/blob/blob_storage_controller.h"
-#include "webkit/blob/shareable_file_reference.h"
-#include "webkit/fileapi/file_observers.h"
-#include "webkit/fileapi/file_permission_policy.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_util.h"
-#include "webkit/fileapi/isolated_context.h"
-#include "webkit/fileapi/local_file_system_operation.h"
-#include "webkit/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/browser/fileapi/file_observers.h"
+#include "webkit/browser/fileapi/file_permission_policy.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/browser/fileapi/local_file_system_operation.h"
+#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/common/blob/blob_data.h"
+#include "webkit/common/blob/shareable_file_reference.h"
+#include "webkit/common/fileapi/directory_entry.h"
+#include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/quota/quota_manager.h"
 
 using fileapi::FileSystemFileUtil;
@@ -194,7 +195,11 @@ void FileAPIMessageFilter::OnOpen(
   } else if (type == fileapi::kFileSystemTypePersistent) {
     RecordAction(UserMetricsAction("OpenFileSystemPersistent"));
   }
-  context_->OpenFileSystem(origin_url, type, create, base::Bind(
+  // TODO(kinuko): Use this mode for IPC too.
+  fileapi::OpenFileSystemMode mode =
+      create ? fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT
+             : fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT;
+  context_->OpenFileSystem(origin_url, type, mode, base::Bind(
       &FileAPIMessageFilter::DidOpenFileSystem, this, request_id));
 }
 
@@ -650,7 +655,7 @@ void FileAPIMessageFilter::DidGetMetadata(
 void FileAPIMessageFilter::DidReadDirectory(
     int request_id,
     base::PlatformFileError result,
-    const std::vector<base::FileUtilProxy::Entry>& entries,
+    const std::vector<fileapi::DirectoryEntry>& entries,
     bool has_more) {
   if (result == base::PLATFORM_FILE_OK)
     Send(new FileSystemMsg_DidReadDirectory(request_id, entries, has_more));
@@ -748,12 +753,14 @@ void FileAPIMessageFilter::DidCreateSnapshot(
     // - the file comes from sandboxed filesystem. Reading sandboxed files is
     //   always permitted, but only implicitly.
     // - the underlying filesystem returned newly created snapshot file.
-    // - the file comes from an external drive filesystem. The renderer has
-    //   already been granted read permission for the file's nominal path, but
-    //   for drive files, platform paths differ from the nominal paths.
+    // - the nominal path differs from the platform path. This can happen even
+    //   when the filesystem has been granted permissions. This happens with:
+    //   - Drive filesystems
+    //   - Picasa filesystems
     DCHECK(snapshot_file ||
            fileapi::SandboxMountPointProvider::IsSandboxType(url.type()) ||
-           url.type() == fileapi::kFileSystemTypeDrive);
+           url.type() == fileapi::kFileSystemTypeDrive ||
+           url.type() == fileapi::kFileSystemTypePicasa);
     ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
         process_id_, platform_path);
     if (snapshot_file) {

@@ -47,6 +47,8 @@
 
       <structure type="chrome_scaled_image" name="IDR_AURA_CROS_DEFAULT_THROBBER" file="cros/common/default_throbber.png" />
 
+      <structure type="chrome_scaled_image" name="IDR_AURA_WARNING_ICON" file="common/alert_small.png" />
+
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_ACCESSIBILITY" file="cros/status/status_accessibility_mode.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_ACCESSIBILITY_DARK" file="cros/status/status_accessibility_dark.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_BLUETOOTH" file="cros/status/status_bluetooth.png" />
@@ -76,6 +78,7 @@
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_LOCALE" file="cros/status/status_locale.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_LOCKSCREEN" file="cros/status/status_lockscreen.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_LOCKSCREEN_HOVER" file="cros/status/status_lockscreen_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_GUEST_ICON" file="cros/status/status_guest_icon.png" />
 
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_HOT_BOTTOM" file="cros/status/status_logout_button_hover_bottom.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_HOT_BOTTOM_LEFT" file="cros/status/status_logout_button_hover_bottom_left.png" />
@@ -105,6 +108,8 @@
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_NORMAL_TOP_LEFT" file="cros/status/status_logout_button_normal_top_left.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_NORMAL_TOP_RIGHT" file="cros/status/status_logout_button_normal_top_right.png" />
 
+      <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_ADD_MULTIPROFILE_USER" file="cros/status/multiprofiles_add.png" />
+      
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_MORE" file="cros/status/status_more.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_CELLULAR_NETWORK_FAILED" file="cros/network/status_cellular_failed.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_UBER_TRAY_NETWORK_FAILED" file="cros/network/status_network_failed.png" />
@@ -198,6 +203,7 @@
         <!-- TODO(jamescook): We need updated incognito art for Aura. -->
       <structure type="chrome_scaled_image" name="IDR_AURA_WINDOW_HEADER_BASE_INCOGNITO_ACTIVE" file="common/window_header_base_incognito_active.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_WINDOW_HEADER_BASE_INCOGNITO_INACTIVE" file="common/window_header_base_incognito_inactive.png" />
+      <structure type="chrome_scaled_image" name="IDR_AURA_WINDOW_HEADER_BASE_MINIMAL" file="common/window_header_base_minimal.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_WINDOW_HEADER_SHADE_LEFT" file="common/window_header_shade_left.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_WINDOW_HEADER_SHADE_MIDDLE" file="common/window_header_shade_middle.png" />
       <structure type="chrome_scaled_image" name="IDR_AURA_WINDOW_HEADER_SHADE_RIGHT" file="common/window_header_shade_right.png" />

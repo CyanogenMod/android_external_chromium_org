@@ -129,8 +129,8 @@ class CC_EXPORT PictureLayerTiling {
   void UpdateTilePriorities(
       WhichTree tree,
       gfx::Size device_viewport,
-      const gfx::RectF& viewport_in_layer_space,
-      const gfx::RectF& visible_layer_rect,
+      gfx::Rect viewport_in_layer_space,
+      gfx::Rect visible_layer_rect,
       gfx::Size last_layer_bounds,
       gfx::Size current_layer_bounds,
       float last_layer_contents_scale,
@@ -138,7 +138,6 @@ class CC_EXPORT PictureLayerTiling {
       const gfx::Transform& last_screen_transform,
       const gfx::Transform& current_screen_transform,
       double current_frame_time_in_seconds,
-      bool store_screen_space_quads_on_tiles,
       size_t max_tiles_for_interest_area);
 
   // Copies the src_tree priority into the dst_tree priority for all tiles.
@@ -151,6 +150,7 @@ class CC_EXPORT PictureLayerTiling {
   }
 
   scoped_ptr<base::Value> AsValue() const;
+  size_t GPUMemoryUsageInBytes() const;
 
   static gfx::Rect ExpandRectEquallyToAreaBoundedBy(
       gfx::Rect starting_rect,
@@ -169,7 +169,7 @@ class CC_EXPORT PictureLayerTiling {
                      gfx::Size layer_bounds,
                      PictureLayerTilingClient* client);
   void SetLiveTilesRect(gfx::Rect live_tiles_rect);
-  void CreateTile(int i, int j);
+  void CreateTile(int i, int j, const PictureLayerTiling* twin_tiling);
   Tile* TileAt(int, int) const;
 
   // Given properties.

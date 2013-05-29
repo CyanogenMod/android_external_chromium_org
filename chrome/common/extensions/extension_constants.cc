@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/string_util.h"
 #include "chrome/common/chrome_switches.h"
+#include "net/base/escape.h"
 #include "net/base/url_util.h"
 
 namespace extension_urls {
@@ -32,20 +33,20 @@ std::string GetWebstoreItemDetailURLPrefix() {
   return GetWebstoreLaunchURL() + "/detail/";
 }
 
-GURL GetWebstoreIntentQueryURL(const std::string& action,
-                               const std::string& type) {
-  const char kIntentsCategoryPath[] = "category/collection/webintent_apps";
+GURL GetWebstoreItemJsonDataURL(const std::string& extension_id) {
+  return GURL(GetWebstoreLaunchURL() + "/inlineinstall/detail/" + extension_id);
+}
 
-  GURL url(std::string(kGalleryBrowsePrefix) + "/");
-  url = url.Resolve(kIntentsCategoryPath);
-  url = net::AppendQueryParameter(url, "_wi", action);
-  url = net::AppendQueryParameter(url, "_mt", type);
-
+GURL GetWebstoreJsonSearchUrl(const std::string& query, const std::string& hl) {
+  GURL url(GetWebstoreLaunchURL() + "/jsonsearch");
+  url = net::AppendQueryParameter(url, "q", query);
+  url = net::AppendQueryParameter(url, "hl", hl);
   return url;
 }
 
-GURL GetWebstoreItemJsonDataURL(const std::string& extension_id) {
-  return GURL(GetWebstoreLaunchURL() + "/inlineinstall/detail/" + extension_id);
+GURL GetWebstoreSearchPageUrl(const std::string& query) {
+  return GURL(GetWebstoreLaunchURL() + "/search/" +
+              net::EscapeQueryParamValue(query, false));
 }
 
 const char kGalleryUpdateHttpsUrl[] =
@@ -140,6 +141,7 @@ const char kGoogleSheetsAppId[] = "felcaaldnbdncclmgdcncolpebgiejap";
 const char kGoogleSlidesAppId[] = "aapocclcgogkmnckokdopfmhonfmgoek";
 const char kHTermAppId[] = "pnhechapfaindjhompbnflcldabbghjo";
 const char kHTermDevAppId[] = "okddffdblfhhnmhodogpojmfkjmhinfp";
+const char kIdentityApiUiAppId[] = "ahjaciijnoiaklcomgnblndopackapon";
 const char kCroshBuiltinAppId[] = "nkoccljplnhpfnfiajclkommnmllphnl";
 const char kQuickOfficeComponentExtensionId[] =
     "bpmcpldpdmajfigpchkicefoigmkfalc";
@@ -150,6 +152,7 @@ const char kStreamsPrivateTestExtensionId[] =
     "oickdpebdnfbgkcaoklfcdhjniefkcji";
 const char kWebStoreAppId[] = "ahfgeienlihckogmohjhadlkjgocpleb";
 const char kYoutubeAppId[] = "blpcfgokakmgnkcojhhkbfbldkacnbeo";
+const char kInAppPaymentsSupportAppId[] = "nmmhkkegccagdldgiimedpiccmgmieda";
 
 const char kAppLaunchHistogram[] = "Extensions.AppLaunch";
 const char kPlatformAppLaunchHistogram[] = "Apps.AppLaunch";

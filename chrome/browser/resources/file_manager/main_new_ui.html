@@ -82,6 +82,7 @@
       <script src="js/combobutton.js"></script>
       <script src="js/commandbutton.js"></script>
 
+      <script src="js/async_util.js"></script>
       <script src="js/path_util.js"></script>
       <script src="js/util.js"></script>
       <script src="js/action_choice_util.js"></script>
@@ -127,8 +128,7 @@
                shortcut="U+0056-Ctrl">
       <command id="rename" i18n-values="label:RENAME_BUTTON_LABEL"
                shortcut="Enter-Ctrl">
-      <command id="delete" i18n-values="label:DELETE_BUTTON_LABEL"
-               shortcut="U+007F">
+      <command id="delete" shortcut="U+007F">
       <command id="newfolder" i18n-values="label:NEW_FOLDER_BUTTON_LABEL"
                shortcut="U+0045-Ctrl">
       <command id="newwindow" i18n-values="label:NEW_WINDOW_BUTTON_LABEL">
@@ -170,7 +170,7 @@
       <menuitem command="#paste" visibleif="full-page"></menuitem>
       <hr visibleif="full-page">
       <menuitem command="#rename"></menuitem>
-      <menuitem command="#delete"></menuitem>
+      <menuitem command="#delete" i18n-content=DELETE_BUTTON_LABEL></menuitem>
       <menuitem command="#zip-selection"></menuitem>
       <hr visibleif="saveas-file full-page">
       <menuitem command="#newfolder"
@@ -258,23 +258,26 @@
           <div class="search-box-wrapper">
             <input id="search-box" type="search" tabindex="9"
                    i18n-values="aria-label:SEARCH_TEXT_LABEL">
+            <!-- This is placed at the head of search-box -->
+            <div id="search-icon"></div>
           </div>
-          <div class="decoration-buttons-wrapper">
-            <div class="right buttonbar">
-              <button class="menubutton" id="gear-button" tabindex="10"
-                      menu="#gear-menu">
-              </button>
-              <button id="maximize-button" visibleif="full-page" tabindex="-1">
-              </button>
-              <button id="close-button" visibleif="full-page" tabindex="-1">
-              </button>
-            </div>
+          <div id="search-clear-button"></div>
+          <div class="buttonbar">
+            <button class="menubutton" id="gear-button" tabindex="10"
+                    menu="#gear-menu">
+            </button>
+            <button id="maximize-button" visibleif="full-page" tabindex="-1">
+            </button>
+            <button id="close-button" visibleif="full-page" tabindex="-1">
+            </button>
           </div>
         </div>
         <div class=dialog-body>
           <div class="main-panel">
             <!-- The middle bar and spilitter are hidden by default, and will be shown by script if necessary. -->
             <div class="dialog-middlebar-contents" hidden>
+              <div id="middlebar-header"
+                   i18n-content="DRIVE_DIRECTORY_LABEL"></div>
               <tree id="directory-tree" tabindex="8"></tree>
             </div>
             <div class="splitter" id="middlebar-splitter" hidden></div>
@@ -313,7 +316,8 @@
               <button id="tasks" class="combobutton" menu="#tasks-menu"
                       tabindex="2">
               </button>
-              <button id="delete-button" command="#delete" tabindex="3"></button>
+              <button id="delete-button" command="#delete" tabindex="3"
+                      i18n-values="aria-label:DELETE_BUTTON_LABEL"></button>
             </div>
           </div>
           <div id="unmounted-panel"></div>
@@ -333,12 +337,12 @@
         <input type=text spellcheck=false tabindex="5">
       </div>
       <div class=horizontal-spacer></div>
-      <select id="file-type"></select>
       <div class=preparing-label i18n-content=PREPARING_LABEL></div>
       <div class=progress-bar>
         <div class=progress-track></div>
       </div>
       <div class="right buttonbar">
+        <select id="file-type"></select>
         <button class=ok disabled tabindex="6"></button>
         <button class=cancel i18n-content=CANCEL_LABEL tabindex="7"></button>
       </div>

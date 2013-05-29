@@ -22,7 +22,7 @@ namespace media {
 // Note: MediaCodec is only available on JB and greater.
 // Use AudioCodecBridge or VideoCodecBridge to create an instance of this
 // object.
-class MediaCodecBridge {
+class MEDIA_EXPORT MediaCodecBridge {
  public:
   enum DequeueBufferInfo {
     INFO_OUTPUT_BUFFERS_CHANGED = -3,
@@ -74,16 +74,18 @@ class MediaCodecBridge {
   // or one of DequeueBufferInfo above.
   // Use kTimeOutInfinity for infinite timeout.
   int DequeueOutputBuffer(
-      base::TimeDelta timeout, int* offset, int* size,
+      base::TimeDelta timeout, size_t* offset, size_t* size,
       base::TimeDelta* presentation_time, bool* end_of_stream);
 
   // Returns the buffer to the codec. If you previously specified a surface
   // when configuring this video decoder you can optionally render the buffer.
   void ReleaseOutputBuffer(int index, bool render);
 
-  // Gets output buffers from media codec and keeps them inside this class.
-  // To access them, use DequeueOutputBuffer() and GetFromOutputBuffer().
-  int GetOutputBuffers();
+  // Gets output buffers from media codec and keeps them inside the java class.
+  // To access them, use DequeueOutputBuffer().
+  void GetOutputBuffers();
+
+  static bool RegisterMediaCodecBridge(JNIEnv* env);
 
  protected:
   explicit MediaCodecBridge(const char* mime);
@@ -95,40 +97,44 @@ class MediaCodecBridge {
   jobject media_codec() { return j_media_codec_.obj(); }
 
  private:
-  // Gets input buffers from media codec and keeps them inside this class.
-  // To access them, use DequeueInputBuffer(), PutToInputBuffer() and
-  // QueueInputBuffer().
-  int GetInputBuffers();
-
   // Java MediaCodec instance.
   base::android::ScopedJavaGlobalRef<jobject> j_media_codec_;
-
-  // Input buffers used for *InputBuffer() methods.
-  base::android::ScopedJavaGlobalRef<jobjectArray> j_input_buffers_;
-
-  // Output buffers used for *InputBuffer() methods.
-  base::android::ScopedJavaGlobalRef<jobjectArray> j_output_buffers_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaCodecBridge);
 };
 
 class AudioCodecBridge : public MediaCodecBridge {
  public:
-  explicit AudioCodecBridge(const AudioCodec codec);
+  // Returns an AudioCodecBridge instance if |codec| is supported, or a NULL
+  // pointer otherwise.
+  static AudioCodecBridge* Create(const AudioCodec codec);
 
   // Start the audio codec bridge.
   bool Start(const AudioCodec codec, int sample_rate, int channel_count,
-             const uint8* extra_data, size_t extra_data_size);
+             const uint8* extra_data, size_t extra_data_size,
+             bool play_audio);
+
+  // Play the output buffer. This call must be called after
+  // DequeueOutputBuffer() and before ReleaseOutputBuffer.
+  void PlayOutputBuffer(int index, size_t size);
+
+ private:
+  explicit AudioCodecBridge(const char* mime);
 };
 
 class VideoCodecBridge : public MediaCodecBridge {
  public:
-  explicit VideoCodecBridge(const VideoCodec codec);
+  // Returns an VideoCodecBridge instance if |codec| is supported, or a NULL
+  // pointer otherwise.
+  static VideoCodecBridge* Create(const VideoCodec codec);
 
   // Start the video codec bridge.
   // TODO(qinmin): Pass codec specific data if available.
   bool Start(
       const VideoCodec codec, const gfx::Size& size, jobject surface);
+
+ private:
+  explicit VideoCodecBridge(const char* mime);
 };
 
 }  // namespace media

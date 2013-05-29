@@ -90,9 +90,11 @@ class PnaclManifest : public Manifest {
                             "key did not start with files/");
       return false;
     }
-    // Append what follows files to the pnacl URL prefix.
+    // Resolve the full URL to the file. Provide it with a platform-specific
+    // prefix.
     nacl::string key_basename = key.substr(kFilesPrefix.length());
-    return ResolveURL(key_basename, full_url, error_info);
+    return ResolveURL(PnaclUrls::PrependPlatformPrefix(key_basename),
+                      full_url, error_info);
   }
 
  private:
@@ -237,44 +239,20 @@ PnaclCoordinator* PnaclCoordinator::BitcodeToNative(
                  reinterpret_cast<const void*>(coordinator->manifest_.get()),
                  coordinator->off_the_record_));
 
-  // Load llc and ld.
-  std::vector<nacl::string> resource_urls;
-  resource_urls.push_back(PnaclUrls::GetLlcUrl());
-  resource_urls.push_back(PnaclUrls::GetLdUrl());
-  pp::CompletionCallback resources_cb =
-      coordinator->callback_factory_.NewCallback(
-          &PnaclCoordinator::ResourcesDidLoad);
+  // Loading resources (e.g. llc and ld nexes) is done with PnaclResources.
   coordinator->resources_.reset(
       new PnaclResources(plugin,
                          coordinator,
-                         coordinator->manifest_.get(),
-                         resource_urls,
-                         resources_cb));
+                         coordinator->manifest_.get()));
   CHECK(coordinator->resources_ != NULL);
-  coordinator->resources_->StartLoad();
-  // ResourcesDidLoad will be invoked when all resources have been received.
-  return coordinator;
-}
 
-int32_t PnaclCoordinator::GetLoadedFileDesc(int32_t pp_error,
-                                            const nacl::string& url,
-                                            const nacl::string& component) {
-  PLUGIN_PRINTF(("PnaclCoordinator::GetLoadedFileDesc (pp_error=%"
-                 NACL_PRId32", url=%s, component=%s)\n", pp_error,
-                 url.c_str(), component.c_str()));
-  ErrorInfo error_info;
-  int32_t file_desc_ok_to_close = plugin_->GetPOSIXFileDesc(url);
-  if (pp_error != PP_OK || file_desc_ok_to_close == NACL_NO_FILE_DESC) {
-    if (pp_error == PP_ERROR_ABORTED) {
-      plugin_->ReportLoadAbort();
-    } else {
-      ReportPpapiError(ERROR_PNACL_RESOURCE_FETCH,
-                       pp_error,
-                       component + " load failed.");
-    }
-    return NACL_NO_FILE_DESC;
-  }
-  return file_desc_ok_to_close;
+  // The first step of loading resources: read the resource info file.
+  pp::CompletionCallback resource_info_read_cb =
+      coordinator->callback_factory_.NewCallback(
+          &PnaclCoordinator::ResourceInfoWasRead);
+  coordinator->resources_->ReadResourceInfo(PnaclUrls::GetResourceInfoUrl(),
+                                            resource_info_read_cb);
+  return coordinator;
 }
 
 PnaclCoordinator::PnaclCoordinator(
@@ -668,6 +646,15 @@ void PnaclCoordinator::NexeReadDidOpen(int32_t pp_error) {
     translated_fd_.reset(temp_nexe_file_->release_read_wrapper());
   }
   translate_notify_callback_.Run(pp_error);
+}
+
+void PnaclCoordinator::ResourceInfoWasRead(int32_t pp_error) {
+  PLUGIN_PRINTF(("PluginCoordinator::ResourceInfoWasRead (pp_error=%"
+                NACL_PRId32")\n", pp_error));
+  // Second step of loading resources: call StartLoad.
+  pp::CompletionCallback resources_cb =
+      callback_factory_.NewCallback(&PnaclCoordinator::ResourcesDidLoad);
+  resources_->StartLoad(resources_cb);
 }
 
 void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {

@@ -80,27 +80,6 @@ OmniboxState::OmniboxState(const OmniboxEditModel::State& model_state,
 
 OmniboxState::~OmniboxState() {}
 
-// The following const value is the same as in browser_defaults.
-const int kAutocompleteEditFontPixelSize = 15;
-// Font size 10px (as defined in browser_defaults) is too small for many
-// non-Latin/Greek/Cyrillic (non-LGC) scripts. For pop-up window, the total
-// rectangle is 21px tall and the height available for "ink" is 17px (please
-// refer to kAutocompleteVerticalMarginInPopup). With 12px font size, the
-// tallest glyphs in UI fonts we're building for ChromeOS (across all scripts)
-// still fit within 17px "ink" height.
-const int kAutocompleteEditFontPixelSizeInPopup = 12;
-
-// The following 2 values are based on kAutocompleteEditFontPixelSize and
-// kAutocompleteEditFontPixelSizeInPopup. They should be changed accordingly
-// if font size for autocomplete edit (in popup) change.
-const int kAutocompleteVerticalMargin = 1;
-const int kAutocompleteVerticalMarginInPopup = 2;
-
-int GetEditFontPixelSize(bool popup_window_mode) {
-  return popup_window_mode ? kAutocompleteEditFontPixelSizeInPopup :
-                             kAutocompleteEditFontPixelSize;
-}
-
 // This will write |url| and |text| to the clipboard as a well-formed URL.
 void DoCopyURL(const GURL& url, const string16& text, Profile* profile) {
   BookmarkNodeData data;
@@ -118,7 +97,9 @@ OmniboxViewViews::OmniboxViewViews(OmniboxEditController* controller,
                                    Profile* profile,
                                    CommandUpdater* command_updater,
                                    bool popup_window_mode,
-                                   LocationBarView* location_bar)
+                                   LocationBarView* location_bar,
+                                   const gfx::Font& font,
+                                   int font_y_offset)
     : OmniboxView(profile, controller, toolbar_model, command_updater),
       popup_window_mode_(popup_window_mode),
       security_level_(ToolbarModel::NONE),
@@ -130,6 +111,9 @@ OmniboxViewViews::OmniboxViewViews(OmniboxEditController* controller,
       select_all_on_gesture_tap_(false) {
   RemoveBorder();
   set_id(VIEW_ID_OMNIBOX);
+  SetFont(font);
+  SetVerticalMargins(font_y_offset, 0);
+  SetVerticalAlignment(gfx::ALIGN_TOP);
 }
 
 OmniboxViewViews::~OmniboxViewViews() {
@@ -147,9 +131,6 @@ OmniboxViewViews::~OmniboxViewViews() {
 // OmniboxViewViews public:
 
 void OmniboxViewViews::Init() {
-  // The height of the text view is going to change based on the font used.  We
-  // don't want to stretch the height, and we want it vertically centered.
-  // TODO(oshima): make sure the above happens with views.
   SetController(this);
   SetTextInputType(ui::TEXT_INPUT_TYPE_URL);
   SetBackgroundColor(location_bar_view_->GetColor(
@@ -158,27 +139,14 @@ void OmniboxViewViews::Init() {
   if (popup_window_mode_)
     SetReadOnly(true);
 
-  const int font_size = GetEditFontPixelSize(popup_window_mode_);
-  if (font_size != font().GetFontSize())
-    SetFont(font().DeriveFont(font_size - font().GetFontSize()));
-
   // Initialize the popup view using the same font.
   popup_view_.reset(OmniboxPopupContentsView::Create(
       font(), this, model(), location_bar_view_));
 
-  // A null-border to zero out the focused border on textfield.
-  const int vertical_margin = !popup_window_mode_ ?
-      kAutocompleteVerticalMargin : kAutocompleteVerticalMarginInPopup;
-  set_border(views::Border::CreateEmptyBorder(vertical_margin, 0,
-                                              vertical_margin, 0));
 #if defined(OS_CHROMEOS)
   chromeos::input_method::InputMethodManager::Get()->
       AddCandidateWindowObserver(this);
 #endif
-}
-
-gfx::Font OmniboxViewViews::GetFont() {
-  return font();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -331,13 +299,18 @@ void OmniboxViewViews::OnFocus() {
   // Don't call controller()->OnSetFocus, this view has already acquired focus.
 
   // Restore a valid saved selection on tab-to-focus.
-  if (saved_temporary_selection_.IsValid() && !select_all_on_mouse_release_)
-    SelectRange(saved_temporary_selection_);
+  if (location_bar_view_->GetWebContents() && !select_all_on_mouse_release_) {
+    const OmniboxState* state = static_cast<OmniboxState*>(
+        location_bar_view_->GetWebContents()->GetUserData(&OmniboxState::kKey));
+    if (state)
+      SelectSelectionModel(state->selection_model);
+  }
 }
 
 void OmniboxViewViews::OnBlur() {
   // Save the selection to restore on tab-to-focus.
-  saved_temporary_selection_ = GetSelectedRange();
+  if (location_bar_view_->GetWebContents())
+    SaveStateToTab(location_bar_view_->GetWebContents());
 
   views::Textfield::OnBlur();
   gfx::NativeView native_view = NULL;
@@ -399,7 +372,7 @@ void OmniboxViewViews::Update(const content::WebContents* contents) {
       // Restore the saved state and selection.
       model()->RestoreState(state->model_state);
       SelectSelectionModel(state->selection_model);
-      // TODO(oshima): Consider saving/restoring edit history.
+      // TODO(msw|oshima): Consider saving/restoring edit history.
       ClearEditHistory();
     }
   } else if (visibly_changed_permanent_text) {

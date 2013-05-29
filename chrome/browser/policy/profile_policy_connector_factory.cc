@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #if defined(OS_CHROMEOS)
@@ -52,8 +52,9 @@ void ProfilePolicyConnectorFactory::SetServiceForTesting(
 }
 
 ProfilePolicyConnectorFactory::ProfilePolicyConnectorFactory()
-    : ProfileKeyedBaseFactory("ProfilePolicyConnector",
-                              ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedBaseFactory(
+        "ProfilePolicyConnector",
+        BrowserContextDependencyManager::GetInstance()) {
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #if defined(OS_CHROMEOS)
   DependsOn(UserCloudPolicyManagerFactoryChromeOS::GetInstance());
@@ -89,7 +90,7 @@ scoped_ptr<ProfilePolicyConnector>
   return scoped_ptr<ProfilePolicyConnector>(connector);
 }
 
-void ProfilePolicyConnectorFactory::ProfileShutdown(
+void ProfilePolicyConnectorFactory::BrowserContextShutdown(
     content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
   if (profile->IsOffTheRecord())
@@ -99,12 +100,12 @@ void ProfilePolicyConnectorFactory::ProfileShutdown(
     it->second->Shutdown();
 }
 
-void ProfilePolicyConnectorFactory::ProfileDestroyed(
+void ProfilePolicyConnectorFactory::BrowserContextDestroyed(
     content::BrowserContext* context) {
   ConnectorMap::iterator it = connectors_.find(static_cast<Profile*>(context));
   if (it != connectors_.end())
     connectors_.erase(it);
-  ProfileKeyedBaseFactory::ProfileDestroyed(context);
+  BrowserContextKeyedBaseFactory::BrowserContextDestroyed(context);
 }
 
 void ProfilePolicyConnectorFactory::RegisterUserPrefs(

@@ -4,7 +4,7 @@
 
 #include "chrome/browser/storage_monitor/test_storage_monitor.h"
 
-#include "chrome/browser/storage_monitor/media_storage_util.h"
+#include "chrome/browser/storage_monitor/storage_info.h"
 
 #if defined(OS_LINUX)
 #include "chrome/browser/storage_monitor/test_media_transfer_protocol_manager_linux.h"
@@ -42,16 +42,16 @@ void TestStorageMonitor::MarkInitialized() {
 bool TestStorageMonitor::GetStorageInfoForPath(
     const base::FilePath& path,
     StorageInfo* device_info) const {
+  DCHECK(device_info);
+
   if (!path.IsAbsolute())
     return false;
 
-  if (device_info) {
-    device_info->device_id = MediaStorageUtil::MakeDeviceId(
-        MediaStorageUtil::FIXED_MASS_STORAGE, path.AsUTF8Unsafe());
-    device_info->name = path.BaseName().LossyDisplayName();
-    device_info->location = path.value();
-    device_info->total_size_in_bytes = 0;
-  }
+  std::string device_id = StorageInfo::MakeDeviceId(
+      StorageInfo::FIXED_MASS_STORAGE, path.AsUTF8Unsafe());
+  *device_info =
+      StorageInfo(device_id, path.BaseName().LossyDisplayName(), path.value(),
+                  string16(), string16(), string16(), 0);
   return true;
 }
 

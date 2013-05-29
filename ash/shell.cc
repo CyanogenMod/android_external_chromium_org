@@ -16,6 +16,7 @@
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
 #include "ash/display/event_transformation_handler.h"
+#include "ash/display/mirror_window_controller.h"
 #include "ash/display/mouse_cursor_event_filter.h"
 #include "ash/display/screen_position_controller.h"
 #include "ash/drag_drop/drag_drop_controller.h"
@@ -117,7 +118,7 @@
 #include "chromeos/display/output_configurator.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/gpu_feature_type.h"
+#include "gpu/config/gpu_feature_type.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
@@ -211,6 +212,8 @@ Shell::Shell(ShellDelegate* delegate)
       simulate_modal_window_open_for_testing_(false) {
   DCHECK(delegate_.get());
   display_manager_.reset(new internal::DisplayManager);
+  mirror_window_controller_.reset(new internal::MirrorWindowController);
+
   ANNOTATE_LEAKING_OBJECT_PTR(screen_);  // see crbug.com/156466
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_ALTERNATE, screen_);
   if (!gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE))
@@ -219,7 +222,7 @@ Shell::Shell(ShellDelegate* delegate)
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   bool is_panel_fitting_disabled =
       content::GpuDataManager::GetInstance()->IsFeatureBlacklisted(
-          content::GPU_FEATURE_TYPE_PANEL_FITTING) ||
+          gpu::GPU_FEATURE_TYPE_PANEL_FITTING) ||
       CommandLine::ForCurrentProcess()->HasSwitch(
           ::switches::kDisablePanelFitting);
 
@@ -297,6 +300,8 @@ Shell::~Shell() {
 
   power_button_controller_.reset();
   session_state_controller_.reset();
+
+  mirror_window_controller_.reset();
 
   // This also deletes all RootWindows. Note that we invoke Shutdown() on
   // DisplayController before resetting |display_controller_|, since destruction
@@ -420,6 +425,8 @@ bool Shell::IsForcedMaximizeMode() {
 }
 
 void Shell::Init() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+
   delegate_->PreInit();
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   output_configurator_animation_.reset(
@@ -433,6 +440,8 @@ void Shell::Init() {
     display_error_observer_.reset(new internal::DisplayErrorObserver());
     output_configurator_->AddObserver(display_error_observer_.get());
     output_configurator_->set_state_controller(display_change_observer_.get());
+    if (command_line->HasSwitch(ash::switches::kAshEnableSoftwareMirroring))
+      output_configurator_->set_mirroring_controller(display_manager_.get());
     output_configurator_->Start();
     display_change_observer_->OnDisplayModeChanged();
   }
@@ -469,6 +478,7 @@ void Shell::Init() {
 
   screen_position_controller_.reset(new internal::ScreenPositionController);
   root_window_host_factory_.reset(delegate_->CreateRootWindowHostFactory());
+
   display_controller_->Start();
   display_controller_->InitPrimaryDisplay();
   aura::RootWindow* root_window = display_controller_->GetPrimaryRootWindow();
@@ -519,8 +529,6 @@ void Shell::Init() {
   root_window_controller->CreateContainers();
   root_window_controller->CreateSystemBackground(
       delegate_->IsFirstRunAfterBoot());
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
 
   if (command_line->HasSwitch(ash::switches::kAshDisableNewLockAnimations))
     session_state_controller_.reset(new SessionStateControllerImpl);
@@ -616,7 +624,7 @@ void Shell::Init() {
 
 void Shell::ShowContextMenu(const gfx::Point& location_in_screen) {
   // No context menus if there is no session with an active user.
-  if (!session_state_delegate_->HasActiveUser())
+  if (!session_state_delegate_->NumberOfLoggedInUsers())
     return;
   // No context menus when screen is locked.
   if (session_state_delegate_->IsScreenLocked())
@@ -922,10 +930,10 @@ bool Shell::CanWindowReceiveEvents(aura::Window* window) {
   RootWindowControllerList controllers = GetAllRootWindowControllers();
   for (RootWindowControllerList::iterator iter = controllers.begin();
        iter != controllers.end(); ++iter) {
-    if ((*iter)->GetSystemModalLayoutManager(window)->
-            CanWindowReceiveEvents(window)) {
+    internal::SystemModalContainerLayoutManager* layout_manager =
+        (*iter)->GetSystemModalLayoutManager(window);
+    if (layout_manager && layout_manager->CanWindowReceiveEvents(window))
       return true;
-    }
   }
   return false;
 }

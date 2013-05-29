@@ -45,12 +45,6 @@
           <span i18n-content="extensionSettingsDeveloperMode">
         </label>
       </div>
-      <if expr="not pp_ifdef('chromeos')">
-        <div id="managed-user-control-div">
-          <button id="unlock-button" i18n-content="unlockButton"></button>
-          <button id="lock-button" i18n-content="lockButton"></button>
-        </div>
-      </if>
     </div>
     <div class="page-banner profile-is-managed-banner">
       <div class="page-banner-gradient">
@@ -106,6 +100,12 @@
           </a>
           <a class="site-link" target="_parent" hidden></a>
         </p>
+        <div class="permanent-warnings">
+          <div class="extension-warnings" hidden>
+            <span i18n-content="extensionSettingsWarningsTitle"></span>
+            <ul></ul>
+          </div>
+        </div>
         <div class="developer-extras">
           <div>
             <span i18n-content="extensionSettingsExtensionId"></span>
@@ -121,10 +121,6 @@
           <div class="active-views" hidden>
             <span i18n-content="extensionSettingsInspectViews"></span>
             <a href="#"></a>
-          </div>
-          <div class="extension-warnings" hidden>
-            <span i18n-content="extensionSettingsWarningsTitle"></span>
-            <ul></ul>
           </div>
           <div class="install-warnings" hidden>
             <span i18n-content="extensionSettingsInstallWarnings"></span>
@@ -171,6 +167,7 @@
             </span>
           </span>
         </label>
+        <span class="location-text"></span>
         </div>
       </div>
     </div>

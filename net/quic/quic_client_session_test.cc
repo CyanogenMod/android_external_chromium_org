@@ -8,11 +8,12 @@
 
 #include "net/base/capturing_net_log.h"
 #include "net/base/test_completion_callback.h"
-#include "net/quic/crypto/aes_128_gcm_encrypter.h"
+#include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
+#include "net/quic/test_tools/quic_client_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 
 using testing::_;
@@ -29,8 +30,10 @@ class QuicClientSessionTest : public ::testing::Test {
       : guid_(1),
         connection_(new PacketSavingConnection(guid_, IPEndPoint(), false)),
         session_(connection_, NULL, NULL, NULL, kServerHostname,
-                 &crypto_config_, &net_log_) {
+                 QuicConfig(), &crypto_config_, &net_log_) {
+    session_.config()->SetDefaults();
     crypto_config_.SetDefaults();
+    QuicClientSessionPeer::SetMaxOpenStreams(&session_, 1, 1);
   }
 
   void CompleteCryptoHandshake() {
@@ -49,12 +52,11 @@ class QuicClientSessionTest : public ::testing::Test {
   MockRandom random_;
   QuicConnectionVisitorInterface* visitor_;
   TestCompletionCallback callback_;
-  QuicConfig* config_;
   QuicCryptoClientConfig crypto_config_;
 };
 
 TEST_F(QuicClientSessionTest, CryptoConnect) {
-  if (!Aes128GcmEncrypter::IsSupported()) {
+  if (!Aes128Gcm12Encrypter::IsSupported()) {
     LOG(INFO) << "AES GCM not supported. Test skipped.";
     return;
   }
@@ -63,7 +65,7 @@ TEST_F(QuicClientSessionTest, CryptoConnect) {
 }
 
 TEST_F(QuicClientSessionTest, MaxNumConnections) {
-  if (!Aes128GcmEncrypter::IsSupported()) {
+  if (!Aes128Gcm12Encrypter::IsSupported()) {
     LOG(INFO) << "AES GCM not supported. Test skipped.";
     return;
   }
@@ -84,7 +86,7 @@ TEST_F(QuicClientSessionTest, MaxNumConnections) {
 }
 
 TEST_F(QuicClientSessionTest, GoAwayReceived) {
-  if (!Aes128GcmEncrypter::IsSupported()) {
+  if (!Aes128Gcm12Encrypter::IsSupported()) {
     LOG(INFO) << "AES GCM not supported. Test skipped.";
     return;
   }

@@ -132,7 +132,8 @@ class FakeThemeService : public ThemeService {
   bool is_dirty_;
 };
 
-ProfileKeyedService* BuildMockThemeService(content::BrowserContext* profile) {
+BrowserContextKeyedService* BuildMockThemeService(
+    content::BrowserContext* profile) {
   return new FakeThemeService;
 }
 
@@ -161,7 +162,7 @@ scoped_refptr<extensions::Extension> MakeThemeExtension(
 class ThemeSyncableServiceTest : public testing::Test {
  protected:
   ThemeSyncableServiceTest()
-      : loop_(MessageLoop::TYPE_DEFAULT),
+      : loop_(base::MessageLoop::TYPE_DEFAULT),
         ui_thread_(BrowserThread::UI, &loop_),
         file_thread_(BrowserThread::FILE, &loop_),
         fake_theme_service_(NULL) {}
@@ -233,7 +234,7 @@ class ThemeSyncableServiceTest : public testing::Test {
   }
 
   // Needed for setting up extension service.
-  MessageLoop loop_;
+  base::MessageLoop loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 

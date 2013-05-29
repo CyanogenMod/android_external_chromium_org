@@ -60,7 +60,9 @@
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/message_bundle.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/extensions/user_script.h"
+#include "chrome/common/language_detection_details.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -68,6 +70,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
@@ -395,7 +398,8 @@ bool WindowsCreateFunction::ShouldOpenIncognitoWindow(
 bool WindowsCreateFunction::RunImpl() {
   DictionaryValue* args = NULL;
   std::vector<GURL> urls;
-  WebContents* contents = NULL;
+  TabStripModel* source_tab_strip = NULL;
+  int tab_index = -1;
 
   if (HasOptionalArgument(0))
     EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &args));
@@ -447,19 +451,12 @@ bool WindowsCreateFunction::RunImpl() {
     if (args->HasKey(keys::kTabIdKey)) {
       EXTENSION_FUNCTION_VALIDATE(args->GetInteger(keys::kTabIdKey, &tab_id));
 
-      // Find the tab and detach it from the original window.
-      TabStripModel* source_tab_strip = NULL;
-      int tab_index = -1;
+      // Find the tab. |source_tab_strip| and |tab_index| will later be used to
+      // move the tab into the created window.
       if (!GetTabById(tab_id, profile(), include_incognito(),
                       NULL, &source_tab_strip,
                       NULL, &tab_index, &error_))
         return false;
-      contents = source_tab_strip->DetachWebContentsAt(tab_index);
-      if (!contents) {
-        error_ = ErrorUtils::FormatErrorMessage(
-            keys::kTabNotFoundError, base::IntToString(tab_id));
-        return false;
-      }
     }
   }
 
@@ -647,12 +644,23 @@ bool WindowsCreateFunction::RunImpl() {
       TabHelper::FromWebContents(tab)->SetExtensionAppIconById(extension_id);
     }
   }
-  if (contents) {
-    TabStripModel* target_tab_strip = new_window->tab_strip_model();
-    target_tab_strip->InsertWebContentsAt(urls.size(), contents,
-                                          TabStripModel::ADD_NONE);
-  } else if (urls.empty() && window_type != Browser::TYPE_POPUP) {
-    // Don't create a new tab when it is intended to create an empty popup.
+
+  WebContents* contents = NULL;
+  // Move the tab into the created window only if it's an empty popup or it's
+  // a tabbed window.
+  if ((window_type == Browser::TYPE_POPUP && urls.empty()) ||
+      window_type == Browser::TYPE_TABBED) {
+    if (source_tab_strip)
+      contents = source_tab_strip->DetachWebContentsAt(tab_index);
+    if (contents) {
+      TabStripModel* target_tab_strip = new_window->tab_strip_model();
+      target_tab_strip->InsertWebContentsAt(urls.size(), contents,
+                                            TabStripModel::ADD_NONE);
+    }
+  }
+  // Create a new tab if the created window is still empty. Don't create a new
+  // tab when it is intended to create an empty popup.
+  if (!contents && urls.empty() && window_type != Browser::TYPE_POPUP) {
     chrome::NewTab(new_window);
   }
   chrome::SelectNumberedTab(new_window, 0);
@@ -1394,11 +1402,14 @@ bool TabsUpdateFunction::UpdateURL(const std::string &url_string,
   // JavaScript URLs can do the same kinds of things as cross-origin XHR, so
   // we need to check host permissions before allowing them.
   if (url.SchemeIs(chrome::kJavaScriptScheme)) {
-    if (!GetExtension()->CanExecuteScriptOnPage(
+    content::RenderProcessHost* process = web_contents_->GetRenderProcessHost();
+    if (!PermissionsData::CanExecuteScriptOnPage(
+            GetExtension(),
             web_contents_->GetURL(),
             web_contents_->GetURL(),
             tab_id,
             NULL,
+            process ? process->GetID() : -1,
             &error_)) {
       return false;
     }
@@ -1738,9 +1749,11 @@ bool TabsCaptureVisibleTabFunction::RunImpl() {
       web_contents->GetController().GetLastCommittedEntry();
   GURL last_committed_url = last_committed_entry ?
       last_committed_entry->GetURL() : GURL();
-  if (!GetExtension()->CanCaptureVisiblePage(last_committed_url,
-                                             SessionID::IdForTab(web_contents),
-                                             &error_)) {
+  if (!PermissionsData::CanCaptureVisiblePage(
+          GetExtension(),
+          last_committed_url,
+          SessionID::IdForTab(web_contents),
+          &error_)) {
     return false;
   }
 
@@ -1904,7 +1917,7 @@ bool TabsDetectLanguageFunction::RunImpl() {
   if (!translate_tab_helper->language_state().original_language().empty()) {
     // Delay the callback invocation until after the current JS call has
     // returned.
-    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+    base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &TabsDetectLanguageFunction::GotLanguage, this,
         translate_tab_helper->language_state().original_language()));
     return true;
@@ -1927,8 +1940,11 @@ void TabsDetectLanguageFunction::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   std::string language;
-  if (type == chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED)
-    language = *content::Details<std::string>(details).ptr();
+  if (type == chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED) {
+    const LanguageDetectionDetails* lang_det_details =
+        content::Details<const LanguageDetectionDetails>(details).ptr();
+    language = lang_det_details->adopted_language;
+  }
 
   registrar_.RemoveAll();
 
@@ -1952,8 +1968,8 @@ ExecuteCodeInTabFunction::~ExecuteCodeInTabFunction() {}
 
 bool ExecuteCodeInTabFunction::HasPermission() {
   if (Init() &&
-      extension_->HasAPIPermissionForTab(execute_tab_id_,
-                                         APIPermission::kTab)) {
+      PermissionsData::HasAPIPermissionForTab(
+          extension_, execute_tab_id_, APIPermission::kTab)) {
     return true;
   }
   return ExtensionFunction::HasPermission();
@@ -1965,8 +1981,7 @@ bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage() {
   // If |tab_id| is specified, look for the tab. Otherwise default to selected
   // tab in the current window.
   CHECK_GE(execute_tab_id_, 0);
-  if (!GetTabById(execute_tab_id_, profile(),
-                  include_incognito(),
+  if (!GetTabById(execute_tab_id_, profile(), include_incognito(),
                   NULL, NULL, &contents, NULL, &error_)) {
     return false;
   }
@@ -1975,11 +1990,15 @@ bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage() {
 
   // NOTE: This can give the wrong answer due to race conditions, but it is OK,
   // we check again in the renderer.
-  if (!GetExtension()->CanExecuteScriptOnPage(contents->GetURL(),
-                                              contents->GetURL(),
-                                              execute_tab_id_,
-                                              NULL,
-                                              &error_)) {
+  content::RenderProcessHost* process = contents->GetRenderProcessHost();
+  if (!PermissionsData::CanExecuteScriptOnPage(
+          GetExtension(),
+          contents->GetURL(),
+          contents->GetURL(),
+          execute_tab_id_,
+          NULL,
+          process ? process->GetID() : -1,
+          &error_)) {
     return false;
   }
 
@@ -2035,8 +2054,6 @@ bool ExecuteCodeInTabFunction::Init() {
   if (!InjectDetails::Populate(*details_value, details.get()))
     return false;
 
-  details_ = details.Pass();
-
   // If the tab ID wasn't given then it needs to be converted to the
   // currently active tab's ID.
   if (tab_id == -1) {
@@ -2049,6 +2066,7 @@ bool ExecuteCodeInTabFunction::Init() {
   }
 
   execute_tab_id_ = tab_id;
+  details_ = details.Pass();
   return true;
 }
 

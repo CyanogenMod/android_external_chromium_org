@@ -8,8 +8,10 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -138,20 +140,52 @@ class SQL_EXPORT Connection {
   // This must be called before Open() to have an effect.
   void set_exclusive_locking() { exclusive_locking_ = true; }
 
+  // Set an error-handling callback.  On errors, the error number (and
+  // statement, if available) will be passed to the callback.
+  //
+  // If no callback is set, the default action is to crash in debug
+  // mode or return failure in release mode.
+  //
+  // TODO(shess): ErrorDelegate allowed for returning a different
+  // error.  Determine if this is necessary for the callback.  In my
+  // experience, this is not well-tested and probably not safe, and
+  // current clients always return the same error passed.
+  // Additionally, most errors don't admit to a clean way to retry the
+  // failed operation, so converting an error to SQLITE_OK is probably
+  // not feasible.
+  typedef base::Callback<void(int, Statement*)> ErrorCallback;
+  void set_error_callback(const ErrorCallback& callback) {
+    error_callback_ = callback;
+  }
+  void reset_error_callback() {
+    error_callback_.Reset();
+  }
+
   // Sets the object that will handle errors. Recomended that it should be set
   // before calling Open(). If not set, the default is to ignore errors on
   // release and assert on debug builds.
   // Takes ownership of |delegate|.
+  // NOTE(shess): Deprecated, use set_error_callback().
   void set_error_delegate(ErrorDelegate* delegate) {
     error_delegate_.reset(delegate);
   }
 
-  // SQLite error codes for errors on all connections are logged to
-  // enum histogram "Sqlite.Error".  Setting this additionally logs
-  // errors to the histogram |name|.
-  void set_error_histogram_name(const std::string& name) {
-    error_histogram_name_ = name;
+  // Set this tag to enable additional connection-type histogramming
+  // for SQLite error codes and database version numbers.
+  void set_histogram_tag(const std::string& tag) {
+    histogram_tag_ = tag;
   }
+
+  // Record a sparse UMA histogram sample under
+  // |name|+"."+|histogram_tag_|.  If |histogram_tag_| is empty, no
+  // histogram is recorded.
+  void AddTaggedHistogram(const std::string& name, size_t sample) const;
+
+  // Run "PRAGMA integrity_check" and post each line of results into
+  // |messages|.  Returns the success of running the statement - per
+  // the SQLite documentation, if no errors are found the call should
+  // succeed, and a single value "ok" should be in messages.
+  bool IntegrityCheck(std::vector<std::string>* messages);
 
   // Initialization ------------------------------------------------------------
 
@@ -493,12 +527,14 @@ class SQL_EXPORT Connection {
   // databases.
   bool poisoned_;
 
+  ErrorCallback error_callback_;
+
   // This object handles errors resulting from all forms of executing sqlite
   // commands or statements. It can be null which means default handling.
   scoped_ptr<ErrorDelegate> error_delegate_;
 
-  // Auxiliary error-code histogram.
-  std::string error_histogram_name_;
+  // Tag for auxiliary histograms.
+  std::string histogram_tag_;
 
   DISALLOW_COPY_AND_ASSIGN(Connection);
 };

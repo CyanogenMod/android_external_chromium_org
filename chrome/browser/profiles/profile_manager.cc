@@ -230,9 +230,22 @@ void ProfileManager::NukeDeletedProfilesFromDisk() {
   ProfilesToDelete().clear();
 }
 
+namespace {
+
+bool s_allow_get_default_profile = false;
+
+}  // namespace
+
+// static
+void ProfileManager::AllowGetDefaultProfile() {
+  s_allow_get_default_profile = true;
+}
+
 // static
 // TODO(nkostylev): Remove this method once all clients are migrated.
 Profile* ProfileManager::GetDefaultProfile() {
+  CHECK(s_allow_get_default_profile)
+      << "GetDefaultProfile() caled befofre allowed.";
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   return profile_manager->GetDefaultProfile(profile_manager->user_data_dir_);
 }
@@ -240,6 +253,8 @@ Profile* ProfileManager::GetDefaultProfile() {
 // static
 // TODO(nkostylev): Remove this method once all clients are migrated.
 Profile* ProfileManager::GetDefaultProfileOrOffTheRecord() {
+  CHECK(s_allow_get_default_profile)
+      << "GetDefaultProfileOrOffTheRecord() caled befofre allowed.";
   // TODO (mukai,nkostylev): In the long term we should fix those cases that
   // crash on Guest mode and have only one GetDefaultProfile() method.
   Profile* profile = GetDefaultProfile();
@@ -713,12 +728,6 @@ void ProfileManager::Observe(
   }
 }
 
-// static
-bool ProfileManager::IsImportProcess(const CommandLine& command_line) {
-  return (command_line.HasSwitch(switches::kImport) ||
-          command_line.HasSwitch(switches::kImportFromFile));
-}
-
 void ProfileManager::SetWillImport() {
   will_import_ = true;
 }
@@ -794,16 +803,13 @@ void ProfileManager::DoFinalInit(Profile* profile, bool go_off_the_record) {
 void ProfileManager::DoFinalInitForServices(Profile* profile,
                                             bool go_off_the_record) {
 #if defined(ENABLE_EXTENSIONS)
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (!IsImportProcess(command_line)) {
-    extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(
-        !go_off_the_record);
-    // During tests, when |profile| is an instance of TestingProfile,
-    // ExtensionSystem might not create an ExtensionService.
-    if (extensions::ExtensionSystem::Get(profile)->extension_service()) {
-      profile->GetHostContentSettingsMap()->RegisterExtensionService(
-          extensions::ExtensionSystem::Get(profile)->extension_service());
-    }
+  extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(
+      !go_off_the_record);
+  // During tests, when |profile| is an instance of TestingProfile,
+  // ExtensionSystem might not create an ExtensionService.
+  if (extensions::ExtensionSystem::Get(profile)->extension_service()) {
+    profile->GetHostContentSettingsMap()->RegisterExtensionService(
+        extensions::ExtensionSystem::Get(profile)->extension_service());
   }
 #endif
 #if defined(ENABLE_MANAGED_USERS)

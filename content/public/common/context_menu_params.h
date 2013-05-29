@@ -11,6 +11,7 @@
 #include "base/string16.h"
 #include "googleurl/src/gurl.h"
 #include "content/common/content_export.h"
+#include "content/public/common/page_state.h"
 #include "content/public/common/ssl_status.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
@@ -42,7 +43,6 @@ struct CONTENT_EXPORT CustomContextMenuContext {
 //              could be used for more contextual actions.
 struct CONTENT_EXPORT ContextMenuParams {
   ContextMenuParams();
-  explicit ContextMenuParams(const WebKit::WebContextMenuData& data);
   ~ContextMenuParams();
 
   // This is the type of Context Node that the context menu was invoked on.
@@ -88,9 +88,8 @@ struct CONTENT_EXPORT ContextMenuParams {
   // This is the ID of the subframe that the context menu was invoked on.
   int64 frame_id;
 
-  // This is the history item state of the subframe that the context menu was
-  // invoked on.
-  std::string frame_content_state;
+  // This is the page state of the frame on which the context menu was invoked.
+  PageState frame_page_state;
 
   // These are the parameters for the media element that the context menu
   // was invoked on.
@@ -102,6 +101,9 @@ struct CONTENT_EXPORT ContextMenuParams {
   // The misspelled word under the cursor, if any. Used to generate the
   // |dictionary_suggestions| list.
   string16 misspelled_word;
+
+  // The identifier of the misspelling under the cursor, if any.
+  uint32 misspelling_hash;
 
   // Suggested replacements for a misspelled word under the cursor.
   // This vector gets populated in the render process host

@@ -16,7 +16,7 @@
 #include "chrome/browser/policy/cloud/cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/cloud_policy_service.h"
 #include "chrome/browser/policy/cloud/component_cloud_policy_service.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 
 class PrefService;
@@ -38,7 +38,7 @@ class UserCloudPolicyManagerChromeOS
       public CloudPolicyClient::Observer,
       public CloudPolicyService::Observer,
       public ComponentCloudPolicyService::Delegate,
-      public ProfileKeyedService {
+      public BrowserContextKeyedService {
  public:
   // If |wait_for_policy_fetch| is true, IsInitializationComplete() will return
   // false as long as there hasn't been a successful policy fetch.
@@ -72,8 +72,7 @@ class UserCloudPolicyManagerChromeOS
   virtual void Shutdown() OVERRIDE;
   virtual bool IsInitializationComplete(PolicyDomain domain) const OVERRIDE;
   virtual void RegisterPolicyDomain(
-      PolicyDomain domain,
-      const std::set<std::string>& component_ids) OVERRIDE;
+      scoped_refptr<const PolicyDomainDescriptor> descriptor) OVERRIDE;
 
   // CloudPolicyManager:
   virtual scoped_ptr<PolicyBundle> CreatePolicyBundle() OVERRIDE;

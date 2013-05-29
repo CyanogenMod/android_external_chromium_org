@@ -255,6 +255,9 @@ bool InputMethodManagerImpl::MigrateOldInputMethods(
       }
     }
   }
+  std::vector<std::string>::iterator it =
+      std::unique(input_method_ids->begin(), input_method_ids->end());
+  input_method_ids->resize(std::distance(input_method_ids->begin(), it));
   return rewritten;
 }
 
@@ -281,17 +284,6 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
   if (state_ == STATE_TERMINATING)
     return false;
 
-  if (!component_extension_ime_manager_->IsInitialized() ||
-      (!InputMethodUtil::IsKeyboardLayout(input_method_id) &&
-       !IsIBusConnectionAlive())) {
-    // We can't change input method before the initialization of component
-    // extension ime manager or before connection to ibus-daemon is not
-    // established. ChangeInputMethod will be called with
-    // |pending_input_method_| when the both initialization is done.
-    pending_input_method_ = input_method_id;
-    return false;
-  }
-
   std::string input_method_id_to_switch = input_method_id;
 
   // Sanity check.
@@ -306,6 +298,18 @@ bool InputMethodManagerImpl::ChangeInputMethodInternal(
     }
   }
 
+  if (!component_extension_ime_manager_->IsInitialized() ||
+      (!InputMethodUtil::IsKeyboardLayout(input_method_id_to_switch) &&
+       !IsIBusConnectionAlive())) {
+    // We can't change input method before the initialization of component
+    // extension ime manager or before connection to ibus-daemon is not
+    // established. ChangeInputMethod will be called with
+    // |pending_input_method_| when the both initialization is done.
+    pending_input_method_ = input_method_id_to_switch;
+    return false;
+  }
+
+  pending_input_method_.clear();
   IBusInputContextClient* input_context =
       chromeos::DBusThreadManager::Get()->GetIBusInputContextClient();
   const std::string current_input_method_id = current_input_method_.id();
@@ -398,10 +402,8 @@ void InputMethodManagerImpl::OnComponentExtensionInitialized(
 
   LoadNecessaryComponentExtensions();
 
-  if (!pending_input_method_.empty()) {
-    if (ChangeInputMethodInternal(pending_input_method_, false))
-      pending_input_method_.clear();
-  }
+  if (!pending_input_method_.empty())
+    ChangeInputMethodInternal(pending_input_method_, false);
 
 }
 
@@ -440,6 +442,7 @@ void InputMethodManagerImpl::AddInputMethodExtension(
     const std::string& name,
     const std::vector<std::string>& layouts,
     const std::string& language,
+    const GURL& options_url,
     InputMethodEngine* engine) {
   if (state_ == STATE_TERMINATING)
     return;
@@ -450,10 +453,8 @@ void InputMethodManagerImpl::AddInputMethodExtension(
     return;
   }
 
-  // TODO(nona): Support options page for normal extension ime.
-  //             crbug.com/156283.
   extra_input_methods_[id] =
-      InputMethodDescriptor(id, name, layouts, language, GURL());
+      InputMethodDescriptor(id, name, layouts, language, options_url);
   if (Contains(enabled_extension_imes_, id) &&
       !ComponentExtensionIMEManager::IsComponentExtensionIMEId(id)) {
     if (!Contains(active_input_method_ids_, id)) {
@@ -720,10 +721,8 @@ void InputMethodManagerImpl::OnConnected() {
     }
   }
 
-  if (!pending_input_method_.empty()) {
-    if (ChangeInputMethodInternal(pending_input_method_, false))
-      pending_input_method_.clear();
-  }
+  if (!pending_input_method_.empty())
+    ChangeInputMethodInternal(pending_input_method_, false);
 }
 
 void InputMethodManagerImpl::OnDisconnected() {

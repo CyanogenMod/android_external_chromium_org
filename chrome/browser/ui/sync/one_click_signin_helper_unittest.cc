@@ -55,7 +55,7 @@ const char kImplicitURLString[] =
 class SigninManagerMock : public FakeSigninManager {
  public:
   explicit SigninManagerMock(Profile* profile) : FakeSigninManager(profile) {
-    Initialize(profile);
+    Initialize(profile, NULL);
   }
   MOCK_CONST_METHOD1(IsAllowedUsername, bool(const std::string& username));
 };
@@ -155,8 +155,8 @@ class OneClickTestProfileSyncService : public TestProfileSyncService {
    virtual ~OneClickTestProfileSyncService() {}
 
    // Helper routine to be used in conjunction with
-   // ProfileKeyedServiceFactory::SetTestingFactory().
-   static ProfileKeyedService* Build(content::BrowserContext* profile) {
+   // BrowserContextKeyedServiceFactory::SetTestingFactory().
+   static BrowserContextKeyedService* Build(content::BrowserContext* profile) {
      return new OneClickTestProfileSyncService(static_cast<Profile*>(profile));
    }
 
@@ -189,7 +189,7 @@ class OneClickTestProfileSyncService : public TestProfileSyncService {
    bool first_setup_in_progress_;
 };
 
-static ProfileKeyedService* BuildSigninManagerMock(
+static BrowserContextKeyedService* BuildSigninManagerMock(
     content::BrowserContext* profile) {
   return new SigninManagerMock(static_cast<Profile*>(profile));
 }

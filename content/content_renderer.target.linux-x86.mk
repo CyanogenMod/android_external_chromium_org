@@ -35,6 +35,7 @@ LOCAL_SRC_FILES := \
 	content/public/renderer/android_content_detection_prefixes.cc \
 	content/public/renderer/content_renderer_client.cc \
 	content/public/renderer/document_state.cc \
+	content/public/renderer/history_item_serialization.cc \
 	content/public/renderer/navigation_state.cc \
 	content/public/renderer/render_process_observer.cc \
 	content/public/renderer/render_thread.cc \
@@ -64,7 +65,9 @@ LOCAL_SRC_FILES := \
 	content/renderer/gpu/compositor_output_surface.cc \
 	content/renderer/gpu/compositor_software_output_device.cc \
 	content/renderer/gpu/input_event_filter.cc \
+	content/renderer/gpu/input_handler_proxy.cc \
 	content/renderer/gpu/input_handler_manager.cc \
+	content/renderer/gpu/input_handler_wrapper.cc \
 	content/renderer/gpu/gpu_benchmarking_extension.cc \
 	content/renderer/gpu/mailbox_output_surface.cc \
 	content/renderer/gpu/stream_texture_host_android.cc \
@@ -104,11 +107,13 @@ LOCAL_SRC_FILES := \
 	content/renderer/browser_plugin/browser_plugin_manager.cc \
 	content/renderer/browser_plugin/browser_plugin_manager_impl.cc \
 	content/renderer/browser_plugin/browser_plugin_compositing_helper.cc \
+	content/renderer/context_menu_params_builder.cc \
 	content/renderer/date_time_formatter.cc \
 	content/renderer/fetchers/alt_error_page_resource_fetcher.cc \
 	content/renderer/fetchers/image_resource_fetcher.cc \
 	content/renderer/fetchers/multi_resolution_image_resource_fetcher.cc \
 	content/renderer/fetchers/resource_fetcher.cc \
+	content/renderer/ime_event_guard.cc \
 	content/renderer/render_process_impl.cc \
 	content/renderer/render_thread_impl.cc \
 	content/renderer/render_view_impl.cc \
@@ -128,6 +133,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/renderer_webcolorchooser_impl.cc \
 	content/renderer/renderer_webkitplatformsupport_impl.cc \
 	content/renderer/rendering_benchmark.cc \
+	content/renderer/savable_resources.cc \
 	content/renderer/skia_benchmarking_extension.cc \
 	content/renderer/text_input_client_observer.cc \
 	content/renderer/v8_value_converter_impl.cc \
@@ -182,6 +188,7 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
+	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -246,14 +253,14 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
 	$(LOCAL_PATH)/third_party/hyphen \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/common \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/icu4c/i18n \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/libjingle/overrides \
 	$(LOCAL_PATH)/third_party/libjingle/source \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/webrtc \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/expat/lib \
+	$(PWD)/external/expat/lib \
 	$(LOCAL_PATH)/third_party/jsoncpp/overrides/include \
 	$(LOCAL_PATH)/third_party/jsoncpp/source/include \
 	$(LOCAL_PATH)/third_party/npapi \
@@ -264,9 +271,9 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
-	$(GYP_ABS_ANDROID_TOP_DIR)/frameworks/wilhelm/include \
-	$(GYP_ABS_ANDROID_TOP_DIR)/bionic \
-	$(GYP_ABS_ANDROID_TOP_DIR)/external/stlport/stlport
+	$(PWD)/frameworks/wilhelm/include \
+	$(PWD)/bionic \
+	$(PWD)/external/stlport/stlport
 
 LOCAL_C_INCLUDES := $(GYP_COPIED_SOURCE_ORIGIN_DIRS) $(LOCAL_C_INCLUDES)
 

@@ -9,13 +9,13 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/api/discovery/suggested_link.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
 namespace extensions {
 
 // This class keeps track of links suggested by an extension using the discovery
 // API.
-class SuggestedLinksRegistry : public ProfileKeyedService {
+class SuggestedLinksRegistry : public BrowserContextKeyedService {
  public:
   // A list of ExtensionSuggestedLink's.
   typedef std::vector<linked_ptr<extensions::SuggestedLink> > SuggestedLinkList;
