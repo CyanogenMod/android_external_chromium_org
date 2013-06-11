@@ -11,6 +11,10 @@
 #include "cc/output/output_surface.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 
+namespace cc {
+class CompositorFrameMetadata;
+}
+
 namespace content {
 
 class SynchronousCompositorClient;
@@ -24,6 +28,8 @@ class SynchronousCompositorOutputSurfaceDelegate {
   virtual void DidDestroySynchronousOutputSurface(
       SynchronousCompositorOutputSurface* output_surface) = 0;
   virtual void SetContinuousInvalidate(bool enable) = 0;
+  virtual void UpdateFrameMetaData(
+      const cc::CompositorFrameMetadata& frame_metadata) = 0;
 
  protected:
   SynchronousCompositorOutputSurfaceDelegate() {}
@@ -48,9 +54,8 @@ class SynchronousCompositorOutputSurface
   virtual bool ForcedDrawToSoftwareDevice() const OVERRIDE;
   virtual bool BindToClient(cc::OutputSurfaceClient* surface_client) OVERRIDE;
   virtual void Reshape(gfx::Size size, float scale_factor) OVERRIDE;
-  virtual void SendFrameToParentCompositor(cc::CompositorFrame* frame) OVERRIDE;
   virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
-  virtual void SwapBuffers(const ui::LatencyInfo& info) OVERRIDE;
+  virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE;
 
   // Partial SynchronousCompositor API implementation.
   bool InitializeHwDraw();

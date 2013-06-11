@@ -219,6 +219,7 @@ include $(LOCAL_PATH)/v8/tools/gyp/v8_base.arm.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_base.arm.target.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_nosnapshot.arm.host.darwin-arm.mk
 include $(LOCAL_PATH)/v8/tools/gyp/v8_snapshot.target.darwin-arm.mk
+include $(LOCAL_PATH)/webkit/base/webkit_base.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.darwin-arm.mk
@@ -230,12 +231,13 @@ include $(LOCAL_PATH)/webkit/support/glue_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue_renderer.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/plugins.target.darwin-arm.mk
-include $(LOCAL_PATH)/webkit/support/webkit_base.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/webkit_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/webkit_media.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/webkit_resources.target.darwin-arm.mk
-include $(LOCAL_PATH)/webkit/support/webkit_storage.target.darwin-arm.mk
 include $(LOCAL_PATH)/webkit/support/webkit_strings.target.darwin-arm.mk
+include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.darwin-arm.mk
+include $(LOCAL_PATH)/webkit/webkit_storage_common.target.darwin-arm.mk
+include $(LOCAL_PATH)/webkit/webkit_storage_renderer.target.darwin-arm.mk
 
 # "gyp_all_modules" is a concatenation of the "gyp_all_modules" targets from
 # all the included sub-makefiles. This is just here to clarify.

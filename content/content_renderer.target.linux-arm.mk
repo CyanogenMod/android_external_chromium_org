@@ -65,6 +65,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/geolocation_dispatcher.cc \
 	content/renderer/gpu/compositor_output_surface.cc \
 	content/renderer/gpu/compositor_software_output_device.cc \
+	content/renderer/gpu/delegated_compositor_output_surface.cc \
 	content/renderer/gpu/input_event_filter.cc \
 	content/renderer/gpu/input_handler_proxy.cc \
 	content/renderer/gpu/input_handler_manager.cc \

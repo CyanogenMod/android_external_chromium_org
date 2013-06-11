@@ -10,7 +10,7 @@
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/download/download_file_icon_extractor.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
@@ -3347,11 +3347,20 @@ IN_PROC_BROWSER_TEST_F(
                          result_id)));
 }
 
+#if defined(OS_WIN)
+// This test is very flaky on Win XP and Aura. http://crbug.com/248438
+#define MAYBE_DownloadExtensionTest_OnDeterminingFilename_InterruptedResume \
+    DISABLED_DownloadExtensionTest_OnDeterminingFilename_InterruptedResume
+#else
+#define MAYBE_DownloadExtensionTest_OnDeterminingFilename_InterruptedResume \
+    DownloadExtensionTest_OnDeterminingFilename_InterruptedResume
+#endif
+
 // Test download interruption while extensions determining filename. Should not
 // re-dispatch onDeterminingFilename.
 IN_PROC_BROWSER_TEST_F(
     DownloadExtensionTest,
-    DownloadExtensionTest_OnDeterminingFilename_InterruptedResume) {
+    MAYBE_DownloadExtensionTest_OnDeterminingFilename_InterruptedResume) {
   CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   LoadExtension("downloads_split");

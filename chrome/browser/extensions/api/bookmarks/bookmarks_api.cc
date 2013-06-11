@@ -15,9 +15,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/sha1.h"
 #include "base/stl_util.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
 #include "chrome/browser/bookmarks/bookmark_html_writer.h"
@@ -117,7 +117,7 @@ bool BookmarksFunction::GetBookmarkIdAsInt64(const std::string& id_string,
 }
 
 bool BookmarksFunction::EditBookmarksEnabled() {
-  PrefService* prefs = components::UserPrefs::Get(profile_);
+  PrefService* prefs = user_prefs::UserPrefs::Get(profile_);
   if (prefs->GetBoolean(prefs::kEditBookmarksEnabled))
     return true;
   error_ = keys::kEditBookmarksDisabled;
@@ -436,7 +436,7 @@ bool BookmarksSearchFunction::RunImpl() {
       bookmarks::Search::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  PrefService* prefs = components::UserPrefs::Get(profile_);
+  PrefService* prefs = user_prefs::UserPrefs::Get(profile_);
   std::string lang = prefs->GetString(prefs::kAcceptLanguages);
   std::vector<const BookmarkNode*> nodes;
   bookmark_utils::GetBookmarksContainingText(

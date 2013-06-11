@@ -26,6 +26,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/gpu/compositor_software_output_device.h"
+#include "content/renderer/gpu/delegated_compositor_output_surface.h"
 #include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/gpu/mailbox_output_surface.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
@@ -178,7 +179,6 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       invalidation_task_posted_(false),
       screen_info_(screen_info),
       device_scale_factor_(screen_info_.deviceScaleFactor),
-      throttle_input_events_(true),
       is_threaded_compositing_enabled_(false),
       overscroll_notifications_enabled_(false),
       weak_ptr_factory_(this) {
@@ -600,7 +600,7 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   if (command_line.HasSwitch(switches::kEnableSoftwareCompositingGLAdapter)) {
       return scoped_ptr<cc::OutputSurface>(
           new CompositorOutputSurface(routing_id(), NULL,
-              new CompositorSoftwareOutputDevice()));
+              new CompositorSoftwareOutputDevice(), true));
   }
 
   // Explicitly disable antialiasing for the compositor. As of the time of
@@ -626,14 +626,18 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   if (!context)
     return scoped_ptr<cc::OutputSurface>();
 
-  bool composite_to_mailbox =
-      command_line.HasSwitch(cc::switches::kCompositeToMailbox) &&
-      !command_line.HasSwitch(switches::kEnableDelegatedRenderer);
-  // No swap throttling yet when compositing on the main thread.
-  DCHECK(!composite_to_mailbox || is_threaded_compositing_enabled_);
-  return scoped_ptr<cc::OutputSurface>(composite_to_mailbox ?
-      new MailboxOutputSurface(routing_id(), context, NULL) :
-          new CompositorOutputSurface(routing_id(), context, NULL));
+  if (command_line.HasSwitch(switches::kEnableDelegatedRenderer)) {
+    DCHECK(is_threaded_compositing_enabled_);
+    return scoped_ptr<cc::OutputSurface>(
+        new DelegatedCompositorOutputSurface(routing_id(), context, NULL));
+  }
+  if (command_line.HasSwitch(cc::switches::kCompositeToMailbox)) {
+    DCHECK(is_threaded_compositing_enabled_);
+    return scoped_ptr<cc::OutputSurface>(
+        new MailboxOutputSurface(routing_id(), context, NULL));
+  }
+  return scoped_ptr<cc::OutputSurface>(
+      new CompositorOutputSurface(routing_id(), context, NULL, false));
 }
 
 void RenderWidget::OnViewContextSwapBuffersAborted() {
@@ -809,11 +813,7 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
                     compositor_->commitRequested();
   }
 
-  bool is_input_throttled =
-      throttle_input_events_ &&
-      frame_pending;
-
-  if (event_type_gets_rate_limited && is_input_throttled && !is_hidden_) {
+  if (event_type_gets_rate_limited && frame_pending && !is_hidden_) {
     // We want to rate limit the input events in this case, so we'll wait for
     // painting to finish before ACKing this message.
     if (pending_input_event_ack_) {

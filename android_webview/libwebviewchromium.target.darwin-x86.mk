@@ -145,6 +145,11 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_svg_gyp)/third_party_WebKit_Source_core_webcore_svg_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_derived_gyp)/third_party_WebKit_Source_core_webcore_derived_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_modules_modules_gyp)/third_party_WebKit_Source_modules_modules_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_base_webkit_base_gyp)/webkit_base_webkit_base_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_webkit_storage_browser_gyp)/webkit_webkit_storage_browser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,sql_sql_gyp)/sql_sql_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_leveldatabase_leveldatabase_gyp)/third_party_leveldatabase_leveldatabase_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_webkit_storage_common_gyp)/webkit_webkit_storage_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,printing_printing_gyp)/printing_printing_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_native_theme_native_theme_gyp)/ui_native_theme_native_theme_gyp.a \
@@ -156,12 +161,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_plugins_gyp)/webkit_support_plugins_gyp.a \
 	$(call intermediates-dir-for,GYP,ppapi_ppapi_c_gyp)/ppapi_c.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ppapi_ppapi_shared_gyp)/ppapi_ppapi_shared_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_webkit_base_gyp)/webkit_support_webkit_base_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_webkit_common_gyp)/webkit_support_webkit_common_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_resources_gyp)/webkit_resources.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_webkit_storage_gyp)/webkit_support_webkit_storage_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,sql_sql_gyp)/sql_sql_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_leveldatabase_leveldatabase_gyp)/third_party_leveldatabase_leveldatabase_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_webkit_media_gyp)/webkit_support_webkit_media_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_widevine_cdm_widevine_cdm_version_h_gyp)/widevine_cdm_version_h.stamp \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_strings_gyp)/webkit_strings.stamp \
@@ -187,6 +188,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_hyphen_hyphen_gyp)/third_party_hyphen_hyphen_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_gyp)/third_party_libjingle_libjingle_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libjingle_libjingle_p2p_constants_gyp)/third_party_libjingle_libjingle_p2p_constants_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_webkit_storage_renderer_gyp)/webkit_webkit_storage_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_renderer_gyp)/webkit_support_glue_renderer_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_gyp)/third_party_libphonenumber_libphonenumber_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a \
@@ -439,6 +441,11 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_WebKit_Source_core_webcore_svg_gyp \
 	third_party_WebKit_Source_core_webcore_derived_gyp \
 	third_party_WebKit_Source_modules_modules_gyp \
+	webkit_base_webkit_base_gyp \
+	webkit_webkit_storage_browser_gyp \
+	sql_sql_gyp \
+	third_party_leveldatabase_leveldatabase_gyp \
+	webkit_webkit_storage_common_gyp \
 	webkit_support_glue_gyp \
 	printing_printing_gyp \
 	ui_native_theme_native_theme_gyp \
@@ -449,11 +456,7 @@ LOCAL_STATIC_LIBRARIES := \
 	webkit_support_glue_common_gyp \
 	webkit_support_plugins_gyp \
 	ppapi_ppapi_shared_gyp \
-	webkit_support_webkit_base_gyp \
 	webkit_support_webkit_common_gyp \
-	webkit_support_webkit_storage_gyp \
-	sql_sql_gyp \
-	third_party_leveldatabase_leveldatabase_gyp \
 	webkit_support_webkit_media_gyp \
 	components_encryptor_gyp \
 	components_user_prefs_gyp \
@@ -470,6 +473,7 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_hyphen_hyphen_gyp \
 	third_party_libjingle_libjingle_gyp \
 	third_party_libjingle_libjingle_p2p_constants_gyp \
+	webkit_webkit_storage_renderer_gyp \
 	webkit_support_glue_renderer_gyp \
 	third_party_libphonenumber_libphonenumber_gyp \
 	third_party_libphonenumber_libphonenumber_without_metadata_gyp \

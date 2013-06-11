@@ -1242,7 +1242,14 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
 }
 #endif
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallBlacklist) {
+// See crbug.com/248464
+#if defined(OS_WIN)
+#define MAYBE_ExtensionInstallBlacklist DISABLED_ExtensionInstallBlacklist
+#else
+#define MAYBE_ExtensionInstallBlacklist ExtensionInstallBlacklist
+#endif
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallBlacklist) {
   // Verifies that blacklisted extensions can't be installed.
   ExtensionService* service = extension_service();
   ASSERT_FALSE(service->GetExtensionById(kGoodCrxId, true));
@@ -1901,7 +1908,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, SpokenFeedbackEnabled) {
 
   // Manually enable spoken feedback.
   accessibility_manager->EnableSpokenFeedback(
-      true, NULL, ash::A11Y_NOTIFICATION_NONE);
+      true, ash::A11Y_NOTIFICATION_NONE);
   EXPECT_TRUE(accessibility_manager->IsSpokenFeedbackEnabled());
 
   // Verify that policy overrides the manual setting.
@@ -1914,7 +1921,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, SpokenFeedbackEnabled) {
 
   // Verify that spoken feedback cannot be enabled manually anymore.
   accessibility_manager->EnableSpokenFeedback(
-      true, NULL, ash::A11Y_NOTIFICATION_NONE);
+      true, ash::A11Y_NOTIFICATION_NONE);
   EXPECT_FALSE(accessibility_manager->IsSpokenFeedbackEnabled());
 }
 
