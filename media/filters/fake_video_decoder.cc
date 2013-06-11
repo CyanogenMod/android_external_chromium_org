@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/demuxer_stream.h"
 
@@ -153,7 +153,7 @@ void FakeVideoDecoder::BufferReady(DemuxerStream::Status status,
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, NORMAL);
   DCHECK(!read_cb_.IsNull());
-  DCHECK_EQ(status != DemuxerStream::kOk, !buffer) << status;
+  DCHECK_EQ(status != DemuxerStream::kOk, !buffer.get()) << status;
 
   if (!stop_cb_.IsNull()) {
     read_cb_.RunOrHold(kOk, scoped_refptr<VideoFrame>());
@@ -187,15 +187,19 @@ void FakeVideoDecoder::BufferReady(DemuxerStream::Status status,
 
   DCHECK_EQ(status, DemuxerStream::kOk);
 
-  // Make sure the decoder is always configured with the latest config.
-  DCHECK(current_config_.Matches(demuxer_stream_->video_decoder_config()));
-
   if (buffer->IsEndOfStream() && decoded_frames_.empty()) {
     read_cb_.RunOrHold(kOk, VideoFrame::CreateEmptyFrame());
     return;
   }
 
   if (!buffer->IsEndOfStream()) {
+    // Make sure the decoder is always configured with the latest config.
+    DCHECK(current_config_.Matches(demuxer_stream_->video_decoder_config()))
+        << "Decoder's Current Config: "
+        << current_config_.AsHumanReadableString()
+        << "DemuxerStream's Current Config: "
+        << demuxer_stream_->video_decoder_config().AsHumanReadableString();
+
     scoped_refptr<VideoFrame> video_frame = VideoFrame::CreateColorFrame(
         current_config_.coded_size(), 0, 0, 0, buffer->GetTimestamp());
     decoded_frames_.push_back(video_frame);

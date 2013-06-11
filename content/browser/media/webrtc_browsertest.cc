@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
@@ -115,15 +115,13 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, MANUAL_CanSetupCallAndSendDtmf) {
       ExecuteJavascript("callAndSendDtmf('123,abc');"));
 }
 
-// TODO(miu): Test is flaky.  http://crbug.com/236102
 IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest,
-                       DISABLED_CanMakeEmptyCallThenAddStreamsAndRenegotiate) {
+                       CanMakeEmptyCallThenAddStreamsAndRenegotiate) {
   GURL url(embedded_test_server()->GetURL("/media/peerconnection-call.html"));
   NavigateToURL(shell(), url);
 
   const char* kJavascript =
-      "makeEmptyCallThenAddOneStreamAndRenegotiate("
-      "{video: true, audio: true});";
+      "callEmptyThenAddOneStreamAndRenegotiate({video: true, audio: true});";
   EXPECT_TRUE(ExecuteJavascript(kJavascript));
   ExpectTitle("OK");
 }
@@ -180,9 +178,16 @@ IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, MAYBE_CallWithDataAndMedia) {
   ExpectTitle("OK");
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+// Timing out on ARM linux bot: http://crbug.com/238490
+#define MAYBE_CallWithDataAndLaterAddMedia DISABLED_CallWithDataAndLaterAddMedia
+#else
+#define MAYBE_CallWithDataAndLaterAddMedia CallWithDataAndLaterAddMedia
+#endif
+
 // This test will make a PeerConnection-based call and test an unreliable text
 // dataChannel and later add an audio and video track.
-IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, CallWithDataAndLaterAddMedia) {
+IN_PROC_BROWSER_TEST_F(WebrtcBrowserTest, MAYBE_CallWithDataAndLaterAddMedia) {
   GURL url(embedded_test_server()->GetURL("/media/peerconnection-call.html"));
   NavigateToURL(shell(), url);
 

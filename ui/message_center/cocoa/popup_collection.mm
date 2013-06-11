@@ -10,9 +10,7 @@
 #include "ui/message_center/message_center_observer.h"
 #include "ui/message_center/message_center_style.h"
 
-namespace {
 const float kAnimationDuration = 0.2;
-}  // namespace
 
 @interface MCPopupCollection (Private)
 // Returns the primary screen's visible frame rectangle.
@@ -93,12 +91,15 @@ class PopupCollectionObserver : public message_center::MessageCenterObserver {
     messageCenter_ = messageCenter;
     observer_.reset(new PopupCollectionObserver(messageCenter_, self));
     popups_.reset([[NSMutableArray alloc] init]);
+    popupsBeingRemoved_.reset([[NSMutableArray alloc] init]);
     popupAnimationDuration_ = kAnimationDuration;
   }
   return self;
 }
 
 - (void)dealloc {
+  [popupsBeingRemoved_ makeObjectsPerformSelector:
+      @selector(markPopupCollectionGone)];
   [self removeAllNotifications];
   [super dealloc];
 }
@@ -112,6 +113,13 @@ class PopupCollectionObserver : public message_center::MessageCenterObserver {
 }
 
 - (void)onPopupAnimationEnded:(const std::string&)notificationID {
+  NSUInteger index = [popupsBeingRemoved_ indexOfObjectPassingTest:
+      ^BOOL(id popup, NSUInteger index, BOOL* stop) {
+          return [popup notificationID] == notificationID;
+      }];
+  if (index != NSNotFound)
+    [popupsBeingRemoved_ removeObjectAtIndex:index];
+
   animatingNotificationIDs_.erase(notificationID);
   if (![self isAnimating])
     [self layoutNotifications];
@@ -182,6 +190,7 @@ class PopupCollectionObserver : public message_center::MessageCenterObserver {
     bounds.origin.y = y;
     [popup showWithAnimation:bounds];
     [popups_ addObject:popup];
+    messageCenter_->DisplayedNotification(notification->id());
     return YES;
   }
 
@@ -309,6 +318,11 @@ class PopupCollectionObserver : public message_center::MessageCenterObserver {
     if (index != NSNotFound) {
       [[popups_ objectAtIndex:index] closeWithAnimation];
       animatingNotificationIDs_.insert(notificationID);
+
+      // Still need to track popup object and only remove it after the animation
+      // ends. We need to notify these objects that the collection is gone
+      // in the collection destructor.
+      [popupsBeingRemoved_ addObject:[popups_ objectAtIndex:index]];
       [popups_ removeObjectAtIndex:index];
     }
   }
@@ -330,10 +344,11 @@ class PopupCollectionObserver : public message_center::MessageCenterObserver {
     const std::string& notificationID = (*iter)->id();
 
     // Does the notification need to be updated?
-    if (pendingUpdateNotificationIDs_.find(notificationID) ==
-            pendingUpdateNotificationIDs_.end()) {
+    std::set<std::string>::iterator pendingUpdateIter =
+        pendingUpdateNotificationIDs_.find(notificationID);
+    if (pendingUpdateIter == pendingUpdateNotificationIDs_.end())
       continue;
-    }
+    pendingUpdateNotificationIDs_.erase(pendingUpdateIter);
 
     // Is the notification still on screen?
     NSUInteger index = [self indexOfPopupWithNotificationID:notificationID];
@@ -355,6 +370,14 @@ class PopupCollectionObserver : public message_center::MessageCenterObserver {
       popupFrame.size.height += newHeight - oldHeight;
       [popup setBounds:popupFrame];
     }
+  }
+
+  // Notification update could be received when a notification is excluded from
+  // the popup notification list but still remains in the full notification
+  // list, as in clicking the popup. In that case, the popup should be closed.
+  for (auto iter = pendingUpdateNotificationIDs_.begin();
+       iter != pendingUpdateNotificationIDs_.end(); ++iter) {
+    pendingRemoveNotificationIDs_.insert(*iter);
   }
 
   pendingUpdateNotificationIDs_.clear();

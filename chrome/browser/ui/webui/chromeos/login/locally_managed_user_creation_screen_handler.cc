@@ -64,6 +64,8 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PREVIOUS_BUTTON_TEXT);
   builder->Add("managedUserCreationFlowNextButtonTitle",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_NEXT_BUTTON_TEXT);
+  builder->Add("managedUserCreationFlowHandleErrorButtonTitle",
+               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_HANDLE_ERROR_BUTTON_TEXT);
   builder->Add("createManagedUserPasswordMismatchError",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_MISMATCH_ERROR);
   builder->Add("createManagedUserSelectManagerTitle",
@@ -135,9 +137,13 @@ void LocallyManagedUserCreationScreenHandler::ShowManagerPasswordError() {
   CallJS("login.LocallyManagedUserCreationScreen.showManagerPasswordError");
 }
 
-void LocallyManagedUserCreationScreenHandler::ShowProgress(
+void LocallyManagedUserCreationScreenHandler::ShowStatusMessage(
+    bool is_progress,
     const string16& message) {
-  CallJS("login.LocallyManagedUserCreationScreen.showProgress", message);
+  if (is_progress)
+    CallJS("login.LocallyManagedUserCreationScreen.showProgress", message);
+  else
+    CallJS("login.LocallyManagedUserCreationScreen.showStatusError", message);
 }
 
 void LocallyManagedUserCreationScreenHandler::ShowUsernamePage() {
@@ -208,8 +214,7 @@ void LocallyManagedUserCreationScreenHandler::HandleCreateManagedUser(
     return;
   }
 
-  ShowProgress(
-      l10n_util::GetStringUTF16(
+  ShowStatusMessage(true /* progress */, l10n_util::GetStringUTF16(
       IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
 
   delegate_->CreateManagedUser(new_user_name, new_user_password);

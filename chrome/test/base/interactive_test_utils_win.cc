@@ -7,10 +7,10 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "chrome/browser/ui/window_snapshot/window_snapshot.h"
-#include "chrome/test/base/ui_controls.h"
+#include "ui/base/test/ui_controls.h"
 #include "ui/base/win/foreground_helper.h"
 #include "ui/views/focus/focus_manager.h"
 

@@ -11,7 +11,7 @@
 #include "chrome/common/extensions/extension_test_util.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/resource_request_info.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -23,7 +23,7 @@ using extension_test_util::LoadManifestUnchecked;
 class ExtensionWebRequestHelpersTestWithThreadsTest : public testing::Test {
  public:
   ExtensionWebRequestHelpersTestWithThreadsTest()
-      : io_thread_(content::BrowserThread::IO, &message_loop_) {}
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
 
  protected:
   virtual void SetUp() OVERRIDE;
@@ -38,8 +38,7 @@ class ExtensionWebRequestHelpersTestWithThreadsTest : public testing::Test {
   scoped_refptr<ExtensionInfoMap> extension_info_map_;
 
  private:
-  base::MessageLoopForIO message_loop_;
-  content::TestBrowserThread io_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
 };
 
 void ExtensionWebRequestHelpersTestWithThreadsTest::SetUp() {
@@ -52,7 +51,7 @@ void ExtensionWebRequestHelpersTestWithThreadsTest::SetUp() {
                                                     Extension::NO_FLAGS,
                                                     "ext_id_1",
                                                     &error);
-  ASSERT_TRUE(permissionless_extension_) << error;
+  ASSERT_TRUE(permissionless_extension_.get()) << error;
   com_extension_ =
       LoadManifestUnchecked("permissions",
                             "web_request_com_host_permissions.json",
@@ -60,7 +59,7 @@ void ExtensionWebRequestHelpersTestWithThreadsTest::SetUp() {
                             Extension::NO_FLAGS,
                             "ext_id_2",
                             &error);
-  ASSERT_TRUE(com_extension_) << error;
+  ASSERT_TRUE(com_extension_.get()) << error;
   extension_info_map_ = new ExtensionInfoMap;
   extension_info_map_->AddExtension(permissionless_extension_.get(),
                                     base::Time::Now(),
@@ -149,25 +148,25 @@ TEST_F(ExtensionWebRequestHelpersTestWithThreadsTest,
       GURL("http://example.com"), NULL, &context, NULL);
 
   EXPECT_TRUE(WebRequestPermissions::CanExtensionAccessURL(
-      extension_info_map_,
+      extension_info_map_.get(),
       permissionless_extension_->id(),
       request.url(),
       false /*crosses_incognito*/,
       WebRequestPermissions::DO_NOT_CHECK_HOST));
   EXPECT_FALSE(WebRequestPermissions::CanExtensionAccessURL(
-      extension_info_map_,
+      extension_info_map_.get(),
       permissionless_extension_->id(),
       request.url(),
       false /*crosses_incognito*/,
       WebRequestPermissions::REQUIRE_HOST_PERMISSION));
   EXPECT_TRUE(WebRequestPermissions::CanExtensionAccessURL(
-      extension_info_map_,
+      extension_info_map_.get(),
       com_extension_->id(),
       request.url(),
       false /*crosses_incognito*/,
       WebRequestPermissions::REQUIRE_HOST_PERMISSION));
   EXPECT_FALSE(WebRequestPermissions::CanExtensionAccessURL(
-      extension_info_map_,
+      extension_info_map_.get(),
       com_extension_->id(),
       request.url(),
       false /*crosses_incognito*/,

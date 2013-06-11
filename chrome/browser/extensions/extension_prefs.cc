@@ -6,9 +6,9 @@
 
 #include "base/prefs/pref_notifier.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "chrome/browser/extensions/admin_policy.h"
 #include "chrome/browser/extensions/event_router.h"
@@ -21,8 +21,10 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
+#include "chrome/common/extensions/user_script.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -48,7 +50,10 @@ namespace {
 
 // Additional preferences keys
 
-// Whether this extension was running when chrome last shutdown.
+// True if this extension is running. Note this preference stops getting updated
+// during Chrome shutdown (and won't be updated on a browser crash) and so can
+// be used at startup to determine whether the extension was running when Chrome
+// was last terminated.
 const char kPrefRunning[] = "running";
 
 // Whether this extension had windows when it was last running.
@@ -134,9 +139,6 @@ const char kPrefLaunchType[] = "launchType";
 
 // A preference specifying if the user dragged the app on the NTP.
 const char kPrefUserDraggedApp[] = "user_dragged_app_ntp";
-
-// A preference for storing the url loaded when an extension is uninstalled.
-const char kUninstallUrl[] = "uninstall_url";
 
 // Preferences that hold which permissions the user has granted the extension.
 // We explicitly keep track of these so that extensions can contain unknown
@@ -1131,7 +1133,7 @@ extension_misc::LaunchContainer ExtensionPrefs::GetLaunchContainer(
     const Extension* extension,
     ExtensionPrefs::LaunchType default_pref_value) {
   extension_misc::LaunchContainer manifest_launch_container =
-      extension->launch_container();
+      AppLaunchInfo::GetLaunchContainer(extension);
 
   const extension_misc::LaunchContainer kInvalidLaunchContainer =
       static_cast<extension_misc::LaunchContainer>(-1);
@@ -1494,22 +1496,6 @@ bool ExtensionPrefs::WasAppDraggedByUser(const std::string& extension_id) {
 void ExtensionPrefs::SetAppDraggedByUser(const std::string& extension_id) {
   UpdateExtensionPref(extension_id, kPrefUserDraggedApp,
                       Value::CreateBooleanValue(true));
-}
-
-void ExtensionPrefs::SetUninstallUrl(const std::string& extension_id,
-                                     const std::string& url_string) {
-  UpdateExtensionPref(extension_id, kUninstallUrl,
-                      Value::CreateStringValue(url_string));
-}
-
-std::string ExtensionPrefs::GetUninstallUrl(const std::string& extension_id) {
-  const DictionaryValue* dictionary = GetExtensionPref(extension_id);
-  if (!dictionary)
-    return std::string();
-
-  std::string url_string;
-  dictionary->GetString(kUninstallUrl, &url_string);
-  return url_string;
 }
 
 void ExtensionPrefs::OnContentSettingChanged(

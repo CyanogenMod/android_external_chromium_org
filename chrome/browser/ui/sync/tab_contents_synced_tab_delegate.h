@@ -36,6 +36,7 @@ class TabContentsSyncedTabDelegate
   virtual const std::vector<const content::NavigationEntry*>*
       GetBlockedNavigations() const OVERRIDE;
   virtual bool IsPinned() const OVERRIDE;
+  virtual bool HasWebContents() const OVERRIDE;
 
  private:
   explicit TabContentsSyncedTabDelegate(content::WebContents* web_contents);

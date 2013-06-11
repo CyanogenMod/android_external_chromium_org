@@ -57,6 +57,7 @@ class SSLConfigService;
 class TransportSecurityState;
 class URLRequestContext;
 class URLRequestContextGetter;
+class URLRequestJobFactory;
 class URLRequestThrottlerManager;
 class URLSecurityManager;
 }  // namespace net
@@ -122,6 +123,10 @@ class IOThread : public content::BrowserThreadDelegate {
     scoped_ptr<net::ProxyService> proxy_script_fetcher_proxy_service;
     scoped_ptr<net::HttpTransactionFactory>
         proxy_script_fetcher_http_transaction_factory;
+    scoped_ptr<net::FtpTransactionFactory>
+        proxy_script_fetcher_ftp_transaction_factory;
+    scoped_ptr<net::URLRequestJobFactory>
+        proxy_script_fetcher_url_request_job_factory;
     scoped_ptr<net::URLRequestThrottlerManager> throttler_manager;
     scoped_ptr<net::URLSecurityManager> url_security_manager;
     // TODO(willchan): Remove proxy script fetcher context since it's not
@@ -159,7 +164,7 @@ class IOThread : public content::BrowserThreadDelegate {
     Optional<bool> enable_spdy_ping_based_connection_checking;
     Optional<net::NextProto> spdy_default_protocol;
     Optional<bool> enable_quic;
-    Optional<uint16> origin_port_to_force_quic_on;
+    Optional<net::HostPortPair> origin_to_force_quic_on;
     bool enable_user_alternate_protocol_ports;
     // NetErrorTabHelper uses |dns_probe_service| to send DNS probes when a
     // main frame load fails with a DNS error in order to provide more useful
@@ -245,6 +250,10 @@ class IOThread : public content::BrowserThreadDelegate {
   void ChangedToOnTheRecordOnIOThread();
 
   void UpdateDnsClientEnabled();
+
+  // Returns true if QUIC should be enabled, either as a result
+  // of a field trial or a command line flag.
+  bool ShouldEnableQuic(const CommandLine& command_line);
 
   // The NetLog is owned by the browser process, to allow logging from other
   // threads during shutdown, but is used most frequently on the IOThread.

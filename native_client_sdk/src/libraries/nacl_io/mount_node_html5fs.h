@@ -15,25 +15,36 @@ class MountNodeHtml5Fs : public MountNode {
   // Normal OS operations on a node (file), can be called by the kernel
   // directly so it must lock and unlock appropriately.  These functions
   // must not be called by the mount.
-  virtual int FSync();
-  virtual int GetDents(size_t offs, struct dirent* pdir, size_t count);
-  virtual int GetStat(struct stat* stat);
-  virtual int Read(size_t offs, void* buf, size_t count);
-  virtual int FTruncate(off_t size);
-  virtual int Write(size_t offs, const void* buf, size_t count);
+  virtual Error FSync();
+  virtual Error GetDents(size_t offs,
+                         struct dirent* pdir,
+                         size_t count,
+                         int* out_bytes);
+  virtual Error GetStat(struct stat* stat);
+  virtual Error Read(size_t offs, void* buf, size_t count, int* out_bytes);
+  virtual Error FTruncate(off_t size);
+  virtual Error Write(size_t offs,
+                      const void* buf,
+                      size_t count,
+                      int* out_bytes);
 
-  virtual size_t GetSize();
+  virtual Error GetSize(size_t *out_size);
 
  protected:
   MountNodeHtml5Fs(Mount* mount, PP_Resource fileref);
 
   // Init with standard open flags
-  virtual bool Init(int o_mode);
+  virtual Error Init(int o_mode);
   virtual void Destroy();
 
  private:
   PP_Resource fileref_resource_;
-  PP_Resource fileio_resource_;
+  PP_Resource fileio_resource_;  // 0 if the file is a directory.
+
+  // Returns true if this node is a directory.
+  bool IsDirectory() const {
+    return !fileio_resource_;
+  }
 
   friend class MountHtml5Fs;
 };

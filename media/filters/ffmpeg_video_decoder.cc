@@ -11,8 +11,8 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
-#include "base/string_number_conversions.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/string_number_conversions.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
@@ -169,12 +169,12 @@ void FFmpegVideoDecoder::Read(const ReadCB& read_cb) {
   }
 
   // Return empty frames if decoding has finished.
-  if (decoded_frames_.empty() && state_ == kDecodeFinished) {
+  if (state_ == kDecodeFinished) {
     base::ResetAndReturn(&read_cb_).Run(kOk, VideoFrame::CreateEmptyFrame());
     return;
   }
 
-  ReturnFrameOrReadFromDemuxerStream();
+  ReadFromDemuxerStream();
 }
 
 void FFmpegVideoDecoder::Reset(const base::Closure& closure) {
@@ -193,7 +193,6 @@ void FFmpegVideoDecoder::DoReset() {
   DCHECK(read_cb_.is_null());
 
   avcodec_flush_buffers(codec_context_);
-  decoded_frames_.clear();
   state_ = kNormal;
   base::ResetAndReturn(&reset_cb_).Run();
 }
@@ -209,7 +208,6 @@ void FFmpegVideoDecoder::Stop(const base::Closure& closure) {
     base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
 
   ReleaseFFmpegResources();
-  decoded_frames_.clear();
   state_ = kUninitialized;
 }
 
@@ -219,18 +217,12 @@ FFmpegVideoDecoder::~FFmpegVideoDecoder() {
   DCHECK(!av_frame_);
 }
 
-void FFmpegVideoDecoder::ReturnFrameOrReadFromDemuxerStream() {
-  if (!decoded_frames_.empty()) {
-    scoped_refptr<VideoFrame> frame = decoded_frames_.front();
-    decoded_frames_.pop_front();
-    base::ResetAndReturn(&read_cb_).Run(kOk, frame);
-    return;
-  }
-
+void FFmpegVideoDecoder::ReadFromDemuxerStream() {
   DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
   DCHECK_NE(state_, kError);
   DCHECK(!read_cb_.is_null());
+
   demuxer_stream_->Read(base::Bind(
       &FFmpegVideoDecoder::BufferReady, weak_this_));
 }
@@ -241,36 +233,12 @@ void FFmpegVideoDecoder::BufferReady(
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_NE(state_, kDecodeFinished);
   DCHECK_NE(state_, kError);
-  DCHECK_EQ(status != DemuxerStream::kOk, !buffer) << status;
+  DCHECK_EQ(status != DemuxerStream::kOk, !buffer.get()) << status;
 
   if (state_ == kUninitialized)
     return;
 
   DCHECK(!read_cb_.is_null());
-
-  if (status == DemuxerStream::kConfigChanged) {
-    // Collect all frames that are still buffered in the decoder before we
-    // reconfigure it.
-    scoped_refptr<DecoderBuffer> eos_buffer = DecoderBuffer::CreateEOSBuffer();
-    scoped_refptr<VideoFrame> video_frame;
-    while (Decode(eos_buffer, &video_frame) && video_frame) {
-      decoded_frames_.push_back(video_frame);
-      video_frame = NULL;
-    }
-
-    if (!ConfigureDecoder()) {
-      state_ = kError;
-      base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-      if (!reset_cb_.is_null())
-        base::ResetAndReturn(&reset_cb_).Run();
-      return;
-    }
-
-    if (reset_cb_.is_null()) {
-      ReturnFrameOrReadFromDemuxerStream();
-      return;
-    }
-  }
 
   if (!reset_cb_.is_null()) {
     base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
@@ -278,14 +246,13 @@ void FFmpegVideoDecoder::BufferReady(
     return;
   }
 
-  DCHECK_NE(status, DemuxerStream::kConfigChanged);
-
   if (status == DemuxerStream::kAborted) {
     base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
     return;
   }
 
-  DCHECK_EQ(status, DemuxerStream::kOk);
+  // VideoFrameStream ensures no kConfigChanged is passed to VideoDecoders.
+  DCHECK_EQ(status, DemuxerStream::kOk) << status;
   DecodeBuffer(buffer);
 }
 
@@ -297,7 +264,7 @@ void FFmpegVideoDecoder::DecodeBuffer(
   DCHECK_NE(state_, kError);
   DCHECK(reset_cb_.is_null());
   DCHECK(!read_cb_.is_null());
-  DCHECK(buffer);
+  DCHECK(buffer.get());
 
   // During decode, because reads are issued asynchronously, it is possible to
   // receive multiple end of stream buffers since each read is acked. When the
@@ -346,27 +313,19 @@ void FFmpegVideoDecoder::DecodeBuffer(
     statistics_cb_.Run(statistics);
   }
 
-  if (video_frame) {
-    decoded_frames_.push_back(video_frame);
-    video_frame = NULL;
-  }
-
-  if (state_ == kFlushCodec) {
-    // Collect all remaining frames that may be buffered in the codec.
-    DCHECK(buffer->IsEndOfStream());
-    while (Decode(buffer, &video_frame) && video_frame) {
-      decoded_frames_.push_back(video_frame);
-      video_frame = NULL;
-    }
-
-    state_ = kDecodeFinished;
-    if (decoded_frames_.empty()) {
+  if (!video_frame.get()) {
+    if (state_ == kFlushCodec) {
+      DCHECK(buffer->IsEndOfStream());
+      state_ = kDecodeFinished;
       base::ResetAndReturn(&read_cb_).Run(kOk, VideoFrame::CreateEmptyFrame());
       return;
     }
+
+    ReadFromDemuxerStream();
+    return;
   }
 
-  ReturnFrameOrReadFromDemuxerStream();
+  base::ResetAndReturn(&read_cb_).Run(kOk, video_frame);
 }
 
 bool FFmpegVideoDecoder::Decode(
@@ -468,7 +427,6 @@ bool FFmpegVideoDecoder::ConfigureDecoder() {
 
   // Release existing decoder resources if necessary.
   ReleaseFFmpegResources();
-  decoded_frames_.clear();
 
   // Initialize AVCodecContext structure.
   codec_context_ = avcodec_alloc_context3(NULL);

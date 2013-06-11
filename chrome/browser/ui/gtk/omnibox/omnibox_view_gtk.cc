@@ -10,9 +10,9 @@
 #include <algorithm>
 
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversion_utils.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
@@ -20,7 +20,6 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
@@ -41,7 +40,6 @@
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "third_party/undoview/undo_view.h"
-#include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/gtk/gtk_compat.h"
@@ -169,12 +167,10 @@ guint GetPopupMenuIndexForStockLabel(const char* label, GtkMenu* menu) {
 }
 
 // Writes the |url| and |text| to the primary clipboard.
-void DoWriteURLToClipboard(const GURL& url,
-                           const string16& text,
-                           Profile* profile) {
+void DoWriteToClipboard(const GURL& url, const string16& text) {
   BookmarkNodeData data;
   data.ReadFromTuple(url, text);
-  data.WriteToClipboard(profile);
+  data.WriteToClipboard();
 }
 
 }  // namespace
@@ -1170,7 +1166,7 @@ void OmniboxViewGtk::HandleViewMoveCursor(
       OnAfterPossibleChange();
       handled = true;
     } else if (count == count_towards_end && !IsCaretAtEnd()) {
-      handled = model()->CommitSuggestedText(true);
+      handled = model()->CommitSuggestedText();
     }
   } else if (step == GTK_MOVEMENT_PAGES) {  // Page up and down.
     // Multiply by count for the direction (if we move too much that's ok).
@@ -1549,7 +1545,7 @@ void OmniboxViewGtk::HandleViewMoveFocus(GtkWidget* widget,
     handled = true;
 
   if (!handled && gtk_widget_get_visible(instant_view_))
-    handled = model()->CommitSuggestedText(true);
+    handled = model()->CommitSuggestedText();
 
   if (handled) {
     static guint signal_id = g_signal_lookup("move-focus", GTK_TYPE_WIDGET);
@@ -1562,9 +1558,8 @@ void OmniboxViewGtk::HandleCopyClipboard(GtkWidget* sender) {
 }
 
 void OmniboxViewGtk::HandleCopyURLClipboard(GtkWidget* sender) {
-  DoWriteURLToClipboard(toolbar_model()->GetURL(),
-                        toolbar_model()->GetText(false),
-                        browser_->profile());
+  DoWriteToClipboard(toolbar_model()->GetURL(),
+                     toolbar_model()->GetText(false));
 }
 
 void OmniboxViewGtk::HandleCutClipboard(GtkWidget* sender) {
@@ -1581,36 +1576,35 @@ void OmniboxViewGtk::HandleCopyOrCutClipboard(bool copy) {
   if (!gtk_text_buffer_get_has_selection(text_buffer_))
     return;
 
-  // Stop propagating the signal.
-  static guint copy_signal_id =
-      g_signal_lookup("copy-clipboard", GTK_TYPE_TEXT_VIEW);
-  static guint cut_signal_id =
-      g_signal_lookup("cut-clipboard", GTK_TYPE_TEXT_VIEW);
-  g_signal_stop_emission(text_view_,
-                         copy ? copy_signal_id : cut_signal_id,
-                         0);
+  GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+  DCHECK(clipboard);
 
   CharRange selection = GetSelection();
   GURL url;
   string16 text(UTF8ToUTF16(GetSelectedText()));
   bool write_url;
   model()->AdjustTextForCopy(selection.selection_min(), IsSelectAll(), &text,
-                             &url, &write_url);
+                            &url, &write_url);
 
+  // On other platforms we write |text| to the clipboard regardless of
+  // |write_url|.  We don't need to do that here because we fall through to
+  // the default signal handlers.
   if (write_url) {
-    DoWriteURLToClipboard(url, text, browser_->profile());
-  } else {
-    ui::ScopedClipboardWriter scoped_clipboard_writer(
-        ui::Clipboard::GetForCurrentThread(),
-        ui::Clipboard::BUFFER_STANDARD,
-        content::BrowserContext::GetMarkerForOffTheRecordContext(
-            browser_->profile()));
-    scoped_clipboard_writer.WriteText(text);
-  }
+    DoWriteToClipboard(url, text);
+    SetSelectedRange(selection);
 
-  SetSelectedRange(selection);
-  if (!copy && gtk_text_view_get_editable(GTK_TEXT_VIEW(text_view_)))
-    gtk_text_buffer_delete_selection(text_buffer_, true, true);
+    // Stop propagating the signal.
+    static guint copy_signal_id =
+        g_signal_lookup("copy-clipboard", GTK_TYPE_TEXT_VIEW);
+    static guint cut_signal_id =
+        g_signal_lookup("cut-clipboard", GTK_TYPE_TEXT_VIEW);
+    g_signal_stop_emission(text_view_,
+                           copy ? copy_signal_id : cut_signal_id,
+                           0);
+
+    if (!copy && gtk_text_view_get_editable(GTK_TEXT_VIEW(text_view_)))
+      gtk_text_buffer_delete_selection(text_buffer_, true, true);
+  }
 
   OwnPrimarySelection(UTF16ToUTF8(text));
 }

@@ -10,8 +10,8 @@
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_vector.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
@@ -52,17 +52,20 @@ namespace extensions {
 namespace {
 
 // Holds the Approvals between the time we prompt and start the installs.
-struct PendingApprovals {
-  typedef ScopedVector<WebstoreInstaller::Approval> ApprovalList;
-
+class PendingApprovals {
+ public:
   PendingApprovals();
   ~PendingApprovals();
 
   void PushApproval(scoped_ptr<WebstoreInstaller::Approval> approval);
   scoped_ptr<WebstoreInstaller::Approval> PopApproval(
       Profile* profile, const std::string& id);
+ private:
+  typedef ScopedVector<WebstoreInstaller::Approval> ApprovalList;
 
-  ApprovalList approvals;
+  ApprovalList approvals_;
+
+  DISALLOW_COPY_AND_ASSIGN(PendingApprovals);
 };
 
 PendingApprovals::PendingApprovals() {}
@@ -70,23 +73,75 @@ PendingApprovals::~PendingApprovals() {}
 
 void PendingApprovals::PushApproval(
     scoped_ptr<WebstoreInstaller::Approval> approval) {
-  approvals.push_back(approval.release());
+  approvals_.push_back(approval.release());
 }
 
 scoped_ptr<WebstoreInstaller::Approval> PendingApprovals::PopApproval(
     Profile* profile, const std::string& id) {
-  for (size_t i = 0; i < approvals.size(); ++i) {
-    WebstoreInstaller::Approval* approval = approvals[i];
+  for (size_t i = 0; i < approvals_.size(); ++i) {
+    WebstoreInstaller::Approval* approval = approvals_[i];
     if (approval->extension_id == id &&
         profile->IsSameProfile(approval->profile)) {
-      approvals.weak_erase(approvals.begin() + i);
+      approvals_.weak_erase(approvals_.begin() + i);
       return scoped_ptr<WebstoreInstaller::Approval>(approval);
     }
   }
   return scoped_ptr<WebstoreInstaller::Approval>(NULL);
 }
 
+// Uniquely holds the profile and extension id of an install between the time we
+// prompt and complete the installs.
+class PendingInstalls {
+ public:
+  PendingInstalls();
+  ~PendingInstalls();
+
+  bool InsertInstall(Profile* profile, const std::string& id);
+  void EraseInstall(Profile* profile, const std::string& id);
+ private:
+  typedef std::pair<Profile*, std::string> ProfileAndExtensionId;
+  typedef std::vector<ProfileAndExtensionId> InstallList;
+
+  InstallList::iterator FindInstall(Profile* profile, const std::string& id);
+
+  InstallList installs_;
+
+  DISALLOW_COPY_AND_ASSIGN(PendingInstalls);
+};
+
+PendingInstalls::PendingInstalls() {}
+PendingInstalls::~PendingInstalls() {}
+
+// Returns true and inserts the profile/id pair if it is not present. Otherwise
+// returns false.
+bool PendingInstalls::InsertInstall(Profile* profile, const std::string& id) {
+  if (FindInstall(profile, id) != installs_.end())
+    return false;
+  installs_.push_back(make_pair(profile, id));
+  return true;
+}
+
+// Removes the given profile/id pair.
+void PendingInstalls::EraseInstall(Profile* profile, const std::string& id) {
+  InstallList::iterator it = FindInstall(profile, id);
+  if (it != installs_.end())
+    installs_.erase(it);
+}
+
+PendingInstalls::InstallList::iterator PendingInstalls::FindInstall(
+    Profile* profile,
+    const std::string& id) {
+  for (size_t i = 0; i < installs_.size(); ++i) {
+    ProfileAndExtensionId install = installs_[i];
+    if (install.second == id && profile->IsSameProfile(install.first))
+      return (installs_.begin() + i);
+  }
+  return installs_.end();
+}
+
 static base::LazyInstance<PendingApprovals> g_pending_approvals =
+    LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<PendingInstalls> g_pending_installs =
     LAZY_INSTANCE_INITIALIZER;
 
 const char kAppInstallBubbleKey[] = "appInstallBubble";
@@ -101,7 +156,7 @@ const char kManifestKey[] = "manifest";
 // A preference set by the web store to indicate login information for
 // purchased apps.
 const char kWebstoreLogin[] = "extensions.webstore_login";
-
+const char kAlreadyInstalledError[] = "This item is already installed";
 const char kCannotSpecifyIconDataAndUrlError[] =
     "You cannot specify both icon data and an icon url";
 const char kInvalidIconUrlError[] = "Invalid icon url";
@@ -277,6 +332,15 @@ bool BeginInstallWithManifestFunction::RunImpl() {
     EXTENSION_FUNCTION_VALIDATE(details->GetBoolean(
         kEnableLauncherKey, &enable_launcher_));
 
+  ExtensionService* service =
+    extensions::ExtensionSystem::Get(profile_)->extension_service();
+  if (service->GetInstalledExtension(id_) ||
+      !g_pending_installs.Get().InsertInstall(profile_, id_)) {
+    SetResultCode(ALREADY_INSTALLED);
+    error_ = kAlreadyInstalledError;
+    return false;
+  }
+
   net::URLRequestContextGetter* context_getter = NULL;
   if (!icon_url.is_empty())
     context_getter = profile()->GetRequestContext();
@@ -326,6 +390,9 @@ void BeginInstallWithManifestFunction::SetResultCode(ResultCode code) {
     case SIGNIN_FAILED:
       SetResult(Value::CreateStringValue("signin_failed"));
       break;
+    case ALREADY_INSTALLED:
+      SetResult(Value::CreateStringValue("already_installed"));
+      break;
     default:
       CHECK(false);
   }
@@ -349,8 +416,9 @@ void BeginInstallWithManifestFunction::OnWebstoreParseSuccess(
       std::string(),
       &error);
 
-  if (!dummy_extension_) {
-    OnWebstoreParseFailure(id_, WebstoreInstallHelper::Delegate::MANIFEST_ERROR,
+  if (!dummy_extension_.get()) {
+    OnWebstoreParseFailure(id_,
+                           WebstoreInstallHelper::Delegate::MANIFEST_ERROR,
                            kInvalidManifestError);
     return;
   }
@@ -388,6 +456,7 @@ void BeginInstallWithManifestFunction::OnWebstoreParseFailure(
       CHECK(false);
   }
   error_ = error_message;
+  g_pending_installs.Get().EraseInstall(profile_, id);
   SendResponse(false);
 
   // Matches the AddRef in RunImpl().
@@ -402,6 +471,7 @@ void BeginInstallWithManifestFunction::SigninFailed(
 
   SetResultCode(SIGNIN_FAILED);
   error_ = error.ToString();
+  g_pending_installs.Get().EraseInstall(profile_, id_);
   SendResponse(false);
 
   // Matches the AddRef in RunImpl().
@@ -421,7 +491,7 @@ void BeginInstallWithManifestFunction::SigninCompletedOrNotNeeded() {
   install_prompt_.reset(new ExtensionInstallPrompt(web_contents));
   install_prompt_->ConfirmWebstoreInstall(
       this,
-      dummy_extension_,
+      dummy_extension_.get(),
       &icon_,
       ExtensionInstallPrompt::GetDefaultShowDialogCallback());
   // Control flow finishes up in InstallUIProceed or InstallUIAbort.
@@ -446,7 +516,7 @@ void BeginInstallWithManifestFunction::InstallUIProceed() {
   // for all extension installs, so we only need to record the web store
   // specific histogram here.
   ExtensionService::RecordPermissionMessagesHistogram(
-      dummy_extension_, "Extensions.Permissions_WebStoreInstall");
+      dummy_extension_.get(), "Extensions.Permissions_WebStoreInstall");
 
   // Matches the AddRef in RunImpl().
   Release();
@@ -455,6 +525,7 @@ void BeginInstallWithManifestFunction::InstallUIProceed() {
 void BeginInstallWithManifestFunction::InstallUIAbort(bool user_initiated) {
   error_ = kUserCancelledError;
   SetResultCode(USER_CANCELLED);
+  g_pending_installs.Get().EraseInstall(profile_, id_);
   SendResponse(false);
 
   // The web store install histograms are a subset of the install histograms.
@@ -463,14 +534,14 @@ void BeginInstallWithManifestFunction::InstallUIAbort(bool user_initiated) {
   std::string histogram_name = user_initiated ?
       "Extensions.Permissions_WebStoreInstallCancel" :
       "Extensions.Permissions_WebStoreInstallAbort";
-  ExtensionService::RecordPermissionMessagesHistogram(
-      dummy_extension_, histogram_name.c_str());
+  ExtensionService::RecordPermissionMessagesHistogram(dummy_extension_.get(),
+                                                      histogram_name.c_str());
 
   histogram_name = user_initiated ?
       "Extensions.Permissions_InstallCancel" :
       "Extensions.Permissions_InstallAbort";
-  ExtensionService::RecordPermissionMessagesHistogram(
-      dummy_extension_, histogram_name.c_str());
+  ExtensionService::RecordPermissionMessagesHistogram(dummy_extension_.get(),
+                                                      histogram_name.c_str());
 
   // Matches the AddRef in RunImpl().
   Release();
@@ -512,15 +583,8 @@ bool CompleteInstallFunction::RunImpl() {
 void CompleteInstallFunction::AfterMaybeInstallAppLauncher(bool ok) {
   if (!ok)
     LOG(ERROR) << "Error installing app launcher";
-  apps::GetIsAppLauncherEnabled(base::Bind(
-      &CompleteInstallFunction::OnGetAppLauncherEnabled, this,
-      approval_->extension_id));
-}
-
-void CompleteInstallFunction::OnGetAppLauncherEnabled(
-    std::string id,
-    bool app_launcher_enabled) {
-  if (app_launcher_enabled) {
+  std::string id = approval_->extension_id;
+  if (apps::IsAppLauncherEnabled()) {
     std::string name;
     if (!approval_->manifest->value()->GetString(extension_manifest_keys::kName,
                                                  &name)) {
@@ -552,6 +616,7 @@ void CompleteInstallFunction::OnExtensionInstallSuccess(
     test_webstore_installer_delegate->OnExtensionInstallSuccess(id);
 
   LOG(INFO) << "Install success, sending response";
+  g_pending_installs.Get().EraseInstall(profile_, id);
   SendResponse(true);
 
   // Matches the AddRef in RunImpl().
@@ -572,6 +637,7 @@ void CompleteInstallFunction::OnExtensionInstallFailure(
 
   error_ = error;
   LOG(INFO) << "Install failed, sending response";
+  g_pending_installs.Get().EraseInstall(profile_, id);
   SendResponse(false);
 
   // Matches the AddRef in RunImpl().
@@ -644,14 +710,9 @@ void GetWebGLStatusFunction::OnFeatureCheck(bool feature_allowed) {
 }
 
 bool GetIsLauncherEnabledFunction::RunImpl() {
-  apps::GetIsAppLauncherEnabled(base::Bind(
-      &GetIsLauncherEnabledFunction::OnIsLauncherCheckCompleted, this));
-  return true;
-}
-
-void GetIsLauncherEnabledFunction::OnIsLauncherCheckCompleted(bool is_enabled) {
-  SetResult(Value::CreateBooleanValue(is_enabled));
+  SetResult(Value::CreateBooleanValue(apps::IsAppLauncherEnabled()));
   SendResponse(true);
+  return true;
 }
 
 }  // namespace extensions

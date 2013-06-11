@@ -10,7 +10,7 @@
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
@@ -270,7 +270,7 @@ ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
   // We know about the following pseudo schemes and treat them specially.
   RegisterPseudoScheme(chrome::kAboutScheme);
   RegisterPseudoScheme(chrome::kJavaScriptScheme);
-  RegisterPseudoScheme(chrome::kViewSourceScheme);
+  RegisterPseudoScheme(kViewSourceScheme);
 }
 
 ChildProcessSecurityPolicyImpl::~ChildProcessSecurityPolicyImpl() {
@@ -345,18 +345,6 @@ bool ChildProcessSecurityPolicyImpl::IsPseudoScheme(
   return (pseudo_schemes_.find(scheme) != pseudo_schemes_.end());
 }
 
-void ChildProcessSecurityPolicyImpl::RegisterDisabledSchemes(
-    const std::set<std::string>& schemes) {
-  base::AutoLock lock(lock_);
-  disabled_schemes_ = schemes;
-}
-
-bool ChildProcessSecurityPolicyImpl::IsDisabledScheme(
-    const std::string& scheme) {
-  base::AutoLock lock(lock_);
-  return disabled_schemes_.find(scheme) != disabled_schemes_.end();
-}
-
 void ChildProcessSecurityPolicyImpl::GrantRequestURL(
     int child_id, const GURL& url) {
 
@@ -369,7 +357,7 @@ void ChildProcessSecurityPolicyImpl::GrantRequestURL(
   if (IsPseudoScheme(url.scheme())) {
     // The view-source scheme is a special case of a pseudo-URL that eventually
     // results in requesting its embedded URL.
-    if (url.SchemeIs(chrome::kViewSourceScheme)) {
+    if (url.SchemeIs(kViewSourceScheme)) {
       // URLs with the view-source scheme typically look like:
       //   view-source:http://www.google.com/a
       // In order to request these URLs, the child_id needs to be able to
@@ -527,21 +515,18 @@ bool ChildProcessSecurityPolicyImpl::CanRequestURL(
   if (!url.is_valid())
     return false;  // Can't request invalid URLs.
 
-  if (IsDisabledScheme(url.scheme()))
-    return false;  // The scheme is disabled by policy.
-
   if (IsWebSafeScheme(url.scheme()))
     return true;  // The scheme has been white-listed for every child process.
 
   if (IsPseudoScheme(url.scheme())) {
     // There are a number of special cases for pseudo schemes.
 
-    if (url.SchemeIs(chrome::kViewSourceScheme)) {
+    if (url.SchemeIs(kViewSourceScheme)) {
       // A view-source URL is allowed if the child process is permitted to
       // request the embedded URL. Careful to avoid pointless recursion.
       GURL child_url(url.path());
-      if (child_url.SchemeIs(chrome::kViewSourceScheme) &&
-          url.SchemeIs(chrome::kViewSourceScheme))
+      if (child_url.SchemeIs(kViewSourceScheme) &&
+          url.SchemeIs(kViewSourceScheme))
           return false;
 
       return CanRequestURL(child_id, child_url);

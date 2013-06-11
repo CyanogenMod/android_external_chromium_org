@@ -70,13 +70,13 @@ struct GPU_EXPORT TextureUnit {
   }
 
   void Unbind(TextureRef* texture) {
-    if (bound_texture_2d == texture) {
+    if (bound_texture_2d.get() == texture) {
       bound_texture_2d = NULL;
     }
-    if (bound_texture_cube_map == texture) {
+    if (bound_texture_cube_map.get() == texture) {
       bound_texture_cube_map = NULL;
     }
-    if (bound_texture_external_oes == texture) {
+    if (bound_texture_external_oes.get() == texture) {
       bound_texture_external_oes = NULL;
     }
   }
@@ -124,12 +124,6 @@ struct GPU_EXPORT ContextState {
 
   EnableFlags enable_flags;
 
-  // pack alignment as last set by glPixelStorei
-  GLint pack_alignment;
-
-  // unpack alignment as last set by glPixelStorei
-  GLint unpack_alignment;
-
   // Current active texture by 0 - n index.
   // In other words, if we call glActiveTexture(GL_TEXTURE2) this value would
   // be 2.
@@ -159,9 +153,6 @@ struct GPU_EXPORT ContextState {
   scoped_refptr<Renderbuffer> bound_renderbuffer;
 
   scoped_refptr<QueryManager::Query> current_query;
-
-  GLenum hint_generate_mipmap;
-  GLenum hint_fragment_shader_derivative;
 
   bool pack_reverse_row_order;
 

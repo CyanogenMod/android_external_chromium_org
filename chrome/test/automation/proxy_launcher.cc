@@ -8,12 +8,13 @@
 
 #include "base/environment.h"
 #include "base/file_util.h"
-#include "base/stringprintf.h"
+#include "base/files/file_enumerator.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
 #include "base/test/test_timeouts.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/chrome_constants.h"
@@ -49,13 +50,11 @@ const char kUITestType[] = "ui";
 // startup tests other than the "cold" ones run more slowly than necessary.
 bool CopyDirectoryContentsNoCache(const base::FilePath& source,
                                   const base::FilePath& dest) {
-  file_util::FileEnumerator en(source, false,
-      file_util::FileEnumerator::FILES |
-      file_util::FileEnumerator::DIRECTORIES);
+  base::FileEnumerator en(source, false,
+      base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
   for (base::FilePath cur = en.Next(); !cur.empty(); cur = en.Next()) {
-    file_util::FileEnumerator::FindInfo info;
-    en.GetFindInfo(&info);
-    if (file_util::FileEnumerator::IsDirectory(info)) {
+    base::FileEnumerator::FileInfo info = en.GetInfo();
+    if (info.IsDirectory()) {
       if (!file_util::CopyDirectory(cur, dest, true))
         return false;
     } else {
@@ -67,8 +66,7 @@ bool CopyDirectoryContentsNoCache(const base::FilePath& source,
   // Kick out the profile files, this must happen after SetUp which creates the
   // profile. It might be nicer to use EvictFileFromSystemCacheWrapper from
   // UITest which will retry on failure.
-  file_util::FileEnumerator kickout(dest, true,
-                                    file_util::FileEnumerator::FILES);
+  base::FileEnumerator kickout(dest, true, base::FileEnumerator::FILES);
   for (base::FilePath cur = kickout.Next(); !cur.empty(); cur = kickout.Next())
     base::EvictFileFromSystemCacheWithRetry(cur);
   return true;

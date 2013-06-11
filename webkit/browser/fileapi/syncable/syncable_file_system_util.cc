@@ -26,41 +26,49 @@ namespace {
 const char kEnableSyncFSDirectoryOperation[] =
     "enable-syncfs-directory-operation";
 
+const char kSyncableMountName[] = "syncfs";
+const char kSyncableMountNameForInternalSync[] = "syncfs-internal";
+
 bool is_directory_operation_enabled = false;
 
 }
 
-bool RegisterSyncableFileSystem(const std::string& service_name) {
-  return ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
-      service_name, fileapi::kFileSystemTypeSyncable, base::FilePath());
+void RegisterSyncableFileSystem() {
+  ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
+      kSyncableMountName,
+      fileapi::kFileSystemTypeSyncable,
+      base::FilePath());
+  ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
+      kSyncableMountNameForInternalSync,
+      fileapi::kFileSystemTypeSyncableForInternalSync,
+      base::FilePath());
 }
 
-bool RevokeSyncableFileSystem(const std::string& service_name) {
-  return ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
-      service_name);
+void RevokeSyncableFileSystem() {
+  ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+      kSyncableMountName);
+  ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+      kSyncableMountNameForInternalSync);
 }
 
-GURL GetSyncableFileSystemRootURI(const GURL& origin,
-                                  const std::string& service_name) {
-  const GURL url = GetFileSystemRootURI(origin,
-                                        fileapi::kFileSystemTypeExternal);
-  const std::string path = service_name + "/";
-  url_canon::Replacements<char> replacements;
-  replacements.SetPath(path.c_str(), url_parse::Component(0, path.length()));
-  return url.ReplaceComponents(replacements);
+GURL GetSyncableFileSystemRootURI(const GURL& origin) {
+  return GURL(fileapi::GetExternalFileSystemRootURIString(
+      origin, kSyncableMountName));
 }
 
 FileSystemURL CreateSyncableFileSystemURL(const GURL& origin,
-                                          const std::string& service_name,
                                           const base::FilePath& path) {
-  // Avoid using FilePath::Append as path may be an absolute path.
-  base::FilePath::StringType virtual_path =
-      base::FilePath::FromUTF8Unsafe(service_name + "/").value() +
-      path.value();
-  return ExternalMountPoints::GetSystemInstance()->CreateCrackedFileSystemURL(
-      origin,
-      fileapi::kFileSystemTypeExternal,
-      base::FilePath(virtual_path));
+  return ExternalMountPoints::GetSystemInstance()->CreateExternalFileSystemURL(
+      origin, kSyncableMountName, path);
+}
+
+FileSystemURL CreateSyncableFileSystemURLForSync(
+    fileapi::FileSystemContext* file_system_context,
+    const FileSystemURL& syncable_url) {
+  return ExternalMountPoints::GetSystemInstance()->CreateExternalFileSystemURL(
+      syncable_url.origin(),
+      kSyncableMountNameForInternalSync,
+      syncable_url.path());
 }
 
 bool SerializeSyncableFileSystemURL(const FileSystemURL& url,
@@ -68,7 +76,7 @@ bool SerializeSyncableFileSystemURL(const FileSystemURL& url,
   if (!url.is_valid() || url.type() != fileapi::kFileSystemTypeSyncable)
     return false;
   *serialized_url =
-      GetSyncableFileSystemRootURI(url.origin(), url.filesystem_id()).spec() +
+      GetSyncableFileSystemRootURI(url.origin()).spec() +
       url.path().AsUTF8Unsafe();
   return true;
 }
@@ -88,13 +96,6 @@ bool DeserializeSyncableFileSystemURL(
 
   *url = deserialized;
   return true;
-}
-
-LocalFileSystemOperation* CreateFileSystemOperationForSync(
-    FileSystemContext* file_system_context) {
-  DCHECK(file_system_context);
-  return file_system_context->sandbox_provider()->
-      CreateFileSystemOperationForSync(file_system_context);
 }
 
 void SetEnableSyncFSDirectoryOperation(bool flag) {

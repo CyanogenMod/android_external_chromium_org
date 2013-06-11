@@ -1,0 +1,23 @@
+/* Copyright 2013 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+#extension-view {
+  width: 100%;
+}
+
+#extension-view tr:nth-child(odd) {
+  background: rgb(239, 243, 255);
+}
+
+#extension-view td {
+  vertical-align: top;
+}
+
+#extension-view .extension-memory {
+  text-align: right;
+}
+
+#extension-view #extension-template {
+  display: none;
+}

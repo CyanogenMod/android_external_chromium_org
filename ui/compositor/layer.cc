@@ -17,8 +17,8 @@
 #include "cc/layers/texture_layer.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/resources/transferable_resource.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperation.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
+#include "third_party/WebKit/public/platform/WebFilterOperation.h"
+#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "ui/base/animation/animation.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/dip_util.h"
@@ -86,6 +86,7 @@ Layer::Layer(LayerType type)
       zoom_(1),
       zoom_inset_(0),
       delegate_(NULL),
+      cc_layer_(NULL),
       scale_content_(true),
       device_scale_factor_(1.0f) {
   CreateWebLayer();
@@ -95,7 +96,7 @@ Layer::~Layer() {
   // Destroying the animator may cause observers to use the layer (and
   // indirectly the WebLayer). Destroy the animator first so that the WebLayer
   // is still around.
-  if (animator_)
+  if (animator_.get())
     animator_->SetDelegate(NULL);
   animator_ = NULL;
   if (compositor_)
@@ -444,7 +445,7 @@ void Layer::SetFillsBoundsOpaquely(bool fills_bounds_opaquely) {
 
 void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
   // Finish animations being handled by cc_layer_.
-  if (animator_) {
+  if (animator_.get()) {
     animator_->StopAnimatingProperty(LayerAnimationElement::TRANSFORM);
     animator_->StopAnimatingProperty(LayerAnimationElement::OPACITY);
   }
@@ -463,7 +464,7 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
   new_layer->SetTransform(cc_layer_->transform());
   new_layer->SetPosition(cc_layer_->position());
 
-  cc_layer_= new_layer;
+  cc_layer_ = new_layer.get();
   content_layer_ = NULL;
   solid_color_layer_ = NULL;
   texture_layer_ = NULL;
@@ -492,11 +493,11 @@ void Layer::SetExternalTexture(Texture* texture) {
   scoped_refptr<ui::Texture> old_texture = texture_;
 
   DCHECK_EQ(type_, LAYER_TEXTURED);
-  DCHECK(!solid_color_layer_);
+  DCHECK(!solid_color_layer_.get());
   bool has_texture = !!texture;
   layer_updated_externally_ = has_texture;
   texture_ = texture;
-  if (!!texture_layer_ != has_texture) {
+  if (!!texture_layer_.get() != has_texture) {
     // Switch to a different type of layer.
     if (has_texture) {
       scoped_refptr<cc::TextureLayer> new_layer =
@@ -514,13 +515,39 @@ void Layer::SetExternalTexture(Texture* texture) {
   RecomputeDrawsContentAndUVRect();
 }
 
+void Layer::SetTextureMailbox(const cc::TextureMailbox& mailbox,
+                              float scale_factor) {
+  DCHECK_EQ(type_, LAYER_TEXTURED);
+  DCHECK(!solid_color_layer_);
+  layer_updated_externally_ = true;
+  texture_ = NULL;
+  if (!texture_layer_ || !texture_layer_->uses_mailbox()) {
+    scoped_refptr<cc::TextureLayer> new_layer =
+        cc::TextureLayer::CreateForMailbox(this);
+    new_layer->SetFlipped(false);
+    SwitchToLayer(new_layer);
+    texture_layer_ = new_layer;
+  }
+  texture_layer_->SetTextureMailbox(mailbox);
+  mailbox_ = mailbox;
+  mailbox_scale_factor_ = scale_factor;
+  RecomputeDrawsContentAndUVRect();
+}
+
+cc::TextureMailbox Layer::GetTextureMailbox(float* scale_factor) {
+  if (scale_factor)
+    *scale_factor = mailbox_scale_factor_;
+  cc::TextureMailbox::ReleaseCallback callback;
+  return mailbox_.CopyWithNewCallback(callback);
+}
+
 void Layer::SetDelegatedFrame(scoped_ptr<cc::DelegatedFrameData> frame,
                               gfx::Size frame_size_in_dip) {
   DCHECK_EQ(type_, LAYER_TEXTURED);
   bool has_frame = frame.get() && !frame->render_pass_list.empty();
   layer_updated_externally_ = has_frame;
   delegated_frame_size_in_dip_ = frame_size_in_dip;
-  if (!!delegated_renderer_layer_ != has_frame) {
+  if (!!delegated_renderer_layer_.get() != has_frame) {
     if (has_frame) {
       scoped_refptr<cc::DelegatedRendererLayer> new_layer =
           cc::DelegatedRendererLayer::Create(NULL);
@@ -540,7 +567,7 @@ void Layer::SetDelegatedFrame(scoped_ptr<cc::DelegatedFrameData> frame,
 
 void Layer::TakeUnusedResourcesForChildCompositor(
     cc::TransferableResourceArray* list) {
-  if (delegated_renderer_layer_)
+  if (delegated_renderer_layer_.get())
     delegated_renderer_layer_->TakeUnusedResourcesForChildCompositor(list);
 }
 
@@ -549,7 +576,7 @@ void Layer::SetColor(SkColor color) {
 }
 
 bool Layer::SchedulePaint(const gfx::Rect& invalid_rect) {
-  if (type_ == LAYER_SOLID_COLOR || (!delegate_ && !texture_))
+  if (type_ == LAYER_SOLID_COLOR || (!delegate_ && !texture_.get()))
     return false;
 
   damaged_region_.op(invalid_rect.x(),
@@ -568,9 +595,8 @@ void Layer::ScheduleDraw() {
 }
 
 void Layer::SendDamagedRects() {
-  if ((delegate_ || texture_) && !damaged_region_.isEmpty()) {
-    for (SkRegion::Iterator iter(damaged_region_);
-         !iter.done(); iter.next()) {
+  if ((delegate_ || texture_.get()) && !damaged_region_.isEmpty()) {
+    for (SkRegion::Iterator iter(damaged_region_); !iter.done(); iter.next()) {
       const SkIRect& sk_damaged = iter.rect();
       gfx::Rect damaged(
           sk_damaged.x(),
@@ -598,7 +624,7 @@ void Layer::SuppressPaint() {
 void Layer::OnDeviceScaleFactorChanged(float device_scale_factor) {
   if (device_scale_factor_ == device_scale_factor)
     return;
-  if (animator_)
+  if (animator_.get())
     animator_->StopAnimatingProperty(LayerAnimationElement::TRANSFORM);
   gfx::Transform transform = this->transform();
   device_scale_factor_ = device_scale_factor;
@@ -635,13 +661,15 @@ void Layer::PaintContents(SkCanvas* sk_canvas,
 }
 
 unsigned Layer::PrepareTexture(cc::ResourceUpdateQueue* queue) {
-  DCHECK(texture_layer_);
+  DCHECK(texture_layer_.get());
   return texture_->PrepareTexture();
 }
 
 WebKit::WebGraphicsContext3D* Layer::Context3d() {
-  DCHECK(texture_layer_);
-  return texture_->HostContext3D();
+  DCHECK(texture_layer_.get());
+  if (texture_)
+    return texture_->HostContext3D();
+  return NULL;
 }
 
 bool Layer::PrepareTextureMailbox(cc::TextureMailbox* mailbox) {
@@ -657,7 +685,7 @@ void Layer::SetForceRenderSurface(bool force) {
 }
 
 void Layer::OnAnimationStarted(const cc::AnimationEvent& event) {
-  if (animator_)
+  if (animator_.get())
     animator_->OnThreadedAnimationStarted(event);
 }
 
@@ -919,12 +947,19 @@ void Layer::RecomputeDrawsContentAndUVRect() {
   DCHECK(cc_layer_);
   gfx::Size size(bounds_.size());
   if (texture_layer_.get()) {
-    DCHECK(texture_);
-
-    float texture_scale_factor = 1.0f / texture_->device_scale_factor();
-    gfx::Size texture_size = gfx::ToFlooredSize(
-        gfx::ScaleSize(texture_->size(), texture_scale_factor));
-    size.ClampToMax(texture_size);
+    gfx::Size texture_size;
+    if (!texture_layer_->uses_mailbox()) {
+      DCHECK(texture_);
+      float texture_scale_factor = 1.0f / texture_->device_scale_factor();
+      texture_size = gfx::ToFlooredSize(
+          gfx::ScaleSize(texture_->size(), texture_scale_factor));
+    } else {
+      DCHECK(mailbox_.IsSharedMemory());
+      float texture_scale_factor = 1.0f / mailbox_scale_factor_;
+      texture_size = gfx::ToFlooredSize(
+          gfx::ScaleSize(mailbox_.shared_memory_size(), texture_scale_factor));
+    }
+    size.SetToMin(texture_size);
 
     gfx::PointF uv_top_left(0.f, 0.f);
     gfx::PointF uv_bottom_right(
@@ -934,7 +969,7 @@ void Layer::RecomputeDrawsContentAndUVRect() {
   } else if (delegated_renderer_layer_.get()) {
     delegated_renderer_layer_->SetDisplaySize(
         ConvertSizeToPixel(this, delegated_frame_size_in_dip_));
-    size.ClampToMax(delegated_frame_size_in_dip_);
+    size.SetToMin(delegated_frame_size_in_dip_);
   }
   cc_layer_->SetBounds(ConvertSizeToPixel(this, size));
 }

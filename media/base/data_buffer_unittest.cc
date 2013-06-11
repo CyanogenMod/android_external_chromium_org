@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "media/base/data_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -99,7 +99,7 @@ TEST(DataBufferTest, ReadingWriting) {
 
   // Create a DataBuffer.
   scoped_refptr<DataBuffer> buffer(new DataBuffer(kDataSize));
-  ASSERT_TRUE(buffer);
+  ASSERT_TRUE(buffer.get());
 
   uint8* data = buffer->GetWritableData();
   ASSERT_TRUE(data);

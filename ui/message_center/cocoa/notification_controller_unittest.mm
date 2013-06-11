@@ -8,7 +8,7 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #import "ui/base/cocoa/hover_image_button.h"
 #import "ui/base/test/ui_cocoa_test_helper.h"
 #include "ui/message_center/fake_message_center.h"
@@ -83,6 +83,10 @@ class MockMessageCenter : public message_center::FakeMessageCenter {
 - (NSTextField*)messageView {
   return message_.get();
 }
+
+- (NSView*)listItemView {
+  return listItemView_.get();
+}
 @end
 
 class NotificationControllerTest : public ui::CocoaTest {
@@ -99,6 +103,7 @@ TEST_F(NotificationControllerTest, BasicLayout) {
           "",
           ASCIIToUTF16("Added to circles"),
           ASCIIToUTF16("Jonathan and 5 others"),
+          gfx::Image(),
           string16(),
           std::string(),
           NULL,
@@ -128,6 +133,7 @@ TEST_F(NotificationControllerTest, OverflowText) {
           ASCIIToUTF16("And even the message is long. This sure is a wordy "
                        "notification. Are you really going to read this "
                        "entire thing?"),
+          gfx::Image(),
           string16(),
           std::string(),
           NULL,
@@ -148,6 +154,7 @@ TEST_F(NotificationControllerTest, Close) {
           "an_id",
           string16(),
           string16(),
+          gfx::Image(),
           string16(),
           std::string(),
           NULL,
@@ -174,6 +181,7 @@ TEST_F(NotificationControllerTest, Update) {
           ASCIIToUTF16("A simple title"),
           ASCIIToUTF16("This message isn't too long and should fit in the"
                        "default bounds."),
+          gfx::Image(),
           string16(),
           std::string(),
           NULL,
@@ -207,6 +215,7 @@ TEST_F(NotificationControllerTest, Buttons) {
           "an_id",
           string16(),
           string16(),
+          gfx::Image(),
           string16(),
           std::string(),
           &buttons,
@@ -231,6 +240,7 @@ TEST_F(NotificationControllerTest, Image) {
           "an_id",
           string16(),
           string16(),
+          gfx::Image(),
           string16(),
           std::string(),
           NULL,
@@ -249,4 +259,44 @@ TEST_F(NotificationControllerTest, Image) {
   ASSERT_TRUE([[[controller bottomSubviews] lastObject]
       isKindOfClass:[NSImageView class]]);
   EXPECT_EQ(image, [[[controller bottomSubviews] lastObject] image]);
+}
+
+TEST_F(NotificationControllerTest, List) {
+  base::ListValue* list = new base::ListValue;
+
+  base::DictionaryValue* item0 = new base::DictionaryValue;
+  item0->SetString(message_center::kItemTitleKey, "First title");
+  item0->SetString(message_center::kItemMessageKey, "first message");
+  list->Append(item0);
+
+  base::DictionaryValue* item1 = new base::DictionaryValue;
+  item1->SetString(message_center::kItemTitleKey, "Second title");
+  item1->SetString(message_center::kItemMessageKey,
+                   "second slightly longer message");
+  list->Append(item1);
+
+  base::DictionaryValue items;
+  items.Set(message_center::kItemsKey, list);
+
+  scoped_ptr<message_center::Notification> notification(
+      new message_center::Notification(
+          message_center::NOTIFICATION_TYPE_BASE_FORMAT,
+          "an_id",
+          string16(),
+          string16(),
+          gfx::Image(),
+          string16(),
+          std::string(),
+          &items,
+          NULL));
+
+  MockMessageCenter message_center;
+  scoped_nsobject<MCNotificationController> controller(
+      [[MCNotificationController alloc] initWithNotification:notification.get()
+                                               messageCenter:&message_center]);
+  [controller view];
+
+  EXPECT_EQ(2u, [[[controller listItemView] subviews] count]);
+  EXPECT_TRUE(NSMaxY([[controller listItemView] frame]) <
+              NSMinY([[controller messageView] frame]));
 }

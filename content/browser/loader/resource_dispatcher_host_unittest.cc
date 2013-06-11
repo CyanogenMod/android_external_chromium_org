@@ -10,12 +10,13 @@
 #include "base/message_loop.h"
 #include "base/pickle.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_message_filter.h"
+#include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
@@ -37,7 +38,7 @@
 #include "net/url_request/url_request_simple_job.h"
 #include "net/url_request/url_request_test_job.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/appcache/appcache_interfaces.h"
+#include "webkit/common/appcache/appcache_interfaces.h"
 
 // TODO(eroman): Write unit tests for SafeBrowsing that exercise
 //               SafeBrowsingResourceHandler.
@@ -591,6 +592,9 @@ class ResourceDispatcherHostTest : public testing::Test,
     if (ResourceDispatcherHostImpl::Get())
       ResourceDispatcherHostImpl::Get()->CancelRequestsForContext(
           browser_context_->GetResourceContext());
+
+    WorkerServiceImpl::GetInstance()->PerformTeardownForTesting();
+
     browser_context_.reset();
     message_loop_.RunUntilIdle();
   }
@@ -766,7 +770,7 @@ void ResourceDispatcherHostTest::CancelRequest(int request_id) {
 }
 
 void ResourceDispatcherHostTest::CompleteStartRequest(int request_id) {
-  CompleteStartRequest(filter_, request_id);
+  CompleteStartRequest(filter_.get(), request_id);
 }
 
 void ResourceDispatcherHostTest::CompleteStartRequest(
@@ -1409,7 +1413,7 @@ TEST_F(ResourceDispatcherHostTest, TooManyOutstandingRequests) {
 
   // Flush all the pending requests.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // Sorts out all the messages we saw by request.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -1745,7 +1749,8 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigation) {
   ResourceHostMsg_RequestResource transfer_request_msg(
       new_render_view_id, new_request_id, request);
   bool msg_was_ok;
-  host_.OnMessageReceived(transfer_request_msg, second_filter, &msg_was_ok);
+  host_.OnMessageReceived(
+      transfer_request_msg, second_filter.get(), &msg_was_ok);
   base::MessageLoop::current()->RunUntilIdle();
 
   // Flush all the pending requests.
@@ -1807,7 +1812,8 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationAndThenRedirect) {
   ResourceHostMsg_RequestResource transfer_request_msg(
       new_render_view_id, new_request_id, request);
   bool msg_was_ok;
-  host_.OnMessageReceived(transfer_request_msg, second_filter, &msg_was_ok);
+  host_.OnMessageReceived(
+      transfer_request_msg, second_filter.get(), &msg_was_ok);
   base::MessageLoop::current()->RunUntilIdle();
 
   // Response data for "http://other.com/blerg":
@@ -1818,7 +1824,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationAndThenRedirect) {
 
   // OK, let the redirect happen.
   SetDelayedStartJobGeneration(false);
-  CompleteStartRequest(second_filter, new_request_id);
+  CompleteStartRequest(second_filter.get(), new_request_id);
   base::MessageLoop::current()->RunUntilIdle();
 
   // Flush all the pending requests.
@@ -1827,7 +1833,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationAndThenRedirect) {
   // Now, simulate the renderer choosing to follow the redirect.
   ResourceHostMsg_FollowRedirect redirect_msg(
       new_render_view_id, new_request_id, false, GURL());
-  host_.OnMessageReceived(redirect_msg, second_filter, &msg_was_ok);
+  host_.OnMessageReceived(redirect_msg, second_filter.get(), &msg_was_ok);
   base::MessageLoop::current()->RunUntilIdle();
 
   // Flush all the pending requests.
@@ -1917,6 +1923,60 @@ TEST_F(ResourceDispatcherHostTest, DelayedDataReceivedACKs) {
   // NOTE: If we fail the above checks then it means that we probably didn't
   // load a big enough response to trigger the delay mechanism we are trying to
   // test!
+
+  msgs[0].erase(msgs[0].begin());
+  msgs[0].erase(msgs[0].begin());
+
+  // ACK all DataReceived messages until we find a RequestComplete message.
+  bool complete = false;
+  while (!complete) {
+    for (size_t i = 0; i < msgs[0].size(); ++i) {
+      if (msgs[0][i].type() == ResourceMsg_RequestComplete::ID) {
+        complete = true;
+        break;
+      }
+
+      EXPECT_EQ(ResourceMsg_DataReceived::ID, msgs[0][i].type());
+
+      ResourceHostMsg_DataReceived_ACK msg(0, 1);
+      bool msg_was_ok;
+      host_.OnMessageReceived(msg, filter_.get(), &msg_was_ok);
+    }
+
+    base::MessageLoop::current()->RunUntilIdle();
+
+    msgs.clear();
+    accum_.GetClassifiedMessages(&msgs);
+  }
+}
+
+// Flakyness of this test might indicate memory corruption issues with
+// for example the ResourceBuffer of AsyncResourceHandler.
+TEST_F(ResourceDispatcherHostTest, DataReceivedUnexpectedACKs) {
+  EXPECT_EQ(0, host_.pending_requests());
+
+  HandleScheme("big-job");
+  MakeTestRequest(0, 1, GURL("big-job:0123456789,1000000"));
+
+  // Sort all the messages we saw by request.
+  ResourceIPCAccumulator::ClassifiedMessages msgs;
+  accum_.GetClassifiedMessages(&msgs);
+
+  // We expect 1x ReceivedResponse, 1x SetDataBuffer, Nx ReceivedData messages.
+  EXPECT_EQ(ResourceMsg_ReceivedResponse::ID, msgs[0][0].type());
+  EXPECT_EQ(ResourceMsg_SetDataBuffer::ID, msgs[0][1].type());
+  for (size_t i = 2; i < msgs[0].size(); ++i)
+    EXPECT_EQ(ResourceMsg_DataReceived::ID, msgs[0][i].type());
+
+  // NOTE: If we fail the above checks then it means that we probably didn't
+  // load a big enough response to trigger the delay mechanism.
+
+  // Send some unexpected ACKs.
+  for (size_t i = 0; i < 128; ++i) {
+    ResourceHostMsg_DataReceived_ACK msg(0, 1);
+    bool msg_was_ok;
+    host_.OnMessageReceived(msg, filter_.get(), &msg_was_ok);
+  }
 
   msgs[0].erase(msgs[0].begin());
   msgs[0].erase(msgs[0].begin());

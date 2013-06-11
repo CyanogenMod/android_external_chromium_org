@@ -127,7 +127,7 @@ std::string LocallyManagedUserCreationScreen::GetName() const {
 }
 
 void LocallyManagedUserCreationScreen::AbortFlow() {
-  controller_->FinishCreation();
+  controller_->CancelCreation();
 }
 
 void LocallyManagedUserCreationScreen::FinishFlow() {
@@ -139,7 +139,7 @@ void LocallyManagedUserCreationScreen::AuthenticateManager(
     const std::string& manager_password) {
   // Make sure no two controllers exist at the same time.
   controller_.reset();
-  controller_.reset(new LocallyManagedUserCreationController(this));
+  controller_.reset(new LocallyManagedUserCreationController(this, manager_id));
 
   ExistingUserController::current_controller()->
       Login(UserContext(manager_id,
@@ -170,8 +170,8 @@ void LocallyManagedUserCreationScreen::OnManagerFullyAuthenticated(
 
 void LocallyManagedUserCreationScreen::OnManagerCryptohomeAuthenticated() {
   if (actor_) {
-    actor_->ShowProgress(l10n_util::GetStringUTF16(
-        IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_AUTH_PROGRESS_MESSAGE));
+    actor_->ShowStatusMessage(true /* progress */, l10n_util::GetStringUTF16(
+            IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_AUTH_PROGRESS_MESSAGE));
   }
 }
 
@@ -224,6 +224,13 @@ void LocallyManagedUserCreationScreen::SelectPicture() {
 
 void LocallyManagedUserCreationScreen::OnCreationSuccess() {
   SelectPicture();
+}
+
+void LocallyManagedUserCreationScreen::OnCreationTimeout() {
+  if (actor_) {
+    actor_->ShowStatusMessage(false /* error */, l10n_util::GetStringUTF16(
+        IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_TIMEOUT_MESSAGE));
+  }
 }
 
 }  // namespace chromeos

@@ -107,8 +107,6 @@ INSTANTIATE_TEST_CASE_P(
                       prefs::kPluginsDisabledPluginsExceptions),
         PolicyAndPref(key::kEnabledPlugins,
                       prefs::kPluginsEnabledPlugins),
-        PolicyAndPref(key::kDisabledSchemes,
-                      prefs::kDisabledSchemes),
         PolicyAndPref(key::kAutoSelectCertificateForUrls,
                       prefs::kManagedAutoSelectCertificateForUrls),
         PolicyAndPref(key::kURLBlacklist,
@@ -155,18 +153,19 @@ INSTANTIATE_TEST_CASE_P(
                       prefs::kAuthNegotiateDelegateWhitelist),
         PolicyAndPref(key::kGSSAPILibraryName,
                       prefs::kGSSAPILibraryName),
-        PolicyAndPref(key::kDiskCacheDir,
-                      prefs::kDiskCacheDir),
         PolicyAndPref(key::kVariationsRestrictParameter,
                       prefs::kVariationsRestrictParameter)));
 
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 INSTANTIATE_TEST_CASE_P(
     ConfigurationPolicyPrefStoreDownloadDirectoryInstance,
     ConfigurationPolicyPrefStoreStringTest,
-    testing::Values(PolicyAndPref(key::kDownloadDirectory,
-                                  prefs::kDownloadDefaultDirectory)));
-#endif  // !defined(OS_CHROMEOS)
+    testing::Values(
+        PolicyAndPref(key::kDiskCacheDir,
+                      prefs::kDiskCacheDir),
+        PolicyAndPref(key::kDownloadDirectory,
+                      prefs::kDownloadDefaultDirectory)));
+#endif  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 
 // Test cases for boolean-valued policy settings.
 class ConfigurationPolicyPrefStoreBooleanTest
@@ -303,6 +302,12 @@ INSTANTIATE_TEST_CASE_P(
                       prefs::kExternalStorageDisabled),
         PolicyAndPref(key::kShowAccessibilityOptionsInSystemTrayMenu,
                       prefs::kShouldAlwaysShowAccessibilityMenu),
+        PolicyAndPref(key::kLargeCursorEnabled,
+                      prefs::kLargeCursorEnabled),
+        PolicyAndPref(key::kSpokenFeedbackEnabled,
+                      prefs::kSpokenFeedbackEnabled),
+        PolicyAndPref(key::kHighContrastEnabled,
+                      prefs::kHighContrastEnabled),
         PolicyAndPref(key::kAudioOutputAllowed,
                       prefs::kAudioOutputAllowed),
         PolicyAndPref(key::kAudioCaptureAllowed,
@@ -927,7 +932,7 @@ TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest, Default) {
   EXPECT_FALSE(store_->GetValue(prefs::kPromptForDownload, NULL));
 }
 
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest, SetDownloadDirectory) {
   PolicyMap policy;
   EXPECT_FALSE(store_->GetValue(prefs::kPromptForDownload, NULL));
@@ -947,7 +952,7 @@ TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest, SetDownloadDirectory) {
   ASSERT_TRUE(result);
   EXPECT_FALSE(prompt_for_download);
 }
-#endif  // !defined(OS_CHROMEOS)
+#endif  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 
 TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest,
        EnableFileSelectionDialogs) {
@@ -1012,6 +1017,47 @@ TEST_F(ConfigurationPolicyPrefStoreAutofillTest, Disabled) {
   ASSERT_TRUE(result);
   EXPECT_FALSE(autofill_enabled);
 }
+
+#if defined(OS_CHROMEOS)
+// Test cases for the screen magnifier type policy setting.
+class ConfigurationPolicyPrefStoreScreenMagnifierTypeTest
+    : public ConfigurationPolicyPrefStoreTest {};
+
+TEST_F(ConfigurationPolicyPrefStoreScreenMagnifierTypeTest, Default) {
+  EXPECT_FALSE(store_->GetValue(prefs::kScreenMagnifierEnabled, NULL));
+  EXPECT_FALSE(store_->GetValue(prefs::kScreenMagnifierType, NULL));
+}
+
+TEST_F(ConfigurationPolicyPrefStoreScreenMagnifierTypeTest, Disabled) {
+  PolicyMap policy;
+  policy.Set(key::kScreenMagnifierType, POLICY_LEVEL_MANDATORY,
+             POLICY_SCOPE_USER, base::Value::CreateIntegerValue(0));
+  UpdateProviderPolicy(policy);
+  const base::Value* enabled = NULL;
+  EXPECT_TRUE(store_->GetValue(prefs::kScreenMagnifierEnabled, &enabled));
+  ASSERT_TRUE(enabled);
+  EXPECT_TRUE(base::FundamentalValue(false).Equals(enabled));
+  const base::Value* type = NULL;
+  EXPECT_TRUE(store_->GetValue(prefs::kScreenMagnifierType, &type));
+  ASSERT_TRUE(type);
+  EXPECT_TRUE(base::FundamentalValue(0).Equals(type));
+}
+
+TEST_F(ConfigurationPolicyPrefStoreScreenMagnifierTypeTest, Enabled) {
+  PolicyMap policy;
+  policy.Set(key::kScreenMagnifierType, POLICY_LEVEL_MANDATORY,
+             POLICY_SCOPE_USER, base::Value::CreateIntegerValue(1));
+  UpdateProviderPolicy(policy);
+  const base::Value* enabled = NULL;
+  EXPECT_TRUE(store_->GetValue(prefs::kScreenMagnifierEnabled, &enabled));
+  ASSERT_TRUE(enabled);
+  EXPECT_TRUE(base::FundamentalValue(true).Equals(enabled));
+  const base::Value* type = NULL;
+  EXPECT_TRUE(store_->GetValue(prefs::kScreenMagnifierType, &type));
+  ASSERT_TRUE(type);
+  EXPECT_TRUE(base::FundamentalValue(1).Equals(type));
+}
+#endif  // defined(OS_CHROMEOS)
 
 // Exercises the policy refresh mechanism.
 class ConfigurationPolicyPrefStoreRefreshTest

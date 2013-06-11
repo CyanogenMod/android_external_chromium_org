@@ -37,12 +37,11 @@ bool RulesFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &event_name));
 
   RulesRegistryService* rules_registry_service =
-      ExtensionSystemFactory::GetForProfile(profile())->
-      rules_registry_service();
+      RulesRegistryService::Get(profile());
   rules_registry_ = rules_registry_service->GetRulesRegistry(event_name);
   // Raw access to this function is not available to extensions, therefore
   // there should never be a request for a nonexisting rules registry.
-  EXTENSION_FUNCTION_VALIDATE(rules_registry_);
+  EXTENSION_FUNCTION_VALIDATE(rules_registry_.get());
 
   if (content::BrowserThread::CurrentlyOn(rules_registry_->owner_thread())) {
     bool success = RunImplOnCorrectThread();
@@ -52,7 +51,7 @@ bool RulesFunction::RunImpl() {
         content::BrowserThread::GetMessageLoopProxyForThread(
             rules_registry_->owner_thread());
     base::PostTaskAndReplyWithResult(
-        message_loop_proxy,
+        message_loop_proxy.get(),
         FROM_HERE,
         base::Bind(&RulesFunction::RunImplOnCorrectThread, this),
         base::Bind(&RulesFunction::SendResponse, this));

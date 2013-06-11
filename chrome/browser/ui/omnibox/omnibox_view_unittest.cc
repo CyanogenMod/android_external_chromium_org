@@ -4,9 +4,9 @@
 
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "base/message_loop.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #include "ui/base/clipboard/clipboard.h"
@@ -73,8 +73,7 @@ TEST_F(OmniboxViewTest, GetClipboardText) {
 #if !defined(OS_CHROMEOS)
   // Does an empty clipboard get empty text?
   clipboard->WriteObjects(ui::Clipboard::BUFFER_STANDARD,
-                          ui::Clipboard::ObjectMap(),
-                          ui::SourceTag());
+                          ui::Clipboard::ObjectMap());
   EXPECT_EQ(string16(), OmniboxView::GetClipboardText());
 #endif
 

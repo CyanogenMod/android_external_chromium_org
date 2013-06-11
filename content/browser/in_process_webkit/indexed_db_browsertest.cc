@@ -9,8 +9,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/thread_test_helper.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
@@ -25,7 +25,7 @@
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "webkit/browser/database/database_util.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 using quota::QuotaManager;
 using webkit_database::DatabaseUtil;

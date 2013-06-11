@@ -11,6 +11,7 @@
 #include "remoting/protocol/negotiating_authenticator_base.h"
 #include "remoting/protocol/negotiating_client_authenticator.h"
 #include "remoting/protocol/negotiating_host_authenticator.h"
+#include "remoting/protocol/pairing_registry.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
@@ -69,10 +70,11 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
       methods.push_back(AuthenticationMethod::Spake2(
           AuthenticationMethod::NONE));
     }
-    bool pairing_expected = pairing_registry != NULL;
-    FetchSecretCallback fetch_secret_callback = base::Bind(
-        &NegotiatingAuthenticatorTest::FetchSecret,
-        client_interactive_pin, pairing_expected);
+    bool pairing_expected = pairing_registry.get() != NULL;
+    FetchSecretCallback fetch_secret_callback =
+        base::Bind(&NegotiatingAuthenticatorTest::FetchSecret,
+                   client_interactive_pin,
+                   pairing_expected);
     client_as_negotiating_authenticator_ = new NegotiatingClientAuthenticator(
         client_id, client_paired_secret,
         kTestHostId, fetch_secret_callback,

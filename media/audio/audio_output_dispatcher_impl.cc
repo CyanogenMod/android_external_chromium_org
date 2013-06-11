@@ -19,8 +19,9 @@ namespace media {
 AudioOutputDispatcherImpl::AudioOutputDispatcherImpl(
     AudioManager* audio_manager,
     const AudioParameters& params,
+    const std::string& input_device_id,
     const base::TimeDelta& close_delay)
-    : AudioOutputDispatcher(audio_manager, params),
+    : AudioOutputDispatcher(audio_manager, params, input_device_id),
       pause_delay_(base::TimeDelta::FromMicroseconds(
           2 * params.frames_per_buffer() * base::Time::kMicrosecondsPerSecond /
           static_cast<float>(params.sample_rate()))),
@@ -28,7 +29,7 @@ AudioOutputDispatcherImpl::AudioOutputDispatcherImpl(
       weak_this_(this),
       close_timer_(FROM_HERE,
                    close_delay,
-                   weak_this_.GetWeakPtr(),
+                   this,
                    &AudioOutputDispatcherImpl::ClosePendingStreams) {
 }
 
@@ -166,7 +167,8 @@ void AudioOutputDispatcherImpl::Shutdown() {
 
 bool AudioOutputDispatcherImpl::CreateAndOpenStream() {
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
-  AudioOutputStream* stream = audio_manager_->MakeAudioOutputStream(params_);
+  AudioOutputStream* stream = audio_manager_->MakeAudioOutputStream(
+      params_, input_device_id_);
   if (!stream)
     return false;
 

@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/rand_util.h"
 #include "base/string_number_conversions.h"
 #include "base/strings/stringize_macros.h"
@@ -65,7 +65,7 @@ HeartbeatSender::HeartbeatSender(
       heartbeat_succeeded_(false),
       failed_startup_heartbeat_count_(0) {
   DCHECK(signal_strategy_);
-  DCHECK(key_pair_);
+  DCHECK(key_pair_.get());
 
   signal_strategy_->AddListener(this);
 

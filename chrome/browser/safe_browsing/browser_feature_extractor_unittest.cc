@@ -10,7 +10,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_service.h"
@@ -32,10 +32,9 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::Return;
-using ::testing::StrictMock;
-using content::BrowserThread;
 using content::WebContentsTester;
+using testing::Return;
+using testing::StrictMock;
 
 namespace safe_browsing {
 namespace {
@@ -50,10 +49,6 @@ class MockClientSideDetectionService : public ClientSideDetectionService {
 
 class BrowserFeatureExtractorTest : public ChromeRenderViewHostTestHarness {
  protected:
-  BrowserFeatureExtractorTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_) {
-  }
-
   virtual void SetUp() {
     ChromeRenderViewHostTestHarness::SetUp();
     profile()->CreateHistoryService(true /* delete_file */, false /* no_db */);
@@ -161,7 +156,6 @@ class BrowserFeatureExtractorTest : public ChromeRenderViewHostTestHarness {
     }
   }
 
-  content::TestBrowserThread ui_thread_;
   int num_pending_;
   scoped_ptr<BrowserFeatureExtractor> extractor_;
   std::map<ClientPhishingRequest*, bool> success_;

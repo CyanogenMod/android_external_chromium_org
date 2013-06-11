@@ -14,6 +14,7 @@
 #include "base/sequenced_task_runner.h"
 #include "chrome/browser/media_galleries/fileapi/device_media_async_file_util.h"
 #include "chrome/browser/media_galleries/fileapi/itunes/itunes_file_util.h"
+#include "chrome/browser/media_galleries/fileapi/media_file_validator_factory.h"
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
 #include "chrome/browser/media_galleries/fileapi/picasa/picasa_file_util.h"
@@ -37,23 +38,25 @@ using fileapi::FileSystemURL;
 
 namespace chrome {
 
+const char MediaFileSystemMountPointProvider::kMediaTaskRunnerName[] =
+    "media-task-runner";
 const char MediaFileSystemMountPointProvider::kMediaPathFilterKey[] =
     "MediaPathFilterKey";
 const char MediaFileSystemMountPointProvider::kMTPDeviceDelegateURLKey[] =
     "MTPDeviceDelegateKey";
 
 MediaFileSystemMountPointProvider::MediaFileSystemMountPointProvider(
-    const base::FilePath& profile_path)
+    const base::FilePath& profile_path,
+    base::SequencedTaskRunner* media_task_runner)
     : profile_path_(profile_path),
-      media_path_filter_(new MediaPathFilter()),
-      native_media_file_util_(
-          new fileapi::AsyncFileUtilAdapter(new NativeMediaFileUtil())),
+      media_task_runner_(media_task_runner),
+      media_path_filter_(new MediaPathFilter),
+      media_copy_or_move_file_validator_factory_(new MediaFileValidatorFactory),
+      native_media_file_util_(new NativeMediaFileUtil()),
       device_media_async_file_util_(
           DeviceMediaAsyncFileUtil::Create(profile_path_)),
-      picasa_file_util_(
-          new fileapi::AsyncFileUtilAdapter(new picasa::PicasaFileUtil())),
-      itunes_file_util_(new fileapi::AsyncFileUtilAdapter(
-          new itunes::ItunesFileUtil())) {
+      picasa_file_util_(new picasa::PicasaFileUtil()),
+      itunes_file_util_(new itunes::ItunesFileUtil()) {
 }
 
 MediaFileSystemMountPointProvider::~MediaFileSystemMountPointProvider() {
@@ -85,12 +88,7 @@ void MediaFileSystemMountPointProvider::OpenFileSystem(
 
 fileapi::FileSystemFileUtil* MediaFileSystemMountPointProvider::GetFileUtil(
     fileapi::FileSystemType type) {
-  switch (type) {
-    case fileapi::kFileSystemTypeNativeMedia:
-      return native_media_file_util_->sync_file_util();
-    default:
-      NOTREACHED();
-  }
+  NOTREACHED();
   return NULL;
 }
 
@@ -119,6 +117,7 @@ MediaFileSystemMountPointProvider::GetCopyOrMoveFileValidatorFactory(
   switch (type) {
     case fileapi::kFileSystemTypeNativeMedia:
     case fileapi::kFileSystemTypeDeviceMedia:
+    case fileapi::kFileSystemTypeItunes:
       if (!media_copy_or_move_file_validator_factory_) {
         *error_code = base::PLATFORM_FILE_ERROR_SECURITY;
         return NULL;
@@ -145,7 +144,7 @@ MediaFileSystemMountPointProvider::CreateFileSystemOperation(
     base::PlatformFileError* error_code) const {
   scoped_ptr<fileapi::FileSystemOperationContext> operation_context(
       new fileapi::FileSystemOperationContext(
-          context, context->task_runners()->media_task_runner()));
+          context, media_task_runner_.get()));
 
   operation_context->SetUserValue(kMediaPathFilterKey,
                                   media_path_filter_.get());
@@ -154,7 +153,7 @@ MediaFileSystemMountPointProvider::CreateFileSystemOperation(
                                     url.filesystem_id());
   }
 
-  return new fileapi::LocalFileSystemOperation(context,
+  return new fileapi::LocalFileSystemOperation(url, context,
                                                operation_context.Pass());
 }
 

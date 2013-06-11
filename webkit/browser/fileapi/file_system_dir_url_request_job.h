@@ -10,7 +10,7 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "net/url_request/url_request_job.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -19,7 +19,6 @@
 namespace fileapi {
 
 class FileSystemContext;
-class FileSystemOperation;
 struct DirectoryEntry;
 
 // A request job that handles reading filesystem: URLs for directories.
@@ -53,7 +52,6 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE FileSystemDirURLRequestJob
   void DidReadDirectory(base::PlatformFileError result,
                         const std::vector<DirectoryEntry>& entries,
                         bool has_more);
-  FileSystemOperation* GetNewOperation(base::PlatformFileError* error_code);
 
   std::string data_;
   FileSystemURL url_;

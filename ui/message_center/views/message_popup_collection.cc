@@ -13,6 +13,7 @@
 #include "base/run_loop.h"
 #include "base/time.h"
 #include "base/timer.h"
+#include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/gfx/screen.h"
@@ -25,6 +26,7 @@
 #include "ui/views/background.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/view.h"
+#include "ui/views/views_delegate.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -90,7 +92,7 @@ void MessagePopupCollection::UpdateWidgets() {
   // items may be ignored if there are no room to place them.
   for (NotificationList::PopupNotifications::const_reverse_iterator iter =
            popups.rbegin(); iter != popups.rend(); ++iter) {
-    if (HasToast((*iter)->id()))
+    if (FindToast((*iter)->id()))
       continue;
 
     MessageView* view =
@@ -116,6 +118,10 @@ void MessagePopupCollection::UpdateWidgets() {
     bottom -= view_height + kToastMargin;
 
     message_center_->DisplayedNotification((*iter)->id());
+    if (views::ViewsDelegate::views_delegate) {
+      views::ViewsDelegate::views_delegate->NotifyAccessibilityEvent(
+          toast, ui::AccessibilityTypes::EVENT_ALERT);
+    }
   }
 }
 
@@ -124,9 +130,7 @@ void MessagePopupCollection::OnMouseEntered(ToastContentsView* toast_entered) {
   // toasts.  So we need to keep track of which one is the currently active one.
   latest_toast_entered_ = toast_entered;
 
-  for (Toasts::iterator iter = toasts_.begin(); iter != toasts_.end(); ++iter) {
-    (*iter)->SuspendTimer();
-  }
+  message_center_->PausePopupTimers();
 
   if (user_is_closing_toasts_by_clicking_)
     defer_timer_->Stop();
@@ -146,11 +150,7 @@ void MessagePopupCollection::OnMouseExited(ToastContentsView* toast_exited) {
         this,
         &MessagePopupCollection::OnDeferTimerExpired);
   } else {
-    for (Toasts::iterator iter = toasts_.begin();
-         iter != toasts_.end();
-         ++iter) {
-      (*iter)->StartTimer();
-    }
+    message_center_->RestartPopupTimers();
   }
 }
 
@@ -203,32 +203,24 @@ void MessagePopupCollection::RepositionWidgetsWithTarget() {
   if (toasts_.empty())
     return;
 
-  if (toasts_.back()->origin().y() > target_top_edge_) {
-    // No widgets are above, thus slides up the widgets.
-    int slide_length =
-        toasts_.back()->origin().y() - target_top_edge_;
-    for (Toasts::iterator iter = toasts_.begin();
-         iter != toasts_.end(); ++iter) {
-      gfx::Rect bounds((*iter)->bounds());
-      bounds.set_y(bounds.y() - slide_length);
-      (*iter)->SetBoundsWithAnimation(bounds);
-    }
-  } else {
-    Toasts::reverse_iterator iter = toasts_.rbegin();
-    for (; iter != toasts_.rend(); ++iter) {
-      if ((*iter)->origin().y() > target_top_edge_)
-        break;
-    }
-    --iter;
-    int slide_length = target_top_edge_ - (*iter)->origin().y();
-    for (; ; --iter) {
-      gfx::Rect bounds((*iter)->bounds());
-      bounds.set_y(bounds.y() + slide_length);
-      (*iter)->SetBoundsWithAnimation(bounds);
+  // No widgets above.
+  if (toasts_.back()->origin().y() > target_top_edge_)
+    return;
 
-      if (iter == toasts_.rbegin())
-        break;
-    }
+  Toasts::reverse_iterator iter = toasts_.rbegin();
+  for (; iter != toasts_.rend(); ++iter) {
+    if ((*iter)->origin().y() > target_top_edge_)
+      break;
+  }
+  --iter;
+  int slide_length = target_top_edge_ - (*iter)->origin().y();
+  for (; ; --iter) {
+    gfx::Rect bounds((*iter)->bounds());
+    bounds.set_y(bounds.y() + slide_length);
+    (*iter)->SetBoundsWithAnimation(bounds);
+
+    if (iter == toasts_.rbegin())
+      break;
   }
 }
 
@@ -271,9 +263,7 @@ void MessagePopupCollection::OnDeferTimerExpired() {
   user_is_closing_toasts_by_clicking_ = false;
   DecrementDeferCounter();
 
-  for (Toasts::iterator iter = toasts_.begin(); iter != toasts_.end(); ++iter) {
-    (*iter)->StartTimer();
-  }
+  message_center_->RestartPopupTimers();
 }
 
 void MessagePopupCollection::OnNotificationUpdated(
@@ -299,7 +289,6 @@ void MessagePopupCollection::OnNotificationUpdated(
     MessageView* view = NotificationView::Create(
         *(*iter), message_center_, true);
     (*toast_iter)->SetContents(view);
-    (*toast_iter)->ResetTimeout((*iter)->priority());
     updated = true;
   }
 
@@ -319,12 +308,13 @@ void MessagePopupCollection::SetWorkAreaForTest(const gfx::Rect& work_area) {
   work_area_ = work_area;
 }
 
-bool MessagePopupCollection::HasToast(const std::string& notification_id) {
+ToastContentsView* MessagePopupCollection::FindToast(
+    const std::string& notification_id) {
   for (Toasts::iterator iter = toasts_.begin(); iter != toasts_.end(); ++iter) {
     if ((*iter)->id() == notification_id)
-      return true;
+      return *iter;
   }
-  return false;
+  return NULL;
 }
 
 void MessagePopupCollection::IncrementDeferCounter() {

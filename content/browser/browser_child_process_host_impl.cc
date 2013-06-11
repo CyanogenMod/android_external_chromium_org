@@ -14,7 +14,7 @@
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/browser/histogram_message_filter.h"
 #include "content/browser/loader/resource_message_filter.h"
@@ -202,6 +202,10 @@ void BrowserChildProcessHostImpl::ForceShutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   g_child_process_list.Get().remove(this);
   child_process_host_->ForceShutdown();
+}
+
+void BrowserChildProcessHostImpl::SetBackgrounded(bool backgrounded) {
+  child_process_->SetProcessBackgrounded(backgrounded);
 }
 
 void BrowserChildProcessHostImpl::SetTerminateChildOnShutdown(

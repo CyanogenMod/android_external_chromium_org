@@ -4,7 +4,7 @@
 
 #include "ui/gfx/font.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/platform_font.h"
 
 namespace gfx {
@@ -58,7 +58,7 @@ int Font::GetAverageCharacterWidth() const {
   return platform_font_->GetAverageCharacterWidth();
 }
 
-int Font::GetStringWidth(const string16& text) const {
+int Font::GetStringWidth(const base::string16& text) const {
   return platform_font_->GetStringWidth(text);
 }
 

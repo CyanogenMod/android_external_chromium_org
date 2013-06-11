@@ -6,7 +6,7 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/memory/scoped_nsobject.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_models.h"
 #include "chrome/browser/ui/autofill/mock_autofill_dialog_controller.h"
 #import "chrome/browser/ui/cocoa/autofill/layout_view.h"
@@ -53,8 +53,9 @@ TEST_F(AutofillSectionContainerTest, HasSubviews) {
   bool hasLayoutView = false;
   bool hasTextField = false;
   bool hasSuggestButton = false;
+  bool hasSuggestionView = false;
 
-  ASSERT_EQ(3U, [[[container_ view] subviews] count]);
+  ASSERT_EQ(4U, [[[container_ view] subviews] count]);
   for (NSView* view in [[container_ view] subviews]) {
     if ([view isKindOfClass:[NSTextField class]]) {
       hasTextField = true;
@@ -62,12 +63,15 @@ TEST_F(AutofillSectionContainerTest, HasSubviews) {
       hasLayoutView = true;
     } else if ([view isKindOfClass:[MenuButton class]]) {
       hasSuggestButton = true;
+    } else if ([view isKindOfClass:[NSView class]]) {
+      hasSuggestionView = true;
     }
   }
 
   EXPECT_TRUE(hasSuggestButton);
   EXPECT_TRUE(hasLayoutView);
   EXPECT_TRUE(hasTextField);
+  EXPECT_TRUE(hasSuggestionView);
 }
 
 TEST_F(AutofillSectionContainerTest, ModelsPopulateComboboxes) {

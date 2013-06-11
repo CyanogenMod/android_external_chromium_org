@@ -34,7 +34,7 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
   else
     surface = CreateNativeSurface(manager, stub, handle);
 
-  if (!surface || !surface->Initialize())
+  if (!surface.get() || !surface->Initialize())
     return NULL;
   return surface;
 }
@@ -52,7 +52,7 @@ ImageTransportHelper::ImageTransportHelper(ImageTransportSurface* surface,
 }
 
 ImageTransportHelper::~ImageTransportHelper() {
-  if (stub_) {
+  if (stub_.get()) {
     stub_->SetLatencyInfoCallback(
         base::Callback<void(const ui::LatencyInfo&)>());
   }
@@ -171,13 +171,13 @@ void ImageTransportHelper::Suspend() {
 }
 
 gpu::GpuScheduler* ImageTransportHelper::Scheduler() {
-  if (!stub_)
+  if (!stub_.get())
     return NULL;
   return stub_->scheduler();
 }
 
 gpu::gles2::GLES2Decoder* ImageTransportHelper::Decoder() {
-  if (!stub_)
+  if (!stub_.get())
     return NULL;
   return stub_->decoder();
 }

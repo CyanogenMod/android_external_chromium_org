@@ -13,10 +13,10 @@
 #include "base/file_util.h"
 #include "base/json/string_escape.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -124,13 +124,13 @@ class TaskProxy : public base::RefCountedThreadSafe<TaskProxy> {
       : handler_(handler) {}
   void LoadTraceFileCompleteProxy(string16* file_contents,
                                   const base::FilePath& path) {
-    if (handler_)
+    if (handler_.get())
       handler_->LoadTraceFileComplete(file_contents, path);
     delete file_contents;
   }
 
   void SaveTraceFileCompleteProxy() {
-    if (handler_)
+    if (handler_.get())
       handler_->SaveTraceFileComplete();
   }
 
@@ -157,7 +157,7 @@ TracingMessageHandler::TracingMessageHandler()
 }
 
 TracingMessageHandler::~TracingMessageHandler() {
-  if (select_trace_file_dialog_)
+  if (select_trace_file_dialog_.get())
     select_trace_file_dialog_->ListenerDestroyed();
 
   // If we are the current subscriber, this will result in ending tracing.
@@ -310,7 +310,7 @@ void TracingMessageHandler::FileSelectionCanceled(void* params) {
 
 void TracingMessageHandler::OnLoadTraceFile(const base::ListValue* list) {
   // Only allow a single dialog at a time.
-  if (select_trace_file_dialog_)
+  if (select_trace_file_dialog_.get())
     return;
   select_trace_file_dialog_type_ = ui::SelectFileDialog::SELECT_OPEN_FILE;
   select_trace_file_dialog_ = ui::SelectFileDialog::Create(
@@ -360,7 +360,7 @@ void TracingMessageHandler::LoadTraceFileComplete(string16* contents,
 
 void TracingMessageHandler::OnSaveTraceFile(const base::ListValue* list) {
   // Only allow a single dialog at a time.
-  if (select_trace_file_dialog_)
+  if (select_trace_file_dialog_.get())
     return;
 
   DCHECK(list->GetSize() == 1);

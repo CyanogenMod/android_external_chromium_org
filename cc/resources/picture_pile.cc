@@ -34,10 +34,12 @@ PicturePile::~PicturePile() {
 void PicturePile::Update(
     ContentLayerClient* painter,
     SkColor background_color,
+    bool contents_opaque,
     const Region& invalidation,
     gfx::Rect visible_layer_rect,
     RenderingStats* stats) {
   background_color_ = background_color;
+  contents_opaque_ = contents_opaque;
 
   gfx::Rect interest_rect = visible_layer_rect;
   interest_rect.Inset(
@@ -121,7 +123,8 @@ class FullyContainedPredicate {
  public:
   explicit FullyContainedPredicate(gfx::Rect rect) : layer_rect_(rect) {}
   bool operator()(const scoped_refptr<Picture>& picture) {
-    return layer_rect_.Contains(picture->LayerRect());
+    return picture->LayerRect().IsEmpty() ||
+        layer_rect_.Contains(picture->LayerRect());
   }
   gfx::Rect layer_rect_;
 };
@@ -130,6 +133,7 @@ void PicturePile::InvalidateRect(
     PictureList& picture_list,
     gfx::Rect invalidation) {
   DCHECK(!picture_list.empty());
+  DCHECK(!invalidation.IsEmpty());
 
   std::vector<PictureList::iterator> overlaps;
   for (PictureList::iterator i = picture_list.begin();
@@ -146,7 +150,7 @@ void PicturePile::InvalidateRect(
       picture_rect.Union((*overlaps[j])->LayerRect());
   }
 
-  Picture* base_picture = picture_list.front();
+  Picture* base_picture = picture_list.front().get();
   int max_pixels = kResetThreshold * base_picture->LayerRect().size().GetArea();
   if (picture_rect.size().GetArea() > max_pixels) {
     // This picture list will be entirely recreated, so clear it.

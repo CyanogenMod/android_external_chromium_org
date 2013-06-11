@@ -23,10 +23,10 @@
 #include <set>
 
 #include "base/memory/singleton.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -60,7 +60,7 @@ enum {
 
 // The singleton dialog box. This is non-NULL when a dialog is active so we
 // know not to create a new one.
-AboutIPCDialog* g_active_dialog = NULL;
+AboutIPCDialog* g_dialog = NULL;
 
 std::set<int> disabled_messages;
 
@@ -200,15 +200,15 @@ AboutIPCDialog::AboutIPCDialog()
 }
 
 AboutIPCDialog::~AboutIPCDialog() {
-  g_active_dialog = NULL;
+  g_dialog = NULL;
   IPC::Logging::GetInstance()->SetConsumer(NULL);
 }
 
 // static
 void AboutIPCDialog::RunDialog() {
-  if (!g_active_dialog) {
-    g_active_dialog = new AboutIPCDialog;
-    views::Widget::CreateWindow(g_active_dialog)->Show();
+  if (!g_dialog) {
+    g_dialog = new AboutIPCDialog;
+    views::DialogDelegate::CreateDialogWidget(g_dialog, NULL, NULL)->Show();
   } else {
     // TODO(brettw) it would be nice to focus the existing window.
   }
@@ -333,6 +333,10 @@ void AboutIPCDialog::Log(const IPC::LogData& data) {
 
 bool AboutIPCDialog::CanResize() const {
   return true;
+}
+
+bool AboutIPCDialog::UseNewStyleForThisDialog() const {
+  return false;
 }
 
 void AboutIPCDialog::ButtonPressed(

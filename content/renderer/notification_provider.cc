@@ -4,11 +4,11 @@
 
 #include "content/renderer/notification_provider.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPermissionCallback.h"

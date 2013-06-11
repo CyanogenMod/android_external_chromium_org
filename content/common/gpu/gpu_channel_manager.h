@@ -13,7 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "build/build_config.h"
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "ipc/ipc_listener.h"
@@ -93,7 +93,7 @@ class GpuChannelManager : public IPC::Listener,
 
   GpuChannel* LookupChannel(int32 client_id);
 
-  SyncPointManager* sync_point_manager() { return sync_point_manager_; }
+  SyncPointManager* sync_point_manager() { return sync_point_manager_.get(); }
 
   gfx::GLSurface* GetDefaultOffscreenSurface();
 

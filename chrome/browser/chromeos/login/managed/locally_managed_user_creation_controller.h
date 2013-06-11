@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/string16.h"
+#include "base/timer.h"
 #include "chrome/browser/chromeos/login/managed/managed_user_authenticator.h"
 #include "chrome/browser/managed_mode/managed_user_registration_service.h"
 
@@ -47,13 +48,15 @@ class LocallyManagedUserCreationController
     virtual ~StatusConsumer();
 
     virtual void OnCreationError(ErrorCode code) = 0;
+    virtual void OnCreationTimeout() = 0;
     virtual void OnCreationSuccess() = 0;
   };
 
   // All UI initialization is deferred till Init() call.
   // |Consumer| is not owned by controller, and it is expected that it wouldn't
   // be deleted before LocallyManagedUserCreationController.
-  explicit LocallyManagedUserCreationController(StatusConsumer* consumer);
+  LocallyManagedUserCreationController(StatusConsumer* consumer,
+                                       const std::string& manager_id);
   virtual ~LocallyManagedUserCreationController();
 
   // Returns the current locally managed user controller if it has been created.
@@ -64,6 +67,7 @@ class LocallyManagedUserCreationController
   void SetUpCreation(string16 display_name, std::string password);
   void SetManagerProfile(Profile* manager_profile);
   void StartCreation();
+  void CancelCreation();
   void FinishCreation();
   std::string GetManagedUserId();
 
@@ -74,6 +78,7 @@ class LocallyManagedUserCreationController
     ~UserCreationContext();
 
     string16 display_name;
+    std::string manager_id;
     std::string user_id;
     std::string password;
     std::string mount_hash;
@@ -81,6 +86,7 @@ class LocallyManagedUserCreationController
     std::string token;
     bool token_succesfully_written;
     Profile* manager_profile;
+    ManagedUserRegistrationService* service;
   };
 
   // ManagedUserAuthenticator::StatusConsumer overrides.
@@ -88,6 +94,7 @@ class LocallyManagedUserCreationController
       ManagedUserAuthenticator::AuthState error) OVERRIDE;
   virtual void OnMountSuccess(const std::string& mount_hash) OVERRIDE;
 
+  void CreationTimedOut();
   void RegistrationCallback(const GoogleServiceAuthError& error,
                             const std::string& token);
 
@@ -107,6 +114,9 @@ class LocallyManagedUserCreationController
 
   // Creation context. Not null while creating new LMU.
   scoped_ptr<UserCreationContext> creation_context_;
+
+  // Timer for showing warning if creation process takes too long.
+  base::OneShotTimer<LocallyManagedUserCreationController> timeout_timer_;
 
   // Factory of callbacks.
   base::WeakPtrFactory<LocallyManagedUserCreationController> weak_factory_;

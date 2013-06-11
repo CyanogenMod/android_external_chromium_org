@@ -9,7 +9,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry_factory.h"
 #include "chrome/browser/media/audio_stream_indicator.h"
@@ -25,6 +25,9 @@
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/media_devices_monitor.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/media_stream_request.h"
 #include "extensions/common/constants.h"
@@ -80,14 +83,28 @@ bool IsOriginWhitelistedForScreenCapture(const GURL& origin) {
 
 }  // namespace
 
+MediaCaptureDevicesDispatcher::PendingAccessRequest::PendingAccessRequest(
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback)
+    : request(request),
+      callback(callback) {
+}
+
+MediaCaptureDevicesDispatcher::PendingAccessRequest::~PendingAccessRequest() {}
+
 MediaCaptureDevicesDispatcher* MediaCaptureDevicesDispatcher::GetInstance() {
   return Singleton<MediaCaptureDevicesDispatcher>::get();
 }
 
 MediaCaptureDevicesDispatcher::MediaCaptureDevicesDispatcher()
     : devices_enumerated_(false),
+      is_device_enumeration_disabled_(false),
       media_stream_capture_indicator_(new MediaStreamCaptureIndicator()),
-      audio_stream_indicator_(new AudioStreamIndicator()) {}
+      audio_stream_indicator_(new AudioStreamIndicator()) {
+  notifications_registrar_.Add(
+      this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+      content::NotificationService::AllSources());
+}
 
 MediaCaptureDevicesDispatcher::~MediaCaptureDevicesDispatcher() {}
 
@@ -117,7 +134,7 @@ void MediaCaptureDevicesDispatcher::RemoveObserver(Observer* observer) {
 const MediaStreamDevices&
 MediaCaptureDevicesDispatcher::GetAudioCaptureDevices() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!devices_enumerated_) {
+  if (!is_device_enumeration_disabled_ && !devices_enumerated_) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&content::EnsureMonitorCaptureDevices));
@@ -129,13 +146,25 @@ MediaCaptureDevicesDispatcher::GetAudioCaptureDevices() {
 const MediaStreamDevices&
 MediaCaptureDevicesDispatcher::GetVideoCaptureDevices() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!devices_enumerated_) {
+  if (!is_device_enumeration_disabled_ && !devices_enumerated_) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&content::EnsureMonitorCaptureDevices));
     devices_enumerated_ = true;
   }
   return video_devices_;
+}
+
+void MediaCaptureDevicesDispatcher::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED) {
+    content::WebContents* web_contents =
+        content::Source<content::WebContents>(source).ptr();
+    pending_requests_.erase(web_contents);
+  }
 }
 
 void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequest(
@@ -152,8 +181,7 @@ void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequest(
     ProcessMediaAccessRequestFromExtension(
         web_contents, request, callback, extension);
   } else {
-    // For all regular media requests show infobar.
-    MediaStreamInfoBarDelegate::Create(web_contents, request, callback);
+    ProcessRegularMediaAccessRequest(web_contents, request, callback);
   }
 }
 
@@ -259,6 +287,66 @@ void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequestFromExtension(
   callback.Run(devices, ui.Pass());
 }
 
+void MediaCaptureDevicesDispatcher::ProcessRegularMediaAccessRequest(
+    content::WebContents* web_contents,
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  RequestsQueue& queue = pending_requests_[web_contents];
+  queue.push(PendingAccessRequest(request, callback));
+
+  // If this is the only request then show the infobar.
+  if (queue.size() == 1)
+    ProcessQueuedAccessRequest(web_contents);
+}
+
+void MediaCaptureDevicesDispatcher::ProcessQueuedAccessRequest(
+    content::WebContents* web_contents) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  std::map<content::WebContents*, RequestsQueue>::iterator it =
+      pending_requests_.find(web_contents);
+
+  if (it == pending_requests_.end() || it->second.empty()) {
+    // Don't do anything if the tab was was closed.
+    return;
+  }
+
+  DCHECK(!it->second.empty());
+
+  MediaStreamInfoBarDelegate::Create(
+      web_contents, it->second.front().request,
+      base::Bind(&MediaCaptureDevicesDispatcher::OnAccessRequestResponse,
+                 base::Unretained(this), web_contents));
+}
+
+void MediaCaptureDevicesDispatcher::OnAccessRequestResponse(
+    content::WebContents* web_contents,
+    const content::MediaStreamDevices& devices,
+    scoped_ptr<content::MediaStreamUI> ui) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  std::map<content::WebContents*, RequestsQueue>::iterator it =
+      pending_requests_.find(web_contents);
+  DCHECK(it != pending_requests_.end());
+  RequestsQueue& queue(it->second);
+  content::MediaResponseCallback callback = queue.front().callback;
+  queue.pop();
+
+  if (!queue.empty()) {
+    // Post a task to process next queued request. It has to be done
+    // asynchronously to make sure that calling infobar is not destroyed until
+    // after this function returns.
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&MediaCaptureDevicesDispatcher::ProcessQueuedAccessRequest,
+                   base::Unretained(this), web_contents));
+  }
+
+  callback.Run(devices, ui.Pass());
+}
+
 void MediaCaptureDevicesDispatcher::GetDefaultDevicesForProfile(
     Profile* profile,
     bool audio,
@@ -302,6 +390,10 @@ void MediaCaptureDevicesDispatcher::GetRequestedDevice(
     if (device)
       devices->push_back(*device);
   }
+}
+
+void MediaCaptureDevicesDispatcher::DisableDeviceEnumerationForTesting() {
+  is_device_enumeration_disabled_ = true;
 }
 
 scoped_refptr<MediaStreamCaptureIndicator>

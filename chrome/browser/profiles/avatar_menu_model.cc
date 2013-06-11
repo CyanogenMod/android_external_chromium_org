@@ -8,7 +8,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/avatar_menu_model_observer.h"
 #include "chrome/browser/profiles/profile.h"
@@ -29,7 +29,9 @@
 #include "content/public/browser/site_instance.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/managed_mode/managed_user_service.h"
@@ -218,13 +220,32 @@ const AvatarMenuModel::Item& AvatarMenuModel::GetItemAt(size_t index) {
 
 bool AvatarMenuModel::ShouldShowAddNewProfileLink() const {
 #if defined(ENABLE_MANAGED_USERS)
-  if (!browser_)
-    return true;
-  ManagedUserService* service = ManagedUserServiceFactory::GetForProfile(
-      browser_->profile());
-  return !service->ProfileIsManaged();
+  // |browser_| can be NULL in unit_tests.
+  return !browser_ ||
+      !ManagedUserService::ProfileIsManaged(browser_->profile());
 #endif
   return true;
+}
+
+base::string16 AvatarMenuModel::GetManagedUserInformation() const {
+#if defined(ENABLE_MANAGED_USERS)
+  // |browser_| can be NULL in unit_tests.
+  if (!browser_)
+    return base::string16();
+
+  ManagedUserService* service = ManagedUserServiceFactory::GetForProfile(
+      browser_->profile());
+  if (service->ProfileIsManaged()) {
+    base::string16 custodian = UTF8ToUTF16(service->GetCustodianEmailAddress());
+    return l10n_util::GetStringFUTF16(IDS_MANAGED_USER_INFO, custodian);
+  }
+#endif
+  return base::string16();
+}
+
+const gfx::Image& AvatarMenuModel::GetManagedUserIcon() const {
+  return ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+      IDR_MANAGED_USER_ICON);
 }
 
 void AvatarMenuModel::Observe(int type,
@@ -271,7 +292,8 @@ void AvatarMenuModel::RebuildMenu() {
     item->signed_in = !item->sync_state.empty();
     if (!item->signed_in) {
       item->sync_state = l10n_util::GetStringUTF16(
-          IDS_PROFILES_LOCAL_PROFILE_STATE);
+          profile_info_->ProfileIsManagedAtIndex(i) ?
+              IDS_MANAGED_USER_AVATAR_LABEL : IDS_PROFILES_LOCAL_PROFILE_STATE);
     }
     if (browser_) {
       base::FilePath path = profile_info_->GetPathOfProfileAtIndex(i);

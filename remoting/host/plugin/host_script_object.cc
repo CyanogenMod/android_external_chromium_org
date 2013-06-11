@@ -8,12 +8,12 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/net_util.h"
 #include "remoting/base/auth_token_util.h"
@@ -868,7 +868,7 @@ bool HostNPScriptObject::SetProperty(const std::string& property_name,
   if (property_name == kAttrNameOnNatTraversalPolicyChanged) {
     if (NPVARIANT_IS_OBJECT(*value)) {
       on_nat_traversal_policy_changed_func_ = NPVARIANT_TO_OBJECT(*value);
-      if (it2me_impl_) {
+      if (it2me_impl_.get()) {
         // Ask the It2Me implementation to notify the web-app of the policy.
         it2me_impl_->RequestNatPolicy();
       }
@@ -1004,7 +1004,7 @@ bool HostNPScriptObject::Connect(const NPVariant* args,
     return false;
   }
 
-  if (it2me_impl_) {
+  if (it2me_impl_.get()) {
     SetException("connect: can be called only when disconnected");
     return false;
   }
@@ -1051,7 +1051,7 @@ bool HostNPScriptObject::Disconnect(const NPVariant* args,
     return false;
   }
 
-  if (it2me_impl_) {
+  if (it2me_impl_.get()) {
     it2me_impl_->Disconnect();
     it2me_impl_ = NULL;
   }

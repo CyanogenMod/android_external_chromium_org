@@ -5,14 +5,16 @@
 #include "chrome/browser/profiles/avatar_menu_model.h"
 
 #include "base/metrics/field_trial.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/avatar_menu_model_observer.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -167,7 +169,7 @@ TEST_F(AvatarMenuModelTest, ChangeOnNotify) {
 }
 
 TEST_F(AvatarMenuModelTest, ShowAvatarMenuInTrial) {
-  // If multiple profiles is not enabled, the trial will not be enabled, so it
+  // If multiprofile mode is not enabled, the trial will not be enabled, so it
   // isn't tested.
   if (!ProfileManager::IsMultipleProfilesEnabled())
     return;
@@ -188,7 +190,7 @@ TEST_F(AvatarMenuModelTest, DontShowAvatarMenu) {
 
   EXPECT_FALSE(AvatarMenuModel::ShouldShowAvatarMenu());
 
-  // If multiple profiles is enabled, there are no other cases when we wouldn't
+  // If multiprofile mode is enabled, there are no other cases when we wouldn't
   // show the menu.
   if (ProfileManager::IsMultipleProfilesEnabled())
     return;
@@ -200,7 +202,7 @@ TEST_F(AvatarMenuModelTest, DontShowAvatarMenu) {
 }
 
 TEST_F(AvatarMenuModelTest, ShowAvatarMenu) {
-  // If multiple profiles is enabled then the menu is never show.
+  // If multiprofile mode is not enabled then the menu is never shown.
   if (!ProfileManager::IsMultipleProfilesEnabled())
     return;
 
@@ -215,6 +217,33 @@ TEST_F(AvatarMenuModelTest, ShowAvatarMenu) {
 #else
   EXPECT_TRUE(AvatarMenuModel::ShouldShowAvatarMenu());
 #endif
+}
+
+TEST_F(AvatarMenuModelTest, SyncState) {
+  // If multiprofile mode is not enabled then the menu is never shown.
+  if (!ProfileManager::IsMultipleProfilesEnabled())
+    return;
+
+  manager()->CreateTestingProfile("p1", ASCIIToUTF16("Test 1"), 0);
+
+  // Add a managed user profile.
+  ProfileInfoCache* cache = manager()->profile_info_cache();
+  manager()->profile_info_cache()->AddProfileToCache(
+      cache->GetUserDataDir().AppendASCII("p2"), ASCIIToUTF16("Test 2"),
+      string16(), 0, true);
+  MockObserver observer;
+  AvatarMenuModel model(manager()->profile_info_cache(), &observer, browser());
+  EXPECT_EQ(2U, model.GetNumberOfItems());
+
+  // Now check that the sync_state of a managed user shows the managed user
+  // avatar label instead.
+  base::string16 managed_user_label =
+      l10n_util::GetStringUTF16(IDS_MANAGED_USER_AVATAR_LABEL);
+  const AvatarMenuModel::Item& item1 = model.GetItemAt(0);
+  EXPECT_NE(item1.sync_state, managed_user_label);
+
+  const AvatarMenuModel::Item& item2 = model.GetItemAt(1);
+  EXPECT_EQ(item2.sync_state, managed_user_label);
 }
 
 }  // namespace

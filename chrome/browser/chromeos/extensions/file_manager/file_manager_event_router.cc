@@ -10,6 +10,7 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
@@ -254,20 +255,15 @@ bool IsDownloadJob(drive::JobType type) {
 
 // Converts the job info to its JSON (Value) form.
 scoped_ptr<base::DictionaryValue> JobInfoToDictionaryValue(
-    Profile* profile,
     const std::string& extension_id,
     const std::string& job_status,
     const drive::JobInfo& job_info) {
   DCHECK(IsActiveFileTransferJobInfo(job_info));
 
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue);
-  GURL file_url;
-  if (file_manager_util::ConvertFileToFileSystemUrl(profile,
-          drive::util::GetSpecialRemoteRootPath().Append(job_info.file_path),
-          extension_id,
-          &file_url)) {
-    result->SetString("fileUrl", file_url.spec());
-  }
+  GURL url = file_manager_util::ConvertRelativePathToFileSystemUrl(
+      job_info.file_path, extension_id);
+  result->SetString("fileUrl", url.spec());
   result->SetString("transferState", job_status);
   result->SetString("transferType",
                     IsUploadJob(job_info.job_type) ? "upload" : "download");
@@ -400,7 +396,7 @@ void FileManagerEventRouter::AddFileWatch(
   // Tweak watch path for remote sources - we need to drop leading /special
   // directory from there in order to be able to pair these events with
   // their change notifications.
-  if (drive::util::GetSpecialRemoteRootPath().IsParent(watch_path)) {
+  if (drive::util::IsUnderDriveMountPoint(watch_path)) {
     watch_path = drive::util::ExtractDrivePath(watch_path);
     is_remote_watch = true;
   }
@@ -431,7 +427,7 @@ void FileManagerEventRouter::RemoveFileWatch(
   // Tweak watch path for remote sources - we need to drop leading /special
   // directory from there in order to be able to pair these events with
   // their change notifications.
-  if (drive::util::GetSpecialRemoteRootPath().IsParent(watch_path)) {
+  if (drive::util::IsUnderDriveMountPoint(watch_path)) {
     watch_path = drive::util::ExtractDrivePath(watch_path);
   }
   WatcherMap::iterator iter = file_watchers_.find(watch_path);
@@ -674,8 +670,7 @@ void FileManagerEventRouter::SendDriveFileTransferEvent(bool always) {
        iter = drive_jobs_.begin(); iter != drive_jobs_.end(); ++iter) {
 
     scoped_ptr<base::DictionaryValue> job_info_dict(
-        JobInfoToDictionaryValue(profile_,
-                                 kFileBrowserDomain,
+        JobInfoToDictionaryValue(kFileBrowserDomain,
                                  iter->second.status,
                                  iter->second.job_info));
     event_list->Append(job_info_dict.release());

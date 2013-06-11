@@ -6,13 +6,6 @@
 // isn't implemented if OpenSSL is used.
 GEN('#if defined(USE_NSS)');
 
-// Triggers an issue in v8: http://crbug.com/225325
-GEN('#if defined(OS_LINUX)');
-GEN('#define MAYBE_testViewAndDeleteCert DISABLED_testViewAndDeleteCert');
-GEN('#else');
-GEN('#define MAYBE_testViewAndDeleteCert testViewAndDeleteCert');
-GEN('#endif');
-
 /**
  * TestFixture for certificate manager WebUI testing.
  * @extends {testing.Test}
@@ -118,21 +111,34 @@ CertificateManagerWebUITest.prototype = {
 
     this.mockHandler.expects(once()).populateCertificateManager().will(
         callFunction(function() {
-          CertificateManager.onPopulateTree(
-              ['personalCertsTab-tree',
-               [{'id': 'o1',
-                 'name': 'org1',
-                 'subnodes': [
-                   {'id': 'c1',
-                    'name': 'cert1',
-                    'readonly': false,
-                    'untrusted': false,
-                    'extractable': true,
-                   },
-                 ],
-               },
-              ],
-             ])}));
+          [['personalCertsTab-tree',
+              [{'id': 'o1',
+                'name': 'org1',
+                'subnodes': [{ 'id': 'c1',
+                               'name': 'cert1',
+                               'readonly': false,
+                               'untrusted': false,
+                               'extractable': true }],
+               }],
+           ],
+           ['caCertsTab-tree',
+              [{'id': 'o2',
+                'name': 'org2',
+                'subnodes': [{ 'id': 'ca_cert0',
+                               'name': 'ca_cert0',
+                               'readonly': false,
+                               'untrusted': false,
+                               'extractable': true,
+                               'policy': false },
+                             { 'id': 'ca_cert1',
+                               'name': 'ca_cert1',
+                               'readonly': false,
+                               'untrusted': false,
+                               'extractable': true,
+                               'policy': true }],
+               }],
+           ]
+          ].forEach(CertificateManager.onPopulateTree)}));
 
     if (this.isChromeOS)
       this.mockHandler.expects(once()).checkTpmTokenReady().will(callFunction(
@@ -143,7 +149,7 @@ CertificateManagerWebUITest.prototype = {
 };
 
 TEST_F('CertificateManagerWebUITest',
-       'MAYBE_testViewAndDeleteCert', function() {
+       'testViewAndDeleteCert', function() {
   assertEquals(this.browsePreload, document.location.href);
 
   this.mockHandler.expects(once()).viewCertificate(['c1']);
@@ -204,6 +210,32 @@ TEST_F('CertificateManagerWebUITest',
   expectTrue(personalCerts.querySelector('div.tree-item') === null);
 });
 
-// TODO(mattm): add more tests.
+// Ensure certificate objects with the 'policy' property set have
+// the cert-policy CSS class appended.
+TEST_F('CertificateManagerWebUITest',
+       'testPolicyInstalledCertificate', function() {
+  // Click on the first folder and get the certificates.
+  var caCertsTab = $('caCertsTab');
+  caCertsTab.querySelector('div.tree-item').click();
+  var certs = caCertsTab.querySelectorAll('div.tree-item div.tree-item');
+
+  // First cert shouldn't show the controlled setting badge, and the
+  // edit and delete buttons should be enabled.
+  var cert0 = certs[0];
+  expectEquals('ca_cert0', cert0.data.name);
+  expectEquals(null, cert0.querySelector('.cert-policy'));
+  cert0.click();
+  expectFalse($('caCertsTab-edit').disabled);
+  expectFalse($('caCertsTab-delete').disabled);
+
+  // But the second should show the controlled setting badge, and the
+  // edit and delete buttons should be disabled.
+  var cert1 = certs[1];
+  expectEquals('ca_cert1', cert1.data.name);
+  expectNotEquals(null, cert1.querySelector('.cert-policy'));
+  cert1.click();
+  expectTrue($('caCertsTab-edit').disabled);
+  expectTrue($('caCertsTab-delete').disabled);
+});
 
 GEN('#endif  // defined(USE_NSS)');

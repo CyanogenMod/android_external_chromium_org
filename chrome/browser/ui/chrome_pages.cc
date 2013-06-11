@@ -5,8 +5,8 @@
 #include "chrome/browser/ui/chrome_pages.h"
 
 #include "base/logging.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_manager.h"
@@ -26,6 +26,10 @@
 #include "google_apis/gaia/gaia_urls.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/url_util.h"
+
+#if defined(OS_WIN)
+#include "chrome/browser/enumerate_modules_model_win.h"
+#endif
 
 using content::UserMetricsAction;
 
@@ -106,6 +110,19 @@ void ShowExtensions(Browser* browser,
 }
 
 void ShowConflicts(Browser* browser) {
+#if defined(OS_WIN)
+  EnumerateModulesModel* model = EnumerateModulesModel::GetInstance();
+  if (model->modules_to_notify_about() > 0) {
+    GURL help_center_url = model->GetFirstNotableConflict();
+    if (help_center_url.is_valid()) {
+      EnumerateModulesModel::RecordLearnMoreStat(true);
+      ShowSingletonTab(browser, help_center_url);
+      model->AcknowledgeConflictNotification();
+      return;
+    }
+  }
+#endif
+
   content::RecordAction(UserMetricsAction("AboutConflicts"));
   ShowSingletonTab(browser, GURL(kChromeUIConflictsURL));
 }
@@ -216,8 +233,7 @@ void ShowBrowserSignin(Browser* browser, SyncPromoUI::Source source) {
         original_profile);
     if (use_web_flow || (show_promo && login->current_login_ui() == NULL)) {
       NavigateToSingletonTab(browser,
-                             GURL(SyncPromoUI::GetSyncPromoURL(GURL(),
-                                                               source,
+                             GURL(SyncPromoUI::GetSyncPromoURL(source,
                                                                false)));
     } else {
       if (login->current_login_ui()) {

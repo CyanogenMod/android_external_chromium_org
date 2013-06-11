@@ -17,13 +17,12 @@ QuicServerSession::QuicServerSession(
     QuicSessionOwner* owner)
     : QuicSession(connection, config, true),
       owner_(owner) {
-  set_max_open_streams(config.max_streams_per_connection());
 }
 
 QuicServerSession::~QuicServerSession() {
 }
 
-void QuicServerSession::Initialize(
+void QuicServerSession::InitializeSession(
     const QuicCryptoServerConfig& crypto_config) {
   crypto_stream_.reset(CreateQuicCryptoServerStream(crypto_config));
 }

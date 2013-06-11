@@ -3,22 +3,22 @@
 // found in the LICENSE file.
 
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/test/base/chrome_render_view_test.h"
 #include "components/autofill/common/autofill_messages.h"
 #include "components/autofill/common/form_data.h"
 #include "components/autofill/common/form_field_data.h"
-#include "components/autofill/renderer/autofill_agent.h"
-#include "components/autofill/renderer/password_autofill_agent.h"
+#include "components/autofill/content/renderer/autofill_agent.h"
+#include "components/autofill/content/renderer/password_autofill_agent.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
 using content::PasswordForm;
@@ -41,6 +41,7 @@ const char* const kBobUsername = "bob";
 const char* const kBobPassword = "secret";
 const char* const kCarolUsername = "Carol";
 const char* const kCarolPassword = "test";
+const char* const kCarolAlternateUsername = "RealCarolUsername";
 
 
 const char* const kFormHTML =
@@ -78,6 +79,7 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     password2_ = ASCIIToUTF16(kBobPassword);
     username3_ = ASCIIToUTF16(kCarolUsername);
     password3_ = ASCIIToUTF16(kCarolPassword);
+    alternate_username3_ = ASCIIToUTF16(kCarolAlternateUsername);
 
     FormFieldData username_field;
     username_field.name = ASCIIToUTF16(kUsernameName);
@@ -87,10 +89,16 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     FormFieldData password_field;
     password_field.name = ASCIIToUTF16(kPasswordName);
     password_field.value = password1_;
+    password_field.form_control_type = "password";
     fill_data_.basic_data.fields.push_back(password_field);
 
     fill_data_.additional_logins[username2_] = password2_;
     fill_data_.additional_logins[username3_] = password3_;
+
+    UsernamesCollectionKey key;
+    key.username = username3_;
+    key.password = password3_;
+    fill_data_.other_possible_usernames[key].push_back(alternate_username3_);
 
     // We need to set the origin so it matches the frame URL and the action so
     // it matches the form action, otherwise we won't autocomplete.
@@ -110,6 +118,12 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     element = document.getElementById(WebString::fromUTF8(kPasswordName));
     ASSERT_FALSE(element.isNull());
     password_element_ = element.to<WebKit::WebInputElement>();
+  }
+
+  virtual void TearDown() {
+    username_element_.reset();
+    password_element_.reset();
+    ChromeRenderViewTest::TearDown();
   }
 
   void ClearUsernameAndPasswordFields() {
@@ -164,6 +178,7 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
   string16 password1_;
   string16 password2_;
   string16 password3_;
+  string16 alternate_username3_;
   PasswordFormFillData fill_data_;
 
   WebInputElement username_element_;
@@ -264,6 +279,66 @@ TEST_F(PasswordAutofillAgentTest, NoInitialAutocompleteForFilledField) {
 
   // Neither field should be autocompleted.
   CheckTextFieldsState("bogus", false, std::string(), false);
+}
+
+TEST_F(PasswordAutofillAgentTest, NoAutocompleteForTextFieldPasswords) {
+  const char kTextFieldPasswordFormHTML[] =
+      "<FORM name='LoginTestForm' action='http://www.bidule.com'>"
+      "  <INPUT type='text' id='username'/>"
+      "  <INPUT type='text' id='password'/>"
+      "  <INPUT type='submit' value='Login'/>"
+      "</FORM>";
+  LoadHTML(kTextFieldPasswordFormHTML);
+
+  // Retrieve the input elements so the test can access them.
+  WebDocument document = GetMainFrame()->document();
+  WebElement element =
+      document.getElementById(WebString::fromUTF8(kUsernameName));
+  ASSERT_FALSE(element.isNull());
+  username_element_ = element.to<WebKit::WebInputElement>();
+  element = document.getElementById(WebString::fromUTF8(kPasswordName));
+  ASSERT_FALSE(element.isNull());
+  password_element_ = element.to<WebKit::WebInputElement>();
+
+  // Set the expected form origin URL.
+  std::string origin("data:text/html;charset=utf-8,");
+  origin += kTextFieldPasswordFormHTML;
+  fill_data_.basic_data.origin = GURL(origin);
+
+  SimulateOnFillPasswordForm(fill_data_);
+
+  // Fields should still be empty.
+  CheckTextFieldsState(std::string(), false, std::string(), false);
+}
+
+TEST_F(PasswordAutofillAgentTest, NoAutocompleteForPasswordFieldUsernames) {
+  const char kPasswordFieldUsernameFormHTML[] =
+      "<FORM name='LoginTestForm' action='http://www.bidule.com'>"
+      "  <INPUT type='password' id='username'/>"
+      "  <INPUT type='password' id='password'/>"
+      "  <INPUT type='submit' value='Login'/>"
+      "</FORM>";
+  LoadHTML(kPasswordFieldUsernameFormHTML);
+
+  // Retrieve the input elements so the test can access them.
+  WebDocument document = GetMainFrame()->document();
+  WebElement element =
+      document.getElementById(WebString::fromUTF8(kUsernameName));
+  ASSERT_FALSE(element.isNull());
+  username_element_ = element.to<WebKit::WebInputElement>();
+  element = document.getElementById(WebString::fromUTF8(kPasswordName));
+  ASSERT_FALSE(element.isNull());
+  password_element_ = element.to<WebKit::WebInputElement>();
+
+  // Set the expected form origin URL.
+  std::string origin("data:text/html;charset=utf-8,");
+  origin += kPasswordFieldUsernameFormHTML;
+  fill_data_.basic_data.origin = GURL(origin);
+
+  SimulateOnFillPasswordForm(fill_data_);
+
+  // Fields should still be empty.
+  CheckTextFieldsState(std::string(), false, std::string(), false);
 }
 
 // Tests that having a matching username does not preclude the autocomplete.
@@ -375,12 +450,17 @@ TEST_F(PasswordAutofillAgentTest, InlineAutocomplete) {
   // The username and password fields should match the 'Carol' entry.
   CheckTextFieldsState(kCarolUsername, true, kCarolPassword, true);
   CheckUsernameSelection(1, 5);
-  // Finally, the user removes all the text and types a lowercase 'c'.  We only
+  // The user removes all the text and types a lowercase 'c'.  We only
   // want case-sensitive autocompletion, so the username and the selected range
   // should be empty.
   SimulateUsernameChange("c", true);
   CheckTextFieldsState("c", false, std::string(), false);
   CheckUsernameSelection(1, 1);
+
+  // Check that we complete other_possible_usernames as well.
+  SimulateUsernameChange("R", true);
+  CheckTextFieldsState(kCarolAlternateUsername, true, kCarolPassword, true);
+  CheckUsernameSelection(1, 17);
 }
 
 // Tests that accepting an item in the suggestion drop-down works.

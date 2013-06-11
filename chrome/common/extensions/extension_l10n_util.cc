@@ -10,13 +10,14 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/constants.h"
@@ -258,9 +259,9 @@ bool GetValidLocales(const base::FilePath& locale_path,
   GetAllLocales(&chrome_locales);
 
   // Enumerate all supplied locales in the extension.
-  file_util::FileEnumerator locales(locale_path,
-                                    false,
-                                    file_util::FileEnumerator::DIRECTORIES);
+  base::FileEnumerator locales(locale_path,
+                               false,
+                               base::FileEnumerator::DIRECTORIES);
   base::FilePath locale_folder;
   while (!(locale_folder = locales.Next()).empty()) {
     std::string locale_name = locale_folder.BaseName().MaybeAsASCII();

@@ -18,7 +18,7 @@ PasswordModelWorker::PasswordModelWorker(
     syncer::WorkerLoopDestructionObserver* observer)
   : syncer::ModelSafeWorker(observer),
     password_store_(password_store) {
-  DCHECK(password_store);
+  DCHECK(password_store.get());
 }
 
 void PasswordModelWorker::RegisterForLoopDestruction() {
@@ -55,7 +55,7 @@ void PasswordModelWorker::CallDoWorkAndSignalTask(
 }
 
 void PasswordModelWorker::RegisterForPasswordLoopDestruction() {
-  MessageLoop::current()->AddDestructionObserver(this);
+  base::MessageLoop::current()->AddDestructionObserver(this);
 }
 
 }  // namespace browser_sync

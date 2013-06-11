@@ -181,7 +181,7 @@ static scoped_refptr<DecoderBuffer> CreateWebMEncryptedBuffer(
     const uint8* key_id, int key_id_size) {
   scoped_refptr<DecoderBuffer> encrypted_buffer = DecoderBuffer::CopyFrom(
       data, data_size);
-  CHECK(encrypted_buffer);
+  CHECK(encrypted_buffer.get());
   DCHECK_EQ(kWebMSignalByteSize, 1);
 
   uint8 signal_byte = data[0];
@@ -214,7 +214,7 @@ static scoped_refptr<DecoderBuffer> CreateSubsampleEncryptedBuffer(
     const std::vector<SubsampleEntry>& subsample_entries) {
   scoped_refptr<DecoderBuffer> encrypted_buffer =
       DecoderBuffer::CopyFrom(data, data_size);
-  CHECK(encrypted_buffer);
+  CHECK(encrypted_buffer.get());
   encrypted_buffer->SetDecryptConfig(
       scoped_ptr<DecryptConfig>(new DecryptConfig(
           std::string(reinterpret_cast<const char*>(key_id), key_id_size),
@@ -261,7 +261,7 @@ class AesDecryptorTest : public testing::Test {
   void AddKeyAndExpectToFail(const uint8* key_id, int key_id_size,
                              const uint8* key, int key_size) {
     EXPECT_CALL(*this, KeyError(kClearKeySystem, session_id_string_,
-                                Decryptor::kUnknownError, 0));
+                                MediaKeys::kUnknownError, 0));
     decryptor_.AddKey(kClearKeySystem, key, key_size, key_id, key_id_size,
                       session_id_string_);
   }
@@ -276,7 +276,7 @@ class AesDecryptorTest : public testing::Test {
         .WillOnce(SaveArg<1>(&decrypted));
 
     decryptor_.Decrypt(Decryptor::kVideo, encrypted, decrypt_cb_);
-    ASSERT_TRUE(decrypted);
+    ASSERT_TRUE(decrypted.get());
     ASSERT_EQ(plain_text_size, decrypted->GetDataSize());
     EXPECT_EQ(0, memcmp(plain_text, decrypted->GetData(), plain_text_size));
   }
@@ -289,7 +289,7 @@ class AesDecryptorTest : public testing::Test {
         .WillOnce(SaveArg<1>(&decrypted));
 
     decryptor_.Decrypt(Decryptor::kVideo, encrypted, decrypt_cb_);
-    ASSERT_TRUE(decrypted);
+    ASSERT_TRUE(decrypted.get());
     ASSERT_EQ(plain_text_size, decrypted->GetDataSize());
     EXPECT_NE(0, memcmp(plain_text, decrypted->GetData(), plain_text_size));
   }
@@ -302,7 +302,7 @@ class AesDecryptorTest : public testing::Test {
         .WillOnce(SaveArg<1>(&decrypted));
 
     decryptor_.Decrypt(Decryptor::kVideo, encrypted, decrypt_cb_);
-    ASSERT_TRUE(decrypted);
+    ASSERT_TRUE(decrypted.get());
     EXPECT_NE(plain_text_size, decrypted->GetDataSize());
     EXPECT_NE(0, memcmp(plain_text, decrypted->GetData(), plain_text_size));
   }
@@ -314,7 +314,7 @@ class AesDecryptorTest : public testing::Test {
 
   MOCK_METHOD2(KeyAdded, void(const std::string&, const std::string&));
   MOCK_METHOD4(KeyError, void(const std::string&, const std::string&,
-                              Decryptor::KeyError, int));
+                              MediaKeys::KeyError, int));
   MOCK_METHOD4(KeyMessage, void(const std::string& key_system,
                                 const std::string& session_id,
                                 const std::string& message,

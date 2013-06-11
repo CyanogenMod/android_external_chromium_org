@@ -8,6 +8,7 @@
 #include "cc/output/software_frame_data.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkDevice.h"
+#include "ui/gfx/skia_util.h"
 
 namespace cc {
 
@@ -34,20 +35,18 @@ SkCanvas* SoftwareOutputDevice::BeginPaint(gfx::Rect damage_rect) {
 void SoftwareOutputDevice::EndPaint(SoftwareFrameData* frame_data) {
   DCHECK(device_);
   if (frame_data) {
+    frame_data->id = 0;
     frame_data->size = viewport_size_;
     frame_data->damage_rect = damage_rect_;
-    frame_data->dib_id = TransportDIB::Id();
+    frame_data->handle = base::SharedMemory::NULLHandle();
   }
 }
 
 void SoftwareOutputDevice::CopyToBitmap(
     gfx::Rect rect, SkBitmap* output) {
   DCHECK(device_);
-  SkIRect invert_rect = SkIRect::MakeXYWH(
-      rect.x(), viewport_size_.height() - rect.bottom(),
-      rect.width(), rect.height());
   const SkBitmap& bitmap = device_->accessBitmap(false);
-  bitmap.extractSubset(output, invert_rect);
+  bitmap.extractSubset(output, gfx::RectToSkIRect(rect));
 }
 
 void SoftwareOutputDevice::Scroll(
@@ -55,7 +54,7 @@ void SoftwareOutputDevice::Scroll(
   NOTIMPLEMENTED();
 }
 
-void SoftwareOutputDevice::ReclaimDIB(const TransportDIB::Id& id) {
+void SoftwareOutputDevice::ReclaimSoftwareFrame(unsigned id) {
   NOTIMPLEMENTED();
 }
 

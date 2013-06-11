@@ -7,18 +7,18 @@
 #include <list>
 #include <map>
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 #include "content/common/dom_storage_messages.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
+#include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageEventDispatcher.h"
-#include "webkit/dom_storage/dom_storage_cached_area.h"
-#include "webkit/dom_storage/dom_storage_proxy.h"
-#include "webkit/dom_storage/dom_storage_types.h"
+#include "webkit/common/dom_storage/dom_storage_types.h"
+#include "webkit/renderer/dom_storage/dom_storage_cached_area.h"
+#include "webkit/renderer/dom_storage/dom_storage_proxy.h"
 
 using dom_storage::DomStorageCachedArea;
 using dom_storage::DomStorageProxy;
@@ -175,7 +175,7 @@ class DomStorageDispatcher::ProxyImpl : public DomStorageProxy {
 DomStorageDispatcher::ProxyImpl::ProxyImpl(RenderThreadImpl* sender)
     : sender_(sender),
       throttling_filter_(new MessageThrottlingFilter(sender)) {
-  sender_->AddFilter(throttling_filter_);
+  sender_->AddFilter(throttling_filter_.get());
 }
 
 DomStorageCachedArea* DomStorageDispatcher::ProxyImpl::OpenCachedArea(
@@ -183,11 +183,11 @@ DomStorageCachedArea* DomStorageDispatcher::ProxyImpl::OpenCachedArea(
   std::string key = GetCachedAreaKey(namespace_id, origin);
   if (CachedAreaHolder* holder = GetAreaHolder(key)) {
     ++(holder->open_count_);
-    return holder->area_;
+    return holder->area_.get();
   }
   scoped_refptr<DomStorageCachedArea> area =
       new DomStorageCachedArea(namespace_id, origin, this);
-  cached_areas_[key] = CachedAreaHolder(area, 1);
+  cached_areas_[key] = CachedAreaHolder(area.get(), 1);
   return area.get();
 }
 
@@ -218,7 +218,7 @@ void DomStorageDispatcher::ProxyImpl::CompleteOnePendingCallback(bool success) {
 
 void DomStorageDispatcher::ProxyImpl::Shutdown() {
   throttling_filter_->Shutdown();
-  sender_->RemoveFilter(throttling_filter_);
+  sender_->RemoveFilter(throttling_filter_.get());
   sender_ = NULL;
   cached_areas_.clear();
   pending_callbacks_.clear();

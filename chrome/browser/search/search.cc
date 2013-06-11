@@ -17,6 +17,9 @@
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_instant_controller.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -52,7 +55,13 @@ const char kStalePageTimeoutFlagName[] = "stale";
 const int kStalePageTimeoutDefault = 3 * 3600;  // 3 hours.
 const int kStalePageTimeoutDisabled = 0;
 
+// Unless "allow_instant:1" is present, users cannot opt into Instant, nor will
+// the "instant" flag below have any effect.
+const char kAllowInstantSearchResultsFlagName[] = "allow_instant";
+
+// Sets the default state for the Instant checkbox.
 const char kInstantSearchResultsFlagName[] = "instant";
+
 const char kLocalOnlyFlagName[] = "local_only";
 const char kPreloadLocalOnlyNTPFlagName[] = "preload_local_only_ntp";
 const char kUseRemoteNTPOnStartupFlagName[] = "use_remote_ntp_on_startup";
@@ -250,20 +259,7 @@ string16 GetSearchTermsImpl(const content::WebContents* contents,
     return search_terms;
 
   // Otherwise, extract from the URL.
-  TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
-  if (!template_url)
-    return string16();
-
-  GURL url = entry->GetVirtualURL();
-
-  if (IsCommandLineInstantURL(url))
-    url = CoerceCommandLineURLToTemplateURL(url, template_url->url_ref(),
-                                            kDisableStartMargin);
-
-  if (url.SchemeIsSecure() && template_url->HasSearchTermsReplacementKey(url))
-    template_url->ExtractSearchTermsFromURL(url, &search_terms);
-
-  return search_terms;
+  return GetSearchTermsFromURL(profile, entry->GetVirtualURL());
 }
 
 }  // namespace
@@ -314,6 +310,24 @@ bool IsLocalOnlyInstantExtendedAPIEnabled() {
     return GetBoolValueForFlagWithDefault(kLocalOnlyFlagName, false, flags);
   }
   return false;
+}
+
+string16 GetSearchTermsFromURL(Profile* profile, const GURL& in_url) {
+  GURL url(in_url);
+  string16 search_terms;
+
+  TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
+  if (!template_url)
+    return string16();
+
+  if (IsCommandLineInstantURL(url))
+    url = CoerceCommandLineURLToTemplateURL(url, template_url->url_ref(),
+                                            kDisableStartMargin);
+
+  if (url.SchemeIsSecure() && template_url->HasSearchTermsReplacementKey(url))
+    template_url->ExtractSearchTermsFromURL(url, &search_terms);
+
+  return search_terms;
 }
 
 string16 GetSearchTermsFromNavigationEntry(
@@ -397,6 +411,17 @@ bool IsInstantPrefEnabled(Profile* profile) {
          profile->GetPrefs()->GetBoolean(prefs::kSearchInstantEnabled);
 }
 
+bool IsInstantCheckboxVisible() {
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    return GetBoolValueForFlagWithDefault(
+        kAllowInstantSearchResultsFlagName, false, flags);
+  }
+  return false;
+}
+
 bool IsInstantCheckboxEnabled(Profile* profile) {
   return IsInstantExtendedAPIEnabled() &&
          !IsLocalOnlyInstantExtendedAPIEnabled() &&
@@ -416,7 +441,8 @@ bool IsInstantCheckboxChecked(Profile* profile) {
                           IsInstantPrefEnabled(profile));
   }
 
-  return IsInstantCheckboxEnabled(profile) &&
+  return IsInstantCheckboxVisible() &&
+         IsInstantCheckboxEnabled(profile) &&
          IsInstantPrefEnabled(profile);
 }
 
@@ -586,6 +612,26 @@ int GetInstantLoaderStalenessTimeoutSec() {
   return timeout_sec;
 }
 
+bool IsInstantOverlay(const content::WebContents* contents) {
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    if (it->instant_controller() &&
+        it->instant_controller()->instant()->GetOverlayContents() == contents) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool IsPreloadedInstantExtendedNTP(const content::WebContents* contents) {
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    if (it->instant_controller() &&
+        it->instant_controller()->instant()->GetNTPContents() == contents) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void EnableInstantExtendedAPIForTesting() {
   CommandLine* cl = CommandLine::ForCurrentProcess();
   cl->AppendSwitch(switches::kEnableInstantExtendedAPI);
@@ -697,6 +743,21 @@ bool DefaultSearchProviderSupportsInstant(Profile* profile) {
 
 void ResetInstantExtendedOptInStateGateForTest() {
   instant_extended_opt_in_state_gate = false;
+}
+
+bool AreMostVisitedItemsEqual(
+    const std::vector<InstantMostVisitedItem>& items_a,
+    const std::vector<InstantMostVisitedItem>& items_b) {
+  if (items_a.size() != items_b.size())
+    return false;
+
+  for (size_t i = 0; i < items_b.size(); ++i) {
+    if (items_b[i].url != items_a[i].url ||
+        items_b[i].title != items_a[i].title) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace chrome

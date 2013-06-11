@@ -171,9 +171,16 @@
   <!-- End of Bookmarks Bar Context Menu strings. -->
 
   <!-- Begin of Bookmarks Bubble strings. -->
-  <message name="IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED" desc="Title of the bubble after bookmarking something">
-    Bookmark Added!
-  </message>
+  <if expr="not pp_ifdef('use_titlecase')">
+    <message name="IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED" desc="Title of the bubble after bookmarking a page.">
+      Bookmark added!
+    </message>
+  </if>
+  <if expr="pp_ifdef('use_titlecase')">
+    <message name="IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED" desc="In Title Case: Title of the bubble after bookmarking a page.">
+      Bookmark Added!
+    </message>
+  </if>
   <message name="IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARK" desc="Title of the bubble when re-clicking on a bookmark">
     Bookmark
   </message>
@@ -246,6 +253,16 @@
       Edit Folder
     </message>
   </if>
+  <if expr="not pp_ifdef('use_titlecase')">
+    <message name="IDS_BOOKMARK_ALL_TABS_DIALOG_TITLE" desc="The title of the Bookmark All Tabs dialog.">
+      Bookmark all tabs
+    </message>
+  </if>
+  <if expr="pp_ifdef('use_titlecase')">
+    <message name="IDS_BOOKMARK_ALL_TABS_DIALOG_TITLE" desc="In Title Case: The title of the Bookmark All Tabs dialog.">
+      Bookmark All Tabs
+    </message>
+  </if>
   <!-- End of Bookmarks Editor strings. -->
 
   <!-- Begin of Bookmarks Prompt strings. -->
@@ -301,9 +318,6 @@
     <message name="IDS_BOOKMARK_MANAGER_SEARCH" desc="The label for the tree item that shows the search results for the bookmarks.">
       Search
     </message>
-    <message name="IDS_BOOKMARK_MANAGER_BOOKMARK_ALL_TABS" desc="Title of the window the bookmark all tabs dialog.">
-      Bookmark all tabs
-    </message>
   </if>
   <if expr="pp_ifdef('use_titlecase')">
     <message name="IDS_BOOKMARK_MANAGER" desc="In Title Case: The label of the menu item that shows the bookmark manager">
@@ -341,9 +355,6 @@
     </message>
     <message name="IDS_BOOKMARK_MANAGER_SEARCH" desc="In Title Case: The label for the tree item that shows the search results for the bookmarks.">
       Search
-    </message>
-    <message name="IDS_BOOKMARK_MANAGER_BOOKMARK_ALL_TABS" desc="Title of the window the bookmark all tabs dialog.">
-      Bookmark All Tabs
     </message>
   </if>
   <if expr="pp_ifdef('ios')">

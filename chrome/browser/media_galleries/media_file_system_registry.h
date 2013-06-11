@@ -82,17 +82,15 @@ class MediaFileSystemRegistry : public RemovableStorageObserver {
   // MediaGalleriesPreferences directly because this method also ensures that
   // currently attached removable devices are added to the preferences.
   // Called on the UI thread.
+  // Note: Caller must ensure that the storage monitor is initialized before
+  // calling this method.
   MediaGalleriesPreferences* GetPreferences(Profile* profile);
 
   // RemovableStorageObserver implementation.
   virtual void OnRemovableStorageDetached(const StorageInfo& info) OVERRIDE;
 
-  size_t GetExtensionGalleriesHostCountForTests() const;
-
-  // See TransientDeviceIds::GetTransientIdForDeviceId().
-  uint64 GetTransientIdForDeviceId(const std::string& device_id);
-
  private:
+  friend class MediaFileSystemRegistryTest;
   friend class TestMediaFileSystemContext;
   class MediaFileSystemContextImpl;
 

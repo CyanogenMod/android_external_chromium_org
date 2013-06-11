@@ -3,6 +3,7 @@
  * found in the LICENSE file.
  */
 
+#include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <gmock/gmock.h>
@@ -93,7 +94,7 @@ class MountHtml5FsNodeTest : public MountHtml5FsTest {
   virtual void SetUp();
   virtual void TearDown();
 
-  void SetUpNodeExpectations();
+  void SetUpNodeExpectations(PP_FileType file_type);
   void InitFilesystem();
   void InitNode();
 
@@ -131,22 +132,32 @@ void MountHtml5FsNodeTest::TearDown() {
   }
 }
 
-void MountHtml5FsNodeTest::SetUpNodeExpectations() {
+void MountHtml5FsNodeTest::SetUpNodeExpectations(PP_FileType file_type) {
   // Open.
   EXPECT_CALL(*fileref_, Create(filesystem_resource_, StrEq(&path_[0])))
       .WillOnce(Return(fileref_resource_));
-  EXPECT_CALL(*fileio_, Create(instance_)).WillOnce(Return(fileio_resource_));
-  int32_t open_flags = PP_FILEOPENFLAG_READ | PP_FILEOPENFLAG_WRITE |
-      PP_FILEOPENFLAG_CREATE;
-  EXPECT_CALL(*fileio_,
-              Open(fileio_resource_, fileref_resource_, open_flags, _))
-      .WillOnce(Return(int32_t(PP_OK)));
+  PP_FileInfo info;
+  memset(&info, 0, sizeof(PP_FileInfo));
+  info.type = file_type;
+  EXPECT_CALL(*fileref_, Query(fileref_resource_, _, _))
+      .WillOnce(DoAll(SetArgPointee<1>(info),
+                      Return(int32_t(PP_OK))));
+  if (file_type != PP_FILETYPE_DIRECTORY) {
+    EXPECT_CALL(*fileio_, Create(instance_)).WillOnce(Return(fileio_resource_));
+    int32_t open_flags = PP_FILEOPENFLAG_READ | PP_FILEOPENFLAG_WRITE |
+        PP_FILEOPENFLAG_CREATE;
+    EXPECT_CALL(*fileio_,
+                Open(fileio_resource_, fileref_resource_, open_flags, _))
+        .WillOnce(Return(int32_t(PP_OK)));
+
+    // Close.
+    EXPECT_CALL(*fileio_, Close(fileio_resource_));
+    EXPECT_CALL(*ppapi_, ReleaseResource(fileio_resource_));
+    EXPECT_CALL(*fileio_, Flush(fileio_resource_, _));
+  }
 
   // Close.
-  EXPECT_CALL(*fileio_, Close(fileio_resource_));
   EXPECT_CALL(*ppapi_, ReleaseResource(fileref_resource_));
-  EXPECT_CALL(*ppapi_, ReleaseResource(fileio_resource_));
-  EXPECT_CALL(*fileio_, Flush(fileio_resource_, _));
 }
 
 void MountHtml5FsNodeTest::InitFilesystem() {
@@ -155,7 +166,7 @@ void MountHtml5FsNodeTest::InitFilesystem() {
 }
 
 void MountHtml5FsNodeTest::InitNode() {
-  node_ = mnt_->Open(Path(path_), O_CREAT | O_RDWR);
+  ASSERT_EQ(0, mnt_->Open(Path(path_), O_CREAT | O_RDWR, &node_));
   ASSERT_NE((MountNode*)NULL, node_);
 }
 
@@ -163,15 +174,32 @@ void MountHtml5FsNodeTest::InitNode() {
 // creation of the mount blocks until the filesystem is ready.
 class MountHtml5FsNodeSyncTest : public MountHtml5FsNodeTest {
  public:
+  void SetUpForFileType(PP_FileType file_type);
+
   virtual void SetUp();
 };
 
-void MountHtml5FsNodeSyncTest::SetUp() {
+void MountHtml5FsNodeSyncTest::SetUpForFileType(PP_FileType file_type) {
   MountHtml5FsNodeTest::SetUp();
   SetUpFilesystemExpectations(PP_FILESYSTEMTYPE_LOCALPERSISTENT, 0);
   InitFilesystem();
-  SetUpNodeExpectations();
+  SetUpNodeExpectations(file_type);
   InitNode();
+}
+
+void MountHtml5FsNodeSyncTest::SetUp() {
+  SetUpForFileType(PP_FILETYPE_REGULAR);
+}
+
+// Node test where the filesystem is opened synchronously, and the node is a
+// directory.
+class MountHtml5FsNodeSyncDirTest : public MountHtml5FsNodeSyncTest {
+ public:
+  virtual void SetUp();
+};
+
+void MountHtml5FsNodeSyncDirTest::SetUp() {
+  SetUpForFileType(PP_FILETYPE_DIRECTORY);
 }
 
 void ReadDirectoryEntriesAction(const PP_ArrayOutput& output) {
@@ -224,7 +252,7 @@ void MountHtml5FsNodeAsyncTest::SetUp() {
   // true => asynchronous filesystem open.
   SetUpFilesystemExpectations(PP_FILESYSTEMTYPE_LOCALPERSISTENT, 0, true);
   InitFilesystem();
-  SetUpNodeExpectations();
+  SetUpNodeExpectations(PP_FILETYPE_REGULAR);
 
   // Signal the other thread to try opening a Node.
   pthread_mutex_lock(&mutex_);
@@ -350,7 +378,8 @@ TEST_F(MountHtml5FsNodeSyncTest, Write) {
   EXPECT_CALL(*fileio_, Write(fileio_resource_, offset, &buffer[0], count, _))
       .WillOnce(Return(count));
 
-  int result = node_->Write(offset, &buffer, count);
+  int result = 0;
+  EXPECT_EQ(0, node_->Write(offset, &buffer, count, &result));
   EXPECT_EQ(count, result);
 }
 
@@ -362,7 +391,8 @@ TEST_F(MountHtml5FsNodeSyncTest, Read) {
   EXPECT_CALL(*fileio_, Read(fileio_resource_, offset, &buffer[0], count, _))
       .WillOnce(Return(count));
 
-  int result = node_->Read(offset, &buffer, count);
+  int result = 0;
+  EXPECT_EQ(0, node_->Read(offset, &buffer, count, &result));
   EXPECT_EQ(count, result);
 }
 
@@ -380,7 +410,7 @@ TEST_F(MountHtml5FsNodeSyncTest, GetStat) {
   info.last_access_time = access_time;
   info.last_modified_time = modified_time;
 
-  EXPECT_CALL(*fileio_, Query(fileio_resource_, _, _))
+  EXPECT_CALL(*fileref_, Query(fileref_resource_, _, _))
       .WillOnce(DoAll(SetArgPointee<1>(info),
                       Return(int32_t(PP_OK))));
 
@@ -405,6 +435,76 @@ TEST_F(MountHtml5FsNodeSyncTest, FTruncate) {
 }
 
 TEST_F(MountHtml5FsNodeSyncTest, GetDents) {
+  struct dirent dirents[2];
+  memset(&dirents[0], 0, sizeof(dirents));
+
+  // Should fail for regular files.
+  int result_bytes = 0;
+  EXPECT_EQ(ENOTDIR, node_->GetDents(0, &dirents[0], sizeof(dirent) * 2,
+        &result_bytes));
+  ASSERT_EQ(0, result_bytes);
+}
+
+TEST_F(MountHtml5FsNodeSyncDirTest, OpenAndClose) {
+}
+
+TEST_F(MountHtml5FsNodeSyncDirTest, Write) {
+  const int offset = 10;
+  const int count = 20;
+  const char buffer[30] = {0};
+
+  // Should fail for directories.
+  int result_bytes = 0;
+  EXPECT_EQ(EISDIR, node_->Write(offset, &buffer, count, &result_bytes));
+  ASSERT_EQ(0, result_bytes);
+}
+
+TEST_F(MountHtml5FsNodeSyncDirTest, Read) {
+  const int offset = 10;
+  const int count = 20;
+  char buffer[30] = {0};
+
+  // Should fail for directories.
+  int result_bytes = 0;
+  EXPECT_EQ(EISDIR, node_->Read(offset, &buffer, count, &result_bytes));
+  ASSERT_EQ(0, result_bytes);
+}
+
+TEST_F(MountHtml5FsNodeSyncDirTest, GetStat) {
+  const int creation_time = 1000;
+  const int access_time = 2000;
+  const int modified_time = 3000;
+
+  PP_FileInfo info;
+  info.size = 0;
+  info.type = PP_FILETYPE_DIRECTORY;
+  info.system_type = PP_FILESYSTEMTYPE_LOCALPERSISTENT;
+  info.creation_time = creation_time;
+  info.last_access_time = access_time;
+  info.last_modified_time = modified_time;
+
+  EXPECT_CALL(*fileref_, Query(fileref_resource_, _, _))
+      .WillOnce(DoAll(SetArgPointee<1>(info),
+                      Return(int32_t(PP_OK))));
+
+  struct stat statbuf;
+  int result = node_->GetStat(&statbuf);
+
+  EXPECT_EQ(0, result);
+  EXPECT_EQ(S_IFDIR | S_IWRITE | S_IREAD, statbuf.st_mode);
+  EXPECT_EQ(0, statbuf.st_size);
+  EXPECT_EQ(access_time, statbuf.st_atime);
+  EXPECT_EQ(modified_time, statbuf.st_mtime);
+  EXPECT_EQ(creation_time, statbuf.st_ctime);
+}
+
+TEST_F(MountHtml5FsNodeSyncDirTest, FTruncate) {
+  const int size = 123;
+  // Should fail for directories.
+  EXPECT_EQ(EISDIR, node_->FTruncate(size));
+}
+
+TEST_F(MountHtml5FsNodeSyncDirTest, GetDents) {
   const int fileref_resource_1 = 238;
   const int fileref_resource_2 = 239;
 
@@ -441,9 +541,20 @@ TEST_F(MountHtml5FsNodeSyncTest, GetDents) {
 
   struct dirent dirents[2];
   memset(&dirents[0], 0, sizeof(dirents));
-  int result = node_->GetDents(0, &dirents[0], sizeof(dirent) * 2);
+  // +2 to test a size that is not a multiple of sizeof(dirent).
+  // Expect it to round down.
+  int result_bytes = 0;
+  EXPECT_EQ(
+      0,
+      node_->GetDents(0, &dirents[0], sizeof(dirent) * 2 + 2, &result_bytes));
 
-  EXPECT_EQ(0, result);
-  EXPECT_STREQ(&fileref_name_cstr_1[0], &dirents[0].d_name[0]);
-  EXPECT_STREQ(&fileref_name_cstr_2[0], &dirents[1].d_name[0]);
+  ASSERT_EQ(sizeof(dirent) * 2, result_bytes);
+  EXPECT_LT(0, dirents[0].d_ino);  // 0 is an invalid inode number.
+  EXPECT_EQ(sizeof(dirent), dirents[0].d_off);
+  EXPECT_EQ(sizeof(dirent), dirents[0].d_reclen);
+  EXPECT_STREQ(fileref_name_cstr_1, dirents[0].d_name);
+  EXPECT_LT(0, dirents[1].d_ino);  // 0 is an invalid inode number.
+  EXPECT_EQ(sizeof(dirent), dirents[1].d_off);
+  EXPECT_EQ(sizeof(dirent), dirents[1].d_reclen);
+  EXPECT_STREQ(fileref_name_cstr_2, dirents[1].d_name);
 }

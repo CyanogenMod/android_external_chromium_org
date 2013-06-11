@@ -10,8 +10,8 @@
 #include "base/message_loop.h"
 #include "base/process_util.h"
 #include "base/run_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -32,10 +32,6 @@
 #include "webkit/support/webkit_support_gfx.h"
 
 namespace content {
-
-const int kTestTimeoutMilliseconds = 30 * 1000;
-// 0x20000000ms is big enough for the purpose to avoid timeout in debugging.
-const int kCloseEnoughToInfinity = 0x20000000;
 
 const int kTestSVGWindowWidthDip = 480;
 const int kTestSVGWindowHeightDip = 360;
@@ -246,14 +242,6 @@ bool WebKitTestController::PrepareForLayoutTest(
   }
   main_window_->web_contents()->GetRenderViewHost()->SetActive(true);
   main_window_->web_contents()->GetRenderViewHost()->Focus();
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoTimeout)) {
-    watchdog_.Reset(base::Bind(&WebKitTestController::TimeoutHandler,
-                               base::Unretained(this)));
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        watchdog_.callback(),
-        base::TimeDelta::FromMilliseconds(kTestTimeoutMilliseconds + 1000));
-  }
   return true;
 }
 
@@ -269,7 +257,6 @@ bool WebKitTestController::ResetAfterLayoutTest() {
   test_url_ = GURL();
   prefs_ = WebPreferences();
   should_override_prefs_ = false;
-  watchdog_.Cancel();
   return true;
 }
 
@@ -351,7 +338,10 @@ void WebKitTestController::PluginCrashed(const base::FilePath& plugin_path,
   DCHECK(CalledOnValidThread());
   printer_->AddErrorMessage(
       base::StringPrintf("#CRASHED - plugin (pid %d)", plugin_pid));
-  DiscardMainWindow();
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(base::IgnoreResult(&WebKitTestController::DiscardMainWindow),
+                 base::Unretained(this)));
 }
 
 void WebKitTestController::RenderViewCreated(RenderViewHost* render_view_host) {
@@ -446,10 +436,6 @@ void WebKitTestController::SendTestConfiguration() {
   params.temp_path = temp_path_;
   params.test_url = test_url_;
   params.enable_pixel_dumping = enable_pixel_dumping_;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoTimeout))
-    params.layout_test_timeout = kCloseEnoughToInfinity;
-  else
-    params.layout_test_timeout = kTestTimeoutMilliseconds;
   params.allow_external_pages = CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kAllowExternalPages);
   params.expected_pixel_hash = expected_pixel_hash_;
@@ -458,14 +444,7 @@ void WebKitTestController::SendTestConfiguration() {
       render_view_host->GetRoutingID(), params));
 }
 
-void WebKitTestController::OnTestFinished(bool did_timeout) {
-  watchdog_.Cancel();
-  if (did_timeout) {
-    printer_->AddErrorMessage(
-        "FAIL: Timed out waiting for notifyDone to be called");
-    DiscardMainWindow();
-    return;
-  }
+void WebKitTestController::OnTestFinished() {
   test_phase_ = CLEAN_UP;
   if (!printer_->output_finished())
     printer_->PrintImageFooter();

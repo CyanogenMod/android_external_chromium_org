@@ -6,9 +6,9 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "build/build_config.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
 #include "content/common/media/audio_messages.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/render_thread_impl.h"
@@ -138,8 +138,9 @@ void PepperPlatformAudioOutputImpl::InitializeOnIOThread(
     const media::AudioParameters& params) {
   DCHECK(ChildProcess::current()->io_message_loop_proxy()->
       BelongsToCurrentThread());
+  const int kSessionId = 0;
   if (ipc_)
-    ipc_->CreateStream(this, params);
+    ipc_->CreateStream(this, params, kSessionId);
 }
 
 void PepperPlatformAudioOutputImpl::StartPlaybackOnIOThread() {

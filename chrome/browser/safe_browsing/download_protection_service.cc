@@ -12,9 +12,9 @@
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
@@ -237,8 +237,8 @@ class DownloadUrlSBClient : public DownloadSBClient {
 
   virtual void StartCheck() OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    if (!database_manager_ || database_manager_->CheckDownloadUrl(
-           url_chain_, this)) {
+    if (!database_manager_.get() ||
+        database_manager_->CheckDownloadUrl(url_chain_, this)) {
       CheckDone(SB_THREAT_TYPE_SAFE);
     } else {
       AddRef();  // SafeBrowsingService takes a pointer not a scoped_refptr.
@@ -551,7 +551,7 @@ class DownloadProtectionService::CheckClientDownloadRequest
   void CheckWhitelists() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     DownloadCheckResultReason reason = REASON_MAX;
-    if (!database_manager_) {
+    if (!database_manager_.get()) {
       reason = REASON_SB_DISABLED;
     } else {
       for (size_t i = 0; i < url_chain_.size(); ++i) {
@@ -719,7 +719,7 @@ class DownloadProtectionService::CheckClientDownloadRequest
       }
       std::vector<std::string> whitelist_strings;
       DownloadProtectionService::GetCertificateWhitelistStrings(
-          *cert, *issuer, &whitelist_strings);
+          *cert.get(), *issuer.get(), &whitelist_strings);
       for (size_t j = 0; j < whitelist_strings.size(); ++j) {
         if (database_manager_->MatchDownloadWhitelistString(
                 whitelist_strings[j])) {

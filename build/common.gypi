@@ -45,9 +45,6 @@
           # Disable viewport meta tag by default.
           'enable_viewport%': 0,
 
-          # Enable DoubleResourceLoadTiming support.
-          'enable_double_resource_load_timing%': 1,
-
           # Enable HiDPI support.
           'enable_hidpi%': 0,
 
@@ -104,7 +101,6 @@
         'use_ozone%': '<(use_ozone)',
         'use_openssl%': '<(use_openssl)',
         'enable_viewport%': '<(enable_viewport)',
-        'enable_double_resource_load_timing%': '<(enable_double_resource_load_timing)',
         'enable_hidpi%': '<(enable_hidpi)',
         'enable_touch_ui%': '<(enable_touch_ui)',
         'buildtype%': '<(buildtype)',
@@ -186,7 +182,6 @@
       'use_ozone%': '<(use_ozone)',
       'use_openssl%': '<(use_openssl)',
       'enable_viewport%': '<(enable_viewport)',
-      'enable_double_resource_load_timing%': '<(enable_double_resource_load_timing)',
       'enable_hidpi%': '<(enable_hidpi)',
       'enable_touch_ui%': '<(enable_touch_ui)',
       'android_webview_build%': '<(android_webview_build)',
@@ -346,6 +341,9 @@
 
       # Enables autofill dialog and associated features; disabled by default.
       'enable_autofill_dialog%' : 0,
+
+      # Uses spring wallpaper resources on Spring.
+      'use_spring_wallpaper%': 0,
 
       # Uses OEM-specific wallpaper resources on Chrome OS.
       'use_oem_wallpaper%': 0,
@@ -637,10 +635,10 @@
         ['linux_lsb_release=="12.04"', {
           'conditions': [
             ['target_arch=="x64"', {
-              'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/internal/debian_wheezy_amd64-sysroot',
+              'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/debian_wheezy_amd64-sysroot',
             }],
             ['target_arch=="ia32"', {
-              'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/internal/debian_wheezy_i386-sysroot',
+              'sysroot%': '<!(cd <(DEPTH) && pwd -P)/chrome/installer/linux/debian_wheezy_i386-sysroot',
             }],
         ],
         }], # linux_lsb_release=="12.04"
@@ -751,7 +749,6 @@
     'linux_fpic%': '<(linux_fpic)',
     'chromeos%': '<(chromeos)',
     'enable_viewport%': '<(enable_viewport)',
-    'enable_double_resource_load_timing%': '<(enable_double_resource_load_timing)',
     'enable_hidpi%': '<(enable_hidpi)',
     'enable_touch_ui%': '<(enable_touch_ui)',
     'use_xi2_mt%':'<(use_xi2_mt)',
@@ -792,6 +789,7 @@
     'enable_session_service%': '<(enable_session_service)',
     'enable_themes%': '<(enable_themes)',
     'enable_autofill_dialog%': '<(enable_autofill_dialog)',
+    'use_spring_wallpaper%': '<(use_spring_wallpaper)',
     'use_oem_wallpaper%': '<(use_oem_wallpaper)',
     'enable_background%': '<(enable_background)',
     'linux_use_gold_binary%': '<(linux_use_gold_binary)',
@@ -1312,6 +1310,11 @@
         # Copy it out one scope.
         'android_webview_build%': '<(android_webview_build)',
       }],  # OS=="android"
+      ['android_webview_build==1', {
+        # When building the WebView in the Android tree, jarjar will remap all
+        # the class names, so the JNI generator needs to know this.
+        'jni_generator_jarjar_file': '../android_webview/build/jarjar-rules.txt',
+      }],
       ['OS=="mac"', {
         # Enable clang on mac by default!
         'clang%': 1,
@@ -1543,6 +1546,9 @@
       ['enable_themes==1', {
         'grit_defines': ['-D', 'enable_themes'],
       }],
+      ['use_spring_wallpaper==1', {
+        'grit_defines': ['-D', 'use_spring_wallpaper'],
+      }],
       ['use_oem_wallpaper==1', {
         'grit_defines': ['-D', 'use_oem_wallpaper'],
       }],
@@ -1568,8 +1574,6 @@
         'clang%': 1,
       }],
       ['asan==1 and OS=="mac"', {
-        # See http://crbug.com/145503.
-        'component': "static_library",
         # TODO(glider): we do not strip ASan binaries until the dynamic ASan
         # runtime is fully adopted. See http://crbug.com/242503.
         'mac_strip_release': 0,
@@ -1854,9 +1858,6 @@
             '@loader_path/../../..',
           ],
         },
-      }],
-      ['enable_double_resource_load_timing==1', {
-        'defines': ['ENABLE_DOUBLE_RESOURCE_LOAD_TIMING'],
       }],
       ['enable_rlz==1', {
         'defines': ['ENABLE_RLZ'],
@@ -3059,7 +3060,7 @@
               '-mfpmath=sse',
             ],
           }],
-          ['clang==1 and (OS!="android" and chromeos!=1)', {
+          ['clang==1 and OS!="android"', {
             # Turn on C++11.
             'cflags': [
               # This warns on using ints as initializers for floats in
@@ -3080,7 +3081,7 @@
               '-std=gnu++11',
             ],
           }],
-          ['clang==1 and (OS=="android" or chromeos==1)', {
+          ['clang==1 and OS=="android"', {
             # Android uses gcc4.4, and clang isn't compatible with gcc4.4's
             # libstdc++ in C++11 mode. So no C++11 mode for Android yet.
             # Doesn't work with asan for some reason either: crbug.com/233464

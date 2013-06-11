@@ -10,23 +10,16 @@
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_result_view.h"
 #include "chrome/browser/ui/views/omnibox/touch_omnibox_popup_contents_view.h"
+#include "grit/ui_resources.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/path.h"
+#include "ui/views/controls/image_view.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
 #include "ui/views/corewm/window_animations.h"
-#endif
-
-#if defined(OS_WIN)
-#include <dwmapi.h>
-
-#include "base/win/scoped_gdi_object.h"
-#if !defined(USE_AURA)
-#include "ui/base/win/shell.h"
-#endif
 #endif
 
 namespace {
@@ -42,6 +35,10 @@ const int kEditFontAdjust = 0;
 #else
 const int kEditFontAdjust = -1;
 #endif
+
+// This is the number of pixels in the border image interior to the actual
+// border.
+const int kBorderInterior = 6;
 
 }  // namespace
 
@@ -63,17 +60,19 @@ OmniboxPopupView* OmniboxPopupContentsView::Create(
     const gfx::Font& font,
     OmniboxView* omnibox_view,
     OmniboxEditModel* edit_model,
-    views::View* location_bar) {
+    LocationBarView* location_bar_view) {
+#if defined(HTML_INSTANT_EXTENDED_POPUP)
   if (chrome::IsInstantExtendedAPIEnabled())
     return new OmniboxPopupNonView(edit_model);
+#endif
 
   OmniboxPopupContentsView* view = NULL;
   if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) {
     view = new TouchOmniboxPopupContentsView(
-        font, omnibox_view, edit_model, location_bar);
+        font, omnibox_view, edit_model, location_bar_view);
   } else {
     view = new OmniboxPopupContentsView(
-        font, omnibox_view, edit_model, location_bar);
+        font, omnibox_view, edit_model, location_bar_view);
   }
 
   view->Init();
@@ -84,18 +83,21 @@ OmniboxPopupContentsView::OmniboxPopupContentsView(
     const gfx::Font& font,
     OmniboxView* omnibox_view,
     OmniboxEditModel* edit_model,
-    views::View* location_bar)
+    LocationBarView* location_bar_view)
     : model_(new OmniboxPopupModel(this, edit_model)),
       omnibox_view_(omnibox_view),
-      location_bar_(location_bar),
+      location_bar_view_(location_bar_view),
       font_(font.DeriveFont(kEditFontAdjust)),
       ignore_mouse_drag_(false),
-      size_animation_(this) {
-  bubble_border_ = new views::BubbleBorder(views::BubbleBorder::NONE,
-      views::BubbleBorder::NO_SHADOW, SK_ColorWHITE);
-  set_border(const_cast<views::BubbleBorder*>(bubble_border_));
+      size_animation_(this),
+      left_margin_(0),
+      right_margin_(0),
+      outside_vertical_padding_(0) {
   // The contents is owned by the LocationBarView.
   set_owned_by_client();
+
+  ui::ThemeProvider* theme = location_bar_view_->GetThemeProvider();
+  bottom_shadow_ = theme->GetImageSkiaNamed(IDR_BUBBLE_B);
 }
 
 void OmniboxPopupContentsView::Init() {
@@ -133,8 +135,11 @@ gfx::Rect OmniboxPopupContentsView::GetPopupBounds() const {
 
 void OmniboxPopupContentsView::LayoutChildren() {
   gfx::Rect contents_rect = GetContentsBounds();
+
+  contents_rect.Inset(left_margin_, outside_vertical_padding_, right_margin_,
+                      outside_vertical_padding_);
   int top = contents_rect.y();
-  for (int i = 0; i < child_count(); ++i) {
+  for (size_t i = 0; i < AutocompleteResult::kMaxMatches; ++i) {
     View* v = child_at(i);
     if (v->visible()) {
       v->SetBounds(contents_rect.x(), top, contents_rect.width(),
@@ -162,8 +167,10 @@ void OmniboxPopupContentsView::InvalidateLine(size_t line) {
 }
 
 void OmniboxPopupContentsView::UpdatePopupAppearance() {
-  if (model_->result().empty()) {
-    // No matches, close any existing popup.
+  if (model_->result().empty() ||
+      omnibox_view_->IsImeShowingPopup()) {
+    // No matches or the IME is showing a popup window which may overlap
+    // the omnibox popup window.  Close any existing popup.
     if (popup_ != NULL) {
       size_animation_.Stop();
 
@@ -179,17 +186,21 @@ void OmniboxPopupContentsView::UpdatePopupAppearance() {
 
   // Update the match cached by each row, in the process of doing so make sure
   // we have enough row views.
-  size_t child_rv_count = child_count();
   const size_t result_size = model_->result().size();
   for (size_t i = 0; i < result_size; ++i) {
     OmniboxResultView* view = result_view_at(i);
     view->SetMatch(GetMatchAtIndex(i));
     view->SetVisible(true);
   }
-  for (size_t i = result_size; i < child_rv_count; ++i)
+  for (size_t i = result_size; i < AutocompleteResult::kMaxMatches; ++i)
     child_at(i)->SetVisible(false);
 
-  gfx::Rect new_target_bounds = CalculateTargetBounds(CalculatePopupHeight());
+  gfx::Point top_left_screen_coord;
+  int width;
+  location_bar_view_->GetOmniboxPopupPositioningInfo(
+      &top_left_screen_coord, &width, &left_margin_, &right_margin_);
+  gfx::Rect new_target_bounds(top_left_screen_coord,
+                              gfx::Size(width, CalculatePopupHeight()));
 
   // If we're animating and our target height changes, reset the animation.
   // NOTE: If we just reset blindly on _every_ update, then when the user types
@@ -200,14 +211,17 @@ void OmniboxPopupContentsView::UpdatePopupAppearance() {
   target_bounds_ = new_target_bounds;
 
   if (popup_ == NULL) {
+    gfx::NativeView popup_parent =
+        location_bar_view_->GetWidget()->GetNativeView();
+
     // If the popup is currently closed, we need to create it.
     popup_ = (new AutocompletePopupWidget)->AsWeakPtr();
     views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
     params.can_activate = false;
     params.transparent = true;
-    params.parent = location_bar_->GetWidget()->GetNativeView();
+    params.parent = popup_parent;
     params.bounds = GetPopupBounds();
-    params.context = location_bar_->GetWidget()->GetNativeView();
+    params.context = popup_parent;
     popup_->Init(params);
 #if defined(USE_AURA)
     views::corewm::SetWindowVisibilityAnimationType(
@@ -287,8 +301,6 @@ void OmniboxPopupContentsView::AnimationProgressed(
 // OmniboxPopupContentsView, views::View overrides:
 
 void OmniboxPopupContentsView::Layout() {
-  UpdateBlurRegion();
-
   // Size our children to the available content area.
   LayoutChildren();
 
@@ -385,39 +397,49 @@ int OmniboxPopupContentsView::CalculatePopupHeight() {
   int popup_height = 0;
   for (size_t i = 0; i < model_->result().size(); ++i)
     popup_height += child_at(i)->GetPreferredSize().height();
-  return popup_height;
+
+  // Add enough space on the top and bottom so it looks like there is the same
+  // amount of space between the text and the popup border as there is in the
+  // interior between each row of text.
+  //
+  // Discovering the exact amount of leading and padding around the font is
+  // a bit tricky and platform-specific, but this computation seems to work in
+  // practice.
+  OmniboxResultView* result_view = result_view_at(0);
+  outside_vertical_padding_ =
+      (result_view->GetPreferredSize().height() -
+       result_view->GetTextHeight());
+
+  return popup_height + outside_vertical_padding_ * 2 +
+        bottom_shadow_->height() - kBorderInterior;
 }
 
 OmniboxResultView* OmniboxPopupContentsView::CreateResultView(
     OmniboxResultViewModel* model,
     int model_index,
     const gfx::Font& font) {
-  return new OmniboxResultView(model, model_index, location_bar_, font);
+  return new OmniboxResultView(model, model_index, location_bar_view_, font);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // OmniboxPopupContentsView, views::View overrides, protected:
 
 void OmniboxPopupContentsView::OnPaint(gfx::Canvas* canvas) {
+  gfx::Rect contents_bounds = GetContentsBounds();
+  contents_bounds.set_height(
+      contents_bounds.height() - bottom_shadow_->height() + kBorderInterior);
+
   gfx::Path path;
-  MakeContentsPath(&path, GetContentsBounds());
+  MakeContentsPath(&path, contents_bounds);
   canvas->Save();
   canvas->sk_canvas()->clipPath(path,
                                 SkRegion::kIntersect_Op,
                                 true /* doAntialias */);
   PaintResultViews(canvas);
-
-  // We want the contents background to be slightly transparent so we can see
-  // the blurry glass effect on DWM systems behind. We do this _after_ we paint
-  // the children since they paint text, and GDI will reset this alpha data if
-  // we paint text after this call.
-  MakeCanvasTransparent(canvas);
   canvas->Restore();
 
-  // Now we paint the border, so it will be alpha-blended atop the contents.
-  // This looks slightly better in the corners than drawing the contents atop
-  // the border.
-  OnPaintBorder(canvas);
+  canvas->TileImageInt(*bottom_shadow_, 0, height() - bottom_shadow_->height(),
+                       width(), bottom_shadow_->height());
 }
 
 void OmniboxPopupContentsView::PaintChildren(gfx::Canvas* canvas) {
@@ -444,54 +466,7 @@ void OmniboxPopupContentsView::MakeContentsPath(
            SkIntToScalar(bounding_rect.y()),
            SkIntToScalar(bounding_rect.right()),
            SkIntToScalar(bounding_rect.bottom()));
-
-  SkScalar radius = SkIntToScalar(views::BubbleBorder::GetCornerRadius());
-  path->addRoundRect(rect, radius, radius);
-}
-
-void OmniboxPopupContentsView::UpdateBlurRegion() {
-#if defined(OS_WIN) && !defined(USE_AURA)
-  // We only support background blurring on Vista with Aero-Glass enabled.
-  if (!ui::win::IsAeroGlassEnabled() || !GetWidget())
-    return;
-
-  // Provide a blurred background effect within the contents region of the
-  // popup.
-  DWM_BLURBEHIND bb = {0};
-  bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
-  bb.fEnable = true;
-
-  // Translate the contents rect into widget coordinates, since that's what
-  // DwmEnableBlurBehindWindow expects a region in.
-  gfx::Rect contents_rect = ConvertRectToWidget(GetContentsBounds());
-  gfx::Path contents_path;
-  MakeContentsPath(&contents_path, contents_rect);
-  base::win::ScopedGDIObject<HRGN> popup_region;
-  popup_region.Set(contents_path.CreateNativeRegion());
-  bb.hRgnBlur = popup_region.Get();
-  DwmEnableBlurBehindWindow(GetWidget()->GetNativeView(), &bb);
-#endif
-}
-
-void OmniboxPopupContentsView::MakeCanvasTransparent(gfx::Canvas* canvas) {
-  // Allow the window blur effect to show through the popup background.
-  SkAlpha alpha = GetThemeProvider()->ShouldUseNativeFrame() ?
-      kGlassPopupAlpha : kOpaquePopupAlpha;
-  canvas->DrawColor(SkColorSetA(
-      result_view_at(0)->GetColor(OmniboxResultView::NORMAL,
-          OmniboxResultView::BACKGROUND), alpha), SkXfermode::kDstIn_Mode);
-}
-
-void OmniboxPopupContentsView::OpenIndex(size_t index,
-                                         WindowOpenDisposition disposition) {
-  if (!HasMatchAt(index))
-    return;
-
-  // OpenMatch() may close the popup, which will clear the result set and, by
-  // extension, |match| and its contents.  So copy the relevant match out to
-  // make sure it stays alive until the call completes.
-  AutocompleteMatch match = model_->result().match_at(index);
-  omnibox_view_->OpenMatch(match, disposition, GURL(), index);
+  path->addRect(rect);
 }
 
 size_t OmniboxPopupContentsView::GetIndexForPoint(
@@ -511,28 +486,6 @@ size_t OmniboxPopupContentsView::GetIndexForPoint(
   return OmniboxPopupModel::kNoMatch;
 }
 
-gfx::Rect OmniboxPopupContentsView::CalculateTargetBounds(int h) {
-  gfx::Rect location_bar_bounds(location_bar_->GetContentsBounds());
-  const views::Border* border = location_bar_->border();
-  if (border) {
-    // Adjust for the border so that the bubble and location bar borders are
-    // aligned.
-    gfx::Insets insets = border->GetInsets();
-    location_bar_bounds.Inset(insets.left(), 0, insets.right(), 0);
-  } else {
-    // The normal location bar is drawn using a background graphic that includes
-    // the border, so we inset by enough to make the edges line up, and the
-    // bubble appear at the same height as the Star bubble.
-    location_bar_bounds.Inset(LocationBarView::kNormalHorizontalEdgeThickness,
-                              0);
-  }
-  gfx::Point location_bar_origin(location_bar_bounds.origin());
-  views::View::ConvertPointToScreen(location_bar_, &location_bar_origin);
-  location_bar_bounds.set_origin(location_bar_origin);
-  return bubble_border_->GetBounds(
-      location_bar_bounds, gfx::Size(location_bar_bounds.width(), h));
-}
-
 void OmniboxPopupContentsView::UpdateLineEvent(
     const ui::LocatedEvent& event,
     bool should_set_selected_line) {
@@ -546,7 +499,14 @@ void OmniboxPopupContentsView::OpenSelectedLine(
     const ui::LocatedEvent& event,
     WindowOpenDisposition disposition) {
   size_t index = GetIndexForPoint(event.location());
-  OpenIndex(index, disposition);
+  if (!HasMatchAt(index))
+    return;
+
+  // OpenMatch() may close the popup, which will clear the result set and, by
+  // extension, |match| and its contents.  So copy the relevant match out to
+  // make sure it stays alive until the call completes.
+  AutocompleteMatch match = model_->result().match_at(index);
+  omnibox_view_->OpenMatch(match, disposition, GURL(), index);
 }
 
 OmniboxResultView* OmniboxPopupContentsView::result_view_at(size_t i) {

@@ -15,16 +15,15 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "base/version.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
@@ -64,7 +63,6 @@
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/update_observer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
-#include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -74,10 +72,8 @@
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
@@ -88,8 +84,10 @@
 #include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
+#include "chrome/common/extensions/sync_helper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/startup_metric_utils.h"
 #include "chrome/common/url_constants.h"
@@ -97,12 +95,10 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/plugin_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
-#include "content/public/common/pepper_plugin_info.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "googleurl/src/gurl.h"
@@ -122,7 +118,6 @@
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DevToolsAgentHost;
-using content::PluginService;
 using extensions::CrxInstaller;
 using extensions::Extension;
 using extensions::ExtensionIdSet;
@@ -157,16 +152,6 @@ static const int kUpdateIdleDelay = 5;
 // Wait this many seconds before trying to garbage collect extensions again.
 static const int kGarbageCollectRetryDelay = 30;
 
-const char* kNaClPluginMimeType = "application/x-nacl";
-
-static bool IsSyncableExtension(const Extension& extension) {
-  return extension.GetSyncType() == Extension::SYNC_TYPE_EXTENSION;
-}
-
-static bool IsSyncableApp(const Extension& extension) {
-  return extension.GetSyncType() == Extension::SYNC_TYPE_APP;
-}
-
 }  // namespace
 
 ExtensionService::ExtensionRuntimeData::ExtensionRuntimeData()
@@ -176,12 +161,6 @@ ExtensionService::ExtensionRuntimeData::ExtensionRuntimeData()
 }
 
 ExtensionService::ExtensionRuntimeData::~ExtensionRuntimeData() {
-}
-
-ExtensionService::NaClModuleInfo::NaClModuleInfo() {
-}
-
-ExtensionService::NaClModuleInfo::~NaClModuleInfo() {
 }
 
 // ExtensionService.
@@ -657,7 +636,7 @@ bool ExtensionService::UpdateExtension(const std::string& id,
   // which are newer.
   int creation_flags = Extension::NO_FLAGS;
   if ((extension && extension->from_webstore()) ||
-      (extension && extension->UpdatesFromGallery()) ||
+      (extension && extensions::ManifestURL::UpdatesFromGallery(extension)) ||
       (!extension && extension_urls::IsWebstoreUpdateUrl(
            pending_extension_info->update_url()))) {
     creation_flags |= Extension::FROM_WEBSTORE;
@@ -681,23 +660,12 @@ bool ExtensionService::UpdateExtension(const std::string& id,
   installer->InstallCrx(extension_path);
 
   if (out_crx_installer)
-    *out_crx_installer = installer;
+    *out_crx_installer = installer.get();
 
   return true;
 }
 
 void ExtensionService::ReloadExtension(const std::string& extension_id) {
-  int events = HasShellWindows(extension_id) ? EVENT_LAUNCHED : EVENT_NONE;
-  ReloadExtensionWithEvents(extension_id, events);
-}
-
-void ExtensionService::RestartExtension(const std::string& extension_id) {
-  ReloadExtensionWithEvents(extension_id, EVENT_RESTARTED);
-}
-
-void ExtensionService::ReloadExtensionWithEvents(
-    const std::string& extension_id,
-    int events) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // If the extension is already reloading, don't reload again.
@@ -732,8 +700,6 @@ void ExtensionService::ReloadExtensionWithEvents(
   } else {
     path = unloaded_extension_paths_[extension_id];
   }
-
-  on_load_events_[extension_id] = events;
 
   if (delayed_updates_for_idle_.Contains(extension_id)) {
     FinishDelayedInstallation(extension_id);
@@ -772,7 +738,7 @@ bool ExtensionService::UninstallExtension(
   scoped_refptr<const Extension> extension(GetInstalledExtension(extension_id));
 
   // Callers should not send us nonexistent extensions.
-  CHECK(extension);
+  CHECK(extension.get());
 
   // Policy change which triggers an uninstall will always set
   // |external_uninstall| to true so this is the only way to uninstall
@@ -783,28 +749,29 @@ bool ExtensionService::UninstallExtension(
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_EXTENSION_UNINSTALL_NOT_ALLOWED,
         content::Source<Profile>(profile_),
-        content::Details<const Extension>(extension));
+        content::Details<const Extension>(extension.get()));
     return false;
   }
 
   // Extract the data we need for sync now, but don't actually sync until we've
   // completed the uninstallation.
   syncer::SyncChange sync_change;
-  if (app_sync_bundle_.HandlesApp(*extension)) {
-    sync_change = app_sync_bundle_.CreateSyncChangeToDelete(extension);
-  } else if (extension_sync_bundle_.HandlesExtension(*extension)) {
-    sync_change = extension_sync_bundle_.CreateSyncChangeToDelete(extension);
+  if (app_sync_bundle_.HandlesApp(*extension.get())) {
+    sync_change = app_sync_bundle_.CreateSyncChangeToDelete(extension.get());
+  } else if (extension_sync_bundle_.HandlesExtension(*extension.get())) {
+    sync_change =
+        extension_sync_bundle_.CreateSyncChangeToDelete(extension.get());
   }
 
-  if (IsUnacknowledgedExternalExtension(extension)) {
+  if (IsUnacknowledgedExternalExtension(extension.get())) {
     UMA_HISTOGRAM_ENUMERATION("Extensions.ExternalExtensionEvent",
                               EXTERNAL_EXTENSION_UNINSTALLED,
                               EXTERNAL_EXTENSION_BUCKET_BOUNDARY);
   }
   UMA_HISTOGRAM_ENUMERATION("Extensions.UninstallType",
                             extension->GetType(), 100);
-  RecordPermissionMessagesHistogram(
-      extension, "Extensions.Permissions_Uninstall");
+  RecordPermissionMessagesHistogram(extension.get(),
+                                    "Extensions.Permissions_Uninstall");
 
   // Unload before doing more cleanup to ensure that nothing is hanging on to
   // any of these resources.
@@ -824,10 +791,10 @@ bool ExtensionService::UninstallExtension(
       NOTREACHED();
   }
 
-  GURL launch_web_url_origin(extension->launch_web_url());
-  launch_web_url_origin = launch_web_url_origin.GetOrigin();
+  GURL launch_web_url_origin(
+      extensions::AppLaunchInfo::GetLaunchWebURL(extension).GetOrigin());
   bool is_storage_isolated =
-      extensions::AppIsolationInfo::HasIsolatedStorage(extension);
+      extensions::AppIsolationInfo::HasIsolatedStorage(extension.get());
 
   if (is_storage_isolated) {
     BrowserContext::AsyncObliterateStoragePartition(
@@ -852,7 +819,7 @@ bool ExtensionService::UninstallExtension(
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
       content::Source<Profile>(profile_),
-      content::Details<const Extension>(extension));
+      content::Details<const Extension>(extension.get()));
 
   if (app_sync_bundle_.HasExtensionId(extension_id) &&
       sync_change.sync_data().GetDataType() == syncer::APPS) {
@@ -1090,45 +1057,6 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
     ThumbnailSource* thumbnail_source = new ThumbnailSource(profile_);
     content::URLDataSource::Add(profile_, thumbnail_source);
   }
-
-#if defined(ENABLE_PLUGINS)
-  // TODO(mpcomplete): This ends up affecting all profiles. See crbug.com/80757.
-  bool plugins_changed = false;
-  if (extensions::PluginInfo::HasPlugins(extension)) {
-    const extensions::PluginInfo::PluginVector* plugins =
-      extensions::PluginInfo::GetPlugins(extension);
-    CHECK(plugins);
-    plugins_changed = true;
-    for (extensions::PluginInfo::PluginVector::const_iterator plugin =
-             plugins->begin();
-         plugin != plugins->end(); ++plugin) {
-      PluginService::GetInstance()->RefreshPlugins();
-      PluginService::GetInstance()->AddExtraPluginPath(plugin->path);
-      ChromePluginServiceFilter* filter =
-          ChromePluginServiceFilter::GetInstance();
-      if (plugin->is_public) {
-        filter->RestrictPluginToProfileAndOrigin(
-            plugin->path, profile_, GURL());
-      } else {
-        filter->RestrictPluginToProfileAndOrigin(
-            plugin->path, profile_, extension->url());
-      }
-    }
-  }
-
-  bool nacl_modules_changed = false;
-  for (size_t i = 0; i < extension->nacl_modules().size(); ++i) {
-    const Extension::NaClModuleInfo& module = extension->nacl_modules()[i];
-    RegisterNaClModule(module.url, module.mime_type);
-    nacl_modules_changed = true;
-  }
-
-  if (nacl_modules_changed)
-    UpdatePluginListWithNaClModules();
-
-  if (plugins_changed || nacl_modules_changed)
-    PluginService::GetInstance()->PurgePluginListCache(profile_, false);
-#endif  // defined(ENABLE_PLUGINS)
 }
 
 void ExtensionService::NotifyExtensionUnloaded(
@@ -1180,36 +1108,6 @@ void ExtensionService::NotifyExtensionUnloaded(
 #endif
 
   UpdateActiveExtensionsInCrashReporter();
-
-#if defined(ENABLE_PLUGINS)
-  bool plugins_changed = false;
-  if (extensions::PluginInfo::HasPlugins(extension)) {
-    const extensions::PluginInfo::PluginVector* plugins =
-      extensions::PluginInfo::GetPlugins(extension);
-    plugins_changed = true;
-    for (extensions::PluginInfo::PluginVector::const_iterator plugin =
-             plugins->begin();
-         plugin != plugins->end(); ++plugin) {
-      PluginService::GetInstance()->ForcePluginShutdown(plugin->path);
-      PluginService::GetInstance()->RefreshPlugins();
-      PluginService::GetInstance()->RemoveExtraPluginPath(plugin->path);
-      ChromePluginServiceFilter::GetInstance()->UnrestrictPlugin(plugin->path);
-    }
-  }
-
-  bool nacl_modules_changed = false;
-  for (size_t i = 0; i < extension->nacl_modules().size(); ++i) {
-    const Extension::NaClModuleInfo& module = extension->nacl_modules()[i];
-    UnregisterNaClModule(module.url);
-    nacl_modules_changed = true;
-  }
-
-  if (nacl_modules_changed)
-    UpdatePluginListWithNaClModules();
-
-  if (plugins_changed || nacl_modules_changed)
-    PluginService::GetInstance()->PurgePluginListCache(profile_, false);
-#endif  // defined(ENABLE_PLUGINS)
 }
 
 Profile* ExtensionService::profile() {
@@ -1233,8 +1131,8 @@ bool ExtensionService::is_ready() {
 }
 
 base::SequencedTaskRunner* ExtensionService::GetFileTaskRunner() {
-  if (file_task_runner_)
-    return file_task_runner_;
+  if (file_task_runner_.get())
+    return file_task_runner_.get();
 
   // We should be able to interrupt any part of extension install process during
   // shutdown. SKIP_ON_SHUTDOWN ensures that not started extension install tasks
@@ -1245,7 +1143,7 @@ base::SequencedTaskRunner* ExtensionService::GetFileTaskRunner() {
       GetSequencedTaskRunnerWithShutdownBehavior(
         BrowserThread::GetBlockingPool()->GetNamedSequenceToken(token),
         base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
-  return file_task_runner_;
+  return file_task_runner_.get();
 }
 
 extensions::ExtensionUpdater* ExtensionService::updater() {
@@ -1476,12 +1374,12 @@ bool ExtensionService::ProcessAppSyncData(
 bool ExtensionService::IsCorrectSyncType(const Extension& extension,
                                          syncer::ModelType type) const {
   if (type == syncer::EXTENSIONS &&
-      extension.GetSyncType() == Extension::SYNC_TYPE_EXTENSION) {
+      extensions::sync_helper::IsSyncableExtension(&extension)) {
     return true;
   }
 
   if (type == syncer::APPS &&
-      extension.GetSyncType() == Extension::SYNC_TYPE_APP) {
+      extensions::sync_helper::IsSyncableApp(&extension)) {
     return true;
   }
 
@@ -1549,8 +1447,9 @@ bool ExtensionService::ProcessExtensionSyncDataHelper(
     const bool kInstallSilently = true;
 
     CHECK(type == syncer::EXTENSIONS || type == syncer::APPS);
-    ExtensionFilter filter =
-        (type == syncer::APPS) ? IsSyncableApp : IsSyncableExtension;
+    extensions::PendingExtensionInfo::ShouldAllowInstallPredicate filter =
+        (type == syncer::APPS) ? extensions::sync_helper::IsSyncableApp :
+                                 extensions::sync_helper::IsSyncableExtension;
 
     if (!pending_extension_manager()->AddFromSync(
             id,
@@ -1592,7 +1491,7 @@ void ExtensionService::SetIsIncognitoEnabled(
   if (extension && extension->location() == Manifest::COMPONENT) {
     // This shouldn't be called for component extensions unless they are
     // syncable.
-    DCHECK(extension->IsSyncable());
+    DCHECK(extensions::sync_helper::IsSyncable(extension));
 
     // If we are here, make sure the we aren't trying to change the value.
     DCHECK_EQ(enabled, IsIncognitoEnabled(extension_id));
@@ -1898,7 +1797,7 @@ void ExtensionService::UnloadExtension(
 
   // This method can be called via PostTask, so the extension may have been
   // unloaded by the time this runs.
-  if (!extension) {
+  if (!extension.get()) {
     // In case the extension may have crashed/uninstalled. Allow the profile to
     // clean up its RequestContexts.
     system_->UnregisterExtensionWithRequestContexts(extension_id, reason);
@@ -1921,7 +1820,7 @@ void ExtensionService::UnloadExtension(
   extension_runtime_data_.erase(extension_id);
 
   if (disabled_extensions_.Contains(extension->id())) {
-    UnloadedExtensionInfo details(extension, reason);
+    UnloadedExtensionInfo details(extension.get(), reason);
     details.already_disabled = true;
     disabled_extensions_.Remove(extension->id());
     content::NotificationService::current()->Notify(
@@ -2097,7 +1996,6 @@ void ExtensionService::AddExtension(const Extension* extension) {
     // Replace the old extension with the new version.
     CHECK(!disabled_extensions_.Insert(extension));
     EnableExtension(extension->id());
-    DoPostLoadTasks(extension);
   } else {
     // All apps that are displayed in the launcher are ordered by their ordinals
     // so we must ensure they have valid ordinals.
@@ -2113,7 +2011,6 @@ void ExtensionService::AddExtension(const Extension* extension) {
     extensions_.Insert(extension);
     SyncExtensionChangeIfNeeded(*extension);
     NotifyExtensionLoaded(extension);
-    DoPostLoadTasks(extension);
   }
   SetBeingUpgraded(extension, false);
 }
@@ -2144,7 +2041,7 @@ void ExtensionService::UpdateActivePermissions(const Extension* extension) {
   scoped_refptr<PermissionSet> active_permissions =
       extension_prefs()->GetActivePermissions(extension->id());
 
-  if (active_permissions) {
+  if (active_permissions.get()) {
     // We restrict the active permissions to be within the bounds defined in the
     // extension's manifest.
     //  a) active permissions must be a subset of optional + default permissions
@@ -2165,7 +2062,7 @@ void ExtensionService::UpdateActivePermissions(const Extension* extension) {
         adjusted_active.get());
 
     extensions::PermissionsUpdater perms_updater(profile());
-    perms_updater.UpdateActivePermissions(extension, adjusted_active);
+    perms_updater.UpdateActivePermissions(extension, adjusted_active.get());
   }
 }
 
@@ -2279,10 +2176,6 @@ void ExtensionService::UpdateActiveExtensionsInCrashReporter() {
   child_process_logging::SetActiveExtensions(extension_ids);
 }
 
-void ExtensionService::ScheduleLaunchOnLoad(const std::string& extension_id) {
-  on_load_events_[extension_id] = EVENT_LAUNCHED;
-}
-
 void ExtensionService::OnExtensionInstalled(
     const Extension* extension,
     const syncer::StringOrdinal& page_ordinal,
@@ -2294,7 +2187,7 @@ void ExtensionService::OnExtensionInstalled(
   bool initial_enable = ShouldEnableOnInstall(extension);
   const extensions::PendingExtensionInfo* pending_extension_info = NULL;
   if ((pending_extension_info = pending_extension_manager()->GetById(id))) {
-    if (!pending_extension_info->ShouldAllowInstall(*extension)) {
+    if (!pending_extension_info->ShouldAllowInstall(extension)) {
       pending_extension_manager()->Remove(id);
 
       LOG(WARNING) << "ShouldAllowInstall() returned false for "
@@ -2419,13 +2312,13 @@ void ExtensionService::FinishDelayedInstallation(
     const std::string& extension_id) {
   scoped_refptr<const Extension> extension(
       GetPendingExtensionUpdate(extension_id));
-  CHECK(extension);
+  CHECK(extension.get());
   delayed_updates_for_idle_.Remove(extension_id);
 
   if (!extension_prefs_->FinishDelayedInstallInfo(extension_id))
     NOTREACHED();
 
-  FinishInstallation(extension);
+  FinishInstallation(extension.get());
 }
 
 void ExtensionService::FinishInstallation(const Extension* extension) {
@@ -2827,134 +2720,6 @@ void ExtensionService::SetHasUsedWebRequest(const Extension* extension,
   extension_runtime_data_[extension->id()].has_used_webrequest = value;
 }
 
-void ExtensionService::RegisterNaClModule(const GURL& url,
-                                          const std::string& mime_type) {
-  NaClModuleInfo info;
-  info.url = url;
-  info.mime_type = mime_type;
-
-  DCHECK(FindNaClModule(url) == nacl_module_list_.end());
-  nacl_module_list_.push_front(info);
-}
-
-void ExtensionService::UnregisterNaClModule(const GURL& url) {
-  NaClModuleInfoList::iterator iter = FindNaClModule(url);
-  DCHECK(iter != nacl_module_list_.end());
-  nacl_module_list_.erase(iter);
-}
-
-void ExtensionService::UpdatePluginListWithNaClModules() {
-  // An extension has been added which has a nacl_module component, which means
-  // there is a MIME type that module wants to handle, so we need to add that
-  // MIME type to plugins which handle NaCl modules in order to allow the
-  // individual modules to handle these types.
-  base::FilePath path;
-  if (!PathService::Get(chrome::FILE_NACL_PLUGIN, &path))
-    return;
-  const content::PepperPluginInfo* pepper_info =
-      PluginService::GetInstance()->GetRegisteredPpapiPluginInfo(path);
-  if (!pepper_info)
-    return;
-
-  std::vector<webkit::WebPluginMimeType>::const_iterator mime_iter;
-  // Check each MIME type the plugins handle for the NaCl MIME type.
-  for (mime_iter = pepper_info->mime_types.begin();
-       mime_iter != pepper_info->mime_types.end(); ++mime_iter) {
-    if (mime_iter->mime_type == kNaClPluginMimeType) {
-      // This plugin handles "application/x-nacl".
-
-      PluginService::GetInstance()->
-          UnregisterInternalPlugin(pepper_info->path);
-
-      webkit::WebPluginInfo info = pepper_info->ToWebPluginInfo();
-
-      for (ExtensionService::NaClModuleInfoList::const_iterator iter =
-          nacl_module_list_.begin();
-          iter != nacl_module_list_.end(); ++iter) {
-        // Add the MIME type specified in the extension to this NaCl plugin,
-        // With an extra "nacl" argument to specify the location of the NaCl
-        // manifest file.
-        webkit::WebPluginMimeType mime_type_info;
-        mime_type_info.mime_type = iter->mime_type;
-        mime_type_info.additional_param_names.push_back(UTF8ToUTF16("nacl"));
-        mime_type_info.additional_param_values.push_back(
-            UTF8ToUTF16(iter->url.spec()));
-        info.mime_types.push_back(mime_type_info);
-      }
-
-      PluginService::GetInstance()->RefreshPlugins();
-      PluginService::GetInstance()->RegisterInternalPlugin(info, true);
-      // This plugin has been modified, no need to check the rest of its
-      // types, but continue checking other plugins.
-      break;
-    }
-  }
-}
-
-ExtensionService::NaClModuleInfoList::iterator
-    ExtensionService::FindNaClModule(const GURL& url) {
-  for (NaClModuleInfoList::iterator iter = nacl_module_list_.begin();
-       iter != nacl_module_list_.end(); ++iter) {
-    if (iter->url == url)
-      return iter;
-  }
-  return nacl_module_list_.end();
-}
-
-void ExtensionService::DoPostLoadTasks(const Extension* extension) {
-  std::map<std::string, int>::iterator it =
-      on_load_events_.find(extension->id());
-  if (it == on_load_events_.end())
-    return;
-
-  int events_to_fire = it->second;
-  extensions::LazyBackgroundTaskQueue* queue =
-      system_->lazy_background_task_queue();
-  if (queue->ShouldEnqueueTask(profile(), extension)) {
-    if (events_to_fire & EVENT_LAUNCHED)
-      queue->AddPendingTask(profile(), extension->id(),
-                            base::Bind(&ExtensionService::LaunchApplication));
-    if (events_to_fire & EVENT_RESTARTED) {
-      queue->AddPendingTask(profile(), extension->id(),
-                            base::Bind(&ExtensionService::RestartApplication));
-    }
-  }
-
-  on_load_events_.erase(it);
-}
-
-// static
-void ExtensionService::LaunchApplication(
-    extensions::ExtensionHost* extension_host) {
-  if (!extension_host)
-    return;
-
-#if !defined(OS_ANDROID)
-  extensions::LaunchPlatformApp(extension_host->profile(),
-                                extension_host->extension(),
-                                NULL, base::FilePath());
-#endif
-}
-
-// static
-void ExtensionService::RestartApplication(
-    extensions::ExtensionHost* extension_host) {
-  if (!extension_host)
-    return;
-
-#if !defined(OS_ANDROID)
-  extensions::RestartPlatformApp(
-      extension_host->profile(), extension_host->extension());
-#endif
-}
-
-bool ExtensionService::HasShellWindows(const std::string& extension_id) {
-  const Extension* current_extension = GetExtensionById(extension_id, false);
-  return current_extension && current_extension->is_platform_app() &&
-      !extensions::ShellWindowRegistry::Get(profile_)->
-          GetShellWindowsForApp(extension_id).empty();
-}
-
 void ExtensionService::InspectExtensionHost(
     extensions::ExtensionHost* host) {
   if (host)
@@ -3088,20 +2853,21 @@ void ExtensionService::ManageBlacklist(
        it != no_longer_blacklisted.end(); ++it) {
     scoped_refptr<const Extension> extension =
         blacklisted_extensions_.GetByID(*it);
-    DCHECK(extension);
-    if (!extension)
+    DCHECK(extension.get());
+    if (!extension.get())
       continue;
     blacklisted_extensions_.Remove(*it);
-    AddExtension(extension);
+    AddExtension(extension.get());
     UMA_HISTOGRAM_ENUMERATION("ExtensionBlacklist.UnblacklistInstalled",
-                              extension->location(), Manifest::NUM_LOCATIONS);
+                              extension->location(),
+                              Manifest::NUM_LOCATIONS);
   }
 
   for (std::set<std::string>::iterator it = not_yet_blacklisted.begin();
        it != not_yet_blacklisted.end(); ++it) {
     scoped_refptr<const Extension> extension = GetInstalledExtension(*it);
-    DCHECK(extension);
-    if (!extension)
+    DCHECK(extension.get());
+    if (!extension.get())
       continue;
     blacklisted_extensions_.Insert(extension);
     UnloadExtension(*it, extension_misc::UNLOAD_REASON_BLACKLIST);

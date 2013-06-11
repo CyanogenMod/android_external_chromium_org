@@ -12,7 +12,7 @@
 #include "base/observer_list.h"
 #include "chrome/browser/google_apis/auth_service_observer.h"
 #include "chrome/browser/google_apis/drive_service_interface.h"
-#include "chrome/browser/google_apis/gdata_wapi_operations.h"
+#include "chrome/browser/google_apis/gdata_wapi_requests.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 
 class GURL;
@@ -28,11 +28,11 @@ class URLRequestContextGetter;
 
 namespace google_apis {
 class AuthService;
-class OperationRunner;
+class RequestSender;
 
 // This class provides documents feed service calls for WAPI (codename for
 // DocumentsList API).
-// Details of API call are abstracted in each operation class and this class
+// Details of API call are abstracted in each request class and this class
 // works as a thin wrapper for the API.
 class GDataWapiService : public DriveServiceInterface,
                          public AuthServiceObserver {
@@ -52,7 +52,7 @@ class GDataWapiService : public DriveServiceInterface,
   virtual void Initialize(Profile* profile) OVERRIDE;
   virtual void AddObserver(DriveServiceObserver* observer) OVERRIDE;
   virtual void RemoveObserver(DriveServiceObserver* observer) OVERRIDE;
-  virtual bool CanStartOperation() const OVERRIDE;
+  virtual bool CanSendRequest() const OVERRIDE;
   virtual void CancelAll() OVERRIDE;
   virtual bool CancelForFilePath(const base::FilePath& file_path) OVERRIDE;
   virtual std::string CanonicalizeResourceId(
@@ -165,9 +165,9 @@ class GDataWapiService : public DriveServiceInterface,
   virtual void OnOAuth2RefreshTokenChanged() OVERRIDE;
 
   net::URLRequestContextGetter* url_request_context_getter_;  // Not owned.
-  scoped_ptr<OperationRunner> runner_;
+  scoped_ptr<RequestSender> sender_;
   ObserverList<DriveServiceObserver> observers_;
-  // Operation objects should hold a copy of this, rather than a const
+  // Request objects should hold a copy of this, rather than a const
   // reference, as they may outlive this object.
   const GDataWapiUrlGenerator url_generator_;
   const std::string custom_user_agent_;

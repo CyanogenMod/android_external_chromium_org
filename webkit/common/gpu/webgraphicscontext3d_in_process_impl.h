@@ -11,8 +11,8 @@
 #include "base/compiler_specific.h"
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/angle/include/GLSLANG/ShaderLang.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/common/gpu/webkit_gpu_export.h"
@@ -73,10 +73,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessImpl :
   virtual int width();
   virtual int height();
 
-  virtual bool isGLES2Compliant();
-
-  virtual bool setParentContext(WebGraphicsContext3D* parent_context);
-
   virtual void reshape(int width, int height);
   virtual void reshapeWithScaleFactor(
     int width, int height, float scaleFactor);
@@ -85,7 +81,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessImpl :
   virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size,
                                    WebGLId framebuffer, int width, int height);
 
-  virtual WebGLId getPlatformTextureId();
   virtual void prepareTexture();
   virtual void postSubBufferCHROMIUM(int x, int y, int width, int height);
 

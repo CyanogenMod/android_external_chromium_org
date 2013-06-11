@@ -12,7 +12,7 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/test/ash_test_base.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/view.h"
@@ -142,9 +142,9 @@ TEST_F(SystemTrayTest, SystemTrayDefaultView) {
   tray->ShowDefaultView(BUBBLE_CREATE_NEW);
 
   // Ensure that closing the bubble destroys it.
-  ASSERT_TRUE(tray->CloseSystemBubbleForTest());
+  ASSERT_TRUE(tray->CloseSystemBubble());
   RunAllPendingInMessageLoop();
-  ASSERT_FALSE(tray->CloseSystemBubbleForTest());
+  ASSERT_FALSE(tray->CloseSystemBubble());
 }
 
 TEST_F(SystemTrayTest, SystemTrayTestItems) {
@@ -247,8 +247,8 @@ TEST_F(SystemTrayTest, SystemTrayNotifications) {
   ASSERT_TRUE(detailed_item->detailed_view() != NULL);
   ASSERT_TRUE(test_item->notification_view() != NULL);
 
-  // Hide the detailed view, ensure the notificaiton view still exists.
-  ASSERT_TRUE(tray->CloseSystemBubbleForTest());
+  // Hide the detailed view, ensure the notification view still exists.
+  ASSERT_TRUE(tray->CloseSystemBubble());
   RunAllPendingInMessageLoop();
   ASSERT_TRUE(detailed_item->detailed_view() == NULL);
   ASSERT_TRUE(test_item->notification_view() != NULL);

@@ -27,7 +27,7 @@ using remoting::HostStarter;
 bool g_started = false;
 
 // The main message loop.
-MessageLoop* g_message_loop = NULL;
+base::MessageLoop* g_message_loop = NULL;
 
 // Lets us hide the PIN that a user types.
 void SetEcho(bool echo) {
@@ -159,11 +159,10 @@ int main(int argc, char** argv) {
   }
 
   // Start the host.
-  scoped_ptr<HostStarter> host_starter(
-      HostStarter::Create(
-          GaiaUrls::GetInstance()->oauth2_token_url(),
-          remoting::ServiceUrls::GetInstance()->directory_hosts_url(),
-          url_request_context_getter));
+  scoped_ptr<HostStarter> host_starter(HostStarter::Create(
+      GaiaUrls::GetInstance()->oauth2_token_url(),
+      remoting::ServiceUrls::GetInstance()->directory_hosts_url(),
+      url_request_context_getter.get()));
   if (redirect_url.empty()) {
     redirect_url = remoting::GetDefaultOauthRedirectUrl();
   }

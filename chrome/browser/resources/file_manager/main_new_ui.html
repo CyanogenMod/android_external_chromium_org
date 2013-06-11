@@ -58,7 +58,6 @@
       <script src="chrome://resources/js/cr/ui/list_selection_controller.js"></script>
       <script src="chrome://resources/js/cr/ui/list.js"></script>
       <script src="chrome://resources/js/cr/ui/tree.js"></script>
-      <script src="chrome://resources/css/tree.css.js"></script>
       <script src="chrome://resources/js/cr/ui/autocomplete_list.js"></script>
 
       <script src="chrome://resources/js/cr/ui/splitter.js"></script>
@@ -90,7 +89,9 @@
       <script src="js/butter_bar.js"></script>
       <script src="js/directory_contents.js"></script>
       <script src="js/directory_model.js"></script>
+      <script src="js/drag_selector.js"></script>
       <script src="js/drive_banners.js"></script>
+      <script src="js/error_dialog.js"></script>
       <script src="js/file_copy_manager_wrapper.js"></script>
       <script src="js/file_grid.js"></script>
       <script src="js/file_manager.js"></script>
@@ -102,6 +103,7 @@
       <script src="js/file_type.js"></script>
       <script src="js/scrollbar.js"></script>
       <script src="js/sidebar.js"></script>
+      <script src="js/tree.css.js"></script>
       <script src="js/volume_manager.js"></script>
       <script src="js/volume_list.js"></script>
       <script src="js/media/media_util.js"></script>
@@ -136,6 +138,17 @@
                i18n-values="label:CHANGE_DEFAULT_APP_BUTTON_LABEL" hidden>
 
       <command id="search" shortcut="U+0046-Ctrl U+00BF">
+
+      <!-- Shortcuts for toggling between volumes (CTRL-1..CTRL-9). -->
+      <command id="volume-switch-1" shortcut="U+0031-Ctrl">
+      <command id="volume-switch-2" shortcut="U+0032-Ctrl">
+      <command id="volume-switch-3" shortcut="U+0033-Ctrl">
+      <command id="volume-switch-4" shortcut="U+0034-Ctrl">
+      <command id="volume-switch-5" shortcut="U+0035-Ctrl">
+      <command id="volume-switch-6" shortcut="U+0036-Ctrl">
+      <command id="volume-switch-7" shortcut="U+0037-Ctrl">
+      <command id="volume-switch-8" shortcut="U+0038-Ctrl">
+      <command id="volume-switch-9" shortcut="U+0039-Ctrl">
 
       <command id="unmount" i18n-values="label:UNMOUNT_DEVICE_BUTTON_LABEL">
       <command id="format" i18n-values="label:FORMAT_DEVICE_BUTTON_LABEL">

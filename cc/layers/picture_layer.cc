@@ -46,8 +46,8 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
   // See PictureLayerImpl::PushPropertiesTo for more details.
   layer_impl->invalidation_.Clear();
   layer_impl->invalidation_.Swap(&pile_invalidation_);
-  layer_impl->pile_ =
-      PicturePileImpl::CreateFromOther(pile_, layer_impl->is_using_lcd_text_);
+  layer_impl->pile_ = PicturePileImpl::CreateFromOther(
+      pile_.get(), layer_impl->is_using_lcd_text_);
   layer_impl->SyncFromActiveLayer();
 }
 
@@ -92,7 +92,8 @@ void PictureLayer::Update(ResourceUpdateQueue*,
   devtools_instrumentation::ScopedLayerTask paint_layer(
       devtools_instrumentation::kPaintLayer, id());
   pile_->Update(client_,
-                background_color(),
+                SafeOpaqueBackgroundColor(),
+                contents_opaque(),
                 pile_invalidation_,
                 visible_layer_rect,
                 stats);

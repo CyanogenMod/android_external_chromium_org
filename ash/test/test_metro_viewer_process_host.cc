@@ -10,7 +10,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/time.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
@@ -49,6 +49,13 @@ void TestMetroViewerProcessHost::OnSetTargetSurface(
       AcceleratedPresenter::GetForWindow(NULL);
   any_window->SetNewTargetWindow(hwnd);
   aura::RemoteRootWindowHostWin::Instance()->Connected(this);
+}
+
+void TestMetroViewerProcessHost::OnOpenURL(const string16& url) {
+}
+
+void TestMetroViewerProcessHost::OnHandleSearchRequest(
+    const string16& search_string) {
 }
 
 }  // namespace test

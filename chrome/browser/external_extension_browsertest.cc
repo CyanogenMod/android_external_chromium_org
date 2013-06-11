@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
@@ -58,7 +58,7 @@ class SearchProviderTest : public InProcessBrowserTest {
         search_provider_test_url_.path() + "#" + expected_result);
     ui_test_utils::NavigateToURLWithDisposition(
         browser, test_url, NEW_FOREGROUND_TAB,
-        ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
+        ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
 
     // Bundle up information needed to verify the result.
     content::WebContents* tab =

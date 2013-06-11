@@ -255,11 +255,6 @@ const char kV3Dictionary[] = {
 };
 const int kV3DictionarySize = arraysize(kV3Dictionary);
 
-// Note: all protocol data structures are on-the-wire format.  That means that
-//       data is stored in network-normalized order.  Readers must use the
-//       accessors provided or call base::NetworkToHostX() functions.
-// TODO(hkhalil): remove above note.
-
 // Types of SPDY frames.
 enum SpdyFrameType {
   DATA = 0,
@@ -274,7 +269,8 @@ enum SpdyFrameType {
   HEADERS,
   WINDOW_UPDATE,
   CREDENTIAL,
-  LAST_CONTROL_TYPE = CREDENTIAL
+  BLOCKED,
+  LAST_CONTROL_TYPE = BLOCKED
 };
 
 // Flags on data packets.
@@ -381,7 +377,6 @@ class SpdyFrameWithStreamIdIR : public SpdyFrameIR {
   virtual ~SpdyFrameWithStreamIdIR() {}
   SpdyStreamId stream_id() const { return stream_id_; }
   void set_stream_id(SpdyStreamId stream_id) {
-    // TODO(hkhalil): DCHECK_LT(0u, stream_id);
     DCHECK_EQ(0u, stream_id & ~kStreamIdMask);
     stream_id_ = stream_id;
   }
@@ -667,6 +662,15 @@ class SpdyCredentialIR : public SpdyFrameIR {
   CertificateList certificates_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyCredentialIR);
+};
+
+class SpdyBlockedIR : public SpdyFrameWithStreamIdIR {
+  public:
+   explicit SpdyBlockedIR(SpdyStreamId stream_id)
+       : SpdyFrameWithStreamIdIR(stream_id) {}
+
+  private:
+   DISALLOW_COPY_AND_ASSIGN(SpdyBlockedIR);
 };
 
 // -------------------------------------------------------------------------

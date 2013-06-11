@@ -39,6 +39,7 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_switches.h"
+#include "ui/base/latency_info.h"
 #include "ui/gl/gl_switches.h"
 
 
@@ -84,8 +85,7 @@ void SendGpuProcessMessage(GpuProcessHost::GpuProcessKind kind,
 
 void AcceleratedSurfaceBuffersSwappedCompletedForGPU(int host_id,
                                                      int route_id,
-                                                     bool alive,
-                                                     uint64 surface_handle) {
+                                                     bool alive) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
     BrowserThread::PostTask(
         BrowserThread::IO,
@@ -93,8 +93,7 @@ void AcceleratedSurfaceBuffersSwappedCompletedForGPU(int host_id,
         base::Bind(&AcceleratedSurfaceBuffersSwappedCompletedForGPU,
                    host_id,
                    route_id,
-                   alive,
-                   surface_handle));
+                   alive));
     return;
   }
 
@@ -117,13 +116,14 @@ void AcceleratedSurfaceBuffersSwappedCompletedForGPU(int host_id,
 void AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
     int surface_id,
     base::TimeTicks timebase,
-    base::TimeDelta interval) {
+    base::TimeDelta interval,
+    const ui::LatencyInfo& latency_info) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
         base::Bind(&AcceleratedSurfaceBuffersSwappedCompletedForRenderer,
-                   surface_id, timebase, interval));
+                   surface_id, timebase, interval, latency_info));
     return;
   }
 
@@ -131,6 +131,7 @@ void AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
   int render_widget_id = 0;
   if (!GpuSurfaceTracker::Get()->GetRenderWidgetIDForSurface(
       surface_id, &render_process_id, &render_widget_id)) {
+    RenderWidgetHostImpl::CompositorFrameDrawn(latency_info);
     return;
   }
   RenderProcessHost* host = RenderProcessHost::FromID(render_process_id);
@@ -142,19 +143,21 @@ void AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
   RenderWidgetHostImpl::From(rwh)->AcknowledgeSwapBuffersToRenderer();
   if (interval != base::TimeDelta())
     RenderWidgetHostImpl::From(rwh)->UpdateVSyncParameters(timebase, interval);
+  RenderWidgetHostImpl::From(rwh)->FrameSwapped(latency_info);
 }
 
-void AcceleratedSurfaceBuffersSwappedCompleted(int host_id,
-                                               int route_id,
-                                               int surface_id,
-                                               uint64 surface_handle,
-                                               bool alive,
-                                               base::TimeTicks timebase,
-                                               base::TimeDelta interval) {
+void AcceleratedSurfaceBuffersSwappedCompleted(
+    int host_id,
+    int route_id,
+    int surface_id,
+    bool alive,
+    base::TimeTicks timebase,
+    base::TimeDelta interval,
+    const ui::LatencyInfo& latency_info) {
   AcceleratedSurfaceBuffersSwappedCompletedForGPU(host_id, route_id,
-                                                  alive, surface_handle);
+                                                  alive);
   AcceleratedSurfaceBuffersSwappedCompletedForRenderer(surface_id, timebase,
-                                                       interval);
+                                                       interval, latency_info);
 }
 
 // NOTE: changes to this class need to be reviewed by the security team.
@@ -515,11 +518,21 @@ GpuProcessHost::~GpuProcessHost() {
     }
   }
 
-  int exit_code;
-  base::TerminationStatus status = process_->GetTerminationStatus(&exit_code);
-  UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus",
-                            status,
-                            base::TERMINATION_STATUS_MAX_ENUM);
+  // In case we never started, clean up.
+  while (!queued_messages_.empty()) {
+    delete queued_messages_.front();
+    queued_messages_.pop();
+  }
+
+  // This is only called on the IO thread so no race against the constructor
+  // for another GpuProcessHost.
+  if (g_gpu_process_hosts[kind_] == this)
+    g_gpu_process_hosts[kind_] = NULL;
+
+  // If there are any remaining offscreen contexts at the point the
+  // GPU process exits, assume something went wrong, and block their
+  // URLs from accessing client 3D APIs without prompting.
+  BlockLiveOffscreenContexts();
 
   UMA_HISTOGRAM_COUNTS_100("GPU.AtExitSurfaceCount",
                            GpuSurfaceTracker::Get()->GetSurfaceCount());
@@ -542,47 +555,39 @@ GpuProcessHost::~GpuProcessHost() {
         uma_memory_stats_.bytes_limit / 1024 / 1024, 1, 2000, 50);
   }
 
-  if (status == base::TERMINATION_STATUS_NORMAL_TERMINATION ||
-      status == base::TERMINATION_STATUS_ABNORMAL_TERMINATION) {
-    UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessExitCode",
-                              exit_code,
-                              RESULT_CODE_LAST_CODE);
-  }
-
-  // In case we never started, clean up.
-  while (!queued_messages_.empty()) {
-    delete queued_messages_.front();
-    queued_messages_.pop();
-  }
-
-  // This is only called on the IO thread so no race against the constructor
-  // for another GpuProcessHost.
-  if (g_gpu_process_hosts[kind_] == this)
-    g_gpu_process_hosts[kind_] = NULL;
-
-  // If there are any remaining offscreen contexts at the point the
-  // GPU process exits, assume something went wrong, and block their
-  // URLs from accessing client 3D APIs without prompting.
-  BlockLiveOffscreenContexts();
-
   std::string message;
-  switch (status) {
-    case base::TERMINATION_STATUS_NORMAL_TERMINATION:
-      message = "The GPU process exited normally. Everything is okay.";
-      break;
-    case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
-      message = base::StringPrintf(
-          "The GPU process exited with code %d.",
-          exit_code);
-      break;
-    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
-      message = "You killed the GPU process! Why?";
-      break;
-    case base::TERMINATION_STATUS_PROCESS_CRASHED:
-      message = "The GPU process crashed!";
-      break;
-    default:
-      break;
+  if (!in_process_) {
+    int exit_code;
+    base::TerminationStatus status = process_->GetTerminationStatus(&exit_code);
+    UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus",
+                              status,
+                              base::TERMINATION_STATUS_MAX_ENUM);
+
+    if (status == base::TERMINATION_STATUS_NORMAL_TERMINATION ||
+        status == base::TERMINATION_STATUS_ABNORMAL_TERMINATION) {
+      UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessExitCode",
+                                exit_code,
+                                RESULT_CODE_LAST_CODE);
+    }
+
+    switch (status) {
+      case base::TERMINATION_STATUS_NORMAL_TERMINATION:
+        message = "The GPU process exited normally. Everything is okay.";
+        break;
+      case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
+        message = base::StringPrintf(
+            "The GPU process exited with code %d.",
+            exit_code);
+        break;
+      case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
+        message = "You killed the GPU process! Why?";
+        break;
+      case base::TERMINATION_STATUS_PROCESS_CRASHED:
+        message = "The GPU process crashed!";
+        break;
+      default:
+        break;
+    }
   }
 
   BrowserThread::PostTask(BrowserThread::UI,
@@ -912,7 +917,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
   base::ScopedClosureRunner scoped_completion_runner(
       base::Bind(&AcceleratedSurfaceBuffersSwappedCompletedForGPU,
                  host_id_, params.route_id,
-                 true /* alive */, params.surface_handle));
+                 true /* alive */));
 
   int render_process_id = 0;
   int render_widget_id = 0;
@@ -938,6 +943,7 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
   view_params.size = params.size;
   view_params.scale_factor = params.scale_factor;
   view_params.gpu_process_host_id = host_id_;
+  view_params.latency_info = params.latency_info;
   helper->DidReceiveBackingStoreMsg(ViewHostMsg_CompositorSurfaceBuffersSwapped(
       render_widget_id,
       view_params));
@@ -951,8 +957,8 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
 
   base::ScopedClosureRunner scoped_completion_runner(
       base::Bind(&AcceleratedSurfaceBuffersSwappedCompleted,
-          host_id_, params.route_id, params.surface_id, params.surface_handle,
-          true, base::TimeTicks(), base::TimeDelta()));
+          host_id_, params.route_id, params.surface_id,
+          true, base::TimeTicks(), base::TimeDelta(), ui::LatencyInfo()));
 
   gfx::GLSurfaceHandle handle =
       GpuSurfaceTracker::Get()->GetSurfaceHandle(params.surface_id);
@@ -978,6 +984,14 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
                  "EarlyOut_NativeWindowNotFound",
                  "handle",
                  handle.handle);
+    scoped_completion_runner.Release();
+    AcceleratedSurfaceBuffersSwappedCompleted(host_id_,
+                                              params.route_id,
+                                              params.surface_id,
+                                              true,
+                                              base::TimeTicks(),
+                                              base::TimeDelta(),
+                                              params.latency_info);
     return;
   }
 
@@ -985,11 +999,11 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
   presenter->AsyncPresentAndAcknowledge(
       params.size,
       params.surface_handle,
+      params.latency_info,
       base::Bind(&AcceleratedSurfaceBuffersSwappedCompleted,
                  host_id_,
                  params.route_id,
-                 params.surface_id,
-                 params.surface_handle));
+                 params.surface_id));
 
   FrameSubscriberMap::iterator it = frame_subscribers_.find(params.surface_id);
   if (it != frame_subscribers_.end() && it->second) {
@@ -1133,7 +1147,6 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kDisableImageTransportSurface,
     switches::kDisableLogging,
     switches::kDisableSeccompFilterSandbox,
-    switches::kEnableGpuSandbox,
     switches::kEnableLogging,
     switches::kEnableShareGroupAsyncTextureUpload,
     switches::kEnableVirtualGLContexts,
@@ -1245,7 +1258,7 @@ void GpuProcessHost::CreateChannelCache(int32 client_id, size_t cache_size) {
 
   scoped_refptr<ShaderDiskCache> cache =
       ShaderCacheFactory::GetInstance()->Get(client_id);
-  if (!cache)
+  if (!cache.get())
     return;
 
   cache->set_max_cache_size(cache_size);

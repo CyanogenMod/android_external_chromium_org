@@ -8,13 +8,14 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "base/path_service.h"
 #include "base/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/utf_string_conversions.h"
 #include "chromeos/dbus/cros_disks_client.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebFileSystem.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "webkit/browser/chromeos/fileapi/file_access_permissions.h"
 #include "webkit/browser/chromeos/fileapi/remote_file_stream_writer.h"
 #include "webkit/browser/chromeos/fileapi/remote_file_system_operation.h"
@@ -59,7 +60,28 @@ CrosMountPointProvider::CrosMountPointProvider(
           new fileapi::IsolatedFileUtil())),
       mount_points_(mount_points),
       system_mount_points_(system_mount_points) {
-  // Add default system mount points.
+}
+
+CrosMountPointProvider::~CrosMountPointProvider() {
+}
+
+void CrosMountPointProvider::AddSystemMountPoints() {
+  // RegisterFileSystem() is no-op if the mount point with the same name
+  // already exists, hence it's safe to call without checking if a mount
+  // point already exists or not.
+
+  // TODO(satorux): "Downloads" directory should probably be per-profile. For
+  // this to be per-profile, a unique directory path should be chosen per
+  // profile, and the mount point should be added to
+  // mount_points_. crbug.com/247236
+  base::FilePath home_path;
+  if (PathService::Get(base::DIR_HOME, &home_path)) {
+    system_mount_points_->RegisterFileSystem(
+        "Downloads",
+        fileapi::kFileSystemTypeNativeLocal,
+        home_path.AppendASCII("Downloads"));
+  }
+
   system_mount_points_->RegisterFileSystem(
       "archive",
       fileapi::kFileSystemTypeNativeLocal,
@@ -72,9 +94,6 @@ CrosMountPointProvider::CrosMountPointProvider(
       "oem",
       fileapi::kFileSystemTypeRestrictedNativeLocal,
       base::FilePath(FILE_PATH_LITERAL("/usr/share/oem")));
-}
-
-CrosMountPointProvider::~CrosMountPointProvider() {
 }
 
 bool CrosMountPointProvider::CanHandleType(fileapi::FileSystemType type) const {
@@ -266,7 +285,7 @@ fileapi::FileSystemOperation* CrosMountPointProvider::CreateFileSystemOperation(
   scoped_ptr<fileapi::FileSystemOperationContext> operation_context(
       new fileapi::FileSystemOperationContext(context));
   operation_context->set_root_path(GetFileSystemRootPath(url));
-  return new fileapi::LocalFileSystemOperation(context,
+  return new fileapi::LocalFileSystemOperation(url, context,
                                                operation_context.Pass());
 }
 

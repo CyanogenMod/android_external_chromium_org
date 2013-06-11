@@ -117,7 +117,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       draw_properties().can_draw_directly_to_backbuffer &&
       layer_tree_impl()->settings().force_direct_layer_drawing;
 
-  if (draw_direct_to_backbuffer || !append_quads_data->allow_tile_draw_quads) {
+  if (draw_direct_to_backbuffer ||
+      current_draw_mode_ == DRAW_MODE_RESOURCELESS_SOFTWARE) {
     AppendDebugBorderQuad(
         quad_sink,
         shared_quad_state,
@@ -162,8 +163,10 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
          ++iter) {
       SkColor color;
       float width;
-      if (*iter && iter->tile_version().IsReadyToDraw()) {
-        ManagedTileState::TileVersion::Mode mode = iter->tile_version().mode();
+      TileRasterMode raster_mode;
+      if (*iter && iter->IsReadyToDraw(&raster_mode)) {
+        ManagedTileState::TileVersion::Mode mode =
+            iter->tile_version(raster_mode).mode();
         if (mode == ManagedTileState::TileVersion::SOLID_COLOR_MODE) {
           color = DebugColors::SolidColorTileBorderColor();
           width = DebugColors::SolidColorTileBorderWidth(layer_tree_impl());
@@ -206,7 +209,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
        iter;
        ++iter) {
     gfx::Rect geometry_rect = iter.geometry_rect();
-    if (!*iter || !iter->tile_version().IsReadyToDraw()) {
+    TileRasterMode raster_mode;
+    if (!*iter || !iter->IsReadyToDraw(&raster_mode)) {
       if (DrawCheckerboardForMissingTiles()) {
         // TODO(enne): Figure out how to show debug "invalidated checker" color
         scoped_ptr<CheckerboardDrawQuad> quad = CheckerboardDrawQuad::Create();
@@ -215,23 +219,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
         if (quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data))
           append_quads_data->num_missing_tiles++;
       } else {
-        SkColor color = background_color();
-        // TODO(wangxianzhu): Change the next |if| condition once we support
-        // finer-grain opaqueness. Ensure with the following DCHECK.
-        DCHECK(contents_opaque() || VisibleContentOpaqueRegion().IsEmpty());
-        if (SkColorGetA(color) != 255 && contents_opaque()) {
-          // If content is opaque, the occlusion tracker expects this layer to
-          // cover the background, so needs an opaque color.
-          for (const LayerImpl* layer = parent(); layer;
-               layer = layer->parent()) {
-            color = layer->background_color();
-            if (SkColorGetA(color) == 255)
-              break;
-          }
-          if (SkColorGetA(color) != 255)
-            color = layer_tree_impl()->background_color();
-          DCHECK_EQ(SkColorGetA(color), 255u);
-        }
+        SkColor color = SafeOpaqueBackgroundColor();
         scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
         quad->SetNew(shared_quad_state, geometry_rect, color, false);
         if (quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data))
@@ -242,7 +230,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       continue;
     }
 
-    const ManagedTileState::TileVersion& tile_version = iter->tile_version();
+    const ManagedTileState::TileVersion& tile_version =
+        iter->tile_version(raster_mode);
     switch (tile_version.mode()) {
       case ManagedTileState::TileVersion::RESOURCE_MODE: {
         gfx::RectF texture_rect = iter.texture_rect();
@@ -373,6 +362,11 @@ void PictureLayerImpl::UpdateTilePriorities() {
 void PictureLayerImpl::DidBecomeActive() {
   LayerImpl::DidBecomeActive();
   tilings_->DidBecomeActive();
+  layer_tree_impl()->WillModifyTilePriorities();
+}
+
+void PictureLayerImpl::DidBeginTracing() {
+  pile_->DidBeginTracing();
 }
 
 void PictureLayerImpl::DidLoseOutputSurface() {
@@ -405,7 +399,9 @@ void PictureLayerImpl::CalculateContentsScale(
   }
 
   float min_contents_scale = MinimumContentsScale();
+  DCHECK_GT(min_contents_scale, 0.f);
   float min_page_scale = layer_tree_impl()->min_page_scale_factor();
+  DCHECK_GT(min_page_scale, 0.f);
   float min_device_scale = 1.f;
   float min_source_scale =
       min_contents_scale / min_page_scale / min_device_scale;
@@ -493,11 +489,11 @@ gfx::Size PictureLayerImpl::CalculateTileSize(
       layer_tree_impl()->resource_provider()->max_texture_size();
 
   gfx::Size default_tile_size = layer_tree_impl()->settings().default_tile_size;
-  default_tile_size.ClampToMax(gfx::Size(max_texture_size, max_texture_size));
+  default_tile_size.SetToMin(gfx::Size(max_texture_size, max_texture_size));
 
   gfx::Size max_untiled_content_size =
       layer_tree_impl()->settings().max_untiled_layer_size;
-  max_untiled_content_size.ClampToMax(
+  max_untiled_content_size.SetToMin(
       gfx::Size(max_texture_size, max_texture_size));
 
   bool any_dimension_too_large =
@@ -624,15 +620,19 @@ ResourceProvider::ResourceId PictureLayerImpl::ContentsResourceId() const {
        iter;
        ++iter) {
     // Mask resource not ready yet.
-    if (!*iter ||
-        iter->tile_version().mode() !=
-            ManagedTileState::TileVersion::RESOURCE_MODE ||
-        !iter->tile_version().IsReadyToDraw())
+    TileRasterMode raster_mode;
+    if (!*iter || !iter->IsReadyToDraw(&raster_mode))
       return 0;
+
+    if (iter->tile_version(raster_mode).mode() !=
+            ManagedTileState::TileVersion::RESOURCE_MODE)
+      return 0;
+
     // Masks only supported if they fit on exactly one tile.
     if (iter.geometry_rect() != content_rect)
       return 0;
-    return iter->tile_version().get_resource_id();
+
+    return iter->tile_version(raster_mode).get_resource_id();
   }
   return 0;
 }
@@ -682,13 +682,17 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
                                                    rect);
          iter;
          ++iter) {
-      if (!iter->tile_version().IsReadyToDraw())
+      if (!*iter || !iter->IsReadyToDraw(NULL))
         continue;
+
+      // This iteration is over the visible content rect which is potentially
+      // less conservative than projecting the viewport into the layer.
+      // Ignore tiles that are know to be outside the viewport.
+      if (iter->priority(PENDING_TREE).distance_to_visible_in_pixels != 0)
+        continue;
+
       missing_region.Subtract(iter.geometry_rect());
       iter->mark_required_for_activation();
-
-      DCHECK_EQ(iter->priority(PENDING_TREE).distance_to_visible_in_pixels, 0);
-      DCHECK_EQ(iter->priority(PENDING_TREE).time_to_visible_in_seconds, 0);
     }
   }
 
@@ -699,15 +703,21 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
        iter;
        ++iter) {
     // A null tile (i.e. missing recording) can just be skipped.
+    if (!*iter)
+      continue;
+
+    // This iteration is over the visible content rect which is potentially
+    // less conservative than projecting the viewport into the layer.
+    // Ignore tiles that are know to be outside the viewport.
+    if (iter->priority(PENDING_TREE).distance_to_visible_in_pixels != 0)
+      continue;
+
     // If the missing region doesn't cover it, this tile is fully
     // covered by acceptable tiles at other scales.
-    if (!*iter || !missing_region.Intersects(iter.geometry_rect()))
+    if (!missing_region.Intersects(iter.geometry_rect()))
       continue;
-    iter->mark_required_for_activation();
 
-    // These must be true for this tile to end up in the NOW_BIN in TileManager.
-    DCHECK_EQ(iter->priority(PENDING_TREE).distance_to_visible_in_pixels, 0);
-    DCHECK_EQ(iter->priority(PENDING_TREE).time_to_visible_in_seconds, 0);
+    iter->mark_required_for_activation();
   }
 }
 
@@ -771,10 +781,8 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
       low_res_raster_contents_scale_ == 0.f ||
       ShouldAdjustRasterScale(animating_transform_to_screen);
 
-  if (layer_tree_impl()->IsActiveTree()) {
-    // Store the value for the next time ShouldAdjustRasterScale is called.
-    raster_source_scale_was_animating_ = animating_transform_to_screen;
-  }
+  // Store the value for the next time ShouldAdjustRasterScale is called.
+  raster_source_scale_was_animating_ = animating_transform_to_screen;
 
   if (!change_target_tiling)
     return;
@@ -790,12 +798,15 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
   PictureLayerTiling* high_res = NULL;
   PictureLayerTiling* low_res = NULL;
 
+  PictureLayerTiling* previous_low_res = NULL;
   for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
     PictureLayerTiling* tiling = tilings_->tiling_at(i);
     if (tiling->contents_scale() == raster_contents_scale_)
       high_res = tiling;
     if (tiling->contents_scale() == low_res_raster_contents_scale_)
       low_res = tiling;
+    if (tiling->resolution() == LOW_RESOLUTION)
+      previous_low_res = tiling;
 
     // Reset all tilings to non-ideal until the end of this function.
     tiling->set_resolution(NON_IDEAL_RESOLUTION);
@@ -806,13 +817,21 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen) {
     if (raster_contents_scale_ == low_res_raster_contents_scale_)
       low_res = high_res;
   }
-  if (!low_res && low_res != high_res)
+
+  // Only create new low res tilings when the transform is static.  This
+  // prevents wastefully creating a paired low res tiling for every new high res
+  // tiling during a pinch or a CSS animation.
+  bool is_pinching = layer_tree_impl()->PinchGestureActive();
+  if (!is_pinching && !animating_transform_to_screen && !low_res &&
+      low_res != high_res)
     low_res = AddTiling(low_res_raster_contents_scale_);
 
   if (high_res)
     high_res->set_resolution(HIGH_RESOLUTION);
   if (low_res && low_res != high_res)
     low_res->set_resolution(LOW_RESOLUTION);
+  else if (!low_res && previous_low_res)
+    previous_low_res->set_resolution(LOW_RESOLUTION);
 }
 
 bool PictureLayerImpl::ShouldAdjustRasterScale(
@@ -822,13 +841,11 @@ bool PictureLayerImpl::ShouldAdjustRasterScale(
   // tree. This will allow CSS scale changes to get re-rastered at an
   // appropriate rate.
 
-  bool is_active_layer = layer_tree_impl()->IsActiveTree();
-  if (is_active_layer && raster_source_scale_was_animating_ &&
-      !animating_transform_to_screen)
+  if (raster_source_scale_was_animating_ && !animating_transform_to_screen)
     return true;
 
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
-  if (is_active_layer && is_pinching && raster_page_scale_) {
+  if (is_pinching && raster_page_scale_) {
     // If the page scale diverges too far during pinch, change raster target to
     // the current page scale.
     float ratio = PositiveRatio(ideal_page_scale_, raster_page_scale_);
@@ -855,7 +872,9 @@ void PictureLayerImpl::CalculateRasterContentsScale(
     float* low_res_raster_contents_scale) const {
   *raster_contents_scale = ideal_contents_scale_;
 
-  // Don't allow animating CSS scales to drop below 1.
+  // Don't allow animating CSS scales to drop below 1.  This is needed because
+  // changes in raster source scale aren't handled.  See the TODO in
+  // ShouldAdjustRasterScale.
   if (animating_transform_to_screen) {
     *raster_contents_scale = std::max(
         *raster_contents_scale, 1.f * ideal_page_scale_ * ideal_device_scale_);
@@ -967,8 +986,8 @@ void PictureLayerImpl::UpdateLCDTextStatus() {
   // Further tiles created due to new tilings should be considered invalidated.
   pending_layer->invalidation_.Union(gfx::Rect(bounds()));
   pending_layer->is_using_lcd_text_ = is_using_lcd_text_;
-  pending_layer->pile_ = PicturePileImpl::CreateFromOther(pending_layer->pile_,
-                                                          is_using_lcd_text_);
+  pending_layer->pile_ = PicturePileImpl::CreateFromOther(
+      pending_layer->pile_.get(), is_using_lcd_text_);
   pending_layer->tilings_->DestroyAndRecreateTilesWithText();
 }
 

@@ -15,9 +15,9 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
@@ -149,8 +149,12 @@ Profile* GetProfileOnUI(ProfileManager* profile_manager, Profile* profile) {
 
 #if defined(DEBUG_DEVTOOLS)
 bool IsSupportedDevToolsURL(const GURL& url, base::FilePath* path) {
+  std::string bundled_path_prefix(chrome::kChromeUIDevToolsBundledPath);
+  bundled_path_prefix = "/" + bundled_path_prefix + "/";
+
   if (!url.SchemeIs(chrome::kChromeDevToolsScheme) ||
-      url.host() != chrome::kChromeUIDevToolsBundledHost) {
+      url.host() != chrome::kChromeUIDevToolsHost ||
+      !StartsWithASCII(url.path(), bundled_path_prefix, false)) {
     return false;
   }
 
@@ -170,10 +174,9 @@ bool IsSupportedDevToolsURL(const GURL& url, base::FilePath* path) {
   const std::string& spec = stripped_url.possibly_invalid_spec();
   const url_parse::Parsed& parsed =
       stripped_url.parsed_for_possibly_invalid_spec();
-  // + 1 to skip the slash at the beginning of the path.
-  int offset = parsed.CountCharactersBefore(url_parse::Parsed::PATH, false) + 1;
+  int offset = parsed.CountCharactersBefore(url_parse::Parsed::PATH, false);
   if (offset < static_cast<int>(spec.size()))
-    relative_path.assign(spec.substr(offset));
+    relative_path.assign(spec.substr(offset + bundled_path_prefix.length()));
 
   // Check that |relative_path| is not an absolute path (otherwise
   // AppendASCII() will DCHECK).  The awkward use of StringType is because on
@@ -541,13 +544,13 @@ ChromeURLRequestContext* ProfileIOData::GetIsolatedMediaRequestContext(
 
 ExtensionInfoMap* ProfileIOData::GetExtensionInfoMap() const {
   DCHECK(initialized_) << "ExtensionSystem not initialized";
-  return extension_info_map_;
+  return extension_info_map_.get();
 }
 
 CookieSettings* ProfileIOData::GetCookieSettings() const {
   // Allow either Init() or SetCookieSettingsForTesting() to initialize.
-  DCHECK(initialized_ || cookie_settings_);
-  return cookie_settings_;
+  DCHECK(initialized_ || cookie_settings_.get());
+  return cookie_settings_.get();
 }
 
 #if defined(ENABLE_NOTIFICATIONS)
@@ -660,10 +663,11 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
       new ChromeNetworkDelegate(
           io_thread_globals->extension_event_router_forwarder.get(),
           &enable_referrers_);
-  network_delegate->set_extension_info_map(profile_params_->extension_info_map);
+  network_delegate->set_extension_info_map(
+      profile_params_->extension_info_map.get());
   network_delegate->set_url_blacklist_manager(url_blacklist_manager_.get());
   network_delegate->set_profile(profile_params_->profile);
-  network_delegate->set_cookie_settings(profile_params_->cookie_settings);
+  network_delegate->set_cookie_settings(profile_params_->cookie_settings.get());
   network_delegate->set_enable_do_not_track(&enable_do_not_track_);
   network_delegate->set_force_google_safe_search(&force_safesearch_);
   network_delegate->set_load_time_stats(load_time_stats_);
@@ -688,9 +692,6 @@ void ProfileIOData::Init(content::ProtocolHandlerMap* protocol_handlers) const {
       new TransportSecurityPersister(transport_security_state_.get(),
                                      profile_params_->path,
                                      is_incognito()));
-  const std::string& serialized =
-      command_line.GetSwitchValueASCII(switches::kHstsHosts);
-  transport_security_persister_.get()->DeserializeFromCommandLine(serialized);
 
   // Take ownership over these parameters.
   cookie_settings_ = profile_params_->cookie_settings;
@@ -730,7 +731,7 @@ void ProfileIOData::ApplyProfileParamsToContext(
     ChromeURLRequestContext* context) const {
   context->set_http_user_agent_settings(
       chrome_http_user_agent_settings_.get());
-  context->set_ssl_config_service(profile_params_->ssl_config_service);
+  context->set_ssl_config_service(profile_params_->ssl_config_service.get());
 }
 
 scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
@@ -745,10 +746,11 @@ scoped_ptr<net::URLRequestJobFactory> ProfileIOData::SetUpJobFactoryDefaults(
       chrome::kFileScheme, new net::FileProtocolHandler());
   DCHECK(set_protocol);
 
-  DCHECK(extension_info_map_);
+  DCHECK(extension_info_map_.get());
   set_protocol = job_factory->SetProtocolHandler(
       extensions::kExtensionScheme,
-      CreateExtensionProtocolHandler(is_incognito(), extension_info_map_));
+      CreateExtensionProtocolHandler(is_incognito(),
+                                     extension_info_map_.get()));
   DCHECK(set_protocol);
   set_protocol = job_factory->SetProtocolHandler(
       chrome::kExtensionResourceScheme,
@@ -859,7 +861,7 @@ void ProfileIOData::PopulateNetworkSessionParams(
 
 void ProfileIOData::SetCookieSettingsForTesting(
     CookieSettings* cookie_settings) {
-  DCHECK(!cookie_settings_);
+  DCHECK(!cookie_settings_.get());
   cookie_settings_ = cookie_settings;
 }
 

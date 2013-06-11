@@ -7,18 +7,20 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/format_macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "chrome/browser/chromeos/drive/debug_info_collector.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/chromeos/drive/logging.h"
 #include "chrome/browser/google_apis/auth_service.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
@@ -64,26 +66,22 @@ void GetGCacheContents(const base::FilePath& root_path,
   DCHECK(gcache_contents);
   DCHECK(gcache_summary);
 
-  using file_util::FileEnumerator;
   // Use this map to sort the result list by the path.
   std::map<base::FilePath, DictionaryValue*> files;
 
-  const int options = (file_util::FileEnumerator::FILES |
-                       file_util::FileEnumerator::DIRECTORIES |
-                       file_util::FileEnumerator::SHOW_SYM_LINKS);
-  FileEnumerator enumerator(root_path, true /* recursive */, options);
+  const int options = (base::FileEnumerator::FILES |
+                       base::FileEnumerator::DIRECTORIES |
+                       base::FileEnumerator::SHOW_SYM_LINKS);
+  base::FileEnumerator enumerator(root_path, true /* recursive */, options);
 
   int64 total_size = 0;
   for (base::FilePath current = enumerator.Next(); !current.empty();
        current = enumerator.Next()) {
-    FileEnumerator::FindInfo find_info;
-    enumerator.GetFindInfo(&find_info);
-    int64 size = FileEnumerator::GetFilesize(find_info);
-    const bool is_directory = FileEnumerator::IsDirectory(find_info);
-    const bool is_symbolic_link =
-        file_util::IsLink(FileEnumerator::GetFilename(find_info));
-    const base::Time last_modified =
-        FileEnumerator::GetLastModifiedTime(find_info);
+    base::FileEnumerator::FileInfo info = enumerator.GetInfo();
+    int64 size = info.GetSize();
+    const bool is_directory = info.IsDirectory();
+    const bool is_symbolic_link = file_util::IsLink(info.GetName());
+    const base::Time last_modified = info.GetLastModifiedTime();
 
     base::DictionaryValue* entry = new base::DictionaryValue;
     entry->SetString("path", current.value());
@@ -97,7 +95,7 @@ void GetGCacheContents(const base::FilePath& root_path,
     // Print lower 9 bits in octal format.
     entry->SetString(
         "permission",
-        base::StringPrintf("%03o", find_info.stat.st_mode & 0x1ff));
+        base::StringPrintf("%03o", info.stat().st_mode & 0x1ff));
     files[current] = entry;
 
     total_size += size;
@@ -168,7 +166,7 @@ std::string FormatEntry(const base::FilePath& path,
     StringAppendF(&out, "    content_mime_type: %s\n",
                   file_specific_info.content_mime_type().c_str());
     StringAppendF(&out, "    file_md5: %s\n",
-                  file_specific_info.file_md5().c_str());
+                  file_specific_info.md5().c_str());
     StringAppendF(&out, "    document_extension: %s\n",
                   file_specific_info.document_extension().c_str());
     StringAppendF(&out, "    is_hosted_document: %d\n",

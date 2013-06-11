@@ -11,7 +11,7 @@
 #include "base/i18n/rtl.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/defaults.h"
@@ -75,6 +75,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/button_drag_utils.h"
 #include "ui/views/controls/label.h"
@@ -145,30 +146,14 @@ void CalculateFontAndOffsetForHeight(int height,
   }
 }
 
-// Height of the location bar's round corner region.
-const int kBorderRoundCornerHeight = 5;
-// Width of location bar's round corner region.
-const int kBorderRoundCornerWidth = 4;
-// Radius of the round corners inside the location bar.
-const int kBorderCornerRadius = 2;
-
-const int kDesktopItemPadding = 3;
-const int kDesktopEdgeItemPadding = kDesktopItemPadding;
-const int kDesktopScriptBadgeItemPadding = 9;
-const int kDesktopScriptBadgeEdgeItemPadding = kDesktopScriptBadgeItemPadding;
-
-const int kTouchItemPadding = 8;
-const int kTouchEdgeItemPadding = kTouchItemPadding;
-
 }  // namespace
 
 
 // LocationBarView -----------------------------------------------------------
 
 // static
-const int LocationBarView::kNormalHorizontalEdgeThickness = 2;
+const int LocationBarView::kNormalEdgeThickness = 2;
 const int LocationBarView::kPopupEdgeThickness = 1;
-const int LocationBarView::kNormalVerticalEdgeThickness = 3;
 const int LocationBarView::kIconInternalPadding = 2;
 const int LocationBarView::kBubblePadding = 1;
 const char LocationBarView::kViewClassName[] = "LocationBarView";
@@ -191,6 +176,7 @@ LocationBarView::LocationBarView(Browser* browser,
       location_icon_view_(NULL),
       ev_bubble_view_(NULL),
       location_entry_view_(NULL),
+      ime_inline_autocomplete_view_(NULL),
       selected_keyword_view_(NULL),
       suggested_text_view_(NULL),
       keyword_hint_view_(NULL),
@@ -208,14 +194,18 @@ LocationBarView::LocationBarView(Browser* browser,
   if (!views::Textfield::IsViewsTextfieldEnabled())
     set_id(VIEW_ID_OMNIBOX);
 
+  const int kOmniboxBorderImages[] = IMAGE_GRID(IDR_OMNIBOX_BORDER);
+  const int kOmniboxPopupImages[] = IMAGE_GRID(IDR_OMNIBOX_POPUP_BORDER);
+  background_border_painter_.reset(
+      views::Painter::CreateImageGridPainter(
+          is_popup_mode_ ? kOmniboxPopupImages : kOmniboxBorderImages));
+#if defined(OS_CHROMEOS)
   if (!is_popup_mode_) {
-    background_painter_.reset(
-        views::Painter::CreateImagePainter(
-            *ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-                IDR_LOCATION_BAR_BORDER).ToImageSkia(),
-            gfx::Insets(kBorderRoundCornerHeight, kBorderRoundCornerWidth,
-                        kBorderRoundCornerHeight, kBorderRoundCornerWidth)));
+    const int kOmniboxFillingImages[] = IMAGE_GRID(IDR_OMNIBOX_FILLING);
+    background_filling_painter_.reset(
+        views::Painter::CreateImageGridPainter(kOmniboxFillingImages));
   }
+#endif
 
   edit_bookmarks_enabled_.Init(
       prefs::kEditBookmarksEnabled,
@@ -258,23 +248,19 @@ void LocationBarView::Init() {
   // Determine the font for use inside the bubbles.
   gfx::Font bubble_font(font);
   int bubble_font_y_offset;
-  // The bubble background images have 1 px thick edges, and then we want at
-  // least 1 px of padding inside that before any content.
-  const int kBubbleInteriorVerticalPadding = 2;
+  // The bubble background images have 1 px thick edges, which we don't want to
+  // overlap.
+  const int kBubbleInteriorVerticalPadding = 1;
   CalculateFontAndOffsetForHeight(
       location_height - ((kBubblePadding + kBubbleInteriorVerticalPadding) * 2),
       &bubble_font, &bubble_font_y_offset);
   bubble_font_y_offset += kBubbleInteriorVerticalPadding;
 
-  const int kEVBubbleBackgroundImages[] = {
-    IDR_OMNIBOX_EV_BUBBLE_BACKGROUND_L,
-    IDR_OMNIBOX_EV_BUBBLE_BACKGROUND_C,
-    IDR_OMNIBOX_EV_BUBBLE_BACKGROUND_R,
-  };
-  ev_bubble_view_ =
-      new EVBubbleView(kEVBubbleBackgroundImages, IDR_OMNIBOX_HTTPS_VALID,
-                       bubble_font, bubble_font_y_offset,
-                       GetColor(ToolbarModel::EV_SECURE, SECURITY_TEXT), this);
+  const SkColor background_color =
+      GetColor(ToolbarModel::NONE, LocationBarView::BACKGROUND);
+  ev_bubble_view_ = new EVBubbleView(
+      bubble_font, bubble_font_y_offset,
+      GetColor(ToolbarModel::EV_SECURE, SECURITY_TEXT), background_color, this);
   ev_bubble_view_->set_drag_controller(this);
   AddChildView(ev_bubble_view_);
 
@@ -284,15 +270,26 @@ void LocationBarView::Init() {
   SetLocationEntryFocusable(true);
   location_entry_view_ = location_entry_->AddToView(this);
 
-  const int kSelectedKeywordBackgroundImages[] = {
-    IDR_LOCATION_BAR_SELECTED_KEYWORD_BACKGROUND_L,
-    IDR_LOCATION_BAR_SELECTED_KEYWORD_BACKGROUND_C,
-    IDR_LOCATION_BAR_SELECTED_KEYWORD_BACKGROUND_R,
-  };
+  // Initialize the inline autocomplete view which is visible only when IME is
+  // turned on.  Use the same font with the omnibox and highlighted background.
+  ime_inline_autocomplete_view_ = new views::Label(string16(), font);
+  ime_inline_autocomplete_view_->set_border(
+      views::Border::CreateEmptyBorder(font_y_offset, 0, 0, 0));
+  ime_inline_autocomplete_view_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  ime_inline_autocomplete_view_->SetAutoColorReadabilityEnabled(false);
+  ime_inline_autocomplete_view_->set_background(
+      views::Background::CreateSolidBackground(GetNativeTheme()->GetSystemColor(
+          ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused)));
+  ime_inline_autocomplete_view_->SetEnabledColor(
+      GetNativeTheme()->GetSystemColor(
+          ui::NativeTheme::kColorId_TextfieldSelectionColor));
+  ime_inline_autocomplete_view_->SetVisible(false);
+  AddChildView(ime_inline_autocomplete_view_);
+
   const SkColor text_color = GetColor(ToolbarModel::NONE, TEXT);
   selected_keyword_view_ = new SelectedKeywordView(
-      kSelectedKeywordBackgroundImages, IDR_KEYWORD_SEARCH_MAGNIFIER,
-      bubble_font, bubble_font_y_offset, text_color, profile_);
+      bubble_font, bubble_font_y_offset, text_color, background_color,
+      profile_);
   AddChildView(selected_keyword_view_);
 
   suggested_text_view_ = new views::Label(string16(), font);
@@ -305,7 +302,10 @@ void LocationBarView::Init() {
   suggested_text_view_->SetVisible(false);
   AddChildView(suggested_text_view_);
 
-  keyword_hint_view_ = new KeywordHintView(profile_, font, font_y_offset, this);
+  keyword_hint_view_ = new KeywordHintView(
+      profile_, font, font_y_offset,
+      GetColor(ToolbarModel::NONE, LocationBarView::DEEMPHASIZED_TEXT),
+      background_color);
   AddChildView(keyword_hint_view_);
 
   search_token_view_ = new views::Label(string16(), font);
@@ -316,16 +316,11 @@ void LocationBarView::Init() {
   search_token_separator_view_ = new LocationBarSeparatorView();
   AddChildView(search_token_separator_view_);
 
-  const int kCSBubbleBackgroundImages[] = {
-    IDR_OMNIBOX_CS_BUBBLE_BACKGROUND_L,
-    IDR_OMNIBOX_CS_BUBBLE_BACKGROUND_C,
-    IDR_OMNIBOX_CS_BUBBLE_BACKGROUND_R,
-  };
   for (int i = 0; i < CONTENT_SETTINGS_NUM_TYPES; ++i) {
     ContentSettingImageView* content_blocked_view =
-        new ContentSettingImageView(
-            static_cast<ContentSettingsType>(i), kCSBubbleBackgroundImages,
-            this, bubble_font, bubble_font_y_offset, text_color);
+        new ContentSettingImageView(static_cast<ContentSettingsType>(i), this,
+                                    bubble_font, bubble_font_y_offset,
+                                    text_color, background_color);
     content_setting_views_.push_back(content_blocked_view);
     content_blocked_view->SetVisible(false);
     AddChildView(content_blocked_view);
@@ -432,20 +427,34 @@ SkColor LocationBarView::GetColor(ToolbarModel::SecurityLevel security_level,
   }
 }
 
-// static
-int LocationBarView::GetItemPadding() {
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH)
-    return kTouchItemPadding;
-  return extensions::FeatureSwitch::script_badges()->IsEnabled() ?
-      kDesktopScriptBadgeItemPadding : kDesktopItemPadding;
+void LocationBarView::GetOmniboxPopupPositioningInfo(
+    gfx::Point* top_left_screen_coord,
+    int* popup_width,
+    int* left_margin,
+    int* right_margin) {
+  gfx::Rect location_bar_bounds(parent()->GetContentsBounds());
+  location_bar_bounds.Inset(kNormalEdgeThickness, 0);
+
+  *top_left_screen_coord = gfx::Point(0, parent()->height());
+  views::View::ConvertPointToScreen(parent(), top_left_screen_coord);
+  *popup_width = parent()->width();
+
+  gfx::Point location_bar_in_toolbar(location_bar_bounds.origin());
+  views::View::ConvertPointToTarget(this, parent(), &location_bar_in_toolbar);
+  *left_margin = location_bar_in_toolbar.x();
+  *right_margin = *popup_width - *left_margin - location_bar_bounds.width();
 }
 
 // static
-int LocationBarView::GetEdgeItemPadding() {
+int LocationBarView::GetItemPadding() {
+  const int kTouchItemPadding = 8;
   if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH)
-    return kTouchEdgeItemPadding;
+    return kTouchItemPadding;
+
+  const int kDesktopScriptBadgeItemPadding = 9;
+  const int kDesktopItemPadding = 3;
   return extensions::FeatureSwitch::script_badges()->IsEnabled() ?
-      kDesktopScriptBadgeEdgeItemPadding : kDesktopEdgeItemPadding;
+      kDesktopScriptBadgeItemPadding : kDesktopItemPadding;
 }
 
 // DropdownBarHostDelegate
@@ -652,6 +661,11 @@ gfx::Point LocationBarView::GetLocationEntryOrigin() const {
   return origin;
 }
 
+void LocationBarView::SetImeInlineAutocompletion(const string16& text) {
+  ime_inline_autocomplete_view_->SetText(text);
+  ime_inline_autocomplete_view_->SetVisible(!text.empty());
+}
+
 void LocationBarView::SetInstantSuggestion(const string16& text) {
   if (suggested_text_view_->text() != text) {
     suggested_text_view_->SetText(text);
@@ -679,10 +693,7 @@ bool LocationBarView::IsLocationEntryFocusableInRootView() const {
 }
 
 gfx::Size LocationBarView::GetPreferredSize() {
-  int sizing_image_id = is_popup_mode_ ?
-      IDR_LOCATIONBG_POPUPMODE_CENTER : IDR_LOCATION_BAR_BORDER;
-  return gfx::Size(
-      0, GetThemeProvider()->GetImageSkiaNamed(sizing_image_id)->height());
+  return background_border_painter_->GetMinimumSize();
 }
 
 void LocationBarView::Layout() {
@@ -692,29 +703,6 @@ void LocationBarView::Layout() {
   // TODO(jhawkins): Remove once crbug.com/101994 is fixed.
   CHECK(location_icon_view_);
 
-  // In some cases (e.g. fullscreen mode) we may have 0 height.  We still want
-  // to position our child views in this case, because other things may be
-  // positioned relative to them (e.g. the "bookmark added" bubble if the user
-  // hits ctrl-d).
-  const int location_height = GetInternalHeight(false);
-  const int bubble_height = std::max(location_height - (kBubblePadding * 2), 0);
-
-  // The edit has 1 px of horizontal whitespace inside it before the text.
-  const int kEditInternalSpace = 1;
-  // The space between an item and the edit is the normal item space, minus the
-  // edit's built-in space (so the apparent space will be the same).
-  const int kItemEditPadding = GetItemPadding() - kEditInternalSpace;
-  const int kEdgeEditPadding = GetEdgeItemPadding() - kEditInternalSpace;
-  // The largest fraction of the omnibox that can be taken by resizable
-  // bubble decorations such as the EV_SECURE decoration.
-  const double kMaxBubbleFraction = 0.5;
-  const int bubble_location_y = vertical_edge_thickness() + kBubblePadding;
-
-  LocationBarLayout leading_decorations(LocationBarLayout::LEFT_EDGE,
-                                        kItemEditPadding, kEdgeEditPadding);
-  LocationBarLayout trailing_decorations(LocationBarLayout::RIGHT_EDGE,
-                                         kItemEditPadding, kEdgeEditPadding);
-
   selected_keyword_view_->SetVisible(false);
   location_icon_view_->SetVisible(false);
   ev_bubble_view_->SetVisible(false);
@@ -722,17 +710,31 @@ void LocationBarView::Layout() {
   search_token_view_->SetVisible(false);
   search_token_separator_view_->SetVisible(false);
 
+  const int item_padding = GetItemPadding();
+  // The native edit has 1 px of whitespace inside it before the text when the
+  // text is not scrolled off the leading edge.  The views textfield has 1 px of
+  // whitespace before the text in the RTL case only.
+  const int kEditLeadingInternalSpace =
+      (base::i18n::IsRTL() || GetOmniboxViewWin(location_entry_.get())) ? 1 : 0;
+  LocationBarLayout leading_decorations(
+      LocationBarLayout::LEFT_EDGE, item_padding - kEditLeadingInternalSpace);
+  LocationBarLayout trailing_decorations(LocationBarLayout::RIGHT_EDGE,
+                                         item_padding);
+
   const string16 keyword(location_entry_->model()->keyword());
   const bool is_keyword_hint(location_entry_->model()->is_keyword_hint());
   const bool show_search_token = !search_token_view_->text().empty();
-  const bool show_selected_keyword = !keyword.empty() && !is_keyword_hint &&
-      !show_search_token;
-  const bool show_keyword_hint = !keyword.empty() && is_keyword_hint &&
-      !show_search_token;
-  if (show_selected_keyword) {
-    leading_decorations.AddDecoration(
-        bubble_location_y, bubble_height, true, 0, kBubblePadding,
-        GetItemPadding(), 0, selected_keyword_view_);
+  const int bubble_location_y = vertical_edge_thickness() + kBubblePadding;
+  // In some cases (e.g. fullscreen mode) we may have 0 height.  We still want
+  // to position our child views in this case, because other things may be
+  // positioned relative to them (e.g. the "bookmark added" bubble if the user
+  // hits ctrl-d).
+  const int location_height = GetInternalHeight(false);
+  const int bubble_height = std::max(location_height - (kBubblePadding * 2), 0);
+  if (!keyword.empty() && !is_keyword_hint && !show_search_token) {
+    leading_decorations.AddDecoration(bubble_location_y, bubble_height, true, 0,
+                                      kBubblePadding, item_padding, 0,
+                                      selected_keyword_view_);
     if (selected_keyword_view_->keyword() != keyword) {
       selected_keyword_view_->SetKeyword(keyword);
       const TemplateURL* template_url =
@@ -751,9 +753,11 @@ void LocationBarView::Layout() {
     }
   } else if (model_->GetSecurityLevel() == ToolbarModel::EV_SECURE) {
     ev_bubble_view_->SetLabel(model_->GetEVCertName());
-    leading_decorations.AddDecoration(
-        bubble_location_y, bubble_height, false, kMaxBubbleFraction,
-        kBubblePadding, GetItemPadding(), 0, ev_bubble_view_);
+    // The largest fraction of the omnibox that can be taken by the EV bubble.
+    const double kMaxBubbleFraction = 0.5;
+    leading_decorations.AddDecoration(bubble_location_y, bubble_height, false,
+                                      kMaxBubbleFraction, kBubblePadding,
+                                      item_padding, 0, ev_bubble_view_);
   } else {
     leading_decorations.AddDecoration(
         vertical_edge_thickness(), location_height,
@@ -796,36 +800,37 @@ void LocationBarView::Layout() {
     trailing_decorations.AddDecoration(vertical_edge_thickness(),
                                        location_height, 0, zoom_view_);
   }
-  for (ContentSettingViews::const_reverse_iterator
-       i(content_setting_views_.rbegin()); i != content_setting_views_.rend();
+  for (ContentSettingViews::const_reverse_iterator i(
+           content_setting_views_.rbegin()); i != content_setting_views_.rend();
        ++i) {
     if ((*i)->visible()) {
       trailing_decorations.AddDecoration(
-          bubble_location_y, bubble_height, false, 0, GetEdgeItemPadding(),
-          GetItemPadding(), (*i)->GetBuiltInHorizontalPadding(), (*i));
+          bubble_location_y, bubble_height, false, 0, item_padding,
+          item_padding, (*i)->GetBuiltInHorizontalPadding(), (*i));
     }
   }
-  if (show_keyword_hint) {
-    trailing_decorations.AddDecoration(
-        vertical_edge_thickness(), location_height, true, 0,
-        GetEdgeItemPadding(), GetItemPadding(), 0, keyword_hint_view_);
+  if (!keyword.empty() && is_keyword_hint && !show_search_token) {
+    trailing_decorations.AddDecoration(vertical_edge_thickness(),
+                                       location_height, true, 0, item_padding,
+                                       item_padding, 0, keyword_hint_view_);
     if (keyword_hint_view_->keyword() != keyword)
       keyword_hint_view_->SetKeyword(keyword);
   }
   if (show_search_token) {
+    const int token_height = search_token_view_->GetPreferredSize().height();
     if (model_->GetSearchTermsType() == ToolbarModel::URL_LIKE_SEARCH_TERMS) {
-      leading_decorations.AddDecoration(
-          vertical_edge_thickness(), 0, true, 0, GetEdgeItemPadding(),
-          GetItemPadding(), 0, search_token_view_);
+      leading_decorations.AddDecoration(vertical_edge_thickness(), token_height,
+                                        true, 0, item_padding, item_padding, 0,
+                                        search_token_view_);
     } else {
       trailing_decorations.AddSeparator(vertical_edge_thickness(),
-                                        location_height, GetItemPadding(),
+                                        location_height, item_padding,
                                         search_token_separator_view_);
       // This must be the last item in the right decorations list, otherwise
       // trailing_decorations.set_item_padding() makes no sense.
-      trailing_decorations.AddDecoration(
-          vertical_edge_thickness(), 0, true, 0, GetEdgeItemPadding(),
-          GetItemPadding(), 0, search_token_view_);
+      trailing_decorations.AddDecoration(vertical_edge_thickness(),
+                                         token_height, true, 0, item_padding,
+                                         item_padding, 0, search_token_view_);
       trailing_decorations.set_item_edit_padding(
           views::kUnrelatedControlLargeHorizontalSpacing);
     }
@@ -919,53 +924,63 @@ void LocationBarView::Layout() {
   if (omnibox_views)
     omnibox_views->SetHorizontalMargins(0, omnibox_views_margin);
 
+  // Layout |ime_inline_autocomplete_view_| next to the user input.
+  if (ime_inline_autocomplete_view_->visible()) {
+    int width =
+        ime_inline_autocomplete_view_->font().GetStringWidth(
+            ime_inline_autocomplete_view_->text()) +
+        ime_inline_autocomplete_view_->GetInsets().width();
+    // All the target languages (IMEs) are LTR, and we do not need to support
+    // RTL so far.  In other words, no testable RTL environment so far.
+    int x = location_needed_width;
+    if (width > entry_width)
+      x = 0;
+    else if (location_needed_width + width > entry_width)
+      x = entry_width - width;
+    location_bounds.set_width(x);
+    ime_inline_autocomplete_view_->SetBounds(
+        location_bounds.right(), location_bounds.y(),
+        std::min(width, entry_width),
+        ime_inline_autocomplete_view_->GetPreferredSize().height());
+  }
+
   location_entry_view_->SetBoundsRect(location_bounds);
 }
 
 void LocationBarView::OnPaint(gfx::Canvas* canvas) {
   View::OnPaint(canvas);
 
+  // Fill the location bar background color behind the border.  Parts of the
+  // border images are meant to rest atop the toolbar background and parts atop
+  // the omnibox background, so we can't just blindly fill our entire bounds.
   const int horizontal_edge_thickness = GetHorizontalEdgeThickness();
-  if (background_painter_.get()) {
-    background_painter_->Paint(canvas, size());
-  } else {
-    canvas->TileImageInt(
-        *GetThemeProvider()->GetImageSkiaNamed(IDR_LOCATIONBG_POPUPMODE_CENTER),
-        0, 0, horizontal_edge_thickness, 0,
-        width() - (horizontal_edge_thickness * 2), height());
-    if (horizontal_edge_thickness != 0) {
-      canvas->DrawImageInt(
-          *GetThemeProvider()->GetImageSkiaNamed(IDR_LOCATIONBG_POPUPMODE_EDGE),
-          0, 0);
-      canvas->DrawImageInt(
-          *GetThemeProvider()->GetImageSkiaNamed(IDR_LOCATIONBG_POPUPMODE_EDGE),
-          width() - horizontal_edge_thickness, 0);
+  if (!background_filling_painter_) {
+    gfx::Rect bounds(GetContentsBounds());
+    bounds.Inset(horizontal_edge_thickness, vertical_edge_thickness());
+    SkColor color(GetColor(ToolbarModel::NONE, BACKGROUND));
+    if (is_popup_mode_) {
+      canvas->FillRect(bounds, color);
+    } else {
+      SkPaint paint;
+      paint.setStyle(SkPaint::kFill_Style);
+      paint.setColor(color);
+      const int kBorderCornerRadius = 2;
+      canvas->DrawRoundRect(bounds, kBorderCornerRadius, paint);
     }
   }
 
-  // Draw the background color so that the graphical elements at the edges
-  // appear over the correct color.  (The edit draws its own background, so this
-  // isn't important for that.)
-  // TODO(pkasting): We need images that are transparent in the middle, so we
-  // can draw the border images over the background color instead of the
-  // reverse; this antialiases better (see comments in
-  // OmniboxPopupContentsView::OnPaint()).
-  gfx::Rect bounds(GetContentsBounds());
-  bounds.Inset(horizontal_edge_thickness, vertical_edge_thickness());
-  SkColor color(GetColor(ToolbarModel::NONE, BACKGROUND));
-  if (is_popup_mode_) {
-    canvas->FillRect(bounds, color);
-  } else {
-    SkPaint paint;
-    paint.setStyle(SkPaint::kFill_Style);
-    paint.setAntiAlias(true);
-    // TODO(jamescook): Make the corners of the dropdown match the corners of
-    // the omnibox.
-    // Paint the actual background color.
-    paint.setColor(color);
-    canvas->DrawRoundRect(bounds, kBorderCornerRadius, paint);
+  // Maximized popup windows don't draw the horizontal edges.  We implement this
+  // by simply expanding the paint area outside the view by the edge thickness.
+  gfx::Rect background_rect(GetContentsBounds());
+  if (is_popup_mode_ && (horizontal_edge_thickness == 0))
+    background_rect.Inset(-kPopupEdgeThickness, 0);
+  views::Painter::PaintPainterAt(canvas, background_border_painter_.get(),
+                                 background_rect);
+  if (background_filling_painter_)
+    background_filling_painter_->Paint(canvas, size());
+
+  if (!is_popup_mode_)
     PaintPageActionBackgrounds(canvas);
-  }
 
   // For non-InstantExtendedAPI cases, if necessary, show focus rect.
   // Note: |Canvas::DrawFocusRect| paints a dashed rect with gray color.
@@ -1118,12 +1133,9 @@ WebContents* LocationBarView::GetWebContents() const {
 }
 
 int LocationBarView::GetHorizontalEdgeThickness() const {
-  if (!is_popup_mode_)
-    return kNormalHorizontalEdgeThickness;
-
   // In maximized popup mode, there isn't any edge.
-  return (browser_ && browser_->window() && browser_->window()->IsMaximized()) ?
-      0 : kPopupEdgeThickness;
+  return (is_popup_mode_ && browser_ && browser_->window() &&
+      browser_->window()->IsMaximized()) ? 0 : vertical_edge_thickness();
 }
 
 void LocationBarView::RefreshContentSettingViews() {
@@ -1311,7 +1323,6 @@ bool LocationBarView::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
 
 #if defined(USE_AURA)
   NOTIMPLEMENTED();
-  return false;
 #else
   OmniboxViewWin* omnibox_win = GetOmniboxViewWin(location_entry_.get());
   if (omnibox_win)

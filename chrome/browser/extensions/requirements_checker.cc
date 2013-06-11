@@ -5,7 +5,7 @@
 #include "chrome/browser/extensions/requirements_checker.h"
 
 #include "base/bind.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/gpu/gpu_feature_checker.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension.h"
@@ -35,7 +35,7 @@ void RequirementsChecker::Check(scoped_refptr<const Extension> extension,
 
   callback_ = callback;
   const RequirementsInfo& requirements =
-      RequirementsInfo::GetRequirements(extension);
+      RequirementsInfo::GetRequirements(extension.get());
 
   if (requirements.npapi) {
 #if defined(OS_CHROMEOS)
@@ -75,9 +75,9 @@ void RequirementsChecker::Check(scoped_refptr<const Extension> extension,
   }
   // Running the GPU checkers down here removes any race condition that arises
   // from the use of pending_requirement_checks_.
-  if (webgl_checker_)
+  if (webgl_checker_.get())
     webgl_checker_->CheckGPUFeatureAvailability();
-  if (css3d_checker_)
+  if (css3d_checker_.get())
     css3d_checker_->CheckGPUFeatureAvailability();
 }
 

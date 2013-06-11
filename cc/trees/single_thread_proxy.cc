@@ -118,7 +118,7 @@ void SingleThreadProxy::CreateAndInitializeOutputSurface() {
   if (created_offscreen_context_provider_) {
     offscreen_context_provider =
         layer_tree_host_->client()->OffscreenContextProviderForMainThread();
-    if (!offscreen_context_provider) {
+    if (!offscreen_context_provider.get()) {
       OnOutputSurfaceInitializeAttempted(false);
       return;
     }
@@ -144,7 +144,7 @@ void SingleThreadProxy::CreateAndInitializeOutputSurface() {
 
       layer_tree_host_impl_->resource_provider()->
           set_offscreen_context_provider(offscreen_context_provider);
-    } else if (offscreen_context_provider) {
+    } else if (offscreen_context_provider.get()) {
       offscreen_context_provider->VerifyContexts();
     }
   }
@@ -185,8 +185,10 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
 
     layer_tree_host_impl_->BeginCommit();
 
-    layer_tree_host_->contents_texture_manager()->
-        PushTexturePrioritiesToBackings();
+    if (layer_tree_host_->contents_texture_manager()) {
+      layer_tree_host_->contents_texture_manager()->
+          PushTexturePrioritiesToBackings();
+    }
     layer_tree_host_->BeginCommitOnImplThread(layer_tree_host_impl_.get());
 
     scoped_ptr<ResourceUpdateController> update_controller =
@@ -280,10 +282,6 @@ void SingleThreadProxy::SetNeedsCommitOnImplThread() {
   layer_tree_host_->ScheduleComposite();
 }
 
-void SingleThreadProxy::SetNeedsManageTilesOnImplThread() {
-  layer_tree_host_->ScheduleComposite();
-}
-
 void SingleThreadProxy::PostAnimationEventsToMainThreadOnImplThread(
     scoped_ptr<AnimationEventsVector> events,
     base::Time wall_clock_time) {
@@ -324,6 +322,13 @@ void SingleThreadProxy::SendManagedMemoryStats() {
 }
 
 bool SingleThreadProxy::IsInsideDraw() { return inside_draw_; }
+
+void SingleThreadProxy::DidTryInitializeRendererOnImplThread(
+    bool success,
+    scoped_refptr<ContextProvider> offscreen_context_provider) {
+  NOTREACHED()
+      << "This is only used on threaded compositing with impl-side painting";
+}
 
 void SingleThreadProxy::DidLoseOutputSurfaceOnImplThread() {
   // Cause a commit so we can notice the lost context.
@@ -386,11 +391,14 @@ bool SingleThreadProxy::CommitAndComposite(
       layer_tree_host_->needs_offscreen_context()) {
     offscreen_context_provider =
         layer_tree_host_->client()->OffscreenContextProviderForMainThread();
-    if (offscreen_context_provider)
+    if (offscreen_context_provider.get())
       created_offscreen_context_provider_ = true;
   }
 
-  layer_tree_host_->contents_texture_manager()->UnlinkAndClearEvictedBackings();
+  if (layer_tree_host_->contents_texture_manager()) {
+    layer_tree_host_->contents_texture_manager()
+        ->UnlinkAndClearEvictedBackings();
+  }
 
   scoped_ptr<ResourceUpdateQueue> queue =
       make_scoped_ptr(new ResourceUpdateQueue);

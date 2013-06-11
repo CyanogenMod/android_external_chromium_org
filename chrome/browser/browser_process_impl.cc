@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <map>
-#include <set>
 #include <vector>
 
 #include "base/bind.h"
@@ -118,6 +117,10 @@
 #if defined(OS_MACOSX)
 #include "apps/app_shim/app_shim_host_manager_mac.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
+#endif
+
+#if defined(ENABLE_WEBRTC)
+#include "chrome/browser/media/webrtc_log_uploader.h"
 #endif
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
@@ -631,6 +634,14 @@ bool BrowserProcessImpl::created_local_state() const {
     return created_local_state_;
 }
 
+#if defined(ENABLE_WEBRTC)
+WebRtcLogUploader* BrowserProcessImpl::webrtc_log_uploader() {
+  if (!webrtc_log_uploader_.get())
+    webrtc_log_uploader_.reset(new WebRtcLogUploader());
+  return webrtc_log_uploader_.get();
+}
+#endif
+
 // static
 void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kDefaultBrowserSettingEnabled,
@@ -639,10 +650,6 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
   // so we do it here.
   registry->RegisterIntegerPref(prefs::kMaxConnectionsPerProxy,
                                 net::kDefaultMaxSocketsPerProxyServer);
-
-  // This is observed by ChildProcessSecurityPolicy, which lives in content/
-  // though, so it can't register itself.
-  registry->RegisterListPref(prefs::kDisabledSchemes);
 
   registry->RegisterBooleanPref(prefs::kAllowCrossOriginAuthPrompt, false);
 
@@ -680,9 +687,9 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
 
 DownloadRequestLimiter* BrowserProcessImpl::download_request_limiter() {
   DCHECK(CalledOnValidThread());
-  if (!download_request_limiter_)
+  if (!download_request_limiter_.get())
     download_request_limiter_ = new DownloadRequestLimiter();
-  return download_request_limiter_;
+  return download_request_limiter_.get();
 }
 
 BackgroundModeManager* BrowserProcessImpl::background_mode_manager() {
@@ -813,11 +820,11 @@ void BrowserProcessImpl::CreateLocalState() {
   scoped_refptr<PrefRegistrySimple> pref_registry = new PrefRegistrySimple;
 
   // Register local state preferences.
-  chrome::RegisterLocalState(pref_registry);
+  chrome::RegisterLocalState(pref_registry.get());
 
   local_state_.reset(
       chrome_prefs::CreateLocalState(local_state_path,
-                                     local_state_task_runner_,
+                                     local_state_task_runner_.get(),
                                      policy_service(),
                                      NULL,
                                      pref_registry,
@@ -837,12 +844,6 @@ void BrowserProcessImpl::CreateLocalState() {
       std::max(std::min(max_per_proxy, 99),
                net::ClientSocketPoolManager::max_sockets_per_group(
                    net::HttpNetworkSession::NORMAL_SOCKET_POOL)));
-
-  pref_change_registrar_.Add(
-      prefs::kDisabledSchemes,
-      base::Bind(&BrowserProcessImpl::ApplyDisabledSchemesPolicy,
-                 base::Unretained(this)));
-  ApplyDisabledSchemesPolicy();
 }
 
 void BrowserProcessImpl::PreCreateThreads() {
@@ -968,19 +969,6 @@ void BrowserProcessImpl::CreateSafeBrowsingService() {
   safe_browsing_service_ = SafeBrowsingService::CreateSafeBrowsingService();
   safe_browsing_service_->Initialize();
 #endif
-}
-
-void BrowserProcessImpl::ApplyDisabledSchemesPolicy() {
-  std::set<std::string> schemes;
-  const ListValue* scheme_list =
-      local_state()->GetList(prefs::kDisabledSchemes);
-  for (ListValue::const_iterator iter = scheme_list->begin();
-       iter != scheme_list->end(); ++iter) {
-    std::string scheme;
-    if ((*iter)->GetAsString(&scheme))
-      schemes.insert(scheme);
-  }
-  ChildProcessSecurityPolicy::GetInstance()->RegisterDisabledSchemes(schemes);
 }
 
 void BrowserProcessImpl::ApplyDefaultBrowserPolicy() {

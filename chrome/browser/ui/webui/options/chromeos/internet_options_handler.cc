@@ -19,11 +19,11 @@
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
 #include "base/json/json_writer.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/choose_mobile_network_dialog.h"
@@ -34,18 +34,17 @@
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/chromeos/options/network_connect.h"
-#include "chrome/browser/chromeos/proxy_config_service_impl.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
 #include "chrome/browser/chromeos/status/network_menu_icon.h"
-#include "chrome/browser/net/pref_proxy_config_tracker.h"
-#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/chromeos/ui_proxy_config_service.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/browser/ui/webui/options/chromeos/core_chromeos_options_handler.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/time_format.h"
 #include "chromeos/chromeos_switches.h"
@@ -581,7 +580,7 @@ chromeos::ConnectionType ParseNetworkTypeString(const std::string& type) {
 namespace options {
 
 InternetOptionsHandler::InternetOptionsHandler()
-  : weak_factory_(this) {
+    : weak_factory_(this) {
   registrar_.Add(this, chrome::NOTIFICATION_REQUIRE_PIN_SETTING_CHANGE_ENDED,
       content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_ENTER_PIN_ENDED,
@@ -1021,8 +1020,7 @@ void InternetOptionsHandler::UpdateConnectionData(
     const chromeos::Network* network) {
   DictionaryValue dictionary;
   PopulateConnectionDetails(network, &dictionary);
-  web_ui()->CallJavascriptFunction(
-      kUpdateConnectionDataFunction, dictionary);
+  web_ui()->CallJavascriptFunction(kUpdateConnectionDataFunction, dictionary);
 }
 
 void InternetOptionsHandler::UpdateCarrier() {
@@ -1240,9 +1238,6 @@ void InternetOptionsHandler::PopulateIPConfigsCallback(
   if (!network)
     return;
 
-  Profile::FromWebUI(web_ui())->GetProxyConfigTracker()->UISetCurrentNetwork(
-      service_path);
-
   const chromeos::NetworkUIData& ui_data = network->ui_data();
   const chromeos::NetworkPropertyUIData property_ui_data(ui_data.onc_source());
   const base::DictionaryValue* onc =
@@ -1367,7 +1362,9 @@ void InternetOptionsHandler::PopulateIPConfigsCallback(
 }
 
 void InternetOptionsHandler::PopulateConnectionDetails(
-    const chromeos::Network* network, DictionaryValue* dictionary) {
+    const chromeos::Network* network,
+    DictionaryValue* dictionary) {
+  dictionary->SetString(kNetworkInfoKeyServicePath, network->service_path());
   chromeos::ConnectionType type = network->type();
   dictionary->SetBoolean(kTagConnecting, network->connecting());
   dictionary->SetBoolean(kTagConnected, network->connected());
@@ -1771,16 +1768,16 @@ ListValue* InternetOptionsHandler::GetRememberedList() {
 }
 
 void InternetOptionsHandler::FillNetworkInfo(DictionaryValue* dictionary) {
-  dictionary->SetBoolean(kTagAccessLocked, cros_->IsLocked());
+  dictionary->SetBoolean(kTagAccessLocked, false);  // TODO(stevenj) remove.
   dictionary->Set(kTagWiredList, GetWiredList());
   dictionary->Set(kTagWirelessList, GetWirelessList());
   dictionary->Set(kTagVpnList, GetVPNList());
   dictionary->Set(kTagRememberedList, GetRememberedList());
   dictionary->SetBoolean(kTagWifiAvailable, cros_->wifi_available());
-  dictionary->SetBoolean(kTagWifiBusy, cros_->wifi_busy());
+  dictionary->SetBoolean(kTagWifiBusy, false);  // TODO(stevenj) remove.
   dictionary->SetBoolean(kTagWifiEnabled, cros_->wifi_enabled());
   dictionary->SetBoolean(kTagCellularAvailable, cros_->cellular_available());
-  dictionary->SetBoolean(kTagCellularBusy, cros_->cellular_busy());
+  dictionary->SetBoolean(kTagCellularBusy, false);  // TODO(stevenj) remove.
   dictionary->SetBoolean(kTagCellularEnabled, cros_->cellular_enabled());
 
   const chromeos::NetworkDevice* cellular_device = cros_->FindCellularDevice();
@@ -1790,9 +1787,9 @@ void InternetOptionsHandler::FillNetworkInfo(DictionaryValue* dictionary) {
 
   dictionary->SetBoolean(kTagWimaxEnabled, cros_->wimax_enabled());
   dictionary->SetBoolean(kTagWimaxAvailable, cros_->wimax_available());
-  dictionary->SetBoolean(kTagWimaxBusy, cros_->wimax_busy());
+  dictionary->SetBoolean(kTagWimaxBusy, false);  // TODO(stevenj) remove.
   // TODO(kevers): The use of 'offline_mode' is not quite correct.  Update once
-  // we have proper back-end support.
+  // we have proper back-end support. TODO(stevenj) remove.
   dictionary->SetBoolean(kTagAirplaneMode, cros_->offline_mode());
 }
 

@@ -39,7 +39,7 @@ QuicServer::QuicServer()
       packets_dropped_(0),
       overflow_supported_(false),
       use_recvmmsg_(false),
-      crypto_config_(kSourceAddressTokenSecret) {
+      crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()) {
   // Use hardcoded crypto parameters for now.
   config_.SetDefaults();
   Initialize();
@@ -51,7 +51,7 @@ QuicServer::QuicServer(const QuicConfig& config)
       overflow_supported_(false),
       use_recvmmsg_(false),
       config_(config),
-      crypto_config_(kSourceAddressTokenSecret) {
+      crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()) {
   Initialize();
 }
 
@@ -68,7 +68,7 @@ void QuicServer::Initialize() {
   scoped_ptr<CryptoHandshakeMessage> scfg(
       crypto_config_.AddDefaultConfig(
           QuicRandom::GetInstance(), &clock,
-          QuicCryptoServerConfig::kDefaultExpiry));
+          QuicCryptoServerConfig::ConfigOptions()));
 }
 
 QuicServer::~QuicServer() {
@@ -170,21 +170,19 @@ void QuicServer::OnEvent(int fd, EpollEvent* event) {
     }
   }
   if (event->in_events & EPOLLOUT) {
-    LOG(INFO) << "Epollout";
     bool can_write_more = dispatcher_->OnCanWrite();
     if (can_write_more) {
       event->out_ready_mask |= EPOLLOUT;
     }
   }
   if (event->in_events & EPOLLERR) {
-    LOG(INFO) << "Epollerr";
   }
 }
 
 bool QuicServer::ReadAndDispatchSinglePacket(int fd,
-                                       int port,
-                                       QuicDispatcher* dispatcher,
-                                       int* packets_dropped) {
+                                             int port,
+                                             QuicDispatcher* dispatcher,
+                                             int* packets_dropped) {
   // Allocate some extra space so we can send an error if the client goes over
   // the limit.
   char buf[2 * kMaxPacketSize];

@@ -45,8 +45,6 @@ namespace extensions {
 
 namespace {
 
-const char kDispatchEvent[] = "Event.dispatchEvent";
-
 void NotifyEventListenerRemovedOnIOThread(
     void* profile,
     const std::string& extension_id,
@@ -111,25 +109,8 @@ void EventRouter::LogExtensionEventMessage(void* profile_id,
     Profile* profile = reinterpret_cast<Profile*>(profile_id);
     if (!g_browser_process->profile_manager()->IsValidProfile(profile))
       return;
-
-    // An ExtensionService might not be running during unit tests, or an
-    // extension might have been unloaded by the time we get to logging it.  In
-    // those cases log a warning.
-    ExtensionService* extension_service =
-        ExtensionSystem::Get(profile)->extension_service();
-    if (!extension_service) {
-      LOG(WARNING) << "ExtensionService does not seem to be available "
-                   << "(this may be normal for unit tests)";
-    } else {
-      const Extension* extension =
-          extension_service->extensions()->GetByID(extension_id);
-      if (!extension) {
-        LOG(WARNING) << "Extension " << extension_id << " not found!";
-      } else {
-        ActivityLog::GetInstance(profile)->LogEventAction(
-            extension, event_name, event_args.get(), std::string());
-      }
-    }
+    ActivityLog::GetInstance(profile)->LogEventAction(
+        extension_id, event_name, event_args.get(), std::string());
   }
 }
 
@@ -139,10 +120,9 @@ void EventRouter::DispatchExtensionMessage(IPC::Sender* ipc_sender,
                                            const std::string& extension_id,
                                            const std::string& event_name,
                                            ListValue* event_args,
-                                           const GURL& event_url,
                                            UserGestureState user_gesture,
                                            const EventFilteringInfo& info) {
-  if (ActivityLog::IsLogEnabled()) {
+  if (ActivityLog::IsLogEnabledOnAnyProfile()) {
     LogExtensionEventMessage(profile_id, extension_id, event_name,
                              scoped_ptr<ListValue>(event_args->DeepCopy()));
   }
@@ -151,8 +131,12 @@ void EventRouter::DispatchExtensionMessage(IPC::Sender* ipc_sender,
   args.Set(0, Value::CreateStringValue(event_name));
   args.Set(1, event_args);
   args.Set(2, info.AsValue().release());
-  ipc_sender->Send(new ExtensionMsg_MessageInvoke(MSG_ROUTING_CONTROL,
-      extension_id, kDispatchEvent, args, event_url,
+  ipc_sender->Send(new ExtensionMsg_MessageInvoke(
+      MSG_ROUTING_CONTROL,
+      extension_id,
+      "event_bindings",
+      "dispatchEvent",
+      args,
       user_gesture == USER_GESTURE_ENABLED));
 
   // DispatchExtensionMessage does _not_ take ownership of event_args, so we
@@ -167,11 +151,10 @@ void EventRouter::DispatchEvent(IPC::Sender* ipc_sender,
                                 const std::string& extension_id,
                                 const std::string& event_name,
                                 scoped_ptr<ListValue> event_args,
-                                const GURL& event_url,
                                 UserGestureState user_gesture,
                                 const EventFilteringInfo& info) {
   DispatchExtensionMessage(ipc_sender, profile_id, extension_id, event_name,
-                           event_args.get(), event_url, user_gesture, info);
+                           event_args.get(), user_gesture, info);
 
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -605,6 +588,15 @@ void EventRouter::DispatchEventToProcess(const std::string& extension_id,
     return;
   }
 
+  // If the event is restricted to a URL, only dispatch if the extension has
+  // permission for it (or if the event originated from itself).
+  if (!event->event_url.is_empty() &&
+      event->event_url.host() != extension->id() &&
+      !extension->GetActivePermissions()->HasEffectiveAccessToURL(
+          event->event_url)) {
+    return;
+  }
+
   if (!CanDispatchEventToProfile(listener_profile, extension, event))
     return;
 
@@ -613,10 +605,9 @@ void EventRouter::DispatchEventToProcess(const std::string& extension_id,
                                       event->event_args.get());
   }
 
-  DispatchExtensionMessage(process, listener_profile, extension_id,
+  DispatchExtensionMessage(process, listener_profile, extension->id(),
                            event->event_name, event->event_args.get(),
-                           event->event_url, event->user_gesture,
-                           event->filter_info);
+                           event->user_gesture, event->filter_info);
   IncrementInFlightEvents(listener_profile, extension);
 }
 

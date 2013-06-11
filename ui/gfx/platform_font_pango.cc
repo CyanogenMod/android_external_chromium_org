@@ -13,7 +13,7 @@
 #include "base/logging.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/app_locale_settings.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkTypeface.h"
@@ -198,7 +198,7 @@ int PlatformFontPango::GetAverageCharacterWidth() const {
   return SkScalarRound(average_width_pixels_);
 }
 
-int PlatformFontPango::GetStringWidth(const string16& text) const {
+int PlatformFontPango::GetStringWidth(const base::string16& text) const {
   return Canvas::GetStringWidth(text,
                                 Font(const_cast<PlatformFontPango*>(this)));
 }

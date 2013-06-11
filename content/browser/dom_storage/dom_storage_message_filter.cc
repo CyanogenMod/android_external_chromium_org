@@ -7,15 +7,15 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/nullable_string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/utf_string_conversions.h"
-#include "content/public/browser/user_metrics.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
 #include "content/common/dom_storage_messages.h"
+#include "content/public/browser/user_metrics.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/dom_storage/dom_storage_area.h"
-#include "webkit/dom_storage/dom_storage_host.h"
-#include "webkit/dom_storage/dom_storage_task_runner.h"
+#include "webkit/browser/dom_storage/dom_storage_area.h"
+#include "webkit/browser/dom_storage/dom_storage_host.h"
+#include "webkit/browser/dom_storage/dom_storage_task_runner.h"
 
 namespace content {
 
@@ -32,7 +32,7 @@ DOMStorageMessageFilter::~DOMStorageMessageFilter() {
 
 void DOMStorageMessageFilter::InitializeInSequence() {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
-  host_.reset(new dom_storage::DomStorageHost(context_));
+  host_.reset(new dom_storage::DomStorageHost(context_.get()));
   context_->AddEventObserver(this);
 }
 

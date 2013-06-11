@@ -11,13 +11,16 @@
 #include "base/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread.h"
+#include "chrome/browser/sync_file_system/drive/metadata_db_migration_util.h"
 #include "chrome/browser/sync_file_system/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_file_system.pb.h"
 #include "content/public/browser/browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
+#include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 
@@ -30,13 +33,12 @@ namespace sync_file_system {
 namespace {
 
 const char kOrigin[] = "chrome-extension://example";
-const char* const kServiceName = DriveFileSyncService::kServiceName;
 
 typedef DriveMetadataStore::ResourceIdByOrigin ResourceIdByOrigin;
 typedef DriveMetadataStore::OriginByResourceId OriginByResourceId;
 
 fileapi::FileSystemURL URL(const base::FilePath& path) {
-  return CreateSyncableFileSystemURL(GURL(kOrigin), kServiceName, path);
+  return CreateSyncableFileSystemURL(GURL(kOrigin), path);
 }
 
 std::string GetResourceID(const ResourceIdByOrigin& sync_origins,
@@ -76,11 +78,11 @@ class DriveMetadataStoreTest : public testing::Test {
     file_task_runner_ = file_thread_->message_loop_proxy();
 
     ASSERT_TRUE(base_dir_.CreateUniqueTempDir());
-    ASSERT_TRUE(RegisterSyncableFileSystem(kServiceName));
+    RegisterSyncableFileSystem();
   }
 
   virtual void TearDown() OVERRIDE {
-    EXPECT_TRUE(RevokeSyncableFileSystem(kServiceName));
+    RevokeSyncableFileSystem();
 
     DropDatabase();
     file_thread_->Stop();
@@ -96,10 +98,13 @@ class DriveMetadataStoreTest : public testing::Test {
     bool created = false;
 
     drive_metadata_store_.reset(
-        new DriveMetadataStore(base_dir_.path(), file_task_runner_));
+        new DriveMetadataStore(base_dir_.path(), file_task_runner_.get()));
     drive_metadata_store_->Initialize(
         base::Bind(&DriveMetadataStoreTest::DidInitializeDatabase,
-                   base::Unretained(this), &done, &status, &created));
+                   base::Unretained(this),
+                   &done,
+                   &status,
+                   &created));
     message_loop_.Run();
 
     EXPECT_TRUE(done);
@@ -116,35 +121,6 @@ class DriveMetadataStoreTest : public testing::Test {
   void DropDatabase() {
     EXPECT_TRUE(ui_task_runner_->RunsTasksOnCurrentThread());
     drive_metadata_store_.reset();
-  }
-
-  void DropSyncRootDirectoryInStore() {
-    EXPECT_TRUE(ui_task_runner_->RunsTasksOnCurrentThread());
-    drive_metadata_store_->sync_root_directory_resource_id_.clear();
-  }
-
-  void RestoreSyncRootDirectoryFromDB() {
-    EXPECT_TRUE(ui_task_runner_->RunsTasksOnCurrentThread());
-    drive_metadata_store_->RestoreSyncRootDirectory(
-        base::Bind(&DriveMetadataStoreTest::DidRestoreSyncRootDirectory,
-                   base::Unretained(this)));
-    message_loop_.Run();
-  }
-
-  void DropSyncOriginsInStore() {
-    EXPECT_TRUE(ui_task_runner_->RunsTasksOnCurrentThread());
-    drive_metadata_store_->incremental_sync_origins_.clear();
-    drive_metadata_store_->disabled_origins_.clear();
-    EXPECT_TRUE(drive_metadata_store_->incremental_sync_origins().empty());
-    EXPECT_TRUE(drive_metadata_store_->disabled_origins().empty());
-  }
-
-  void RestoreOriginsFromDB() {
-    EXPECT_TRUE(ui_task_runner_->RunsTasksOnCurrentThread());
-    drive_metadata_store_->RestoreOrigins(
-        base::Bind(&DriveMetadataStoreTest::DidRestoreOrigins,
-                   base::Unretained(this)));
-    message_loop_.Run();
   }
 
   SyncStatusCode EnableOrigin(const GURL& origin) {
@@ -282,16 +258,6 @@ class DriveMetadataStoreTest : public testing::Test {
     message_loop_.Quit();
   }
 
-  void DidRestoreSyncRootDirectory(SyncStatusCode status) {
-    EXPECT_EQ(SYNC_STATUS_OK, status);
-    message_loop_.Quit();
-  }
-
-  void DidRestoreOrigins(SyncStatusCode status) {
-    EXPECT_EQ(SYNC_STATUS_OK, status);
-    message_loop_.Quit();
-  }
-
   bool VerifyReverseMapInclusion(const ResourceIdByOrigin& left,
                                  const OriginByResourceId& right) {
     for (ResourceIdByOrigin::const_iterator itr = left.begin();
@@ -330,7 +296,7 @@ TEST_F(DriveMetadataStoreTest, ReadWriteTest) {
   EXPECT_EQ(SYNC_DATABASE_ERROR_NOT_FOUND,
             metadata_store()->ReadEntry(url, &metadata));
 
-  metadata = CreateMetadata("1234567890", "09876543210", true, false);
+  metadata = CreateMetadata("file:1234567890", "09876543210", true, false);
   EXPECT_EQ(SYNC_STATUS_OK, UpdateEntry(url, metadata));
   EXPECT_EQ(SYNC_STATUS_OK, SetLargestChangeStamp(1));
 
@@ -413,29 +379,24 @@ TEST_F(DriveMetadataStoreTest, GetToBeFetchedFilessTest) {
 }
 
 TEST_F(DriveMetadataStoreTest, StoreSyncRootDirectory) {
-  const std::string kResourceId("hoge");
+  const std::string kResourceId("folder:hoge");
 
   InitializeDatabase();
-
   EXPECT_TRUE(metadata_store()->sync_root_directory().empty());
 
   metadata_store()->SetSyncRootDirectory(kResourceId);
   EXPECT_EQ(kResourceId, metadata_store()->sync_root_directory());
 
-  DropSyncRootDirectoryInStore();
-  EXPECT_TRUE(metadata_store()->sync_root_directory().empty());
-
-  RestoreSyncRootDirectoryFromDB();
+  DropDatabase();
+  InitializeDatabase();
   EXPECT_EQ(kResourceId, metadata_store()->sync_root_directory());
-
-  VerifyReverseMap();
 }
 
 TEST_F(DriveMetadataStoreTest, StoreSyncOrigin) {
   const GURL kOrigin1("chrome-extension://example1");
   const GURL kOrigin2("chrome-extension://example2");
-  const std::string kResourceId1("hoge");
-  const std::string kResourceId2("fuga");
+  const std::string kResourceId1("folder:hoge");
+  const std::string kResourceId2("folder:fuga");
 
   InitializeDatabase();
 
@@ -454,13 +415,8 @@ TEST_F(DriveMetadataStoreTest, StoreSyncOrigin) {
   VerifyIncrementalSyncOrigin(kOrigin1, kResourceId1);
   VerifyDisabledOrigin(kOrigin2, kResourceId2);
 
-  DropSyncOriginsInStore();
-
-  // Make sure origins have been dropped.
-  VerifyUntrackedOrigin(kOrigin1);
-  VerifyUntrackedOrigin(kOrigin2);
-
-  RestoreOriginsFromDB();
+  DropDatabase();
+  InitializeDatabase();
 
   // Make sure origins have been restored.
   VerifyIncrementalSyncOrigin(kOrigin1, kResourceId1);
@@ -509,17 +465,17 @@ TEST_F(DriveMetadataStoreTest, RemoveOrigin) {
   EXPECT_EQ(SYNC_STATUS_OK,
             UpdateEntry(
                 CreateSyncableFileSystemURL(
-                    kOrigin1, kServiceName, base::FilePath(FPL("guf"))),
+                    kOrigin1, base::FilePath(FPL("guf"))),
                 CreateMetadata("foo", "spam", false, false)));
   EXPECT_EQ(SYNC_STATUS_OK,
             UpdateEntry(
                 CreateSyncableFileSystemURL(
-                    kOrigin2, kServiceName, base::FilePath(FPL("mof"))),
+                    kOrigin2, base::FilePath(FPL("mof"))),
                 CreateMetadata("bar", "ham", false, false)));
   EXPECT_EQ(SYNC_STATUS_OK,
             UpdateEntry(
                 CreateSyncableFileSystemURL(
-                    kOrigin3, kServiceName, base::FilePath(FPL("waf"))),
+                    kOrigin3, base::FilePath(FPL("waf"))),
                 CreateMetadata("baz", "egg", false, false)));
 
   EXPECT_EQ(SYNC_STATUS_OK, RemoveOrigin(kOrigin2));
@@ -545,9 +501,9 @@ TEST_F(DriveMetadataStoreTest, GetResourceIdForOrigin) {
   const GURL kOrigin1("chrome-extension://example1");
   const GURL kOrigin2("chrome-extension://example2");
   const GURL kOrigin3("chrome-extension://example3");
-  const std::string kResourceId1("hogera");
-  const std::string kResourceId2("fugaga");
-  const std::string kResourceId3("piyopiyo");
+  const std::string kResourceId1("folder:hogera");
+  const std::string kResourceId2("folder:fugaga");
+  const std::string kResourceId3("folder:piyopiyo");
 
   InitializeDatabase();
   EXPECT_EQ(SYNC_STATUS_OK, SetLargestChangeStamp(1));
@@ -583,118 +539,6 @@ TEST_F(DriveMetadataStoreTest, GetResourceIdForOrigin) {
   EXPECT_TRUE(metadata_store()->IsKnownOrigin(kOrigin3));
 
   VerifyReverseMap();
-}
-
-TEST_F(DriveMetadataStoreTest, MigrationFromV0) {
-  const GURL kOrigin1("chrome-extension://example1");
-  const GURL kOrigin2("chrome-extension://example2");
-  const std::string kSyncRootResourceId("sync_root_resource_id");
-  const std::string kResourceId1("hoge");
-  const std::string kResourceId2("fuga");
-  const std::string kFileResourceId("piyo");
-  const base::FilePath kFile(FPL("foo bar"));
-  const std::string kFileMD5("file_md5");
-
-  {
-    const char kChangeStampKey[] = "CHANGE_STAMP";
-    const char kSyncRootDirectoryKey[] = "SYNC_ROOT_DIR";
-    const char kDriveMetadataKeyPrefix[] = "METADATA: ";
-    const char kDriveBatchSyncOriginKeyPrefix[] = "BSYNC_ORIGIN: ";
-    const char kDriveIncrementalSyncOriginKeyPrefix[] = "ISYNC_ORIGIN: ";
-
-    const char kV0ServiceName[] = "drive";
-    ASSERT_TRUE(RegisterSyncableFileSystem(kV0ServiceName));
-    leveldb::Options options;
-    options.create_if_missing = true;
-    leveldb::DB* db_ptr = NULL;
-    std::string db_dir = fileapi::FilePathToString(
-        base_dir().Append(DriveMetadataStore::kDatabaseName));
-    leveldb::Status status = leveldb::DB::Open(options, db_dir, &db_ptr);
-
-    scoped_ptr<leveldb::DB> db(db_ptr);
-    ASSERT_TRUE(status.ok());
-
-    leveldb::WriteOptions write_options;
-    db->Put(write_options, kChangeStampKey, "1");
-    db->Put(write_options, kSyncRootDirectoryKey, kSyncRootResourceId);
-
-    DriveMetadata drive_metadata;
-    drive_metadata.set_resource_id(kFileResourceId);
-    drive_metadata.set_md5_checksum(kFileMD5);
-    drive_metadata.set_conflicted(false);
-    drive_metadata.set_to_be_fetched(false);
-
-    fileapi::FileSystemURL url = CreateSyncableFileSystemURL(
-        kOrigin1, kV0ServiceName, kFile);
-    std::string serialized_url;
-    SerializeSyncableFileSystemURL(url, &serialized_url);
-    std::string metadata_string;
-    drive_metadata.SerializeToString(&metadata_string);
-
-    db->Put(write_options,
-            kDriveMetadataKeyPrefix + serialized_url, metadata_string);
-    db->Put(write_options,
-            kDriveBatchSyncOriginKeyPrefix + kOrigin1.spec(), kResourceId1);
-    db->Put(write_options,
-            kDriveIncrementalSyncOriginKeyPrefix + kOrigin2.spec(),
-            kResourceId2);
-    EXPECT_TRUE(RevokeSyncableFileSystem(kV0ServiceName));
-    MarkAsCreated();
-  }
-
-  InitializeDatabase();
-
-  EXPECT_EQ(1, metadata_store()->GetLargestChangeStamp());
-  EXPECT_EQ(kSyncRootResourceId, metadata_store()->sync_root_directory());
-  EXPECT_EQ(kResourceId2, metadata_store()->GetResourceIdForOrigin(kOrigin2));
-
-  DriveMetadata metadata;
-  EXPECT_EQ(SYNC_STATUS_OK,
-            metadata_store()->ReadEntry(
-                CreateSyncableFileSystemURL(kOrigin1, kServiceName, kFile),
-                &metadata));
-  EXPECT_EQ(kFileResourceId, metadata.resource_id());
-  EXPECT_EQ(kFileMD5, metadata.md5_checksum());
-  EXPECT_FALSE(metadata.conflicted());
-  EXPECT_FALSE(metadata.to_be_fetched());
-
-  VerifyReverseMap();
-}
-
-TEST_F(DriveMetadataStoreTest, DeprecateBatchSyncOrigins) {
-  // Make sure that previously saved batch sync origins were deleted from the DB
-  // as they are no longer used.
-  const char kDriveBatchSyncOriginKeyPrefix[] = "BSYNC_ORIGIN: ";
-  const GURL kOrigin1("chrome-extension://example1");
-  const std::string kResourceId1("hoge");
-
-  // Purposely add in an old batch sync origin (from previous DB version).
-  {
-    leveldb::Options options;
-    options.create_if_missing = true;
-    leveldb::DB* db_ptr = NULL;
-    std::string db_dir = fileapi::FilePathToString(
-        base_dir().Append(DriveMetadataStore::kDatabaseName));
-    leveldb::DB::Open(options, db_dir, &db_ptr);
-    scoped_ptr<leveldb::DB> db(db_ptr);
-    leveldb::WriteOptions write_options;
-    db->Put(write_options,
-            kDriveBatchSyncOriginKeyPrefix + kOrigin1.spec(), kResourceId1);
-  }
-
-  InitializeDatabase();
-
-  // Confirm no batch sync origins remain after InitializeDatabase.
-  scoped_ptr<leveldb::Iterator> itr(metadata_db()->NewIterator(
-      leveldb::ReadOptions()));
-  int batch_origins_found = 0;
-  for (itr->Seek(kDriveBatchSyncOriginKeyPrefix); itr->Valid(); itr->Next()) {
-    std::string key = itr->key().ToString();
-    if (!StartsWithASCII(key, kDriveBatchSyncOriginKeyPrefix, true))
-      break;
-    batch_origins_found++;
-  }
-  EXPECT_EQ(0, batch_origins_found);
 }
 
 TEST_F(DriveMetadataStoreTest, ResetOriginRootDirectory) {

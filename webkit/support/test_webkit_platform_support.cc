@@ -9,29 +9,28 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/metrics/stats_counters.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "cc/base/thread_impl.h"
 #include "cc/output/context_provider.h"
 #include "media/base/media.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebAudioDevice.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageArea.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageNamespace.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageEventDispatcher.h"
+#include "third_party/WebKit/public/platform/WebAudioDevice.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebFileSystem.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebStorageArea.h"
+#include "third_party/WebKit/public/platform/WebStorageNamespace.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "v8/include/v8.h"
-#include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/browser/database/vfs_backend.h"
 #include "webkit/common/gpu/test_context_provider_factory.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
@@ -41,26 +40,27 @@
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
+#include "webkit/renderer/appcache/web_application_cache_host_impl.h"
 #include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/support/gc_extension.h"
+#include "webkit/support/mock_webclipboard_impl.h"
+#include "webkit/support/simple_appcache_system.h"
 #include "webkit/support/simple_database_system.h"
+#include "webkit/support/simple_file_system.h"
+#include "webkit/support/simple_resource_loader_bridge.h"
+#include "webkit/support/simple_socket_stream_bridge.h"
+#include "webkit/support/simple_webcookiejar_impl.h"
+#include "webkit/support/test_shell_request_context.h"
+#include "webkit/support/test_shell_webblobregistry_impl.h"
 #include "webkit/support/test_webmessageportchannel.h"
 #include "webkit/support/web_audio_device_mock.h"
 #include "webkit/support/web_gesture_curve_mock.h"
 #include "webkit/support/web_layer_tree_view_impl_for_testing.h"
 #include "webkit/support/webkit_support.h"
 #include "webkit/support/weburl_loader_mock_factory.h"
-#include "webkit/tools/test_shell/mock_webclipboard_impl.h"
-#include "webkit/tools/test_shell/simple_appcache_system.h"
-#include "webkit/tools/test_shell/simple_file_system.h"
-#include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
-#include "webkit/tools/test_shell/simple_socket_stream_bridge.h"
-#include "webkit/tools/test_shell/simple_webcookiejar_impl.h"
-#include "webkit/tools/test_shell/test_shell_request_context.h"
-#include "webkit/tools/test_shell/test_shell_webblobregistry_impl.h"
 
 #if defined(OS_WIN)
-#include "third_party/WebKit/Source/Platform/chromium/public/win/WebThemeEngine.h"
+#include "third_party/WebKit/public/platform/win/WebThemeEngine.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #endif
@@ -199,6 +199,12 @@ WebKit::WebHyphenator* TestWebKitPlatformSupport::hyphenator() {
   return &hyphenator_;
 }
 
+WebKit::WebIDBFactory* TestWebKitPlatformSupport::idbFactory() {
+  NOTREACHED() <<
+      "IndexedDB cannot be tested with in-process harnesses.";
+  return NULL;
+}
+
 bool TestWebKitPlatformSupport::sandboxEnabled() {
   return true;
 }
@@ -279,32 +285,8 @@ WebKit::WebData TestWebKitPlatformSupport::loadResource(const char* name) {
 
 WebKit::WebString TestWebKitPlatformSupport::queryLocalizedString(
     WebKit::WebLocalizedString::Name name) {
-  // Returns messages same as WebKit's in DRT.
-  // We use different strings for form validation messages and page popup UI
-  // strings.
+  // Returns placeholder strings to check if they are correctly localized.
   switch (name) {
-    case WebKit::WebLocalizedString::ValidationValueMissing:
-    case WebKit::WebLocalizedString::ValidationValueMissingForCheckbox:
-    case WebKit::WebLocalizedString::ValidationValueMissingForFile:
-    case WebKit::WebLocalizedString::ValidationValueMissingForMultipleFile:
-    case WebKit::WebLocalizedString::ValidationValueMissingForRadio:
-    case WebKit::WebLocalizedString::ValidationValueMissingForSelect:
-      return ASCIIToUTF16("value missing");
-    case WebKit::WebLocalizedString::ValidationTypeMismatch:
-    case WebKit::WebLocalizedString::ValidationTypeMismatchForEmail:
-    case WebKit::WebLocalizedString::ValidationTypeMismatchForMultipleEmail:
-    case WebKit::WebLocalizedString::ValidationTypeMismatchForURL:
-      return ASCIIToUTF16("type mismatch");
-    case WebKit::WebLocalizedString::ValidationPatternMismatch:
-      return ASCIIToUTF16("pattern mismatch");
-    case WebKit::WebLocalizedString::ValidationTooLong:
-      return ASCIIToUTF16("too long");
-    case WebKit::WebLocalizedString::ValidationRangeUnderflow:
-      return ASCIIToUTF16("range underflow");
-    case WebKit::WebLocalizedString::ValidationRangeOverflow:
-      return ASCIIToUTF16("range overflow");
-    case WebKit::WebLocalizedString::ValidationStepMismatch:
-      return ASCIIToUTF16("step mismatch");
     case WebKit::WebLocalizedString::OtherDateLabel:
       return ASCIIToUTF16("<<OtherDateLabel>>");
     case WebKit::WebLocalizedString::OtherMonthLabel:
@@ -380,7 +362,7 @@ WebKit::WebGraphicsContext3DProvider* TestWebKitPlatformSupport::
   main_thread_contexts_ =
       webkit::gpu::TestContextProviderFactory::GetInstance()->
           OffscreenContextProviderForMainThread();
-  if (!main_thread_contexts_)
+  if (!main_thread_contexts_.get())
     return NULL;
   return new webkit::gpu::WebGraphicsContext3DProviderImpl(
       main_thread_contexts_);

@@ -7,6 +7,7 @@
 
 import optparse
 import os
+import platform
 import sys
 
 import archive
@@ -34,42 +35,44 @@ def _AddToolsToSystemPathForWindows():
   os.environ['PATH'] = os.pathsep.join(paths) + os.pathsep + os.environ['PATH']
 
 
-def _GenerateTestCommand(script, chromedriver, chrome=None,
-                         chrome_version=None, android_package=None):
-  python = sys.executable
-  if util.IsMac():
-    # In Mac, chromedriver2.so is a 32-bit build, so run with 32-bit python.
-    # /usr/bin/python* are universal binaries, meaning they have multiple
-    # binaries in one file.
-    # To force to run with i386, there are two options:
-    # 1) run a versioned python (e.g., 2.6) and use arch -i386.
-    # 2) set VERSIONER_PYTHON_PREFER_32_BIT=yes and run unversioned python
-    os.environ['VERSIONER_PYTHON_PREFER_32_BIT'] = 'yes'
-    python = 'python'
+def _GenerateTestCommand(script,
+                         chromedriver,
+                         ref_chromedriver=None,
+                         chrome=None,
+                         chrome_version=None,
+                         android_package=None):
   cmd = [
-      python,
+      sys.executable,
       os.path.join(_THIS_DIR, script),
       '--chromedriver=' + chromedriver,
   ]
+  if ref_chromedriver:
+    cmd.append('--reference-chromedriver=' + ref_chromedriver)
   if chrome:
     cmd.append('--chrome=' + chrome)
   if chrome_version:
     cmd.append('--chrome-version=' + chrome_version)
 
   if android_package:
+    cmd.insert(0, 'xvfb-run')
     cmd.append('--android-package=' + android_package)
   return cmd
 
 
-def RunPythonTests(chromedriver, chrome=None, chrome_version=None,
+def RunPythonTests(chromedriver, ref_chromedriver,
+                   chrome=None, chrome_version=None,
                    chrome_version_name=None, android_package=None):
   version_info = ''
   if chrome_version_name:
     version_info = '(v%s)' % chrome_version_name
   util.MarkBuildStepStart('python_tests%s' % version_info)
   code = util.RunCommand(
-      _GenerateTestCommand('run_py_tests.py', chromedriver, chrome,
-                           chrome_version, android_package))
+      _GenerateTestCommand('run_py_tests.py',
+                           chromedriver,
+                           ref_chromedriver=ref_chromedriver,
+                           chrome=chrome,
+                           chrome_version=chrome_version,
+                           android_package=android_package))
   if code:
     util.MarkBuildStepError()
   return code
@@ -82,8 +85,12 @@ def RunJavaTests(chromedriver, chrome=None, chrome_version=None,
     version_info = '(v%s)' % chrome_version_name
   util.MarkBuildStepStart('java_tests%s' % version_info)
   code = util.RunCommand(
-      _GenerateTestCommand('run_java_tests.py', chromedriver, chrome,
-                           chrome_version, android_package))
+      _GenerateTestCommand('run_java_tests.py',
+                           chromedriver,
+                           ref_chromedriver=None,
+                           chrome=chrome,
+                           chrome_version=chrome_version,
+                           android_package=android_package))
   if code:
     util.MarkBuildStepError()
   return code
@@ -110,28 +117,27 @@ def main():
            'Notice: this option only applies to desktop.')
   options, _ = parser.parse_args()
 
-  chromedriver_map = {
-      'win': 'chromedriver2.dll',
-      'mac': 'chromedriver2.so',
-      'linux': 'libchromedriver2.so',
-  }
-  chromedriver_name = chromedriver_map[util.GetPlatformName()]
-
+  exe_postfix = ''
   if util.IsWindows():
-    cpp_tests_name = 'chromedriver2_tests.exe'
-    server_name = 'chromedriver2_server.exe'
-  else:
-    cpp_tests_name = 'chromedriver2_tests'
-    server_name = 'chromedriver2_server'
+    exe_postfix = '.exe'
+  cpp_tests_name = 'chromedriver2_tests' + exe_postfix
+  server_name = 'chromedriver2_server' + exe_postfix
 
-  required_build_outputs = [chromedriver_name]
+  required_build_outputs = [server_name]
   if not options.android_package:
-    required_build_outputs += [cpp_tests_name, server_name]
+    required_build_outputs += [cpp_tests_name]
   build_dir = chrome_paths.GetBuildDir(required_build_outputs)
   print 'Using build outputs from', build_dir
 
-  chromedriver = os.path.join(build_dir, chromedriver_name)
-  chromedriver_server = os.path.join(build_dir, server_name)
+  chromedriver = os.path.join(build_dir, server_name)
+  platform_name = util.GetPlatformName()
+  if util.IsLinux() and platform.architecture()[0] == '64bit':
+    platform_name += '64'
+  ref_chromedriver = os.path.join(
+      chrome_paths.GetSrc(),
+      'chrome', 'test', 'chromedriver', 'third_party', 'java_tests',
+      'reference_builds',
+      'chromedriver_%s%s' % (platform_name, exe_postfix))
 
   if util.IsLinux():
     # Set LD_LIBRARY_PATH to enable successful loading of shared object files,
@@ -144,8 +150,9 @@ def main():
   if options.android_package:
     os.environ['PATH'] += os.pathsep + os.path.join(_THIS_DIR, 'chrome')
     code1 = RunPythonTests(chromedriver,
+                           ref_chromedriver,
                            android_package=options.android_package)
-    code2 = RunJavaTests(chromedriver_server,
+    code2 = RunJavaTests(chromedriver,
                          android_package=options.android_package)
     return code1 or code2
   else:
@@ -153,8 +160,7 @@ def main():
     versions = [
         ['HEAD', latest_snapshot_revision],
         ['28', archive.CHROME_28_REVISION],
-        ['27', archive.CHROME_27_REVISION],
-        ['26', archive.CHROME_26_REVISION]
+        ['27', archive.CHROME_27_REVISION]
     ]
     code = 0
     for version in versions:
@@ -168,10 +174,12 @@ def main():
       chrome_path = archive.DownloadChrome(version[1],
                                            util.MakeTempDir(),
                                            download_site)
-      code1 = RunPythonTests(chromedriver, chrome=chrome_path,
+      code1 = RunPythonTests(chromedriver,
+                             ref_chromedriver,
+                             chrome=chrome_path,
                              chrome_version=version[0],
                              chrome_version_name=version_name)
-      code2 = RunJavaTests(chromedriver_server, chrome=chrome_path,
+      code2 = RunJavaTests(chromedriver, chrome=chrome_path,
                            chrome_version=version[0],
                            chrome_version_name=version_name)
       code = code or code1 or code2

@@ -7,13 +7,14 @@
 #include <set>
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_handle.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/extension.h"
@@ -127,9 +128,9 @@ bool Unpacker::ReadAllMessageCatalogs(const std::string& default_locale) {
     temp_install_dir_.Append(kLocaleFolder);
 
   // Not all folders under _locales have to be valid locales.
-  file_util::FileEnumerator locales(locales_path,
-                                    false,
-                                    file_util::FileEnumerator::DIRECTORIES);
+  base::FileEnumerator locales(locales_path,
+                               false,
+                               base::FileEnumerator::DIRECTORIES);
 
   std::set<std::string> all_locales;
   extension_l10n_util::GetAllLocales(&all_locales);
@@ -197,17 +198,18 @@ bool Unpacker::Run() {
 
   // Decode any images that the browser needs to display.
   std::set<base::FilePath> image_paths =
-      extension_file_util::GetBrowserImagePaths(extension);
+      extension_file_util::GetBrowserImagePaths(extension.get());
   for (std::set<base::FilePath>::iterator it = image_paths.begin();
-       it != image_paths.end(); ++it) {
+       it != image_paths.end();
+       ++it) {
     if (!AddDecodedImage(*it))
       return false;  // Error was already reported.
   }
 
   // Parse all message catalogs (if any).
   parsed_catalogs_.reset(new DictionaryValue);
-  if (!LocaleInfo::GetDefaultLocale(extension).empty()) {
-    if (!ReadAllMessageCatalogs(LocaleInfo::GetDefaultLocale(extension)))
+  if (!LocaleInfo::GetDefaultLocale(extension.get()).empty()) {
+    if (!ReadAllMessageCatalogs(LocaleInfo::GetDefaultLocale(extension.get())))
       return false;  // Error was already reported.
   }
 

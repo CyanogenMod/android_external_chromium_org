@@ -11,10 +11,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -36,24 +36,27 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::BrowserThread;
 using content::SiteInstance;
 using content::WebContents;
 using extensions::Extension;
 
 namespace {
 
-// Class used to delete a WebContents when another WebContents is destroyed.
+// Class used to delete a WebContents and TabStripModel when another WebContents
+// is destroyed.
 class DeleteWebContentsOnDestroyedObserver
     : public content::NotificationObserver {
  public:
+  // When |source| is deleted both |tab_to_delete| and |tab_strip| are deleted.
+  // |tab_to_delete| and |tab_strip| may be NULL.
   DeleteWebContentsOnDestroyedObserver(WebContents* source,
-                                       WebContents* tab_to_delete)
+                                       WebContents* tab_to_delete,
+                                       TabStripModel* tab_strip)
       : source_(source),
-        tab_to_delete_(tab_to_delete) {
+        tab_to_delete_(tab_to_delete),
+        tab_strip_(tab_strip) {
     registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
                    content::Source<WebContents>(source));
   }
@@ -63,12 +66,16 @@ class DeleteWebContentsOnDestroyedObserver
                        const content::NotificationDetails& details) OVERRIDE {
     WebContents* tab_to_delete = tab_to_delete_;
     tab_to_delete_ = NULL;
+    TabStripModel* tab_strip_to_delete = tab_strip_;
+    tab_strip_ = NULL;
     delete tab_to_delete;
+    delete tab_strip_to_delete;
   }
 
  private:
   WebContents* source_;
   WebContents* tab_to_delete_;
+  TabStripModel* tab_strip_;
   content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(DeleteWebContentsOnDestroyedObserver);
@@ -108,9 +115,6 @@ class TabStripModelTestIDUserData : public base::SupportsUserData::Data {
 
 class TabStripModelTest : public ChromeRenderViewHostTestHarness {
  public:
-  TabStripModelTest() : browser_thread_(BrowserThread::UI, &message_loop_) {
-  }
-
   WebContents* CreateWebContents() {
     return WebContents::Create(WebContents::CreateParams(profile()));
   }
@@ -197,15 +201,13 @@ class TabStripModelTest : public ChromeRenderViewHostTestHarness {
     selection_model.set_active(selection_model.selected_indices()[0]);
     model->SetSelectionFromModel(selection_model);
   }
-
- private:
-  content::TestBrowserThread browser_thread_;
 };
 
 class MockTabStripModelObserver : public TabStripModelObserver {
  public:
   explicit MockTabStripModelObserver(TabStripModel* model)
       : empty_(true),
+        deleted_(false),
         model_(model) {}
   virtual ~MockTabStripModelObserver() {}
 
@@ -329,18 +331,23 @@ class MockTabStripModelObserver : public TabStripModelObserver {
   virtual void TabStripEmpty() OVERRIDE {
     empty_ = true;
   }
+  virtual void TabStripModelDeleted() OVERRIDE {
+    deleted_ = true;
+  }
 
   void ClearStates() {
     states_.clear();
   }
 
   bool empty() const { return empty_; }
+  bool deleted() const { return deleted_; }
   TabStripModel* model() { return model_; }
 
  private:
   std::vector<State> states_;
 
   bool empty_;
+  bool deleted_;
   TabStripModel* model_;
 
   DISALLOW_COPY_AND_ASSIGN(MockTabStripModelObserver);
@@ -1721,12 +1728,12 @@ TEST_F(TabStripModelTest, Apps) {
                         manifest, Extension::NO_FLAGS, &error));
   WebContents* contents1 = CreateWebContents();
   extensions::TabHelper::CreateForWebContents(contents1);
-  extensions::TabHelper::FromWebContents(contents1)->
-      SetExtensionApp(extension_app);
+  extensions::TabHelper::FromWebContents(contents1)
+      ->SetExtensionApp(extension_app.get());
   WebContents* contents2 = CreateWebContents();
   extensions::TabHelper::CreateForWebContents(contents2);
-  extensions::TabHelper::FromWebContents(contents2)->
-      SetExtensionApp(extension_app);
+  extensions::TabHelper::FromWebContents(contents2)
+      ->SetExtensionApp(extension_app.get());
   WebContents* contents3 = CreateWebContents();
 
   SetID(contents1, 1);
@@ -2116,8 +2123,27 @@ TEST_F(TabStripModelTest, DeleteFromDestroy) {
   strip.AppendWebContents(contents2, true);
   // DeleteWebContentsOnDestroyedObserver deletes contents1 when contents2 sends
   // out notification that it is being destroyed.
-  DeleteWebContentsOnDestroyedObserver observer(contents2, contents1);
+  DeleteWebContentsOnDestroyedObserver observer(contents2, contents1, NULL);
   strip.CloseAllTabs();
+}
+
+// Makes sure TabStripModel handles the case of deleting another tab and the
+// TabStrip while removing another tab.
+TEST_F(TabStripModelTest, DeleteTabStripFromDestroy) {
+  TabStripDummyDelegate delegate;
+  TabStripModel* strip = new TabStripModel(&delegate, profile());
+  MockTabStripModelObserver tab_strip_model_observer(strip);
+  strip->AddObserver(&tab_strip_model_observer);
+  WebContents* contents1 = CreateWebContents();
+  WebContents* contents2 = CreateWebContents();
+  strip->AppendWebContents(contents1, true);
+  strip->AppendWebContents(contents2, true);
+  // DeleteWebContentsOnDestroyedObserver deletes |contents1| and |strip| when
+  // |contents2| sends out notification that it is being destroyed.
+  DeleteWebContentsOnDestroyedObserver observer(contents2, contents1, strip);
+  strip->CloseAllTabs();
+  EXPECT_TRUE(tab_strip_model_observer.empty());
+  EXPECT_TRUE(tab_strip_model_observer.deleted());
 }
 
 TEST_F(TabStripModelTest, MoveSelectedTabsTo) {

@@ -10,8 +10,8 @@
 #include "base/platform_file.h"
 #include "base/threading/thread_local_storage.h"
 #include "base/timer.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
+#include "third_party/WebKit/public/platform/Platform.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
 #include "ui/base/layout.h"
 #include "webkit/glue/resource_loader_bridge.h"
 #include "webkit/glue/webfallbackthemeengine_impl.h"
@@ -25,7 +25,7 @@
 #include "webkit/glue/webthemeengine_impl_mac.h"
 #elif defined(OS_ANDROID)
 #include "webkit/glue/webthemeengine_impl_android.h"
-#include "webkit/media/audio_decoder.h"
+#include "webkit/renderer/media/audio_decoder.h"
 #endif
 
 namespace base {
@@ -85,6 +85,9 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   virtual WebKit::WebURLLoader* createURLLoader();
   virtual WebKit::WebSocketStreamHandle* createSocketStreamHandle();
   virtual WebKit::WebString userAgent(const WebKit::WebURL& url);
+  virtual WebKit::WebData parseDataURL(
+      const WebKit::WebURL& url, WebKit::WebString& mimetype,
+      WebKit::WebString& charset);
   virtual WebKit::WebURLError cancelledError(const WebKit::WebURL& url) const;
   virtual void getPluginList(bool refresh, WebKit::WebPluginListBuilder*);
   virtual void decrementStatsCounter(const char* name);

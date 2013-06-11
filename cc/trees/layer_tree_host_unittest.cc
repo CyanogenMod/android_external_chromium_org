@@ -25,6 +25,8 @@
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_picture_layer.h"
+#include "cc/test/fake_picture_layer_impl.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/fake_scrollbar_layer.h"
 #include "cc/test/geometry_test_utils.h"
@@ -2247,7 +2249,7 @@ SINGLE_THREAD_TEST_F(LayerTreeHostTestLCDNotification);
 class LayerTreeHostTestBeginFrameNotification : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->render_parent_drives_begin_frame_ = true;
+    settings->begin_frame_scheduling_enabled = true;
   }
 
   virtual void BeginTest() OVERRIDE {
@@ -2297,7 +2299,7 @@ class LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled
     : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->render_parent_drives_begin_frame_ = true;
+    settings->begin_frame_scheduling_enabled = true;
     settings->using_synchronous_renderer_compositor = true;
   }
 
@@ -2316,43 +2318,6 @@ class LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled
 
 MULTI_THREAD_TEST_F(
     LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled);
-
-class LayerTreeHostTestInputDrivenRendering : public LayerTreeHostTest {
- public:
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->render_parent_drives_begin_frame_ = true;
-  }
-
-  virtual void BeginTest() OVERRIDE {
-    frame_time_ = base::TimeTicks::Now();
-    PostSetNeedsCommitToMainThread();
-  }
-
-  virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    // Post a task to send the final input event for the current BeginFrame;
-    // it should trigger rendering.
-    ImplThread()->PostTask(
-        base::Bind(&LayerTreeHostTestInputDrivenRendering::SendFinalInputEvent,
-                   base::Unretained(this),
-                   base::Unretained(host_impl)));
-  }
-
-  void SendFinalInputEvent(LayerTreeHostImpl* host_impl) {
-    host_impl->DidReceiveLastInputEventForBeginFrame(frame_time_);
-  }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    EXPECT_EQ(frame_time_, **host_impl->fps_counter()->begin());
-    EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
- private:
-  base::TimeTicks frame_time_;
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostTestInputDrivenRendering);
 
 class LayerTreeHostTestUninvertibleTransformDoesNotBlockActivation
     : public LayerTreeHostTest {
@@ -2877,6 +2842,72 @@ TEST_F(LayerTreeHostTestNumFramesPending, DelegatingRenderer) {
 TEST_F(LayerTreeHostTestNumFramesPending, GLRenderer) {
   RunTest(true, false, true);
 }
+
+class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
+ public:
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    // PictureLayer can only be used with impl side painting enabled.
+    settings->impl_side_painting = true;
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    layer_ = FakePictureLayer::Create(&client_);
+    layer_tree_host()->SetRootLayer(layer_);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    initialized_gl_ = false;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual scoped_ptr<OutputSurface> CreateOutputSurface() OVERRIDE {
+    scoped_ptr<TestWebGraphicsContext3D> context3d(
+        TestWebGraphicsContext3D::Create());
+    context3d->set_support_swapbuffers_complete_callback(false);
+
+    return FakeOutputSurface::CreateDeferredGL(
+        context3d.PassAs<WebKit::WebGraphicsContext3D>(),
+        scoped_ptr<SoftwareOutputDevice>(new SoftwareOutputDevice))
+        .PassAs<OutputSurface>();
+  }
+
+  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    ASSERT_TRUE(host_impl->RootLayer());
+    FakePictureLayerImpl* layer_impl =
+        static_cast<FakePictureLayerImpl*>(host_impl->RootLayer());
+    if (!initialized_gl_) {
+      EXPECT_EQ(1u, layer_impl->append_quads_count());
+      ImplThread()->PostTask(base::Bind(
+          &LayerTreeHostTestDeferredInitialize::DeferredInitializeAndRedraw,
+          base::Unretained(this),
+          base::Unretained(host_impl)));
+    } else {
+      EXPECT_EQ(2u, layer_impl->append_quads_count());
+      EndTest();
+    }
+  }
+
+  void DeferredInitializeAndRedraw(LayerTreeHostImpl* host_impl) {
+    EXPECT_TRUE(
+        host_impl->DeferredInitialize(scoped_refptr<ContextProvider>()));
+    initialized_gl_ = true;
+
+    // Force redraw again.
+    host_impl->SetNeedsRedrawRect(gfx::Rect(1, 1));
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    EXPECT_TRUE(initialized_gl_);
+  }
+
+ private:
+  FakeContentLayerClient client_;
+  scoped_refptr<FakePictureLayer> layer_;
+  bool initialized_gl_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestDeferredInitialize);
 
 }  // namespace
 }  // namespace cc

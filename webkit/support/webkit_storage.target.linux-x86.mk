@@ -11,6 +11,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
@@ -24,48 +25,25 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/appcache/appcache.cc \
-	webkit/appcache/appcache_backend_impl.cc \
-	webkit/appcache/appcache_database.cc \
-	webkit/appcache/appcache_disk_cache.cc \
-	webkit/appcache/appcache_frontend_impl.cc \
-	webkit/appcache/appcache_group.cc \
-	webkit/appcache/appcache_histograms.cc \
-	webkit/appcache/appcache_host.cc \
-	webkit/appcache/appcache_interceptor.cc \
-	webkit/appcache/appcache_interfaces.cc \
-	webkit/appcache/appcache_quota_client.cc \
-	webkit/appcache/appcache_request_handler.cc \
-	webkit/appcache/appcache_response.cc \
-	webkit/appcache/appcache_service.cc \
-	webkit/appcache/appcache_storage.cc \
-	webkit/appcache/appcache_storage_impl.cc \
-	webkit/appcache/appcache_working_set.cc \
-	webkit/appcache/appcache_update_job.cc \
-	webkit/appcache/appcache_url_request_job.cc \
-	webkit/appcache/manifest_parser.cc \
-	webkit/appcache/view_appcache_internals_job.cc \
-	webkit/appcache/web_application_cache_host_impl.cc \
-	webkit/dom_storage/dom_storage_area.cc \
-	webkit/dom_storage/dom_storage_cached_area.cc \
-	webkit/dom_storage/dom_storage_context.cc \
-	webkit/dom_storage/dom_storage_database.cc \
-	webkit/dom_storage/dom_storage_host.cc \
-	webkit/dom_storage/dom_storage_map.cc \
-	webkit/dom_storage/dom_storage_namespace.cc \
-	webkit/dom_storage/dom_storage_session.cc \
-	webkit/dom_storage/dom_storage_task_runner.cc \
-	webkit/dom_storage/dom_storage_types.cc \
-	webkit/dom_storage/local_storage_database_adapter.cc \
-	webkit/dom_storage/session_storage_database.cc \
-	webkit/dom_storage/session_storage_database_adapter.cc \
-	webkit/quota/quota_database.cc \
-	webkit/quota/quota_manager.cc \
-	webkit/quota/quota_status_code.cc \
-	webkit/quota/quota_task.cc \
-	webkit/quota/quota_temporary_storage_evictor.cc \
-	webkit/quota/special_storage_policy.cc \
-	webkit/quota/usage_tracker.cc \
+	webkit/browser/appcache/appcache.cc \
+	webkit/browser/appcache/appcache_backend_impl.cc \
+	webkit/browser/appcache/appcache_database.cc \
+	webkit/browser/appcache/appcache_disk_cache.cc \
+	webkit/browser/appcache/appcache_group.cc \
+	webkit/browser/appcache/appcache_histograms.cc \
+	webkit/browser/appcache/appcache_host.cc \
+	webkit/browser/appcache/appcache_interceptor.cc \
+	webkit/browser/appcache/appcache_quota_client.cc \
+	webkit/browser/appcache/appcache_request_handler.cc \
+	webkit/browser/appcache/appcache_response.cc \
+	webkit/browser/appcache/appcache_service.cc \
+	webkit/browser/appcache/appcache_storage.cc \
+	webkit/browser/appcache/appcache_storage_impl.cc \
+	webkit/browser/appcache/appcache_working_set.cc \
+	webkit/browser/appcache/appcache_update_job.cc \
+	webkit/browser/appcache/appcache_url_request_job.cc \
+	webkit/browser/appcache/manifest_parser.cc \
+	webkit/browser/appcache/view_appcache_internals_job.cc \
 	webkit/browser/blob/blob_data_handle.cc \
 	webkit/browser/blob/blob_storage_controller.cc \
 	webkit/browser/blob/blob_storage_context.cc \
@@ -79,14 +57,25 @@ LOCAL_SRC_FILES := \
 	webkit/browser/database/database_tracker.cc \
 	webkit/browser/database/database_util.cc \
 	webkit/browser/database/vfs_backend.cc \
+	webkit/browser/dom_storage/dom_storage_area.cc \
+	webkit/browser/dom_storage/dom_storage_context.cc \
+	webkit/browser/dom_storage/dom_storage_database.cc \
+	webkit/browser/dom_storage/dom_storage_host.cc \
+	webkit/browser/dom_storage/dom_storage_namespace.cc \
+	webkit/browser/dom_storage/dom_storage_session.cc \
+	webkit/browser/dom_storage/dom_storage_task_runner.cc \
+	webkit/browser/dom_storage/local_storage_database_adapter.cc \
+	webkit/browser/dom_storage/session_storage_database.cc \
+	webkit/browser/dom_storage/session_storage_database_adapter.cc \
 	webkit/browser/fileapi/async_file_util_adapter.cc \
-	webkit/browser/fileapi/cross_operation_delegate.cc \
+	webkit/browser/fileapi/copy_or_move_operation_delegate.cc \
 	webkit/browser/fileapi/external_mount_points.cc \
 	webkit/browser/fileapi/file_permission_policy.cc \
 	webkit/browser/fileapi/file_system_context.cc \
 	webkit/browser/fileapi/file_system_dir_url_request_job.cc \
 	webkit/browser/fileapi/file_system_file_stream_reader.cc \
 	webkit/browser/fileapi/file_system_file_util.cc \
+	webkit/browser/fileapi/file_system_operation_runner.cc \
 	webkit/browser/fileapi/file_system_operation_context.cc \
 	webkit/browser/fileapi/file_system_options.cc \
 	webkit/browser/fileapi/file_system_quota_client.cc \
@@ -109,8 +98,10 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/remove_operation_delegate.cc \
 	webkit/browser/fileapi/sandbox_directory_database.cc \
 	webkit/browser/fileapi/sandbox_file_stream_writer.cc \
+	webkit/browser/fileapi/sandbox_isolated_origin_database.cc \
 	webkit/browser/fileapi/sandbox_mount_point_provider.cc \
 	webkit/browser/fileapi/sandbox_origin_database.cc \
+	webkit/browser/fileapi/sandbox_origin_database_interface.cc \
 	webkit/browser/fileapi/sandbox_quota_observer.cc \
 	webkit/browser/fileapi/syncable/file_change.cc \
 	webkit/browser/fileapi/syncable/local_file_change_tracker.cc \
@@ -124,11 +115,24 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/test_mount_point_provider.cc \
 	webkit/browser/fileapi/transient_file_util.cc \
 	webkit/browser/fileapi/upload_file_system_file_element_reader.cc \
+	webkit/browser/quota/quota_database.cc \
+	webkit/browser/quota/quota_manager.cc \
+	webkit/browser/quota/quota_task.cc \
+	webkit/browser/quota/quota_temporary_storage_evictor.cc \
+	webkit/browser/quota/special_storage_policy.cc \
+	webkit/browser/quota/usage_tracker.cc \
 	webkit/common/blob/blob_data.cc \
 	webkit/common/blob/scoped_file.cc \
 	webkit/common/blob/shareable_file_reference.cc \
 	webkit/common/database/database_connections.cc \
+	webkit/common/dom_storage/dom_storage_map.cc \
+	webkit/common/dom_storage/dom_storage_types.cc \
 	webkit/common/fileapi/file_system_util.cc \
+	webkit/common/quota/quota_status_code.cc \
+	webkit/common/appcache/appcache_interfaces.cc \
+	webkit/renderer/appcache/appcache_frontend_impl.cc \
+	webkit/renderer/appcache/web_application_cache_host_impl.cc \
+	webkit/renderer/dom_storage/dom_storage_cached_area.cc \
 	webkit/renderer/fileapi/webfilewriter_base.cc
 
 
@@ -180,7 +184,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -217,8 +220,7 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/config \

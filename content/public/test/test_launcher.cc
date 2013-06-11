@@ -18,10 +18,10 @@
 #include "base/process_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_suite.h"
 #include "base/test/test_timeouts.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "content/public/app/content_main.h"
 #include "content/public/app/content_main_delegate.h"
 #include "content/public/app/startup_helper_win.h"
@@ -54,10 +54,6 @@ const char kPreTestPrefix[] = "PRE_";
 // This is useful so that a team that wants to run a few tests doesn't have to
 // add a new binary that must be compiled on all builds.
 const char kManualTestPrefix[] = "MANUAL_";
-
-// Tests with this suffix are expected to crash, so it won't count as a failure.
-// A test that uses this must have a PRE_ prefix.
-const char kCrashTestSuffix[] = "_CRASH";
 
 TestLauncherDelegate* g_launcher_delegate;
 }
@@ -317,10 +313,8 @@ int RunTestInternal(const testing::TestCase* test_case,
       if (cur_test_name == pre_test_name) {
         int exit_code = RunTestInternal(test_case, pre_test_name, command_line,
                                         default_timeout, was_timeout);
-        if (exit_code != 0 &&
-            !EndsWith(pre_test_name, kCrashTestSuffix, true)) {
+        if (exit_code != 0)
           return exit_code;
-        }
       }
     }
   }

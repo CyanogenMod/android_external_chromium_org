@@ -11,7 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_util_proxy.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "net/base/io_buffer.h"
@@ -31,23 +31,6 @@
 namespace webkit_blob {
 
 namespace {
-
-const int kHTTPOk = 200;
-const int kHTTPPartialContent = 206;
-const int kHTTPNotAllowed = 403;
-const int kHTTPNotFound = 404;
-const int kHTTPMethodNotAllow = 405;
-const int kHTTPRequestedRangeNotSatisfiable = 416;
-const int kHTTPInternalError = 500;
-
-const char kHTTPOKText[] = "OK";
-const char kHTTPPartialContentText[] = "Partial Content";
-const char kHTTPNotAllowedText[] = "Not Allowed";
-const char kHTTPNotFoundText[] = "Not Found";
-const char kHTTPMethodNotAllowText[] = "Method Not Allowed";
-const char kHTTPRequestedRangeNotSatisfiableText[] =
-    "Requested Range Not Satisfiable";
-const char kHTTPInternalErrorText[] = "Internal Server Error";
 
 bool IsFileType(BlobData::Item::Type type) {
   switch (type) {
@@ -78,9 +61,8 @@ BlobURLRequestJob::BlobURLRequestJob(
       current_item_index_(0),
       current_item_offset_(0),
       error_(false),
-      headers_set_(false),
       byte_range_set_(false) {
-  DCHECK(file_thread_proxy_);
+  DCHECK(file_thread_proxy_.get());
 }
 
 void BlobURLRequestJob::Start() {
@@ -121,7 +103,7 @@ bool BlobURLRequestJob::ReadRawData(net::IOBuffer* dest,
   }
 
   // Keep track of the buffer.
-  DCHECK(!read_buf_);
+  DCHECK(!read_buf_.get());
   read_buf_ = new net::DrainableIOBuffer(dest, dest_size);
 
   return ReadLoop(bytes_read);
@@ -171,6 +153,8 @@ BlobURLRequestJob::~BlobURLRequestJob() {
 }
 
 void BlobURLRequestJob::DidStart() {
+  error_ = false;
+
   // We only support GET request per the spec.
   if (request()->method() != "GET") {
     NotifyFailure(net::ERR_METHOD_NOT_SUPPORTED);
@@ -178,7 +162,7 @@ void BlobURLRequestJob::DidStart() {
   }
 
   // If the blob data is not present, bail out.
-  if (!blob_data_) {
+  if (!blob_data_.get()) {
     NotifyFailure(net::ERR_FILE_NOT_FOUND);
     return;
   }
@@ -200,7 +184,6 @@ bool BlobURLRequestJob::AddItemLength(size_t index, int64 item_length) {
 }
 
 void BlobURLRequestJob::CountSize() {
-  error_ = false;
   pending_get_file_info_count_ = 0;
   total_size_ = 0;
   item_length_list_.resize(blob_data_->items().size());
@@ -392,9 +375,9 @@ bool BlobURLRequestJob::ReadFileItem(FileStreamReader* reader,
   DCHECK_GE(read_buf_->BytesRemaining(), bytes_to_read);
   DCHECK(reader);
   const int result = reader->Read(
-      read_buf_, bytes_to_read,
-      base::Bind(&BlobURLRequestJob::DidReadFile,
-                 base::Unretained(this)));
+      read_buf_.get(),
+      bytes_to_read,
+      base::Bind(&BlobURLRequestJob::DidReadFile, base::Unretained(this)));
   if (result >= 0) {
     // Data is immediately available.
     if (GetStatus().is_io_pending())
@@ -473,16 +456,10 @@ bool BlobURLRequestJob::ReadLoop(int* bytes_read) {
 }
 
 void BlobURLRequestJob::NotifySuccess() {
-  int status_code = 0;
-  std::string status_text;
-  if (byte_range_set_ && byte_range_.IsValid()) {
-    status_code = kHTTPPartialContent;
-    status_text += kHTTPPartialContentText;
-  } else {
-    status_code = kHTTPOk;
-    status_text = kHTTPOKText;
-  }
-  HeadersCompleted(status_code, status_text);
+  net::HttpStatusCode status_code = net::HTTP_OK;
+  if (byte_range_set_ && byte_range_.IsValid())
+    status_code = net::HTTP_PARTIAL_CONTENT;
+  HeadersCompleted(status_code);
 }
 
 void BlobURLRequestJob::NotifyFailure(int error_code) {
@@ -490,54 +467,44 @@ void BlobURLRequestJob::NotifyFailure(int error_code) {
 
   // If we already return the headers on success, we can't change the headers
   // now. Instead, we just error out.
-  if (headers_set_) {
+  if (response_info_) {
     NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED,
                                      error_code));
     return;
   }
 
-  int status_code = 0;
-  std::string status_txt;
+  net::HttpStatusCode status_code = net::HTTP_INTERNAL_SERVER_ERROR;
   switch (error_code) {
     case net::ERR_ACCESS_DENIED:
-      status_code = kHTTPNotAllowed;
-      status_txt = kHTTPNotAllowedText;
+      status_code = net::HTTP_FORBIDDEN;
       break;
     case net::ERR_FILE_NOT_FOUND:
-      status_code = kHTTPNotFound;
-      status_txt = kHTTPNotFoundText;
+      status_code = net::HTTP_NOT_FOUND;
       break;
     case net::ERR_METHOD_NOT_SUPPORTED:
-      status_code = kHTTPMethodNotAllow;
-      status_txt = kHTTPMethodNotAllowText;
+      status_code = net::HTTP_METHOD_NOT_ALLOWED;
       break;
     case net::ERR_REQUEST_RANGE_NOT_SATISFIABLE:
-      status_code = kHTTPRequestedRangeNotSatisfiable;
-      status_txt = kHTTPRequestedRangeNotSatisfiableText;
+      status_code = net::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE;
       break;
     case net::ERR_FAILED:
-      status_code = kHTTPInternalError;
-      status_txt = kHTTPInternalErrorText;
       break;
     default:
       DCHECK(false);
-      status_code = kHTTPInternalError;
-      status_txt = kHTTPInternalErrorText;
       break;
   }
-  HeadersCompleted(status_code, status_txt);
+  HeadersCompleted(status_code);
 }
 
-void BlobURLRequestJob::HeadersCompleted(int status_code,
-                                         const std::string& status_text) {
+void BlobURLRequestJob::HeadersCompleted(net::HttpStatusCode status_code) {
   std::string status("HTTP/1.1 ");
   status.append(base::IntToString(status_code));
   status.append(" ");
-  status.append(status_text);
+  status.append(net::GetHttpReasonPhrase(status_code));
   status.append("\0\0", 2);
   net::HttpResponseHeaders* headers = new net::HttpResponseHeaders(status);
 
-  if (status_code == kHTTPOk || status_code == kHTTPPartialContent) {
+  if (status_code == net::HTTP_OK || status_code == net::HTTP_PARTIAL_CONTENT) {
     std::string content_length_header(net::HttpRequestHeaders::kContentLength);
     content_length_header.append(": ");
     content_length_header.append(base::Int64ToString(remaining_bytes_));
@@ -559,7 +526,6 @@ void BlobURLRequestJob::HeadersCompleted(int status_code,
   response_info_->headers = headers;
 
   set_expected_content_size(remaining_bytes_);
-  headers_set_ = true;
 
   NotifyHeadersComplete();
 }
@@ -585,11 +551,10 @@ void BlobURLRequestJob::CreateFileStreamReader(size_t index,
   FileStreamReader* reader = NULL;
   switch (item.type()) {
     case BlobData::Item::TYPE_FILE:
-      reader = new LocalFileStreamReader(
-          file_thread_proxy_,
-          item.path(),
-          item.offset() + additional_offset,
-          item.expected_modification_time());
+      reader = new LocalFileStreamReader(file_thread_proxy_.get(),
+                                         item.path(),
+                                         item.offset() + additional_offset,
+                                         item.expected_modification_time());
       break;
     case BlobData::Item::TYPE_FILE_FILESYSTEM:
       reader = file_system_context_->CreateFileStreamReader(

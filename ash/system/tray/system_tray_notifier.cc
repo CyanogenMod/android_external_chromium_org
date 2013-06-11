@@ -4,9 +4,16 @@
 
 #include "ash/system/tray/system_tray_notifier.h"
 
+#if defined(OS_CHROMEOS)
+#include "ash/system/chromeos/network/network_state_notifier.h"
+#endif
+
 namespace ash {
 
 SystemTrayNotifier::SystemTrayNotifier() {
+#if defined(OS_CHROMEOS)
+  network_state_notifier_.reset(new NetworkStateNotifier());
+#endif
 }
 
 SystemTrayNotifier::~SystemTrayNotifier() {
@@ -161,6 +168,15 @@ void SystemTrayNotifier::RemoveScreenCaptureObserver(
   screen_capture_observers_.RemoveObserver(observer);
 }
 
+void SystemTrayNotifier::AddScreenShareObserver(
+    ScreenShareObserver* observer) {
+  screen_share_observers_.AddObserver(observer);
+}
+
+void SystemTrayNotifier::RemoveScreenShareObserver(
+    ScreenShareObserver* observer) {
+  screen_share_observers_.RemoveObserver(observer);
+}
 #endif
 
 void SystemTrayNotifier::NotifyAccessibilityModeChanged(
@@ -335,6 +351,18 @@ void SystemTrayNotifier::NotifyScreenCaptureStart(
 void SystemTrayNotifier::NotifyScreenCaptureStop() {
   FOR_EACH_OBSERVER(ScreenCaptureObserver, screen_capture_observers_,
                     OnScreenCaptureStop());
+}
+
+void SystemTrayNotifier::NotifyScreenShareStart(
+    const base::Closure& stop_callback,
+    const base::string16& helper_name) {
+  FOR_EACH_OBSERVER(ScreenShareObserver, screen_share_observers_,
+                    OnScreenShareStart(stop_callback, helper_name));
+}
+
+void SystemTrayNotifier::NotifyScreenShareStop() {
+  FOR_EACH_OBSERVER(ScreenShareObserver, screen_share_observers_,
+                    OnScreenShareStop());
 }
 
 #endif  // OS_CHROMEOS

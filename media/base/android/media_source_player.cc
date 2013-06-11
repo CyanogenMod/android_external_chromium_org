@@ -8,6 +8,7 @@
 #include "base/android/jni_string.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
@@ -15,18 +16,47 @@
 #include "media/base/android/media_player_manager.h"
 
 namespace {
+
 // Timeout value for media codec operations.
 const int kMediaCodecTimeoutInMicroseconds = 5000;
+
+class DecoderThread : public base::Thread {
+ public:
+  virtual ~DecoderThread() {}
+ protected:
+  DecoderThread(const char* name) : base::Thread(name) { Start(); }
+};
+
+class AudioDecoderThread : public DecoderThread {
+ public:
+  AudioDecoderThread() : DecoderThread("MediaSource_AudioDecoderThread") {}
+};
+
+class VideoDecoderThread : public DecoderThread {
+ public:
+  VideoDecoderThread() : DecoderThread("MediaSource_VideoDecoderThread") {}
+};
+
+// TODO(qinmin): Check if it is tolerable to use worker pool to handle all the
+// decoding tasks so that we don't need the global threads here.
+// http://crbug.com/245750
+base::LazyInstance<AudioDecoderThread>::Leaky
+    g_audio_decoder_thread = LAZY_INSTANCE_INITIALIZER;
+
+base::LazyInstance<VideoDecoderThread>::Leaky
+    g_video_decoder_thread = LAZY_INSTANCE_INITIALIZER;
+
 }
 
 namespace media {
 
-MediaDecoderJob::MediaDecoderJob(
-    bool is_audio, const scoped_refptr<base::MessageLoopProxy>& message_loop)
-    : message_loop_(message_loop),
+MediaDecoderJob::MediaDecoderJob(base::Thread* thread, bool is_audio)
+    : message_loop_(base::MessageLoopProxy::current()),
+      thread_(thread),
       needs_flush_(false),
       is_audio_(is_audio),
-      weak_this_(this) {
+      weak_this_(this),
+      decoding_(false) {
 }
 
 MediaDecoderJob::~MediaDecoderJob() {}
@@ -35,9 +65,8 @@ MediaDecoderJob::~MediaDecoderJob() {}
 class AudioDecoderJob : public MediaDecoderJob {
  public:
   AudioDecoderJob(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop,
-      const AudioCodec audio_codec, int sample_rate, int channel_count,
-      const uint8* extra_data, size_t extra_data_size);
+      const AudioCodec audio_codec, int sample_rate,
+      int channel_count, const uint8* extra_data, size_t extra_data_size);
   virtual ~AudioDecoderJob() {}
 };
 
@@ -45,7 +74,6 @@ class AudioDecoderJob : public MediaDecoderJob {
 class VideoDecoderJob : public MediaDecoderJob {
  public:
   VideoDecoderJob(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop,
       const VideoCodec video_codec, const gfx::Size& size, jobject surface);
   virtual ~VideoDecoderJob() {}
 
@@ -58,8 +86,8 @@ void MediaDecoderJob::Decode(
     const base::Time& start_wallclock_time,
     const base::TimeDelta& start_presentation_timestamp,
     const MediaDecoderJob::DecoderCallback& callback) {
-  if (!thread_->IsRunning())
-    thread_->Start();
+  DCHECK(!decoding_);
+  decoding_ = true;
   thread_->message_loop()->PostTask(FROM_HERE, base::Bind(
       &MediaDecoderJob::DecodeInternal, base::Unretained(this), unit,
       start_wallclock_time, start_presentation_timestamp, needs_flush_,
@@ -78,6 +106,12 @@ void MediaDecoderJob::DecodeInternal(
   base::TimeDelta timeout = base::TimeDelta::FromMicroseconds(
       kMediaCodecTimeoutInMicroseconds);
   int input_buf_index = media_codec_bridge_->DequeueInputBuffer(timeout);
+  if (input_buf_index == MediaCodecBridge::INFO_MEDIA_CODEC_ERROR) {
+    message_loop_->PostTask(FROM_HERE, base::Bind(
+        callback, false, start_presentation_timestamp, start_wallclock_time,
+        false));
+    return;
+  }
   // TODO(qinmin): skip frames if video is falling far behind.
   if (input_buf_index >= 0) {
     if (unit.end_of_stream) {
@@ -91,6 +125,7 @@ void MediaDecoderJob::DecodeInternal(
   size_t size = 0;
   base::TimeDelta presentation_timestamp;
   bool end_of_stream = false;
+  bool decode_succeeded = true;
 
   int outputBufferIndex = media_codec_bridge_->DequeueOutputBuffer(
       timeout, &offset, &size, &presentation_timestamp, &end_of_stream);
@@ -103,6 +138,9 @@ void MediaDecoderJob::DecodeInternal(
       break;
     case MediaCodecBridge::INFO_TRY_AGAIN_LATER:
       break;
+    case MediaCodecBridge::INFO_MEDIA_CODEC_ERROR:
+      decode_succeeded = false;
+      break;
     default:
       DCHECK_LE(0, outputBufferIndex);
       if (size == 0 && end_of_stream)
@@ -113,7 +151,7 @@ void MediaDecoderJob::DecodeInternal(
             start_wallclock_time + start_presentation_timestamp);
       }
       if (time_to_render >= base::TimeDelta()) {
-        MessageLoop::current()->PostDelayedTask(
+        base::MessageLoop::current()->PostDelayedTask(
             FROM_HERE,
             base::Bind(&MediaDecoderJob::ReleaseOutputBuffer,
                        weak_this_.GetWeakPtr(), outputBufferIndex, size,
@@ -130,8 +168,8 @@ void MediaDecoderJob::DecodeInternal(
       return;
   }
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      callback, start_presentation_timestamp, start_wallclock_time,
-      end_of_stream));
+      callback, decode_succeeded, start_presentation_timestamp,
+      start_wallclock_time, end_of_stream));
 }
 
 void MediaDecoderJob::ReleaseOutputBuffer(
@@ -146,7 +184,12 @@ void MediaDecoderJob::ReleaseOutputBuffer(
   }
   media_codec_bridge_->ReleaseOutputBuffer(outputBufferIndex, !is_audio_);
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      callback, presentation_timestamp, base::Time::Now(), end_of_stream));
+      callback, true, presentation_timestamp, base::Time::Now(),
+      end_of_stream));
+}
+
+void MediaDecoderJob::OnDecodeCompleted() {
+  decoding_ = false;
 }
 
 void MediaDecoderJob::Flush() {
@@ -155,37 +198,43 @@ void MediaDecoderJob::Flush() {
 }
 
 void MediaDecoderJob::Release() {
-  if (thread_->IsRunning() &&
-      thread_->message_loop() != base::MessageLoop::current()) {
+  // If |decoding_| is false, there is nothing running on the decoder thread.
+  // So it is safe to delete the MediaDecoderJob on the UI thread. However,
+  // if we post a task to the decoder thread to delete object, then we cannot
+  // immediately pass the surface to a new MediaDecoderJob instance because
+  // the java surface is still owned by the old object. New decoder creation
+  // will be blocked on the UI thread until the previous decoder gets deleted.
+  // This introduces extra latency during config changes, and makes the logic in
+  // MediaSourcePlayer more complicated.
+  //
+  // TODO(qinmin): Figure out the logic to passing the surface to a new
+  // MediaDecoderJob instance after the previous one gets deleted on the decoder
+  // thread.
+  if (decoding_ && thread_->message_loop() != base::MessageLoop::current())
     thread_->message_loop()->DeleteSoon(FROM_HERE, this);
-  } else {
+  else
     delete this;
-  }
 }
 
 VideoDecoderJob::VideoDecoderJob(
-    const scoped_refptr<base::MessageLoopProxy>& message_loop,
     const VideoCodec video_codec, const gfx::Size& size, jobject surface)
-    : MediaDecoderJob(false, message_loop) {
+    : MediaDecoderJob(g_video_decoder_thread.Pointer(), false) {
   scoped_ptr<VideoCodecBridge> codec(VideoCodecBridge::Create(video_codec));
   codec->Start(video_codec, size, surface);
   media_codec_bridge_.reset(codec.release());
-  thread_.reset(new base::Thread("MediaSource_VideoDecoderThread"));
 }
 
 AudioDecoderJob::AudioDecoderJob(
-    const scoped_refptr<base::MessageLoopProxy>& message_loop,
     const AudioCodec audio_codec,
     int sample_rate,
     int channel_count,
     const uint8* extra_data,
     size_t extra_data_size)
-    : MediaDecoderJob(true, message_loop) {
+    : MediaDecoderJob(g_audio_decoder_thread.Pointer(), true) {
   scoped_ptr<AudioCodecBridge> codec(AudioCodecBridge::Create(audio_codec));
   codec->Start(audio_codec, sample_rate, channel_count, extra_data,
                extra_data_size, true);
   media_codec_bridge_.reset(codec.release());
-  thread_.reset(new base::Thread("MediaSource_AudioDecoderThread"));
 }
 
 MediaSourcePlayer::MediaSourcePlayer(
@@ -194,6 +243,7 @@ MediaSourcePlayer::MediaSourcePlayer(
     : MediaPlayerAndroid(player_id, manager),
       pending_event_(NO_EVENT_PENDING),
       active_decoding_tasks_(0),
+      seek_request_id_(0),
       width_(0),
       height_(0),
       audio_codec_(kUnknownAudioCodec),
@@ -204,11 +254,12 @@ MediaSourcePlayer::MediaSourcePlayer(
       audio_finished_(true),
       video_finished_(true),
       playing_(false),
+      reconfig_audio_decoder_(false),
+      reconfig_video_decoder_(false),
       audio_access_unit_index_(0),
       video_access_unit_index_(0),
       waiting_for_audio_data_(false),
       waiting_for_video_data_(false),
-      use_empty_surface_(true),
       weak_this_(this) {
 }
 
@@ -216,56 +267,21 @@ MediaSourcePlayer::~MediaSourcePlayer() {
   Release();
 }
 
-void MediaSourcePlayer::SetVideoSurface(jobject surface) {
-  use_empty_surface_ =  surface ? false : true;
-
-  // If we haven't processed a surface change event, do so now.
-  if (active_decoding_tasks_ > 0) {
-    pending_event_ |= SURFACE_CHANGE_EVENT_PENDING;
-    // Request a seek so that the next decoder will decode an I-frame first.
-    // Or otherwise, MediaCodec might crash. See b/8950387.
-    pending_event_ |= SEEK_EVENT_PENDING;
-    ProcessPendingEvents();
-    return;
-  }
-
-  if (HasVideo()) {
-    video_decoder_job_.reset(new VideoDecoderJob(
-        base::MessageLoopProxy::current(), video_codec_,
-        gfx::Size(width_, height_), surface));
-  }
-
-  // Inform the fullscreen view the player is ready.
-  // TODO(qinmin): refactor MediaPlayerBridge so that we have a better way
-  // to inform ContentVideoView.
-  OnMediaMetadataChanged(duration_, width_, height_, true);
-
-  if (pending_event_ & SURFACE_CHANGE_EVENT_PENDING) {
-    // We should already requested a seek in this case.
-    pending_event_ &= ~SURFACE_CHANGE_EVENT_PENDING;
-  } else {
-    // Perform a seek so the new decoder can get the I-frame first.
-    pending_event_ |= SEEK_EVENT_PENDING;
-    ProcessPendingEvents();
-    return;
-  }
-
-  if (playing_)
-    StartInternal();
+void MediaSourcePlayer::SetVideoSurface(gfx::ScopedJavaSurface surface) {
+  surface_ =  surface.Pass();
+  pending_event_ |= SURFACE_CHANGE_EVENT_PENDING;
+  // Setting a new surface will require a new MediaCodec to be created.
+  // Request a seek so that the new decoder will decode an I-frame first.
+  // Or otherwise, the new MediaCodec might crash. See b/8950387.
+  pending_event_ |= SEEK_EVENT_PENDING;
+  ProcessPendingEvents();
 }
 
 void MediaSourcePlayer::Start() {
   playing_ = true;
-  if (HasAudio() && !audio_decoder_job_) {
-    audio_decoder_job_.reset(new AudioDecoderJob(
-        base::MessageLoopProxy::current(), audio_codec_, sampling_rate_,
-        num_channels_, &audio_extra_data_[0], audio_extra_data_.size()));
-  }
 
-  if (HasVideo() && !video_decoder_job_) {
-    // StartInternal() will be delayed until SetVideoSurface() gets called.
-    return;
-  }
+  CreateAudioDecoderJob();
+  CreateVideoDecoderJob();
 
   StartInternal();
 }
@@ -305,9 +321,12 @@ void MediaSourcePlayer::Release() {
   ClearDecodingData();
   audio_decoder_job_.reset();
   video_decoder_job_.reset();
+  reconfig_audio_decoder_ = false;
+  reconfig_video_decoder_ = false;
   active_decoding_tasks_ = 0;
   playing_ = false;
   pending_event_ = NO_EVENT_PENDING;
+  surface_ = gfx::ScopedJavaSurface();
   ReleaseMediaResourcesFromManager();
 }
 
@@ -335,6 +354,12 @@ void MediaSourcePlayer::StartInternal() {
   if (active_decoding_tasks_ > 0 || pending_event_ != NO_EVENT_PENDING)
     return;
 
+  // If one of the decoder job is not ready, do nothing.
+  if ((HasAudio() && !audio_decoder_job_) ||
+      (HasVideo() && !video_decoder_job_)) {
+    return;
+  }
+
   if (HasAudio()) {
     audio_finished_ = false;
     DecodeMoreAudio();
@@ -358,6 +383,20 @@ void MediaSourcePlayer::DemuxerReady(
   video_codec_ = params.video_codec;
   audio_extra_data_ = params.audio_extra_data;
   OnMediaMetadataChanged(duration_, width_, height_, true);
+  if (pending_event_ & CONFIG_CHANGE_EVENT_PENDING) {
+    if (reconfig_audio_decoder_) {
+      CreateAudioDecoderJob();
+    }
+    // If there is a pending surface change, we can merge it with the config
+    // change.
+    if (reconfig_video_decoder_) {
+      pending_event_ &= ~SURFACE_CHANGE_EVENT_PENDING;
+      CreateVideoDecoderJob();
+    }
+    pending_event_ &= ~CONFIG_CHANGE_EVENT_PENDING;
+    if (playing_ && pending_event_ == NO_EVENT_PENDING)
+      StartInternal();
+  }
 }
 
 void MediaSourcePlayer::ReadFromDemuxerAck(
@@ -385,11 +424,13 @@ void MediaSourcePlayer::ReadFromDemuxerAck(
   }
 }
 
-void MediaSourcePlayer::OnSeekRequestAck() {
+void MediaSourcePlayer::OnSeekRequestAck(unsigned seek_request_id) {
+  // Do nothing until the most recent seek request is processed.
+  if (seek_request_id_ != seek_request_id)
+    return;
   pending_event_ &= ~SEEK_EVENT_PENDING;
   OnSeekComplete();
-  if (playing_)
-    StartInternal();
+  ProcessPendingEvents();
 }
 
 void MediaSourcePlayer::UpdateTimestamps(
@@ -404,27 +445,51 @@ void MediaSourcePlayer::UpdateTimestamps(
 }
 
 void MediaSourcePlayer::ProcessPendingEvents() {
-  // Wait for all the decoding jobs to finish before sending a seek request.
+  // Wait for all the decoding jobs to finish before processing pending tasks.
   if (active_decoding_tasks_ > 0)
     return;
 
-  DCHECK(pending_event_ != NO_EVENT_PENDING);
-  if (use_empty_surface_ && (pending_event_ & SURFACE_CHANGE_EVENT_PENDING)) {
+  if (pending_event_ & SEEK_EVENT_PENDING) {
+    ClearDecodingData();
+    manager()->OnMediaSeekRequest(
+        player_id(), last_presentation_timestamp_, ++seek_request_id_);
+    return;
+  }
+
+  start_wallclock_time_ = base::Time();
+  if (pending_event_ & CONFIG_CHANGE_EVENT_PENDING) {
+    DCHECK(reconfig_audio_decoder_ || reconfig_video_decoder_);
+    manager()->OnMediaConfigRequest(player_id());
+    return;
+  }
+
+  if (pending_event_ & SURFACE_CHANGE_EVENT_PENDING) {
     video_decoder_job_.reset();
+    CreateVideoDecoderJob();
     pending_event_ &= ~SURFACE_CHANGE_EVENT_PENDING;
   }
 
-  ClearDecodingData();
-  manager()->OnMediaSeekRequest(player_id(),
-                                last_presentation_timestamp_,
-                                pending_event_ & SURFACE_CHANGE_EVENT_PENDING);
+  if (playing_ && pending_event_ == NO_EVENT_PENDING)
+    StartInternal();
 }
 
 void MediaSourcePlayer::MediaDecoderCallback(
-    bool is_audio, const base::TimeDelta& presentation_timestamp,
+    bool is_audio, bool decode_succeeded,
+    const base::TimeDelta& presentation_timestamp,
     const base::Time& wallclock_time, bool end_of_stream) {
   if (active_decoding_tasks_ > 0)
     active_decoding_tasks_--;
+
+  if (is_audio && audio_decoder_job_)
+    audio_decoder_job_->OnDecodeCompleted();
+  if (!is_audio && video_decoder_job_)
+    video_decoder_job_->OnDecodeCompleted();
+
+  if (!decode_succeeded) {
+    Release();
+    OnMediaError(MEDIA_ERROR_DECODE);
+    return;
+  }
 
   if (pending_event_ != NO_EVENT_PENDING) {
     ProcessPendingEvents();
@@ -459,6 +524,17 @@ void MediaSourcePlayer::DecodeMoreAudio() {
     return;
   }
 
+  if (DemuxerStream::kConfigChanged ==
+      received_audio_.access_units[audio_access_unit_index_].status) {
+    // Wait for demuxer ready message.
+    reconfig_audio_decoder_ = true;
+    pending_event_ |= CONFIG_CHANGE_EVENT_PENDING;
+    received_audio_ = MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
+    audio_access_unit_index_ = 0;
+    ProcessPendingEvents();
+    return;
+  }
+
   audio_decoder_job_->Decode(
       received_audio_.access_units[audio_access_unit_index_],
       start_wallclock_time_, start_presentation_timestamp_,
@@ -476,6 +552,17 @@ void MediaSourcePlayer::DecodeMoreVideo() {
       video_access_unit_index_ = 0;
       waiting_for_video_data_ = true;
     }
+    return;
+  }
+
+  if (DemuxerStream::kConfigChanged ==
+      received_video_.access_units[video_access_unit_index_].status) {
+    // Wait for demuxer ready message.
+    reconfig_video_decoder_ = true;
+    pending_event_ |= CONFIG_CHANGE_EVENT_PENDING;
+    received_video_ = MediaPlayerHostMsg_ReadFromDemuxerAck_Params();
+    video_access_unit_index_ = 0;
+    ProcessPendingEvents();
     return;
   }
 
@@ -520,6 +607,39 @@ bool MediaSourcePlayer::HasVideo() {
 
 bool MediaSourcePlayer::HasAudio() {
   return kUnknownAudioCodec != audio_codec_;
+}
+
+void MediaSourcePlayer::CreateAudioDecoderJob() {
+  DCHECK_EQ(0, active_decoding_tasks_);
+
+  // Create audio decoder job only if config changes.
+  if (HasAudio() && (reconfig_audio_decoder_ || !audio_decoder_job_)) {
+    audio_decoder_job_.reset(new AudioDecoderJob(
+        audio_codec_, sampling_rate_, num_channels_,
+        &audio_extra_data_[0], audio_extra_data_.size()));
+    reconfig_audio_decoder_ =  false;
+  }
+}
+
+void MediaSourcePlayer::CreateVideoDecoderJob() {
+  DCHECK_EQ(0, active_decoding_tasks_);
+
+  if (!HasVideo() || surface_.IsSurfaceEmpty()) {
+    video_decoder_job_.reset();
+    return;
+  }
+
+  if (reconfig_video_decoder_ || !video_decoder_job_) {
+    video_decoder_job_.reset();
+    video_decoder_job_.reset(new VideoDecoderJob(
+        video_codec_, gfx::Size(width_, height_), surface_.j_surface().obj()));
+    reconfig_video_decoder_ = false;
+  }
+
+  // Inform the fullscreen view the player is ready.
+  // TODO(qinmin): refactor MediaPlayerBridge so that we have a better way
+  // to inform ContentVideoView.
+  OnMediaMetadataChanged(duration_, width_, height_, true);
 }
 
 }  // namespace media

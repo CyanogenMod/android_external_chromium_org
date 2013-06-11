@@ -5,8 +5,8 @@
 #include "base/basictypes.h"
 
 #include "base/shared_memory.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_ui_controller_factory.h"
@@ -22,10 +22,10 @@
 #include "content/test/mock_keyboard.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPBody.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWindowFeatures.h"
@@ -1182,7 +1182,13 @@ TEST_F(RenderViewImplTest, MAYBE_OnHandleKeyboardEvent) {
 // keyboard events through the RenderWidget::OnHandleInputEvent() function.
 // This test is for preventing regressions caused only when we use non-US
 // keyboards, such as Issue 10846.
-TEST_F(RenderViewImplTest, InsertCharacters) {
+// see http://crbug.com/244562
+#if defined(OS_WIN)
+#define MAYBE_InsertCharacters DISABLED_InsertCharacters
+#else
+#define MAYBE_InsertCharacters InsertCharacters
+#endif
+TEST_F(RenderViewImplTest, MAYBE_InsertCharacters) {
 #if !defined(OS_MACOSX)
   static const struct {
     MockKeyboard::Layout layout;
@@ -1853,6 +1859,12 @@ TEST_F(RenderViewImplTest, NavigateFrame) {
   std::wstring output = UTF16ToWideHack(
       GetMainFrame()->contentAsText(kMaxOutputCharacters));
   EXPECT_EQ(output, L"hello \n\nworld");
+}
+
+// This test ensures that a RenderFrame object is created for the top level
+// frame in the RenderView.
+TEST_F(RenderViewImplTest, BasicRenderFrame) {
+  EXPECT_TRUE(view()->main_render_frame_.get());
 }
 
 }  // namespace content

@@ -14,13 +14,13 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_local.h"
-#include "base/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_comptr.h"
@@ -964,7 +964,7 @@ bool IsValidUrlScheme(const GURL& url, bool is_privileged) {
 
   // Additional checking for view-source. Allow only http and https
   // URLs in view source.
-  if (url.SchemeIs(chrome::kViewSourceScheme)) {
+  if (url.SchemeIs(content::kViewSourceScheme)) {
     GURL sub_url(url.path());
     if (sub_url.SchemeIs(chrome::kHttpScheme) ||
         sub_url.SchemeIs(chrome::kHttpsScheme))

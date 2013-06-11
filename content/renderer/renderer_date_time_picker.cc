@@ -4,7 +4,7 @@
 
 #include "content/renderer/renderer_date_time_picker.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/date_time_formatter.h"
 #include "content/renderer/render_view_impl.h"
@@ -31,8 +31,6 @@ RendererDateTimePicker::~RendererDateTimePicker() {
 
 bool RendererDateTimePicker::Open() {
   DateTimeFormatter parser(chooser_params_);
-  std::string test_s = chooser_params_.currentValue.utf8();
-
   ViewHostMsg_DateTimeDialogValue_Params message;
   message.year =  parser.GetYear();
   message.month =  parser.GetMonth();
@@ -41,7 +39,8 @@ bool RendererDateTimePicker::Open() {
   message.minute = parser.GetMinute();
   message.second = parser.GetSecond();
   message.dialog_type = parser.GetType();
-
+  message.minimum = chooser_params_.minimum;
+  message.maximum = chooser_params_.maximum;
   Send(new ViewHostMsg_OpenDateTimeDialog(routing_id(), message));
   return true;
 }

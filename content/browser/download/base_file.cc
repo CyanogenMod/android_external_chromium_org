@@ -9,7 +9,7 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/pickle.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
 #include "content/browser/download/download_net_log_parameters.h"
@@ -218,11 +218,6 @@ DownloadInterruptReason BaseFile::AnnotateWithSourceInformation() {
 }
 #endif
 
-int64 BaseFile::CurrentSpeed() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  return CurrentSpeedAtTime(base::TimeTicks::Now());
-}
-
 bool BaseFile::GetHash(std::string* hash) {
   DCHECK(!detached_);
   hash->assign(reinterpret_cast<const char*>(sha256_hash_),
@@ -337,12 +332,6 @@ void BaseFile::ClearStream() {
   DCHECK(file_stream_.get() != NULL);
   file_stream_.reset();
   bound_net_log_.EndEvent(net::NetLog::TYPE_DOWNLOAD_FILE_OPENED);
-}
-
-int64 BaseFile::CurrentSpeedAtTime(base::TimeTicks current_time) const {
-  base::TimeDelta diff = current_time - start_tick_;
-  int64 diff_ms = diff.InMilliseconds();
-  return diff_ms == 0 ? 0 : bytes_so_far() * 1000 / diff_ms;
 }
 
 DownloadInterruptReason BaseFile::LogNetError(

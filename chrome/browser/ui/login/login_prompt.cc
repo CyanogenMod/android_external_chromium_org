@@ -8,8 +8,8 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -87,7 +87,7 @@ LoginHandler::LoginHandler(net::AuthChallengeInfo* auth_info,
   // here. BuildViewForPasswordManager() will be invoked on the UI thread
   // later, so wait with loading the nib until then.
   DCHECK(request_) << "LoginHandler constructed with NULL request";
-  DCHECK(auth_info_) << "LoginHandler constructed with NULL auth info";
+  DCHECK(auth_info_.get()) << "LoginHandler constructed with NULL auth info";
 
   AddRef();  // matched by LoginHandler::ReleaseSoon().
 

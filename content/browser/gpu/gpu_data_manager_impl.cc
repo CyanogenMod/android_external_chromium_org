@@ -162,9 +162,20 @@ std::string GpuDataManagerImpl::GetBlacklistVersion() const {
   return private_->GetBlacklistVersion();
 }
 
-base::ListValue* GpuDataManagerImpl::GetBlacklistReasons() const {
+std::string GpuDataManagerImpl::GetDriverBugListVersion() const {
   base::AutoLock auto_lock(lock_);
-  return private_->GetBlacklistReasons();
+  return private_->GetDriverBugListVersion();
+}
+
+void GpuDataManagerImpl::GetBlacklistReasons(base::ListValue* reasons) const {
+  base::AutoLock auto_lock(lock_);
+  private_->GetBlacklistReasons(reasons);
+}
+
+void GpuDataManagerImpl::GetDriverBugWorkarounds(
+    base::ListValue* workarounds) const {
+  base::AutoLock auto_lock(lock_);
+  private_->GetDriverBugWorkarounds(workarounds);
 }
 
 void GpuDataManagerImpl::AddLogMessage(int level,
@@ -220,6 +231,16 @@ void GpuDataManagerImpl::DisableDomainBlockingFor3DAPIsForTesting() {
 size_t GpuDataManagerImpl::GetBlacklistedFeatureCount() const {
   base::AutoLock auto_lock(lock_);
   return private_->GetBlacklistedFeatureCount();
+}
+
+void GpuDataManagerImpl::SetDisplayCount(unsigned int display_count) {
+  base::AutoLock auto_lock(lock_);
+  private_->SetDisplayCount(display_count);
+}
+
+unsigned int GpuDataManagerImpl::GetDisplayCount() const {
+  base::AutoLock auto_lock(lock_);
+  return private_->GetDisplayCount();
 }
 
 void GpuDataManagerImpl::Notify3DAPIBlocked(const GURL& url,

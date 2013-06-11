@@ -7,14 +7,16 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
-#include "base/string16.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "cc/base/switches.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
@@ -83,11 +85,11 @@
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/webpreferences.h"
 
 #if defined(OS_ANDROID)
-#include "content/public/browser/android/content_view_core.h"
 #include "content/browser/android/date_time_chooser_android.h"
+#include "content/public/browser/android/content_view_core.h"
 #endif
 
 #if defined(OS_MACOSX)
@@ -151,6 +153,9 @@ const int kQueryStateDelay = 5000;
 const int kSyncWaitDelay = 40;
 
 const char kDotGoogleDotCom[] = ".google.com";
+
+base::LazyInstance<std::vector<WebContents::CreatedCallback> >
+g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 
 static int StartDownload(content::RenderViewHost* rvh,
                          const GURL& url,
@@ -272,12 +277,25 @@ WebContents* WebContents::CreateWithSessionStorage(
            session_storage_namespace_map.begin();
        it != session_storage_namespace_map.end();
        ++it) {
-    new_contents->GetController().SetSessionStorageNamespace(it->first,
-                                                             it->second);
+    new_contents->GetController()
+        .SetSessionStorageNamespace(it->first, it->second.get());
   }
 
   new_contents->Init(params);
   return new_contents;
+}
+
+void WebContents::AddCreatedCallback(const CreatedCallback& callback) {
+  g_created_callbacks.Get().push_back(callback);
+}
+
+void WebContents::RemoveCreatedCallback(const CreatedCallback& callback) {
+  for (size_t i = 0; i < g_created_callbacks.Get().size(); ++i) {
+    if (g_created_callbacks.Get().at(i).Equals(callback)) {
+      g_created_callbacks.Get().erase(g_created_callbacks.Get().begin() + i);
+      return;
+    }
+  }
 }
 
 WebContents* WebContents::FromRenderViewHost(const RenderViewHost* rvh) {
@@ -339,6 +357,8 @@ WebContentsImpl::WebContentsImpl(
       color_chooser_identifier_(0),
       message_source_(NULL),
       fullscreen_widget_routing_id_(MSG_ROUTING_NONE) {
+  for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
+    g_created_callbacks.Get().at(i).Run(this);
 }
 
 WebContentsImpl::~WebContentsImpl() {
@@ -379,11 +399,18 @@ WebContentsImpl::~WebContentsImpl() {
   // OnCloseStarted isn't called in unit tests.
   if (!close_start_time_.is_null()) {
     base::TimeTicks now = base::TimeTicks::Now();
+    base::TimeDelta close_time = now - close_start_time_;
+    UMA_HISTOGRAM_TIMES("Tab.Close", close_time);
+
     base::TimeTicks unload_start_time = close_start_time_;
+    base::TimeTicks unload_end_time = now;
     if (!before_unload_end_time_.is_null())
       unload_start_time = before_unload_end_time_;
-    UMA_HISTOGRAM_TIMES("Tab.Close", now - close_start_time_);
-    UMA_HISTOGRAM_TIMES("Tab.Close.UnloadTime", now - unload_start_time);
+    if (!unload_detached_start_time_.is_null())
+      unload_end_time = unload_detached_start_time_;
+    base::TimeDelta unload_time = unload_end_time - unload_start_time;
+    UMA_HISTOGRAM_TIMES("Tab.Close.UnloadTime", unload_time);
+
   }
 
   FOR_EACH_OBSERVER(WebContentsObserver,
@@ -595,6 +622,7 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
 
   prefs.is_online = !net::NetworkChangeNotifier::IsOffline();
 
+#if !defined(USE_AURA)
   // Force accelerated compositing and 2d canvas off for chrome: and about:
   // pages (unless it's specifically allowed).
   if ((url.SchemeIs(chrome::kChromeUIScheme) ||
@@ -604,6 +632,7 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
     prefs.accelerated_compositing_enabled = false;
     prefs.accelerated_2d_canvas_enabled = false;
   }
+#endif
 
   prefs.fixed_position_creates_stacking_context = !command_line.HasSwitch(
       switches::kDisableFixedPositionCreatesStackingContext);
@@ -744,13 +773,13 @@ BrowserContext* WebContentsImpl::GetBrowserContext() const {
 
 const GURL& WebContentsImpl::GetURL() const {
   // We may not have a navigation entry yet.
-  NavigationEntry* entry = controller_.GetActiveEntry();
+  NavigationEntry* entry = controller_.GetVisibleEntry();
   return entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
 }
 
 const GURL& WebContentsImpl::GetActiveURL() const {
   // We may not have a navigation entry yet.
-  NavigationEntry* entry = controller_.GetActiveEntry();
+  NavigationEntry* entry = controller_.GetVisibleEntry();
   return entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
 }
 
@@ -911,7 +940,7 @@ const string16& WebContentsImpl::GetTitle() const {
       render_manager_.pending_web_ui() : render_manager_.web_ui();
   if (our_web_ui) {
     // Don't override the title in view source mode.
-    entry = controller_.GetActiveEntry();
+    entry = controller_.GetVisibleEntry();
     if (!(entry && entry->IsViewSourceMode())) {
       // Give the Web UI the chance to override our title.
       const string16& title = our_web_ui->GetOverriddenTitle();
@@ -925,6 +954,13 @@ const string16& WebContentsImpl::GetTitle() const {
   // keep the old page's title until the new load has committed and we get a new
   // title.
   entry = controller_.GetLastCommittedEntry();
+
+  // We make an exception for initial navigations, because we can have a
+  // committed entry for an initial navigation when doing a history navigation
+  // in a new tab, such as Ctrl+Back.
+  if (entry && controller_.IsInitialNavigation())
+    entry = controller_.GetVisibleEntry();
+
   if (entry) {
     return entry->GetTitleForDisplay(accept_languages);
   }
@@ -1162,7 +1198,8 @@ void WebContentsImpl::Observe(int type,
 
 void WebContentsImpl::Init(const WebContents::CreateParams& params) {
   render_manager_.Init(
-      params.browser_context, params.site_instance, params.routing_id);
+      params.browser_context, params.site_instance, params.routing_id,
+      params.main_frame_routing_id);
 
   view_.reset(GetContentClient()->browser()->
       OverrideCreateWebContentsView(this, &render_view_host_delegate_view_));
@@ -1378,12 +1415,15 @@ void WebContentsImpl::LostMouseLock() {
 
 void WebContentsImpl::CreateNewWindow(
     int route_id,
+    int main_frame_route_id,
     const ViewHostMsg_CreateWindow_Params& params,
     SessionStorageNamespace* session_storage_namespace) {
   if (delegate_ && !delegate_->ShouldCreateWebContents(
           this, route_id, params.window_container_type, params.frame_name,
           params.target_url)) {
     GetRenderViewHost()->GetProcess()->ResumeRequestsForView(route_id);
+    GetRenderViewHost()->GetProcess()->ResumeRequestsForView(
+        main_frame_route_id);
     return;
   }
 
@@ -1411,9 +1451,8 @@ void WebContentsImpl::CreateNewWindow(
       GetContentClient()->browser()->
           GetStoragePartitionIdForSite(GetBrowserContext(),
                                        site_instance->GetSiteURL());
-  StoragePartition* partition =
-      BrowserContext::GetStoragePartition(GetBrowserContext(),
-                                          site_instance);
+  StoragePartition* partition = BrowserContext::GetStoragePartition(
+      GetBrowserContext(), site_instance.get());
   DOMStorageContextImpl* dom_storage_context =
       static_cast<DOMStorageContextImpl*>(partition->GetDOMStorageContext());
   SessionStorageNamespaceImpl* session_storage_namespace_impl =
@@ -1422,8 +1461,9 @@ void WebContentsImpl::CreateNewWindow(
   new_contents->GetController().SetSessionStorageNamespace(
       partition_id,
       session_storage_namespace);
-  CreateParams create_params(GetBrowserContext(), site_instance);
+  CreateParams create_params(GetBrowserContext(), site_instance.get());
   create_params.routing_id = route_id;
+  create_params.main_frame_routing_id = main_frame_route_id;
   if (!is_guest) {
     create_params.context = view_->GetNativeView();
     create_params.initial_size = view_->GetContainerSize();
@@ -1898,6 +1938,21 @@ void WebContentsImpl::OnCloseStarted() {
     close_start_time_ = base::TimeTicks::Now();
 }
 
+void WebContentsImpl::OnCloseCanceled() {
+  close_start_time_ = base::TimeTicks();
+  before_unload_end_time_ = base::TimeTicks();
+  unload_detached_start_time_ = base::TimeTicks();
+}
+
+void WebContentsImpl::OnUnloadStarted() {
+  before_unload_end_time_ = base::TimeTicks::Now();
+}
+
+void WebContentsImpl::OnUnloadDetachedStarted() {
+  if (unload_detached_start_time_.is_null())
+    unload_detached_start_time_ = base::TimeTicks::Now();
+}
+
 void WebContentsImpl::DragSourceEndedAt(int client_x, int client_y,
     int screen_x, int screen_y, WebKit::WebDragOperation operation) {
   if (browser_plugin_embedder_.get())
@@ -2066,6 +2121,23 @@ void WebContentsImpl::DidStartProvisionalLoadForFrame(
 
   if (is_main_frame)
     DidChangeLoadProgress(0);
+
+  // Create a pending entry for this provisional load (if none exists) using the
+  // current SiteInstance, and ensure the address bar updates accordingly.
+  // We don't know the referrer or extra headers at this point, but the referrer
+  // will be set properly upon commit.
+  if (is_main_frame && !controller_.GetPendingEntry()) {
+    NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
+        controller_.CreateNavigationEntry(validated_url,
+                                          content::Referrer(),
+                                          content::PAGE_TRANSITION_LINK,
+                                          true /* is_renderer_initiated */,
+                                          std::string(), GetBrowserContext()));
+    entry->set_site_instance(
+        static_cast<SiteInstanceImpl*>(GetSiteInstance()));
+    controller_.SetPendingEntry(entry);
+    NotifyNavigationStateChanged(content::INVALIDATE_TYPE_URL);
+  }
 
   // Notify observers about the start of the provisional load.
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
@@ -2322,8 +2394,9 @@ void WebContentsImpl::OnRegisterProtocolHandler(const std::string& protocol,
 
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (policy->IsPseudoScheme(protocol) || policy->IsDisabledScheme(protocol))
+  if (policy->IsPseudoScheme(protocol))
     return;
+
   delegate_->RegisterProtocolHandler(this, protocol, url, title, user_gesture);
 }
 
@@ -2358,7 +2431,7 @@ void WebContentsImpl::OnOpenDateTimeDialog(
   date_time_chooser_->ShowDialog(
       ContentViewCore::FromWebContents(this), GetRenderViewHost(),
       value.dialog_type, value.year, value.month, value.day, value.hour,
-      value.minute, value.second);
+      value.minute, value.second, value.minimum, value.maximum);
 }
 
 #endif
@@ -2479,6 +2552,11 @@ void WebContentsImpl::OnUpdateFaviconURL(
 }
 
 FrameTreeNode* WebContentsImpl::FindFrameTreeNodeByID(int64 frame_id) {
+  // TODO(nasko): Remove this check once we move to creating the root node
+  // through RenderFrameHost creation.
+  if (!frame_tree_root_.get())
+    return NULL;
+
   FrameTreeNode* node = NULL;
   std::queue<FrameTreeNode*> queue;
   queue.push(frame_tree_root_.get());
@@ -2696,6 +2774,12 @@ void WebContentsImpl::NotifyDisconnected() {
       NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
       Source<WebContents>(this),
       NotificationService::NoDetails());
+}
+
+void WebContentsImpl::NotifyNavigationEntryCommitted(
+    const LoadCommittedDetails& load_details) {
+  FOR_EACH_OBSERVER(
+      WebContentsObserver, observers_, NavigationEntryCommitted(load_details));
 }
 
 RenderViewHostDelegateView* WebContentsImpl::GetDelegateView() {
@@ -3057,6 +3141,11 @@ void WebContentsImpl::DidDisownOpener(RenderViewHost* rvh) {
   // in case we go back to them, or if another window in those processes tries
   // to access window.opener.
   render_manager_.DidDisownOpener(rvh);
+}
+
+void WebContentsImpl::DidAccessInitialDocument() {
+  // Update the URL display.
+  NotifyNavigationStateChanged(content::INVALIDATE_TYPE_URL);
 }
 
 void WebContentsImpl::DocumentAvailableInMainFrame(
@@ -3517,9 +3606,7 @@ void WebContentsImpl::OnDialogClosed(RenderViewHost* rvh,
     // spinning, since we forced it to start spinning in Navigate.
     DidStopLoading(rvh);
     controller_.DiscardNonCommittedEntries();
-
-    close_start_time_ = base::TimeTicks();
-    before_unload_end_time_ = base::TimeTicks();
+    OnCloseCanceled();
   }
   is_showing_before_unload_dialog_ = false;
   static_cast<RenderViewHostImpl*>(

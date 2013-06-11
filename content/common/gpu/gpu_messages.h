@@ -18,6 +18,7 @@
 #include "content/public/common/gpu_memory_stats.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
 #include "ipc/ipc_channel_handle.h"
@@ -27,7 +28,6 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gpu_preference.h"
-#include "ui/surface/transport_dib.h"
 
 #if defined(OS_ANDROID)
 #include "content/common/android/surface_texture_peer.h"
@@ -148,6 +148,9 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(gl_vendor)
   IPC_STRUCT_TRAITS_MEMBER(gl_renderer)
   IPC_STRUCT_TRAITS_MEMBER(gl_extensions)
+  IPC_STRUCT_TRAITS_MEMBER(gl_ws_vendor)
+  IPC_STRUCT_TRAITS_MEMBER(gl_ws_version)
+  IPC_STRUCT_TRAITS_MEMBER(gl_ws_extensions)
   IPC_STRUCT_TRAITS_MEMBER(can_lose_context)
   IPC_STRUCT_TRAITS_MEMBER(gpu_accessible)
   IPC_STRUCT_TRAITS_MEMBER(performance_stats)
@@ -492,12 +495,10 @@ IPC_SYNC_MESSAGE_ROUTED1_1(GpuCommandBufferMsg_Initialize,
 IPC_SYNC_MESSAGE_ROUTED1_0(GpuCommandBufferMsg_SetGetBuffer,
                            int32 /* shm_id */)
 
-// Sets the parent command buffer. This allows the parent and child to share
-// textures.
-IPC_SYNC_MESSAGE_ROUTED2_1(GpuCommandBufferMsg_SetParent,
-                           int32 /* parent_route_id */,
-                           uint32 /* parent_texture_id */,
-                           bool /* result */)
+// Produces the front buffer into a mailbox. This allows another context to draw
+// the output of this context.
+IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_ProduceFrontBuffer,
+                    gpu::Mailbox /* mailbox */)
 
 // Get the current state of the command buffer.
 IPC_SYNC_MESSAGE_ROUTED0_1(GpuCommandBufferMsg_GetState,

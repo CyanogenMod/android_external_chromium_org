@@ -11,8 +11,8 @@
 #include "base/pickle.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/native_backend_kwallet_x.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
@@ -250,31 +250,29 @@ void NativeBackendKWalletTest::SetUp() {
       new dbus::MockObjectProxy(mock_session_bus_.get(),
                                 "org.kde.klauncher",
                                 dbus::ObjectPath("/KLauncher"));
-  EXPECT_CALL(*mock_klauncher_proxy_,
-              MockCallMethodAndBlock(_, _))
-      .WillRepeatedly(Invoke(this,
-          &NativeBackendKWalletTest::KLauncherMethodCall));
+  EXPECT_CALL(*mock_klauncher_proxy_.get(), MockCallMethodAndBlock(_, _))
+      .WillRepeatedly(
+           Invoke(this, &NativeBackendKWalletTest::KLauncherMethodCall));
 
   mock_kwallet_proxy_ =
       new dbus::MockObjectProxy(mock_session_bus_.get(),
                                 "org.kde.kwalletd",
                                 dbus::ObjectPath("/modules/kwalletd"));
-  EXPECT_CALL(*mock_kwallet_proxy_,
-              MockCallMethodAndBlock(_, _))
-      .WillRepeatedly(Invoke(this,
-          &NativeBackendKWalletTest::KWalletMethodCall));
+  EXPECT_CALL(*mock_kwallet_proxy_.get(), MockCallMethodAndBlock(_, _))
+      .WillRepeatedly(
+           Invoke(this, &NativeBackendKWalletTest::KWalletMethodCall));
 
-  EXPECT_CALL(*mock_session_bus_, GetObjectProxy(
-      "org.kde.klauncher",
-      dbus::ObjectPath("/KLauncher")))
+  EXPECT_CALL(
+      *mock_session_bus_.get(),
+      GetObjectProxy("org.kde.klauncher", dbus::ObjectPath("/KLauncher")))
       .WillRepeatedly(Return(mock_klauncher_proxy_.get()));
-  EXPECT_CALL(*mock_session_bus_, GetObjectProxy(
-      "org.kde.kwalletd",
-      dbus::ObjectPath("/modules/kwalletd")))
+  EXPECT_CALL(
+      *mock_session_bus_.get(),
+      GetObjectProxy("org.kde.kwalletd", dbus::ObjectPath("/modules/kwalletd")))
       .WillRepeatedly(Return(mock_kwallet_proxy_.get()));
 
-  EXPECT_CALL(*mock_session_bus_,
-              ShutdownAndBlock()).WillOnce(Return()).WillRepeatedly(Return());
+  EXPECT_CALL(*mock_session_bus_.get(), ShutdownAndBlock()).WillOnce(Return())
+      .WillRepeatedly(Return());
 }
 
 void NativeBackendKWalletTest::TearDown() {

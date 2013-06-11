@@ -9,11 +9,12 @@
 #include "base/base_paths.h"
 #include "base/base_paths_win.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
 #include "base/test/scoped_path_override.h"
 #include "base/test/test_shortcut_win.h"
 #include "base/win/shortcut.h"
@@ -526,8 +527,8 @@ TEST_F(ShellUtilShortcutTest, CreateMultipleStartMenuShortcutsAndRemoveFolder) {
 
   base::FilePath shortcut_folder(
       fake_start_menu_.path().Append(dist_->GetAppShortCutName()));
-  file_util::FileEnumerator file_counter(shortcut_folder, false,
-                                         file_util::FileEnumerator::FILES);
+  base::FileEnumerator file_counter(shortcut_folder, false,
+                                    base::FileEnumerator::FILES);
   int count = 0;
   while (!file_counter.Next().empty())
     ++count;

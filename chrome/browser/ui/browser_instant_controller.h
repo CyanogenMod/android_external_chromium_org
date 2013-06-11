@@ -50,7 +50,7 @@ class BrowserInstantController : public content::NotificationObserver,
 
   // Commits the current Instant, returning true on success. This is intended
   // for use from OpenCurrentURL.
-  bool OpenInstant(WindowOpenDisposition disposition);
+  bool OpenInstant(WindowOpenDisposition disposition, const GURL& url);
 
   // Returns the Profile associated with the Browser that owns this object.
   Profile* profile() const;
@@ -65,10 +65,6 @@ class BrowserInstantController : public content::NotificationObserver,
 
   // Invoked by |instant_| to autocomplete the |suggestion| into the omnibox.
   void SetInstantSuggestion(const InstantSuggestion& suggestion);
-
-  // Invoked by |instant_| to commit the omnibox's suggested text.
-  // Call-through to OmniboxEditModel::CommitSuggestedText.
-  void CommitSuggestedText(bool skip_inline_autocomplete);
 
   // Invoked by |instant_| to get the bounds that the overlay is placed at,
   // in screen coordinates.
@@ -102,6 +98,9 @@ class BrowserInstantController : public content::NotificationObserver,
 
   // Sets the stored omnibox bounds.
   void SetOmniboxBounds(const gfx::Rect& bounds);
+
+  // Notifies |instant_| to toggle voice search.
+  void ToggleVoiceSearch();
 
  private:
   // Sets the value of |instant_| based on value from profile. Invoked

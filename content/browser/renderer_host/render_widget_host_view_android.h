@@ -20,7 +20,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/vector2d_f.h"
 
@@ -100,7 +100,8 @@ class RenderWidgetHostViewAndroid
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects) OVERRIDE;
+      const std::vector<gfx::Rect>& copy_rects,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -221,6 +222,7 @@ class RenderWidgetHostViewAndroid
   void AttachLayers();
   void RemoveLayers();
 
+  void CreateOverscrollEffectIfNecessary();
   void UpdateAnimationSize(const cc::CompositorFrame* frame);
   void ScheduleAnimationIfNecessary();
 
@@ -266,14 +268,12 @@ class RenderWidgetHostViewAndroid
   // The mailbox of the previously received frame.
   gpu::Mailbox current_mailbox_;
 
-  // The mailbox of the frame we last returned.
-  gpu::Mailbox last_mailbox_;
-
   base::WeakPtrFactory<RenderWidgetHostViewAndroid> weak_ptr_factory_;
 
   std::queue<base::Closure> ack_callbacks_;
 
   // Used to render overscroll overlays.
+  bool overscroll_effect_enabled_;
   scoped_ptr<OverscrollGlow> overscroll_effect_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAndroid);

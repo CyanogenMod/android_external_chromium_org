@@ -439,6 +439,7 @@
 
     // Force HTTPS for sites that have requested it.
     { "name": "www.paypal.com", "mode": "force-https" },
+    { "name": "paypal.com", "mode": "force-https" },
     { "name": "www.elanex.biz", "mode": "force-https" },
     { "name": "jottit.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "sunshinepress.org", "include_subdomains": true, "mode": "force-https" },
@@ -602,6 +603,10 @@
     { "name": "p.linode.com", "mode": "force-https" },
     { "name": "paste.linode.com", "mode": "force-https" },
     { "name": "pastebin.linode.com", "mode": "force-https" },
+    { "name": "inertianetworks.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "carezone.com", "mode": "force-https" },
+    { "name": "conformal.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "cyphertite.com", "include_subdomains": true, "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },

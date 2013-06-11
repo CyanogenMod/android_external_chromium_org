@@ -25,7 +25,7 @@
 #include "base/time/tick_clock.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
-#include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launch_error.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launcher.h"
@@ -73,6 +73,7 @@
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/owner_key_util.h"
 #include "chrome/browser/chromeos/system/automatic_reboot_manager.h"
+#include "chrome/browser/chromeos/system/device_change_handler.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/chromeos/system_key_event_listener.h"
 #include "chrome/browser/chromeos/upgrade_detector_chromeos.h"
@@ -86,7 +87,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
 #include "chrome/browser/storage_monitor/storage_monitor_chromeos.h"
-#include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -209,7 +209,7 @@ bool ShouldAutoLaunchKioskApp(const CommandLine& command_line) {
   return !command_line.HasSwitch(switches::kDisableAppMode) &&
       command_line.HasSwitch(switches::kLoginManager) &&
       !command_line.HasSwitch(switches::kForceLoginManagerInTests) &&
-      !app_manager->GetAutoLaunchApp().empty() &&
+      app_manager->IsAutoLaunchEnabled() &&
       KioskAppLaunchError::Get() == KioskAppLaunchError::NONE;
 }
 
@@ -554,14 +554,6 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
     // Load the default app order synchronously for restarting case.
     app_order_loader_.reset(
         new default_app_order::ExternalLoader(false /* async */));
-
-  // TODO(antrim): SessionStarted notification should be moved to
-  // PostProfileInit at some point, as NOTIFICATION_SESSION_STARTED should
-  // go after NOTIFICATION_LOGIN_USER_PROFILE_PREPARED, which requires
-  // loaded profile (and, thus, should be fired in PostProfileInit, as
-  // synchronous profile loading does not emit it).
-
-    user_manager->SessionStarted();
   }
 
   if (!app_order_loader_) {
@@ -571,6 +563,7 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
 
   // Initialize magnification manager before ash tray is created. And this must
   // be placed after UserManager::SessionStarted();
+  AccessibilityManager::Initialize();
   MagnificationManager::Initialize();
 
   // Add observers for WallpaperManager. This depends on PowerManagerClient,
@@ -601,10 +594,6 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   // -- This used to be in ChromeBrowserMainParts::PreMainMessageLoopRun()
   // -- just after CreateProfile().
 
-  // Initialize the Ash Shell after the Default Profile has been created and
-  // before ash dependent systems are initialized.
-  chrome::OpenAsh();
-
   // Restarting Chrome inside existing user session. Possible cases:
   // 1. Chrome is restarted after crash.
   // 2. Chrome is started in browser_tests skipping the login flow
@@ -621,6 +610,14 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
 
     // This is done in LoginUtils::OnProfileCreated during normal login.
     LoginUtils::Get()->InitRlzDelayed(profile());
+
+    // Send the PROFILE_PREPARED notification and call SessionStarted()
+    // so that the Launcher and other Profile dependent classes are created.
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
+        content::NotificationService::AllSources(),
+        content::Details<Profile>(profile()));
+    UserManager::Get()->SessionStarted();
 
     // Now is the good time to retrieve other logged in users for this session.
     // First user has been already marked as logged in and active in
@@ -670,11 +667,8 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
         content::PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
         "Retail mode");
   }
-  chromeos::accessibility::Initialize();
 
   peripheral_battery_observer_.reset(new PeripheralBatteryObserver());
-
-  storage_monitor_->Init();
 
   // Initialize the network portal detector for Chrome OS. The network
   // portal detector starts to listen for notifications from
@@ -703,6 +697,9 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   // This observer cannot be created earlier because it requires the shell to be
   // available.
   idle_action_warning_observer_.reset(new IdleActionWarningObserver());
+
+  // Listen to changes in device hierarchy.
+  device_change_handler_.reset(new system::DeviceChangeHandler());
 
   ChromeBrowserMainPartsLinux::PostProfileInit();
 }
@@ -817,6 +814,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   contact_manager_.reset();
 
   MagnificationManager::Shutdown();
+  AccessibilityManager::Shutdown();
 
   // Let the UserManager and WallpaperManager unregister itself as an observer
   // of the CrosSettings singleton before it is destroyed.
@@ -829,8 +827,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
 
   // Clean up dependency on CrosSettings and stop pending data fetches.
   KioskAppManager::Shutdown();
-
-  chrome::CloseAsh();
 
   ChromeBrowserMainPartsLinux::PostMainMessageLoopRun();
 

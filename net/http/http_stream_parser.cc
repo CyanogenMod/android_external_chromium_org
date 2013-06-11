@@ -248,15 +248,15 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
     // We'll repurpose |request_headers_| to store the merged headers and
     // body.
     request_headers_ = new DrainableIOBuffer(
-        merged_request_headers_and_body, merged_size);
+        merged_request_headers_and_body.get(), merged_size);
 
     memcpy(request_headers_->data(), request.data(), request.size());
     request_headers_->DidConsume(request.size());
 
     size_t todo = request_->upload_data_stream->size();
     while (todo) {
-      int consumed = request_->upload_data_stream->Read(request_headers_, todo,
-                                                        CompletionCallback());
+      int consumed = request_->upload_data_stream
+          ->Read(request_headers_.get(), todo, CompletionCallback());
       DCHECK_GT(consumed, 0);  // Read() won't fail if not chunked.
       request_headers_->DidConsume(consumed);
       todo -= consumed;
@@ -278,8 +278,8 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
     // If we didn't merge the body with the headers, then |request_headers_|
     // contains just the HTTP headers.
     scoped_refptr<StringIOBuffer> headers_io_buf(new StringIOBuffer(request));
-    request_headers_ = new DrainableIOBuffer(headers_io_buf,
-                                             headers_io_buf->size());
+    request_headers_ =
+        new DrainableIOBuffer(headers_io_buf.get(), headers_io_buf->size());
   }
 
   result = DoLoop(OK);
@@ -422,9 +422,8 @@ int HttpStreamParser::DoSendHeaders(int result) {
     if (bytes_remaining == request_headers_->size()) {
       response_->request_time = base::Time::Now();
     }
-    result = connection_->socket()->Write(request_headers_,
-                                          bytes_remaining,
-                                          io_callback_);
+    result = connection_->socket()
+        ->Write(request_headers_.get(), bytes_remaining, io_callback_);
   } else if (request_->upload_data_stream != NULL &&
              (request_->upload_data_stream->is_chunked() ||
               // !IsEOF() indicates that the body wasn't merged.
@@ -451,10 +450,10 @@ int HttpStreamParser::DoSendBody(int result) {
   // Send the remaining data in the request body buffer.
   request_body_send_buf_->DidConsume(result);
   if (request_body_send_buf_->BytesRemaining() > 0) {
-    return connection_->socket()->Write(
-        request_body_send_buf_,
-        request_body_send_buf_->BytesRemaining(),
-        io_callback_);
+    return connection_->socket()
+        ->Write(request_body_send_buf_.get(),
+                request_body_send_buf_->BytesRemaining(),
+                io_callback_);
   }
 
   if (request_->upload_data_stream->is_chunked() && sent_last_chunk_) {
@@ -464,7 +463,7 @@ int HttpStreamParser::DoSendBody(int result) {
 
   request_body_read_buf_->Clear();
   io_state_ = STATE_SEND_REQUEST_READING_BODY;
-  return request_->upload_data_stream->Read(request_body_read_buf_,
+  return request_->upload_data_stream->Read(request_body_read_buf_.get(),
                                             request_body_read_buf_->capacity(),
                                             io_callback_);
 }
@@ -513,9 +512,8 @@ int HttpStreamParser::DoReadHeaders() {
   // See if the user is passing in an IOBuffer with a NULL |data_|.
   CHECK(read_buf_->data());
 
-  return connection_->socket()->Read(read_buf_,
-                                     read_buf_->RemainingCapacity(),
-                                     io_callback_);
+  return connection_->socket()
+      ->Read(read_buf_.get(), read_buf_->RemainingCapacity(), io_callback_);
 }
 
 int HttpStreamParser::DoReadHeadersComplete(int result) {
@@ -541,26 +539,31 @@ int HttpStreamParser::DoReadHeadersComplete(int result) {
 
   if (result == ERR_CONNECTION_CLOSED) {
     // The connection closed before we detected the end of the headers.
-    // parse things as well as we can and let the caller decide what to do.
     if (read_buf_->offset() == 0) {
       // The connection was closed before any data was sent. Likely an error
       // rather than empty HTTP/0.9 response.
       io_state_ = STATE_DONE;
       return ERR_EMPTY_RESPONSE;
-    } else {
-      int end_offset;
-      if (response_header_start_offset_ >= 0) {
-        io_state_ = STATE_READ_BODY_COMPLETE;
-        end_offset = read_buf_->offset();
-      } else {
-        io_state_ = STATE_BODY_PENDING;
-        end_offset = 0;
-      }
-      int rv = DoParseResponseHeaders(end_offset);
-      if (rv < 0)
-        return rv;
-      return result;
+    } else if (request_->url.SchemeIs("https")) {
+      // The connection was closed in the middle of the headers. For HTTPS we
+      // don't parse partial headers. Return a different error code so that we
+      // know that we shouldn't attempt to retry the request.
+      io_state_ = STATE_DONE;
+      return ERR_HEADERS_TRUNCATED;
     }
+    // Parse things as well as we can and let the caller decide what to do.
+    int end_offset;
+    if (response_header_start_offset_ >= 0) {
+      io_state_ = STATE_READ_BODY_COMPLETE;
+      end_offset = read_buf_->offset();
+    } else {
+      io_state_ = STATE_BODY_PENDING;
+      end_offset = 0;
+    }
+    int rv = DoParseResponseHeaders(end_offset);
+    if (rv < 0)
+      return rv;
+    return result;
   }
 
   read_buf_->set_offset(read_buf_->offset() + result);
@@ -645,8 +648,8 @@ int HttpStreamParser::DoReadBody() {
     return 0;
 
   DCHECK_EQ(0, read_buf_->offset());
-  return connection_->socket()->Read(user_read_buf_, user_read_buf_len_,
-                                     io_callback_);
+  return connection_->socket()
+      ->Read(user_read_buf_.get(), user_read_buf_len_, io_callback_);
 }
 
 int HttpStreamParser::DoReadBodyComplete(int result) {
@@ -790,25 +793,26 @@ int HttpStreamParser::DoParseResponseHeaders(int end_offset) {
   // If they exist, and have distinct values, it's a potential response
   // smuggling attack.
   if (!headers->HasHeader("Transfer-Encoding")) {
-    if (HeadersContainMultipleCopiesOfField(*headers, "Content-Length"))
+    if (HeadersContainMultipleCopiesOfField(*headers.get(), "Content-Length"))
       return ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_LENGTH;
   }
 
   // Check for multiple Content-Disposition or Location headers.  If they exist,
   // it's also a potential response smuggling attack.
-  if (HeadersContainMultipleCopiesOfField(*headers, "Content-Disposition"))
+  if (HeadersContainMultipleCopiesOfField(*headers.get(),
+                                          "Content-Disposition"))
     return ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_DISPOSITION;
-  if (HeadersContainMultipleCopiesOfField(*headers, "Location"))
+  if (HeadersContainMultipleCopiesOfField(*headers.get(), "Location"))
     return ERR_RESPONSE_HEADERS_MULTIPLE_LOCATION;
 
   response_->headers = headers;
   response_->connection_info = HttpResponseInfo::CONNECTION_INFO_HTTP1;
-  response_->vary_data.Init(*request_, *response_->headers);
+  response_->vary_data.Init(*request_, *response_->headers.get());
   DVLOG(1) << __FUNCTION__ << "()"
-           << " content_length = \""
-           << response_->headers->GetContentLength() << "\n\""
-           << " headers = \"" << GetResponseHeaderLines(*response_->headers)
-           << "\"";
+           << " content_length = \"" << response_->headers->GetContentLength()
+           << "\n\""
+           << " headers = \""
+           << GetResponseHeaderLines(*response_->headers.get()) << "\"";
   return OK;
 }
 

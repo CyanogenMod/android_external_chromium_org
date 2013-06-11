@@ -71,7 +71,7 @@ bool HasInternalURL(const NavigationEntry* entry) {
 
   // If the |virtual_url()| isn't a chrome:// URL, check if it's actually
   // view-source: of a chrome:// URL.
-  if (entry->GetVirtualURL().SchemeIs(chrome::kViewSourceScheme))
+  if (entry->GetVirtualURL().SchemeIs(content::kViewSourceScheme))
     return entry->GetURL().SchemeIs(chrome::kChromeUIScheme);
 
   return false;
@@ -387,9 +387,12 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       CloseTab(browser_);
       break;
     case IDC_SELECT_NEXT_TAB:
+      content::RecordAction(content::UserMetricsAction("Accel_SelectNextTab"));
       SelectNextTab(browser_);
       break;
     case IDC_SELECT_PREVIOUS_TAB:
+      content::RecordAction(
+          content::UserMetricsAction("Accel_SelectPreviousTab"));
       SelectPreviousTab(browser_);
       break;
     case IDC_TABPOSE:
@@ -996,6 +999,7 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
 
   command_updater->UpdateCommandEnabled(IDC_IMPORT_SETTINGS, command_enabled);
   command_updater->UpdateCommandEnabled(IDC_OPTIONS, command_enabled);
+  command_updater->UpdateCommandEnabled(IDC_SHOW_SIGNIN, command_enabled);
 }
 
 void BrowserCommandController::UpdateCommandsForIncognitoAvailability() {

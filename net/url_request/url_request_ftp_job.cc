@@ -6,7 +6,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
@@ -257,7 +257,7 @@ void URLRequestFtpJob::OnReadCompleted(int result) {
 }
 
 void URLRequestFtpJob::RestartTransactionWithAuth() {
-  DCHECK(auth_data_ && auth_data_->state == AUTH_STATE_HAVE_AUTH);
+  DCHECK(auth_data_.get() && auth_data_->state == AUTH_STATE_HAVE_AUTH);
 
   // No matter what, we want to report our status as IO pending since we will
   // be notifying our consumer asynchronously via OnStartCompleted.
@@ -292,7 +292,7 @@ LoadState URLRequestFtpJob::GetLoadState() const {
 }
 
 bool URLRequestFtpJob::NeedsAuth() {
-  return auth_data_ && auth_data_->state == AUTH_STATE_NEED_AUTH;
+  return auth_data_.get() && auth_data_->state == AUTH_STATE_NEED_AUTH;
 }
 
 void URLRequestFtpJob::GetAuthChallengeInfo(
@@ -379,7 +379,7 @@ bool URLRequestFtpJob::ReadRawData(IOBuffer* buf,
 void URLRequestFtpJob::HandleAuthNeededResponse() {
   GURL origin = request_->url().GetOrigin();
 
-  if (auth_data_) {
+  if (auth_data_.get()) {
     if (auth_data_->state == AUTH_STATE_CANCELED) {
       NotifyHeadersComplete();
       return;

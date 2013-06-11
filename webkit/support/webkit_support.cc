@@ -26,8 +26,8 @@
 #include "base/stringprintf.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "cc/base/thread_impl.h"
 #include "googleurl/src/url_util.h"
 #include "grit/webkit_chromium_resources.h"
@@ -37,20 +37,19 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageNamespace.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebStorageNamespace.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
 #if defined(TOOLKIT_GTK)
 #include "ui/base/keycodes/keyboard_code_conversion_gtk.h"
 #endif
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
-#include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/common/gpu/test_context_provider_factory.h"
@@ -61,25 +60,25 @@
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlrequest_extradata_impl.h"
-#include "webkit/media/media_stream_client.h"
-#include "webkit/media/webmediaplayer_impl.h"
-#include "webkit/media/webmediaplayer_ms.h"
-#include "webkit/media/webmediaplayer_params.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/npapi/webplugin_impl.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
 #include "webkit/plugins/webplugininfo.h"
+#include "webkit/renderer/appcache/web_application_cache_host_impl.h"
 #include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
+#include "webkit/renderer/media/media_stream_client.h"
+#include "webkit/renderer/media/webmediaplayer_impl.h"
+#include "webkit/renderer/media/webmediaplayer_ms.h"
+#include "webkit/renderer/media/webmediaplayer_params.h"
 #include "webkit/support/platform_support.h"
+#include "webkit/support/simple_appcache_system.h"
 #include "webkit/support/simple_database_system.h"
-#include "webkit/support/test_webidbfactory.h"
+#include "webkit/support/simple_dom_storage_system.h"
+#include "webkit/support/simple_file_system.h"
+#include "webkit/support/simple_resource_loader_bridge.h"
 #include "webkit/support/test_webkit_platform_support.h"
 #include "webkit/support/test_webplugin_page_delegate.h"
 #include "webkit/support/web_layer_tree_view_impl_for_testing.h"
-#include "webkit/tools/test_shell/simple_appcache_system.h"
-#include "webkit/tools/test_shell/simple_dom_storage_system.h"
-#include "webkit/tools/test_shell/simple_file_system.h"
-#include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
 
 #if defined(OS_ANDROID)
 #include "base/test/test_support_android.h"
@@ -172,9 +171,6 @@ class TestEnvironment {
     webkit_platform_support_.reset(
         new TestWebKitPlatformSupport(unit_test_mode,
                                       shadow_platform_delegate));
-
-    idb_factory_.reset(new TestWebIDBFactory());
-    WebKit::setIDBFactory(idb_factory_.get());
   }
 
   ~TestEnvironment() {
@@ -210,13 +206,22 @@ class TestEnvironment {
   }
 #endif
 
+  scoped_refptr<base::MessageLoopProxy> GetMediaThreadMessageLoopProxy() {
+    if (!media_thread_) {
+      media_thread_.reset(new base::Thread("Media"));
+      CHECK(media_thread_->Start());
+    }
+    return media_thread_->message_loop_proxy();
+  }
+
  private:
   // Data member at_exit_manager_ will take the ownership of the input
   // AtExitManager and manage its lifecycle.
   scoped_ptr<base::AtExitManager> at_exit_manager_;
   scoped_ptr<MessageLoopType> main_message_loop_;
   scoped_ptr<TestWebKitPlatformSupport> webkit_platform_support_;
-  scoped_ptr<TestWebIDBFactory> idb_factory_;
+
+  scoped_ptr<base::Thread> media_thread_;
 
 #if defined(OS_ANDROID)
   base::FilePath mock_current_directory_;
@@ -409,6 +414,7 @@ WebKit::WebMediaPlayer* CreateMediaPlayer(
   return NULL;
 #else
   webkit_media::WebMediaPlayerParams params(
+      test_environment->GetMediaThreadMessageLoopProxy(),
       NULL, NULL, new media::MediaLog());
   return new webkit_media::WebMediaPlayerImpl(
       frame,

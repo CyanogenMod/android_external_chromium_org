@@ -50,11 +50,11 @@ class SyncFileSystemService
 
   void InitializeForApp(
       fileapi::FileSystemContext* file_system_context,
-      const std::string& service_name,
       const GURL& app_origin,
       const SyncStatusCallback& callback);
 
   SyncServiceState GetSyncServiceState();
+  void GetExtensionStatusMap(std::map<GURL, std::string>* status_map);
 
   // Returns the file |url|'s sync status.
   void GetFileSyncStatus(

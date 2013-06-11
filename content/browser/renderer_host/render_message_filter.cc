@@ -12,9 +12,9 @@
 #include "base/debug/alias.h"
 #include "base/process_util.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
@@ -310,7 +310,7 @@ RenderMessageFilter::RenderMessageFilter(
       render_process_id_(render_process_id),
       cpu_usage_(0),
       media_internals_(media_internals) {
-  DCHECK(request_context_);
+  DCHECK(request_context_.get());
 
   render_widget_helper_->Init(render_process_id_, resource_dispatcher_host_);
 }
@@ -446,6 +446,7 @@ bool RenderMessageFilter::OffTheRecord() const {
 void RenderMessageFilter::OnCreateWindow(
     const ViewHostMsg_CreateWindow_Params& params,
     int* route_id,
+    int* main_frame_route_id,
     int* surface_id,
     int64* cloned_session_storage_namespace_id) {
   bool no_javascript_access;
@@ -460,13 +461,14 @@ void RenderMessageFilter::OnCreateWindow(
 
   if (!can_create_window) {
     *route_id = MSG_ROUTING_NONE;
+    *main_frame_route_id = MSG_ROUTING_NONE;
     *surface_id = 0;
     return;
   }
 
   // This will clone the sessionStorage for namespace_id_to_clone.
   scoped_refptr<SessionStorageNamespaceImpl> cloned_namespace =
-      new SessionStorageNamespaceImpl(dom_storage_context_,
+      new SessionStorageNamespaceImpl(dom_storage_context_.get(),
                                       params.session_storage_namespace_id);
   *cloned_session_storage_namespace_id = cloned_namespace->id();
 
@@ -474,8 +476,9 @@ void RenderMessageFilter::OnCreateWindow(
                                          no_javascript_access,
                                          peer_handle(),
                                          route_id,
+                                         main_frame_route_id,
                                          surface_id,
-                                         cloned_namespace);
+                                         cloned_namespace.get());
 }
 
 void RenderMessageFilter::OnCreateWidget(int opener_id,
@@ -869,7 +872,7 @@ net::URLRequestContext* RenderMessageFilter::GetRequestContextForURL(
 
 #if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
 void RenderMessageFilter::OnAllocTransportDIB(
-    size_t size, bool cache_in_browser, TransportDIB::Handle* handle) {
+    uint32 size, bool cache_in_browser, TransportDIB::Handle* handle) {
   render_widget_helper_->AllocTransportDIB(size, cache_in_browser, handle);
 }
 
@@ -909,9 +912,11 @@ void RenderMessageFilter::OnCacheableMetadataAvailable(
   const net::RequestPriority kPriority = net::LOW;
   scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(data.size()));
   memcpy(buf->data(), &data.front(), data.size());
-  cache->WriteMetadata(
-      url, kPriority,
-      base::Time::FromDoubleT(expected_response_time), buf, data.size());
+  cache->WriteMetadata(url,
+                       kPriority,
+                       base::Time::FromDoubleT(expected_response_time),
+                       buf.get(),
+                       data.size());
 }
 
 void RenderMessageFilter::OnKeygen(uint32 key_size_index,
@@ -1154,7 +1159,7 @@ void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
 void RenderMessageFilter::OnWebAudioMediaCodec(
     base::SharedMemoryHandle encoded_data_handle,
     base::FileDescriptor pcm_output,
-    size_t data_size) {
+    uint32_t data_size) {
   // Let a WorkerPool handle this request since the WebAudio
   // MediaCodec bridge is slow and can block while sending the data to
   // the renderer.

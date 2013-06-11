@@ -44,7 +44,7 @@ AudioInputController::AudioInputController(EventHandler* handler,
       state_(kEmpty),
       sync_writer_(sync_writer),
       max_volume_(0.0) {
-  DCHECK(creator_loop_);
+  DCHECK(creator_loop_.get());
 }
 
 AudioInputController::~AudioInputController() {
@@ -113,11 +113,10 @@ scoped_refptr<AudioInputController> AudioInputController::CreateLowLatency(
 
 // static
 scoped_refptr<AudioInputController> AudioInputController::CreateForStream(
-    AudioManager* audio_manager,
+    const scoped_refptr<base::MessageLoopProxy>& message_loop,
     EventHandler* event_handler,
     AudioInputStream* stream,
     SyncWriter* sync_writer) {
-  DCHECK(audio_manager);
   DCHECK(sync_writer);
   DCHECK(stream);
 
@@ -125,7 +124,7 @@ scoped_refptr<AudioInputController> AudioInputController::CreateForStream(
   // the audio-manager thread.
   scoped_refptr<AudioInputController> controller(new AudioInputController(
       event_handler, sync_writer));
-  controller->message_loop_ = audio_manager->GetMessageLoop();
+  controller->message_loop_ = message_loop;
 
   // TODO(miu): See TODO at top of file.  Until that's resolved, we need to
   // disable the error auto-detection here (since the audio mirroring

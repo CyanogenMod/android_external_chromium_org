@@ -14,7 +14,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
@@ -218,7 +218,7 @@ bool ForeignSessionHandler::IsTabSyncEnabled() {
   Profile* profile = Profile::FromWebUI(web_ui());
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
-  return service && service->GetPreferredDataTypes().Has(syncer::PROXY_TABS);
+  return service && service->GetActiveDataTypes().Has(syncer::PROXY_TABS);
 }
 
 string16 ForeignSessionHandler::FormatSessionTime(const base::Time& time) {

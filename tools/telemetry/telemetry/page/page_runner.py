@@ -105,9 +105,8 @@ class PageRunner(object):
             possible_browser.options.wpr_mode = wpr_modes.WPR_REPLAY
           else:
             possible_browser.options.wpr_mode = wpr_modes.WPR_OFF
-        if last_archive_path != page.archive_path:
-          state.Close()
-          state = _RunState()
+        if last_archive_path != page.archive_path and state.browser:
+          state.browser.SetReplayArchivePath(page.archive_path)
           last_archive_path = page.archive_path
         if (test.discard_first_result and
             not self.has_called_will_run_page_set):
@@ -122,6 +121,7 @@ class PageRunner(object):
             if not state.browser:
               self._SetupBrowser(state, test, possible_browser,
                                  credentials_path, page.archive_path)
+              last_archive_path = page.archive_path
             if not state.tab:
               if len(state.browser.tabs) == 0:
                 state.browser.tabs.New()
@@ -158,7 +158,7 @@ class PageRunner(object):
             if options.profiler_dir:
               self._EndProfiling(state)
 
-            if test.needs_browser_restart_after_each_run:
+            if test.NeedsBrowserRestartAfterEachRun(state.tab):
               state.Close()
 
             break

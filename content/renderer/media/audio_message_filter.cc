@@ -5,7 +5,7 @@
 #include "content/renderer/media/audio_message_filter.h"
 
 #include "base/bind.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/common/media/audio_messages.h"
 #include "content/renderer/render_thread_impl.h"
 #include "ipc/ipc_logging.h"
@@ -25,7 +25,8 @@ class AudioMessageFilter::AudioOutputIPCImpl
 
   // media::AudioOutputIPC implementation.
   virtual void CreateStream(media::AudioOutputIPCDelegate* delegate,
-                            const media::AudioParameters& params) OVERRIDE;
+                            const media::AudioParameters& params,
+                            int session_id) OVERRIDE;
   virtual void PlayStream() OVERRIDE;
   virtual void PauseStream() OVERRIDE;
   virtual void CloseStream() OVERRIDE;
@@ -75,13 +76,14 @@ scoped_ptr<media::AudioOutputIPC> AudioMessageFilter::CreateAudioOutputIPC(
 
 void AudioMessageFilter::AudioOutputIPCImpl::CreateStream(
     media::AudioOutputIPCDelegate* delegate,
-    const media::AudioParameters& params) {
+    const media::AudioParameters& params,
+    int session_id) {
   DCHECK(filter_->io_message_loop_->BelongsToCurrentThread());
   DCHECK(delegate);
   DCHECK_EQ(stream_id_, kStreamIDNotSet);
   stream_id_ = filter_->delegates_.Add(delegate);
   filter_->Send(new AudioHostMsg_CreateStream(
-      stream_id_, render_view_id_, params));
+      stream_id_, render_view_id_, session_id, params));
 }
 
 void AudioMessageFilter::AudioOutputIPCImpl::PlayStream() {

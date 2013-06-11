@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/hash.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -52,23 +54,25 @@ TEST_F(IndexMetadataTest, Serialize) {
 class SimpleIndexFileTest : public testing::Test {
  public:
   bool CompareTwoEntryMetadata(const EntryMetadata& a, const EntryMetadata& b) {
-    return a.hash_key_ == b.hash_key_ &&
-        a.last_used_time_ == b.last_used_time_ &&
-        a.entry_size_ == b.entry_size_;
+    return a.last_used_time_ == b.last_used_time_ &&
+           a.entry_size_ == b.entry_size_;
   }
 
 };
 
 TEST_F(SimpleIndexFileTest, Serialize) {
   SimpleIndex::EntrySet entries;
-  EntryMetadata entries_array[] = {
-    EntryMetadata(11, Time::FromInternalValue(22), 33),
-    EntryMetadata(22, Time::FromInternalValue(33), 44),
-    EntryMetadata(33, Time::FromInternalValue(44), 55)
-  };
-  SimpleIndexFile::IndexMetadata index_metadata(arraysize(entries_array), 456);
-  for (uint32 i = 0; i < arraysize(entries_array); ++i) {
-    SimpleIndex::InsertInEntrySet(entries_array[i], &entries);
+  static const uint64 kHashes[] = { 11, 22, 33 };
+  static const size_t kNumHashes = arraysize(kHashes);
+  EntryMetadata metadata_entries[kNumHashes];
+
+  SimpleIndexFile::IndexMetadata index_metadata(static_cast<uint64>(kNumHashes),
+                                                456);
+  for (size_t i = 0; i < kNumHashes; ++i) {
+    uint64 hash = kHashes[i];
+    metadata_entries[i] =
+        EntryMetadata(Time::FromInternalValue(hash), hash);
+    SimpleIndex::InsertInEntrySet(hash, metadata_entries[i], &entries);
   }
 
   scoped_ptr<Pickle> pickle = SimpleIndexFile::Serialize(
@@ -81,12 +85,40 @@ TEST_F(SimpleIndexFileTest, Serialize) {
   EXPECT_TRUE(new_entries.get() != NULL);
   EXPECT_EQ(entries.size(), new_entries->size());
 
-  for (uint32 i = 0; i < arraysize(entries_array); ++i) {
-    SimpleIndex::EntrySet::iterator it =
-        new_entries->find(entries_array[i].GetHashKey());
+  for (size_t i = 0; i < kNumHashes; ++i) {
+    SimpleIndex::EntrySet::iterator it = new_entries->find(kHashes[i]);
     EXPECT_TRUE(new_entries->end() != it);
-    EXPECT_TRUE(CompareTwoEntryMetadata(it->second, entries_array[i]));
+    EXPECT_TRUE(CompareTwoEntryMetadata(it->second, metadata_entries[i]));
   }
+}
+
+TEST_F(SimpleIndexFileTest, IsIndexFileStale) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  const std::string kIndexFileName = "simple-index";
+  const base::FilePath index_path =
+      temp_dir.path().AppendASCII(kIndexFileName);
+  EXPECT_TRUE(SimpleIndexFile::IsIndexFileStale(index_path));
+  const std::string kDummyData = "nothing to be seen here";
+  EXPECT_EQ(static_cast<int>(kDummyData.size()),
+            file_util::WriteFile(index_path,
+                                 kDummyData.data(),
+                                 kDummyData.size()));
+  EXPECT_FALSE(SimpleIndexFile::IsIndexFileStale(index_path));
+
+  const base::Time past_time = base::Time::Now() -
+      base::TimeDelta::FromSeconds(10);
+  EXPECT_TRUE(file_util::TouchFile(index_path, past_time, past_time));
+  EXPECT_TRUE(file_util::TouchFile(temp_dir.path(), past_time, past_time));
+  EXPECT_FALSE(SimpleIndexFile::IsIndexFileStale(index_path));
+
+  EXPECT_EQ(static_cast<int>(kDummyData.size()),
+            file_util::WriteFile(temp_dir.path().AppendASCII("other_file"),
+                                 kDummyData.data(),
+                                 kDummyData.size()));
+
+  EXPECT_TRUE(SimpleIndexFile::IsIndexFileStale(index_path));
 }
 
 }

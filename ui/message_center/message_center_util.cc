@@ -13,21 +13,18 @@ namespace message_center {
 // when a time period in Canary indicates the new notifications are acceptable
 // for default behavior.
 bool IsRichNotificationEnabled() {
-#if !defined(OS_WIN) && !defined(OS_MACOSX) && !defined(USE_ASH)
+#if !defined(OS_WIN) && !defined(OS_MACOSX) && !defined(USE_AURA)
   return false;
 #endif
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableRichNotifications))
+          switches::kDisableRichNotifications)) {
     return false;
+  }
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableRichNotifications))
+          switches::kEnableRichNotifications)) {
     return true;
-
-// Not enabled by default on Mac yet.
-#if defined(OS_MACOSX)
-  return false;
-#endif
+  }
 
   return true;
 }

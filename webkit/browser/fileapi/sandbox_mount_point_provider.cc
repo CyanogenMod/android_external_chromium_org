@@ -27,9 +27,9 @@
 #include "webkit/browser/fileapi/sandbox_file_stream_writer.h"
 #include "webkit/browser/fileapi/sandbox_quota_observer.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_operation.h"
+#include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/quota/quota_manager.h"
 
 using quota::QuotaManagerProxy;
 
@@ -98,7 +98,7 @@ void DidOpenFileSystem(
     base::WeakPtr<SandboxMountPointProvider> mount_point_provider,
     const FileSystemMountPointProvider::OpenFileSystemCallback& callback,
     base::PlatformFileError* error) {
-  if (mount_point_provider)
+  if (mount_point_provider.get())
     mount_point_provider.get()->CollectOpenFileSystemMetrics(*error);
   callback.Run(*error);
 }
@@ -137,7 +137,8 @@ SandboxMountPointProvider::kFileSystemDirectory[] =
 bool SandboxMountPointProvider::IsSandboxType(FileSystemType type) {
   return type == kFileSystemTypeTemporary ||
          type == kFileSystemTypePersistent ||
-         type == kFileSystemTypeSyncable;
+         type == kFileSystemTypeSyncable ||
+         type == kFileSystemTypeSyncableForInternalSync;
 }
 
 SandboxMountPointProvider::SandboxMountPointProvider(
@@ -153,7 +154,9 @@ SandboxMountPointProvider::SandboxMountPointProvider(
       sandbox_file_util_(
           new AsyncFileUtilAdapter(
               new ObfuscatedFileUtil(
-                  profile_path.Append(kFileSystemDirectory)))),
+                  special_storage_policy,
+                  profile_path.Append(kFileSystemDirectory),
+                  file_task_runner))),
       file_system_usage_cache_(new FileSystemUsageCache(file_task_runner)),
       quota_observer_(new SandboxQuotaObserver(
                       quota_manager_proxy,
@@ -170,13 +173,23 @@ SandboxMountPointProvider::SandboxMountPointProvider(
   AccessObserverList::Source access_observers_src;
 
   if (enable_usage_tracking_) {
-    update_observers_src.AddObserver(quota_observer_.get(), file_task_runner_);
+    update_observers_src.AddObserver(quota_observer_.get(),
+                                     file_task_runner_.get());
     access_observers_src.AddObserver(quota_observer_.get(), NULL);
   }
 
   update_observers_ = UpdateObserverList(update_observers_src);
   access_observers_ = AccessObserverList(access_observers_src);
   syncable_update_observers_ = UpdateObserverList(update_observers_src);
+
+  if (!file_task_runner_->RunsTasksOnCurrentThread()) {
+    // Post prepopulate task only if it's not already running on
+    // file_task_runner (which implies running in tests).
+    file_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&ObfuscatedFileUtil::MaybePrepopulateDatabase,
+                  base::Unretained(sandbox_sync_file_util())));
+  }
 }
 
 SandboxMountPointProvider::~SandboxMountPointProvider() {
@@ -307,29 +320,22 @@ FileSystemOperation* SandboxMountPointProvider::CreateFileSystemOperation(
   if (url.type() == kFileSystemTypeSyncable) {
     operation_context->set_update_observers(syncable_update_observers_);
     operation_context->set_change_observers(syncable_change_observers_);
-    operation_context->set_access_observers(access_observers_);
     return new sync_file_system::SyncableFileSystemOperation(
-        context, operation_context.Pass());
+        url, context, operation_context.Pass());
   }
 
   // For regular sandboxed types.
   operation_context->set_update_observers(update_observers_);
-  operation_context->set_access_observers(access_observers_);
+  operation_context->set_change_observers(change_observers_);
 
-  if (special_storage_policy_ &&
+  if (special_storage_policy_.get() &&
       special_storage_policy_->IsStorageUnlimited(url.origin())) {
     operation_context->set_quota_limit_type(quota::kQuotaLimitTypeUnlimited);
   } else {
     operation_context->set_quota_limit_type(quota::kQuotaLimitTypeLimited);
   }
 
-  // Temporarily disable returning unlimited storage policy for non-PERSISTENT
-  // storage. Since it may hurt performance for all FileSystem operation.
-  if (url.type() != kFileSystemTypePersistent &&
-      operation_context->quota_limit_type() == quota::kQuotaLimitTypeUnlimited)
-    operation_context->set_quota_limit_type(quota::kQuotaLimitTypeLimited);
-
-  return new LocalFileSystemOperation(context, operation_context.Pass());
+  return new LocalFileSystemOperation(url, context, operation_context.Pass());
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>
@@ -564,33 +570,35 @@ const UpdateObserverList* SandboxMountPointProvider::GetUpdateObservers(
   return &update_observers_;
 }
 
-void SandboxMountPointProvider::AddSyncableFileUpdateObserver(
+const AccessObserverList* SandboxMountPointProvider::GetAccessObservers(
+    FileSystemType type) const {
+  DCHECK(CanHandleType(type));
+  return &access_observers_;
+}
+
+void SandboxMountPointProvider::AddFileUpdateObserver(
+    FileSystemType type,
     FileUpdateObserver* observer,
     base::SequencedTaskRunner* task_runner) {
-  UpdateObserverList::Source observer_source =
-      syncable_update_observers_.source();
+  DCHECK(CanHandleType(type));
+  UpdateObserverList* list = &update_observers_;
+  if (type == kFileSystemTypeSyncable)
+    list = &syncable_update_observers_;
+  UpdateObserverList::Source observer_source = list->source();
   observer_source.AddObserver(observer, task_runner);
-  syncable_update_observers_ = UpdateObserverList(observer_source);
+  *list = UpdateObserverList(observer_source);
 }
 
-void SandboxMountPointProvider::AddSyncableFileChangeObserver(
+void SandboxMountPointProvider::AddFileChangeObserver(
+    FileSystemType type,
     FileChangeObserver* observer,
     base::SequencedTaskRunner* task_runner) {
-  ChangeObserverList::Source observer_source =
-      syncable_change_observers_.source();
+  ChangeObserverList* list = &change_observers_;
+  if (type == kFileSystemTypeSyncable)
+    list = &syncable_change_observers_;
+  ChangeObserverList::Source observer_source = list->source();
   observer_source.AddObserver(observer, task_runner);
-  syncable_change_observers_ = ChangeObserverList(observer_source);
-}
-
-LocalFileSystemOperation*
-SandboxMountPointProvider::CreateFileSystemOperationForSync(
-    FileSystemContext* file_system_context) {
-  scoped_ptr<FileSystemOperationContext> operation_context(
-      new FileSystemOperationContext(file_system_context));
-  operation_context->set_update_observers(update_observers_);
-  operation_context->set_access_observers(access_observers_);
-  return new LocalFileSystemOperation(file_system_context,
-                                      operation_context.Pass());
+  *list = ChangeObserverList(observer_source);
 }
 
 base::FilePath SandboxMountPointProvider::GetUsageCachePathForOriginAndType(

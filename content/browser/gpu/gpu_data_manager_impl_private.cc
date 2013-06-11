@@ -10,8 +10,8 @@
 #include "base/debug/trace_event.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/version.h"
 #include "cc/base/switches.h"
@@ -24,6 +24,7 @@
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_control_list_jsons.h"
+#include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info_collector.h"
 #include "gpu/config/gpu_util.h"
@@ -31,7 +32,7 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gpu_switching_manager.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/webpreferences.h"
 #include "webkit/plugins/plugin_switches.h"
 
 #if defined(OS_MACOSX)
@@ -216,12 +217,25 @@ std::string IntSetToString(const std::set<int>& list) {
 void DisplayReconfigCallback(CGDirectDisplayID display,
                              CGDisplayChangeSummaryFlags flags,
                              void* gpu_data_manager) {
-  if (flags & kCGDisplayAddFlag) {
-    GpuDataManagerImpl* manager =
-        reinterpret_cast<GpuDataManagerImpl*>(gpu_data_manager);
-    DCHECK(manager);
-    manager->HandleGpuSwitch();
+  if(flags == kCGDisplayBeginConfigurationFlag)
+    return; // This call contains no information about the display change
+
+  GpuDataManagerImpl* manager =
+      reinterpret_cast<GpuDataManagerImpl*>(gpu_data_manager);
+  DCHECK(manager);
+
+  uint32_t displayCount;
+  CGGetActiveDisplayList(0, NULL, &displayCount);
+
+  bool fireGpuSwitch = flags & kCGDisplayAddFlag;
+
+  if (displayCount != manager->GetDisplayCount()) {
+    manager->SetDisplayCount(displayCount);
+    fireGpuSwitch = true;
   }
+
+  if (fireGpuSwitch)
+    manager->HandleGpuSwitch();
 }
 #endif  // OS_MACOSX
 
@@ -340,6 +354,14 @@ size_t GpuDataManagerImplPrivate::GetBlacklistedFeatureCount() const {
   if (use_swiftshader_)
     return 1;
   return blacklisted_features_.size();
+}
+
+void GpuDataManagerImplPrivate::SetDisplayCount(unsigned int display_count) {
+  display_count_ = display_count;
+}
+
+unsigned int GpuDataManagerImplPrivate::GetDisplayCount() const {
+  return display_count_;
 }
 
 gpu::GPUInfo GpuDataManagerImplPrivate::GetGPUInfo() const {
@@ -617,8 +639,6 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
-  if (ShouldUseSwiftShader())
-    command_line->AppendSwitch(switches::kDisableFlashFullscreen3d);
 }
 
 void GpuDataManagerImplPrivate::AppendGpuCommandLine(
@@ -750,7 +770,8 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->flash_stage3d_baseline_enabled = false;
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS))
     prefs->accelerated_2d_canvas_enabled = false;
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_MULTISAMPLING))
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_MULTISAMPLING)
+      || display_count_ > 1)
     prefs->gl_multisampling_enabled = false;
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_3D_CSS)) {
     prefs->accelerated_compositing_for_3d_transforms_enabled = false;
@@ -792,11 +813,26 @@ std::string GpuDataManagerImplPrivate::GetBlacklistVersion() const {
   return "0";
 }
 
-base::ListValue* GpuDataManagerImplPrivate::GetBlacklistReasons() const {
-  ListValue* reasons = new ListValue();
+std::string GpuDataManagerImplPrivate::GetDriverBugListVersion() const {
+  if (gpu_driver_bug_list_)
+    return gpu_driver_bug_list_->version();
+  return "0";
+}
+
+void GpuDataManagerImplPrivate::GetBlacklistReasons(
+    base::ListValue* reasons) const {
   if (gpu_blacklist_)
     gpu_blacklist_->GetReasons(reasons);
-  return reasons;
+}
+
+void GpuDataManagerImplPrivate::GetDriverBugWorkarounds(
+    base::ListValue* workarounds) const {
+  for (std::set<int>::const_iterator it = gpu_driver_bugs_.begin();
+       it != gpu_driver_bugs_.end(); ++it) {
+    workarounds->AppendString(
+        gpu::GpuDriverBugWorkaroundTypeToString(
+            static_cast<gpu::GpuDriverBugWorkaroundType>(*it)));
+  }
 }
 
 void GpuDataManagerImplPrivate::AddLogMessage(
@@ -899,7 +935,8 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
       update_histograms_(true),
       window_count_(0),
       domain_blocking_enabled_(true),
-      owner_(owner) {
+      owner_(owner),
+      display_count_(0) {
   DCHECK(owner_);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableAcceleratedCompositing)) {
@@ -918,6 +955,7 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
   }
 
 #if defined(OS_MACOSX)
+  CGGetActiveDisplayList (0, NULL, &display_count_);
   CGDisplayRegisterReconfigurationCallback(DisplayReconfigCallback, owner_);
 #endif  // OS_MACOSX
 }

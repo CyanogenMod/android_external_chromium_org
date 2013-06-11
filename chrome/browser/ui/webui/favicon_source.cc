@@ -82,7 +82,7 @@ std::string FaviconSource::GetSource() const {
 }
 
 void FaviconSource::StartDataRequest(
-    const std::string& raw_path,
+    const std::string& path,
     int render_process_id,
     int render_view_id,
     const content::URLDataSource::GotDataCallback& callback) {
@@ -97,7 +97,7 @@ void FaviconSource::StartDataRequest(
   GURL url;
   int size_in_dip = 16;
   ui::ScaleFactor scale_factor = ui::SCALE_FACTOR_100P;
-  bool success = ParsePath(raw_path, &is_icon_url, &url, &size_in_dip,
+  bool success = ParsePath(path, &is_icon_url, &url, &size_in_dip,
       &scale_factor);
 
   if (!success) {
@@ -160,10 +160,8 @@ bool FaviconSource::ShouldReplaceExistingSource() const {
 }
 
 bool FaviconSource::ShouldServiceRequest(const net::URLRequest* request) const {
-  if (request->url().SchemeIs(chrome::kChromeSearchScheme)) {
-    return InstantService::IsInstantPath(request->url()) &&
-        InstantIOContext::ShouldServiceRequest(request);
-  }
+  if (request->url().SchemeIs(chrome::kChromeSearchScheme))
+    return InstantIOContext::ShouldServiceRequest(request);
   return URLDataSource::ShouldServiceRequest(request);
 }
 
@@ -173,7 +171,7 @@ bool FaviconSource::HandleMissingResource(const IconRequest& request) {
   return false;
 }
 
-bool FaviconSource::ParsePath(const std::string& raw_path,
+bool FaviconSource::ParsePath(const std::string& path,
                               bool* is_icon_url,
                               GURL* url,
                               int* size_in_dip,
@@ -185,14 +183,9 @@ bool FaviconSource::ParsePath(const std::string& raw_path,
   *size_in_dip = 16;
   *scale_factor = ui::SCALE_FACTOR_100P;
 
-  if (raw_path.empty())
+  if (path.empty())
     return false;
 
-  // Translate to regular path if |raw_path| is of the form
-  // chrome-search://favicon/<most_visited_item_id>, where
-  // "most_visited_item_id" is a uint64.
-  std::string path = InstantService::MaybeTranslateInstantPathOnUI(profile_,
-                                                                   raw_path);
   size_t parsed_index = 0;
   if (HasSubstringAt(path, parsed_index, kLargestParameter)) {
     parsed_index += strlen(kLargestParameter);
@@ -213,8 +206,7 @@ bool FaviconSource::ParsePath(const std::string& raw_path,
       size_str = path.substr(parsed_index, slash - parsed_index);
     } else {
       size_str = path.substr(parsed_index, scale_delimiter - parsed_index);
-      scale_str = path.substr(scale_delimiter + 1,
-                              slash - scale_delimiter - 1);
+      scale_str = path.substr(scale_delimiter + 1, slash - scale_delimiter - 1);
     }
 
     if (!base::StringToInt(size_str, size_in_dip))
@@ -271,7 +263,7 @@ void FaviconSource::OnFaviconDataAvailable(
     const chrome::FaviconBitmapResult& bitmap_result) {
   if (bitmap_result.is_valid()) {
     // Forward the data along to the networking system.
-    request.callback.Run(bitmap_result.bitmap_data);
+    request.callback.Run(bitmap_result.bitmap_data.get());
   } else if (!HandleMissingResource(request)) {
     SendDefaultResponse(request);
   }
@@ -300,7 +292,8 @@ void FaviconSource::SendDefaultResponse(const IconRequest& icon_request) {
       resource_id = IDR_DEFAULT_FAVICON;
       break;
   }
-  base::RefCountedMemory* default_favicon = default_favicons_[favicon_index];
+  base::RefCountedMemory* default_favicon =
+      default_favicons_[favicon_index].get();
 
   if (!default_favicon) {
     ui::ScaleFactor scale_factor = icon_request.scale_factor;

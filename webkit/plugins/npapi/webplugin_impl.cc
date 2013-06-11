@@ -11,7 +11,7 @@
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "cc/layers/io_surface_layer.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_util.h"
@@ -19,16 +19,6 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCookieJar.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPBody.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPHeaderVisitor.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoader.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
@@ -39,14 +29,24 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebCookieJar.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLLoader.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "ui/gfx/rect.h"
-#include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/glue/multipart_response_delegate.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/webplugin_delegate.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
 #include "webkit/plugins/plugin_constants.h"
+#include "webkit/renderer/appcache/web_application_cache_host_impl.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using appcache::WebApplicationCacheHostImpl;
@@ -233,7 +233,7 @@ struct WebPluginImpl::ClientInfo {
 };
 
 bool WebPluginImpl::initialize(WebPluginContainer* container) {
-  if (!page_delegate_) {
+  if (!page_delegate_.get()) {
     LOG(ERROR) << "No page delegate";
     return false;
   }
@@ -326,8 +326,7 @@ void WebPluginImpl::updateGeometry(
     new_geometry.cutout_rects.push_back(cutout_rects[i]);
 
   // Only send DidMovePlugin if the geometry changed in some way.
-  if (window_ &&
-      page_delegate_ &&
+  if (window_ && page_delegate_.get() &&
       (first_geometry_update_ || !new_geometry.Equals(geometry_))) {
     page_delegate_->DidMovePlugin(new_geometry);
     // We invalidate windowed plugins during the first geometry update to
@@ -388,7 +387,7 @@ void WebPluginImpl::updateFocus(bool focused) {
 }
 
 void WebPluginImpl::updateVisibility(bool visible) {
-  if (!window_ || !page_delegate_)
+  if (!window_ || !page_delegate_.get())
     return;
 
   WebPluginGeometry move;
@@ -531,7 +530,7 @@ void WebPluginImpl::SetWindow(gfx::PluginWindowHandle window) {
     // window was created -- so don't.
 #else
     accepts_input_events_ = false;
-    if (page_delegate_) {
+    if (page_delegate_.get()) {
       // Tell the view delegate that the plugin window was created, so that it
       // can create necessary container widgets.
       page_delegate_->CreatedPluginWindow(window);
@@ -551,7 +550,7 @@ void WebPluginImpl::SetAcceptsInputEvents(bool accepts) {
 void WebPluginImpl::WillDestroyWindow(gfx::PluginWindowHandle window) {
   DCHECK_EQ(window, window_);
   window_ = gfx::kNullPluginWindow;
-  if (page_delegate_)
+  if (page_delegate_.get())
     page_delegate_->WillDestroyPluginWindow(window);
 }
 
@@ -731,7 +730,7 @@ bool WebPluginImpl::FindProxyForUrl(const GURL& url, std::string* proxy_list) {
 void WebPluginImpl::SetCookie(const GURL& url,
                               const GURL& first_party_for_cookies,
                               const std::string& cookie) {
-  if (!page_delegate_)
+  if (!page_delegate_.get())
     return;
 
   WebCookieJar* cookie_jar = page_delegate_->GetCookieJar();
@@ -746,7 +745,7 @@ void WebPluginImpl::SetCookie(const GURL& url,
 
 std::string WebPluginImpl::GetCookies(const GURL& url,
                                       const GURL& first_party_for_cookies) {
-  if (!page_delegate_)
+  if (!page_delegate_.get())
     return std::string();
 
   WebCookieJar* cookie_jar = page_delegate_->GetCookieJar();
@@ -1023,7 +1022,7 @@ void WebPluginImpl::didFinishLoading(WebURLLoader* loader, double finishTime) {
     if (index != multi_part_response_map_.end()) {
       delete (*index).second;
       multi_part_response_map_.erase(index);
-      if (page_delegate_)
+      if (page_delegate_.get())
         page_delegate_->DidStopLoadingForPlugin();
     }
     loader->setDefersLoading(true);
@@ -1287,7 +1286,7 @@ void WebPluginImpl::HandleHttpMultipartResponse(
     return;
   }
 
-  if (page_delegate_)
+  if (page_delegate_.get())
     page_delegate_->DidStartLoadingForPlugin();
 
   MultiPartResponseClient* multi_part_response_client =

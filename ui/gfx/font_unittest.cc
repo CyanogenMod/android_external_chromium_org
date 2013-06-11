@@ -5,7 +5,7 @@
 #include "ui/gfx/font.h"
 
 #include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
@@ -103,9 +103,9 @@ TEST_F(FontTest, AvgCharWidth) {
 
 TEST_F(FontTest, Widths) {
   Font cf("Arial", 16);
-  ASSERT_EQ(cf.GetStringWidth(string16()), 0);
+  ASSERT_EQ(cf.GetStringWidth(base::string16()), 0);
   ASSERT_GT(cf.GetStringWidth(ASCIIToUTF16("a")),
-            cf.GetStringWidth(string16()));
+            cf.GetStringWidth(base::string16()));
   ASSERT_GT(cf.GetStringWidth(ASCIIToUTF16("ab")),
             cf.GetStringWidth(ASCIIToUTF16("a")));
   ASSERT_GT(cf.GetStringWidth(ASCIIToUTF16("abc")),

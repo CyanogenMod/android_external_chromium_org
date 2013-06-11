@@ -76,21 +76,6 @@ typedef base::Callback<void(FileError error,
                             scoped_ptr<ResourceEntryVector> entries)>
     ReadDirectoryCallback;
 
-// Used to get a resource entry from the file system, with the Drive file path.
-// If |error| is not FILE_ERROR_OK, |entry| is set to NULL.
-//
-// |drive_file_path| parameter is provided as ResourceEntry does not contain
-// the Drive file path (i.e. only contains the base name without parent
-// directory names).
-typedef base::Callback<void(FileError error,
-                            const base::FilePath& drive_file_path,
-                            scoped_ptr<ResourceEntry> entry)>
-    GetResourceEntryWithFilePathCallback;
-
-// Used to get a set of changed directories for feed processing.
-typedef base::Callback<void(const std::set<base::FilePath>&)>
-    GetChildDirectoriesCallback;
-
 typedef base::Callback<void(int64)> GetChangestampCallback;
 
 // This is a part of EntryInfoPairResult.
@@ -189,26 +174,17 @@ class ResourceMetadata {
                              const std::string& new_name,
                              const FileMoveCallback& callback);
 
-  // Removes entry with |resource_id| from its parent. Calls |callback| with the
-  // path of the parent directory. |callback| must not be null.
-  // Must be called on the UI thread.
-  void RemoveEntryOnUIThread(const std::string& resource_id,
-                             const FileMoveCallback& callback);
-
-  // Synchronous version of RemoveEntryOnUIThread().
-  FileError RemoveEntry(const std::string& resource_id,
-                        base::FilePath* out_file_path);
+  // Removes entry with |resource_id| from its parent.
+  FileError RemoveEntry(const std::string& resource_id);
 
   // Finds an entry (a file or a directory) by |resource_id|.
   // |callback| must not be null.
   // Must be called on the UI thread.
-  void GetResourceEntryByIdOnUIThread(
-      const std::string& resource_id,
-      const GetResourceEntryWithFilePathCallback& callback);
+  void GetResourceEntryByIdOnUIThread(const std::string& resource_id,
+                                      const GetResourceEntryCallback& callback);
 
   // Synchronous version of GetResourceEntryByIdOnUIThread().
   FileError GetResourceEntryById(const std::string& resource_id,
-                                 base::FilePath* out_file_path,
                                  ResourceEntry* out_entry);
 
   // Finds an entry (a file or a directory) by |file_path|.
@@ -228,6 +204,10 @@ class ResourceMetadata {
   void ReadDirectoryByPathOnUIThread(const base::FilePath& file_path,
                                      const ReadDirectoryCallback& callback);
 
+  // Synchronous version of ReadDirectoryByPathOnUIThread().
+  FileError ReadDirectoryByPath(const base::FilePath& file_path,
+                                ResourceEntryVector* out_entries);
+
   // Similar to GetResourceEntryByPath() but this function finds a pair of
   // entries by |first_path| and |second_path|. If the entry for
   // |first_path| is not found, this function does not try to get the
@@ -238,18 +218,8 @@ class ResourceMetadata {
       const base::FilePath& second_path,
       const GetResourceEntryPairCallback& callback);
 
-  // Refreshes a drive entry with the same resource id as |entry|.
-  // |callback| is run with the error, file path and the new entry.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void RefreshEntryOnUIThread(
-      const ResourceEntry& entry,
-      const GetResourceEntryWithFilePathCallback& callback);
-
-  // Synchronous version of RefreshEntryOnUIThread().
-  FileError RefreshEntry(const ResourceEntry& entry,
-                         base::FilePath* out_file_path,
-                         ResourceEntry* out_entry);
+  // Replaces an existing entry whose ID is |entry.resource_id()| with |entry|.
+  FileError RefreshEntry(const ResourceEntry& entry);
 
   // Removes all child files of the directory pointed by
   // |directory_fetch_info| and replaces them with
@@ -263,14 +233,8 @@ class ResourceMetadata {
       const FileMoveCallback& callback);
 
   // Recursively get child directories of entry pointed to by |resource_id|.
-  // Must be called on the UI thread.
-  void GetChildDirectoriesOnUIThread(
-      const std::string& resource_id,
-      const GetChildDirectoriesCallback& changed_dirs_callback);
-
-  // Synchronous version of GetChildDirectoriesOnUIThread().
-  scoped_ptr<std::set<base::FilePath> > GetChildDirectories(
-      const std::string& resource_id);
+  void GetChildDirectories(const std::string& resource_id,
+                           std::set<base::FilePath>* child_directories);
 
   // Returns the resource id of the resource named |base_name| directly under
   // the directory with |parent_resource_id|.
@@ -307,10 +271,6 @@ class ResourceMetadata {
                         const std::string& new_name,
                         base::FilePath* out_file_path);
 
-  // Used to implement ReadDirectoryByPathOnUIThread().
-  FileError ReadDirectoryByPath(const base::FilePath& file_path,
-                                ResourceEntryVector* out_entries);
-
   // Used to implement RefreshDirectoryOnUIThread().
   FileError RefreshDirectory(const DirectoryFetchInfo& directory_fetch_info,
                              const ResourceEntryMap& entry_map,
@@ -343,10 +303,6 @@ class ResourceMetadata {
   // not be empty. Returns NULL if it finds no corresponding entry, or the
   // corresponding entry is not a directory.
   scoped_ptr<ResourceEntry> GetDirectory(const std::string& resource_id);
-
-  // Recursively extracts the paths set of all sub-directories.
-  void GetDescendantDirectoryPaths(const std::string& resource_id,
-                                   std::set<base::FilePath>* child_directories);
 
   // Puts an entry under its parent directory. Removes the child from the old
   // parent if there is. This method will also do name de-duplication to ensure

@@ -13,7 +13,7 @@
 #include "base/debug/leak_tracker.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
@@ -145,7 +145,7 @@ SafeBrowsingDatabaseManager::SafeBrowsingDatabaseManager(
       database_update_in_progress_(false),
       closing_database_(false),
       check_timeout_(base::TimeDelta::FromMilliseconds(kCheckTimeoutMs)) {
-  DCHECK(sb_service_ != NULL);
+  DCHECK(sb_service_.get() != NULL);
 
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
   enable_download_protection_ =

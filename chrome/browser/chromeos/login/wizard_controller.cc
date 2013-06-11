@@ -23,8 +23,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launcher.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
@@ -36,6 +34,7 @@
 #include "chrome/browser/chromeos/login/oobe_display.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/eula_screen.h"
+#include "chrome/browser/chromeos/login/screens/kiosk_autolaunch_screen.h"
 #include "chrome/browser/chromeos/login/screens/network_screen.h"
 #include "chrome/browser/chromeos/login/screens/reset_screen.h"
 #include "chrome/browser/chromeos/login/screens/terms_of_service_screen.h"
@@ -45,9 +44,12 @@
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
+#include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
+#include "chrome/browser/chromeos/ui/focus_ring_controller.h"
+#include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/options/options_util.h"
@@ -57,6 +59,7 @@
 #include "chromeos/chromeos_constants.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/network/network_state_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -121,6 +124,7 @@ const char WizardController::kUserImageScreenName[] = "image";
 const char WizardController::kEulaScreenName[] = "eula";
 const char WizardController::kEnrollmentScreenName[] = "enroll";
 const char WizardController::kResetScreenName[] = "reset";
+const char WizardController::kKioskAutolaunchScreenName[] = "autolaunch";
 const char WizardController::kErrorScreenName[] = "error-message";
 const char WizardController::kTermsOfServiceScreenName[] = "tos";
 const char WizardController::kWrongHWIDScreenName[] = "wrong-hwid";
@@ -161,18 +165,9 @@ WizardController::WizardController(chromeos::LoginDisplayHost* host,
       usage_statistics_reporting_(true),
       skip_update_enroll_after_eula_(false),
       login_screen_started_(false),
-      user_image_screen_return_to_previous_hack_(false),
-      force_enrollment_(false),
-      can_exit_enrollment_(true) {
+      user_image_screen_return_to_previous_hack_(false) {
   DCHECK(default_controller_ == NULL);
   default_controller_ = this;
-
-  chromeos::system::StatisticsProvider* provider =
-      chromeos::system::StatisticsProvider::GetInstance();
-  provider->GetMachineFlag(chromeos::kOemIsEnterpriseManagedKey,
-                           &force_enrollment_);
-  provider->GetMachineFlag(chromeos::kOemCanExitEnterpriseEnrollmentKey,
-                           &can_exit_enrollment_);
 }
 
 WizardController::~WizardController() {
@@ -193,6 +188,14 @@ void WizardController::Init(
   bool oobe_complete = StartupUtils::IsOobeCompleted();
   if (!oobe_complete || first_screen_name == kOutOfBoxScreenName) {
     is_out_of_box_ = true;
+
+    bool keyboard_driven_oobe = false;
+    system::StatisticsProvider::GetInstance()->GetMachineFlag(
+        chromeos::kOemKeyboardDrivenOobeKey, &keyboard_driven_oobe);
+    if (keyboard_driven_oobe) {
+      focus_ring_controller_.reset(new FocusRingController);
+      focus_ring_controller_->SetVisible(true);
+    }
   }
 
   AdvanceToScreen(first_screen_name);
@@ -252,6 +255,15 @@ chromeos::ResetScreen* WizardController::GetResetScreen() {
         new chromeos::ResetScreen(this, oobe_display_->GetResetScreenActor()));
   }
   return reset_screen_.get();
+}
+
+chromeos::KioskAutolaunchScreen* WizardController::GetKioskAutolaunchScreen() {
+  if (!autolaunch_screen_.get()) {
+    autolaunch_screen_.reset(
+        new chromeos::KioskAutolaunchScreen(
+            this, oobe_display_->GetKioskAutolaunchScreenActor()));
+  }
+  return autolaunch_screen_.get();
 }
 
 chromeos::TermsOfServiceScreen* WizardController::GetTermsOfServiceScreen() {
@@ -365,7 +377,7 @@ void WizardController::ShowEnrollmentScreen() {
 
   EnrollmentScreen* screen = GetEnrollmentScreen();
   screen->SetParameters(is_auto_enrollment,
-                        !force_enrollment_ || can_exit_enrollment_,
+                        !ShouldAutoStartEnrollment() || CanExitEnrollment(),
                         user);
   SetCurrentScreen(screen);
 }
@@ -374,6 +386,12 @@ void WizardController::ShowResetScreen() {
   VLOG(1) << "Showing reset screen.";
   SetStatusAreaVisible(false);
   SetCurrentScreen(GetResetScreen());
+}
+
+void WizardController::ShowKioskAutolaunchScreen() {
+  VLOG(1) << "Showing kiosk autolaunch screen.";
+  SetStatusAreaVisible(false);
+  SetCurrentScreen(GetKioskAutolaunchScreen());
 }
 
 void WizardController::ShowTermsOfServiceScreen() {
@@ -472,11 +490,6 @@ void WizardController::OnEulaAccepted() {
   bool uma_enabled =
       OptionsUtil::ResolveMetricsReportingEnabled(usage_statistics_reporting_);
 
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_WIZARD_EULA_ACCEPTED,
-      content::NotificationSource(content::Source<WizardController>(this)),
-      content::NotificationService::NoDetails());
-
   CrosSettings::Get()->SetBoolean(kStatsReportingPref, uma_enabled);
   if (uma_enabled) {
 #if defined(USE_LINUX_BREAKPAD) && defined(GOOGLE_CHROME_BUILD)
@@ -544,21 +557,15 @@ void WizardController::OnUserImageSkipped() {
 void WizardController::OnEnrollmentDone() {
   // Mark OOBE as completed only if enterprise enrollment was part of the
   // forced flow (i.e. app kiosk).
-  if (force_enrollment_)
+  if (ShouldAutoStartEnrollment())
     PerformPostUpdateActions();
 
   // TODO(mnissler): Unify the logic for auto-login for Public Sessions and
   // Kiosk Apps and make this code cover both cases: http://crbug.com/234694.
-  const std::string auto_launch_app =
-      KioskAppManager::Get()->GetAutoLaunchApp();
-  if (!auto_launch_app.empty()) {
-    ExistingUserController::current_controller()->PrepareKioskAppLaunch();
-
-    // KioskAppLauncher deletes itself when done.
-    (new KioskAppLauncher(KioskAppManager::Get(), auto_launch_app))->Start();
-  } else if (!force_enrollment_ || can_exit_enrollment_) {
+  if (KioskAppManager::Get()->IsAutoLaunchEnabled())
+    AutoLaunchKioskApp();
+  else
     ShowLoginScreen();
-  }
 }
 
 void WizardController::OnResetCanceled() {
@@ -566,6 +573,15 @@ void WizardController::OnResetCanceled() {
     SetCurrentScreen(previous_screen_);
   else
     ShowLoginScreen();
+}
+
+void WizardController::OnKioskAutolaunchCanceled() {
+  ShowLoginScreen();
+}
+
+void WizardController::OnKioskAutolaunchConfirmed() {
+  DCHECK(KioskAppManager::Get()->IsAutoLaunchEnabled());
+  AutoLaunchKioskApp();
 }
 
 void WizardController::OnWrongHWIDWarningSkipped() {
@@ -581,7 +597,7 @@ void WizardController::OnAutoEnrollmentDone() {
 }
 
 void WizardController::OnOOBECompleted() {
-  if (force_enrollment_) {
+  if (ShouldAutoStartEnrollment()) {
     ShowEnrollmentScreen();
   } else {
     PerformPostUpdateActions();
@@ -609,8 +625,8 @@ void WizardController::InitiateOOBEUpdate() {
 void WizardController::PerformPostEulaActions() {
   // Now that EULA has been accepted (for official builds), enable portal check.
   // ChromiumOS builds would go though this code path too.
-  chromeos::CrosLibrary::Get()->GetNetworkLibrary()->
-      SetDefaultCheckPortalList();
+  NetworkHandler::Get()->network_state_handler()->SetCheckPortalList(
+      NetworkStateHandler::kDefaultCheckPortalList);
   host_->CheckForAutoEnrollment();
   NetworkPortalDetector* detector = NetworkPortalDetector::GetInstance();
   if (NetworkPortalDetector::IsEnabledInCommandLine() && detector)
@@ -689,6 +705,8 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
     ShowEulaScreen();
   } else if (screen_name == kResetScreenName) {
     ShowResetScreen();
+  } else if (screen_name == kKioskAutolaunchScreenName) {
+    ShowKioskAutolaunchScreen();
   } else if (screen_name == kEnrollmentScreenName) {
     ShowEnrollmentScreen();
   } else if (screen_name == kTermsOfServiceScreenName) {
@@ -742,6 +760,12 @@ void WizardController::OnExit(ExitCodes exit_code) {
     case RESET_CANCELED:
       OnResetCanceled();
       break;
+    case KIOSK_AUTOLAUNCH_CANCELED:
+      OnKioskAutolaunchCanceled();
+      break;
+    case KIOSK_AUTOLAUNCH_CONFIRMED:
+      OnKioskAutolaunchConfirmed();
+      break;
     case ENTERPRISE_AUTO_MAGIC_ENROLLMENT_COMPLETED:
       OnAutoEnrollmentDone();
       break;
@@ -792,6 +816,15 @@ void WizardController::HideErrorScreen(WizardScreen* parent_screen) {
   SetCurrentScreen(parent_screen);
 }
 
+void WizardController::AutoLaunchKioskApp() {
+  KioskAppManager::App app_data;
+  std::string app_id = KioskAppManager::Get()->GetAutoLaunchApp();
+  CHECK(KioskAppManager::Get()->GetApp(app_id, &app_data));
+  ExistingUserController::current_controller()->PrepareKioskAppLaunch();
+  // KioskAppLauncher deletes itself when done.
+  (new KioskAppLauncher(KioskAppManager::Get(), app_id))->Start();
+}
+
 // static
 bool WizardController::IsZeroDelayEnabled() {
   return zero_delay_enabled_;
@@ -801,6 +834,16 @@ bool WizardController::IsZeroDelayEnabled() {
 void WizardController::SetZeroDelays() {
   kShowDelayMs = 0;
   zero_delay_enabled_ = true;
+}
+
+bool WizardController::ShouldAutoStartEnrollment() const {
+  return g_browser_process->browser_policy_connector()->
+      GetDeviceCloudPolicyManager()->ShouldAutoStartEnrollment();
+}
+
+bool WizardController::CanExitEnrollment() const {
+  return g_browser_process->browser_policy_connector()->
+      GetDeviceCloudPolicyManager()->CanExitEnrollment();
 }
 
 }  // namespace chromeos

@@ -54,7 +54,9 @@ import oshelpers
 CYGTAR = os.path.join(NACL_DIR, 'build', 'cygtar.py')
 
 NACLPORTS_URL = 'https://naclports.googlecode.com/svn/trunk/src'
-NACLPORTS_REV = 757
+NACLPORTS_REV = 774
+
+GYPBUILD_DIR = 'gypbuild'
 
 options = None
 
@@ -434,21 +436,30 @@ TOOLCHAIN_LIBS = {
 
 
 def GypNinjaInstall(pepperdir, platform, toolchains):
-  build_dir = 'gypbuild'
+  build_dir = GYPBUILD_DIR
   ninja_out_dir = os.path.join(OUT_DIR, build_dir, 'Release')
   tools_files = [
-    ['dump_syms', 'dump_syms'],
     ['sel_ldr', 'sel_ldr_x86_32'],
-    ['ncval_x86_32', 'ncval_x86_32'],
-    ['ncval_arm', 'ncval_arm'],
+    ['ncval_new', 'ncval'],
     ['irt_core_newlib_x32.nexe', 'irt_core_x86_32.nexe'],
     ['irt_core_newlib_x64.nexe', 'irt_core_x86_64.nexe'],
   ]
+  if sys.platform not in ['cygwin', 'win32']:
+    minidump_files = [
+      ['dump_syms', 'dump_syms'],
+      ['minidump_dump', 'minidump_dump'],
+      ['minidump_stackwalk', 'minidump_stackwalk']
+    ]
+    tools_files.extend(minidump_files)
+
+  # TODO(binji): dump_syms doesn't currently build on Windows. See
+  # http://crbug.com/245456
+  if platform != 'win':
+    tools_files.append(['dump_syms', 'dump_syms'])
 
   if platform != 'mac':
     # Mac doesn't build 64-bit binaries.
     tools_files.append(['sel_ldr64', 'sel_ldr_x86_64'])
-    tools_files.append(['ncval_x86_64', 'ncval_x86_64'])
 
   if platform == 'linux':
     tools_files.append(['nacl_helper_bootstrap',
@@ -473,10 +484,10 @@ def GypNinjaInstall(pepperdir, platform, toolchains):
       tc_dir = 'tc_' + tc
       lib_dir = 'lib' + archname
       if archname == 'arm':
-        build_dir = 'gypbuild-arm'
+        build_dir = GYPBUILD_DIR + '-arm'
         tcdir = '%s_arm_%s' % (platform, tc)
       else:
-        build_dir = 'gypbuild'
+        build_dir = GYPBUILD_DIR
         tcdir = '%s_x86_%s' % (platform, tc)
 
       ninja_out_dir = os.path.join(OUT_DIR, build_dir, 'Release')
@@ -502,22 +513,18 @@ def GypNinjaBuild_NaCl(platform, rel_out_dir):
   out_dir_arm = MakeNinjaRelPath(rel_out_dir + '-arm')
   GypNinjaBuild('ia32', gyp_py, nacl_core_sdk_gyp, 'nacl_core_sdk', out_dir)
   GypNinjaBuild('arm', gyp_py, nacl_core_sdk_gyp, 'nacl_core_sdk', out_dir_arm)
-  GypNinjaBuild('ia32', gyp_py, all_gyp, 'ncval_x86_32', out_dir)
-  GypNinjaBuild(None, gyp_py, all_gyp, 'ncval_arm', out_dir)
+  GypNinjaBuild('ia32', gyp_py, all_gyp, 'ncval_new', out_dir)
 
   if platform == 'win':
     NinjaBuild('sel_ldr64', out_dir)
-    NinjaBuild('ncval_x86_64', out_dir)
   elif platform == 'linux':
     out_dir_64 = MakeNinjaRelPath(rel_out_dir + '-64')
     GypNinjaBuild('x64', gyp_py, nacl_core_sdk_gyp, 'sel_ldr', out_dir_64)
-    GypNinjaBuild('x64', gyp_py, all_gyp, 'ncval_x86_64', out_dir_64)
 
-    # We only need sel_ldr and ncval_x86_64 from the 64-bit out directory.
+    # We only need sel_ldr from the 64-bit out directory.
     # sel_ldr needs to be renamed, so we'll call it sel_ldr64.
     files_to_copy = [
       ('sel_ldr', 'sel_ldr64'),
-      ('ncval_x86_64', 'ncval_x86_64'),
       ('nacl_helper_bootstrap', 'nacl_helper_bootstrap64'),
     ]
 
@@ -528,10 +535,16 @@ def GypNinjaBuild_NaCl(platform, rel_out_dir):
 
 
 def GypNinjaBuild_Breakpad(platform, rel_out_dir):
+  # TODO(binji): dump_syms doesn't currently build on Windows. See
+  # http://crbug.com/245456
+  if platform == 'win':
+    return
+
   gyp_py = os.path.join(SRC_DIR, 'build', 'gyp_chromium')
   out_dir = MakeNinjaRelPath(rel_out_dir)
   gyp_file = os.path.join(SRC_DIR, 'breakpad', 'breakpad.gyp')
-  GypNinjaBuild('ia32', gyp_py, gyp_file, 'dump_syms', out_dir)
+  build_list = ['dump_syms', 'minidump_dump', 'minidump_stackwalk']
+  GypNinjaBuild('ia32', gyp_py, gyp_file, build_list, out_dir)
 
 
 def GypNinjaBuild_PPAPI(arch, rel_out_dir):
@@ -552,6 +565,16 @@ def GypNinjaBuild_Pnacl(rel_out_dir, target_arch):
   gyp_file = os.path.join(SRC_DIR, 'ppapi', 'native_client', 'src',
                           'untrusted', 'pnacl_irt_shim', 'pnacl_irt_shim.gyp')
   targets = ['pnacl_irt_shim']
+  GypNinjaBuild(target_arch, gyp_py, gyp_file, targets, out_dir, False)
+
+  gyp_py = os.path.join(NACL_DIR, 'build', 'gyp_nacl')
+  gyp_file = os.path.join(NACL_DIR, 'src', 'untrusted', 'minidump_generator',
+                          'minidump_generator.gyp')
+  targets = ['minidump_generator_lib']
+  GypNinjaBuild(target_arch, gyp_py, gyp_file, targets, out_dir, False)
+
+  gyp_file = os.path.join(NACL_DIR, 'src', 'untrusted', 'nacl', 'nacl.gyp')
+  targets = ['nacl_exception_lib']
   GypNinjaBuild(target_arch, gyp_py, gyp_file, targets, out_dir, False)
 
 
@@ -593,8 +616,8 @@ def NinjaBuild(targets, out_dir):
 def BuildStepBuildToolchains(pepperdir, platform, toolchains):
   buildbot_common.BuildStep('SDK Items')
 
-  GypNinjaBuild_NaCl(platform, 'gypbuild')
-  GypNinjaBuild_Breakpad(platform, 'gypbuild')
+  GypNinjaBuild_NaCl(platform, GYPBUILD_DIR)
+  GypNinjaBuild_Breakpad(platform, GYPBUILD_DIR)
 
   tcname = platform + '_x86'
   newlibdir = os.path.join(pepperdir, 'toolchain', tcname + '_newlib')
@@ -602,10 +625,10 @@ def BuildStepBuildToolchains(pepperdir, platform, toolchains):
   pnacldir = os.path.join(pepperdir, 'toolchain', tcname + '_pnacl')
 
   if set(toolchains) & set(['glibc', 'newlib']):
-    GypNinjaBuild_PPAPI('ia32', 'gypbuild')
+    GypNinjaBuild_PPAPI('ia32', GYPBUILD_DIR)
 
   if 'arm' in toolchains:
-    GypNinjaBuild_PPAPI('arm', 'gypbuild-arm')
+    GypNinjaBuild_PPAPI('arm', GYPBUILD_DIR + '-arm')
 
   GypNinjaInstall(pepperdir, platform, toolchains)
 
@@ -624,6 +647,8 @@ def BuildStepBuildToolchains(pepperdir, platform, toolchains):
                        'arm')
 
   if 'pnacl' in toolchains:
+    # shell=True is needed on windows to enable searching of the PATH:
+    # http://bugs.python.org/issue8557
     shell = platform == 'win'
     buildbot_common.Run(
         GetSconsArgs(pnacldir, pepperdir, 'x86', '32'),
@@ -632,7 +657,7 @@ def BuildStepBuildToolchains(pepperdir, platform, toolchains):
 
     for arch in ('ia32', 'arm'):
       # Fill in the latest native pnacl shim library from the chrome build.
-      build_dir = 'gypbuild-pnacl-' + arch
+      build_dir = GYPBUILD_DIR + '-pnacl-' + arch
       GypNinjaBuild_Pnacl(build_dir, arch)
       pnacl_libdir_map = {'ia32': 'x86-64', 'arm': 'arm'}
       release_build_dir = os.path.join(OUT_DIR, build_dir, 'Release',
@@ -641,6 +666,16 @@ def BuildStepBuildToolchains(pepperdir, platform, toolchains):
 
       buildbot_common.CopyFile(
           os.path.join(release_build_dir, 'libpnacl_irt_shim.a'),
+          GetPNaClNativeLib(pnacldir, pnacl_libdir_map[arch]))
+
+      release_build_dir = os.path.join(OUT_DIR, build_dir, 'Release',
+                                       'gen', 'tc_pnacl_newlib', 'lib')
+      buildbot_common.CopyFile(
+          os.path.join(release_build_dir, 'libminidump_generator.a'),
+          GetPNaClNativeLib(pnacldir, pnacl_libdir_map[arch]))
+
+      buildbot_common.CopyFile(
+          os.path.join(release_build_dir, 'libnacl_exception.a'),
           GetPNaClNativeLib(pnacldir, pnacl_libdir_map[arch]))
 
     InstallNaClHeaders(GetToolchainNaClInclude('pnacl', pnacldir, 'x86'),
@@ -741,9 +776,30 @@ def GenerateNotice(fileroot, output_filename='NOTICE', extra_files=None):
 
 def BuildStepVerifyFilelist(pepperdir, platform):
   buildbot_common.BuildStep('Verify SDK Files')
-  verify_filelist.Verify(platform, os.path.join(SCRIPT_DIR, 'sdk_files.list'),
-                         pepperdir)
-  print 'OK'
+  file_list_path = os.path.join(SCRIPT_DIR, 'sdk_files.list')
+  try:
+    verify_filelist.Verify(platform, file_list_path, pepperdir)
+    print 'OK'
+  except verify_filelist.ParseException, e:
+    buildbot_common.ErrorExit('Parsing sdk_files.list failed:\n\n%s' % e)
+  except verify_filelist.VerifyException, e:
+    file_list_rel = os.path.relpath(file_list_path)
+    verify_filelist_py = os.path.splitext(verify_filelist.__file__)[0] + '.py'
+    verify_filelist_py = os.path.relpath(verify_filelist_py)
+    pepperdir_rel = os.path.relpath(pepperdir)
+
+    msg = """\
+SDK verification failed:
+
+%s
+Add/remove files from %s to fix.
+
+Run:
+    ./%s %s %s
+to test.""" % (e, file_list_rel, verify_filelist_py, file_list_rel,
+               pepperdir_rel)
+    buildbot_common.ErrorExit(msg)
+
 
 
 def BuildStepTarBundle(pepper_ver, tarfile):
@@ -959,7 +1015,7 @@ def main(args):
   # Archive on non-trybots.
   if options.archive:
     BuildStepArchiveBundle('build', pepper_ver, clnumber, tarfile)
-    if platform == 'linux':
+    if options.build_ports and platform == 'linux':
       BuildStepArchiveBundle('naclports', pepper_ver, clnumber, ports_tarfile)
     BuildStepArchiveSDKTools()
 

@@ -10,11 +10,11 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/importer_host.h"
@@ -34,7 +34,7 @@ ImportDataHandler::ImportDataHandler() : importer_host_(NULL),
 }
 
 ImportDataHandler::~ImportDataHandler() {
-  if (importer_list_)
+  if (importer_list_.get())
     importer_list_->SetObserver(NULL);
 
   if (importer_host_)

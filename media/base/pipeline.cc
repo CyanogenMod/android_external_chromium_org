@@ -10,11 +10,11 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/metrics/histogram.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/condition_variable.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/audio_renderer.h"
@@ -634,8 +634,12 @@ void Pipeline::OnStopCompleted(PipelineStatus status) {
     error_cb_.Reset();
   }
   if (!stop_cb_.is_null()) {
-    base::ResetAndReturn(&stop_cb_).Run();
     error_cb_.Reset();
+    base::ResetAndReturn(&stop_cb_).Run();
+
+    // NOTE: pipeline may be deleted at this point in time as a result of
+    // executing |stop_cb_|.
+    return;
   }
   if (!error_cb_.is_null()) {
     DCHECK_NE(status_, PIPELINE_OK);
@@ -928,7 +932,7 @@ void Pipeline::OnAudioUnderflow() {
     return;
 
   if (audio_renderer_)
-    audio_renderer_->ResumeAfterUnderflow(true);
+    audio_renderer_->ResumeAfterUnderflow();
 }
 
 void Pipeline::StartClockIfWaitingForTimeUpdate_Locked() {

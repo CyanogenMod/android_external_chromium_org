@@ -6,7 +6,7 @@
 
 #include "base/auto_reset.h"
 #include "base/metrics/histogram.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
@@ -54,7 +54,7 @@
 #include "ui/gfx/image/image_png_rep.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
 
 namespace content {
 WebContentsViewPort* CreateWebContentsView(
@@ -1044,6 +1044,11 @@ void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
     if (enabled)
       host->overscroll_controller()->set_delegate(this);
   }
+
+  if (!enabled)
+    navigation_overlay_.reset();
+  else if (!navigation_overlay_)
+    navigation_overlay_.reset(new OverscrollNavigationOverlay());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

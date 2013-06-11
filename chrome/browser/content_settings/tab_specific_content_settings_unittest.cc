@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
@@ -11,8 +11,8 @@
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_options.h"
 #include "net/cookies/parsed_cookie.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
 
@@ -38,18 +38,10 @@ class MockSiteDataObserver
 
 class TabSpecificContentSettingsTest : public ChromeRenderViewHostTestHarness {
  public:
-  TabSpecificContentSettingsTest()
-      : browser_thread_(BrowserThread::UI, &message_loop_) {}
-
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
     TabSpecificContentSettings::CreateForWebContents(web_contents());
   }
-
- private:
-  content::TestBrowserThread browser_thread_;
-
-  DISALLOW_COPY_AND_ASSIGN(TabSpecificContentSettingsTest);
 };
 
 TEST_F(TabSpecificContentSettingsTest, BlockedContent) {

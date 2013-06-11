@@ -5,7 +5,7 @@
 #include "media/audio/mock_audio_manager.h"
 
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/audio/audio_parameters.h"
 
 namespace media {
@@ -37,13 +37,15 @@ void MockAudioManager::GetAudioInputDeviceNames(
 }
 
 media::AudioOutputStream* MockAudioManager::MakeAudioOutputStream(
-        const media::AudioParameters& params) {
+        const media::AudioParameters& params,
+        const std::string& input_device_id) {
   NOTREACHED();
   return NULL;
 }
 
 media::AudioOutputStream* MockAudioManager::MakeAudioOutputStreamProxy(
-    const media::AudioParameters& params) {
+    const media::AudioParameters& params,
+    const std::string& input_device_id) {
   NOTREACHED();
   return NULL;
 }
@@ -55,11 +57,11 @@ media::AudioInputStream* MockAudioManager::MakeAudioInputStream(
   return NULL;
 }
 
-bool MockAudioManager::IsRecordingInProcess() {
-  return false;
+scoped_refptr<base::MessageLoopProxy> MockAudioManager::GetMessageLoop() {
+  return message_loop_proxy_;
 }
 
-scoped_refptr<base::MessageLoopProxy> MockAudioManager::GetMessageLoop() {
+scoped_refptr<base::MessageLoopProxy> MockAudioManager::GetWorkerLoop() {
   return message_loop_proxy_;
 }
 

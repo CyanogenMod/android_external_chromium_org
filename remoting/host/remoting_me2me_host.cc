@@ -19,15 +19,15 @@
 #include "base/single_thread_task_runner.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
-#include "base/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "crypto/nss_util.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_listener.h"
+#include "media/base/media.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/ssl_server_socket.h"
 #include "net/url_request/url_fetcher.h"
@@ -461,12 +461,19 @@ void HostProcess::CreateAuthenticatorFactory() {
     ShutdownHost(kInitializationFailed);
     return;
   }
+
+  // TODO(jamiewalch): Add a pairing registry here once all the code
+  // is committed.
+  scoped_refptr<remoting::protocol::PairingRegistry> pairing_registry;
+  //scoped_refptr<protocol::PairingRegistry> pairing_registry(
+  //    new protocol::PairingRegistry(
+  //        scoped_ptr<protocol::PairingRegistry::Delegate>(
+  //            new protocol::NotImplementedPairingRegistryDelegate),
+  //        protocol::PairingRegistry::PairedClients()));
+
   scoped_ptr<protocol::AuthenticatorFactory> factory;
 
   if (token_url_.is_empty() && token_validation_url_.is_empty()) {
-    // TODO(jamiewalch): Add a pairing registry here once all the code
-    // is committed.
-    scoped_refptr<remoting::protocol::PairingRegistry> pairing_registry;
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithSharedSecret(
         local_certificate, key_pair_, host_secret_hash_, pairing_registry);
 
@@ -494,6 +501,8 @@ void HostProcess::CreateAuthenticatorFactory() {
   factory.reset(new PamAuthorizationFactory(factory.Pass()));
 #endif
   host_->SetAuthenticatorFactory(factory.Pass());
+
+  host_->set_pairing_registry(pairing_registry);
 }
 
 // IPC::Listener implementation.
@@ -632,7 +641,7 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
   }
 
   key_pair_ = RsaKeyPair::FromString(key_base64);
-  if (!key_pair_) {
+  if (!key_pair_.get()) {
     LOG(ERROR) << "Invalid private key in the config file.";
     return false;
   }
@@ -1044,6 +1053,9 @@ int HostProcessMain() {
   // Enable support for SSL server sockets, which must be done while still
   // single-threaded.
   net::EnableSSLServerSockets();
+
+  // Ensures runtime specific CPU features are initialized.
+  media::InitializeCPUSpecificMediaFeatures();
 
   // Create the main message loop and start helper threads.
   base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);

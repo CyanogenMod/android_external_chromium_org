@@ -9,7 +9,7 @@
 #include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "sync/internal_api/public/base/unique_position.h"
 #include "sync/protocol/app_notification_specifics.pb.h"
@@ -801,6 +801,10 @@ base::DictionaryValue* DatatypeAssociationStatsToValue(
   SET_INT32(num_sync_items_deleted);
   SET_INT32(num_sync_items_modified);
   SET_BOOL(had_error);
+  SET_INT64(download_wait_time_us);
+  SET_INT64(download_time_us);
+  SET_INT64(association_wait_time_for_high_priority_us);
+  SET_INT64(association_wait_time_for_same_priority_us);
   return value;
 }
 

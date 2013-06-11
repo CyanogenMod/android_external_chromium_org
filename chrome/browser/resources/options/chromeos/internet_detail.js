@@ -759,6 +759,9 @@ cr.define('options.internet', function() {
     if (!data)
       return;
 
+    if (update.servicePath != data.servicePath)
+      return;
+
     // Update our cached data object.
     updateDataObject(data, update);
 
@@ -847,6 +850,9 @@ cr.define('options.internet', function() {
     detailsPage.connecting = data.connecting;
     detailsPage.connected = data.connected;
     detailsPage.showProxy = data.showProxy;
+    if (detailsPage.showProxy)
+      chrome.send('selectNetwork', [data.servicePath]);
+
     detailsPage.showStaticIPConfig = data.showStaticIPConfig;
     $('connection-state').textContent = data.connectionState;
 

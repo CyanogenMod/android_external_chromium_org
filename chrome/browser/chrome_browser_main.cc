@@ -31,10 +31,10 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/about_flags.h"
@@ -77,7 +77,6 @@
 #include "chrome/browser/performance_monitor/performance_monitor.h"
 #include "chrome/browser/performance_monitor/startup_timer.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
-#include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
@@ -185,10 +184,6 @@
 
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "chrome/browser/mac/keystone_glue.h"
-#endif
-
-#if defined(ENABLE_CONFIGURATION_POLICY)
-#include "policy/policy_constants.h"
 #endif
 
 #if defined(ENABLE_LANGUAGE_DETECTION)
@@ -793,7 +788,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
   {
     TRACE_EVENT0("startup",
       "ChromeBrowserMainParts::PreCreateThreadsImpl:InitBrowswerProcessImpl");
-    browser_process_.reset(new BrowserProcessImpl(local_state_task_runner,
+    browser_process_.reset(new BrowserProcessImpl(local_state_task_runner.get(),
                                                   parsed_command_line()));
   }
 
@@ -819,9 +814,8 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
             switches::kProfilingOutputFile));
   }
 
-  local_state_ = InitializeLocalState(local_state_task_runner,
-                                      parsed_command_line(),
-                                      is_first_run);
+  local_state_ = InitializeLocalState(
+      local_state_task_runner.get(), parsed_command_line(), is_first_run);
 
   // These members must be initialized before returning from this function.
   master_prefs_.reset(new first_run::MasterPrefs);

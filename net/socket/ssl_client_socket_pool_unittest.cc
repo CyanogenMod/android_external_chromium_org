@@ -7,8 +7,8 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "net/base/auth.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
@@ -183,7 +183,7 @@ class SSLClientSocketPoolTest : public testing::Test {
     params.cert_verifier = cert_verifier_.get();
     params.proxy_service = proxy_service_.get();
     params.client_socket_factory = &socket_factory_;
-    params.ssl_config_service = ssl_config_service_;
+    params.ssl_config_service = ssl_config_service_.get();
     params.http_auth_handler_factory = http_auth_handler_factory_.get();
     params.http_server_properties = &http_server_properties_;
     params.enable_spdy_compression = false;

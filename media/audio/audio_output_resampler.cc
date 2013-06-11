@@ -36,7 +36,6 @@ class OnMoreDataConverter
                            AudioBus* dest,
                            AudioBuffersState buffers_state) OVERRIDE;
   virtual void OnError(AudioOutputStream* stream) OVERRIDE;
-  virtual void WaitTillDataReady() OVERRIDE;
 
   // Sets |source_callback_|.  If this is not a new object, then Stop() must be
   // called before Start().
@@ -148,10 +147,12 @@ static AudioParameters SetupFallbackParams(
 AudioOutputResampler::AudioOutputResampler(AudioManager* audio_manager,
                                            const AudioParameters& input_params,
                                            const AudioParameters& output_params,
+                                           const std::string& input_device_id,
                                            const base::TimeDelta& close_delay)
-    : AudioOutputDispatcher(audio_manager, input_params),
+    : AudioOutputDispatcher(audio_manager, input_params, input_device_id),
       close_delay_(close_delay),
       output_params_(output_params),
+      input_device_id_(input_device_id),
       streams_opened_(false) {
   DCHECK(input_params.IsValid());
   DCHECK(output_params.IsValid());
@@ -171,7 +172,7 @@ void AudioOutputResampler::Initialize() {
   DCHECK(!streams_opened_);
   DCHECK(callbacks_.empty());
   dispatcher_ = new AudioOutputDispatcherImpl(
-      audio_manager_, output_params_, close_delay_);
+      audio_manager_, output_params_, input_device_id_, close_delay_);
 }
 
 bool AudioOutputResampler::OpenStream() {
@@ -389,12 +390,6 @@ void OnMoreDataConverter::OnError(AudioOutputStream* stream) {
   base::AutoLock auto_lock(source_lock_);
   if (source_callback_)
     source_callback_->OnError(stream);
-}
-
-void OnMoreDataConverter::WaitTillDataReady() {
-  base::AutoLock auto_lock(source_lock_);
-  if (source_callback_)
-    source_callback_->WaitTillDataReady();
 }
 
 }  // namespace media

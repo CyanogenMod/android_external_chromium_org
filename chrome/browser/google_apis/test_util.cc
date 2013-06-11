@@ -11,14 +11,14 @@
 #include "base/path_service.h"
 #include "base/pending_task.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_wapi_operations.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
+#include "chrome/browser/google_apis/gdata_wapi_requests.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -133,11 +133,8 @@ scoped_ptr<net::test_server::BasicHttpResponse> CreateHttpResponseFromFile(
     return scoped_ptr<net::test_server::BasicHttpResponse>();
 
   std::string content_type = "text/plain";
-  if (EndsWith(file_path.AsUTF8Unsafe(), ".json", true /* case sensitive */)) {
+  if (EndsWith(file_path.AsUTF8Unsafe(), ".json", true /* case sensitive */))
     content_type = "application/json";
-  } else if (EndsWith(file_path.AsUTF8Unsafe(), ".xml", true)) {
-    content_type = "application/atom+xml";
-  }
 
   scoped_ptr<net::test_server::BasicHttpResponse> http_response(
       new net::test_server::BasicHttpResponse);
@@ -147,7 +144,7 @@ scoped_ptr<net::test_server::BasicHttpResponse> CreateHttpResponseFromFile(
   return http_response.Pass();
 }
 
-scoped_ptr<net::test_server::HttpResponse> HandleDownloadRequest(
+scoped_ptr<net::test_server::HttpResponse> HandleDownloadFileRequest(
     const GURL& base_url,
     net::test_server::HttpRequest* out_request,
     const net::test_server::HttpRequest& request) {

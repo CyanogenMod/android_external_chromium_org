@@ -4,11 +4,12 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -420,10 +421,10 @@ class GpuPixelBrowserTest : public InProcessBrowserTest {
   void ObtainLocalRefImageRevision() {
     base::FilePath filter;
     filter = filter.AppendASCII(test_name_ + "_*.rev");
-    file_util::FileEnumerator locator(ref_img_dir_,
-                                      false,  // non recursive
-                                      file_util::FileEnumerator::FILES,
-                                      filter.value());
+    base::FileEnumerator locator(ref_img_dir_,
+                                 false,  // non recursive
+                                 base::FileEnumerator::FILES,
+                                 filter.value());
     int64 max_revision = 0;
     std::vector<base::FilePath> outdated_revs;
     for (base::FilePath full_path = locator.Next();

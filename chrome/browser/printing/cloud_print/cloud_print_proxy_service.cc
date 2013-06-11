@@ -14,7 +14,7 @@
 #include "base/json/json_reader.h"
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
@@ -154,7 +154,7 @@ void CloudPrintProxyService::GetPrintersAvalibleForRegistration(
     printing::PrinterList printer_list;
     scoped_refptr<printing::PrintBackend> backend(
         printing::PrintBackend::CreateInstance(NULL));
-    if (backend)
+    if (backend.get())
       backend->EnumeratePrinters(&printer_list);
     for (size_t i = 0; i < printer_list.size(); ++i)
       printers->push_back(printer_list[i].printer_name);

@@ -16,7 +16,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -29,7 +29,6 @@
 #include "chrome/browser/ui/ash/ash_keyboard_controller_proxy.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
-#include "chrome/browser/ui/ash/session_state_delegate.h"
 #include "chrome/browser/ui/ash/user_action_handler.h"
 #include "chrome/browser/ui/ash/window_positioner.h"
 #include "chrome/browser/ui/browser.h"
@@ -245,6 +244,10 @@ app_list::AppListViewDelegate*
 
 ash::LauncherDelegate* ChromeShellDelegate::CreateLauncherDelegate(
     ash::LauncherModel* model) {
+  // Defer Launcher creation until DefaultProfile is created.
+  if (!ProfileManager::IsGetDefaultProfileAllowed())
+    return NULL;
+
   // TODO(oshima): This is currently broken with multiple launchers.
   // Refactor so that there is just one launcher delegate in the
   // shell.
@@ -253,10 +256,6 @@ ash::LauncherDelegate* ChromeShellDelegate::CreateLauncherDelegate(
     launcher_delegate_->Init();
   }
   return launcher_delegate_;
-}
-
-ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
-  return new SessionStateDelegate;
 }
 
 aura::client::UserActionClient* ChromeShellDelegate::CreateUserActionClient() {

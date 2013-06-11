@@ -5,7 +5,9 @@
 #include "chrome/browser/extensions/api/messaging/native_message_process_host.h"
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/files/file_path.h"
+#include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/platform_file.h"
 #include "base/process_util.h"
@@ -42,6 +44,8 @@ const char kForbiddenError[] =
     "Access to the specified native messaging host is forbidden.";
 const char kHostInputOuputError[] =
     "Error when communicating with the native messaging host.";
+const char kInvalidJsonError[] =
+    "Message must be valid JSON";
 
 }  // namespace
 
@@ -211,9 +215,9 @@ void NativeMessageProcessHost::DoRead() {
   while (!closed_ && !read_eof_ && !read_pending_) {
     read_buffer_ = new net::IOBuffer(kReadBufferSize);
     int result = read_stream_->Read(
-        read_buffer_, kReadBufferSize,
-        base::Bind(&NativeMessageProcessHost::OnRead,
-                   base::Unretained(this)));
+        read_buffer_.get(),
+        kReadBufferSize,
+        base::Bind(&NativeMessageProcessHost::OnRead, base::Unretained(this)));
     HandleReadResult(result);
   }
 }
@@ -268,10 +272,35 @@ void NativeMessageProcessHost::ProcessIncomingData(
     if (incoming_data_.size() < message_size + kMessageHeaderSize)
       return;
 
+    scoped_ptr<base::ListValue> message(new base::ListValue());
+    {
+      std::string message_as_json =
+          incoming_data_.substr(kMessageHeaderSize, message_size);
+      int error_code;
+      std::string error_message;
+      scoped_ptr<base::Value> message_as_value(
+          base::JSONReader::ReadAndReturnError(message_as_json,
+                                               0,  // no flags
+                                               &error_code,
+                                               &error_message));
+      if (!message_as_value) {
+        base::JSONReader::JsonParseError parse_error =
+            static_cast<base::JSONReader::JsonParseError>(error_code);
+        LOG(ERROR) << "Native Messaging host sent message with invalid JSON \""
+                   << message_as_json << "\": " << error_message << " ("
+                   << base::JSONReader::ErrorCodeToString(parse_error) << "), "
+                   << "message size " << message_size << ", "
+                   << "incoming data size " << incoming_data_.size() << ".";
+        Close(kInvalidJsonError);
+        return;
+      }
+      message->Append(message_as_value.release());
+    }
+
     content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
         base::Bind(&Client::PostMessageFromNativeProcess, weak_client_ui_,
             destination_port_,
-            incoming_data_.substr(kMessageHeaderSize, message_size)));
+            base::Passed(&message)));
 
     incoming_data_.erase(0, kMessageHeaderSize + message_size);
   }
@@ -281,18 +310,20 @@ void NativeMessageProcessHost::DoWrite() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
 
   while (!write_pending_ && !closed_) {
-    if (!current_write_buffer_ || !current_write_buffer_->BytesRemaining()) {
+    if (!current_write_buffer_.get() ||
+        !current_write_buffer_->BytesRemaining()) {
       if (write_queue_.empty())
         return;
       current_write_buffer_ = new net::DrainableIOBuffer(
-          write_queue_.front(), write_queue_.front()->size());
+          write_queue_.front().get(), write_queue_.front()->size());
       write_queue_.pop();
     }
 
-    int result = write_stream_->Write(
-        current_write_buffer_, current_write_buffer_->BytesRemaining(),
-        base::Bind(&NativeMessageProcessHost::OnWritten,
-                   base::Unretained(this)));
+    int result =
+        write_stream_->Write(current_write_buffer_.get(),
+                             current_write_buffer_->BytesRemaining(),
+                             base::Bind(&NativeMessageProcessHost::OnWritten,
+                                        base::Unretained(this)));
     HandleWriteResult(result);
   }
 }

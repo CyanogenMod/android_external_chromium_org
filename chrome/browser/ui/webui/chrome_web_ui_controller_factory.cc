@@ -22,7 +22,6 @@
 #include "chrome/browser/ui/webui/crashes_ui.h"
 #include "chrome/browser/ui/webui/devtools_ui.h"
 #include "chrome/browser/ui/webui/downloads_ui.h"
-#include "chrome/browser/ui/webui/extensions/extension_activity_ui.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
 #include "chrome/browser/ui/webui/extensions/extensions_ui.h"
 #include "chrome/browser/ui/webui/feedback_ui.h"
@@ -30,6 +29,7 @@
 #include "chrome/browser/ui/webui/flash_ui.h"
 #include "chrome/browser/ui/webui/help/help_ui.h"
 #include "chrome/browser/ui/webui/history_ui.h"
+#include "chrome/browser/ui/webui/identity_internals_ui.h"
 #include "chrome/browser/ui/webui/inline_login_ui.h"
 #include "chrome/browser/ui/webui/inspect_ui.h"
 #include "chrome/browser/ui/webui/instant_ui.h"
@@ -218,11 +218,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<InstantUI>;
   if (url.host() == chrome::kChromeUIManagedUserPassphrasePageHost)
     return &NewWebUI<ConstrainedWebDialogUI>;
-  if (url.host() == chrome::kChromeUIMemoryInternalsHost &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableMemoryInternalsUI)) {
+  if (url.host() == chrome::kChromeUIMemoryInternalsHost)
     return &NewWebUI<MemoryInternalsUI>;
-  }
 #if !defined(DISABLE_NACL)
   if (url.host() == chrome::kChromeUINaClHost)
     return &NewWebUI<NaClUI>;
@@ -283,6 +280,9 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   // Help is implemented with native UI elements on Android.
   if (url.host() == chrome::kChromeUIHelpFrameHost)
     return &NewWebUI<HelpUI>;
+  // Identity API is not available on Android.
+  if (url.host() == chrome::kChromeUIIdentityInternalsHost)
+    return &NewWebUI<IdentityInternalsUI>;
   // chrome://inspect isn't supported on Android. Page debugging is handled by a
   // remote devtools on the host machine, and other elements (Shared Workers,
   // extensions, etc) aren't supported.
@@ -353,12 +353,13 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(ENABLE_CONFIGURATION_POLICY)
   if (url.host() == chrome::kChromeUIPolicyHost)
     return &NewWebUI<PolicyUI>;
-#endif
 
-#if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
   if (url.host() == chrome::kChromeUIProfileSigninConfirmationHost)
     return &NewWebUI<ProfileSigninConfirmationUI>;
 #endif
+
+#endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if (defined(OS_LINUX) && defined(TOOLKIT_VIEWS)) || defined(USE_AURA)
   if (url.host() == chrome::kChromeUITabModalConfirmDialogHost) {
@@ -371,19 +372,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<GestureConfigUI>;
   if (url.host() == keyboard::kKeyboardWebUIHost)
     return &NewWebUI<keyboard::KeyboardUIController>;
-#endif
-
-#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
-  if (url.host() == chrome::kChromeUISyncPromoHost) {
-    // If the sync promo page is enabled then use the sync promo WebUI otherwise
-    // use the NTP WebUI. We don't want to return NULL if the sync promo page
-    // is disabled because the page can be disabled mid-flight (for example,
-    // if sync login finishes).
-    if (SyncPromoUI::ShouldShowSyncPromo(profile))
-      return &NewWebUI<SyncPromoUI>;
-    else
-      return &NewWebUI<NewTabUI>;
-  }
 #endif
 
   if (url.host() == chrome::kChromeUIChromeURLsHost ||
@@ -411,11 +399,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   }
 
 #if defined(ENABLE_EXTENSIONS)
-  if (url.host() == chrome::kChromeUIExtensionActivityHost &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableExtensionActivityUI)) {
-    return &NewWebUI<ExtensionActivityUI>;
-  }
   if (url.host() == chrome::kChromeUIExtensionInfoHost &&
       extensions::FeatureSwitch::script_badges()->IsEnabled()) {
     return &NewWebUI<ExtensionInfoUI>;

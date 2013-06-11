@@ -8,8 +8,8 @@
 
 #include "base/basictypes.h"
 #include "base/pickle.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -129,11 +129,9 @@ bool BookmarkNodeData::ReadFromTuple(const GURL& url, const string16& title) {
 }
 
 #if !defined(OS_MACOSX)
-void BookmarkNodeData::WriteToClipboard(Profile* profile) const {
+void BookmarkNodeData::WriteToClipboard() const {
   ui::ScopedClipboardWriter scw(ui::Clipboard::GetForCurrentThread(),
-                                ui::Clipboard::BUFFER_STANDARD,
-                                content::BrowserContext::
-                                    GetMarkerForOffTheRecordContext(profile));
+                                ui::Clipboard::BUFFER_STANDARD);
 
   // If there is only one element and it is a URL, write the URL to the
   // clipboard.
@@ -153,7 +151,7 @@ void BookmarkNodeData::WriteToClipboard(Profile* profile) const {
   }
 
   Pickle pickle;
-  WriteToPickle(profile, &pickle);
+  WriteToPickle(NULL, &pickle);
   scw.WritePickledData(
       pickle, ui::Clipboard::GetFormatType(kClipboardFormatString));
 }

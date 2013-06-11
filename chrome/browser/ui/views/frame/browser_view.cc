@@ -12,7 +12,7 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
@@ -446,6 +446,7 @@ BrowserView::BrowserView()
       tabstrip_(NULL),
       toolbar_(NULL),
       window_switcher_button_(NULL),
+      find_bar_host_view_(NULL),
       infobar_container_(NULL),
       contents_web_view_(NULL),
       devtools_container_(NULL),
@@ -978,14 +979,17 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
   }
 }
 
-void BrowserView::MaybeStackImmersiveRevealAtTop() {
-  immersive_mode_controller_->MaybeStackViewAtTop();
-}
-
 void BrowserView::OnOverlayStateChanged(bool repaint_infobars) {
   Layout();
 
-  overlay_container_->MaybeStackAtTop(immersive_mode_controller_->IsRevealed());
+  // |top_container_| paints to a layer when in immersive fullscreen. Paint
+  // |overlay_container_| to a layer in this case so that the overlay stays
+  // stacked on top of |top_container_| in z-order.
+  if (overlay_container_->visible() &&
+      immersive_mode_controller_->IsRevealed()) {
+    overlay_container_->SetPaintToLayer(true);
+    overlay_container_->SetFillsBoundsOpaquely(false);
+  }
 
   // When immersive mode is not reveal and infobar container is visible, set top
   // infobar arrow as per overlay state.  Layout() needs to happen before
@@ -1516,10 +1520,6 @@ void BrowserView::ActiveTabChanged(content::WebContents* old_contents,
   // Update all the UI bits.
   UpdateTitleBar();
 
-  // Like the overlay layer and the bookmark bar layer, the immersive mode
-  // reveal view's layer may need to live above the web contents.
-  MaybeStackImmersiveRevealAtTop();
-
   // No need to update Toolbar because it's already updated in
   // browser.cc.
 }
@@ -1555,6 +1555,11 @@ bool BrowserView::CanActivate() const {
   if (!AppModalDialogQueue::GetInstance()->active_dialog())
     return true;
 
+#if defined(USE_AURA) && defined(OS_CHROMEOS)
+  // On Aura window manager controls all windows so settings focus via PostTask
+  // will make only worse because posted task will keep trying to steal focus.
+  AppModalDialogQueue::GetInstance()->ActivateModalDialog();
+#else
   // If another browser is app modal, flash and activate the modal browser. This
   // has to be done in a post task, otherwise if the user clicked on a window
   // that doesn't have the modal dialog the windows keep trying to get the focus
@@ -1563,6 +1568,7 @@ bool BrowserView::CanActivate() const {
       FROM_HERE,
       base::Bind(&BrowserView::ActivateAppModalDialog,
                  activate_modal_dialog_factory_.GetWeakPtr()));
+#endif
   return false;
 }
 
@@ -1825,6 +1831,13 @@ bool BrowserView::CanClose() {
     // down. When the tab strip is empty we'll be called back again.
     frame_->Hide();
     browser_->OnWindowClosing();
+    browser_->tab_strip_model()->CloseAllTabs();
+    return false;
+  } else if (!browser_->HasCompletedUnloadProcessing()) {
+    // The browser needs to finish running unload handlers.
+    // Hide the frame (so it appears to have closed immediately), and
+    // the browser will call us back again when it is ready to close.
+    frame_->Hide();
     return false;
   }
 
@@ -1930,10 +1943,6 @@ FullscreenController* BrowserView::GetFullscreenController() {
   // Cannot be injected into ImmersiveModeController because it is constructed
   // after BrowserView.
   return browser()->fullscreen_controller();
-}
-
-void BrowserView::FocusLocationBar() {
-  SetFocusToLocationBar(false);
 }
 
 void BrowserView::FullscreenStateChanged() {
@@ -2058,6 +2067,11 @@ void BrowserView::InitViews() {
   toolbar_ = new ToolbarView(browser_.get());
   top_container_->AddChildView(toolbar_);
   toolbar_->Init();
+
+  // Create do-nothing view for the sake of controlling the z-order of the find
+  // bar widget.
+  find_bar_host_view_ = new View();
+  AddChildView(find_bar_host_view_);
 
   overlay_container_ =
       new OverlayContainer(this, immersive_mode_controller_.get());

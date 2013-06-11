@@ -10,7 +10,7 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/buffers.h"
@@ -261,7 +261,7 @@ void DecryptingAudioDecoder::DecryptAndDecodeBuffer(
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
   DCHECK(!read_cb_.is_null());
-  DCHECK_EQ(buffer != NULL, status == DemuxerStream::kOk) << status;
+  DCHECK_EQ(buffer.get() != NULL, status == DemuxerStream::kOk) << status;
 
   if (status == DemuxerStream::kConfigChanged) {
     DVLOG(2) << "DecryptAndDecodeBuffer() - kConfigChanged";
@@ -336,7 +336,7 @@ void DecryptingAudioDecoder::DeliverFrame(
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDecode) << state_;
   DCHECK(!read_cb_.is_null());
-  DCHECK(pending_buffer_to_decode_);
+  DCHECK(pending_buffer_to_decode_.get());
   DCHECK(queued_audio_frames_.empty());
 
   bool need_to_try_again_if_nokey_is_returned = key_added_while_decode_pending_;

@@ -12,12 +12,13 @@
 #include "base/compiler_specific.h"
 #include "base/debug/leak_tracker.h"
 #include "base/logging.h"
+#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
 #include "base/time/default_tick_clock.h"
@@ -40,6 +41,7 @@
 #include "chrome/browser/policy/policy_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/net_util.h"
@@ -50,6 +52,7 @@
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
+#include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_filter.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_network_layer.h"
@@ -61,7 +64,11 @@
 #include "net/spdy/spdy_session.h"
 #include "net/ssl/default_server_bound_cert_store.h"
 #include "net/ssl/server_bound_cert_service.h"
+#include "net/url_request/data_protocol_handler.h"
+#include "net/url_request/file_protocol_handler.h"
+#include "net/url_request/ftp_protocol_handler.h"
 #include "net/url_request/url_fetcher.h"
+#include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_throttler_manager.h"
 #include "net/websockets/websocket_job.h"
 
@@ -89,6 +96,9 @@ class SafeBrowsingURLRequestContext;
 // Quit task, so base::Bind() calls are not refcounted.
 
 namespace {
+
+const char kQuicFieldTrialName[] = "QUIC";
+const char kQuicFieldTrialEnabledGroupName[] = "Enabled";
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 void ObserveKeychainEvents() {
@@ -188,6 +198,8 @@ ConstructProxyScriptFetcherContext(IOThread::Globals* globals,
   context->set_proxy_service(globals->proxy_script_fetcher_proxy_service.get());
   context->set_http_transaction_factory(
       globals->proxy_script_fetcher_http_transaction_factory.get());
+  context->set_job_factory(
+      globals->proxy_script_fetcher_url_request_job_factory.get());
   context->set_cookie_store(globals->system_cookie_store.get());
   context->set_server_bound_cert_service(
       globals->system_server_bound_cert_service.get());
@@ -443,10 +455,10 @@ void IOThread::ChangedToOnTheRecord() {
 
 net::URLRequestContextGetter* IOThread::system_url_request_context_getter() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!system_url_request_context_getter_) {
+  if (!system_url_request_context_getter_.get()) {
     InitSystemRequestContext();
   }
-  return system_url_request_context_getter_;
+  return system_url_request_context_getter_.get();
 }
 
 void IOThread::Init() {
@@ -523,13 +535,14 @@ void IOThread::Init() {
     globals_->testing_fixed_https_port =
         GetSwitchValueAsInt(command_line, switches::kTestingFixedHttpsPort);
   }
-  if (command_line.HasSwitch(switches::kEnableQuic)) {
-    globals_->enable_quic.set(true);
-  }
-  if (command_line.HasSwitch(switches::kOriginPortToForceQuicOn)) {
-    globals_->origin_port_to_force_quic_on.set(
-        GetSwitchValueAsInt(command_line,
-                            switches::kOriginPortToForceQuicOn));
+  globals_->enable_quic.set(ShouldEnableQuic(command_line));
+  if (command_line.HasSwitch(switches::kOriginToForceQuicOn)) {
+    net::HostPortPair quic_origin =
+        net::HostPortPair::FromString(
+            command_line.GetSwitchValueASCII(switches::kOriginToForceQuicOn));
+    if (!quic_origin.IsEmpty()) {
+      globals_->origin_to_force_quic_on.set(quic_origin);
+    }
   }
   if (command_line.HasSwitch(
           switches::kEnableUserAlternateProtocolPorts)) {
@@ -545,8 +558,24 @@ void IOThread::Init() {
 
   scoped_refptr<net::HttpNetworkSession> network_session(
       new net::HttpNetworkSession(session_params));
-  globals_->proxy_script_fetcher_http_transaction_factory.reset(
-      new net::HttpNetworkLayer(network_session));
+  globals_->proxy_script_fetcher_http_transaction_factory
+      .reset(new net::HttpNetworkLayer(network_session.get()));
+  scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
+      new net::URLRequestJobFactoryImpl());
+  job_factory->SetProtocolHandler(chrome::kDataScheme,
+                                  new net::DataProtocolHandler());
+  job_factory->SetProtocolHandler(chrome::kFileScheme,
+                                  new net::FileProtocolHandler());
+#if !defined(DISABLE_FTP_SUPPORT)
+  globals_->proxy_script_fetcher_ftp_transaction_factory.reset(
+      new net::FtpNetworkLayer(globals_->host_resolver.get()));
+  job_factory->SetProtocolHandler(
+      chrome::kFtpScheme,
+      new net::FtpProtocolHandler(
+          globals_->proxy_script_fetcher_ftp_transaction_factory.get()));
+#endif
+  globals_->proxy_script_fetcher_url_request_job_factory =
+      job_factory.PassAs<net::URLRequestJobFactory>();
 
   globals_->throttler_manager.reset(new net::URLRequestThrottlerManager());
   globals_->throttler_manager->set_net_log(net_log_);
@@ -842,8 +871,8 @@ void IOThread::InitializeNetworkSessionParams(
   globals_->spdy_default_protocol.CopyToIfSet(
       &params->spdy_default_protocol);
   globals_->enable_quic.CopyToIfSet(&params->enable_quic);
-  globals_->origin_port_to_force_quic_on.CopyToIfSet(
-      &params->origin_port_to_force_quic_on);
+  globals_->origin_to_force_quic_on.CopyToIfSet(
+      &params->origin_to_force_quic_on);
   params->enable_user_alternate_protocol_ports =
       globals_->enable_user_alternate_protocol_ports;
 }
@@ -861,7 +890,7 @@ void IOThread::ChangedToOnTheRecordOnIOThread() {
 }
 
 void IOThread::InitSystemRequestContext() {
-  if (system_url_request_context_getter_)
+  if (system_url_request_context_getter_.get())
     return;
   // If we're in unit_tests, IOThread may not be run.
   if (!BrowserThread::IsMessageLoopValid(BrowserThread::IO))
@@ -912,4 +941,20 @@ void IOThread::InitSystemRequestContextOnIOThread() {
 
 void IOThread::UpdateDnsClientEnabled() {
   globals()->host_resolver->SetDnsClientEnabled(*dns_client_enabled_);
+}
+
+bool IOThread::ShouldEnableQuic(const CommandLine& command_line) {
+  // Always fetch the field trial group to ensure it is reported correctly.
+  // The command line flags will be associated with a group that is reported
+  // so long as trial is actually queried.
+  std::string quic_trial_group =
+      base::FieldTrialList::FindFullName(kQuicFieldTrialName);
+
+  if (command_line.HasSwitch(switches::kDisableQuic))
+    return false;
+
+  if (command_line.HasSwitch(switches::kEnableQuic))
+    return true;
+
+  return quic_trial_group == kQuicFieldTrialEnabledGroupName;
 }

@@ -16,10 +16,10 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/syncable/local_file_sync_status.h"
 #include "webkit/browser/fileapi/syncable/sync_status_code.h"
+#include "webkit/browser/quota/quota_callbacks.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/quota/quota_callbacks.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -29,7 +29,7 @@ class Thread;
 
 namespace fileapi {
 class FileSystemContext;
-class FileSystemOperation;
+class FileSystemOperationRunner;
 class FileSystemURL;
 }
 
@@ -55,7 +55,6 @@ class CannedSyncableFileSystem
   typedef base::Callback<void(int64)> WriteCallback;
 
   CannedSyncableFileSystem(const GURL& origin,
-                           const std::string& service,
                            base::SingleThreadTaskRunner* io_task_runner,
                            base::SingleThreadTaskRunner* file_task_runner);
   virtual ~CannedSyncableFileSystem();
@@ -134,8 +133,7 @@ class CannedSyncableFileSystem
   void GetChangedURLsInTracker(fileapi::FileSystemURLSet* urls);
   void ClearChangeForURLInTracker(const fileapi::FileSystemURL& url);
 
-  // Returns new FileSystemOperation.
-  fileapi::FileSystemOperation* NewOperation();
+  fileapi::FileSystemOperationRunner* operation_runner();
 
   // LocalFileSyncStatus::Observer overrides.
   virtual void OnSyncEnabled(const fileapi::FileSystemURL& url) OVERRIDE;

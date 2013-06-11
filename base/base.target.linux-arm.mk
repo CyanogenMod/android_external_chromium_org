@@ -77,6 +77,8 @@ LOCAL_SRC_FILES := \
 	base/file_util.cc \
 	base/file_util_android.cc \
 	base/file_util_posix.cc \
+	base/files/file_enumerator.cc \
+	base/files/file_enumerator_posix.cc \
 	base/files/file_path.cc \
 	base/files/file_path_constants.cc \
 	base/files/file_path_watcher.cc \
@@ -139,9 +141,11 @@ LOCAL_SRC_FILES := \
 	base/process_util.cc \
 	base/process_util_linux.cc \
 	base/process_util_posix.cc \
+	base/process/internal_linux.cc \
+	base/process/process_iterator.cc \
+	base/process/process_iterator_linux.cc \
 	base/process/process_metrics_linux.cc \
 	base/process/process_metrics_posix.cc \
-	base/process/internal_linux.cc \
 	base/profiler/scoped_profile.cc \
 	base/profiler/alternate_timer.cc \
 	base/profiler/tracked_time.cc \
@@ -153,13 +157,14 @@ LOCAL_SRC_FILES := \
 	base/sequence_checker_impl.cc \
 	base/sequenced_task_runner.cc \
 	base/sha1_portable.cc \
-	base/string_util.cc \
-	base/string_util_constants.cc \
-	base/string16.cc \
-	base/stringprintf.cc \
-	base/strings/string_split.cc \
+	base/strings/latin1_string_conversions.cc \
+	base/strings/string16.cc \
 	base/strings/string_number_conversions.cc \
+	base/strings/string_split.cc \
 	base/strings/string_piece.cc \
+	base/strings/string_util.cc \
+	base/strings/string_util_constants.cc \
+	base/strings/stringprintf.cc \
 	base/strings/sys_string_conversions_posix.cc \
 	base/strings/utf_offset_string_conversions.cc \
 	base/strings/utf_string_conversion_utils.cc \
@@ -250,7 +255,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \

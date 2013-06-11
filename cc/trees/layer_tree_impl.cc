@@ -79,7 +79,7 @@ void LayerTreeImpl::FindRootScrollLayer() {
         root_layer_scroll_offset_delegate_);
   }
 
-  if (root_layer_ && scrolling_layer_id_from_previous_tree_) {
+  if (scrolling_layer_id_from_previous_tree_) {
     currently_scrolling_layer_ = LayerTreeHostCommon::FindLayerInSubtree(
         root_layer_.get(),
         scrolling_layer_id_from_previous_tree_);
@@ -217,7 +217,7 @@ void LayerTreeImpl::UpdateMaxScrollOffset() {
 
   // The viewport may be larger than the contents in some cases, such as
   // having a vertical scrollbar but no horizontal overflow.
-  max_scroll.ClampToMin(gfx::Vector2dF());
+  max_scroll.SetToMax(gfx::Vector2dF());
 
   root_scroll_layer_->SetMaxScrollOffset(gfx::ToFlooredVector2d(max_scroll));
 }
@@ -282,7 +282,8 @@ void LayerTreeImpl::UpdateDrawProperties() {
                  IsActiveTree());
     LayerTreeHostCommon::CalculateDrawProperties(
         root_layer(),
-        device_viewport_size(),
+        layer_tree_host_impl_->DeviceViewport().size(),
+        layer_tree_host_impl_->DeviceTransform(),
         device_scale_factor(),
         total_page_scale_factor(),
         root_scroll_layer_,
@@ -341,13 +342,11 @@ void LayerTreeImpl::UnregisterLayer(LayerImpl* layer) {
 }
 
 void LayerTreeImpl::PushPersistedState(LayerTreeImpl* pending_tree) {
-  int id = currently_scrolling_layer_ ? currently_scrolling_layer_->id() : 0;
-  LayerImpl* pending_scrolling_layer_twin = NULL;
-  if (pending_tree->root_layer()) {
-    pending_scrolling_layer_twin =
-        LayerTreeHostCommon::FindLayerInSubtree(pending_tree->root_layer(), id);
-  }
-  pending_tree->SetCurrentlyScrollingLayer(pending_scrolling_layer_twin);
+  pending_tree->SetCurrentlyScrollingLayer(
+      LayerTreeHostCommon::FindLayerInSubtree(pending_tree->root_layer(),
+          currently_scrolling_layer_ ? currently_scrolling_layer_->id() : 0));
+  pending_tree->SetLatencyInfo(latency_info_);
+  latency_info_.Clear();
 }
 
 static void DidBecomeActiveRecursive(LayerImpl* layer) {
@@ -567,7 +566,7 @@ void LayerTreeImpl::ClearLatencyInfo() {
 }
 
 void LayerTreeImpl::WillModifyTilePriorities() {
-  layer_tree_host_impl_->tile_manager()->WillModifyTilePriorities();
+  layer_tree_host_impl_->SetNeedsManageTiles();
 }
 
 }  // namespace cc

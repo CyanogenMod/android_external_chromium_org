@@ -7,7 +7,7 @@
 #include "base/command_line.h"
 #include "base/string16.h"
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -17,8 +17,8 @@
 #include "chrome/renderer/extensions/console.h"
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/extension_helper.h"
-#include "content/public/renderer/v8_value_converter.h"
 #include "content/public/renderer/render_view.h"
+#include "content/public/renderer/v8_value_converter.h"
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
@@ -57,7 +57,7 @@ const char* kInvalidCallbackIdError = "Invalid callbackId";
 }  // namespace
 
 AppBindings::AppBindings(Dispatcher* dispatcher, ChromeV8Context* context)
-    : ChromeV8Extension(dispatcher, context->v8_context()),
+    : ChromeV8Extension(dispatcher, context),
       ChromeV8ExtensionHandler(context) {
   RouteFunction("GetIsInstalled",
       base::Bind(&AppBindings::GetIsInstalled, base::Unretained(this)));
@@ -73,7 +73,7 @@ AppBindings::AppBindings(Dispatcher* dispatcher, ChromeV8Context* context)
 
 v8::Handle<v8::Value> AppBindings::GetIsInstalled(
     const v8::Arguments& args) {
-  const Extension* extension = context_->extension();
+  const Extension* extension = context()->extension();
 
   // TODO(aa): Why only hosted app?
   bool result = extension && extension->is_hosted_app() &&
@@ -83,14 +83,14 @@ v8::Handle<v8::Value> AppBindings::GetIsInstalled(
 
 v8::Handle<v8::Value> AppBindings::GetDetails(
     const v8::Arguments& args) {
-  CHECK(context_->web_frame());
-  return GetDetailsForFrameImpl(context_->web_frame());
+  CHECK(context()->web_frame());
+  return GetDetailsForFrameImpl(context()->web_frame());
 }
 
 v8::Handle<v8::Value> AppBindings::GetDetailsForFrame(
     const v8::Arguments& args) {
-  CHECK(context_->web_frame());
-  if (!CheckAccessToAppDetails(context_->web_frame()))
+  CHECK(context()->web_frame());
+  if (!CheckAccessToAppDetails(context()->web_frame()))
     return v8::Undefined();
 
   if (args.Length() < 0)
@@ -143,11 +143,11 @@ v8::Handle<v8::Value> AppBindings::GetInstallState(const v8::Arguments& args) {
     callback_id = args[0]->Int32Value();
   }
 
-  content::RenderView* render_view = context_->GetRenderView();
+  content::RenderView* render_view = context()->GetRenderView();
   CHECK(render_view);
 
   Send(new ExtensionHostMsg_GetAppInstallState(
-      render_view->GetRoutingID(), context_->web_frame()->document().url(),
+      render_view->GetRoutingID(), context()->web_frame()->document().url(),
       GetRoutingID(), callback_id));
   return v8::Undefined();
 }
@@ -155,7 +155,7 @@ v8::Handle<v8::Value> AppBindings::GetInstallState(const v8::Arguments& args) {
 v8::Handle<v8::Value> AppBindings::GetRunningState(const v8::Arguments& args) {
   // To distinguish between ready_to_run and cannot_run states, we need the top
   // level frame.
-  const WebFrame* parent_frame = context_->web_frame();
+  const WebFrame* parent_frame = context()->web_frame();
   while (parent_frame->parent())
     parent_frame = parent_frame->parent();
 
@@ -166,8 +166,8 @@ v8::Handle<v8::Value> AppBindings::GetRunningState(const v8::Arguments& args) {
       ExtensionURLInfo(parent_frame->document().url()));
 
   // The app associated with this frame.
-  const Extension* this_app = extensions->GetHostedAppByURL(
-      ExtensionURLInfo(context_->web_frame()->document().url()));
+  const Extension* this_app = extensions->GetHostedAppByURL(ExtensionURLInfo(
+      context()->web_frame()->document().url()));
 
   if (!this_app || !parent_app)
     return v8::String::New(extension_misc::kAppStateCannotRun);
@@ -199,12 +199,13 @@ bool AppBindings::OnMessageReceived(const IPC::Message& message) {
 void AppBindings::OnAppInstallStateResponse(
     const std::string& state, int callback_id) {
   v8::HandleScope handle_scope;
-  v8::Context::Scope context_scope(context_->v8_context());
-  v8::Handle<v8::Value> argv[2];
-  argv[0] = v8::String::New(state.c_str());
-  argv[1] = v8::Integer::New(callback_id);
-  CHECK(context_->CallChromeHiddenMethod("app.onInstallStateResponse",
-                                         arraysize(argv), argv, NULL));
+  v8::Context::Scope context_scope(context()->v8_context());
+  v8::Handle<v8::Value> argv[] = {
+    v8::String::New(state.c_str()),
+    v8::Integer::New(callback_id)
+  };
+  context()->module_system()->CallModuleMethod(
+      "app", "onInstallStateResponse", arraysize(argv), argv);
 }
 
 }  // namespace extensions

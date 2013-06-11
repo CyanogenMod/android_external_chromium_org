@@ -5,7 +5,7 @@
 #include "remoting/host/log_to_server.h"
 
 #include "base/bind.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "remoting/base/constants.h"
 #include "remoting/host/host_status_monitor.h"
 #include "remoting/host/server_log_entry.h"
@@ -34,7 +34,7 @@ LogToServer::LogToServer(base::WeakPtr<HostStatusMonitor> monitor,
 
 LogToServer::~LogToServer() {
   signal_strategy_->RemoveListener(this);
-  if (monitor_)
+  if (monitor_.get())
     monitor_->RemoveStatusObserver(this);
 }
 

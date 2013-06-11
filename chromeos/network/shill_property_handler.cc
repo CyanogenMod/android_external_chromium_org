@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/format_macros.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_device_client.h"
@@ -162,6 +162,17 @@ void ShillPropertyHandler::SetTechnologyEnabled(
   }
 }
 
+void ShillPropertyHandler::SetCheckPortalList(
+    const std::string& check_portal_list) {
+  base::StringValue value(check_portal_list);
+  shill_manager_->SetProperty(
+      flimflam::kCheckPortalListProperty,
+      value,
+      base::Bind(&base::DoNothing),
+      base::Bind(&network_handler::ShillErrorCallbackFunction,
+                 "", network_handler::ErrorCallback()));
+}
+
 void ShillPropertyHandler::RequestScan() const {
   shill_manager_->RequestScan(
       "",
@@ -296,6 +307,12 @@ bool ShillPropertyHandler::ManagerPropertyChanged(const std::string& key,
     }
   } else if (key == flimflam::kProfilesProperty) {
     listener_->ProfileListChanged();
+  } else if (key == flimflam::kCheckPortalListProperty) {
+    std::string check_portal_list;
+    if (value.GetAsString(&check_portal_list)) {
+      listener_->CheckPortalListChanged(check_portal_list);
+      notify_manager_changed = true;
+    }
   }
   return notify_manager_changed;
 }

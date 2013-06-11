@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -108,7 +108,14 @@ class MediaGalleriesPrivateApiTest : public ExtensionApiTest {
   DISALLOW_COPY_AND_ASSIGN(MediaGalleriesPrivateApiTest);
 };
 
-IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateApiTest, DeviceAttachDetachEvents) {
+// TODO(jschuh): Flaky on Win64 build. crbug.com/247336
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#define MAYBE_DeviceAttachDetachEvents DISABLED_DeviceAttachDetachEvents
+#else
+#define MAYBE_DeviceAttachDetachEvents DeviceAttachDetachEvents
+#endif
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPrivateApiTest,
+                       MAYBE_DeviceAttachDetachEvents) {
   // Setup.
   const extensions::Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII(kTestExtensionPath));

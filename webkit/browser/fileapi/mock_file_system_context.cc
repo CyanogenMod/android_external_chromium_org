@@ -11,7 +11,7 @@
 #include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/mock_file_system_options.h"
 #include "webkit/browser/fileapi/test_mount_point_provider.h"
-#include "webkit/quota/mock_special_storage_policy.h"
+#include "webkit/browser/quota/mock_special_storage_policy.h"
 
 namespace fileapi {
 
@@ -22,6 +22,14 @@ FileSystemContext* CreateFileSystemContextForTesting(
   additional_providers.push_back(
       new TestMountPointProvider(
           base::MessageLoopProxy::current(), base_path));
+  return CreateFileSystemContextWithAdditionalProvidersForTesting(
+      quota_manager_proxy, additional_providers.Pass(), base_path);
+}
+
+FileSystemContext* CreateFileSystemContextWithAdditionalProvidersForTesting(
+    quota::QuotaManagerProxy* quota_manager_proxy,
+    ScopedVector<FileSystemMountPointProvider> additional_providers,
+    const base::FilePath& base_path) {
   return new FileSystemContext(
       FileSystemTaskRunners::CreateMockTaskRunners(),
       ExternalMountPoints::CreateRefCounted().get(),

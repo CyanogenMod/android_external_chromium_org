@@ -15,8 +15,8 @@
 #include "cc/output/copy_output_request.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebAnimationDelegate.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayerScrollClient.h"
+#include "third_party/WebKit/public/platform/WebAnimationDelegate.h"
+#include "third_party/WebKit/public/platform/WebLayerScrollClient.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -73,11 +73,11 @@ Layer::~Layer() {
 
   // Remove the parent reference from all children and dependents.
   RemoveAllChildren();
-  if (mask_layer_) {
+  if (mask_layer_.get()) {
     DCHECK_EQ(this, mask_layer_->parent());
     mask_layer_->RemoveFromParent();
   }
-  if (replica_layer_) {
+  if (replica_layer_.get()) {
     DCHECK_EQ(this, replica_layer_->parent());
     replica_layer_->RemoveFromParent();
   }
@@ -92,9 +92,9 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
   for (size_t i = 0; i < children_.size(); ++i)
     children_[i]->SetLayerTreeHost(host);
 
-  if (mask_layer_)
+  if (mask_layer_.get())
     mask_layer_->SetLayerTreeHost(host);
-  if (replica_layer_)
+  if (replica_layer_.get())
     replica_layer_->SetLayerTreeHost(host);
 
   if (host) {
@@ -177,9 +177,9 @@ void Layer::SetParent(Layer* layer) {
     return;
 
   reset_raster_scale_to_unknown();
-  if (mask_layer_)
+  if (mask_layer_.get())
     mask_layer_->reset_raster_scale_to_unknown();
-  if (replica_layer_ && replica_layer_->mask_layer_)
+  if (replica_layer_.get() && replica_layer_->mask_layer_.get())
     replica_layer_->mask_layer_->reset_raster_scale_to_unknown();
 }
 
@@ -213,13 +213,13 @@ void Layer::RemoveFromParent() {
 }
 
 void Layer::RemoveChildOrDependent(Layer* child) {
-  if (mask_layer_ == child) {
+  if (mask_layer_.get() == child) {
     mask_layer_->SetParent(NULL);
     mask_layer_ = NULL;
     SetNeedsFullTreeSync();
     return;
   }
-  if (replica_layer_ == child) {
+  if (replica_layer_.get() == child) {
     replica_layer_->SetParent(NULL);
     replica_layer_ = NULL;
     SetNeedsFullTreeSync();
@@ -229,7 +229,7 @@ void Layer::RemoveChildOrDependent(Layer* child) {
   for (LayerList::iterator iter = children_.begin();
        iter != children_.end();
        ++iter) {
-    if (*iter != child)
+    if (iter->get() != child)
       continue;
 
     child->SetParent(NULL);
@@ -244,7 +244,7 @@ void Layer::ReplaceChild(Layer* reference, scoped_refptr<Layer> new_layer) {
   DCHECK_EQ(reference->parent(), this);
   DCHECK(IsPropertyChangeAllowed());
 
-  if (reference == new_layer)
+  if (reference == new_layer.get())
     return;
 
   int reference_index = IndexOfChild(reference);
@@ -255,7 +255,7 @@ void Layer::ReplaceChild(Layer* reference, scoped_refptr<Layer> new_layer) {
 
   reference->RemoveFromParent();
 
-  if (new_layer) {
+  if (new_layer.get()) {
     new_layer->RemoveFromParent();
     InsertChild(new_layer, reference_index);
   }
@@ -263,7 +263,7 @@ void Layer::ReplaceChild(Layer* reference, scoped_refptr<Layer> new_layer) {
 
 int Layer::IndexOfChild(const Layer* reference) {
   for (size_t i = 0; i < children_.size(); ++i) {
-    if (children_[i] == reference)
+    if (children_[i].get() == reference)
       return i;
   }
   return -1;
@@ -343,6 +343,25 @@ void Layer::SetBackgroundColor(SkColor background_color) {
   SetNeedsCommit();
 }
 
+SkColor Layer::SafeOpaqueBackgroundColor() const {
+  SkColor color = background_color();
+  if (SkColorGetA(color) == 255 && !contents_opaque()) {
+    color = SK_ColorTRANSPARENT;
+  } else if (SkColorGetA(color) != 255 && contents_opaque()) {
+    for (const Layer* layer = parent(); layer;
+         layer = layer->parent()) {
+      color = layer->background_color();
+      if (SkColorGetA(color) == 255)
+        break;
+    }
+    if (SkColorGetA(color) != 255)
+      color = layer_tree_host_->background_color();
+    if (SkColorGetA(color) != 255)
+      color = SkColorSetA(color, 255);
+  }
+  return color;
+}
+
 void Layer::CalculateContentsScale(
     float ideal_contents_scale,
     float device_scale_factor,
@@ -366,14 +385,14 @@ void Layer::SetMasksToBounds(bool masks_to_bounds) {
 
 void Layer::SetMaskLayer(Layer* mask_layer) {
   DCHECK(IsPropertyChangeAllowed());
-  if (mask_layer_ == mask_layer)
+  if (mask_layer_.get() == mask_layer)
     return;
-  if (mask_layer_) {
+  if (mask_layer_.get()) {
     DCHECK_EQ(this, mask_layer_->parent());
     mask_layer_->RemoveFromParent();
   }
   mask_layer_ = mask_layer;
-  if (mask_layer_) {
+  if (mask_layer_.get()) {
     DCHECK(!mask_layer_->parent());
     mask_layer_->RemoveFromParent();
     mask_layer_->SetParent(this);
@@ -384,14 +403,14 @@ void Layer::SetMaskLayer(Layer* mask_layer) {
 
 void Layer::SetReplicaLayer(Layer* layer) {
   DCHECK(IsPropertyChangeAllowed());
-  if (replica_layer_ == layer)
+  if (replica_layer_.get() == layer)
     return;
-  if (replica_layer_) {
+  if (replica_layer_.get()) {
     DCHECK_EQ(this, replica_layer_->parent());
     replica_layer_->RemoveFromParent();
   }
   replica_layer_ = layer;
-  if (replica_layer_) {
+  if (replica_layer_.get()) {
     DCHECK(!replica_layer_->parent());
     replica_layer_->RemoveFromParent();
     replica_layer_->SetParent(this);
@@ -496,9 +515,19 @@ void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
   if (scroll_offset_ == scroll_offset)
     return;
   scroll_offset_ = scroll_offset;
+  SetNeedsCommit();
+}
+
+void Layer::SetScrollOffsetFromImplSide(gfx::Vector2d scroll_offset) {
+  DCHECK(IsPropertyChangeAllowed());
+  DCHECK(layer_tree_host_ && layer_tree_host_->CommitRequested());
+  if (scroll_offset_ == scroll_offset)
+    return;
+  scroll_offset_ = scroll_offset;
   if (layer_scroll_client_)
     layer_scroll_client_->didScroll();
-  SetNeedsCommit();
+  // Note: didScroll() could potentially change the layer structure.
+  //       "this" may have been destroyed during the process.
 }
 
 void Layer::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
@@ -804,11 +833,6 @@ void Layer::PauseAnimation(int animation_id, double time_offset) {
 void Layer::RemoveAnimation(int animation_id) {
   layer_animation_controller_->RemoveAnimation(animation_id);
   SetNeedsCommit();
-}
-
-void Layer::TransferAnimationsTo(Layer* layer) {
-  layer_animation_controller_->TransferAnimationsTo(
-      layer->layer_animation_controller());
 }
 
 void Layer::SuspendAnimations(double monotonic_time) {

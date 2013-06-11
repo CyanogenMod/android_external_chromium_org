@@ -6,7 +6,7 @@
 #define CONTENT_RENDERER_DOM_AUTOMATION_CONTROLLER_H_
 
 #include "ipc/ipc_sender.h"
-#include "webkit/glue/cpp_bound_class.h"
+#include "webkit/renderer/cpp_bound_class.h"
 
 /* DomAutomationController class:
    Bound to Javascript window.domAutomationController object.
@@ -114,15 +114,6 @@ class DomAutomationController : public webkit_glue::CppBoundClass {
   void set_message_sender(IPC::Sender* sender) {
     sender_ = sender;
   }
-
-  // Retrieves a histogram and returns a JSON representation of it.
-  void GetHistogram(const webkit_glue::CppArgumentList& args,
-                    webkit_glue::CppVariant* result);
-
-  // Retrieves a histogram from the browser process and returns a JSON
-  // representation of it.
-  void GetBrowserHistogram(const webkit_glue::CppArgumentList& args,
-                           webkit_glue::CppVariant* result);
 
  private:
   IPC::Sender* sender_;

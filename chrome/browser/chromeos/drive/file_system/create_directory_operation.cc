@@ -31,7 +31,7 @@ FileError UpdateLocalStateForCreateDirectoryRecursively(
   DCHECK(file_path);
 
   FileError result = metadata->AddEntry(entry);
-  // Depending on timing, a metadata may be updated by delta feed already.
+  // Depending on timing, a metadata may be updated by change list already.
   // So, FILE_ERROR_EXISTS is not an error.
   if (result == FILE_ERROR_EXISTS)
     result = FILE_ERROR_OK;
@@ -105,7 +105,7 @@ base::FilePath CreateDirectoryOperation::GetExistingDeepestDirectory(
     resource_id = child_resource_id;
   }
 
-  FileError error = metadata->GetResourceEntryById(resource_id, NULL, entry);
+  FileError error = metadata->GetResourceEntryById(resource_id, entry);
   DCHECK_EQ(FILE_ERROR_OK, error);
 
   if (!entry->file_info().is_directory())

@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
@@ -470,8 +470,8 @@ void Panel::OnMinimizeButtonClicked(panel::ClickModifier modifier) {
 }
 
 void Panel::OnRestoreButtonClicked(panel::ClickModifier modifier) {
-  if (collection_)
-    collection_->OnRestoreButtonClicked(this, modifier);
+  // Clicking the restore button has the same behavior as clicking the titlebar.
+  OnTitlebarClicked(modifier);
 }
 
 void Panel::OnWindowSizeAvailable() {
@@ -517,7 +517,10 @@ void Panel::Initialize(const GURL& url,
   // Set up hosting for web contents.
   panel_host_.reset(new PanelHost(this, profile_));
   panel_host_->Init(url);
-  native_panel_->AttachWebContents(GetWebContents());
+  content::WebContents* web_contents = GetWebContents();
+  // The contents might be NULL for most of our tests.
+  if (web_contents)
+    native_panel_->AttachWebContents(web_contents);
 
   // Close when the extension is unloaded or the browser is exiting.
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,

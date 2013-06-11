@@ -20,13 +20,13 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/process_info.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
@@ -345,6 +345,11 @@ Browser::Browser(const CreateParams& params)
       command_controller_(new chrome::BrowserCommandController(
           this, g_browser_process->profile_manager())),
       window_has_shown_(false) {
+  // If this causes a crash then a window is being opened using a profile type
+  // that is disallowed by policy. The crash prevents the disabled window type
+  // from opening at all, but the path that triggered it should be fixed.
+  CHECK(IncognitoModePrefs::CanOpenBrowser(profile_));
+
   if (!app_name_.empty())
     chrome::RegisterAppPrefs(app_name_, profile_);
   tab_strip_model_->AddObserver(this);
@@ -581,6 +586,14 @@ bool Browser::ShouldCloseWindow() {
   return unload_controller_->ShouldCloseWindow();
 }
 
+bool Browser::TabsNeedBeforeUnloadFired() {
+  return unload_controller_->TabsNeedBeforeUnloadFired();
+}
+
+bool Browser::HasCompletedUnloadProcessing() const {
+  return unload_controller_->HasCompletedUnloadProcessing();
+}
+
 bool Browser::IsAttemptingToCloseBrowser() const {
   return unload_controller_->is_attempting_to_close_browser();
 }
@@ -624,8 +637,6 @@ void Browser::OnWindowClosing() {
       chrome::NOTIFICATION_BROWSER_CLOSING,
       content::Source<Browser>(this),
       content::NotificationService::NoDetails());
-
-  tab_strip_model_->CloseAllTabs();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1127,7 +1138,7 @@ void Browser::TabStripEmpty() {
 bool Browser::CanOverscrollContent() const {
 #if defined(USE_AURA)
   bool overscroll_enabled = CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) != "0";
+      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) == "1";
   if (!overscroll_enabled)
     return false;
   if (is_app() || is_devtools() || !is_type_tabbed())
@@ -1160,10 +1171,6 @@ bool Browser::PreHandleKeyboardEvent(content::WebContents* source,
 void Browser::HandleKeyboardEvent(content::WebContents* source,
                                   const NativeWebKeyboardEvent& event) {
   window()->HandleKeyboardEvent(event);
-}
-
-bool Browser::TabsNeedBeforeUnloadFired() {
-  return unload_controller_->TabsNeedBeforeUnloadFired();
 }
 
 bool Browser::IsMouseLocked() const {
@@ -2196,12 +2203,12 @@ bool Browser::MaybeCreateBackgroundContents(int route_id,
       content::SiteInstance::Create(opener_web_contents->GetBrowserContext());
 
   // Passed all the checks, so this should be created as a BackgroundContents.
-  BackgroundContents* contents = service->CreateBackgroundContents(
-      site_instance,
-      route_id,
-      profile_,
-      frame_name,
-      ASCIIToUTF16(extension->id()));
+  BackgroundContents* contents =
+      service->CreateBackgroundContents(site_instance.get(),
+                                        route_id,
+                                        profile_,
+                                        frame_name,
+                                        ASCIIToUTF16(extension->id()));
 
   // When a separate process is used, the original renderer cannot access the
   // new window later, thus we need to navigate the window now.

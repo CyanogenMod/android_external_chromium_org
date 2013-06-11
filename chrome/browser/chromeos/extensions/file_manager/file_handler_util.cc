@@ -10,7 +10,7 @@
 #include "base/json/json_writer.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/file_task_executor.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_handler.h"
@@ -98,16 +98,6 @@ int ExtractProcessFromExtensionId(Profile* profile,
   return process->GetID();
 }
 
-// Returns true if the task should be used as a fallback. Such tasks are
-// Files.app's internal handlers as well as quick office extensions.
-bool IsFallbackTask(const FileBrowserHandler* task) {
-  return (task->extension_id() == kFileBrowserDomain ||
-          task->extension_id() ==
-              extension_misc::kQuickOfficeComponentExtensionId ||
-          task->extension_id() == extension_misc::kQuickOfficeDevExtensionId ||
-          task->extension_id() == extension_misc::kQuickOfficeExtensionId);
-}
-
 const FileBrowserHandler* FindFileBrowserHandler(const Extension* extension,
                                                  const std::string& action_id) {
   FileBrowserHandler::List* handler_list =
@@ -185,6 +175,14 @@ bool GetFileBrowserHandlers(Profile* profile,
 }
 
 }  // namespace
+
+bool IsFallbackTask(const FileBrowserHandler* task) {
+  return (task->extension_id() == kFileBrowserDomain ||
+          task->extension_id() ==
+              extension_misc::kQuickOfficeComponentExtensionId ||
+          task->extension_id() == extension_misc::kQuickOfficeDevExtensionId ||
+          task->extension_id() == extension_misc::kQuickOfficeExtensionId);
+}
 
 void UpdateDefaultTask(Profile* profile,
                        const std::string& task_id,
@@ -910,7 +908,7 @@ void ExtensionTaskExecutor::SetupPermissionsAndDispatchEvent(
   DictionaryValue* details = new DictionaryValue();
   event_args->Append(details);
   // Get file definitions. These will be replaced with Entry instances by
-  // chromeHidden.Event.dispatchEvent() method from event_binding.js.
+  // dispatchEvent() method from event_binding.js.
   ListValue* files_urls = new ListValue();
   details->Set("entries", files_urls);
   for (FileDefinitionList::const_iterator iter = file_list.begin();

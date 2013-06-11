@@ -55,6 +55,7 @@ var CLASSES = {
   SUGGESTION_CONTENTS: 'suggestion-contents',
   SUGGESTIONS_BOX: 'suggestions-box',
   THUMBNAIL: 'mv-thumb',
+  THUMBNAIL_MASK: 'mv-mask',
   // Applied when user types. Makes fakebox non-interactive and hides
   // scrollbars. Removed on ESC.
   USER_TYPED: 'user-typed',
@@ -172,6 +173,14 @@ var isBlacklisting = false;
  * @type {number}
  */
 var numColumnsShown = 0;
+
+
+/**
+ * True if the user initiated the current most visited change and false
+ * otherwise.
+ * @type {boolean}
+ */
+var userInitiatedMostVisitedChange = false;
 
 
 /**
@@ -366,6 +375,8 @@ function onMostVisitedChange() {
     for (var i = 0; i < MAX_NUM_TILES_TO_SHOW; ++i) {
       tiles.push(createTile(pages[i], i));
     }
+    if (!userInitiatedMostVisitedChange)
+      tilesContainer.hidden = true;
     renderTiles();
   }
 }
@@ -384,6 +395,26 @@ function renderTiles() {
        i < Math.min(length, numColumnsShown * NUM_ROWS); ++i) {
     rows[Math.floor(i / numColumnsShown)].appendChild(tiles[i].elem);
   }
+}
+
+
+/**
+ * Shows most visited tiles if all child iframes are loaded, and hides them
+ * otherwise.
+ */
+function updateMostVisitedVisibility() {
+  var iframes = tilesContainer.querySelectorAll('iframe');
+  var ready = true;
+  for (var i = 0, numIframes = iframes.length; i < numIframes; i++) {
+    if (iframes[i].hidden) {
+      ready = false;
+      break;
+    }
+  }
+  if (!userInitiatedMostVisitedChange)
+    tilesContainer.hidden = !ready;
+  if (ready)
+    userInitiatedMostVisitedChange = false;
 }
 
 
@@ -442,13 +473,32 @@ function createTile(page, position) {
     var usingCustomTheme = document.body.classList.contains(
         CLASSES.CUSTOM_THEME);
 
+    // Why iframes have IDs:
+    //
+    // On navigating back to the NTP we see several onmostvisitedchange() events
+    // in series with incrementing RIDs. After the first event, a set of iframes
+    // begins loading RIDs n, n+1, ..., n+k-1; after the second event, these get
+    // destroyed and a new set begins loading RIDs n+k, n+k+1, ..., n+2k-1.
+    // Now due to crbug.com/68841, Chrome incorrectly loads the content for the
+    // first set of iframes into the most recent set of iframes.
+    //
+    // Giving iframes distinct ids seems to cause some invalidation and prevent
+    // associating the incorrect data.
+    //
+    // TODO(jered): Find and fix the root (probably Blink) bug.
+
     titleElement.src = getMostVisitedIframeUrl(
         MOST_VISITED_TITLE_IFRAME, rid,
         usingCustomTheme ? MOST_VISITED_THEME_TITLE_COLOR : MOST_VISITED_COLOR,
         MOST_VISITED_FONT_FAMILY, MOST_VISITED_FONT_SIZE, usingCustomTheme,
         position);
+    // Keep this id here. See comment above.
+    titleElement.id = 'title-' + rid;
     titleElement.hidden = true;
-    titleElement.onload = function() { titleElement.hidden = false; };
+    titleElement.onload = function() {
+      titleElement.hidden = false;
+      updateMostVisitedVisibility();
+    };
     titleElement.className = CLASSES.TITLE;
     tileElement.appendChild(titleElement);
 
@@ -458,13 +508,20 @@ function createTile(page, position) {
     thumbnailElement.src = getMostVisitedIframeUrl(
         MOST_VISITED_THUMBNAIL_IFRAME, rid, MOST_VISITED_COLOR,
         MOST_VISITED_FONT_FAMILY, MOST_VISITED_FONT_SIZE, false, position);
+    // Keep this id here. See comment above.
+    thumbnailElement.id = 'thumb-' + rid;
     thumbnailElement.hidden = true;
     thumbnailElement.onload = function() {
       thumbnailElement.hidden = false;
       tileElement.classList.add(CLASSES.PAGE_READY);
+      updateMostVisitedVisibility();
     };
     thumbnailElement.className = CLASSES.THUMBNAIL;
     tileElement.appendChild(thumbnailElement);
+
+    // A mask to darken the thumbnail on focus.
+    var maskElement = createAndAppendElement(
+        tileElement, 'div', CLASSES.THUMBNAIL_MASK);
 
     // The button used to blacklist this page.
     var blacklistButton = createAndAppendElement(
@@ -502,6 +559,7 @@ function generateBlacklistFunction(rid) {
     // Prevent navigation when the page is being blacklisted.
     e.stopPropagation();
 
+    userInitiatedMostVisitedChange = true;
     isBlacklisting = true;
     tilesContainer.classList.add(CLASSES.HIDE_BLACKLIST_BUTTON);
     lastBlacklistedTile = getTileByRid(rid);
@@ -551,6 +609,7 @@ function blacklistAnimationDone() {
  * informing Chrome.
  */
 function onUndo() {
+  userInitiatedMostVisitedChange = true;
   hideNotification();
   var lastBlacklistedRID = lastBlacklistedTile.rid;
   if (typeof lastBlacklistedRID != 'undefined')
@@ -563,6 +622,7 @@ function onUndo() {
  * notification and informing Chrome.
  */
 function onRestoreAll() {
+  userInitiatedMostVisitedChange = true;
   hideNotification();
   ntpApiHandle.undoAllMostVisitedDeletions();
 }
@@ -574,7 +634,8 @@ function onRestoreAll() {
  * container.
  */
 function onResize() {
-  var innerWidth = window.innerWidth;
+  // If innerWidth is zero, then use the maximum snap size.
+  var innerWidth = window.innerWidth || 820;
 
   // These values should remain in sync with local_ntp.css.
   // TODO(jeremycho): Delete once the root cause of crbug/240510 is resolved.
@@ -583,7 +644,7 @@ function onResize() {
     if (fakebox)
       fakebox.style.width = (tilesContainerWidth - 2) + 'px';
   };
-  if (innerWidth >= 820 || innerWidth == 0)
+  if (innerWidth >= 820)
     setWidths(620);
   else if (innerWidth >= 660)
     setWidths(460);
@@ -1684,6 +1745,7 @@ function init() {
   var notificationCloseButton = $(IDS.NOTIFICATION_CLOSE_BUTTON);
   notificationCloseButton.addEventListener('click', hideNotification);
 
+  userInitiatedMostVisitedChange = false;
   window.addEventListener('resize', onResize);
   onResize();
 

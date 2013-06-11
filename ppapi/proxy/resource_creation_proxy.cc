@@ -6,7 +6,6 @@
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_size.h"
-#include "ppapi/c/trusted/ppb_image_data_trusted.h"
 #include "ppapi/proxy/audio_input_resource.h"
 #include "ppapi/proxy/browser_font_resource_trusted.h"
 #include "ppapi/proxy/connection.h"
@@ -19,6 +18,7 @@
 #include "ppapi/proxy/flash_menu_resource.h"
 #include "ppapi/proxy/graphics_2d_resource.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
+#include "ppapi/proxy/net_address_resource.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
@@ -180,15 +180,6 @@ PP_Resource ResourceCreationProxy::CreateURLRequestInfo(
       GetConnection(), instance, URLRequestInfoData()))->GetReference();
 }
 
-PP_Resource ResourceCreationProxy::CreateURLResponseInfo(
-    PP_Instance instance,
-    const URLResponseInfoData& data,
-    PP_Resource file_ref_resource) {
-  return (new URLResponseInfoResource(GetConnection(), instance,
-                                      data,
-                                      file_ref_resource))->GetReference();
-}
-
 PP_Resource ResourceCreationProxy::CreateWheelInputEvent(
     PP_Instance instance,
     PP_TimeTicks time_stamp,
@@ -228,9 +219,9 @@ PP_Resource ResourceCreationProxy::CreateFileChooser(
     PP_FileChooserMode_Dev mode,
     const PP_Var& accept_types) {
   scoped_refptr<StringVar> string_var = StringVar::FromPPVar(accept_types);
-  std::string str = string_var ? string_var->value() : std::string();
-  return (new FileChooserResource(GetConnection(), instance, mode,
-                                  str.c_str()))->GetReference();
+  std::string str = string_var.get() ? string_var->value() : std::string();
+  return (new FileChooserResource(GetConnection(), instance, mode, str.c_str()))
+      ->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateGraphics2D(PP_Instance instance,
@@ -280,6 +271,20 @@ PP_Resource ResourceCreationProxy::CreateImageDataNaCl(
   // always request a "platform" ImageData if we're trusted, or a "NaCl" one
   // if we're untrusted (see PPB_ImageData_Proxy::CreateProxyResource()).
   return CreateImageData(instance, format, size, init_to_zero);
+}
+
+PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv4Address(
+    PP_Instance instance,
+    const PP_NetAddress_IPv4_Dev* ipv4_addr) {
+  return (new NetAddressResource(GetConnection(), instance,
+                                 *ipv4_addr))->GetReference();
+}
+
+PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv6Address(
+    PP_Instance instance,
+    const PP_NetAddress_IPv6_Dev* ipv6_addr) {
+  return (new NetAddressResource(GetConnection(), instance,
+                                 *ipv6_addr))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateNetworkMonitor(

@@ -8,7 +8,7 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/bind_to_loop.h"
@@ -105,16 +105,16 @@ void DecryptingDemuxerStream::Reset(const base::Closure& closure) {
   DoReset();
 }
 
-const AudioDecoderConfig& DecryptingDemuxerStream::audio_decoder_config() {
+AudioDecoderConfig DecryptingDemuxerStream::audio_decoder_config() {
   DCHECK(state_ != kUninitialized && state_ != kDecryptorRequested) << state_;
   CHECK_EQ(demuxer_stream_->type(), AUDIO);
-  return *audio_config_;
+  return audio_config_;
 }
 
-const VideoDecoderConfig& DecryptingDemuxerStream::video_decoder_config() {
+VideoDecoderConfig DecryptingDemuxerStream::video_decoder_config() {
   DCHECK(state_ != kUninitialized && state_ != kDecryptorRequested) << state_;
   CHECK_EQ(demuxer_stream_->type(), VIDEO);
-  return *video_config_;
+  return video_config_;
 }
 
 DemuxerStream::Type DecryptingDemuxerStream::type() {
@@ -153,7 +153,7 @@ void DecryptingDemuxerStream::DecryptBuffer(
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
   DCHECK(!read_cb_.is_null());
-  DCHECK_EQ(buffer != NULL, status == kOk) << status;
+  DCHECK_EQ(buffer.get() != NULL, status == kOk) << status;
 
   if (!reset_cb_.is_null()) {
     base::ResetAndReturn(&read_cb_).Run(kAborted, NULL);
@@ -170,8 +170,8 @@ void DecryptingDemuxerStream::DecryptBuffer(
 
   if (status == kConfigChanged) {
     DVLOG(2) << "DoDecryptBuffer() - kConfigChanged.";
-    DCHECK_EQ(demuxer_stream_->type() == AUDIO, audio_config_ != NULL);
-    DCHECK_EQ(demuxer_stream_->type() == VIDEO, video_config_ != NULL);
+    DCHECK_EQ(demuxer_stream_->type() == AUDIO, audio_config_.IsValidConfig());
+    DCHECK_EQ(demuxer_stream_->type() == VIDEO, video_config_.IsValidConfig());
 
     // Update the decoder config, which the decoder will use when it is notified
     // of kConfigChanged.
@@ -210,7 +210,7 @@ void DecryptingDemuxerStream::DeliverBuffer(
   DCHECK_EQ(state_, kPendingDecrypt) << state_;
   DCHECK_NE(status, Decryptor::kNeedMoreData);
   DCHECK(!read_cb_.is_null());
-  DCHECK(pending_buffer_to_decrypt_);
+  DCHECK(pending_buffer_to_decrypt_.get());
 
   bool need_to_try_again_if_nokey = key_added_while_decrypt_pending_;
   key_added_while_decrypt_pending_ = false;
@@ -286,34 +286,32 @@ void DecryptingDemuxerStream::InitializeDecoderConfig() {
 
   switch (demuxer_stream_->type()) {
     case AUDIO: {
-      const AudioDecoderConfig& input_audio_config =
+      AudioDecoderConfig input_audio_config =
           demuxer_stream_->audio_decoder_config();
-      audio_config_.reset(new AudioDecoderConfig());
-      audio_config_->Initialize(input_audio_config.codec(),
-                                input_audio_config.sample_format(),
-                                input_audio_config.channel_layout(),
-                                input_audio_config.samples_per_second(),
-                                input_audio_config.extra_data(),
-                                input_audio_config.extra_data_size(),
-                                false,  // Output audio is not encrypted.
-                                false);
+      audio_config_.Initialize(input_audio_config.codec(),
+                               input_audio_config.sample_format(),
+                               input_audio_config.channel_layout(),
+                               input_audio_config.samples_per_second(),
+                               input_audio_config.extra_data(),
+                               input_audio_config.extra_data_size(),
+                               false,  // Output audio is not encrypted.
+                               false);
       break;
     }
 
     case VIDEO: {
-      const VideoDecoderConfig& input_video_config =
+      VideoDecoderConfig input_video_config =
           demuxer_stream_->video_decoder_config();
-      video_config_.reset(new VideoDecoderConfig());
-      video_config_->Initialize(input_video_config.codec(),
-                                input_video_config.profile(),
-                                input_video_config.format(),
-                                input_video_config.coded_size(),
-                                input_video_config.visible_rect(),
-                                input_video_config.natural_size(),
-                                input_video_config.extra_data(),
-                                input_video_config.extra_data_size(),
-                                false,  // Output video is not encrypted.
-                                false);
+      video_config_.Initialize(input_video_config.codec(),
+                               input_video_config.profile(),
+                               input_video_config.format(),
+                               input_video_config.coded_size(),
+                               input_video_config.visible_rect(),
+                               input_video_config.natural_size(),
+                               input_video_config.extra_data(),
+                               input_video_config.extra_data_size(),
+                               false,  // Output video is not encrypted.
+                               false);
       break;
     }
 

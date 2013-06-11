@@ -10,7 +10,9 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_tracker.h"
+#include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/sync/profile_signin_confirmation_helper.h"
 
 class Browser;
 class ProfileSyncService;
@@ -22,7 +24,8 @@ class CloudPolicyClient;
 // Waits for successful singin notification from the signin manager and then
 // starts the sync machine.  Instances of this class delete themselves once
 // the job is done.
-class OneClickSigninSyncStarter : public SigninTracker::Observer {
+class OneClickSigninSyncStarter : public SigninTracker::Observer,
+                                  public chrome::BrowserListObserver {
  public:
   enum StartSyncMode {
     // Starts the process of signing the user in with the SigninManager, and
@@ -64,6 +67,9 @@ class OneClickSigninSyncStarter : public SigninTracker::Observer {
                             bool force_same_tab_navigation,
                             ConfirmationRequired display_confirmation);
 
+  // chrome::BrowserListObserver override.
+  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
+
  private:
   virtual ~OneClickSigninSyncStarter();
 
@@ -76,8 +82,22 @@ class OneClickSigninSyncStarter : public SigninTracker::Observer {
   virtual void SigninFailed(const GoogleServiceAuthError& error) OVERRIDE;
   virtual void SigninSuccess() OVERRIDE;
 
-
 #if defined(ENABLE_CONFIGURATION_POLICY)
+  // User input handler for the signin confirmation dialog.
+  class SigninDialogDelegate
+    : public ui::ProfileSigninConfirmationDelegate {
+   public:
+    SigninDialogDelegate(
+        base::WeakPtr<OneClickSigninSyncStarter> sync_starter);
+    virtual ~SigninDialogDelegate();
+    virtual void OnCancelSignin() OVERRIDE;
+    virtual void OnContinueSignin() OVERRIDE;
+    virtual void OnSigninWithNewProfile() OVERRIDE;
+   private:
+    base::WeakPtr<OneClickSigninSyncStarter> sync_starter_;
+  };
+  friend class SigninDialogDelegate;
+
   // Callback invoked once policy registration is complete. If registration
   // fails, |client| will be null.
   void OnRegisteredForPolicy(scoped_ptr<policy::CloudPolicyClient> client);
@@ -95,9 +115,10 @@ class OneClickSigninSyncStarter : public SigninTracker::Observer {
   void LoadPolicyWithCachedClient();
 
   // Callback invoked once a profile is created, so we can complete the
-  // credentials transfer and load policy.
-  void CompleteSigninForNewProfile(Profile* profile,
-                                   Profile::CreateStatus status);
+  // credentials transfer, load policy, and open the first window.
+  void CompleteInitForNewProfile(chrome::HostDesktopType desktop_type,
+                                 Profile* profile,
+                                 Profile::CreateStatus status);
 
   // Cancels the in-progress signin for this profile.
   void CancelSigninAndDelete();
@@ -116,7 +137,14 @@ class OneClickSigninSyncStarter : public SigninTracker::Observer {
   // signin is completed.
   void UntrustedSigninConfirmed(StartSyncMode response);
 
+  // GetProfileSyncService returns non-NULL pointer if sync is enabled.
+  // There is a scenario when when ProfileSyncService discovers that sync is
+  // disabled during setup. In this case GetProfileSyncService will return NULL,
+  // but we still need to call PSS::SetSetupInProgress(false). For this purpose
+  // call FinishProfileSyncServiceSetup() function.
   ProfileSyncService* GetProfileSyncService();
+
+  void FinishProfileSyncServiceSetup();
 
   // Displays the sync configuration UI.
   void ConfigureSync();

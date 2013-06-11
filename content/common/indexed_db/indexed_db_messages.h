@@ -12,9 +12,9 @@
 #include "content/common/indexed_db/indexed_db_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBCursor.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabase.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBMetadata.h"
+#include "third_party/WebKit/public/platform/WebIDBCursor.h"
+#include "third_party/WebKit/public/platform/WebIDBDatabase.h"
+#include "third_party/WebKit/public/platform/WebIDBMetadata.h"
 
 #define IPC_MESSAGE_START IndexedDBMsgStart
 
@@ -403,12 +403,6 @@ IPC_MESSAGE_CONTROL3(IndexedDBHostMsg_CursorPrefetchReset,
                      int32, /* ipc_cursor_id */
                      int32, /* used_prefetches */
                      int32)  /* used_prefetches */
-
-// WebIDBCursor::delete() message.
-IPC_MESSAGE_CONTROL3(IndexedDBHostMsg_CursorDelete,
-                     int32, /* ipc_cursor_id */
-                     int32, /* ipc_thread_id */
-                     int32) /* ipc_callbacks_id */
 
 // WebIDBFactory::getDatabaseNames() message.
 IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_FactoryGetDatabaseNames,

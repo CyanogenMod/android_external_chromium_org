@@ -25,8 +25,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	media/base/simd/convert_rgb_to_yuv_sse2.cc \
 	media/base/simd/convert_rgb_to_yuv_ssse3.cc \
-	media/base/simd/filter_yuv_sse2.cc \
-	media/video/capture/screen/differ_block_sse2.cc
+	media/base/simd/filter_yuv_sse2.cc
 
 
 # Flags passed to both C and C++ files.
@@ -73,7 +72,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \

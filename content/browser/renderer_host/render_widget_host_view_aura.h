@@ -15,10 +15,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "cc/resources/texture_mailbox.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/renderer_host/image_transport_factory.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
+#include "content/common/gpu/client/gl_helper.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/client/activation_delegate.h"
@@ -31,7 +33,7 @@
 #include "ui/compositor/compositor_observer.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/rect.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 
 namespace aura {
 class WindowTracker;
@@ -179,7 +181,8 @@ class RenderWidgetHostViewAura
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects) OVERRIDE;
+      const std::vector<gfx::Rect>& copy_rects,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -249,6 +252,7 @@ class RenderWidgetHostViewAura
   virtual void ClearCompositionText() OVERRIDE;
   virtual void InsertText(const string16& text) OVERRIDE;
   virtual void InsertChar(char16 ch, int flags) OVERRIDE;
+  virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE;
   virtual ui::TextInputType GetTextInputType() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
   virtual gfx::Rect GetCaretBounds() OVERRIDE;
@@ -459,6 +463,7 @@ class RenderWidgetHostViewAura
   void BuffersSwapped(const gfx::Size& size,
                       float surface_scale_factor,
                       const std::string& mailbox_name,
+                      const ui::LatencyInfo& latency_info,
                       const BufferPresentedCallback& ack_callback);
 
   bool SwapBuffersPrepare(const gfx::Rect& surface_rect,
@@ -473,13 +478,15 @@ class RenderWidgetHostViewAura
 
   void SwapDelegatedFrame(
       scoped_ptr<cc::DelegatedFrameData> frame_data,
-      float frame_device_scale_factor);
+      float frame_device_scale_factor,
+      const ui::LatencyInfo& latency_info);
   void SendDelegatedFrameAck();
 
   void SwapSoftwareFrame(
       scoped_ptr<cc::SoftwareFrameData> frame_data,
-      float frame_device_scale_factor);
-  void SendSoftwareFrameAck(const TransportDIB::Id& id);
+      float frame_device_scale_factor,
+      const ui::LatencyInfo& latency_info);
+  void SendSoftwareFrameAck(unsigned software_frame_id);
 
   BrowserAccessibilityManager* GetOrCreateBrowserAccessibilityManager();
 
@@ -557,12 +564,8 @@ class RenderWidgetHostViewAura
   // The current frontbuffer texture.
   scoped_refptr<ui::Texture> current_surface_;
 
-  // The current frontbuffer DIB.
-  scoped_ptr<TransportDIB> current_dib_;
-
-  // The current DIB id as it was received from the renderer. Note that on
-  // some platforms (e.g. Windows) this is different from current_dib_->id().
-  TransportDIB::Id current_dib_id_;
+  // The current software frontbuffer.
+  cc::TextureMailbox current_software_frame_;
 
   // The damage in the previously presented buffer.
   SkRegion previous_damage_;
@@ -670,7 +673,13 @@ class RenderWidgetHostViewAura
   // Subscriber that listens to frame presentation events.
   scoped_ptr<RenderWidgetHostViewFrameSubscriber> frame_subscriber_;
 
+  // YUV readback pipeline.
+  scoped_ptr<content::ReadbackYUVInterface>
+      yuv_readback_pipeline_;
+
   TouchEditingClient* touch_editing_client_;
+
+  ui::LatencyInfo software_latency_info_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);
 };

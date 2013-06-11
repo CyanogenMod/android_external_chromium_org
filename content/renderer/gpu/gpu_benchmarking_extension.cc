@@ -10,7 +10,8 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "content/common/browser_rendering_stats.h"
 #include "content/common/gpu/gpu_rendering_stats.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/all_rendering_benchmarks.h"
@@ -19,6 +20,7 @@
 #include "content/renderer/rendering_benchmark.h"
 #include "content/renderer/skia_benchmarking_extension.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebImageCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebViewBenchmarkSupport.h"
 #include "third_party/skia/include/core/SkData.h"
@@ -32,6 +34,7 @@
 
 using WebKit::WebCanvas;
 using WebKit::WebFrame;
+using WebKit::WebImageCache;
 using WebKit::WebPrivatePtr;
 using WebKit::WebRenderingStatsImpl;
 using WebKit::WebSize;
@@ -124,6 +127,46 @@ class RenderingStatsEnumerator : public cc::RenderingStats::Enumerator {
 
 namespace content {
 
+namespace {
+
+class CallbackAndContext : public base::RefCounted<CallbackAndContext> {
+ public:
+  CallbackAndContext(v8::Isolate* isolate,
+                     v8::Handle<v8::Function> callback,
+                     v8::Handle<v8::Context> context)
+      : isolate_(isolate) {
+    callback_.Reset(isolate_, callback);
+    context_.Reset(isolate_, context);
+  }
+
+  v8::Isolate* isolate() {
+    return isolate_;
+  }
+
+  v8::Handle<v8::Function> GetCallback() {
+    return v8::Local<v8::Function>::New(isolate_, callback_);
+  }
+
+  v8::Handle<v8::Context> GetContext() {
+    return v8::Local<v8::Context>::New(isolate_, context_);
+  }
+
+ private:
+  friend class base::RefCounted<CallbackAndContext>;
+
+  virtual ~CallbackAndContext() {
+    callback_.Dispose();
+    context_.Dispose();
+  }
+
+  v8::Isolate* isolate_;
+  v8::Persistent<v8::Function> callback_;
+  v8::Persistent<v8::Context> context_;
+  DISALLOW_COPY_AND_ASSIGN(CallbackAndContext);
+};
+
+}  // namespace
+
 class GpuBenchmarkingWrapper : public v8::Extension {
  public:
   GpuBenchmarkingWrapper() :
@@ -173,6 +216,10 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "chrome.gpuBenchmarking.beginWindowSnapshotPNG = function(callback) {"
           "  native function BeginWindowSnapshotPNG();"
           "  BeginWindowSnapshotPNG(callback);"
+          "};"
+          "chrome.gpuBenchmarking.clearImageCache = function() {"
+          "  native function ClearImageCache();"
+          "  ClearImageCache();"
           "};") {}
 
   virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
@@ -191,6 +238,8 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return v8::FunctionTemplate::New(RunRenderingBenchmarks);
     if (name->Equals(v8::String::New("BeginWindowSnapshotPNG")))
       return v8::FunctionTemplate::New(BeginWindowSnapshotPNG);
+    if (name->Equals(v8::String::New("ClearImageCache")))
+      return v8::FunctionTemplate::New(ClearImageCache);
 
     return v8::Handle<v8::FunctionTemplate>();
   }
@@ -260,11 +309,14 @@ class GpuBenchmarkingWrapper : public v8::Extension {
 
     content::GpuRenderingStats gpu_stats;
     render_view_impl->GetGpuRenderingStats(&gpu_stats);
+    BrowserRenderingStats browser_stats;
+    render_view_impl->GetBrowserRenderingStats(&browser_stats);
     v8::Handle<v8::Object> stats_object = v8::Object::New();
 
     RenderingStatsEnumerator enumerator(stats_object);
     stats.rendering_stats.EnumerateFields(&enumerator);
     gpu_stats.EnumerateFields(&enumerator);
+    browser_stats.EnumerateFields(&enumerator);
 
     return stats_object;
   }
@@ -305,20 +357,16 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     return v8::Undefined();
   }
 
-  static void OnSmoothScrollCompleted(v8::Persistent<v8::Function> callback,
-                                      v8::Persistent<v8::Context> context) {
-    v8::HandleScope scope;
+  static void OnSmoothScrollCompleted(
+      CallbackAndContext* callback_and_context) {
+    v8::HandleScope scope(callback_and_context->isolate());
+    v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
     WebFrame* frame = WebFrame::frameForContext(context);
     if (frame) {
-      frame->callFunctionEvenIfScriptDisabled(callback,
-                                              v8::Object::New(),
-                                              0,
-                                              NULL);
+      frame->callFunctionEvenIfScriptDisabled(
+          callback_and_context->GetCallback(), v8::Object::New(), 0, NULL);
     }
-    v8::Isolate* isolate = context->GetIsolate();
-    callback.Dispose(isolate);
-    context.Dispose(isolate);
   }
 
   static v8::Handle<v8::Value> BeginSmoothScroll(const v8::Arguments& args) {
@@ -344,11 +392,12 @@ class GpuBenchmarkingWrapper : public v8::Extension {
 
     bool scroll_down = args[0]->BooleanValue();
     v8::Local<v8::Function> callback_local =
-        v8::Local<v8::Function>(v8::Function::Cast(*args[1]));
-    v8::Isolate* isolate = args.GetIsolate();
-    v8::Persistent<v8::Function> callback(isolate, callback_local);
-    v8::Persistent<v8::Context> context(isolate,
-                                        web_frame->mainWorldScriptContext());
+        v8::Local<v8::Function>::Cast(args[1]);
+
+    scoped_refptr<CallbackAndContext> callback_and_context =
+        new CallbackAndContext(args.GetIsolate(),
+                               callback_local,
+                               web_frame->mainWorldScriptContext());
 
     int pixels_to_scroll = args[2]->IntegerValue();
 
@@ -375,8 +424,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     render_view_impl->BeginSmoothScroll(
         scroll_down,
         base::Bind(&OnSmoothScrollCompleted,
-                   callback,
-                   context),
+                   callback_and_context),
         pixels_to_scroll,
         mouse_event_x,
         mouse_event_y);
@@ -440,11 +488,11 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     return results;
   }
 
-  static void OnSnapshotCompleted(v8::Persistent<v8::Function> callback,
-                                  v8::Persistent<v8::Context> context,
+  static void OnSnapshotCompleted(CallbackAndContext* callback_and_context,
                                   const gfx::Size& size,
                                   const std::vector<unsigned char>& png) {
-    v8::HandleScope scope;
+    v8::HandleScope scope(callback_and_context->isolate());
+    v8::Handle<v8::Context> context = callback_and_context->GetContext();
     v8::Context::Scope context_scope(context);
     WebFrame* frame = WebFrame::frameForContext(context);
     if (frame) {
@@ -475,14 +523,9 @@ class GpuBenchmarkingWrapper : public v8::Extension {
 
       v8::Handle<v8::Value> argv[] = { result };
 
-      frame->callFunctionEvenIfScriptDisabled(callback,
-                                              v8::Object::New(),
-                                              1,
-                                              argv);
+      frame->callFunctionEvenIfScriptDisabled(
+          callback_and_context->GetCallback(), v8::Object::New(), 1, argv);
     }
-    v8::Isolate* isolate = context->GetIsolate();
-    callback.Dispose(isolate);
-    context.Dispose(isolate);
   }
 
   static v8::Handle<v8::Value> BeginWindowSnapshotPNG(
@@ -503,14 +546,22 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return v8::Undefined();
 
     v8::Local<v8::Function> callback_local =
-        v8::Local<v8::Function>(v8::Function::Cast(*args[0]));
-    v8::Isolate* isolate = args.GetIsolate();
-    v8::Persistent<v8::Function> callback(isolate, callback_local);
-    v8::Persistent<v8::Context> context(isolate,
-                                        web_frame->mainWorldScriptContext());
+        v8::Local<v8::Function>::Cast(args[0]);
+
+    scoped_refptr<CallbackAndContext> callback_and_context =
+        new CallbackAndContext(args.GetIsolate(),
+                               callback_local,
+                               web_frame->mainWorldScriptContext());
 
     render_view_impl->GetWindowSnapshot(
-        base::Bind(&OnSnapshotCompleted, callback, context));
+        base::Bind(&OnSnapshotCompleted, callback_and_context));
+
+    return v8::Undefined();
+  }
+
+  static v8::Handle<v8::Value> ClearImageCache(
+      const v8::Arguments& args) {
+    WebImageCache::clear();
 
     return v8::Undefined();
   }

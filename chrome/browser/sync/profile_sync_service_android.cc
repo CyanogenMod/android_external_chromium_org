@@ -12,8 +12,8 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/oauth2_token_service.h"
@@ -234,7 +234,13 @@ void ProfileSyncServiceAndroid::EnableSync(JNIEnv* env, jobject) {
 
 void ProfileSyncServiceAndroid::DisableSync(JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  sync_service_->StopAndSuppress();
+  // Don't need to do anything if we're already disabled.
+  if (!sync_prefs_->IsStartSuppressed()) {
+    sync_service_->StopAndSuppress();
+  } else {
+    DVLOG(2)
+        << "Ignoring call to DisableSync() because sync is already disabled";
+  }
 }
 
 void ProfileSyncServiceAndroid::SignInSync(
@@ -356,10 +362,7 @@ jboolean ProfileSyncServiceAndroid::IsPassphraseRequiredForDecryption(
     // DataTypeManager, after configuration password datatype shall be disabled.
     const syncer::ModelTypeSet encrypted_types =
         sync_service_->GetEncryptedDataTypes();
-    const bool are_passwords_the_only_encrypted_type =
-        encrypted_types.Has(syncer::PASSWORDS) && encrypted_types.Size() == 1 &&
-        !sync_service_->ShouldEnablePasswordSyncForAndroid();
-    return !are_passwords_the_only_encrypted_type;
+    return !encrypted_types.Equals(syncer::ModelTypeSet(syncer::PASSWORDS));
   }
   return false;
 }
@@ -464,7 +467,7 @@ jboolean ProfileSyncServiceAndroid::IsSyncKeystoreMigrationDone(
 jlong ProfileSyncServiceAndroid::GetEnabledDataTypes(JNIEnv* env,
                                                      jobject obj) {
   jlong model_type_selection = 0;
-  syncer::ModelTypeSet types = sync_service_->GetPreferredDataTypes();
+  syncer::ModelTypeSet types = sync_service_->GetActiveDataTypes();
   types.PutAll(syncer::ControlTypes());
   if (types.Has(syncer::BOOKMARKS)) {
     model_type_selection |= BOOKMARK;

@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "media/audio/audio_device_name.h"
 #include "media/audio/audio_parameters.h"
 
@@ -82,14 +82,14 @@ class MEDIA_EXPORT AudioManager {
   //
   // Do not free the returned AudioOutputStream. It is owned by AudioManager.
   virtual AudioOutputStream* MakeAudioOutputStream(
-      const AudioParameters& params) = 0;
+      const AudioParameters& params, const std::string& input_device_id) = 0;
 
   // Creates new audio output proxy. A proxy implements
   // AudioOutputStream interface, but unlike regular output stream
   // created with MakeAudioOutputStream() it opens device only when a
   // sound is actually playing.
   virtual AudioOutputStream* MakeAudioOutputStreamProxy(
-      const AudioParameters& params) = 0;
+      const AudioParameters& params, const std::string& input_device_id) = 0;
 
   // Factory to create audio recording streams.
   // |channels| can be 1 or 2.
@@ -106,11 +106,13 @@ class MEDIA_EXPORT AudioManager {
   virtual AudioInputStream* MakeAudioInputStream(
       const AudioParameters& params, const std::string& device_id) = 0;
 
-  // Used to determine if something else is currently making use of audio input.
-  virtual bool IsRecordingInProcess() = 0;
-
   // Returns message loop used for audio IO.
   virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() = 0;
+
+  // Heavyweight tasks should use GetWorkerLoop() instead of GetMessageLoop().
+  // On most platforms they are the same, but some share the UI loop with the
+  // audio IO loop.
+  virtual scoped_refptr<base::MessageLoopProxy> GetWorkerLoop() = 0;
 
   // Allows clients to listen for device state changes; e.g. preferred sample
   // rate or channel layout changes.  The typical response to receiving this

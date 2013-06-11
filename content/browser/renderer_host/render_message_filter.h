@@ -17,7 +17,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/shared_memory.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/public/browser/browser_message_filter.h"
@@ -121,6 +121,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnGetProcessMemorySizes(size_t* private_bytes, size_t* shared_bytes);
   void OnCreateWindow(const ViewHostMsg_CreateWindow_Params& params,
                       int* route_id,
+                      int* main_frame_route_id,
                       int* surface_id,
                       int64* cloned_session_storage_namespace_id);
   void OnCreateWidget(int opener_id,
@@ -209,7 +210,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnResolveProxy(const GURL& url, IPC::Message* reply_msg);
 
   // Browser side transport DIB allocation
-  void OnAllocTransportDIB(size_t size,
+  void OnAllocTransportDIB(uint32 size,
                            bool cache_in_browser,
                            TransportDIB::Handle* result);
   void OnFreeTransportDIB(TransportDIB::Id dib_id);
@@ -263,7 +264,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
 #if defined(OS_ANDROID)
   void OnWebAudioMediaCodec(base::SharedMemoryHandle encoded_data_handle,
                             base::FileDescriptor pcm_output,
-                            size_t data_size);
+                            uint32_t data_size);
 #endif
 
   // Cached resource request dispatcher host and plugin service, guaranteed to

@@ -20,7 +20,7 @@
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/strings/utf_offset_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
 #include "base/win/wrapped_window_proc.h"
@@ -225,9 +225,7 @@ Clipboard::~Clipboard() {
   clipboard_owner_ = NULL;
 }
 
-void Clipboard::WriteObjectsImpl(Buffer buffer,
-                                 const ObjectMap& objects,
-                                 SourceTag tag) {
+void Clipboard::WriteObjects(Buffer buffer, const ObjectMap& objects) {
   DCHECK_EQ(buffer, BUFFER_STANDARD);
 
   ScopedClipboard clipboard;
@@ -240,7 +238,6 @@ void Clipboard::WriteObjectsImpl(Buffer buffer,
        iter != objects.end(); ++iter) {
     DispatchObject(static_cast<ObjectType>(iter->first), iter->second);
   }
-  WriteSourceTag(tag);
 }
 
 void Clipboard::WriteText(const char* text_data, size_t text_len) {
@@ -378,13 +375,6 @@ void Clipboard::WriteData(const FormatType& format,
   memcpy(data, data_data, data_len);
   ::GlobalUnlock(data);
   WriteToClipboard(format.ToUINT(), hdata);
-}
-
-void Clipboard::WriteSourceTag(SourceTag tag) {
-  if (tag != SourceTag()) {
-    ObjectMapParam binary = SourceTag2Binary(tag);
-    WriteData(GetSourceTagFormatType(), &binary[0], binary.size());
-  }
 }
 
 void Clipboard::WriteToClipboard(unsigned int format, HANDLE handle) {
@@ -677,13 +667,6 @@ void Clipboard::ReadData(const FormatType& format, std::string* result) const {
   ::GlobalUnlock(data);
 }
 
-SourceTag Clipboard::ReadSourceTag(Buffer buffer) const {
-  DCHECK_EQ(buffer, BUFFER_STANDARD);
-  std::string result;
-  ReadData(GetSourceTagFormatType(), &result);
-  return Binary2SourceTag(result);
-}
-
 // static
 void Clipboard::ParseBookmarkClipboardFormat(const string16& bookmark,
                                              string16* title,
@@ -830,15 +813,6 @@ const Clipboard::FormatType& Clipboard::GetPepperCustomDataFormatType() {
       FormatType,
       type,
       (::RegisterClipboardFormat(L"Chromium Pepper MIME Data Format")));
-  return type;
-}
-
-// static
-const Clipboard::FormatType& Clipboard::GetSourceTagFormatType() {
-  CR_DEFINE_STATIC_LOCAL(
-      FormatType,
-      type,
-      (::RegisterClipboardFormat(L"Chromium Source tag Format")));
   return type;
 }
 

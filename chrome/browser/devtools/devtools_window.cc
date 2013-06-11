@@ -9,9 +9,9 @@
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/debugger/debugger_api.h"
@@ -213,7 +213,7 @@ DevToolsWindow* DevToolsWindow::GetDockedInstanceForInspectedTab(
     return NULL;
   scoped_refptr<DevToolsAgentHost> agent(DevToolsAgentHost::GetOrCreateFor(
       inspected_web_contents->GetRenderViewHost()));
-  DevToolsWindow* window = FindDevToolsWindow(agent);
+  DevToolsWindow* window = FindDevToolsWindow(agent.get());
   return window && window->IsDocked() ? window : NULL;
 }
 
@@ -326,14 +326,6 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
 
   web_contents_->GetController().LoadURL(url, content::Referrer(),
       content::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
-
-  RenderViewHost* render_view_host = web_contents_->GetRenderViewHost();
-  if (url.host() == chrome::kChromeUIDevToolsBundledHost) {
-    // Only allow file scheme in embedded front-end by default.
-    int process_id = render_view_host->GetProcess()->GetID();
-    content::ChildProcessSecurityPolicy::GetInstance()->GrantScheme(
-        process_id, chrome::kFileScheme);
-  }
 
   frontend_host_.reset(
       DevToolsClientHost::CreateDevToolsFrontendHost(web_contents_, this));
@@ -630,10 +622,11 @@ WebContents* DevToolsWindow::OpenURLFromTab(WebContents* source,
   DevToolsManager* manager = DevToolsManager::GetInstance();
   scoped_refptr<DevToolsAgentHost> agent_host(
       manager->GetDevToolsAgentHostFor(frontend_host_.get()));
-  if (!agent_host)
+  if (!agent_host.get())
     return NULL;
   manager->ClientHostClosing(frontend_host_.get());
-  manager->RegisterDevToolsClientHostFor(agent_host, frontend_host_.get());
+  manager->RegisterDevToolsClientHostFor(agent_host.get(),
+                                         frontend_host_.get());
 
   chrome::NavigateParams nav_params(profile_, params.url, params.transition);
   FillNavigateParamsFromOpenURLParams(&nav_params, params);
@@ -815,14 +808,15 @@ DevToolsWindow* DevToolsWindow::ToggleDevToolsWindow(
   scoped_refptr<DevToolsAgentHost> agent(
       DevToolsAgentHost::GetOrCreateFor(inspected_rvh));
   DevToolsManager* manager = DevToolsManager::GetInstance();
-  DevToolsWindow* window = FindDevToolsWindow(agent);
+  DevToolsWindow* window = FindDevToolsWindow(agent.get());
   bool do_open = force_open;
   if (!window) {
     Profile* profile = Profile::FromBrowserContext(
         inspected_rvh->GetProcess()->GetBrowserContext());
     DevToolsDockSide dock_side = GetDockSideFromPrefs(profile);
     window = Create(profile, GURL(), inspected_rvh, dock_side, false);
-    manager->RegisterDevToolsClientHostFor(agent, window->frontend_host_.get());
+    manager->RegisterDevToolsClientHostFor(agent.get(),
+                                           window->frontend_host_.get());
     do_open = true;
   }
 

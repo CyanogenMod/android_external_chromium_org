@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "base/prefs/pref_service.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/autofill/browser/autofill_external_delegate.h"
 #include "components/autofill/browser/validation.h"
 #include "components/autofill/common/autofill_messages.h"
@@ -170,7 +170,7 @@ void AutocompleteHistoryManager::SetExternalDelegate(
 
 void AutocompleteHistoryManager::CancelPendingQuery() {
   if (pending_query_handle_) {
-    if (autofill_data_)
+    if (autofill_data_.get())
       autofill_data_->CancelRequest(pending_query_handle_);
     pending_query_handle_ = 0;
   }

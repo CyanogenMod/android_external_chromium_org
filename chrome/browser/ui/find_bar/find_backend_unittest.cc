@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/find_bar/find_bar_state.h"
 #include "chrome/browser/ui/find_bar/find_bar_state_factory.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
@@ -12,26 +12,17 @@
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/web_contents_tester.h"
 
-using content::BrowserThread;
 using content::WebContents;
 using content::WebContentsTester;
 
 class FindBackendTest : public ChromeRenderViewHostTestHarness {
- public:
-  FindBackendTest()
-      : ChromeRenderViewHostTestHarness(),
-        browser_thread_(BrowserThread::UI, &message_loop_) {}
-
- private:
+ protected:
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
     FindTabHelper::CreateForWebContents(web_contents());
   }
-
-  content::TestBrowserThread browser_thread_;
 };
 
 namespace {

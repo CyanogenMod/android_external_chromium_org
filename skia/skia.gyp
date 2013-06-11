@@ -36,6 +36,7 @@
         # but Android later.
         '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp',
 
+        '../third_party/skia/src/ports/SkImageDecoder_empty.cpp',
         #'../third_party/skia/src/images/bmpdecoderhelper.cpp',
         #'../third_party/skia/src/images/bmpdecoderhelper.h',
         #'../third_party/skia/src/images/SkFDStream.cpp',
@@ -110,7 +111,9 @@
         #'../third_party/skia/src/ports/SkImageRef_ashmem.h',
         #'../third_party/skia/src/ports/SkOSEvent_android.cpp',
         #'../third_party/skia/src/ports/SkOSEvent_dummy.cpp',
+        '../third_party/skia/src/ports/SkOSFile_posix.cpp',
         '../third_party/skia/src/ports/SkOSFile_stdio.cpp',
+        '../third_party/skia/src/ports/SkOSFile_win.cpp', 
         #'../third_party/skia/src/ports/SkThread_none.cpp',
         '../third_party/skia/src/ports/SkThread_pthread.cpp',
         '../third_party/skia/src/ports/SkThread_win.cpp',
@@ -172,6 +175,8 @@
         'ext/image_operations.h',
         'ext/lazy_pixel_ref.cc',
         'ext/lazy_pixel_ref.h',
+        'ext/lazy_pixel_ref_utils.cc',
+        'ext/lazy_pixel_ref_utils.h',
         'ext/SkThread_chrome.cc',
         'ext/paint_simplifier.cc',
         'ext/paint_simplifier.h',
@@ -500,7 +505,7 @@
         }],
         [ 'OS == "win"', {
           'sources!': [
-            '../third_party/skia/src/core/SkMMapStream.cpp',
+            '../third_party/skia/src/ports/SkOSFile_posix.cpp',
             '../third_party/skia/src/ports/SkThread_pthread.cpp',
             '../third_party/skia/src/ports/SkTime_Unix.cpp',
             'ext/SkThread_chrome.cc',

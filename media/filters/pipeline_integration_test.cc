@@ -6,9 +6,10 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/media_keys.h"
 #include "media/base/test_data_util.h"
 #include "media/crypto/aes_decryptor.h"
 #include "media/filters/chunk_demuxer.h"
@@ -71,7 +72,7 @@ class FakeEncryptedMedia {
     // Errors are not expected unless overridden.
     virtual void KeyError(const std::string& key_system,
                           const std::string& session_id,
-                          AesDecryptor::KeyError error_code,
+                          MediaKeys::KeyError error_code,
                           int system_code) {
       FAIL() << "Unexpected Key Error";
     }
@@ -111,7 +112,7 @@ class FakeEncryptedMedia {
 
   void KeyError(const std::string& key_system,
                 const std::string& session_id,
-                AesDecryptor::KeyError error_code,
+                MediaKeys::KeyError error_code,
                 int system_code) {
     app_->KeyError(key_system, session_id, error_code, system_code);
   }
@@ -438,6 +439,14 @@ TEST_F(PipelineIntegrationTest, BasicPlaybackHashed) {
 
   EXPECT_EQ("f0be120a90a811506777c99a2cdf7cc1", GetVideoHash());
   EXPECT_EQ("-3.59,-2.06,-0.43,2.15,0.77,-0.95,", GetAudioHash());
+}
+
+TEST_F(PipelineIntegrationTest, F32PlaybackHashed) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("sfx_f32le.wav"), PIPELINE_OK, true));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+  EXPECT_EQ(std::string(kNullVideoHash), GetVideoHash());
+  EXPECT_EQ("3.03,2.86,2.99,3.31,3.57,4.06,", GetAudioHash());
 }
 
 TEST_F(PipelineIntegrationTest, BasicPlaybackEncrypted) {

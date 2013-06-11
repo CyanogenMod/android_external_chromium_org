@@ -31,7 +31,13 @@ GURL GetFileBrowserUrl();
 GURL GetMediaPlayerUrl();
 GURL GetVideoPlayerUrl();
 
-// Converts |full_file_path| into external filesystem: url. Returns false
+// Converts |relative_path| (e.g., "drive/root" or "Downloads") into external
+// filesystem URL (e.g., filesystem://id/external/drive/root).
+GURL ConvertRelativePathToFileSystemUrl(const base::FilePath& relative_path,
+                                        const std::string& extension_id);
+
+// Converts |full_file_path| (e.g., "/special/drive/root" or
+// "/home/chronos/user/Downloads") into external filesystem URL. Returns false
 // if |full_file_path| is not managed by the external filesystem provider.
 bool ConvertFileToFileSystemUrl(Profile* profile,
                                 const base::FilePath& full_file_path,
@@ -90,6 +96,9 @@ bool ExecuteBuiltinHandler(
 
 // Checks whether a pepper plugin for |file_extension| is enabled.
 bool ShouldBeOpenedWithPlugin(Profile* profile, const char* file_extension);
+
+// Returns the MIME type of |file_path|.
+std::string GetMimeTypeForPath(const base::FilePath& file_path);
 
 }  // namespace file_manager_util
 

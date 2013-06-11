@@ -61,6 +61,9 @@ class ThreadProxy : public Proxy,
   virtual bool CommitPendingForTesting() OVERRIDE;
 
   // LayerTreeHostImplClient implementation
+  virtual void DidTryInitializeRendererOnImplThread(
+      bool success,
+      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE;
   virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
@@ -73,7 +76,6 @@ class ThreadProxy : public Proxy,
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect dirty_rect) OVERRIDE;
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE;
   virtual void SetNeedsCommitOnImplThread() OVERRIDE;
-  virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
   virtual void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> queue,
       base::Time wall_clock_time) OVERRIDE;
@@ -86,8 +88,6 @@ class ThreadProxy : public Proxy,
   virtual void RenewTreePriority() OVERRIDE;
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
       OVERRIDE;
-  virtual void DidReceiveLastInputEventForBeginFrameOnImplThread(
-      base::TimeTicks frame_time) OVERRIDE;
   virtual void DidActivatePendingTree() OVERRIDE;
 
   // SchedulerClient implementation
@@ -175,7 +175,6 @@ class ThreadProxy : public Proxy,
       RendererCapabilities* capabilities);
   void FinishGLOnImplThread(CompletionEvent* completion);
   void LayerTreeHostClosedOnImplThread(CompletionEvent* completion);
-  void ManageTilesOnImplThread();
   void AcquireLayerTexturesForMainThreadOnImplThread(
       CompletionEvent* completion);
   ScheduledActionDrawAndSwapResult ScheduledActionDrawAndSwapInternal(
@@ -249,7 +248,7 @@ class ThreadProxy : public Proxy,
   bool next_frame_is_newly_committed_frame_on_impl_thread_;
 
   bool throttle_frame_production_;
-  bool render_parent_drives_begin_frame__;
+  bool begin_frame_scheduling_enabled_;
   bool using_synchronous_renderer_compositor_;
   VSyncClient* vsync_client_;
 

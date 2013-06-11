@@ -72,8 +72,16 @@ void MediaPlayerAndroid::ReadFromDemuxerAck(
   NOTREACHED() << "Unexpected ipc received";
 }
 
-void MediaPlayerAndroid::OnSeekRequestAck() {
+void MediaPlayerAndroid::OnSeekRequestAck(unsigned seek_request_id) {
   NOTREACHED() << "Unexpected ipc received";
+}
+
+GURL MediaPlayerAndroid::GetUrl() {
+  return GURL();
+}
+
+GURL MediaPlayerAndroid::GetFirstPartyForCookies() {
+  return GURL();
 }
 
 }  // namespace media

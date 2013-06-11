@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "content/common/child_thread.h"
-#include "content/common/fileapi/file_system_dispatcher.h"
+#include "content/child/child_thread.h"
+#include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "ppapi/c/pp_errors.h"
@@ -69,6 +69,10 @@ int32_t PepperFileSystemHost::OnResourceMessageReceived(
         OnHostMsgInitIsolatedFileSystem)
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
+}
+
+PepperFileSystemHost* PepperFileSystemHost::AsPepperFileSystemHost() {
+  return this;
 }
 
 void PepperFileSystemHost::DidOpenFileSystem(

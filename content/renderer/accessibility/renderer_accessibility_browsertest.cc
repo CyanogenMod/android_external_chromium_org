@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/common/accessibility_node_data.h"
 #include "content/common/view_messages.h"
 #include "content/public/test/render_view_test.h"
 #include "content/renderer/accessibility/renderer_accessibility_complete.h"
 #include "content/renderer/render_view_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAccessibilityObject.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
@@ -301,7 +301,7 @@ TEST_F(RendererAccessibilityTest, SendFullAccessibilityTreeOnReload) {
   document = view()->GetWebView()->mainFrame()->document();
   root_obj = document.accessibilityObject();
   sink_->ClearMessages();
-  const WebAccessibilityObject& first_child = root_obj.firstChild();
+  const WebAccessibilityObject& first_child = root_obj.childAt(0);
   accessibility->HandleWebAccessibilityNotification(
       first_child,
       WebKit::WebAccessibilityNotificationLiveRegionChanged);

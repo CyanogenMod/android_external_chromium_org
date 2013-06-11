@@ -6,10 +6,10 @@
 
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -348,8 +348,7 @@ void PermissionsData::UpdateTabSpecificPermissions(
       &extension->permissions_data()->tab_specific_permissions_;
   if (tab_permissions->count(tab_id)) {
     (*tab_permissions)[tab_id] = PermissionSet::CreateUnion(
-        (*tab_permissions)[tab_id],
-        permissions.get());
+        (*tab_permissions)[tab_id].get(), permissions.get());
   } else {
     (*tab_permissions)[tab_id] = permissions;
   }

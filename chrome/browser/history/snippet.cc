@@ -8,9 +8,9 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "third_party/icu/public/common/unicode/brkiter.h"
 #include "third_party/icu/public/common/unicode/utext.h"
 #include "third_party/icu/public/common/unicode/utf8.h"

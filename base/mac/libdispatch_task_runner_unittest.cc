@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/mac/bind_objc_block.h"
 #include "base/message_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class LibDispatchTaskRunnerTest : public testing::Test {
@@ -21,8 +21,8 @@ class LibDispatchTaskRunnerTest : public testing::Test {
   // all non-delayed tasks are run on the LibDispatchTaskRunner.
   void DispatchLastTask() {
     dispatch_async(task_runner_->GetDispatchQueue(), ^{
-        (&message_loop_)->PostTask(FROM_HERE,
-                                   MessageLoop::QuitWhenIdleClosure());
+        message_loop_.PostTask(FROM_HERE,
+                               base::MessageLoop::QuitWhenIdleClosure());
     });
     message_loop_.Run();
     task_runner_->Shutdown();
@@ -52,7 +52,7 @@ class LibDispatchTaskRunnerTest : public testing::Test {
   }
 
   // The message loop for the test main thread.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   // The task runner under test.
   scoped_refptr<base::mac::LibDispatchTaskRunner> task_runner_;
@@ -117,7 +117,7 @@ TEST_F(LibDispatchTaskRunnerTest, PostTaskWithinTask) {
 TEST_F(LibDispatchTaskRunnerTest, NoMessageLoop) {
   task_runner_->PostTask(FROM_HERE, base::BindBlock(^{
       TaskOrderMarker marker(this,
-          base::StringPrintf("MessageLoop = %p", MessageLoop::current()));
+          base::StringPrintf("MessageLoop = %p", base::MessageLoop::current()));
   }));
   DispatchLastTask();
 
@@ -157,8 +157,8 @@ TEST_F(LibDispatchTaskRunnerTest, NonNestable) {
       TaskOrderMarker marker(this, "First");
       task_runner_->PostNonNestableTask(FROM_HERE, base::BindBlock(^{
           TaskOrderMarker marker(this, "Second NonNestable");
-          (&message_loop_)->PostTask(FROM_HERE,
-                                     MessageLoop::QuitWhenIdleClosure());
+          message_loop_.PostTask(FROM_HERE,
+                                 base::MessageLoop::QuitWhenIdleClosure());
       }));
   }));
   message_loop_.Run();
@@ -183,7 +183,8 @@ TEST_F(LibDispatchTaskRunnerTest, PostDelayed) {
   task_runner_->PostDelayedTask(FROM_HERE, base::BindBlock(^{
       TaskOrderMarker marker(this, "Timed");
       run_time = base::TimeTicks::Now();
-      (&message_loop_)->PostTask(FROM_HERE, MessageLoop::QuitWhenIdleClosure());
+      message_loop_.PostTask(FROM_HERE,
+                             base::MessageLoop::QuitWhenIdleClosure());
   }), delta);
   task_runner_->PostTask(FROM_HERE, BoundRecordTaskOrder(this, "Second"));
   message_loop_.Run();

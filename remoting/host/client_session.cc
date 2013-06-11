@@ -6,8 +6,7 @@
 
 #include <algorithm>
 
-#include "base/message_loop_proxy.h"
-#include "media/video/capture/screen/screen_capturer.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "remoting/base/capabilities.h"
 #include "remoting/codec/audio_encoder.h"
 #include "remoting/codec/audio_encoder_opus.h"
@@ -27,6 +26,8 @@
 #include "remoting/proto/event.pb.h"
 #include "remoting/protocol/client_stub.h"
 #include "remoting/protocol/clipboard_thread_proxy.h"
+#include "remoting/protocol/pairing_registry.h"
+#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 
 // Default DPI to assume for old clients that use notifyClientDimensions.
 const int kDefaultDPI = 96;
@@ -43,7 +44,8 @@ ClientSession::ClientSession(
     scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
     scoped_ptr<protocol::ConnectionToClient> connection,
     DesktopEnvironmentFactory* desktop_environment_factory,
-    const base::TimeDelta& max_duration)
+    const base::TimeDelta& max_duration,
+    scoped_refptr<protocol::PairingRegistry> pairing_registry)
     : event_handler_(event_handler),
       connection_(connection.Pass()),
       client_jid_(connection_->session()->jid()),
@@ -63,7 +65,8 @@ ClientSession::ClientSession(
       video_capture_task_runner_(video_capture_task_runner),
       video_encode_task_runner_(video_encode_task_runner),
       network_task_runner_(network_task_runner),
-      ui_task_runner_(ui_task_runner) {
+      ui_task_runner_(ui_task_runner),
+      pairing_registry_(pairing_registry) {
   connection_->SetEventHandler(this);
 
   // TODO(sergeyu): Currently ConnectionToClient expects stubs to be
@@ -86,11 +89,11 @@ ClientSession::ClientSession(
 
 ClientSession::~ClientSession() {
   DCHECK(CalledOnValidThread());
-  DCHECK(!audio_scheduler_);
+  DCHECK(!audio_scheduler_.get());
   DCHECK(!desktop_environment_);
   DCHECK(!input_injector_);
   DCHECK(!screen_controls_);
-  DCHECK(!video_scheduler_);
+  DCHECK(!video_scheduler_.get());
 
   connection_.reset();
 }
@@ -138,7 +141,7 @@ void ClientSession::ControlAudio(const protocol::AudioControl& audio_control) {
   if (audio_control.has_enable()) {
     VLOG(1) << "Received AudioControl (enable="
             << audio_control.enable() << ")";
-    if (audio_scheduler_)
+    if (audio_scheduler_.get())
       audio_scheduler_->Pause(!audio_control.enable());
   }
 }
@@ -172,15 +175,27 @@ void ClientSession::SetCapabilities(
       IntersectCapabilities(*client_capabilities_, host_capabilities_));
 }
 
+void ClientSession::RequestPairing(
+    const protocol::PairingRequest& pairing_request) {
+  if (pairing_request.has_client_name()) {
+    protocol::PairingRegistry::Pairing pairing =
+        pairing_registry_->CreatePairing(pairing_request.client_name());
+    protocol::PairingResponse pairing_response;
+    pairing_response.set_client_id(pairing.client_id);
+    pairing_response.set_shared_secret(pairing.shared_secret);
+    connection_->client_stub()->SetPairingResponse(pairing_response);
+  }
+}
+
 void ClientSession::OnConnectionAuthenticated(
     protocol::ConnectionToClient* connection) {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(connection_.get(), connection);
-  DCHECK(!audio_scheduler_);
+  DCHECK(!audio_scheduler_.get());
   DCHECK(!desktop_environment_);
   DCHECK(!input_injector_);
   DCHECK(!screen_controls_);
-  DCHECK(!video_scheduler_);
+  DCHECK(!video_scheduler_.get());
 
   auth_input_filter_.set_enabled(true);
   auth_clipboard_filter_.set_enabled(true);
@@ -311,11 +326,11 @@ void ClientSession::OnConnectionClosed(
 
   // Stop components access the client, audio or video stubs, which are no
   // longer valid once ConnectionToClient calls OnConnectionClosed().
-  if (audio_scheduler_) {
+  if (audio_scheduler_.get()) {
     audio_scheduler_->Stop();
     audio_scheduler_ = NULL;
   }
-  if (video_scheduler_) {
+  if (video_scheduler_.get()) {
     video_scheduler_->Stop();
     video_scheduler_ = NULL;
   }
@@ -335,7 +350,7 @@ void ClientSession::OnSequenceNumberUpdated(
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(connection_.get(), connection);
 
-  if (video_scheduler_)
+  if (video_scheduler_.get())
     video_scheduler_->UpdateSequenceNumber(sequence_number);
 
   event_handler_->OnSessionSequenceNumber(this, sequence_number);

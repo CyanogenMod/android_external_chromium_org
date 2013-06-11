@@ -16,9 +16,9 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
@@ -190,7 +190,7 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
       *root,
       extension_flags,
       &error);
-  if (!extension) {
+  if (!extension.get()) {
     LOG(ERROR) << error;
     return NULL;
   }

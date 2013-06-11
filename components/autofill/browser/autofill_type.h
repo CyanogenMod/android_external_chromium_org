@@ -9,7 +9,7 @@
 #include <set>
 #include <string>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "components/autofill/browser/field_types.h"
 
 namespace autofill {
@@ -25,7 +25,8 @@ class AutofillType {
     COMPANY,
     ADDRESS_HOME,
     ADDRESS_BILLING,
-    PHONE,
+    PHONE_HOME,
+    PHONE_BILLING,
     CREDIT_CARD,
   };
 

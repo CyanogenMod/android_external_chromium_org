@@ -55,9 +55,8 @@ class MockAudioOutputControllerSyncReader
   MockAudioOutputControllerSyncReader() {}
 
   MOCK_METHOD1(UpdatePendingBytes, void(uint32 bytes));
-  MOCK_METHOD2(Read, int(AudioBus* source, AudioBus* dest));
+  MOCK_METHOD3(Read, int(bool block, const AudioBus* source, AudioBus* dest));
   MOCK_METHOD0(Close, void());
-  MOCK_METHOD0(DataReady, bool());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAudioOutputControllerSyncReader);
@@ -86,10 +85,10 @@ ACTION_P(SignalEvent, event) {
 
 static const float kBufferNonZeroData = 1.0f;
 ACTION(PopulateBuffer) {
-  arg1->Zero();
+  arg2->Zero();
   // Note: To confirm the buffer will be populated in these tests, it's
   // sufficient that only the first float in channel 0 is set to the value.
-  arg1->channel(0)[0] = kBufferNonZeroData;
+  arg2->channel(0)[0] = kBufferNonZeroData;
 }
 
 class AudioOutputControllerTest : public testing::Test {
@@ -122,12 +121,12 @@ class AudioOutputControllerTest : public testing::Test {
     }
 
     controller_ = AudioOutputController::Create(
-        audio_manager_.get(), &mock_event_handler_, params_,
+        audio_manager_.get(), &mock_event_handler_, params_, std::string(),
         &mock_sync_reader_);
-    if (controller_)
+    if (controller_.get())
       controller_->SetVolume(kTestVolume);
 
-    EXPECT_EQ(params_.IsValid(), controller_ != NULL);
+    EXPECT_EQ(params_.IsValid(), controller_.get() != NULL);
   }
 
   void Play() {
@@ -142,13 +141,10 @@ class AudioOutputControllerTest : public testing::Test {
     // sent from the render process.
     EXPECT_CALL(mock_sync_reader_, UpdatePendingBytes(_))
         .Times(AtLeast(1));
-    EXPECT_CALL(mock_sync_reader_, Read(_, _))
+    EXPECT_CALL(mock_sync_reader_, Read(_, _, _))
         .WillRepeatedly(DoAll(PopulateBuffer(),
                               SignalEvent(&read_event_),
                               Return(params_.frames_per_buffer())));
-    EXPECT_CALL(mock_sync_reader_, DataReady())
-        .WillRepeatedly(Return(true));
-
     controller_->Play();
   }
 

@@ -18,7 +18,7 @@
 #include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/gfx/size.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/webpreferences.h"
 
 class SkBitmap;
 
@@ -138,7 +138,7 @@ class WebKitTestController : public base::NonThreadSafe,
   void OnTextDump(const std::string& dump);
   void OnPrintMessage(const std::string& message);
   void OnOverridePreferences(const WebPreferences& prefs);
-  void OnTestFinished(bool did_timeout);
+  void OnTestFinished();
   void OnShowDevTools();
   void OnCloseDevTools();
   void OnGoToOffset(int offset);
@@ -178,8 +178,6 @@ class WebKitTestController : public base::NonThreadSafe,
   // overridden with prefs_.
   bool should_override_prefs_;
   WebPreferences prefs_;
-
-  base::CancelableClosure watchdog_;
 
   NotificationRegistrar registrar_;
 

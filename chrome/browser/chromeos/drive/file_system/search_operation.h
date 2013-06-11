@@ -9,15 +9,19 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/sequenced_task_runner.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
-#include "chrome/browser/chromeos/drive/file_system/operations.h"
+#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
 class GURL;
 
+namespace base {
+class SequencedTaskRunner;
+}  // namespace base
+
 namespace google_apis {
 class ResourceEntry;
+class ResourceList;
 }  // namespace google_apis
 
 namespace drive {
@@ -39,29 +43,29 @@ class SearchOperation {
                   internal::ResourceMetadata* metadata);
   ~SearchOperation();
 
-  // Performs server side content search operation for |search_query|.
-  // If |next_feed| is set, this is the feed url that will be fetched.
-  // Upon completion, |callback| will be called with the result.
-  // This is implementation of FileSystemInterface::Search() method.
+  // Performs server side content search operation for |search_query|.  If
+  // |next_url| is set, this is the search result url that will be fetched.
+  // Upon completion, |callback| will be called with the result.  This is
+  // implementation of FileSystemInterface::Search() method.
   //
   // |callback| must not be null.
   void Search(const std::string& search_query,
-              const GURL& next_feed,
-              const SearchOperationCallback& callback);
+              const GURL& next_url,
+              const SearchCallback& callback);
 
  private:
   // Part of Search(). This is called after the ResourceList is fetched from
   // the server.
   void SearchAfterGetResourceList(
-      const SearchOperationCallback& callback,
+      const SearchCallback& callback,
       google_apis::GDataErrorCode gdata_error,
       scoped_ptr<google_apis::ResourceList> resource_list);
 
   // Part of Search(). This is called after the RefreshEntryOnBlockingPool
   // is completed.
   void SearchAfterRefreshEntry(
-      const SearchOperationCallback& callback,
-      const GURL& next_feed,
+      const SearchCallback& callback,
+      const GURL& next_url,
       scoped_ptr<std::vector<SearchResultInfo> > result,
       FileError error);
 

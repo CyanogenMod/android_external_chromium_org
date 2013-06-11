@@ -14,7 +14,7 @@
 #include "ppapi/c/ppb_graphics_2d.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h"
+#include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 
 namespace gfx {
@@ -52,6 +52,7 @@ class CONTENT_EXPORT PepperGraphics2DHost
   virtual int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) OVERRIDE;
+  virtual PepperGraphics2DHost* AsPepperGraphics2DHost() OVERRIDE;
 
   // PlatformGraphics2D overrides.
   virtual bool ReadImageData(PP_Resource image,
@@ -68,7 +69,6 @@ class CONTENT_EXPORT PepperGraphics2DHost
   virtual float GetScale() const OVERRIDE;
   virtual bool IsAlwaysOpaque() const OVERRIDE;
   virtual PPB_ImageData_Impl* ImageData() OVERRIDE;
-  virtual bool IsGraphics2DHost() const OVERRIDE;
 
  private:
   PepperGraphics2DHost(RendererPpapiHost* host,

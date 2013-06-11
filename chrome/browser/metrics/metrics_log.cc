@@ -16,20 +16,20 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/profiler/alternate_timer.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/third_party/nspr/prtime.h"
 #include "base/time.h"
 #include "base/tracked_objects.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_log.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_process_type.h"
@@ -1017,7 +1017,7 @@ void MetricsLog::WriteProfileMetrics(const std::string& profileidhash,
   }
 }
 
-void MetricsLog::RecordOmniboxOpenedURL(const AutocompleteLog& log) {
+void MetricsLog::RecordOmniboxOpenedURL(const OmniboxLog& log) {
   DCHECK(!locked());
 
   // Write the XML version.

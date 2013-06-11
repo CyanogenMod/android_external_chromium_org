@@ -8,7 +8,7 @@
 #include "base/native_library.h"
 #include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
@@ -229,7 +229,7 @@ PepperPluginRegistry::PepperPluginRegistry() {
     scoped_refptr<webkit::ppapi::PluginModule> module =
         new webkit::ppapi::PluginModule(current.name, current.path, this,
             ppapi::PpapiPermissions(current.permissions));
-    AddLiveModule(current.path, module);
+    AddLiveModule(current.path, module.get());
     if (current.is_internal) {
       if (!module->InitAsInternalPlugin(current.internal_entry_points)) {
         DLOG(ERROR) << "Failed to load pepper module: " << current.path.value();

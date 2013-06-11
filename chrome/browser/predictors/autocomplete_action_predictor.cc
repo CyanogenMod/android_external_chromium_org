@@ -12,16 +12,16 @@
 #include "base/guid.h"
 #include "base/i18n/case_conversion.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_log.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
+#include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
 #include "chrome/browser/predictors/predictor_database.h"
 #include "chrome/browser/predictors/predictor_database_factory.h"
@@ -150,10 +150,9 @@ void AutocompleteActionPredictor::StartPrerendering(
     content::SessionStorageNamespaceMap::const_iterator it =
         session_storage_namespace_map.find(std::string());
     if (it != session_storage_namespace_map.end())
-      session_storage_namespace = it->second;
-    prerender_handle_.reset(
-        prerender_manager->AddPrerenderFromOmnibox(
-            url, session_storage_namespace, size));
+      session_storage_namespace = it->second.get();
+    prerender_handle_.reset(prerender_manager->AddPrerenderFromOmnibox(
+        url, session_storage_namespace, size));
   }
   if (old_prerender_handle)
     old_prerender_handle->OnCancel();
@@ -243,7 +242,7 @@ void AutocompleteActionPredictor::Observe(
 
       // TODO(dominich): This doesn't need to be synchronous. Investigate
       // posting it as a task to be run later.
-      OnOmniboxOpenedUrl(*content::Details<AutocompleteLog>(details).ptr());
+      OnOmniboxOpenedUrl(*content::Details<OmniboxLog>(details).ptr());
       break;
     }
 
@@ -322,8 +321,7 @@ void AutocompleteActionPredictor::DeleteRowsWithURLs(
                             DATABASE_ACTION_DELETE_SOME, DATABASE_ACTION_COUNT);
 }
 
-void AutocompleteActionPredictor::OnOmniboxOpenedUrl(
-    const AutocompleteLog& log) {
+void AutocompleteActionPredictor::OnOmniboxOpenedUrl(const OmniboxLog& log) {
   if (log.text.length() < kMinimumUserTextLength)
     return;
 

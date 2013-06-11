@@ -6,13 +6,15 @@
 
 #include <list>
 
-#include "base/stringprintf.h"
+#include "base/logging.h"  // For CHECK macros.
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/capabilities.h"
 #include "chrome/test/chromedriver/chrome/chrome.h"
 #include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
+#include "chrome/test/chromedriver/chrome/device_manager.h"
 #include "chrome/test/chromedriver/chrome/devtools_event_listener.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/version.h"
@@ -49,11 +51,13 @@ NewSessionParams::NewSessionParams(
     Log* log,
     SessionMap* session_map,
     scoped_refptr<URLRequestContextGetter> context_getter,
-    const SyncWebSocketFactory& socket_factory)
+    const SyncWebSocketFactory& socket_factory,
+    DeviceManager* device_manager)
     : log(log),
       session_map(session_map),
       context_getter(context_getter),
-      socket_factory(socket_factory) {}
+      socket_factory(socket_factory),
+      device_manager(device_manager) {}
 
 NewSessionParams::~NewSessionParams() {}
 
@@ -85,10 +89,11 @@ Status ExecuteNewSession(
     return status;
 
   scoped_ptr<Chrome> chrome;
-  status = LaunchChrome(bound_params.context_getter,
+  status = LaunchChrome(bound_params.context_getter.get(),
                         port,
                         bound_params.socket_factory,
                         bound_params.log,
+                        bound_params.device_manager,
                         capabilities,
                         devtools_event_listeners,
                         &chrome);
@@ -123,6 +128,32 @@ Status ExecuteNewSession(
   bound_params.session_map->Set(new_id, accessor);
 
   return Status(kOk);
+}
+
+Status ExecuteQuit(
+    bool allow_detach,
+    SessionMap* session_map,
+    const base::DictionaryValue& params,
+    const std::string& session_id,
+    scoped_ptr<base::Value>* out_value,
+    std::string* out_session_id) {
+  *out_session_id = session_id;
+  scoped_refptr<SessionAccessor> session_accessor;
+  if (!session_map->Get(session_id, &session_accessor))
+    return Status(kOk);
+  scoped_ptr<base::AutoLock> session_lock;
+  Session* session = session_accessor->Access(&session_lock);
+  if (!session)
+    return Status(kOk);
+  CHECK(session_map->Remove(session->id));
+  if (allow_detach && session->detach) {
+    session_accessor->DeleteSession();
+    return Status(kOk);
+  } else {
+    Status status = session->chrome->Quit();
+    session_accessor->DeleteSession();
+    return status;
+  }
 }
 
 Status ExecuteQuitAll(

@@ -12,7 +12,7 @@
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -38,7 +38,7 @@
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/webpreferences.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/root_window.h"
@@ -213,7 +213,7 @@ CloudPrintDataSender::~CloudPrintDataSender() {}
 // needed. - 4/1/2010
 void CloudPrintDataSender::SendPrintData() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (!data_ || !data_->size())
+  if (!data_.get() || !data_->size())
     return;
 
   std::string base64_data;
@@ -373,8 +373,11 @@ CloudPrintFlowHandler::CreateCloudPrintDataSender() {
   DCHECK(web_ui());
   print_data_helper_.reset(new CloudPrintDataSenderHelper(web_ui()));
   scoped_refptr<CloudPrintDataSender> sender(
-      new CloudPrintDataSender(print_data_helper_.get(), print_job_title_,
-                               print_ticket_, file_type_, data_));
+      new CloudPrintDataSender(print_data_helper_.get(),
+                               print_job_title_,
+                               print_ticket_,
+                               file_type_,
+                               data_.get()));
   return sender;
 }
 

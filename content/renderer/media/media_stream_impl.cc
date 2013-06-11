@@ -7,9 +7,9 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/media_stream_extra_data.h"
@@ -19,14 +19,14 @@
 #include "content/renderer/media/webrtc_audio_renderer.h"
 #include "content/renderer/media/webrtc_local_audio_renderer.h"
 #include "content/renderer/media/webrtc_uma_histograms.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaConstraints.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamSource.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamTrack.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
+#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaStreamRegistry.h"
-#include "webkit/media/media_stream_audio_renderer.h"
+#include "webkit/renderer/media/media_stream_audio_renderer.h"
 
 namespace content {
 namespace {
@@ -91,7 +91,8 @@ void CreateWebKitSourceVector(
           UTF8ToUTF16(devices[i].device.name));
     webkit_sources[i].setExtraData(
         new content::MediaStreamSourceExtraData(devices[i], webkit_sources[i]));
-    webkit_sources[i].setDeviceId(UTF8ToUTF16(devices[i].device.id.c_str()));
+    webkit_sources[i].setDeviceId(UTF8ToUTF16(
+        base::IntToString(devices[i].session_id)));
   }
 }
 
@@ -101,7 +102,7 @@ webrtc::MediaStreamInterface* GetNativeMediaStream(
       static_cast<content::MediaStreamExtraData*>(descriptor.extraData());
   if (!extra_data)
     return NULL;
-  return extra_data->stream();
+  return extra_data->stream().get();
 }
 
 }  // namespace
@@ -258,10 +259,10 @@ MediaStreamImpl::GetAudioRenderer(const GURL& url) {
 
   if (extra_data->is_local()) {
     // Create the local audio renderer if the stream contains audio tracks.
-    return CreateLocalAudioRenderer(extra_data->stream());
+    return CreateLocalAudioRenderer(extra_data->stream().get());
   }
 
-  webrtc::MediaStreamInterface* stream = extra_data->stream();
+  webrtc::MediaStreamInterface* stream = extra_data->stream().get();
   if (!stream || stream->GetAudioTracks().empty())
     return NULL;
 
@@ -271,10 +272,10 @@ MediaStreamImpl::GetAudioRenderer(const GURL& url) {
 
   // Share the existing renderer if any, otherwise create a new one.
   scoped_refptr<WebRtcAudioRenderer> renderer(audio_device->renderer());
-  if (!renderer) {
-    renderer = CreateRemoteAudioRenderer(extra_data->stream());
+  if (!renderer.get()) {
+    renderer = CreateRemoteAudioRenderer(extra_data->stream().get());
 
-    if (renderer && !audio_device->SetAudioRenderer(renderer))
+    if (renderer.get() && !audio_device->SetAudioRenderer(renderer.get()))
       renderer = NULL;
   }
   return renderer;
@@ -549,7 +550,7 @@ MediaStreamImpl::CreateLocalAudioRenderer(
 
   scoped_refptr<WebRtcAudioCapturer> source =
       dependency_factory_->GetWebRtcAudioDevice()->capturer();
-  if (!source) {
+  if (!source.get()) {
     return NULL;
   }
 

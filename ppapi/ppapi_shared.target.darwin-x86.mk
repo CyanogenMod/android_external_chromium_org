@@ -11,9 +11,10 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
-	$(call intermediates-dir-for,GYP,ppapi_ppapi_c_gyp)/ppapi_c.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
+	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
+	$(call intermediates-dir-for,GYP,ppapi_ppapi_c_gyp)/ppapi_c.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -86,11 +87,9 @@ LOCAL_SRC_FILES := \
 	ppapi/thunk/ppb_audio_config_thunk.cc \
 	ppapi/thunk/ppb_audio_input_dev_thunk.cc \
 	ppapi/thunk/ppb_audio_thunk.cc \
-	ppapi/thunk/ppb_audio_trusted_thunk.cc \
 	ppapi/thunk/ppb_broker_thunk.cc \
 	ppapi/thunk/ppb_browser_font_trusted_thunk.cc \
 	ppapi/thunk/ppb_buffer_thunk.cc \
-	ppapi/thunk/ppb_buffer_trusted_thunk.cc \
 	ppapi/thunk/ppb_char_set_thunk.cc \
 	ppapi/thunk/ppb_console_thunk.cc \
 	ppapi/thunk/ppb_content_decryptor_private_thunk.cc \
@@ -124,16 +123,15 @@ LOCAL_SRC_FILES := \
 	ppapi/thunk/ppb_graphics_2d_dev_thunk.cc \
 	ppapi/thunk/ppb_graphics_2d_thunk.cc \
 	ppapi/thunk/ppb_graphics_3d_thunk.cc \
-	ppapi/thunk/ppb_graphics_3d_trusted_thunk.cc \
 	ppapi/thunk/ppb_host_resolver_private_thunk.cc \
 	ppapi/thunk/ppb_image_data_thunk.cc \
-	ppapi/thunk/ppb_image_data_trusted_thunk.cc \
 	ppapi/thunk/ppb_input_event_thunk.cc \
 	ppapi/thunk/ppb_instance_private_thunk.cc \
 	ppapi/thunk/ppb_instance_thunk.cc \
 	ppapi/thunk/ppb_messaging_thunk.cc \
 	ppapi/thunk/ppb_mouse_cursor_thunk.cc \
 	ppapi/thunk/ppb_mouse_lock_thunk.cc \
+	ppapi/thunk/ppb_net_address_dev_thunk.cc \
 	ppapi/thunk/ppb_network_list_private_thunk.cc \
 	ppapi/thunk/ppb_network_monitor_private_thunk.cc \
 	ppapi/thunk/ppb_pdf_thunk.cc \
@@ -208,7 +206,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -240,12 +237,12 @@ LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES := \
-	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
+	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/config \
@@ -259,8 +256,7 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \

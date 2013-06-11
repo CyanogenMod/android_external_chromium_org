@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/field_trial.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "components/autofill/common/autofill_switches.h"
 #include "content/public/browser/browser_context.h"
 #include "googleurl/src/gurl.h"
@@ -27,10 +27,18 @@ const int kDownloadIntervalSeconds = 86400;  // 1 day
 // to reduce contention at startup time.
 const int kInitialDownloadDelaySeconds = 3;
 
-const char kWhitelistUrl[] =
+const char kDefaultWhitelistUrl[] =
     "https://www.gstatic.com/commerce/autocheckout/whitelist.csv";
 
 const char kWhiteListKeyName[] = "autocheckout_whitelist_manager";
+
+std::string GetWhitelistUrl() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  std::string whitelist_url = command_line.GetSwitchValueASCII(
+      autofill::switches::kAutocheckoutWhitelistUrl);
+
+  return whitelist_url.empty() ? kDefaultWhitelistUrl : whitelist_url;
+}
 
 } //  namespace
 
@@ -86,7 +94,7 @@ void WhitelistManager::TriggerDownload() {
   request_started_timestamp_ = base::Time::Now();
 
   request_.reset(net::URLFetcher::Create(
-      0, GURL(kWhitelistUrl), net::URLFetcher::GET, this));
+      0, GURL(GetWhitelistUrl()), net::URLFetcher::GET, this));
   request_->SetRequestContext(context_getter_);
   request_->SetAutomaticallyRetryOn5xx(false);
   request_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES |

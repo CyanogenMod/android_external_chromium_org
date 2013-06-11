@@ -13,7 +13,7 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
@@ -132,7 +132,7 @@ bool LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
-  if (root_layer_)
+  if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
 
   if (proxy_) {
@@ -145,7 +145,7 @@ LayerTreeHost::~LayerTreeHost() {
   if (it != rate_limiters_.end())
     it->second->Stop();
 
-  if (root_layer_) {
+  if (root_layer_.get()) {
     // The layer tree must be destroyed before the layer tree host. We've
     // made a contract with our animation controllers that the registrar
     // will outlive them, and we must make good.
@@ -178,7 +178,8 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
     }
     settings_.max_partial_texture_updates = max_partial_texture_updates;
 
-    if (!contents_texture_manager_) {
+    if (!contents_texture_manager_ &&
+        (!settings_.impl_side_painting || !settings_.solid_color_scrollbars)) {
       contents_texture_manager_ =
           PrioritizedResourceManager::Create(proxy_.get());
       surface_memory_placeholder_ =
@@ -253,23 +254,26 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   // If there are linked evicted backings, these backings' resources may be put
   // into the impl tree, so we can't draw yet. Determine this before clearing
   // all evicted backings.
-  bool new_impl_tree_has_no_evicted_resources =
-      !contents_texture_manager_->LinkedEvictedBackingsExist();
+  bool new_impl_tree_has_no_evicted_resources = false;
+  if (contents_texture_manager_) {
+    new_impl_tree_has_no_evicted_resources =
+        !contents_texture_manager_->LinkedEvictedBackingsExist();
 
-  // If the memory limit has been increased since this now-finishing
-  // commit began, and the extra now-available memory would have been used,
-  // then request another commit.
-  if (contents_texture_manager_->MaxMemoryLimitBytes() <
-      host_impl->memory_allocation_limit_bytes() &&
-      contents_texture_manager_->MaxMemoryLimitBytes() <
-      contents_texture_manager_->MaxMemoryNeededBytes()) {
-    host_impl->SetNeedsCommit();
+    // If the memory limit has been increased since this now-finishing
+    // commit began, and the extra now-available memory would have been used,
+    // then request another commit.
+    if (contents_texture_manager_->MaxMemoryLimitBytes() <
+            host_impl->memory_allocation_limit_bytes() &&
+        contents_texture_manager_->MaxMemoryLimitBytes() <
+            contents_texture_manager_->MaxMemoryNeededBytes()) {
+      host_impl->SetNeedsCommit();
+    }
+
+    host_impl->set_max_memory_needed_bytes(
+        contents_texture_manager_->MaxMemoryNeededBytes());
+
+    contents_texture_manager_->UpdateBackingsInDrawingImplTree();
   }
-
-  host_impl->set_max_memory_needed_bytes(
-      contents_texture_manager_->MaxMemoryNeededBytes());
-
-  contents_texture_manager_->UpdateBackingsInDrawingImplTree();
 
   // In impl-side painting, synchronize to the pending tree so that it has
   // time to raster before being displayed.  If no pending tree is needed,
@@ -297,7 +301,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   sync_tree->set_needs_full_tree_sync(needs_full_tree_sync_);
   needs_full_tree_sync_ = false;
 
-  if (root_layer_ && hud_layer_) {
+  if (hud_layer_.get()) {
     LayerImpl* hud_impl = LayerTreeHostCommon::FindLayerInSubtree(
         sync_tree->root_layer(), hud_layer_->id());
     sync_tree->set_hud_layer(static_cast<HeadsUpDisplayLayerImpl*>(hud_impl));
@@ -368,12 +372,12 @@ void LayerTreeHost::WillCommit() {
 
 void LayerTreeHost::UpdateHudLayer() {
   if (debug_state_.ShowHudInfo()) {
-    if (!hud_layer_)
+    if (!hud_layer_.get())
       hud_layer_ = HeadsUpDisplayLayer::Create();
 
-    if (root_layer_ && !hud_layer_->parent())
+    if (root_layer_.get() && !hud_layer_->parent())
       root_layer_->AddChild(hud_layer_);
-  } else if (hud_layer_) {
+  } else if (hud_layer_.get()) {
     hud_layer_->RemoveFromParent();
     hud_layer_ = NULL;
   }
@@ -526,16 +530,16 @@ void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
 }
 
 void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
-  if (root_layer_ == root_layer)
+  if (root_layer_.get() == root_layer.get())
     return;
 
-  if (root_layer_)
+  if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
   root_layer_ = root_layer;
-  if (root_layer_)
+  if (root_layer_.get())
     root_layer_->SetLayerTreeHost(this);
 
-  if (hud_layer_)
+  if (hud_layer_.get())
     hud_layer_->RemoveFromParent();
 
   SetNeedsFullTreeSync();
@@ -644,7 +648,7 @@ void LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue,
   if (device_viewport_size().IsEmpty())
     return;
 
-  if (memory_allocation_limit_bytes) {
+  if (contents_texture_manager_ && memory_allocation_limit_bytes) {
     contents_texture_manager_->SetMaxMemoryLimitBytes(
         memory_allocation_limit_bytes);
   }
@@ -719,6 +723,7 @@ void LayerTreeHost::UpdateLayers(Layer* root_layer,
     LayerTreeHostCommon::CalculateDrawProperties(
         root_layer,
         device_viewport_size(),
+        gfx::Transform(),
         device_scale_factor_,
         page_scale_factor_,
         root_scroll,
@@ -789,6 +794,8 @@ void LayerTreeHost::ReduceMemoryUsage() {
 }
 
 void LayerTreeHost::SetPrioritiesForSurfaces(size_t surface_memory_bytes) {
+  DCHECK(surface_memory_placeholder_);
+
   // Surfaces have a place holder for their memory since they are managed
   // independantly but should still be tracked and reduce other memory usage.
   surface_memory_placeholder_->SetTextureManager(
@@ -824,6 +831,9 @@ void LayerTreeHost::SetPrioritiesForLayers(const LayerList& update_list) {
 
 void LayerTreeHost::PrioritizeTextures(
     const LayerList& render_surface_layer_list, OverdrawMetrics* metrics) {
+  if (!contents_texture_manager_)
+    return;
+
   contents_texture_manager_->ClearPriorities();
 
   size_t memory_for_render_surfaces_metric =
@@ -955,7 +965,7 @@ bool LayerTreeHost::PaintLayerContents(
 }
 
 void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
-  if (!root_layer_)
+  if (!root_layer_.get())
     return;
 
   Layer* root_scroll_layer = FindFirstScrollableLayer(root_layer_.get());
@@ -967,11 +977,12 @@ void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
                                                 info.scrolls[i].layer_id);
     if (!layer)
       continue;
-    if (layer == root_scroll_layer)
+    if (layer == root_scroll_layer) {
       root_scroll_delta += info.scrolls[i].scroll_delta;
-    else
-      layer->SetScrollOffset(layer->scroll_offset() +
-                             info.scrolls[i].scroll_delta);
+    } else {
+      layer->SetScrollOffsetFromImplSide(layer->scroll_offset() +
+                                         info.scrolls[i].scroll_delta);
+    }
   }
   if (!root_scroll_delta.IsZero() || info.page_scale_delta != 1.f)
     client_->ApplyScrollAndScale(root_scroll_delta, info.page_scale_delta);
@@ -1040,7 +1051,7 @@ void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
 }
 
 bool LayerTreeHost::BlocksPendingCommit() const {
-  if (!root_layer_)
+  if (!root_layer_.get())
     return false;
   return root_layer_->BlocksPendingCommitRecursive();
 }

@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_message_loop.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
@@ -177,10 +177,9 @@ void MessageLoopResource::PostClosure(
     const tracked_objects::Location& from_here,
     const base::Closure& closure,
     int64 delay_ms) {
-  if (loop_proxy_) {
-    loop_proxy_->PostDelayedTask(from_here,
-                                 closure,
-                                 base::TimeDelta::FromMilliseconds(delay_ms));
+  if (loop_proxy_.get()) {
+    loop_proxy_->PostDelayedTask(
+        from_here, closure, base::TimeDelta::FromMilliseconds(delay_ms));
   } else {
     TaskInfo info;
     info.from_here = FROM_HERE;

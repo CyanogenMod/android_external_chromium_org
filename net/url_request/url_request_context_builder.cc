@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "net/base/cache_type.h"
@@ -291,7 +291,7 @@ URLRequestContext* URLRequestContextBuilder::Build() {
     scoped_refptr<net::HttpNetworkSession> network_session(
         new net::HttpNetworkSession(network_session_params));
 
-    http_transaction_factory = new HttpNetworkLayer(network_session);
+    http_transaction_factory = new HttpNetworkLayer(network_session.get());
   }
   storage->set_http_transaction_factory(http_transaction_factory);
 

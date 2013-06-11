@@ -5,9 +5,11 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/string_util.h"
+#include "base/message_loop.h"
+#include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/message_center_notification_manager.h"
 #include "chrome/browser/notifications/notification.h"
@@ -18,6 +20,34 @@
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_switches.h"
 #include "ui/message_center/message_center_util.h"
+
+class TestAddObserver : public message_center::MessageCenterObserver {
+ public:
+  TestAddObserver(const std::string& id,
+                  message_center::MessageCenter* message_center)
+      : id_(id), message_center_(message_center) {
+    quit_closure_ = run_loop_.QuitClosure();
+    message_center_->AddObserver(this);
+  }
+
+  virtual ~TestAddObserver() { message_center_->RemoveObserver(this); }
+
+  virtual void OnNotificationAdded(const std::string& id) OVERRIDE {
+    log_ += "_" + id;
+    if (id == id_)
+      base::MessageLoop::current()->PostTask(FROM_HERE, quit_closure_);
+  }
+
+  void Run() { run_loop_.Run(); }
+  const std::string log() const { return log_; }
+
+ private:
+  std::string id_;
+  std::string log_;
+  message_center::MessageCenter* message_center_;
+  base::RunLoop run_loop_;
+  base::Closure quit_closure_;
+};
 
 class MessageCenterNotificationsTest : public InProcessBrowserTest {
  public:
@@ -79,13 +109,35 @@ class MessageCenterNotificationsTest : public InProcessBrowserTest {
       new_delegate->AddRef();
     }
 
-    return Notification(GURL(),
+    return Notification(GURL("chrome-test://testing/"),
                         GURL(),
                         ASCIIToUTF16("title"),
                         ASCIIToUTF16("message"),
                         WebKit::WebTextDirectionDefault,
-                        EmptyString16(),
-                        EmptyString16(),
+                        UTF8ToUTF16("chrome-test://testing/"),
+                        UTF8ToUTF16("REPLACE-ME"),
+                        new_delegate);
+  }
+
+  Notification CreateRichTestNotification(const std::string& id,
+                                          TestDelegate** delegate = NULL) {
+    TestDelegate* new_delegate = new TestDelegate(id);
+    if (delegate) {
+      *delegate = new_delegate;
+      new_delegate->AddRef();
+    }
+
+    message_center::RichNotificationData data;
+
+    return Notification(message_center::NOTIFICATION_TYPE_BASE_FORMAT,
+                        GURL("chrome-test://testing/"),
+                        ASCIIToUTF16("title"),
+                        ASCIIToUTF16("message"),
+                        gfx::Image(),
+                        WebKit::WebTextDirectionDefault,
+                        UTF8ToUTF16("chrome-test://testing/"),
+                        UTF8ToUTF16("REPLACE-ME"),
+                        data,
                         new_delegate);
   }
 };
@@ -152,6 +204,59 @@ IN_PROC_BROWSER_TEST_F(MessageCenterNotificationsTest,
   // Verify that delegate accumulated correct log of events.
   EXPECT_EQ("Display_ButtonClick_1_", delegate->log());
   delegate->Release();
+}
+
+// MessaceCenter-specific test.
+#if defined(RUN_MESSAGE_CENTER_TESTS)
+#define MAYBE_UpdateExistingNotification UpdateExistingNotification
+#else
+#define MAYBE_UpdateExistingNotification DISABLED_UpdateExistingNotification
+#endif
+
+IN_PROC_BROWSER_TEST_F(MessageCenterNotificationsTest,
+                       MAYBE_UpdateExistingNotification) {
+  EXPECT_TRUE(NotificationUIManager::DelegatesToMessageCenter());
+  TestDelegate* delegate;
+  manager()->Add(CreateTestNotification("n", &delegate), profile());
+  TestDelegate* delegate2;
+  manager()->Add(CreateRichTestNotification("n", &delegate2), profile());
+
+  manager()->CancelById("n");
+  EXPECT_EQ("Display_Close_programmatically_", delegate->log());
+  EXPECT_EQ("Close_programmatically_", delegate2->log());
+
+  delegate->Release();
+  delegate2->Release();
+}
+
+// MessaceCenter-specific test.
+#if defined(RUN_MESSAGE_CENTER_TESTS)
+#define MAYBE_QueueWhenCenterVisible QueueWhenCenterVisible
+#else
+#define MAYBE_QueueWhenCenterVisible DISABLED_QueueWhenCenterVisible
+#endif
+
+IN_PROC_BROWSER_TEST_F(MessageCenterNotificationsTest,
+                       MAYBE_QueueWhenCenterVisible) {
+  EXPECT_TRUE(NotificationUIManager::DelegatesToMessageCenter());
+  TestAddObserver observer("n2", message_center());
+
+  TestDelegate* delegate;
+  TestDelegate* delegate2;
+
+  manager()->Add(CreateTestNotification("n", &delegate), profile());
+  message_center()->SetMessageCenterVisible(true);
+  manager()->Add(CreateTestNotification("n2", &delegate2), profile());
+
+  EXPECT_EQ("_n", observer.log());
+
+  message_center()->SetMessageCenterVisible(false);
+  observer.Run();
+
+  EXPECT_EQ("_n_n2", observer.log());
+
+  delegate->Release();
+  delegate2->Release();
 }
 
 #endif  // !defined(OS_MACOSX)

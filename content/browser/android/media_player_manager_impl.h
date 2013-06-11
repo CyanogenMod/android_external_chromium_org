@@ -38,11 +38,11 @@ class MediaPlayerManagerImpl
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Fullscreen video playback controls.
-  void FullscreenPlayerPlay();
-  void FullscreenPlayerPause();
-  void FullscreenPlayerSeek(int msec);
-  void ExitFullscreen(bool release_media_player);
-  void SetVideoSurface(jobject surface);
+  virtual void FullscreenPlayerPlay();
+  virtual void FullscreenPlayerPause();
+  virtual void FullscreenPlayerSeek(int msec);
+  virtual void ExitFullscreen(bool release_media_player);
+  virtual void SetVideoSurface(gfx::ScopedJavaSurface surface);
 
   // media::MediaPlayerManager overrides.
   virtual void OnTimeUpdate(
@@ -74,7 +74,21 @@ class MediaPlayerManagerImpl
   virtual media::MediaPlayerAndroid* GetPlayer(int player_id) OVERRIDE;
   virtual void DestroyAllMediaPlayers() OVERRIDE;
   virtual void OnMediaSeekRequest(int player_id, base::TimeDelta time_to_seek,
-                                  bool request_surface) OVERRIDE;
+                                  unsigned seek_request_id) OVERRIDE;
+  virtual void OnMediaConfigRequest(int player_id) OVERRIDE;
+  virtual void OnKeyAdded(int player_id,
+                          const std::string& key_system,
+                          const std::string& session_id) OVERRIDE;
+  virtual void OnKeyError(int player_id,
+                          const std::string& key_system,
+                          const std::string& session_id,
+                          media::MediaKeys::KeyError error_code,
+                          int system_code) OVERRIDE;
+  virtual void OnKeyMessage(int player_id,
+                            const std::string& key_system,
+                            const std::string& session_id,
+                            const std::string& message,
+                            const std::string& destination_url) OVERRIDE;
 
 #if defined(GOOGLE_TV)
   void AttachExternalVideoSurface(int player_id, jobject surface);
@@ -89,36 +103,57 @@ class MediaPlayerManagerImpl
   // method of MediaPlayerManager or the derived classes constructors.
   explicit MediaPlayerManagerImpl(RenderViewHost* render_view_host);
 
- private:
   // Message handlers.
-  void OnEnterFullscreen(int player_id);
-  void OnExitFullscreen(int player_id);
-  void OnInitialize(int player_id, const GURL& url,
-                    bool is_media_source,
-                    const GURL& first_party_for_cookies);
-  void OnStart(int player_id);
-  void OnSeek(int player_id, base::TimeDelta time);
-  void OnPause(int player_id);
-  void OnReleaseResources(int player_id);
-  void OnDestroyPlayer(int player_id);
-  void OnDemuxerReady(
+  virtual void OnEnterFullscreen(int player_id);
+  virtual void OnExitFullscreen(int player_id);
+  virtual void OnInitialize(
+      int player_id,
+      const GURL& url,
+      media::MediaPlayerAndroid::SourceType source_type,
+      const GURL& first_party_for_cookies);
+  virtual void OnStart(int player_id);
+  virtual void OnSeek(int player_id, base::TimeDelta time);
+  virtual void OnPause(int player_id);
+  virtual void OnReleaseResources(int player_id);
+  virtual void OnDestroyPlayer(int player_id);
+  virtual void OnDemuxerReady(
       int player_id,
       const media::MediaPlayerHostMsg_DemuxerReady_Params& params);
-  void OnReadFromDemuxerAck(
+  virtual void OnReadFromDemuxerAck(
       int player_id,
       const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params);
-  void OnMediaSeekRequestAck(int player_id);
+  void OnMediaSeekRequestAck(int player_id, unsigned seek_request_id);
+  void OnGenerateKeyRequest(int player_id,
+                            const std::string& key_system,
+                            const std::string& type,
+                            const std::vector<uint8>& init_data);
+  void OnAddKey(int player_id,
+                const std::string& key_system,
+                const std::vector<uint8>& key,
+                const std::vector<uint8>& init_data,
+                const std::string& session_id);
+  void OnCancelKeyRequest(int player_id,
+                          const std::string& key_system,
+                          const std::string& session_id);
 
 #if defined(GOOGLE_TV)
-  void OnNotifyExternalSurface(
+  virtual void OnNotifyExternalSurface(
       int player_id, bool is_request, const gfx::RectF& rect);
 #endif
 
+  // Adds a given player to the list.
+  void AddPlayer(media::MediaPlayerAndroid* player);
+
+  // Removes the player with the specified id.
+  void RemovePlayer(int player_id);
+
+ private:
   // An array of managed players.
   ScopedVector<media::MediaPlayerAndroid> players_;
 
-  // The fullscreen video view object.
-  ContentVideoView video_view_;
+  // The fullscreen video view object or NULL if video is not played in
+  // fullscreen.
+  scoped_ptr<ContentVideoView> video_view_;
 
   // Player ID of the fullscreen media player.
   int fullscreen_player_id_;

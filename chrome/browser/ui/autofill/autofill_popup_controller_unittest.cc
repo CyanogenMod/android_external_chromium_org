@@ -5,7 +5,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/testing_pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller_impl.h"
 #include "chrome/browser/ui/autofill/autofill_popup_view.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
@@ -365,14 +365,14 @@ TEST_F(AutofillPopupControllerUnitTest, GetOrCreate) {
       AutofillPopupControllerImpl::GetOrCreate(
           WeakPtr<AutofillPopupControllerImpl>(), delegate.GetWeakPtr(), NULL,
           gfx::Rect());
-  EXPECT_TRUE(controller);
+  EXPECT_TRUE(controller.get());
 
   controller->Hide();
 
   controller = AutofillPopupControllerImpl::GetOrCreate(
       WeakPtr<AutofillPopupControllerImpl>(), delegate.GetWeakPtr(), NULL,
       gfx::Rect());
-  EXPECT_TRUE(controller);
+  EXPECT_TRUE(controller.get());
 
   WeakPtr<AutofillPopupControllerImpl> controller2 =
       AutofillPopupControllerImpl::GetOrCreate(controller,
@@ -388,7 +388,7 @@ TEST_F(AutofillPopupControllerUnitTest, GetOrCreate) {
   EXPECT_CALL(*test_controller, Hide());
 
   gfx::RectF bounds(0.f, 0.f, 1.f, 2.f);
-  AutofillPopupControllerImpl* controller3 =
+  base::WeakPtr<AutofillPopupControllerImpl> controller3 =
       AutofillPopupControllerImpl::GetOrCreate(
           test_controller->GetWeakPtr(),
           delegate.GetWeakPtr(),
@@ -396,7 +396,8 @@ TEST_F(AutofillPopupControllerUnitTest, GetOrCreate) {
           bounds);
   EXPECT_EQ(
       bounds,
-      static_cast<AutofillPopupController*>(controller3)->element_bounds());
+      static_cast<AutofillPopupController*>(controller3.get())->
+          element_bounds());
   controller3->Hide();
 
   // Hide the test_controller to delete it.

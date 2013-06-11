@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/prefs/pref_service.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/common/cancelable_request.h"
@@ -21,6 +21,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "chrome/common/extensions/sync_helper.h"
+#include "ui/gfx/color_utils.h"
+#include "ui/native_theme/native_theme.h"
 
 // TODO(dconnelly): change VLOG to DVLOG (crbug.com/240195)
 
@@ -75,7 +78,7 @@ bool HasSyncedExtensions(Profile* profile) {
       // The webstore is synced so that it stays put on the new tab
       // page, but since it's installed by default we don't want to
       // consider it when determining if the profile is dirty.
-      if ((*iter)->IsSyncable() &&
+      if (extensions::sync_helper::IsSyncable(*iter) &&
           (*iter)->id() != extension_misc::kWebStoreAppId) {
         VLOG(1) << "ProfileSigninConfirmationHelper: "
                 << "profile contains a synced extension: " << (*iter)->id();
@@ -199,6 +202,17 @@ void ProfileSigninConfirmationHelper::ReturnResult(bool result) {
 }  // namespace
 
 namespace ui {
+
+SkColor GetSigninConfirmationPromptBarColor(SkAlpha alpha) {
+  static const SkColor kBackgroundColor =
+      ui::NativeTheme::instance()->GetSystemColor(
+          ui::NativeTheme::kColorId_DialogBackground);
+  unsigned char background_luminance =
+      color_utils::GetLuminanceForColor(kBackgroundColor);
+  const SkColor blend_color =
+      background_luminance < 128 ? SK_ColorWHITE : SK_ColorBLACK;
+  return color_utils::AlphaBlend(blend_color, kBackgroundColor, alpha);
+}
 
 bool HasBeenShutdown(Profile* profile) {
   bool has_been_shutdown = !profile->IsNewProfile();

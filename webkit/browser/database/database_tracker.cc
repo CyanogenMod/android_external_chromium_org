@@ -10,10 +10,11 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/message_loop_proxy.h"
+#include "base/files/file_enumerator.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "sql/connection.h"
 #include "sql/meta_table.h"
@@ -23,8 +24,8 @@
 #include "webkit/browser/database/database_quota_client.h"
 #include "webkit/browser/database/database_util.h"
 #include "webkit/browser/database/databases_table.h"
-#include "webkit/quota/quota_manager.h"
-#include "webkit/quota/special_storage_policy.h"
+#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 
 namespace webkit_database {
 
@@ -120,7 +121,7 @@ void DatabaseTracker::DatabaseOpened(const base::string16& origin_identifier,
     return;
   }
 
-  if (quota_manager_proxy_)
+  if (quota_manager_proxy_.get())
     quota_manager_proxy_->NotifyStorageAccessed(
         quota::QuotaClient::kDatabase,
         webkit_base::GetOriginURLFromIdentifier(origin_identifier),
@@ -155,7 +156,7 @@ void DatabaseTracker::DatabaseClosed(const base::string16& origin_identifier,
 
   // We call NotifiyStorageAccessed when a db is opened and also when
   // closed because we don't call it for read while open.
-  if (quota_manager_proxy_)
+  if (quota_manager_proxy_.get())
     quota_manager_proxy_->NotifyStorageAccessed(
         quota::QuotaClient::kDatabase,
         webkit_base::GetOriginURLFromIdentifier(origin_identifier),
@@ -353,8 +354,9 @@ bool DatabaseTracker::DeleteClosedDatabase(
   if (database_connections_.IsDatabaseOpened(origin_identifier, database_name))
     return false;
 
-  int64 db_file_size = quota_manager_proxy_ ?
-      GetDBFileSize(origin_identifier, database_name) : 0;
+  int64 db_file_size = quota_manager_proxy_.get()
+                           ? GetDBFileSize(origin_identifier, database_name)
+                           : 0;
 
   // Try to delete the file on the hard drive.
   base::FilePath db_file = GetFullDBFilePath(origin_identifier, database_name);
@@ -366,7 +368,7 @@ bool DatabaseTracker::DeleteClosedDatabase(
   file_util::Delete(db_file.InsertBeforeExtensionASCII(
       DatabaseUtil::kJournalFileSuffix), false);
 
-  if (quota_manager_proxy_ && db_file_size)
+  if (quota_manager_proxy_.get() && db_file_size)
     quota_manager_proxy_->NotifyStorageModified(
         quota::QuotaClient::kDatabase,
         webkit_base::GetOriginURLFromIdentifier(origin_identifier),
@@ -396,7 +398,7 @@ bool DatabaseTracker::DeleteOrigin(const base::string16& origin_identifier,
     return false;
 
   int64 deleted_size = 0;
-  if (quota_manager_proxy_) {
+  if (quota_manager_proxy_.get()) {
     CachedOriginInfo* origin_info = GetCachedOriginInfo(origin_identifier);
     if (origin_info)
       deleted_size = origin_info->TotalSize();
@@ -413,10 +415,10 @@ bool DatabaseTracker::DeleteOrigin(const base::string16& origin_identifier,
   file_util::CreateTemporaryDirInDir(db_dir_,
                                      kTemporaryDirectoryPrefix,
                                      &new_origin_dir);
-  file_util::FileEnumerator databases(
+  base::FileEnumerator databases(
       origin_dir,
       false,
-      file_util::FileEnumerator::FILES);
+      base::FileEnumerator::FILES);
   for (base::FilePath database = databases.Next(); !database.empty();
        database = databases.Next()) {
     base::FilePath new_file = new_origin_dir.Append(database.BaseName());
@@ -427,7 +429,7 @@ bool DatabaseTracker::DeleteOrigin(const base::string16& origin_identifier,
 
   databases_table_->DeleteOrigin(origin_identifier);
 
-  if (quota_manager_proxy_ && deleted_size) {
+  if (quota_manager_proxy_.get() && deleted_size) {
     quota_manager_proxy_->NotifyStorageModified(
         quota::QuotaClient::kDatabase,
         webkit_base::GetOriginURLFromIdentifier(origin_identifier),
@@ -458,10 +460,10 @@ bool DatabaseTracker::LazyInit() {
     // If there are left-over directories from failed deletion attempts, clean
     // them up.
     if (file_util::DirectoryExists(db_dir_)) {
-      file_util::FileEnumerator directories(
+      base::FileEnumerator directories(
           db_dir_,
           false,
-          file_util::FileEnumerator::DIRECTORIES,
+          base::FileEnumerator::DIRECTORIES,
           kTemporaryDirectoryPattern);
       for (base::FilePath directory = directories.Next(); !directory.empty();
            directory = directories.Next()) {
@@ -614,7 +616,7 @@ int64 DatabaseTracker::UpdateOpenDatabaseInfoAndNotify(
     database_connections_.SetOpenDatabaseSize(origin_id, name, new_size);
     if (info)
       info->SetDatabaseSize(name, new_size);
-    if (quota_manager_proxy_)
+    if (quota_manager_proxy_.get())
       quota_manager_proxy_->NotifyStorageModified(
           quota::QuotaClient::kDatabase,
           webkit_base::GetOriginURLFromIdentifier(origin_id),

@@ -25,10 +25,11 @@
 #include "webkit/browser/fileapi/mock_file_system_context.h"
 #include "webkit/browser/fileapi/obfuscated_file_util.h"
 #include "webkit/browser/fileapi/sandbox_file_system_test_helper.h"
+#include "webkit/browser/fileapi/sandbox_origin_database.h"
 #include "webkit/browser/fileapi/test_file_set.h"
-#include "webkit/quota/mock_special_storage_policy.h"
-#include "webkit/quota/quota_manager.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/browser/quota/mock_special_storage_policy.h"
+#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/common/quota/quota_types.h"
 
 namespace fileapi {
 
@@ -132,12 +133,11 @@ class ObfuscatedFileUtilTest : public testing::Test {
     scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
         new quota::MockSpecialStoragePolicy();
 
-    quota_manager_ = new quota::QuotaManager(
-        false /* is_incognito */,
-        data_dir_.path(),
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current(),
-        storage_policy);
+    quota_manager_ = new quota::QuotaManager(false /* is_incognito */,
+                                             data_dir_.path(),
+                                             base::MessageLoopProxy::current(),
+                                             base::MessageLoopProxy::current(),
+                                             storage_policy.get());
 
     // Every time we create a new sandbox_file_system helper,
     // it creates another context, which creates another path manager,
@@ -227,9 +227,12 @@ class ObfuscatedFileUtilTest : public testing::Test {
 
   void GetUsageFromQuotaManager() {
     int64 quota = -1;
-    quota_status_ = AsyncFileTestHelper::GetUsageAndQuota(
-      quota_manager_, origin(), sandbox_file_system_.type(),
-      &usage_, &quota);
+    quota_status_ =
+        AsyncFileTestHelper::GetUsageAndQuota(quota_manager_.get(),
+                                              origin(),
+                                              sandbox_file_system_.type(),
+                                              &usage_,
+                                              &quota);
     EXPECT_EQ(quota::kQuotaStatusOk, quota_status_);
   }
 
@@ -2247,6 +2250,41 @@ TEST_F(ObfuscatedFileUtilTest, TestQuotaOnOpen) {
                 &file_handle, &created));
   ASSERT_EQ(0, ComputeTotalFileSize());
   EXPECT_TRUE(base::ClosePlatformFile(file_handle));
+}
+
+TEST_F(ObfuscatedFileUtilTest, MaybeDropDatabasesAliveCase) {
+  base::ScopedTempDir data_dir;
+  ASSERT_TRUE(data_dir.CreateUniqueTempDir());
+  ObfuscatedFileUtil file_util(NULL,
+                               data_dir.path(),
+                               base::MessageLoopProxy::current());
+  file_util.InitOriginDatabase(true /*create*/);
+  ASSERT_TRUE(file_util.origin_database_ != NULL);
+
+  // Callback to Drop DB is called while ObfuscatedFileUtilTest is still alive.
+  file_util.db_flush_delay_seconds_ = 0;
+  file_util.MarkUsed();
+  base::MessageLoop::current()->RunUntilIdle();
+
+  ASSERT_TRUE(file_util.origin_database_ == NULL);
+}
+
+TEST_F(ObfuscatedFileUtilTest, MaybeDropDatabasesAlreadyDeletedCase) {
+  // Run message loop after OFU is already deleted to make sure callback doesn't
+  // cause a crash for use after free.
+  {
+    base::ScopedTempDir data_dir;
+    ASSERT_TRUE(data_dir.CreateUniqueTempDir());
+    ObfuscatedFileUtil file_util(NULL,
+                                 data_dir.path(),
+                                 base::MessageLoopProxy::current());
+    file_util.InitOriginDatabase(true /*create*/);
+    file_util.db_flush_delay_seconds_ = 0;
+    file_util.MarkUsed();
+  }
+
+  // At this point the callback is still in the message queue but OFU is gone.
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 }  // namespace fileapi

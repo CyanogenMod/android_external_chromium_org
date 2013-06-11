@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_popup_view.h"
 #include "components/autofill/browser/autofill_popup_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -73,16 +73,15 @@ WeakPtr<AutofillPopupControllerImpl> AutofillPopupControllerImpl::GetOrCreate(
     WeakPtr<AutofillPopupDelegate> delegate,
     gfx::NativeView container_view,
     const gfx::RectF& element_bounds) {
-  DCHECK(!previous || previous->delegate_ == delegate);
+  DCHECK(!previous.get() || previous->delegate_.get() == delegate.get());
 
-  if (previous &&
-      previous->container_view() == container_view &&
+  if (previous.get() && previous->container_view() == container_view &&
       previous->element_bounds() == element_bounds) {
     previous->ClearState();
     return previous;
   }
 
-  if (previous)
+  if (previous.get())
     previous->Hide();
 
   AutofillPopupControllerImpl* controller =
@@ -169,7 +168,7 @@ void AutofillPopupControllerImpl::Show(
 }
 
 void AutofillPopupControllerImpl::Hide() {
-  if (delegate_)
+  if (delegate_.get())
     delegate_->OnPopupHidden(this);
 
   if (view_)

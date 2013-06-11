@@ -8,7 +8,7 @@
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/sys_info.h"
 #include "base/threading/worker_pool.h"
@@ -18,6 +18,7 @@
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_entry_impl.h"
 #include "net/disk_cache/simple/simple_index.h"
+#include "net/disk_cache/simple/simple_index_file.h"
 #include "net/disk_cache/simple/simple_synchronous_entry.h"
 #include "net/disk_cache/simple/simple_util.h"
 
@@ -139,9 +140,10 @@ SimpleBackendImpl::SimpleBackendImpl(
     base::SingleThreadTaskRunner* cache_thread,
     net::NetLog* net_log)
     : path_(path),
-      index_(new SimpleIndex(cache_thread,
-                             MessageLoopProxy::current(),  // io_thread
-                             path)),
+      index_(new SimpleIndex(MessageLoopProxy::current(),  // io_thread
+                             path,
+                             scoped_ptr<SimpleIndexFile>(
+                                 new SimpleIndexFile(cache_thread, path)))),
       cache_thread_(cache_thread),
       orig_max_size_(max_bytes) {
   index_->ExecuteWhenReady(base::Bind(&RecordIndexLoad,
@@ -233,7 +235,7 @@ void SimpleBackendImpl::IndexReadyForDoom(Time initial_time,
     EntryMap::iterator it = active_entries_.find(entry_hash);
     if (it == active_entries_.end())
       continue;
-    SimpleEntryImpl* entry = it->second;
+    SimpleEntryImpl* entry = it->second.get();
     entry->Doom();
 
     (*removed_key_hashes)[i] = removed_key_hashes->back();
@@ -277,7 +279,10 @@ void SimpleBackendImpl::EndEnumeration(void** iter) {
 
 void SimpleBackendImpl::GetStats(
     std::vector<std::pair<std::string, std::string> >* stats) {
-  NOTIMPLEMENTED();
+  std::pair<std::string, std::string> item;
+  item.first = "Cache type";
+  item.second = "Simple Cache";
+  stats->push_back(item);
 }
 
 void SimpleBackendImpl::OnExternalCacheHit(const std::string& key) {
@@ -330,12 +335,12 @@ scoped_refptr<SimpleEntryImpl> SimpleBackendImpl::CreateOrFindActiveEntry(
                                             base::WeakPtr<SimpleEntryImpl>()));
   EntryMap::iterator& it = insert_result.first;
   if (insert_result.second)
-    DCHECK(!it->second);
-  if (!it->second) {
+    DCHECK(!it->second.get());
+  if (!it->second.get()) {
     SimpleEntryImpl* entry = new SimpleEntryImpl(this, path_, key, entry_hash);
     it->second = entry->AsWeakPtr();
   }
-  DCHECK(it->second);
+  DCHECK(it->second.get());
   // It's possible, but unlikely, that we have an entry hash collision with a
   // currently active entry.
   if (key != it->second->key()) {

@@ -78,6 +78,7 @@ class WebContents : public PageNavigator,
     BrowserContext* browser_context;
     SiteInstance* site_instance;
     int routing_id;
+    int main_frame_routing_id;
 
     // Initial size of the new WebContent's view. Can be (0, 0) if not needed.
     gfx::Size initial_size;
@@ -103,6 +104,13 @@ class WebContents : public PageNavigator,
   CONTENT_EXPORT static WebContents* CreateWithSessionStorage(
       const CreateParams& params,
       const SessionStorageNamespaceMap& session_storage_namespace_map);
+
+  // Adds/removes a callback called on creation of each new WebContents.
+  typedef base::Callback<void(WebContents*)> CreatedCallback;
+  CONTENT_EXPORT static void AddCreatedCallback(
+      const CreatedCallback& callback);
+  CONTENT_EXPORT static void RemoveCreatedCallback(
+      const CreatedCallback& callback);
 
   // Returns a WebContents that wraps the RenderViewHost, or NULL if the
   // render view host's delegate isn't a WebContents.
@@ -362,6 +370,18 @@ class WebContents : public PageNavigator,
   // Notification that tab closing has started.  This can be called multiple
   // times, subsequent calls are ignored.
   virtual void OnCloseStarted() = 0;
+
+  // Notification that tab closing was cancelled. This can happen when a user
+  // cancels a window close via another tab's beforeunload dialog.
+  virtual void OnCloseCanceled() = 0;
+
+  // Set the time during close when unload is started. Normally, this is set
+  // after the beforeunload dialog. However, for a window close, it is set
+  // after all the beforeunload dialogs have finished.
+  virtual void OnUnloadStarted() = 0;
+
+  // Set the time during close when the tab is no longer visible.
+  virtual void OnUnloadDetachedStarted() = 0;
 
   // A render view-originated drag has ended. Informs the render view host and
   // WebContentsDelegate.

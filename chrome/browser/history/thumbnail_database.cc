@@ -14,12 +14,12 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/diagnostics/sqlite_diagnostics.h"
 #include "chrome/browser/history/history_publisher.h"
 #include "chrome/browser/history/top_sites.h"
@@ -94,9 +94,25 @@ void FillIconMapping(const sql::Statement& statement,
   icon_mapping->page_url = page_url;
 }
 
-// Attempt to pass 1000 bytes of |debug_info| into a crash dump.
-void DumpWithoutCrashing1000(const std::string& debug_info) {
-  char debug_buf[1000];
+enum InvalidStructureType {
+  // NOTE(shess): Intentionally skip bucket 0 to account for
+  // conversion from a boolean histogram.
+  STRUCTURE_EVENT_FAVICON = 1,
+  STRUCTURE_EVENT_VERSION4,
+  STRUCTURE_EVENT_VERSION5,
+
+  // Always keep this at the end.
+  STRUCTURE_EVENT_MAX,
+};
+
+void RecordInvalidStructure(InvalidStructureType invalid_type) {
+  UMA_HISTOGRAM_ENUMERATION("History.InvalidFaviconsDBStructure",
+                            invalid_type, STRUCTURE_EVENT_MAX);
+}
+
+// Attempt to pass 2000 bytes of |debug_info| into a crash dump.
+void DumpWithoutCrashing2000(const std::string& debug_info) {
+  char debug_buf[2000];
   base::strlcpy(debug_buf, debug_info.c_str(), arraysize(debug_buf));
   base::debug::Alias(&debug_buf);
 
@@ -111,8 +127,8 @@ void ReportCorrupt(sql::Connection* db, size_t startup_kb) {
 
   base::StringAppendF(&debug_info, "SQLITE_CORRUPT, integrity_check:\n");
 
-  // Check files up to 4M to keep things from blocking too long.
-  const size_t kMaxIntegrityCheckSize = 4096;
+  // Check files up to 8M to keep things from blocking too long.
+  const size_t kMaxIntegrityCheckSize = 8192;
   if (startup_kb > kMaxIntegrityCheckSize) {
     base::StringAppendF(&debug_info, "too big %" PRIuS "\n", startup_kb);
   } else {
@@ -125,7 +141,7 @@ void ReportCorrupt(sql::Connection* db, size_t startup_kb) {
                         messages.size());
 
     // SQLite returns up to 100 messages by default, trim deeper to
-    // keep close to the 1000-character size limit for dumping.
+    // keep close to the 2000-character size limit for dumping.
     //
     // TODO(shess): If the first 20 tend to be actionable, test if
     // passing the count to integrity_check makes it exit earlier.  In
@@ -137,7 +153,7 @@ void ReportCorrupt(sql::Connection* db, size_t startup_kb) {
     }
   }
 
-  DumpWithoutCrashing1000(debug_info);
+  DumpWithoutCrashing2000(debug_info);
 }
 
 void ReportError(sql::Connection* db, int error) {
@@ -146,13 +162,53 @@ void ReportError(sql::Connection* db, int error) {
   // fixed-size buffer.
   std::string debug_info;
 
-  // The error message from the failed statement (GetErrorCode()
-  // should be identical to error).
-  base::StringAppendF(&debug_info, "db error: %d/%d/%s\n",
-                      error, db->GetErrorCode(), db->GetErrorMessage());
+  // The error message from the failed operation.
+  base::StringAppendF(&debug_info, "db error: %d/%s\n",
+                      db->GetErrorCode(), db->GetErrorMessage());
 
   // System errno information.
   base::StringAppendF(&debug_info, "errno: %d\n", db->GetLastErrno());
+
+  // SQLITE_ERROR reports seem to be attempts to upgrade invalid
+  // schema, try to log that info.
+  if (error == SQLITE_ERROR) {
+    const char* kVersionSql = "SELECT value FROM meta WHERE key = 'version'";
+    if (db->IsSQLValid(kVersionSql)) {
+      sql::Statement statement(db->GetUniqueStatement(kVersionSql));
+      if (statement.Step()) {
+        debug_info += "version: ";
+        debug_info += statement.ColumnString(0);
+        debug_info += '\n';
+      } else if (statement.Succeeded()) {
+        debug_info += "version: none\n";
+      } else {
+        debug_info += "version: error\n";
+      }
+    } else {
+      debug_info += "version: invalid\n";
+    }
+
+    debug_info += "schema:\n";
+
+    // sqlite_master has columns:
+    //   type - "index" or "table".
+    //   name - name of created element.
+    //   tbl_name - name of element, or target table in case of index.
+    //   rootpage - root page of the element in database file.
+    //   sql - SQL to create the element.
+    // In general, the |sql| column is sufficient to derive the other
+    // columns.  |rootpage| is not interesting for debugging, without
+    // the contents of the database.  The COALESCE is because certain
+    // automatic elements will have a |name| but no |sql|,
+    const char* kSchemaSql = "SELECT COALESCE(sql, name) FROM sqlite_master";
+    sql::Statement statement(db->GetUniqueStatement(kSchemaSql));
+    while (statement.Step()) {
+      debug_info += statement.ColumnString(0);
+      debug_info += '\n';
+    }
+    if (!statement.Succeeded())
+      debug_info += "error\n";
+  }
 
   // TODO(shess): Think of other things to log.  Not logging the
   // statement text because the backtrace should suffice in most
@@ -160,7 +216,7 @@ void ReportError(sql::Connection* db, int error) {
   // likelihood of recursive error callbacks makes that risky (same
   // reasoning applies to other data fetched from the database).
 
-  DumpWithoutCrashing1000(debug_info);
+  DumpWithoutCrashing2000(debug_info);
 }
 
 // TODO(shess): If this proves out, perhaps lift the code out to
@@ -197,28 +253,28 @@ void DatabaseErrorCallback(sql::Connection* db,
       reported = true;
 
       // Corrupt cases currently dominate, report them very infrequently.
-      static const uint64 kCorruptReportsPerMillion = 1000;
+      static const uint64 kCorruptReportsPerMillion = 10000;
       if (rand < kCorruptReportsPerMillion)
         ReportCorrupt(db, startup_kb);
     } else if (error == SQLITE_READONLY) {
-      if (rand < kReportsPerMillion)
-        ReportError(db, error);
-
       // SQLITE_READONLY appears similar to SQLITE_CORRUPT - once it
       // is seen, it is almost guaranteed to be seen again.
       reported = true;
+
+      if (rand < kReportsPerMillion)
+        ReportError(db, error);
     } else {
-      // Only setting the flag after a report, so that later
-      // (potentially different) errors in a stream of errors can be
-      // reported.
+      // Only set the flag when making a report.  This should allow
+      // later (potentially different) errors in a stream of errors to
+      // be reported.
       //
       // TODO(shess): Would it be worthwile to audit for which cases
       // want once-only handling?  Sqlite.Error.Thumbnail shows
       // CORRUPT and READONLY as almost 95% of all reports on these
       // channels, so probably easier to just harvest from the field.
       if (rand < kReportsPerMillion) {
-        ReportError(db, error);
         reported = true;
+        ReportError(db, error);
       }
     }
   }
@@ -321,10 +377,26 @@ sql::InitStatus ThumbnailDatabase::Init(
       return CantUpgradeToVersion(cur_version);
   }
 
+  if (!db_.DoesColumnExist("favicons", "icon_type")) {
+    LOG(ERROR) << "Raze because of missing favicon.icon_type";
+    RecordInvalidStructure(STRUCTURE_EVENT_VERSION4);
+
+    db_.RazeAndClose();
+    return sql::INIT_FAILURE;
+  }
+
   if (cur_version == 4) {
     ++cur_version;
     if (!UpgradeToVersion5())
       return CantUpgradeToVersion(cur_version);
+  }
+
+  if (!db_.DoesColumnExist("favicons", "sizes")) {
+    LOG(ERROR) << "Raze because of missing favicon.sizes";
+    RecordInvalidStructure(STRUCTURE_EVENT_VERSION5);
+
+    db_.RazeAndClose();
+    return sql::INIT_FAILURE;
   }
 
   if (cur_version == 5) {
@@ -349,9 +421,8 @@ sql::InitStatus ThumbnailDatabase::Init(
   // TODO(pkotwicz): Revisit this in M27 and see if the razing can be removed.
   // (crbug.com/166453)
   if (IsFaviconDBStructureIncorrect()) {
-    LOG(ERROR) << "Raze thumbnail database because of invalid favicon db"
-               << "structure.";
-    UMA_HISTOGRAM_BOOLEAN("History.InvalidFaviconsDBStructure", true);
+    LOG(ERROR) << "Raze because of invalid favicon db structure.";
+    RecordInvalidStructure(STRUCTURE_EVENT_FAVICON);
 
     db_.RazeAndClose();
     return sql::INIT_FAILURE;

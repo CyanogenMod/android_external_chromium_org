@@ -214,8 +214,6 @@ RichMessageCenterButtonBar::RichMessageCenterButtonBar(
   quiet_mode_button_->SetToggledImage(
       views::Button::STATE_PRESSED,
       resource_bundle.GetImageSkiaNamed(IDR_NOTIFICATION_PAUSE_PRESSED));
-  quiet_mode_button_->SetToggledTooltipText(resource_bundle.GetLocalizedString(
-      IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOGGLED_TOOLTIP));
   quiet_mode_button_->SetToggled(message_center->IsQuietMode());
   button_container->AddChildView(quiet_mode_button_);
 
@@ -312,8 +310,8 @@ BoundedScrollView::BoundedScrollView(int min_height, int max_height)
 
 gfx::Size BoundedScrollView::GetPreferredSize() {
   gfx::Size size = contents()->GetPreferredSize();
-  size.ClampToMin(gfx::Size(size.width(), min_height_));
-  size.ClampToMax(gfx::Size(size.width(), max_height_));
+  size.SetToMax(gfx::Size(size.width(), min_height_));
+  size.SetToMin(gfx::Size(size.width(), max_height_));
   gfx::Insets insets = GetInsets();
   size.Enlarge(insets.width(), insets.height());
   return size;
@@ -379,7 +377,6 @@ int NoNotificationMessageView::GetHeightForWidth(int width) {
 }
 
 void NoNotificationMessageView::Layout() {
-  DCHECK_EQ(100, height());
   int text_height = label_->GetHeightForWidth(width());
   int margin = (height() - text_height) / 2;
   label_->SetBounds(0, margin, width(), text_height);

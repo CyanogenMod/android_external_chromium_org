@@ -16,7 +16,7 @@
 #include "ash/system/tray/tray_utils.h"
 #include "base/auto_reset.h"
 #include "base/i18n/number_formatting.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "grit/ui_strings.h"
@@ -464,7 +464,7 @@ void WebNotificationTray::OnMessageCenterTrayChanged() {
   // consecutively, and calling Update in the middle of those events will show
   // intermediate unread counts for a moment.
   should_update_tray_content_ = true;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&WebNotificationTray::UpdateTrayContent, AsWeakPtr()));
 }

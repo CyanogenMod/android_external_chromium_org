@@ -7,7 +7,7 @@
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "net/cookies/cookie_store.h"
 #include "net/dns/host_resolver.h"
 #include "net/http/http_transaction_factory.h"
@@ -47,10 +47,10 @@ void URLRequestContext::CopyFrom(const URLRequestContext* other) {
   set_fraudulent_certificate_reporter(other->fraudulent_certificate_reporter_);
   set_http_auth_handler_factory(other->http_auth_handler_factory_);
   set_proxy_service(other->proxy_service_);
-  set_ssl_config_service(other->ssl_config_service_);
+  set_ssl_config_service(other->ssl_config_service_.get());
   set_network_delegate(other->network_delegate_);
   set_http_server_properties(other->http_server_properties_);
-  set_cookie_store(other->cookie_store_);
+  set_cookie_store(other->cookie_store_.get());
   set_transport_security_state(other->transport_security_state_);
   set_http_transaction_factory(other->http_transaction_factory_);
   set_job_factory(other->job_factory_);

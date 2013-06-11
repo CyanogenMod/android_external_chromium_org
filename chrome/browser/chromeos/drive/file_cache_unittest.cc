@@ -8,8 +8,9 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
+#include "base/run_loop.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
@@ -17,7 +18,8 @@
 #include "chrome/browser/chromeos/drive/mock_file_cache_observer.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/google_apis/test_util.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -26,17 +28,6 @@ using ::testing::StrictMock;
 namespace drive {
 namespace internal {
 namespace {
-
-struct PathToVerify {
-  PathToVerify(const base::FilePath& in_path_to_scan,
-               const base::FilePath& in_expected_existing_path) :
-      path_to_scan(in_path_to_scan),
-      expected_existing_path(in_expected_existing_path) {
-  }
-
-  base::FilePath path_to_scan;
-  base::FilePath expected_existing_path;
-};
 
 // Copies results from Iterate().
 void OnIterate(std::vector<std::string>* out_resource_ids,
@@ -54,11 +45,13 @@ void OnIterateCompleted(bool* out_is_called) {
 
 }  // namespace
 
-class FileCacheTest : public testing::Test {
+// Tests FileCache methods from UI thread. It internally uses a real blocking
+// pool and tests the interaction among threads.
+// TODO(hashimoto): remove this class. crbug.com/231221.
+class FileCacheTestOnUIThread : public testing::Test {
  protected:
-  FileCacheTest()
-      : ui_thread_(content::BrowserThread::UI, &message_loop_),
-        expected_error_(FILE_ERROR_OK),
+  FileCacheTestOnUIThread()
+      : expected_error_(FILE_ERROR_OK),
         expected_cache_state_(0),
         expected_sub_dir_type_(FileCache::CACHE_TYPE_META),
         expected_success_(true) {
@@ -66,6 +59,8 @@ class FileCacheTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
+                                                    &dummy_file_path_));
     fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
 
     scoped_refptr<base::SequencedWorkerPool> pool =
@@ -73,8 +68,8 @@ class FileCacheTest : public testing::Test {
     blocking_task_runner_ =
         pool->GetSequencedTaskRunner(pool->GetSequenceToken());
     cache_.reset(new FileCache(temp_dir_.path(),
-                                blocking_task_runner_,
-                                fake_free_disk_space_getter_.get()));
+                               blocking_task_runner_,
+                               fake_free_disk_space_getter_.get()));
 
     mock_cache_observer_.reset(new StrictMock<MockCacheObserver>);
     cache_->AddObserver(mock_cache_observer_.get());
@@ -169,6 +164,19 @@ class FileCacheTest : public testing::Test {
     VerifyRemoveFromCache(error, resource_id, "");
   }
 
+  // Returns number of files matching to |path_pattern|.
+  int CountFilesWithPathPattern(const base::FilePath& path_pattern) {
+    int result = 0;
+    base::FileEnumerator enumerator(
+        path_pattern.DirName(), false /* not recursive*/,
+        base::FileEnumerator::FILES,
+        path_pattern.BaseName().value());
+    for (base::FilePath current = enumerator.Next(); !current.empty();
+         current = enumerator.Next())
+      ++result;
+    return result;
+  }
+
   void VerifyRemoveFromCache(FileError error,
                              const std::string& resource_id,
                              const std::string& md5) {
@@ -183,53 +191,27 @@ class FileCacheTest : public testing::Test {
 
     // If entry doesn't exist, verify that no files with "<resource_id>.*"
     // exist in persistent and tmp dirs.
-    std::vector<PathToVerify> paths_to_verify;
-    paths_to_verify.push_back(  // Index 0: CACHE_TYPE_TMP.
-        PathToVerify(cache_->GetCacheFilePath(resource_id, "*",
-                     FileCache::CACHE_TYPE_TMP,
-                     FileCache::CACHED_FILE_FROM_SERVER), base::FilePath()));
-    paths_to_verify.push_back(  // Index 1: CACHE_TYPE_PERSISTENT.
-        PathToVerify(cache_->GetCacheFilePath(resource_id, "*",
-                     FileCache::CACHE_TYPE_PERSISTENT,
-                     FileCache::CACHED_FILE_FROM_SERVER), base::FilePath()));
-    if (!cache_entry_found) {
-      for (size_t i = 0; i < paths_to_verify.size(); ++i) {
-        file_util::FileEnumerator enumerator(
-            paths_to_verify[i].path_to_scan.DirName(), false /* not recursive*/,
-            file_util::FileEnumerator::FILES,
-            paths_to_verify[i].path_to_scan.BaseName().value());
-        EXPECT_TRUE(enumerator.Next().empty());
-      }
-    } else {
-      // Entry is dirty, verify that:
-      // - no files with "<resource_id>.*" exist in tmp dir
-      // - only 1 "<resource_id>.local" exists in persistent dir
-      // - if entry is pinned, only 1 <resource_id> exists in pinned dir.
+    const base::FilePath path_pattern_tmp =
+        cache_->GetCacheFilePath(resource_id, "*",
+                                 FileCache::CACHE_TYPE_TMP,
+                                 FileCache::CACHED_FILE_FROM_SERVER);
+    const base::FilePath path_pattern_persistent =
+        cache_->GetCacheFilePath(resource_id, "*",
+                                 FileCache::CACHE_TYPE_PERSISTENT,
+                                 FileCache::CACHED_FILE_FROM_SERVER);
 
-      // Change expected_existing_path of CACHE_TYPE_PERSISTENT (index 1).
-      paths_to_verify[1].expected_existing_path =
+    EXPECT_EQ(0, CountFilesWithPathPattern(path_pattern_tmp));
+    if (!cache_entry_found) {
+      EXPECT_EQ(0, CountFilesWithPathPattern(path_pattern_persistent));
+    } else {
+      // Entry is dirty, verify that only 1 "<resource_id>.local" exists in
+      // persistent dir.
+      EXPECT_EQ(1, CountFilesWithPathPattern(path_pattern_persistent));
+      EXPECT_TRUE(file_util::PathExists(
           GetCacheFilePath(resource_id,
                            std::string(),
                            FileCache::CACHE_TYPE_PERSISTENT,
-                           FileCache::CACHED_FILE_LOCALLY_MODIFIED);
-
-      for (size_t i = 0; i < paths_to_verify.size(); ++i) {
-        const struct PathToVerify& verify = paths_to_verify[i];
-        file_util::FileEnumerator enumerator(
-            verify.path_to_scan.DirName(), false /* not recursive */,
-            file_util::FileEnumerator::FILES,
-            verify.path_to_scan.BaseName().value());
-        size_t num_files_found = 0;
-        for (base::FilePath current = enumerator.Next(); !current.empty();
-             current = enumerator.Next()) {
-          ++num_files_found;
-          EXPECT_EQ(verify.expected_existing_path, current);
-        }
-        if (verify.expected_existing_path.empty())
-          EXPECT_EQ(0U, num_files_found);
-        else
-          EXPECT_EQ(1U, num_files_found);
-      }
+                           FileCache::CACHED_FILE_LOCALLY_MODIFIED)));
     }
   }
 
@@ -346,7 +328,6 @@ class FileCacheTest : public testing::Test {
 
   void TestMarkAsMounted(
       const std::string& resource_id,
-      const std::string& md5,
       FileError expected_error,
       int expected_cache_state,
       FileCache::CacheSubDirectoryType expected_sub_dir_type) {
@@ -354,10 +335,14 @@ class FileCacheTest : public testing::Test {
     expected_cache_state_ = expected_cache_state;
     expected_sub_dir_type_ = expected_sub_dir_type;
 
+    FileCacheEntry entry;
+    EXPECT_TRUE(GetCacheEntryFromOriginThread(resource_id, std::string(),
+                                              &entry));
+
     FileError error = FILE_ERROR_OK;
     base::FilePath cache_file_path;
     cache_->MarkAsMountedOnUIThread(
-        resource_id, md5,
+        resource_id,
         google_apis::test_util::CreateCopyResultCallback(
             &error, &cache_file_path));
     google_apis::test_util::RunBlockingPoolTask();
@@ -365,7 +350,7 @@ class FileCacheTest : public testing::Test {
     EXPECT_TRUE(file_util::PathExists(cache_file_path));
     EXPECT_EQ(cache_file_path,
               cache_->GetCacheFilePath(resource_id,
-                                       md5,
+                                       entry.md5(),
                                        expected_sub_dir_type_,
                                        FileCache::CACHED_FILE_MOUNTED));
   }
@@ -504,9 +489,9 @@ class FileCacheTest : public testing::Test {
          FileCache::CACHE_TYPE_PERSISTENT :
          FileCache::CACHE_TYPE_TMP),
         FileCache::CACHED_FILE_FROM_SERVER);
-    file_util::FileEnumerator enumerator(path.DirName(), false,
-                                         file_util::FileEnumerator::FILES,
-                                         path.BaseName().value());
+    base::FileEnumerator enumerator(path.DirName(), false,
+                                    base::FileEnumerator::FILES,
+                                    path.BaseName().value());
     size_t num_files_found = 0;
     for (base::FilePath current = enumerator.Next(); !current.empty();
          current = enumerator.Next()) {
@@ -519,10 +504,10 @@ class FileCacheTest : public testing::Test {
     return num_files_found;
   }
 
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   base::ScopedTempDir temp_dir_;
+  base::FilePath dummy_file_path_;
 
   scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
   scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
@@ -535,7 +520,7 @@ class FileCacheTest : public testing::Test {
   std::string expected_file_extension_;
 };
 
-TEST_F(FileCacheTest, GetCacheFilePath) {
+TEST_F(FileCacheTestOnUIThread, GetCacheFilePath) {
   // Use alphanumeric characters for resource id.
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
@@ -553,22 +538,18 @@ TEST_F(FileCacheTest, GetCacheFilePath) {
       base::FilePath::kExtensionSeparator + escaped_md5);
 }
 
-TEST_F(FileCacheTest, StoreToCacheSimple) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, StoreToCacheSimple) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
 
   // Store an existing file.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Store a non-existent file to the same |resource_id| and |md5|.
-  TestStoreToCache(resource_id, md5, base::FilePath("./non_existent.json"),
+  TestStoreToCache(resource_id, md5,
+                   base::FilePath::FromUTF8Unsafe("non_existent_file"),
                    FILE_ERROR_FAILED,
                    test_util::TEST_CACHE_STATE_PRESENT,
                    FileCache::CACHE_TYPE_TMP);
@@ -576,21 +557,16 @@ TEST_F(FileCacheTest, StoreToCacheSimple) {
   // Store a different existing file to the same |resource_id| but different
   // |md5|.
   md5 = "new_md5";
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/empty_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Verify that there's only one file with name <resource_id>, i.e. previously
   // cached file with the different md5 should be deleted.
   EXPECT_EQ(1U, CountCacheFiles(resource_id, md5));
 }
 
-TEST_F(FileCacheTest, LocallyModifiedSimple) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, LocallyModifiedSimple) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
 
@@ -602,22 +578,17 @@ TEST_F(FileCacheTest, LocallyModifiedSimple) {
   EXPECT_CALL(*mock_cache_observer_, OnCacheCommitted(resource_id)).Times(1);
   TestStoreLocallyModifiedToCache(
       resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
+      dummy_file_path_,
       FILE_ERROR_OK, kDirtyCacheState, FileCache::CACHE_TYPE_PERSISTENT);
 }
 
-TEST_F(FileCacheTest, GetFromCacheSimple) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, GetFromCacheSimple) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   // First store a file to cache.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Then try to get the existing file from cache.
   TestGetFileFromCacheByResourceIdAndMd5(
@@ -635,19 +606,14 @@ TEST_F(FileCacheTest, GetFromCacheSimple) {
       resource_id, md5, FILE_ERROR_NOT_FOUND, md5);
 }
 
-TEST_F(FileCacheTest, RemoveFromCacheSimple) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, RemoveFromCacheSimple) {
   // Use alphanumeric characters for resource id.
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   // First store a file to cache.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Then try to remove existing file from cache.
   TestRemoveFromCache(resource_id, FILE_ERROR_OK);
@@ -655,19 +621,14 @@ TEST_F(FileCacheTest, RemoveFromCacheSimple) {
   // Repeat using non-alphanumeric characters for resource id, including '.'
   // which is an extension separator.
   resource_id = "pdf:`~!@#$%^&*()-_=+[{|]}\\;',<.>/?";
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   TestRemoveFromCache(resource_id, FILE_ERROR_OK);
 }
 
-TEST_F(FileCacheTest, PinAndUnpin) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, PinAndUnpin) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(2);
@@ -675,11 +636,9 @@ TEST_F(FileCacheTest, PinAndUnpin) {
       .Times(1);
 
   // First store a file to cache.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Pin the existing file in cache.
   TestPin(resource_id, md5, FILE_ERROR_OK,
@@ -727,10 +686,7 @@ TEST_F(FileCacheTest, PinAndUnpin) {
             FileCache::CACHE_TYPE_TMP /* non-applicable */);
 }
 
-TEST_F(FileCacheTest, StoreToCachePinned) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, StoreToCachePinned) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(1);
@@ -741,17 +697,16 @@ TEST_F(FileCacheTest, StoreToCachePinned) {
           FileCache::CACHE_TYPE_TMP);
 
   // Store an existing file to a previously pinned file.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK,
-      test_util::TEST_CACHE_STATE_PRESENT |
-      test_util::TEST_CACHE_STATE_PINNED |
-      test_util::TEST_CACHE_STATE_PERSISTENT,
-      FileCache::CACHE_TYPE_PERSISTENT);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK,
+                   test_util::TEST_CACHE_STATE_PRESENT |
+                   test_util::TEST_CACHE_STATE_PINNED |
+                   test_util::TEST_CACHE_STATE_PERSISTENT,
+                   FileCache::CACHE_TYPE_PERSISTENT);
 
   // Store a non-existent file to a previously pinned and stored file.
-  TestStoreToCache(resource_id, md5, base::FilePath("./non_existent.json"),
+  TestStoreToCache(resource_id, md5,
+                   base::FilePath::FromUTF8Unsafe("non_existent_file"),
                    FILE_ERROR_FAILED,
                    test_util::TEST_CACHE_STATE_PRESENT |
                    test_util::TEST_CACHE_STATE_PINNED |
@@ -759,10 +714,7 @@ TEST_F(FileCacheTest, StoreToCachePinned) {
                    FileCache::CACHE_TYPE_PERSISTENT);
 }
 
-TEST_F(FileCacheTest, GetFromCachePinned) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, GetFromCachePinned) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(1);
@@ -777,35 +729,28 @@ TEST_F(FileCacheTest, GetFromCachePinned) {
       resource_id, md5, FILE_ERROR_NOT_FOUND, md5);
 
   // Store an existing file to the previously pinned non-existent file.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK,
-      test_util::TEST_CACHE_STATE_PRESENT |
-      test_util::TEST_CACHE_STATE_PINNED |
-      test_util::TEST_CACHE_STATE_PERSISTENT,
-      FileCache::CACHE_TYPE_PERSISTENT);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK,
+                   test_util::TEST_CACHE_STATE_PRESENT |
+                   test_util::TEST_CACHE_STATE_PINNED |
+                   test_util::TEST_CACHE_STATE_PERSISTENT,
+                   FileCache::CACHE_TYPE_PERSISTENT);
 
   // Get the previously pinned and stored file from cache.
   TestGetFileFromCacheByResourceIdAndMd5(
       resource_id, md5, FILE_ERROR_OK, md5);
 }
 
-TEST_F(FileCacheTest, RemoveFromCachePinned) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, RemoveFromCachePinned) {
   // Use alphanumeric characters for resource_id.
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(1);
 
   // Store a file to cache, and pin it.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
   TestPin(resource_id, md5, FILE_ERROR_OK,
           test_util::TEST_CACHE_STATE_PRESENT |
           test_util::TEST_CACHE_STATE_PINNED |
@@ -820,11 +765,9 @@ TEST_F(FileCacheTest, RemoveFromCachePinned) {
   resource_id = "pdf:`~!@#$%^&*()-_=+[{|]}\\;',<.>/?";
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(1);
 
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
   TestPin(resource_id, md5, FILE_ERROR_OK,
           test_util::TEST_CACHE_STATE_PRESENT |
           test_util::TEST_CACHE_STATE_PINNED |
@@ -834,20 +777,15 @@ TEST_F(FileCacheTest, RemoveFromCachePinned) {
   TestRemoveFromCache(resource_id, FILE_ERROR_OK);
 }
 
-TEST_F(FileCacheTest, DirtyCacheSimple) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, DirtyCacheSimple) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCacheCommitted(resource_id)).Times(1);
 
   // First store a file to cache.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Mark the file dirty.
   TestMarkDirty(resource_id, md5, FILE_ERROR_OK,
@@ -869,21 +807,16 @@ TEST_F(FileCacheTest, DirtyCacheSimple) {
                  FileCache::CACHE_TYPE_TMP);
 }
 
-TEST_F(FileCacheTest, DirtyCachePinned) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, DirtyCachePinned) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(1);
   EXPECT_CALL(*mock_cache_observer_, OnCacheCommitted(resource_id)).Times(1);
 
   // First store a file to cache and pin it.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
   TestPin(resource_id, md5, FILE_ERROR_OK,
           test_util::TEST_CACHE_STATE_PRESENT |
           test_util::TEST_CACHE_STATE_PINNED |
@@ -914,11 +847,7 @@ TEST_F(FileCacheTest, DirtyCachePinned) {
                  FileCache::CACHE_TYPE_PERSISTENT);
 }
 
-// Test is disabled because it is flaky (http://crbug.com/134146)
-TEST_F(FileCacheTest, PinAndUnpinDirtyCache) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, PinAndUnpinDirtyCache) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(1);
@@ -926,11 +855,9 @@ TEST_F(FileCacheTest, PinAndUnpinDirtyCache) {
       .Times(1);
 
   // First store a file to cache and mark it as dirty.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
   TestMarkDirty(resource_id, md5, FILE_ERROR_OK,
                 test_util::TEST_CACHE_STATE_PRESENT |
                 test_util::TEST_CACHE_STATE_DIRTY |
@@ -969,20 +896,15 @@ TEST_F(FileCacheTest, PinAndUnpinDirtyCache) {
   EXPECT_TRUE(file_util::PathExists(dirty_path));
 }
 
-TEST_F(FileCacheTest, DirtyCacheRepetitive) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, DirtyCacheRepetitive) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCacheCommitted(resource_id)).Times(3);
 
   // First store a file to cache.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Mark the file dirty.
   TestMarkDirty(resource_id, md5, FILE_ERROR_OK,
@@ -1037,10 +959,7 @@ TEST_F(FileCacheTest, DirtyCacheRepetitive) {
                  FileCache::CACHE_TYPE_TMP);
 }
 
-TEST_F(FileCacheTest, DirtyCacheInvalid) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, DirtyCacheInvalid) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
 
@@ -1055,11 +974,9 @@ TEST_F(FileCacheTest, DirtyCacheInvalid) {
                  FileCache::CACHE_TYPE_TMP);
 
   // Store a file to cache.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Clear dirty state of a non-dirty existing file.
   TestClearDirty(resource_id, md5, FILE_ERROR_INVALID_OPERATION,
@@ -1074,32 +991,24 @@ TEST_F(FileCacheTest, DirtyCacheInvalid) {
                 test_util::TEST_CACHE_STATE_PERSISTENT,
                 FileCache::CACHE_TYPE_PERSISTENT);
   md5 = "new_md5";
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath(
-          "chromeos/gdata/empty_feed.json"),
-      FILE_ERROR_IN_USE,
-      test_util::TEST_CACHE_STATE_PRESENT |
-      test_util::TEST_CACHE_STATE_DIRTY |
-      test_util::TEST_CACHE_STATE_PERSISTENT,
-      FileCache::CACHE_TYPE_PERSISTENT);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_IN_USE,
+                   test_util::TEST_CACHE_STATE_PRESENT |
+                   test_util::TEST_CACHE_STATE_DIRTY |
+                   test_util::TEST_CACHE_STATE_PERSISTENT,
+                   FileCache::CACHE_TYPE_PERSISTENT);
 }
 
-TEST_F(FileCacheTest, RemoveFromDirtyCache) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, RemoveFromDirtyCache) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(1);
   EXPECT_CALL(*mock_cache_observer_, OnCacheCommitted(resource_id)).Times(1);
 
   // Store a file to cache, pin it, mark it dirty and commit it.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
   TestPin(resource_id, md5, FILE_ERROR_OK,
           test_util::TEST_CACHE_STATE_PRESENT |
           test_util::TEST_CACHE_STATE_PINNED |
@@ -1122,23 +1031,17 @@ TEST_F(FileCacheTest, RemoveFromDirtyCache) {
   TestRemoveFromCache(resource_id, FILE_ERROR_OK);
 }
 
-TEST_F(FileCacheTest, MountUnmount) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, MountUnmount) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
 
   // First store a file to cache in the tmp subdir.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Mark the file mounted.
   TestMarkAsMounted(resource_id,
-                    md5,
                     FILE_ERROR_OK,
                     test_util::TEST_CACHE_STATE_PRESENT |
                     test_util::TEST_CACHE_STATE_MOUNTED |
@@ -1165,9 +1068,7 @@ TEST_F(FileCacheTest, MountUnmount) {
   TestRemoveFromCache(resource_id, FILE_ERROR_OK);
 }
 
-TEST_F(FileCacheTest, Iterate) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
+TEST_F(FileCacheTestOnUIThread, Iterate) {
   const std::vector<test_util::TestCacheResource> cache_resources(
       test_util::GetDefaultTestCacheResources());
   // Set mock expectations.
@@ -1208,20 +1109,14 @@ TEST_F(FileCacheTest, Iterate) {
   ASSERT_EQ(6U, cache_entries.size());
 }
 
-
-TEST_F(FileCacheTest, ClearAll) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, ClearAll) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
 
   // Store an existing file.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK, test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Verify that there's only one cached file.
   EXPECT_EQ(1U, CountCacheFiles(resource_id, md5));
@@ -1239,19 +1134,17 @@ TEST_F(FileCacheTest, ClearAll) {
   EXPECT_EQ(0U, CountCacheFiles(resource_id, md5));
 }
 
-TEST_F(FileCacheTest, StoreToCacheNoSpace) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(0);
+TEST_F(FileCacheTestOnUIThread, StoreToCacheNoSpace) {
+  fake_free_disk_space_getter_->set_default_value(0);
 
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
 
   // Try to store an existing file.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_NO_SPACE,
-      test_util::TEST_CACHE_STATE_NONE,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_NO_SPACE,
+                   test_util::TEST_CACHE_STATE_NONE,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Verify that there's no files added.
   EXPECT_EQ(0U, CountCacheFiles(resource_id, md5));
@@ -1259,61 +1152,167 @@ TEST_F(FileCacheTest, StoreToCacheNoSpace) {
 
 // Don't use TEST_F, as we don't want SetUp() and TearDown() for this test.
 TEST(FileCacheExtraTest, InitializationFailure) {
-  base::MessageLoopForUI message_loop;
-  content::TestBrowserThread ui_thread(content::BrowserThread::UI,
-                                       &message_loop);
-
-  scoped_refptr<base::SequencedWorkerPool> pool =
-      content::BrowserThread::GetBlockingPool();
+  content::TestBrowserThreadBundle thread_bundle;
 
   // Set the cache root to a non existent path, so the initialization fails.
   scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache(new FileCache(
       base::FilePath::FromUTF8Unsafe("/somewhere/nonexistent/blah/blah"),
-      pool->GetSequencedTaskRunner(pool->GetSequenceToken()),
+      base::MessageLoopProxy::current(),
       NULL /* free_disk_space_getter */));
 
   bool success = true;
   cache->RequestInitialize(
       google_apis::test_util::CreateCopyResultCallback(&success));
-  google_apis::test_util::RunBlockingPoolTask();
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(success);
 }
 
-TEST_F(FileCacheTest, UpdatePinnedCache) {
-  fake_free_disk_space_getter_->set_fake_free_disk_space(
-      test_util::kLotsOfSpace);
-
+TEST_F(FileCacheTestOnUIThread, UpdatePinnedCache) {
   std::string resource_id("pdf:1a2b");
   std::string md5("abcdef0123456789");
   std::string md5_modified("aaaaaa0000000000");
 
   // Store an existing file.
-  TestStoreToCache(
-      resource_id, md5,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      FILE_ERROR_OK,
-      test_util::TEST_CACHE_STATE_PRESENT,
-      FileCache::CACHE_TYPE_TMP);
+  TestStoreToCache(resource_id, md5, dummy_file_path_,
+                   FILE_ERROR_OK,
+                   test_util::TEST_CACHE_STATE_PRESENT,
+                   FileCache::CACHE_TYPE_TMP);
 
   // Pin the file.
   EXPECT_CALL(*mock_cache_observer_, OnCachePinned(resource_id, md5)).Times(1);
-  TestPin(
-      resource_id, md5,
-      FILE_ERROR_OK,
-      test_util::TEST_CACHE_STATE_PRESENT |
-      test_util::TEST_CACHE_STATE_PINNED |
-      test_util::TEST_CACHE_STATE_PERSISTENT,
-      FileCache::CACHE_TYPE_PERSISTENT);
+  TestPin(resource_id, md5,
+          FILE_ERROR_OK,
+          test_util::TEST_CACHE_STATE_PRESENT |
+          test_util::TEST_CACHE_STATE_PINNED |
+          test_util::TEST_CACHE_STATE_PERSISTENT,
+          FileCache::CACHE_TYPE_PERSISTENT);
 
   // Store the file with a modified content and md5. It should stay pinned.
-  TestStoreToCache(
-      resource_id, md5_modified,
-      google_apis::test_util::GetTestFilePath("chromeos/gdata/empty_feed.json"),
-      FILE_ERROR_OK,
-      test_util::TEST_CACHE_STATE_PRESENT |
-      test_util::TEST_CACHE_STATE_PINNED |
-      test_util::TEST_CACHE_STATE_PERSISTENT,
-      FileCache::CACHE_TYPE_PERSISTENT);
+  TestStoreToCache(resource_id, md5_modified, dummy_file_path_,
+                   FILE_ERROR_OK,
+                   test_util::TEST_CACHE_STATE_PRESENT |
+                   test_util::TEST_CACHE_STATE_PINNED |
+                   test_util::TEST_CACHE_STATE_PERSISTENT,
+                   FileCache::CACHE_TYPE_PERSISTENT);
+}
+
+// Tests FileCache methods working with the blocking task runner.
+class FileCacheTest : public testing::Test {
+ protected:
+  virtual void SetUp() OVERRIDE {
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
+
+    cache_.reset(new FileCache(temp_dir_.path(),
+                               base::MessageLoopProxy::current(),
+                               fake_free_disk_space_getter_.get()));
+
+    bool success = false;
+    cache_->RequestInitialize(
+        google_apis::test_util::CreateCopyResultCallback(&success));
+    base::RunLoop().RunUntilIdle();
+    ASSERT_TRUE(success);
+  }
+
+  virtual void TearDown() OVERRIDE {
+    cache_.reset();
+  }
+
+  content::TestBrowserThreadBundle thread_bundle_;
+  base::ScopedTempDir temp_dir_;
+
+  scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
+  scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
+};
+
+TEST_F(FileCacheTest, ScanCacheFile) {
+  // Set up files in cache directories.
+  const base::FilePath persistent_directory =
+      cache_->GetCacheDirectoryPath(FileCache::CACHE_TYPE_PERSISTENT);
+  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
+      persistent_directory.AppendASCII("id_foo.md5foo"), "foo"));
+  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
+      persistent_directory.AppendASCII("id_bar.local"), "bar"));
+
+  const base::FilePath tmp_directory =
+      cache_->GetCacheDirectoryPath(FileCache::CACHE_TYPE_TMP);
+  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
+      tmp_directory.AppendASCII("id_qux.md5qux"), "qux"));
+  ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
+      tmp_directory.AppendASCII("id_quux.local"), "quux"));
+
+  // Remove the existing DB.
+  ASSERT_TRUE(file_util::Delete(
+      cache_->GetCacheDirectoryPath(FileCache::CACHE_TYPE_META),
+      true /* recursive */));
+
+  // Create a new cache and initialize it.
+  cache_.reset(new FileCache(temp_dir_.path(),
+                             base::MessageLoopProxy::current(),
+                             fake_free_disk_space_getter_.get()));
+  bool success = false;
+  cache_->RequestInitialize(
+      google_apis::test_util::CreateCopyResultCallback(&success));
+  base::RunLoop().RunUntilIdle();
+  ASSERT_TRUE(success);
+
+  // Check contents of the cache.
+  FileCacheEntry cache_entry;
+  EXPECT_TRUE(cache_->GetCacheEntry("id_foo", std::string(), &cache_entry));
+  EXPECT_TRUE(cache_entry.is_present());
+  EXPECT_EQ("md5foo", cache_entry.md5());
+
+  EXPECT_TRUE(cache_->GetCacheEntry("id_bar", std::string(), &cache_entry));
+  EXPECT_TRUE(cache_entry.is_present());
+  EXPECT_TRUE(cache_entry.is_dirty());
+
+  EXPECT_TRUE(cache_->GetCacheEntry("id_qux", std::string(), &cache_entry));
+  EXPECT_EQ("md5qux", cache_entry.md5());
+
+  EXPECT_FALSE(cache_->GetCacheEntry("id_quux", std::string(), &cache_entry));
+
+}
+
+TEST_F(FileCacheTest, FreeDiskSpaceIfNeededFor) {
+  base::FilePath src_file;
+  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(), &src_file));
+
+  // Store a file as a 'temporary' file and remember the path.
+  const std::string resource_id_tmp = "id_tmp", md5_tmp = "md5_tmp";
+  ASSERT_EQ(FILE_ERROR_OK,
+            cache_->Store(resource_id_tmp, md5_tmp, src_file,
+                          FileCache::FILE_OPERATION_COPY));
+  base::FilePath tmp_path;
+  ASSERT_EQ(FILE_ERROR_OK,
+            cache_->GetFile(resource_id_tmp, md5_tmp, &tmp_path));
+
+  // Store a file as a pinned file and remember the path.
+  const std::string resource_id_pinned = "id_pinned", md5_pinned = "md5_pinned";
+  ASSERT_EQ(FILE_ERROR_OK,
+            cache_->Store(resource_id_pinned, md5_pinned, src_file,
+                          FileCache::FILE_OPERATION_COPY));
+  ASSERT_EQ(FILE_ERROR_OK, cache_->Pin(resource_id_pinned, md5_pinned));
+  base::FilePath pinned_path;
+  ASSERT_EQ(FILE_ERROR_OK,
+            cache_->GetFile(resource_id_pinned, md5_pinned, &pinned_path));
+
+  // Call FreeDiskSpaceIfNeededFor().
+  fake_free_disk_space_getter_->set_default_value(test_util::kLotsOfSpace);
+  fake_free_disk_space_getter_->PushFakeValue(0);
+  const int64 kNeededBytes = 1;
+  EXPECT_TRUE(cache_->FreeDiskSpaceIfNeededFor(kNeededBytes));
+
+  // Only 'temporary' file gets removed.
+  FileCacheEntry entry;
+  EXPECT_FALSE(cache_->GetCacheEntry(resource_id_tmp, md5_tmp, &entry));
+  EXPECT_FALSE(file_util::PathExists(tmp_path));
+
+  EXPECT_TRUE(cache_->GetCacheEntry(resource_id_pinned, md5_pinned, &entry));
+  EXPECT_TRUE(file_util::PathExists(pinned_path));
+
+  // Returns false when disk space cannot be freed.
+  fake_free_disk_space_getter_->set_default_value(0);
+  EXPECT_FALSE(cache_->FreeDiskSpaceIfNeededFor(kNeededBytes));
 }
 
 }  // namespace internal

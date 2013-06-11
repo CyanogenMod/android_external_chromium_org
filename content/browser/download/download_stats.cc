@@ -5,7 +5,7 @@
 #include "content/browser/download/download_stats.h"
 
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/browser/download/download_resource_handler.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "net/http/http_content_disposition.h"
@@ -143,6 +143,28 @@ void RecordDownloadInterrupted(DownloadInterruptReason reason,
   }
 
   UMA_HISTOGRAM_BOOLEAN("Download.InterruptedUnknownSize", unknown_size);
+}
+
+void RecordDangerousDownloadAccept(DownloadDangerType danger_type) {
+  UMA_HISTOGRAM_ENUMERATION("Download.DangerousDownloadValidated",
+                            danger_type,
+                            DOWNLOAD_DANGER_TYPE_MAX);
+}
+
+void RecordDangerousDownloadDiscard(DownloadDiscardReason reason,
+                                    DownloadDangerType danger_type) {
+  switch (reason) {
+    case DOWNLOAD_DISCARD_DUE_TO_USER_ACTION:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Download.UserDiscard", danger_type, DOWNLOAD_DANGER_TYPE_MAX);
+      break;
+    case DOWNLOAD_DISCARD_DUE_TO_SHUTDOWN:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Download.Discard", danger_type, DOWNLOAD_DANGER_TYPE_MAX);
+      break;
+    default:
+      NOTREACHED();
+  }
 }
 
 void RecordDownloadWriteSize(size_t data_len) {

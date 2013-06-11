@@ -5,7 +5,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browsing_data/browsing_data_database_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_helper_browsertest.h"
 #include "chrome/browser/profiles/profile.h"
@@ -85,10 +85,9 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataDatabaseHelperTest, DISABLED_FetchData) {
   CreateDatabases();
   scoped_refptr<BrowsingDataDatabaseHelper> database_helper(
       new BrowsingDataDatabaseHelper(browser()->profile()));
-  StopTestOnCallback stop_test_on_callback(database_helper);
-  database_helper->StartFetching(
-      base::Bind(&StopTestOnCallback::Callback,
-                 base::Unretained(&stop_test_on_callback)));
+  StopTestOnCallback stop_test_on_callback(database_helper.get());
+  database_helper->StartFetching(base::Bind(
+      &StopTestOnCallback::Callback, base::Unretained(&stop_test_on_callback)));
   // Blocks until StopTestOnCallback::Callback is notified.
   content::RunMessageLoop();
 }

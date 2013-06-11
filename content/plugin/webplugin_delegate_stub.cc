@@ -9,19 +9,19 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/string_number_conversions.h"
-#include "content/common_child/plugin_messages.h"
+#include "content/child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/plugin/webplugin_proxy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
-#include "third_party/npapi/bindings/npapi.h"
-#include "third_party/npapi/bindings/npruntime.h"
 #include "skia/ext/platform_device.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "webkit/glue/webcursor.h"
+#include "third_party/npapi/bindings/npapi.h"
+#include "third_party/npapi/bindings/npruntime.h"
+#include "webkit/common/cursors/webcursor.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 
@@ -38,7 +38,7 @@ static void DestroyWebPluginAndDelegate(
     WebPlugin* webplugin) {
   // The plugin may not expect us to try to release the scriptable object
   // after calling NPP_Destroy on the instance, so delete the stub now.
-  if (scriptable_object)
+  if (scriptable_object.get())
     scriptable_object->DeleteSoon();
   // WebPlugin must outlive WebPluginDelegate.
   if (delegate)
@@ -165,8 +165,10 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
   base::FilePath path =
       command_line.GetSwitchValuePath(switches::kPluginPath);
 
-  webplugin_ = new WebPluginProxy(
-      channel_, instance_id_, page_url_, params.host_render_view_routing_id);
+  webplugin_ = new WebPluginProxy(channel_.get(),
+                                  instance_id_,
+                                  page_url_,
+                                  params.host_render_view_routing_id);
   delegate_ = webkit::npapi::WebPluginDelegateImpl::Create(path, mime_type_);
   if (delegate_) {
     webplugin_->set_delegate(delegate_);

@@ -67,8 +67,11 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   gpu::GpuSwitchingOption GetGpuSwitchingOption() const;
 
   std::string GetBlacklistVersion() const;
+  std::string GetDriverBugListVersion() const;
 
-  base::ListValue* GetBlacklistReasons() const;
+  void GetBlacklistReasons(base::ListValue* reasons) const;
+
+  void GetDriverBugWorkarounds(base::ListValue* workarounds) const;
 
   void AddLogMessage(int level,
                      const std::string& header,
@@ -101,6 +104,9 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
                           ThreeDAPIType requester);
 
   size_t GetBlacklistedFeatureCount() const;
+
+  void SetDisplayCount(unsigned int display_count);
+  unsigned int GetDisplayCount() const;
 
   virtual ~GpuDataManagerImplPrivate();
 
@@ -229,6 +235,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   bool domain_blocking_enabled_;
 
   GpuDataManagerImpl* owner_;
+
+  unsigned int display_count_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuDataManagerImplPrivate);
 };

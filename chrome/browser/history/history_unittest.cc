@@ -36,11 +36,11 @@
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/history/download_row.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
@@ -145,7 +145,7 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
   }
 
   void DeleteBackend() {
-    if (backend_) {
+    if (backend_.get()) {
       backend_->Closing();
       backend_ = NULL;
     }

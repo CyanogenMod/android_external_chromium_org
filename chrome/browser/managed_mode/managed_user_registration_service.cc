@@ -6,14 +6,19 @@
 
 #include "base/base64.h"
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/managed_mode/managed_user_refresh_token_fetcher.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/sync/glue/device_info.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/pref_registry_syncable.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error_factory.h"
@@ -32,6 +37,10 @@ using syncer::SyncErrorFactory;
 using syncer::SyncMergeResult;
 using sync_pb::ManagedUserSpecifics;
 using user_prefs::PrefRegistrySyncable;
+
+// How long to wait before aborting user registration. If this is changed, the
+// histogram limits in the BrowserOptionsHandler should also be updated.
+static const int kRegistrationTimeoutMS = 30 * 1000;
 
 namespace {
 
@@ -52,9 +61,11 @@ SyncData CreateLocalSyncData(const std::string& id,
 }  // namespace
 
 ManagedUserRegistrationService::ManagedUserRegistrationService(
-    PrefService* prefs)
+    PrefService* prefs,
+    scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher)
     : weak_ptr_factory_(this),
       prefs_(prefs),
+      token_fetcher_(token_fetcher.Pass()),
       pending_managed_user_acknowledged_(false) {
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(
@@ -79,6 +90,21 @@ void ManagedUserRegistrationService::Register(
     const string16& name,
     const RegistrationCallback& callback) {
   DCHECK(pending_managed_user_id_.empty());
+  DCHECK(!registration_timer_.IsRunning());
+  callback_ = callback;
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kNoManagedUserRegistrationTimeout)) {
+    registration_timer_.Start(
+        FROM_HERE,
+        base::TimeDelta::FromMilliseconds(kRegistrationTimeoutMS),
+        base::Bind(
+            &ManagedUserRegistrationService::AbortPendingRegistration,
+            weak_ptr_factory_.GetWeakPtr(),
+            true,  // Run the callback.
+            GoogleServiceAuthError(GoogleServiceAuthError::CONNECTION_FAILED)));
+  }
+
   DictionaryPrefUpdate update(prefs_, prefs::kManagedUsers);
   DictionaryValue* dict = update.Get();
   DictionaryValue* value = new DictionaryValue;
@@ -102,18 +128,21 @@ void ManagedUserRegistrationService::Register(
     DCHECK(!error.IsSet()) << error.ToString();
   }
 
-  callback_ = callback;
-  OnReceivedToken("abcdef");  // TODO(bauerb): This is a stub implementation.
+  browser_sync::DeviceInfo::CreateLocalDeviceInfo(
+      base::Bind(&ManagedUserRegistrationService::FetchToken,
+                 weak_ptr_factory_.GetWeakPtr(), name));
 }
 
-ProfileManager::CreateCallback
-ManagedUserRegistrationService::GetRegistrationAndInitCallback() {
-  return base::Bind(&ManagedUserRegistrationService::OnProfileCreated,
-                    weak_ptr_factory_.GetWeakPtr());
+void ManagedUserRegistrationService::CancelPendingRegistration() {
+  AbortPendingRegistration(
+      false,  // Don't run the callback. The error will be ignored.
+      GoogleServiceAuthError(GoogleServiceAuthError::NONE));
 }
 
 void ManagedUserRegistrationService::Shutdown() {
-  CancelPendingRegistration();
+  AbortPendingRegistration(
+      true,  // Run the callback.
+      GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
 }
 
 SyncMergeResult ManagedUserRegistrationService::MergeDataAndStartSyncing(
@@ -162,6 +191,7 @@ SyncMergeResult ManagedUserRegistrationService::MergeDataAndStartSyncing(
     dict->GetBoolean(kAcknowledged, &acknowledged);
     std::string name;
     dict->GetString(kName, &name);
+    DCHECK(!name.empty());
     change_list.push_back(
         SyncChange(FROM_HERE, SyncChange::ACTION_ADD,
                    CreateLocalSyncData(it.key(), name, acknowledged)));
@@ -177,10 +207,15 @@ SyncMergeResult ManagedUserRegistrationService::MergeDataAndStartSyncing(
 
 void ManagedUserRegistrationService::StopSyncing(ModelType type) {
   DCHECK_EQ(MANAGED_USERS, type);
+
+  // Canceling a pending registration might result in changes in the Sync data,
+  // so we do it before resetting the |sync_processor|.
+  AbortPendingRegistration(
+      true,  // Run the callback.
+      GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
+
   sync_processor_.reset();
   error_handler_.reset();
-
-  CancelPendingRegistration();
 }
 
 SyncDataList ManagedUserRegistrationService::GetAllSyncData(
@@ -262,64 +297,88 @@ void ManagedUserRegistrationService::OnLastSignedInUsernameChange() {
 
 void ManagedUserRegistrationService::OnManagedUserAcknowledged(
     const std::string& managed_user_id) {
+  // |pending_managed_user_id_| might be empty if we get a late acknowledgement
+  // for a previous registration that was canceled.
+  if (pending_managed_user_id_.empty())
+    return;
+
   DCHECK_EQ(pending_managed_user_id_, managed_user_id);
   DCHECK(!pending_managed_user_acknowledged_);
   pending_managed_user_acknowledged_ = true;
-  DispatchCallbackIfReady();
+  CompleteRegistrationIfReady();
 }
 
-void ManagedUserRegistrationService::OnReceivedToken(const std::string& token) {
-  DCHECK(pending_managed_user_token_.empty());
+void ManagedUserRegistrationService::FetchToken(
+    const string16& name,
+    const browser_sync::DeviceInfo& device_info) {
+  token_fetcher_->Start(
+      pending_managed_user_id_, name, device_info.client_name(),
+      base::Bind(&ManagedUserRegistrationService::OnReceivedToken,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void ManagedUserRegistrationService::OnReceivedToken(
+    const GoogleServiceAuthError& error,
+    const std::string& token) {
+  if (error.state() != GoogleServiceAuthError::NONE) {
+    CompleteRegistration(true, error);
+    return;
+  }
+
+  DCHECK(!token.empty());
   pending_managed_user_token_ = token;
-  DispatchCallbackIfReady();
+  CompleteRegistrationIfReady();
 }
 
-void ManagedUserRegistrationService::DispatchCallbackIfReady() {
+void ManagedUserRegistrationService::CompleteRegistrationIfReady() {
   if (!pending_managed_user_acknowledged_ ||
       pending_managed_user_token_.empty()) {
     return;
   }
 
   GoogleServiceAuthError error(GoogleServiceAuthError::NONE);
-  DispatchCallback(error);
+  CompleteRegistration(true, error);
 }
 
-void ManagedUserRegistrationService::CancelPendingRegistration() {
-  if (!pending_managed_user_id_.empty()) {
-    // Remove a pending managed user if there is one.
-    DictionaryPrefUpdate update(prefs_, prefs::kManagedUsers);
-    bool success = update->RemoveWithoutPathExpansion(pending_managed_user_id_,
-                                                      NULL);
-    DCHECK(success);
-  }
-  pending_managed_user_token_.clear();
-  GoogleServiceAuthError error(GoogleServiceAuthError::REQUEST_CANCELED);
-  DispatchCallback(error);
-}
-
-void ManagedUserRegistrationService::DispatchCallback(
+void ManagedUserRegistrationService::AbortPendingRegistration(
+    bool run_callback,
     const GoogleServiceAuthError& error) {
-  if (callback_.is_null())
-    return;
+  pending_managed_user_token_.clear();
+  CompleteRegistration(run_callback, error);
+}
 
-  callback_.Run(error, pending_managed_user_token_);
-  callback_.Reset();
+void ManagedUserRegistrationService::CompleteRegistration(
+    bool run_callback,
+    const GoogleServiceAuthError& error) {
+  registration_timer_.Stop();
+  if (!callback_.is_null()) {
+    if (run_callback)
+      callback_.Run(error, pending_managed_user_token_);
+    callback_.Reset();
+
+    DCHECK(!pending_managed_user_id_.empty());
+
+    if (pending_managed_user_token_.empty()) {
+      // Remove the pending managed user if we weren't successful.
+      DCHECK_NE(GoogleServiceAuthError::NONE, error.state());
+      DictionaryPrefUpdate update(prefs_, prefs::kManagedUsers);
+      bool success =
+          update->RemoveWithoutPathExpansion(pending_managed_user_id_, NULL);
+      DCHECK(success);
+      if (sync_processor_) {
+        SyncChangeList change_list;
+        change_list.push_back(
+            SyncChange(FROM_HERE, SyncChange::ACTION_DELETE,
+                       SyncData::CreateLocalDelete(pending_managed_user_id_,
+                                                   MANAGED_USERS)));
+        SyncError sync_error =
+            sync_processor_->ProcessSyncChanges(FROM_HERE, change_list);
+        DCHECK(!sync_error.IsSet());
+      }
+    }
+  }
+
   pending_managed_user_token_.clear();
   pending_managed_user_id_.clear();
   pending_managed_user_acknowledged_ = false;
-}
-
-void ManagedUserRegistrationService::OnProfileCreated(
-    Profile* profile,
-    Profile::CreateStatus status) {
-  // We're being called back twice: once after the profile has been created on
-  // disk, and once after all the profile services (including the
-  // ManagedUserService) have been initialized. Ignore the first one.
-  if (status != Profile::CREATE_STATUS_INITIALIZED)
-    return;
-
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(profile);
-  DCHECK(managed_user_service->ProfileIsManaged());
-  managed_user_service->RegisterAndInitSync(this);
 }

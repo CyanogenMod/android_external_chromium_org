@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "components/autofill/renderer/page_click_listener.h"
-#include "components/autofill/renderer/page_click_tracker.h"
+#include "components/autofill/content/renderer/page_click_listener.h"
+#include "components/autofill/content/renderer/page_click_tracker.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/test/render_view_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
 namespace autofill {
@@ -74,6 +74,13 @@ class PageClickTrackerTest : public content::RenderViewTest {
     ASSERT_FALSE(text_.isNull());
   }
 
+  virtual void TearDown() OVERRIDE {
+    text_.reset();
+    test_listener_.ClearResults();
+    page_click_tracker_.reset();
+    content::RenderViewTest::TearDown();
+  }
+
   // Send all the messages required for a complete key press.
   void SendKeyPress(int key_code) {
     WebKit::WebKeyboardEvent keyboard_event;
@@ -90,7 +97,7 @@ class PageClickTrackerTest : public content::RenderViewTest {
     SendWebKeyboardEvent(keyboard_event);
   }
 
-  scoped_ptr<PageClickTracker>  page_click_tracker_;
+  scoped_ptr<PageClickTracker> page_click_tracker_;
   TestPageClickListener test_listener_;
   WebKit::WebElement text_;
 };

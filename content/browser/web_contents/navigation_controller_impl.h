@@ -89,7 +89,8 @@ class CONTENT_EXPORT NavigationControllerImpl
       const NavigationController& source) OVERRIDE;
   virtual void CopyStateFromAndPrune(
       NavigationController* source) OVERRIDE;
-  virtual void PruneAllButActive() OVERRIDE;
+  virtual bool CanPruneAllButVisible() OVERRIDE;
+  virtual void PruneAllButVisible() OVERRIDE;
   virtual void ClearAllScreenshots() OVERRIDE;
 
   // The session storage namespace that all child RenderViews belonging to
@@ -119,6 +120,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   }
 
   // For use by WebContentsImpl ------------------------------------------------
+
+  // Allow renderer-initiated navigations to create a pending entry when the
+  // provisional load starts.
+  void SetPendingEntry(content::NavigationEntryImpl* entry);
 
   // Handles updating the navigation state after the renderer has navigated.
   // This is used by the WebContentsImpl.
@@ -293,10 +298,11 @@ class CONTENT_EXPORT NavigationControllerImpl
   // preparation to add another.
   void PruneOldestEntryIfFull();
 
-  // Removes all the entries except the active entry. If there is a new pending
-  // navigation it is preserved. In contrast to PruneAllButActive() this does
-  // not update the session history of the RenderView.
-  void PruneAllButActiveInternal();
+  // Removes all entries except the last committed entry.  If there is a new
+  // pending navigation it is preserved. In contrast to PruneAllButVisible()
+  // this does not update the session history of the RenderView.  Callers
+  // must ensure that |CanPruneAllButVisible| returns true before calling this.
+  void PruneAllButVisibleInternal();
 
   // Returns true if the navigation is redirect.
   bool IsRedirect(const ViewHostMsg_FrameNavigate_Params& params);

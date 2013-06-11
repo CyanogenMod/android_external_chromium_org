@@ -11,13 +11,13 @@
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "build/build_config.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
+#include "content/child/plugin_messages.h"
 #include "content/common/plugin_process_messages.h"
-#include "content/common_child/plugin_messages.h"
-#include "content/public/common/content_switches.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/plugin/webplugin_delegate_stub.h"
 #include "content/plugin/webplugin_proxy.h"
+#include "content/public/common/content_switches.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 
 #if defined(OS_POSIX)
@@ -263,7 +263,7 @@ void PluginChannel::OnCreateInstance(const std::string& mime_type,
   *instance_id = GenerateRouteID();
   scoped_refptr<WebPluginDelegateStub> stub(new WebPluginDelegateStub(
       mime_type, *instance_id, this));
-  AddRoute(*instance_id, stub, NULL);
+  AddRoute(*instance_id, stub.get(), NULL);
   plugin_stubs_.push_back(stub);
 }
 
@@ -305,7 +305,7 @@ void PluginChannel::OnClearSiteData(const std::string& site,
   base::FilePath path = command_line->GetSwitchValuePath(switches::kPluginPath);
   scoped_refptr<webkit::npapi::PluginLib> plugin_lib(
       webkit::npapi::PluginLib::CreatePluginLib(path));
-  if (plugin_lib) {
+  if (plugin_lib.get()) {
     NPError err = plugin_lib->NP_Initialize();
     if (err == NPERR_NO_ERROR) {
       const char* site_str = site.empty() ? NULL : site.c_str();

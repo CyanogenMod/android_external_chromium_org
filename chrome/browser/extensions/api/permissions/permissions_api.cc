@@ -62,7 +62,7 @@ bool PermissionsContainsFunction::RunImpl() {
     return false;
 
   results_ = Contains::Results::Create(
-      GetExtension()->GetActivePermissions()->Contains(*permissions));
+      GetExtension()->GetActivePermissions()->Contains(*permissions.get()));
   return true;
 }
 
@@ -147,7 +147,9 @@ PermissionsRequestFunction::~PermissionsRequestFunction() {}
 bool PermissionsRequestFunction::RunImpl() {
   results_ = Request::Results::Create(false);
 
-  if (!user_gesture() && !ignore_user_gesture_for_tests) {
+  if (!user_gesture() &&
+      !ignore_user_gesture_for_tests &&
+      extension_->location() != Manifest::COMPONENT) {
     error_ = kUserGestureRequiredError;
     return false;
   }
@@ -181,8 +183,8 @@ bool PermissionsRequestFunction::RunImpl() {
           requested_permissions_.get());
 
   // The requested permissions must be defined as optional in the manifest.
-  if (!PermissionsData::GetOptionalPermissions(GetExtension())->Contains(
-          *manifest_required_requested_permissions)) {
+  if (!PermissionsData::GetOptionalPermissions(GetExtension())
+          ->Contains(*manifest_required_requested_permissions.get())) {
     error_ = kNotInOptionalPermissionsError;
     return false;
   }
@@ -192,7 +194,7 @@ bool PermissionsRequestFunction::RunImpl() {
   scoped_refptr<const PermissionSet> granted =
       ExtensionPrefs::Get(profile_)->
           GetGrantedPermissions(GetExtension()->id());
-  if (granted && granted->Contains(*requested_permissions_)) {
+  if (granted.get() && granted->Contains(*requested_permissions_.get())) {
     PermissionsUpdater perms_updater(profile());
     perms_updater.AddPermissions(GetExtension(), requested_permissions_.get());
     results_ = Request::Results::Create(true);
@@ -211,7 +213,8 @@ bool PermissionsRequestFunction::RunImpl() {
   // are allowed to silently increase their permission level.
   bool has_no_warnings = requested_permissions_->GetWarningMessages(
       GetExtension()->GetType()).empty();
-  if (auto_confirm_for_tests == PROCEED || has_no_warnings) {
+  if (auto_confirm_for_tests == PROCEED || has_no_warnings ||
+      extension_->location() == Manifest::COMPONENT) {
     InstallUIProceed();
   } else if (auto_confirm_for_tests == ABORT) {
     // Pretend the user clicked cancel.

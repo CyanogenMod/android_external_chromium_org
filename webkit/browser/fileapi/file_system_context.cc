@@ -14,6 +14,7 @@
 #include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_options.h"
 #include "webkit/browser/fileapi/file_system_quota_client.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
@@ -26,9 +27,9 @@
 #include "webkit/browser/fileapi/syncable/local_file_sync_context.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 #include "webkit/browser/fileapi/test_mount_point_provider.h"
+#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/quota/quota_manager.h"
-#include "webkit/quota/special_storage_policy.h"
 
 #if defined(OS_CHROMEOS)
 #include "webkit/browser/chromeos/fileapi/cros_mount_point_provider.h"
@@ -76,7 +77,8 @@ FileSystemContext::FileSystemContext(
       isolated_provider_(new IsolatedMountPointProvider()),
       additional_providers_(additional_providers.Pass()),
       external_mount_points_(external_mount_points),
-      partition_path_(partition_path) {
+      partition_path_(partition_path),
+      operation_runner_(new FileSystemOperationRunner(this)) {
   DCHECK(task_runners_.get());
 
   if (quota_manager_proxy) {
@@ -90,11 +92,13 @@ FileSystemContext::FileSystemContext(
 #if defined(OS_CHROMEOS)
   // TODO(kinuko): Move this out of webkit/fileapi layer.
   DCHECK(external_mount_points);
-  external_provider_.reset(
+  chromeos::CrosMountPointProvider* cros_mount_provider =
       new chromeos::CrosMountPointProvider(
           special_storage_policy,
           external_mount_points,
-          ExternalMountPoints::GetSystemInstance()));
+          ExternalMountPoints::GetSystemInstance());
+  cros_mount_provider->AddSystemMountPoints();
+  external_provider_.reset(cros_mount_provider);
   RegisterMountPointProvider(external_provider_.get());
 #endif
 
@@ -200,6 +204,14 @@ const UpdateObserverList* FileSystemContext::GetUpdateObservers(
       mount_point_provider)->GetUpdateObservers(type);
 }
 
+const AccessObserverList* FileSystemContext::GetAccessObservers(
+    FileSystemType type) const {
+  // Currently access observer is only available in SandboxMountPointProvider.
+  if (SandboxMountPointProvider::IsSandboxType(type))
+    return sandbox_provider()->GetAccessObservers(type);
+  return NULL;
+}
+
 SandboxMountPointProvider*
 FileSystemContext::sandbox_provider() const {
   return sandbox_provider_.get();
@@ -233,7 +245,6 @@ void FileSystemContext::OpenFileSystem(
 }
 
 void FileSystemContext::OpenSyncableFileSystem(
-    const std::string& mount_name,
     const GURL& origin_url,
     FileSystemType type,
     OpenFileSystemMode mode,
@@ -242,8 +253,7 @@ void FileSystemContext::OpenSyncableFileSystem(
 
   DCHECK(type == kFileSystemTypeSyncable);
 
-  GURL root_url = sync_file_system::GetSyncableFileSystemRootURI(
-      origin_url, mount_name);
+  GURL root_url = sync_file_system::GetSyncableFileSystemRootURI(origin_url);
   std::string name = GetFileSystemName(origin_url, kFileSystemTypeSyncable);
 
   FileSystemMountPointProvider* mount_point_provider =
@@ -267,31 +277,6 @@ void FileSystemContext::DeleteFileSystem(
   }
 
   mount_point_provider->DeleteFileSystem(origin_url, type, this, callback);
-}
-
-FileSystemOperation* FileSystemContext::CreateFileSystemOperation(
-    const FileSystemURL& url, base::PlatformFileError* error_code) {
-  if (!url.is_valid()) {
-    if (error_code)
-      *error_code = base::PLATFORM_FILE_ERROR_INVALID_URL;
-    return NULL;
-  }
-
-  FileSystemMountPointProvider* mount_point_provider =
-      GetMountPointProvider(url.type());
-  if (!mount_point_provider) {
-    if (error_code)
-      *error_code = base::PLATFORM_FILE_ERROR_FAILED;
-    return NULL;
-  }
-
-  base::PlatformFileError fs_error = base::PLATFORM_FILE_OK;
-  FileSystemOperation* operation =
-      mount_point_provider->CreateFileSystemOperation(url, this, &fs_error);
-
-  if (error_code)
-    *error_code = fs_error;
-  return operation;
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>
@@ -326,10 +311,12 @@ void FileSystemContext::SetLocalFileChangeTracker(
   DCHECK(!change_tracker_.get());
   DCHECK(tracker.get());
   change_tracker_ = tracker.Pass();
-  sandbox_provider_->AddSyncableFileUpdateObserver(
+  sandbox_provider_->AddFileUpdateObserver(
+      kFileSystemTypeSyncable,
       change_tracker_.get(),
       task_runners_->file_task_runner());
-  sandbox_provider_->AddSyncableFileChangeObserver(
+  sandbox_provider_->AddFileChangeObserver(
+      kFileSystemTypeSyncable,
       change_tracker_.get(),
       task_runners_->file_task_runner());
 }
@@ -362,6 +349,32 @@ void FileSystemContext::DeleteOnCorrectThread() const {
   }
   delete this;
 }
+
+FileSystemOperation* FileSystemContext::CreateFileSystemOperation(
+    const FileSystemURL& url, base::PlatformFileError* error_code) {
+  if (!url.is_valid()) {
+    if (error_code)
+      *error_code = base::PLATFORM_FILE_ERROR_INVALID_URL;
+    return NULL;
+  }
+
+  FileSystemMountPointProvider* mount_point_provider =
+      GetMountPointProvider(url.type());
+  if (!mount_point_provider) {
+    if (error_code)
+      *error_code = base::PLATFORM_FILE_ERROR_FAILED;
+    return NULL;
+  }
+
+  base::PlatformFileError fs_error = base::PLATFORM_FILE_OK;
+  FileSystemOperation* operation =
+      mount_point_provider->CreateFileSystemOperation(url, this, &fs_error);
+
+  if (error_code)
+    *error_code = fs_error;
+  return operation;
+}
+
 
 FileSystemURL FileSystemContext::CrackFileSystemURL(
     const FileSystemURL& url) const {

@@ -6,9 +6,9 @@
 
 #include "base/metrics/histogram.h"
 #include "base/time.h"
-#include "content/common/child_process.h"
-#include "content/common_child/npobject_base.h"
-#include "content/common_child/plugin_messages.h"
+#include "content/child/child_process.h"
+#include "content/child/npobject_base.h"
+#include "content/child/plugin_messages.h"
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
@@ -144,7 +144,7 @@ bool PluginChannelHost::Init(base::MessageLoopProxy* ipc_message_loop,
       NPChannelBase::Init(ipc_message_loop, create_pipe_now, shutdown_event);
   if (ret) {
     is_listening_filter_ = new IsListeningFilter;
-    channel_->AddFilter(is_listening_filter_);
+    channel_->AddFilter(is_listening_filter_.get());
   }
   return ret;
 }

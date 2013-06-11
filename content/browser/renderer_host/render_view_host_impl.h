@@ -14,6 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/process_util.h"
+#include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/accessibility_node_data.h"
@@ -62,6 +63,7 @@ namespace content {
 class ChildProcessSecurityPolicyImpl;
 class PageState;
 class PowerSaveBlocker;
+class RenderFrameHostImpl;
 class RenderViewHostObserver;
 class RenderWidgetHostDelegate;
 class SessionStorageNamespace;
@@ -120,6 +122,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       RenderViewHostDelegate* delegate,
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
+      int main_frame_routing_id,
       bool swapped_out,
       SessionStorageNamespace* session_storage_namespace);
   virtual ~RenderViewHostImpl();
@@ -274,6 +277,13 @@ class CONTENT_EXPORT RenderViewHostImpl
   // RenderViewHost.
   void CancelSuspendedNavigations();
 
+  // Whether the initial empty page of this view has been accessed by another
+  // page, making it unsafe to show the pending URL.  Always false after the
+  // first commit.
+  bool has_accessed_initial_document() {
+    return has_accessed_initial_document_;
+  }
+
   // Whether this RenderViewHost has been swapped out to be displayed by a
   // different process.
   bool is_swapped_out() const { return is_swapped_out_; }
@@ -364,6 +374,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Creates a new RenderView with the given route id.
   void CreateNewWindow(
       int route_id,
+      int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace);
 
@@ -557,6 +568,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       const ShowDesktopNotificationHostMsgParams& params);
   void OnCancelDesktopNotification(int notification_id);
   void OnRunFileChooser(const FileChooserParams& params);
+  void OnDidAccessInitialDocument();
   void OnDomOperationResponse(const std::string& json_string,
                               int automation_id);
   void OnGetWindowSnapshot(const int snapshot_id);
@@ -567,6 +579,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 
  private:
   friend class TestRenderViewHost;
+  FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, BasicRenderFrameHost);
 
   // Sets whether this RenderViewHost is swapped out in favor of another,
   // and clears any waiting state that is no longer relevant.
@@ -575,6 +588,12 @@ class CONTENT_EXPORT RenderViewHostImpl
   void ClearPowerSaveBlockers();
 
   bool CanAccessFilesOfPageState(const PageState& state) const;
+
+  // This is an RenderFrameHost object associated with the top-level frame in
+  // the page rendered by this RenderViewHost.
+  // TODO(nasko): Remove this pointer once we have enough infrastructure to
+  // move this to the top-level FrameTreeNode.
+  scoped_ptr<RenderFrameHostImpl> main_render_frame_host_;
 
   // Our delegate, which wants to know about changes in the RenderView.
   RenderViewHostDelegate* delegate_;
@@ -610,6 +629,12 @@ class CONTENT_EXPORT RenderViewHostImpl
   // navigation, because WebContentsImpl will destroy the pending RVH and create
   // a new one if a second navigation occurs.
   scoped_ptr<ViewMsg_Navigate_Params> suspended_nav_params_;
+
+  // Whether the initial empty page of this view has been accessed by another
+  // page, making it unsafe to show the pending URL.  Usually false unless
+  // another window tries to modify the blank page.  Always false after the
+  // first commit.
+  bool has_accessed_initial_document_;
 
   // Whether this RenderViewHost is currently swapped out, such that the view is
   // being rendered by another process.

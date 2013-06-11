@@ -33,17 +33,14 @@ const char kHomePageIsNewTabPage[] = "homepage_is_newtabpage";
 // This is the URL of the page to load when opening new tabs.
 const char kHomePage[] = "homepage";
 
-// This preference is used to store the hash of a password of the custodian of
-// a managed user. It allows to unlock options which should be not available to
-// the managed user. The salt preference is used to derive the hash from the
-// password.
-const char kManagedModeLocalPassphrase[] = "managed_mode.passphrase";
-const char kManagedModeLocalSalt[] = "managed_mode.salt";
-
 // Maps host names to whether the host is manually allowed or blocked.
 const char kManagedModeManualHosts[] = "profile.managed.manual_hosts";
 // Maps URLs to whether the URL is manually allowed or blocked.
 const char kManagedModeManualURLs[] = "profile.managed.manual_urls";
+
+// Stores the email address associated with the google account of the custodian
+// of the managed user.
+const char kManagedUserCustodian[] = "profile.managed.custodian_email";
 
 // Used to determine if the last session exited cleanly. Set to false when
 // first opened, and to true when closing. On startup if the value is false,
@@ -280,6 +277,8 @@ const char kWebKitAllowRunningInsecureContent[] =
 #if defined(OS_ANDROID)
 const char kWebKitFontScaleFactor[] = "webkit.webprefs.font_scale_factor";
 const char kWebKitForceEnableZoom[] = "webkit.webprefs.force_enable_zoom";
+const char kWebKitPasswordEchoEnabled[] =
+    "webkit.webprefs.password_echo_enabled";
 #endif
 
 const char kWebKitCommonScript[] = "Zyyy";
@@ -744,6 +743,8 @@ const char kLanguageXkbAutoRepeatInterval[] =
 // "_r2" suffixes are added to the three prefs above when we change the
 // preferences not user-configurable, not to sync them with cloud.
 
+// A boolean pref which determines whether the large cursor feature is enabled.
+const char kLargeCursorEnabled[] = "settings.a11y.large_cursor_enabled";
 // A boolean pref which determines whether spoken feedback is enabled.
 const char kSpokenFeedbackEnabled[] = "settings.accessibility";
 // A boolean pref which determines whether high conrast is enabled.
@@ -1062,10 +1063,6 @@ const char kShowUpdatePromotionInfoBar[] =
 // true, we draw a custom chrome frame (thicker title bar and blue border).
 const char kUseCustomChromeFrame[] = "browser.custom_chrome_frame";
 
-// Boolean that indicates whether the infobar explaining that search can be
-// done directly from the omnibox should be shown.
-const char kShowOmniboxSearchHint[] = "browser.show_omnibox_search_hint";
-
 // The preferred position (which corner of screen) for desktop notifications.
 const char kDesktopNotificationPosition[] =
     "browser.desktop_notification_position";
@@ -1113,6 +1110,9 @@ const char kDefaultZoomLevel[] = "profile.default_zoom_level";
 const char kPerHostZoomLevels[] = "profile.per_host_zoom_levels";
 
 const char kAutofillDialogAutofillDefault[] = "autofill.data_model_default";
+
+// Whether a user has ever paid with Wallet via the autofill dialog.
+const char kAutofillDialogHasPaidWithWallet[] = "autofill.has_paid_with_wallet";
 
 // Whether a user opted out of making purchases with Google Wallet; changed via
 // the autofill dialog's account chooser and set explicitly on dialog submission
@@ -1866,10 +1866,6 @@ const char kGoogleServicesUsernamePattern[] =
 // Tracks the number of times that we have shown the sync promo at startup.
 const char kSyncPromoStartupCount[] = "sync_promo.startup_count";
 
-// A counter to remember the number of times we've been to the sync promo page
-// (not at startup).
-const char kSyncPromoViewCount[] = "sync_promo.view_count";
-
 // Boolean tracking whether the user chose to skip the sync promo.
 const char kSyncPromoUserSkipped[] = "sync_promo.user_skipped";
 
@@ -2111,6 +2107,15 @@ const char kRebootAfterUpdate[] = "automatic_reboot.reboot_after_update";
 // Public Accounts and kiosks.
 const char kDeviceRobotAnyApiRefreshToken[] =
     "device_robot_refresh_token.any-api";
+
+// Device requisition for enterprise enrollment.
+const char kDeviceEnrollmentRequisition[] = "enrollment.device_requisition";
+
+// Whether to automatically start the enterprise enrollment step during OOBE.
+const char kDeviceEnrollmentAutoStart[] = "enrollment.auto_start";
+
+// Whether the user may exit enrollment.
+const char kDeviceEnrollmentCanExit[] = "enrollment.can_exit";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2478,6 +2483,9 @@ extern const char kLastAppListLaunchPing[] = "app_list.last_launch_ping";
 // ping and the time of the last ping.
 extern const char kAppListAppLaunchCount[] = "app_list.app_launch_count";
 extern const char kLastAppListAppLaunchPing[] = "app_list.last_app_launch_ping";
+
+// How often the bubble has been shown.
+extern const char kModuleConflictBubbleShown[] = "module_conflict.bubble_shown";
 
 // A string pref for storing the salt used to compute the pepper device ID.
 const char kDRMSalt[] = "settings.privacy.drm_salt";

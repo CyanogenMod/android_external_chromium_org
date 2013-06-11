@@ -9,8 +9,8 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/platform_file.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
@@ -64,13 +64,13 @@ void DoOpenPnaclFile(
 
   // Do some validation.
   if (!nacl_file_host::PnaclCanOpenFile(filename, &full_filepath)) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
 
   base::PlatformFile file_to_open;
   if (!PnaclDoOpenFile(full_filepath, &file_to_open)) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
 
@@ -81,7 +81,7 @@ void DoOpenPnaclFile(
                                    chrome_render_message_filter->peer_handle(),
                                    true /* Close source */);
   if (target_desc == IPC::InvalidPlatformFileForTransit()) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
   ChromeViewHostMsg_GetReadonlyPnaclFD::WriteReplyParams(
@@ -96,7 +96,7 @@ void DoCreateTemporaryFile(
 
   base::FilePath file_path;
   if (!file_util::CreateTemporaryFile(&file_path)) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
 
@@ -109,7 +109,7 @@ void DoCreateTemporaryFile(
       NULL, &error);
 
   if (error != base::PLATFORM_FILE_OK) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
 
@@ -120,7 +120,7 @@ void DoCreateTemporaryFile(
                                    chrome_render_message_filter->peer_handle(),
                                    true);
   if (target_desc == IPC::InvalidPlatformFileForTransit()) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
 
@@ -214,7 +214,7 @@ void DoOpenNaClExecutableOnThreadPool(
 
   base::FilePath file_path;
   if (!GetExtensionFilePath(extension_info_map, file_url, &file_path)) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
 
@@ -230,7 +230,7 @@ void DoOpenNaClExecutableOnThreadPool(
             chrome_render_message_filter,
             file, file_path, reply_msg));
   } else {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
 }
@@ -249,7 +249,7 @@ void GetReadonlyPnaclFd(
                      chrome_render_message_filter,
                      filename,
                      reply_msg))) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
   }
 }
 
@@ -294,7 +294,7 @@ void CreateTemporaryFile(
       base::Bind(&DoCreateTemporaryFile,
                  chrome_render_message_filter,
                  reply_msg))) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
   }
 }
 
@@ -328,7 +328,7 @@ void OpenNaClExecutable(
   if (!content::SiteInstance::IsSameWebSite(site_instance->GetBrowserContext(),
                                             site_instance->GetSiteURL(),
                                             file_url)) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
     return;
   }
 
@@ -342,7 +342,7 @@ void OpenNaClExecutable(
           chrome_render_message_filter,
           extension_info_map,
           file_url, reply_msg))) {
-    NotifyRendererOfError(chrome_render_message_filter, reply_msg);
+    NotifyRendererOfError(chrome_render_message_filter.get(), reply_msg);
   }
 }
 

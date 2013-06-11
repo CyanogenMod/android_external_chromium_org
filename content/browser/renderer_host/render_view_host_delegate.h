@@ -11,7 +11,7 @@
 #include "base/callback.h"
 #include "base/i18n/rtl.h"
 #include "base/process_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/javascript_message_type.h"
@@ -215,6 +215,11 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // the window.
   virtual void DidDisownOpener(RenderViewHost* rvh) {}
 
+  // Another page accessed the initial empty document of this RenderView,
+  // which means it is no longer safe to display a pending URL without
+  // risking a URL spoof.
+  virtual void DidAccessInitialDocument() {}
+
   // The RenderView's main frame document element is ready. This happens when
   // the document has finished parsing.
   virtual void DocumentAvailableInMainFrame(RenderViewHost* render_view_host) {}
@@ -364,6 +369,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // the Windows function which is actually a #define.
   virtual void CreateNewWindow(
       int route_id,
+      int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) {}
 

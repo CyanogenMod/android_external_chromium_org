@@ -21,11 +21,11 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner_util.h"
 #include "base/threading/worker_pool.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
@@ -312,7 +312,7 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
   // guarantees that the message loop will be referenced by the
   // browser before it is dereferenced by the login host.
   if (login_host)
-    login_host->OnSessionStart();
+    login_host->Finalize();
   UserManager::Get()->SessionStarted();
 }
 
@@ -447,8 +447,10 @@ void LoginUtilsImpl::OnProfileCreated(
     case Profile::CREATE_STATUS_CREATED:
       InitProfilePreferences(user_profile);
       break;
-    case Profile::CREATE_STATUS_FAIL:
-    default:
+    case Profile::CREATE_STATUS_LOCAL_FAIL:
+    case Profile::CREATE_STATUS_REMOTE_FAIL:
+    case Profile::CREATE_STATUS_CANCELED:
+    case Profile::MAX_CREATE_STATUS:
       NOTREACHED();
       break;
   }

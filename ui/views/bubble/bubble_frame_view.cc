@@ -94,14 +94,18 @@ int BubbleFrameView::NonClientHitTest(const gfx::Point& point) {
     return HTNOWHERE;
   if (close_->visible() && close_->GetMirroredBounds().Contains(point))
     return HTCLOSE;
-  if (!GetWidget()->widget_delegate()->CanResize())
-    return GetWidget()->client_view()->NonClientHitTest(point);
 
-  const int size = bubble_border_->GetBorderThickness() + 4;
-  const int hit = GetHTComponentForFrame(point, size, size, size, size, true);
-  if (hit == HTNOWHERE && point.y() < title_->bounds().bottom())
-    return HTCAPTION;
-  return hit;
+  // Allow dialogs to show the system menu and be dragged.
+  if (GetWidget()->widget_delegate()->AsDialogDelegate()) {
+    gfx::Rect sys_rect(0, 0, title_->x(), title_->y());
+    sys_rect.set_origin(gfx::Point(GetMirroredXForRect(sys_rect), 0));
+    if (sys_rect.Contains(point))
+      return HTSYSMENU;
+    if (point.y() < title_->bounds().bottom())
+      return HTCAPTION;
+  }
+
+  return GetWidget()->client_view()->NonClientHitTest(point);
 }
 
 void BubbleFrameView::GetWindowMask(const gfx::Size& size,
@@ -141,12 +145,14 @@ gfx::Size BubbleFrameView::GetPreferredSize() {
   const gfx::Size client(GetWidget()->client_view()->GetPreferredSize());
   gfx::Size size(GetUpdatedWindowBounds(gfx::Rect(), client, false).size());
   // Accommodate the width of the title bar elements.
-  int title_bar_width = GetInsets().width() + border()->GetInsets().width() +
-      kTitleLeftInset + title_->GetPreferredSize().width() +
-      close_->width() + 1;
+  int title_bar_width = GetInsets().width() + border()->GetInsets().width();
+  if (!title_->text().empty())
+    title_bar_width += kTitleLeftInset + title_->GetPreferredSize().width();
+  if (close_->visible())
+    title_bar_width += close_->width() + 1;
   if (titlebar_extra_view_ != NULL)
     title_bar_width += titlebar_extra_view_->GetPreferredSize().width();
-  size.ClampToMin(gfx::Size(title_bar_width, 0));
+  size.SetToMax(gfx::Size(title_bar_width, 0));
   return size;
 }
 
@@ -161,14 +167,14 @@ void BubbleFrameView::Layout() {
   title_bounds.Inset(kTitleLeftInset, kTitleTopInset, 0, 0);
   gfx::Size title_size(title_->GetPreferredSize());
   const int title_width = std::max(0, close_->bounds().x() - title_bounds.x());
-  title_size.ClampToMax(gfx::Size(title_width, title_size.height()));
+  title_size.SetToMin(gfx::Size(title_width, title_size.height()));
   title_bounds.set_size(title_size);
   title_->SetBoundsRect(title_bounds);
 
   if (titlebar_extra_view_) {
     const int extra_width = close_->bounds().x() - title_->bounds().right();
     gfx::Size size = titlebar_extra_view_->GetPreferredSize();
-    size.ClampToMax(gfx::Size(std::max(0, extra_width), size.height()));
+    size.SetToMin(gfx::Size(std::max(0, extra_width), size.height()));
     gfx::Rect titlebar_extra_view_bounds(
         bounds.right() - size.width(),
         title_bounds.y(),

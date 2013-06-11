@@ -13,7 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/browser/renderer_host/pepper/browser_ppapi_host_impl.h"
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
@@ -107,6 +107,8 @@ class PpapiPluginProcessHost : public BrowserChildProcessHostDelegate,
   // channel is ready or if there's an error.
   void OpenChannelToPlugin(Client* client);
 
+  BrowserPpapiHostImpl* host_impl() { return host_impl_.get(); }
+  const BrowserChildProcessHostImpl* process() { return process_.get(); }
   const base::FilePath& plugin_path() const { return plugin_path_; }
   const base::FilePath& profile_data_directory() const {
     return profile_data_directory_;

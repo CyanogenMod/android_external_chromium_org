@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller_impl.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
@@ -17,9 +18,11 @@
 #include "components/autofill/browser/autofill_common_test.h"
 #include "components/autofill/browser/autofill_metrics.h"
 #include "components/autofill/browser/test_personal_data_manager.h"
-#include "components/autofill/browser/wallet/wallet_test_util.h"
+#include "components/autofill/browser/validation.h"
+#include "components/autofill/common/autofill_switches.h"
 #include "components/autofill/common/form_data.h"
 #include "components/autofill/common/form_field_data.h"
+#include "components/autofill/content/browser/wallet/wallet_test_util.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -116,9 +119,15 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   }
 
   // Increase visibility for testing.
-  AutofillDialogView* view() { return AutofillDialogControllerImpl::view(); }
-  const DetailInput* input_showing_popup() const {
-    return AutofillDialogControllerImpl::input_showing_popup();
+  using AutofillDialogControllerImpl::view;
+  using AutofillDialogControllerImpl::input_showing_popup;
+
+  virtual std::vector<DialogNotification> CurrentNotifications() OVERRIDE {
+    return notifications_;
+  }
+
+  void set_notifications(const std::vector<DialogNotification>& notifications) {
+    notifications_ = notifications;
   }
 
   TestPersonalDataManager* GetTestingManager() {
@@ -126,6 +135,7 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   }
 
   using AutofillDialogControllerImpl::DisableWallet;
+  using AutofillDialogControllerImpl::IsEditingExistingData;
 
  protected:
   virtual PersonalDataManager* GetManager() OVERRIDE {
@@ -141,6 +151,10 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   const AutofillMetrics& metric_logger_;
   TestPersonalDataManager test_manager_;
   scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
+
+  // A list of notifications to show in the notification area of the dialog.
+  // This is used to control what |CurrentNotifications()| returns for testing.
+  std::vector<DialogNotification> notifications_;
 
   DISALLOW_COPY_AND_ASSIGN(TestAutofillDialogController);
 };
@@ -464,6 +478,63 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, WalletCreditCardDisabled) {
     }
   }
   ASSERT_LT(i, add_inputs.size());
+}
+
+// Ensure that expired cards trigger invalid suggestions.
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, ExpiredCard) {
+  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
+  controller()->DisableWallet();
+
+  CreditCard verified_card(test::GetCreditCard());
+  verified_card.set_origin("Chrome settings");
+  ASSERT_TRUE(verified_card.IsVerified());
+  controller()->GetTestingManager()->AddTestingCreditCard(&verified_card);
+
+  CreditCard expired_card(test::GetCreditCard());
+  expired_card.set_origin("Chrome settings");
+  expired_card.SetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR, ASCIIToUTF16("2007"));
+  ASSERT_TRUE(expired_card.IsVerified());
+  ASSERT_FALSE(
+      autofill::IsValidCreditCardExpirationDate(
+          expired_card.GetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR),
+          expired_card.GetRawInfo(CREDIT_CARD_EXP_MONTH),
+          base::Time::Now()));
+  controller()->GetTestingManager()->AddTestingCreditCard(&expired_card);
+
+  ui::MenuModel* model = controller()->MenuModelForSection(SECTION_CC);
+  ASSERT_EQ(4, model->GetItemCount());
+
+  ASSERT_TRUE(model->IsItemCheckedAt(0));
+  EXPECT_FALSE(controller()->IsEditingExistingData(SECTION_CC));
+
+  model->ActivatedAt(1);
+  ASSERT_TRUE(model->IsItemCheckedAt(1));
+  EXPECT_TRUE(controller()->IsEditingExistingData(SECTION_CC));
+}
+
+// Notifications with long message text should not make the dialog bigger.
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, LongNotifications) {
+  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
+
+  const gfx::Size no_notification_size =
+      controller()->view()->GetTestableView()->GetSize();
+  ASSERT_GT(no_notification_size.width(), 0);
+
+  std::vector<DialogNotification> notifications;
+  notifications.push_back(
+      DialogNotification(DialogNotification::DEVELOPER_WARNING, ASCIIToUTF16(
+          "Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do "
+          "eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim "
+          "ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut "
+          "aliquip ex ea commodo consequat. Duis aute irure dolor in "
+          "reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla "
+          "pariatur. Excepteur sint occaecat cupidatat non proident, sunt in "
+          "culpa qui officia deserunt mollit anim id est laborum.")));
+  controller()->set_notifications(notifications);
+  controller()->view()->UpdateNotificationArea();
+
+  EXPECT_EQ(no_notification_size.width(),
+            controller()->view()->GetTestableView()->GetSize().width());
 }
 #endif  // defined(TOOLKIT_VIEWS)
 

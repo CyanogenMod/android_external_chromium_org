@@ -9,7 +9,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -20,6 +20,7 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/prefs/browser_prefs.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -39,7 +40,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -100,10 +100,7 @@ class ProfileManagerTest : public testing::Test {
         extension_event_router_forwarder_(new extensions::EventRouterForwarder),
         ui_thread_(BrowserThread::UI, &message_loop_),
         db_thread_(BrowserThread::DB, &message_loop_),
-        file_thread_(BrowserThread::FILE, &message_loop_),
-        io_thread_(local_state_.Get(), g_browser_process->policy_service(),
-                   NULL, extension_event_router_forwarder_) {
-    TestingBrowserProcess::GetGlobal()->SetIOThread(&io_thread_);
+        file_thread_(BrowserThread::FILE, &message_loop_) {
   }
 
   virtual void SetUp() {
@@ -124,10 +121,6 @@ class ProfileManagerTest : public testing::Test {
   }
 
 #if defined(OS_CHROMEOS)
-  // Do not change order of stub_cros_enabler_, which needs to be constructed
-  // before io_thread_ which requires CrosLibrary to be initialized to construct
-  // its data member pref_proxy_config_tracker_ on ChromeOS.
-  chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
   chromeos::ScopedTestCrosSettings test_cros_settings_;
 #endif
@@ -142,8 +135,6 @@ class ProfileManagerTest : public testing::Test {
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread file_thread_;
-  // IOThread is necessary for the creation of some services below.
-  IOThread io_thread_;
 
 #if defined(OS_CHROMEOS)
   chromeos::ScopedTestUserManager test_user_manager_;
@@ -426,6 +417,37 @@ TEST_F(ProfileManagerTest, InitProfileInfoCacheForAProfile) {
             UTF16ToUTF8(cache.GetNameOfProfileAtIndex(profile_index)));
   EXPECT_EQ(avatar_index,
             cache.GetAvatarIconIndexOfProfileAtIndex(profile_index));
+}
+
+TEST_F(ProfileManagerTest, GetLastUsedProfileAllowedByPolicy) {
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  ASSERT_TRUE(profile_manager);
+
+  Profile* profile = profile_manager->GetLastUsedProfileAllowedByPolicy();
+  ASSERT_TRUE(profile);
+  EXPECT_FALSE(profile->IsOffTheRecord());
+  PrefService* prefs = profile->GetPrefs();
+  EXPECT_EQ(IncognitoModePrefs::ENABLED,
+            IncognitoModePrefs::GetAvailability(prefs));
+
+  // Attach an incognito Profile to the TestingProfile.
+  ASSERT_FALSE(profile->GetOffTheRecordProfile());
+  TestingProfile* incognito_profile = new TestingProfile();
+  incognito_profile->set_incognito(true);
+  EXPECT_TRUE(incognito_profile->IsOffTheRecord());
+  TestingProfile* testing_profile = static_cast<TestingProfile*>(profile);
+  testing_profile->SetOffTheRecordProfile(incognito_profile);
+  ASSERT_TRUE(profile->GetOffTheRecordProfile());
+
+  IncognitoModePrefs::SetAvailability(prefs, IncognitoModePrefs::DISABLED);
+  EXPECT_FALSE(
+      profile_manager->GetLastUsedProfileAllowedByPolicy()->IsOffTheRecord());
+
+  // GetLastUsedProfileAllowedByPolicy() returns the incognito Profile when
+  // incognito mode is forced.
+  IncognitoModePrefs::SetAvailability(prefs, IncognitoModePrefs::FORCED);
+  EXPECT_TRUE(
+      profile_manager->GetLastUsedProfileAllowedByPolicy()->IsOffTheRecord());
 }
 
 #if !defined(OS_ANDROID)

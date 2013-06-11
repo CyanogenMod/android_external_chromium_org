@@ -55,6 +55,13 @@ other types of suffix sets.
 
 <histograms>
 
+<histogram name="Apps.AppLaunch" enum="AppLaunch">
+  <summary>
+    The number of times v2 packaged apps are launched grouped by
+    extension_misc::AppLaunchBuckets. See also Extensions.AppLaunch.
+  </summary>
+</histogram>
+
 <histogram name="AsyncDNS.ConfigChange" enum="BooleanSuccess">
   <summary>
     Whether DnsConfigService::OnConfigChange actually corresponded to a change
@@ -326,6 +333,44 @@ other types of suffix sets.
   <summary>
     Duration of time taken in successful calls to AddressSorter in dual-stack
     resolutions using DnsTask.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TimeoutErrorHistogram" units="milliseconds">
+  <summary>
+    Difference between RTT and timeout calculated using Histogram algorithm.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TimeoutErrorHistogramUnder" units="milliseconds">
+  <summary>
+    Difference between timeout calculated using Histogram algorithm and RTT.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TimeoutErrorJacobson" units="milliseconds">
+  <summary>
+    Difference between RTT and timeout calculated using Jacobson algorithm.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TimeoutErrorJacobsonUnder" units="milliseconds">
+  <summary>
+    Difference between timeout calculated using Jacobson algorithm and RTT.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TimeoutSpentHistogram" units="milliseconds">
+  <summary>
+    Duration of time that would be spent waiting for lost request using
+    Histogram algorithm.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TimeoutSpentJacobson" units="milliseconds">
+  <summary>
+    Duration of time that would be spent waiting for lost request using Jacobson
+    algorithm.
   </summary>
 </histogram>
 
@@ -833,6 +878,31 @@ other types of suffix sets.
   <summary>
     The type of file system that Chrome OS cros-disks daemon is requested to
     mount.
+  </summary>
+</histogram>
+
+<histogram name="DisabledExtension.ExtensionWipedStatus" enum="BooleanWiped">
+  <summary>Whether an extension has been wiped out.</summary>
+</histogram>
+
+<histogram name="DisabledExtension.SideloadWipeoutCount">
+  <summary>
+    How many external extensions get wiped out as a result of the Sideload
+    Wipeout one-time initiative.
+  </summary>
+</histogram>
+
+<histogram name="DisabledExtension.SideloadWipeoutNeeded" enum="BooleanSuccess">
+  <summary>
+    Whether any extension got wiped out as a result of the Sideload Wipeout
+    one-time initiative.
+  </summary>
+</histogram>
+
+<histogram name="DisabledExtension.UserSelection" enum="SideloadWipeoutBubble">
+  <summary>
+    The user selection in the Sideload Wipeout bubble, grouped by the
+    UmaWipeoutHistogramOptions enum.
   </summary>
 </histogram>
 
@@ -1596,6 +1666,148 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="ExtensionBlacklist.BlacklistInstalled"
+    enum="ExtensionLocation">
+  <summary>
+    The number of extensions that were blacklisted when already installed,
+    grouped by Extension::Location. Logged when ExtensionService blackists and
+    unloads an installed extension.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionBlacklist.BlockCRX" enum="ExtensionLocation">
+  <summary>
+    The number of extensions that have been blocked from installing grouped by
+    Extension::Location. Logged when CrxInstaller refuses to install a
+    blacklisted extension.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionBlacklist.UnblacklistInstalled"
+    enum="ExtensionLocation">
+  <summary>
+    The number of extensions that were unblacklisted when installed, grouped by
+    Extension::Location. Logged when ExtensionService unblacklists and loads a
+    blacklisted extension.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.APIUse_RelativeURL" enum="UrlResolutionResult">
+  <summary>
+    Captures the results of URL resolution when relative urls are used in the
+    tabs/windows api.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.AppLaunch" enum="AppLaunch">
+  <summary>
+    The number of times v1 apps are launched grouped by
+    extension_misc::AppLaunchBuckets. See also Apps.AppLaunch for v2 apps.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.AppLaunchContainer" enum="AppLaunchContainer">
+  <summary>
+    The number of times apps are launched grouped by
+    extension_misc::LaunchContainer.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.AppLocation" enum="ExtensionLocation">
+  <summary>
+    The number of apps loaded at startup time grouped by Extension::Location.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.AppsPromo" enum="AppPromoAction">
+  <summary>
+    The actions taken in the NTP apps promo grouped by
+    extension_misc::AppsPromoBuckets.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.AppTabLaunchType" enum="ExtensionLaunchType">
+  <summary>
+    The number of apps launched grouped by ExtensionPrefs::LaunchType.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.BackgroundPageLoadTime" units="milliseconds">
+  <summary>The time for an extension's background page to load.</summary>
+</histogram>
+
+<histogram name="Extensions.BackgroundPageType"
+    units="ExtensionBackgroundPageType">
+  <summary>
+    The type (if any) of background page the extension has. Recorded for
+    installed extensions on startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.CrxFetchFailureRetryCountGoogleUrl">
+  <summary>
+    Number of times chrome retried to download an extension with a url on a
+    google.com domain, before eventually giving up.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.CrxFetchFailureRetryCountOtherUrl">
+  <summary>
+    Number of times chrome retried to download an extension with a url on a non
+    google.com domain, before eventually giving up.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.CrxFetchSuccessRetryCountGoogleUrl">
+  <summary>
+    Number of times chrome retried to download an extension with a url on a
+    google.com domain, before eventually succeeding.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.CrxFetchSuccessRetryCountOtherUrl">
+  <summary>
+    Number of times chrome retried to download an extension with a url on a non
+    google.com domain, before eventually succeeding.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.CrxInstallDirPathLength">
+  <summary>
+    Length of the path to the directory under which an extension is installed.
+    This directory is in the user's profile.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.DeclarativeRulesStorageInitialization"
+    units="milliseconds">
+  <summary>Time spent until rules storage delegate gets ready.</summary>
+</histogram>
+
+<histogram name="Extensions.DepricatedExternalJsonCount">
+  <summary>
+    Number of extensions referenced in the depricated external extensions source
+    at path chrome::DIR_DEPRICATED_EXTERNAL_EXTENSIONS.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.DialogLoadTime" units="milliseconds">
+  <summary>The time for a dialog-hosted extension to load.</summary>
+</histogram>
+
+<histogram name="Extensions.Disabled">
+  <summary>
+    The number of extensions that are disabled at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.DisabledForPermissions">
+  <summary>
+    The number of extensions that are disabled at browser startup due to
+    permissions increases.
+  </summary>
+</histogram>
+
 <histogram name="Extensions.DisabledUIUserResponse"
     enum="ExtensionDisabledUIUserResponse">
   <summary>
@@ -1604,8 +1816,586 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Extensions.ErrorCodeFromCrxOpen">
+  <summary>
+    If opening the CRX file for unpacking fails, this integer is the error code
+    given by the OS.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.EventPageActiveTime" units="milliseconds">
+  <summary>The time an extension's event page has spent loaded.</summary>
+</histogram>
+
+<histogram name="Extensions.EventPageIdleTime" units="milliseconds">
+  <summary>The time an extension's event page has spent unloaded.</summary>
+</histogram>
+
+<histogram name="Extensions.EventPageLoadTime" units="milliseconds">
+  <summary>The time for an extension's event page to load.</summary>
+</histogram>
+
+<histogram name="Extensions.ExtensionInstalled">
+  <summary>An extension has been installed.</summary>
+</histogram>
+
+<histogram name="Extensions.ExtensionLocation" enum="ExtensionLocation">
+  <summary>
+    The number of extensions loaded at startup time grouped by
+    Extension::Location.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ExtensionRootPathLength">
+  <summary>
+    Length of the Extensions dir path inside the profile directory.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ExtensionUninstalled">
+  <summary>An extension has been uninstalled.</summary>
+</histogram>
+
+<histogram name="Extensions.ExternalExtensionEvent" enum="SideloadUIEvents">
+  <summary>
+    Records what happens to extensions that are sideloaded, grouped by the
+    ExternalExtensionEvent enum.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ExternalJsonCount">
+  <summary>
+    Number of extensions referenced in the external extensions source at path
+    chrome::DIR_EXTERNAL_EXTENSIONS.
+  </summary>
+</histogram>
+
 <histogram name="Extensions.FunctionCalls" enum="ExtensionFunctions">
   <summary>Number of calls to extension functions.</summary>
+</histogram>
+
+<histogram name="Extensions.GetUserDataTempDir" enum="GetUserDataTempDirResult">
+  <summary>
+    What happens when the extensions system tries to get a temp dir to unpack
+    in?
+  </summary>
+</histogram>
+
+<histogram name="Extensions.InjectCssTime" units="milliseconds">
+  <summary>
+    The amount of time for a CSS file to be injected into a page.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.InjectEnd_ScriptCount">
+  <summary>Number of scripts injected at document end by extensions.</summary>
+</histogram>
+
+<histogram name="Extensions.InjectEnd_Time" units="milliseconds">
+  <summary>
+    Time taken to inject all scripts at document end by extensions.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.InjectIdle_ScriptCount">
+  <summary>Number of scripts injected at document idle by extensions.</summary>
+</histogram>
+
+<histogram name="Extensions.InjectIdle_Time" units="milliseconds">
+  <summary>
+    Time taken to inject all scripts at document idle by extensions.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.InjectScriptTime" units="milliseconds">
+  <summary>Time taken to inject all scripts by extensions.</summary>
+</histogram>
+
+<histogram name="Extensions.InjectStart_CssCount">
+  <summary>Number of css files injected by extensions.</summary>
+</histogram>
+
+<histogram name="Extensions.InjectStart_ScriptCount">
+  <summary>Number of scripts injected at document start by extensions.</summary>
+</histogram>
+
+<histogram name="Extensions.InjectStart_Time" units="milliseconds">
+  <summary>
+    Time taken to inject css/scripts at document start by extensions.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.InstallSource" enum="ExtensionLocation">
+  <summary>Installs grouped by the location property in prefs.</summary>
+</histogram>
+
+<histogram name="Extensions.InstallType" enum="ExtensionType">
+  <summary>Installs grouped by Extension::HistogramType.</summary>
+</histogram>
+
+<histogram name="Extensions.LoadAll">
+  <summary>
+    The number of extensions and themes loaded at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadAllTime" units="milliseconds">
+  <summary>Time taken to load all extensions at browser startup.</summary>
+</histogram>
+
+<histogram name="Extensions.LoadApp">
+  <summary>The number of apps loaded by each user at startup time.</summary>
+</histogram>
+
+<histogram name="Extensions.LoadAppExternal">
+  <summary>
+    The number of externally managed apps loaded by each user at startup time.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadAppUser">
+  <summary>
+    The number of user-installed apps loaded by each user at startup time.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadBrowserAction">
+  <summary>
+    The number of browser action extensions loaded at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadContentPack">
+  <summary>
+    The number of content-pack extensions loaded at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadExtension">
+  <summary>The number of extensions loaded at browser startup.</summary>
+</histogram>
+
+<histogram name="Extensions.LoadExtensionExternal">
+  <summary>
+    The number of externally managed extensions loaded at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadExtensionUser">
+  <summary>
+    The number of user-installed extensions loaded at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadExternal">
+  <summary>
+    The number of externally managed extensions and apps loaded at browser
+    startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadHostedApp">
+  <summary>
+    The number of hosted apps loaded by each user at startup time.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadPackagedApp">
+  <summary>
+    The number of legacy packaged apps loaded by each user at startup time.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadPageAction">
+  <summary>
+    The number of page action extensions loaded at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadPlatformApp">
+  <summary>The number of platform apps loaded at browser startup.</summary>
+</histogram>
+
+<histogram name="Extensions.LoadTheme">
+  <summary>The number of themes loaded at browser startup.</summary>
+</histogram>
+
+<histogram name="Extensions.LoadType" enum="ExtensionType">
+  <summary>
+    The number of extensions loaded at startup time grouped by
+    Extension::HistogramType.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.LoadUserScript">
+  <summary>
+    The number of converted user scripts loaded at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ManifestFetchFailureRetryCountGoogleUrl">
+  <summary>
+    Number of times chrome retried to download an extension update manifest with
+    a url on a google.com domain, before eventually giving up.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ManifestFetchFailureRetryCountOtherUrl">
+  <summary>
+    Number of times chrome retried to download an extension update manifest with
+    a url on a non google.com domain, before eventually giving up.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ManifestFetchSuccessRetryCountGoogleUrl">
+  <summary>
+    Number of times chrome retried to download an extension update manifest with
+    a url on a google.com domain, before eventually succeeding.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ManifestFetchSuccessRetryCountOtherUrl">
+  <summary>
+    Number of times chrome retried to download an extension update manifest with
+    a url on a non google.com domain, before eventually succeeding.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ManifestReloadNeedsRelocalization">
+  <summary>
+    Number of extension loads on startup where it is necessary to reload the
+    mainfest because the locale has changed.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ManifestReloadNotNeeded">
+  <summary>
+    Number of extension loads on startup where it is not necessary to reload the
+    extension's manifest.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ManifestReloadUnpackedDir">
+  <summary>
+    Number of extension loads on startup where it is necessary to reload the
+    manifest because the extension is unpacked.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.NetworkDelay" units="milliseconds">
+  <summary>Time that network requests were blocked due to extensions.</summary>
+</histogram>
+
+<histogram name="Extensions.NetworkDelayPercentage" units="%">
+  <summary>
+    Percentage of total lifetime a network request was blocked due to an
+    extension.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.NetworkDelayRegistryLoad" units="milliseconds">
+  <summary>
+    Time that network requests were blocked due to relevant rule registries
+    loading.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_AutoDisable" enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when it is automatically disabled
+    due to a permission increase (e.g., after an extension upgrade).
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_Install" enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when it was installed.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_InstallAbort"
+    enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when installation was aborted, not
+    including installation errors and user cancels.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_InstallCancel"
+    enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when installation was canceled.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_Load" enum="ExtensionPermission">
+  <summary>The permissions present in an extension when it was loaded.</summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_ReEnable" enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when it was re-enabled from a
+    confirmation prompt.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_ReEnableAbort"
+    enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when the re-enable prompt was
+    aborted, not including installation errors and manual user cancels.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_ReEnableCancel"
+    enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when the re-enable was canceled from
+    the confirmation prompt.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_Uninstall" enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when it was uninstalled.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_WebStoreInstall"
+    enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when it was installed through the
+    web store.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_WebStoreInstallAbort"
+    enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when installation from the web store
+    was aborted, not including installation errors and user cancels.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.Permissions_WebStoreInstallCancel"
+    enum="ExtensionPermission">
+  <summary>
+    The permissions present in an extension when installation from the web store
+    was canceled.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackFailure">
+  <summary>
+    Count the number of times a sandboxed extension unpack fails.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackFailureReason"
+    enum="ExtensionUnpackFailureReason">
+  <summary>What caused a sandboxed extension unpack to fail?</summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackFailureTime">
+  <summary>Time taken to unpack an extension, when the unpack fails.</summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackInitialCrxPathLength">
+  <summary>Length of the initial path to the CRX to be unpacked.</summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackLinkFreeCrxPathLength">
+  <summary>
+    Length of the normalized (link/junction free) path to the temporary copy of
+    a CRX made during unpacking.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackRate">
+  <summary>
+    Rate at which a CRX file is unpacked in Kilobytes per second.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackRate1To2mB">
+  <summary>
+    Rate at which CRX files 1MB to 2MB are unpacked in Kilobytes per second.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackRate2To5mB">
+  <summary>
+    Rate at which CRX files 2MB to 5MB are unpacked in Kilobytes per second.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackRate50kBTo1mB">
+  <summary>
+    Rate at which CRX files 50kB to 1MB are unpacked in Kilobytes per second.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackRate5To10mB">
+  <summary>
+    Rate at which CRX files 5MB to 10 MB are unpacked in Kilobytes per second.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackRateOver10mB">
+  <summary>
+    Rate at which CRX files larger than 10MB are unpacked in Kilobytes per
+    second.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackRateUnder50kB">
+  <summary>
+    Rate at which CRX files under 50 KB are unpacked in Kilobytes per second.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackSuccess">
+  <summary>Count the number of times a sandboxed CRX unpack succeeds.</summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackSuccessCantGetCrxSize">
+  <summary>
+    Count the number of times a sandboxed CRX unpack succeeds, but we can't get
+    the file size.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackSuccessTime">
+  <summary>
+    Time taken to unpack an extension, when the unpack succeeds.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackTempCrxPathLength">
+  <summary>
+    Length of the path of the temporary copy of a CRX made during unpacking.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.SandboxUnpackUnpackedCrxPathLength">
+  <summary>Length of the path under which a CRX is unpacked.</summary>
+</histogram>
+
+<histogram name="Extensions.StartupDelay" units="milliseconds">
+  <summary>The time one extension delays network requests at startup.</summary>
+</histogram>
+
+<histogram name="Extensions.StartupDelay_Total" units="milliseconds">
+  <summary>
+    The total time extensions delay network requests at startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.ToolstripLoadTime" units="milliseconds">
+  <summary>Time taken to load a toolstrip.</summary>
+</histogram>
+
+<histogram name="Extensions.UninstallType" enum="ExtensionType">
+  <summary>Uninstalls grouped by Extension::HistogramType.</summary>
+</histogram>
+
+<histogram name="Extensions.UnpackFailureInstallCause"
+    enum="ExtensionInstallCause">
+  <summary>
+    Count failing CRX installs, grouped by the way an extension can be
+    installed.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UnpackFailureInstallSource"
+    enum="ExtensionLocation">
+  <summary>
+    Count successful CRX installs, grouped by the location property in prefs.
+    installed.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UnpackSuccessInstallCause"
+    enum="ExtensionInstallCause">
+  <summary>
+    Count successful CRX installs, grouped by the cause of the install.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UnpackSuccessInstallSource"
+    enum="ExtensionLocation">
+  <summary>
+    Count successful CRX installs, grouped by the location property in prefs.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateCheckApp">
+  <summary>
+    The number of legacy packaged apps and hosted apps that were checked during
+    an update check.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateCheckExtension">
+  <summary>
+    The number of extensions that were checked during an update check.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateCheckGap" units="minutes">
+  <summary>Time in minutes between update checks.</summary>
+</histogram>
+
+<histogram name="Extensions.UpdateCheckGoogleUrl">
+  <summary>
+    The number of crx's with a Google-hosted update URL that were checked during
+    an update check.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateCheckNoUrl">
+  <summary>
+    The number of crx's with no update URL checked during an update check.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateCheckOtherUrl">
+  <summary>
+    The number of crx's with a non-Google update URL that were checked during an
+    update check.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateCheckPackagedApp">
+  <summary>
+    The number of packaged apps that were checked during an update check.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateCheckTheme">
+  <summary>
+    The number of themes that were checked during an update check.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateOnLoad">
+  <summary>
+    The number of extensions that were updated at browser startup.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdaterWriteCrx" enum="ExtensionFileWriteResult">
+  <summary>
+    What happened when the extension updater tried to write a file?
+  </summary>
+</histogram>
+
+<histogram name="Extensions.UpdateSource" enum="ExtensionLocation">
+  <summary>Updates grouped by the location property in prefs.</summary>
+</histogram>
+
+<histogram name="Extensions.UpdateType" enum="ExtensionType">
+  <summary>Updates grouped by Extension::HistogramType.</summary>
 </histogram>
 
 <histogram name="FileBrowser.Create" enum="FileDialogType">
@@ -1814,6 +2604,13 @@ other types of suffix sets.
 
 <histogram name="GoogleNow.Event" enum="GoogleNowEvent">
   <summary>Events in Google Now component extension.</summary>
+</histogram>
+
+<histogram name="HistoryPage.OtherSessionsMenu" enum="NtpOtherSessionsType">
+  <summary>
+    Histogram for usage of the section in the history page that allows the user
+    to access tabs from other devices.
+  </summary>
 </histogram>
 
 <histogram name="HttpCache.EntryLockWait" units="milliseconds">
@@ -2178,6 +2975,24 @@ other types of suffix sets.
   <summary>The version of glibc used. (Linux only)</summary>
 </histogram>
 
+<histogram name="Media.AcceleratedCompositingActive" enum="BooleanSuccess">
+  <summary>
+    Whether accelerated compositing was used for HTML5 media rendering.
+  </summary>
+</histogram>
+
+<histogram name="Media.AudioBitsPerChannel">
+  <summary>Bits per channel of HTML5 audio sample data.</summary>
+</histogram>
+
+<histogram name="Media.AudioChannelLayout" enum="ChannelLayout">
+  <summary>Audio channel layout in HTML5 media.</summary>
+</histogram>
+
+<histogram name="Media.AudioCodec" enum="AudioCodec">
+  <summary>Audio codec used in HTML5 media.</summary>
+</histogram>
+
 <histogram name="Media.AudioInputController" units="ms">
   <summary>Measures the time taken for AudioInputController::</summary>
 </histogram>
@@ -2197,6 +3012,65 @@ other types of suffix sets.
   <summary>Captures statistics for various AudioRendererImpl events.</summary>
 </histogram>
 
+<histogram name="Media.AudioRendererMissedDeadline" units="%">
+  <summary>
+    Percentage of AudioSyncReader::Read() calls where the renderer missed its
+    realtime deadline.
+  </summary>
+</histogram>
+
+<histogram name="Media.AudioSamplesPerSecond" enum="AudioSampleRate">
+  <summary>Audio samples per second in HTML5 media.</summary>
+</histogram>
+
+<histogram name="Media.AudioSamplesPerSecondUnexpected" units="Hz">
+  <summary>
+    Audio samples per second in HTML5 media (atypical values, in Hz).
+  </summary>
+</histogram>
+
+<histogram name="Media.CacheUseful" enum="BooleanSuccess">
+  <summary>
+    Whether a media response might be used to satisfy a future request.
+  </summary>
+</histogram>
+
+<histogram name="Media.ChromeCast.DelayedAndDroppedFramesPer5Sec"
+    units="frames/5s">
+  <summary>
+    The average number of delayed and dropped frames for the ChromeCast
+    application.  Reported every 5 seconds.
+  </summary>
+</histogram>
+
+<histogram name="Media.ChromeCast.DisplayedFramesPerSecond" units="frames/s">
+  <summary>
+    The average number of displayed frames for the ChromeCast application.
+    Reported every 5 seconds.
+  </summary>
+</histogram>
+
+<histogram name="Media.ChromeCast.TimeToBufferAv" units="ms">
+  <summary>
+    Time needed to pre-buffer A/V data before the actual playback for the
+    ChromeCast application.
+  </summary>
+</histogram>
+
+<histogram name="Media.ChromeCast.TimeToBufferAvAfterAbort" units="ms">
+  <summary>
+    Time needed to buffer A/V data after an abort for the ChromeCast
+    application.
+  </summary>
+</histogram>
+
+<histogram name="Media.ChromeCast.TimeToBufferAvAfterUnderrun" units="ms">
+  <summary>
+    Time needed to buffer A/V data after an underrun for the ChromeCast
+    application.
+  </summary>
+</histogram>
+
 <histogram name="Media.DetectedAudioCodec" enum="FFmpegCodecs">
   <summary>Audio codec used in HTML5 media.</summary>
 </histogram>
@@ -2207,6 +3081,254 @@ other types of suffix sets.
 
 <histogram name="Media.DetectedVideoCodec" enum="FFmpegCodecs">
   <summary>Video codec used in HTML5 media.</summary>
+</histogram>
+
+<histogram name="Media.Duration" units="ms">
+  <summary>Duration in milliseconds of HTML5 media (when known).</summary>
+</histogram>
+
+<histogram name="Media.EME.ClearKey.addKey" enum="MediaKeyException">
+  <summary>addKey result using the Clear Key key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.ClearKey.cancelKeyRequest" enum="MediaKeyException">
+  <summary>cancelKeyRequest result using the Clear Key key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.ClearKey.DecryptError">
+  <summary>
+    Decryption error event count using the Clear Key key system.
+  </summary>
+</histogram>
+
+<histogram name="Media.EME.ClearKey.generateKeyRequest"
+    enum="MediaKeyException">
+  <summary>generateKeyRequest result using the Clear Key key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.ClearKey.KeyAdded">
+  <summary>KeyAdded event count using the Clear Key key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.ClearKey.KeyError" enum="MediaKeyError">
+  <summary>KeyError event count using the Clear Key key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.NeedKey">
+  <summary>EME NeedKey event count.</summary>
+</histogram>
+
+<histogram name="Media.EME.Unknown.addKey" enum="MediaKeyException">
+  <summary>addKey result using an unknown key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Unknown.cancelKeyRequest" enum="MediaKeyException">
+  <summary>cancelKeyRequest result using an unknown key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Unknown.DecryptError">
+  <summary>Decryption error event count using an unknown key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Unknown.generateKeyRequest" enum="MediaKeyException">
+  <summary>generateKeyRequest result using an unknown key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Unknown.KeyAdded">
+  <summary>KeyAdded event count using an unknown key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Unknown.KeyError" enum="MediaKeyError">
+  <summary>KeyError event count using an unknown key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Widevine.addKey" enum="MediaKeyException">
+  <summary>addKey result using the Widevine key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Widevine.cancelKeyRequest" enum="MediaKeyException">
+  <summary>cancelKeyRequest result using the Widevine key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Widevine.DecryptError">
+  <summary>Decryption error event count using the Widevine key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Widevine.generateKeyRequest"
+    enum="MediaKeyException">
+  <summary>generateKeyRequest result using the Widevine key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Widevine.KeyAdded">
+  <summary>KeyAdded event count using the Widevine key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Widevine.KeyError" enum="MediaKeyError">
+  <summary>KeyError event count using the Widevine key system.</summary>
+</histogram>
+
+<histogram name="Media.FallbackHardwareAudioBitsPerChannel">
+  <summary>
+    Bits per channel of the hardware audio device which failed to open in low
+    latency mode and required high latency fallback.
+  </summary>
+</histogram>
+
+<histogram name="Media.FallbackHardwareAudioChannelCount">
+  <summary>
+    Channel count of the hardware audio device which failed to open in low
+    latency mode and required high latency fallback.
+  </summary>
+</histogram>
+
+<histogram name="Media.FallbackHardwareAudioChannelLayout" enum="ChannelLayout">
+  <summary>
+    Channel layout of the hardware audio device which failed to open in low
+    latency mode and required high latency fallback.
+  </summary>
+</histogram>
+
+<histogram name="Media.FallbackHardwareAudioSamplesPerSecond"
+    enum="AudioSampleRate">
+  <summary>
+    Samples per second of the hardware audio device which failed to open in low
+    latency mode and required high latency fallback.
+  </summary>
+</histogram>
+
+<histogram name="Media.FallbackHardwareAudioSamplesPerSecondUnexpected"
+    units="Hz">
+  <summary>
+    Samples per second of the hardware audio device (atypical values, in Hz)
+    which failed to open in low latency mode and required high latency fallback.
+  </summary>
+</histogram>
+
+<histogram name="Media.FallbackToHighLatencyAudioPath" enum="BooleanSuccess">
+  <summary>
+    Whether Chrome had to fallback to the high latency audio path or not.
+  </summary>
+</histogram>
+
+<histogram name="Media.Fling.DelayedAndDroppedFramesPer5Sec" units="frames/5s">
+  <summary>
+    The average number of delayed and dropped frames for the Fling application.
+    Reported every 5 seconds.
+  </summary>
+</histogram>
+
+<histogram name="Media.Fling.DisplayedFramesPerSecond" units="frames/s">
+  <summary>
+    The average number of displayed frames for the Fling application.  Reported
+    every 5 seconds.
+  </summary>
+</histogram>
+
+<histogram name="Media.Fling.TimeToBufferAv" units="ms">
+  <summary>
+    Time needed to pre-buffer A/V data before the actual playback for the Fling
+    application.
+  </summary>
+</histogram>
+
+<histogram name="Media.Fling.TimeToBufferAvAfterAbort" units="ms">
+  <summary>
+    Time needed to buffer A/V data after an abort for the Fling application.
+  </summary>
+</histogram>
+
+<histogram name="Media.Fling.TimeToBufferAvAfterUnderrun" units="ms">
+  <summary>
+    Time needed to buffer A/V data after an underrun for the Fling application.
+  </summary>
+</histogram>
+
+<histogram name="Media.GpuVideoDecoderInitializeStatus" enum="PipelineStatus">
+  <summary>Results of attempts to GpuVideoDecoder::Initialize().</summary>
+</histogram>
+
+<histogram name="Media.HardwareAudioBitsPerChannel">
+  <summary>Bits per channel of the hardware audio device.</summary>
+</histogram>
+
+<histogram name="Media.HardwareAudioChannelCount">
+  <summary>Channel count of the hardware audio device.</summary>
+</histogram>
+
+<histogram name="Media.HardwareAudioChannelLayout" enum="ChannelLayout">
+  <summary>Channel layout of the hardware audio device.</summary>
+</histogram>
+
+<histogram name="Media.HardwareAudioSamplesPerSecond" enum="AudioSampleRate">
+  <summary>Samples per second of the hardware audio device.</summary>
+</histogram>
+
+<histogram name="Media.HardwareAudioSamplesPerSecondUnexpected" units="Hz">
+  <summary>
+    Samples per second of the hardware audio device (atypical values, in Hz).
+  </summary>
+</histogram>
+
+<histogram name="Media.LinuxAudioIO" enum="LinuxAudioIO">
+  <summary>
+    Audio IO layer used by the Linux OS, sampled once at startup of the browser.
+  </summary>
+</histogram>
+
+<histogram name="Media.MSE.AudioCodec" enum="MSECodec">
+  <summary>
+    Audio codec used in Media Source Extensions playback. Set when AddId() is
+    called during playback.
+  </summary>
+</histogram>
+
+<histogram name="Media.MSE.NumberOfTracks">
+  <summary>
+    Number of tracks specified to AddId() for Media Source Extensions playback.
+    May be called multiple times per element if playback is dynamically altered.
+  </summary>
+</histogram>
+
+<histogram name="Media.MSE.Playback" enum="BooleanSuccess">
+  <summary>
+    Whether Media Source Extensions is specified for playback of Media elements.
+    Sampled when media pipeline starts.
+  </summary>
+</histogram>
+
+<histogram name="Media.MSE.VideoCodec" enum="MSECodec">
+  <summary>
+    Video codec used in Media Source Extensions playback. Set when AddId() is
+    called during playback.
+  </summary>
+</histogram>
+
+<histogram name="Media.Netflix.AudioBitrate" units="kbps">
+  <summary>
+    The audio bit rate as reported by the Netflix application.  May be reported
+    multiple times as network conditions change during playback.
+  </summary>
+</histogram>
+
+<histogram name="Media.Netflix.AudioNumChannels" units="channels">
+  <summary>
+    The number of audio channels as reported by the Netflix application. May be
+    reported multiple times as network conditions change during playback.
+  </summary>
+</histogram>
+
+<histogram name="Media.Netflix.VideoBitrate" units="kbps">
+  <summary>
+    Video bit rate as reported by the Netflix application.  May be reported
+    multiple times as network conditions change during playback.
+  </summary>
+</histogram>
+
+<histogram name="Media.Netflix.VideoHeight" units="pixels">
+  <summary>
+    Video height as reported by the Netflix application.  May be reported
+    multiple times as network conditions change during playback.
+  </summary>
 </histogram>
 
 <histogram name="Media.PepperVideoDecoderError" enum="PepperVideoDecodeError">
@@ -2229,9 +3351,90 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Media.TimeToPipelineStarted" units="ms">
+  <summary>
+    Time in milliseconds from HTML5 media pipeline creation to playing event.
+  </summary>
+</histogram>
+
+<histogram name="Media.TotalMBytes" units="MB">
+  <summary>Size of HTML5 media (when known), in MB.</summary>
+</histogram>
+
+<histogram name="Media.UncacheableReason" enum="UncacheableReason">
+  <summary>
+    Reasons a media response won't be used to satisfy a future request.
+  </summary>
+</histogram>
+
+<histogram name="Media.URLScheme" enum="URLSchemeForHistogram">
+  <summary>
+    URL scheme used with HTML5 media. (each URL provides one sample)
+  </summary>
+</histogram>
+
 <histogram name="Media.VAVDAH264.DecoderFailure" enum="VAVDAH264DecoderFailure">
   <summary>
     Error codes reported by video decode using VA-API hardware video decoder.
+  </summary>
+</histogram>
+
+<histogram name="Media.VideoCodec" enum="VideoCodec">
+  <summary>Video codec used in HTML5 media.</summary>
+</histogram>
+
+<histogram name="Media.VideoCodecProfile" enum="VideoCodecProfile">
+  <summary>Video codec profile used in HTML5 media.</summary>
+</histogram>
+
+<histogram name="Media.VideoCodedAspectRatio">
+  <summary>Coded aspect ratio of HTML5 video.</summary>
+</histogram>
+
+<histogram name="Media.VideoCodedWidth">
+  <summary>Coded width of HTML5 video.</summary>
+</histogram>
+
+<histogram name="Media.VideoVisibleAspectRatio">
+  <summary>Visible aspect ratio of HTML5 video.</summary>
+</histogram>
+
+<histogram name="Media.VideoVisibleWidth">
+  <summary>Visible width of HTML5 video.</summary>
+</histogram>
+
+<histogram name="Media.YouTube.DelayedAndDroppedFramesPer5Sec"
+    units="frames/5s">
+  <summary>
+    The average number of delayed and dropped frames for the YouTube
+    application.  Reported every 5 seconds.
+  </summary>
+</histogram>
+
+<histogram name="Media.YouTube.DisplayedFramesPerSecond" units="frames/s">
+  <summary>
+    The average number of displayed frames for the YouTube application. Reported
+    every 5 seconds.
+  </summary>
+</histogram>
+
+<histogram name="Media.YouTube.TimeToBufferAv" units="ms">
+  <summary>
+    Time needed to pre-buffer A/V data before the actual playback for the
+    YouTube application.
+  </summary>
+</histogram>
+
+<histogram name="Media.YouTube.TimeToBufferAvAfterAbort" units="ms">
+  <summary>
+    Time needed to buffer A/V data after an abort for the YouTube application.
+  </summary>
+</histogram>
+
+<histogram name="Media.YouTube.TimeToBufferAvAfterUnderrun" units="ms">
+  <summary>
+    Time needed to buffer A/V data after an underrun for the YouTube
+    application.
   </summary>
 </histogram>
 
@@ -3255,6 +4458,24 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.IPv6ConnectDuration" units="milliseconds">
+  <summary>Duration of time spent during the UDP-connect IPv6 probe.</summary>
+</histogram>
+
+<histogram name="Net.IPv6ConnectFailureMatch" enum="BooleanSuccess">
+  <summary>
+    Whether the the interface-enumeration IPv6 probe method failed given that
+    the UDP-connect IPV6 probe failed.
+  </summary>
+</histogram>
+
+<histogram name="Net.IPv6ConnectSuccessMatch" enum="BooleanSuccess">
+  <summary>
+    Whether the the interface-enumeration IPv6 probe method was successful given
+    that the UDP-connect IPV6 probe was successful.
+  </summary>
+</histogram>
+
 <histogram name="Net.IPv6Status" enum="IPV6ProbeResult">
   <summary>The probe results when a test for IPv6 support is done.</summary>
 </histogram>
@@ -3379,6 +4600,14 @@ other types of suffix sets.
   <summary>
     Positive error code that was returned by the system library
     &quot;getaddrinfo()&quot;.
+  </summary>
+</histogram>
+
+<histogram name="Net.PreconnectedNavigation" enum="PreconnectedNavigation">
+  <summary>
+    Indicate whether the navigation was preceded by a recent pre-connect
+    (pre-connect within 10 seconds). There is a high chance that loading the
+    page used a preconnected TCP session.
   </summary>
 </histogram>
 
@@ -3651,6 +4880,10 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.ProxyResolver.URLSize">
+  <summary>The length of the URL that was passed into the PAC script.</summary>
+</histogram>
+
 <histogram name="Net.PublicKeyPinFailureDomain" enum="PublicKeyPinFailedDomain">
   <summary>
     Second-level domains for which we have observed public key pinning failures.
@@ -3662,6 +4895,24 @@ other types of suffix sets.
     A validated certificate chain may be subject to additional
     &quot;pinning&quot; requirements on a per-domain basis. This records the
     fraction of successful matches between a certificate chain and a pin list.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicCryptoHandshakeState" enum="QuicHandshakeState">
+  <summary>
+    The state of a QUIC connection's crypto hanshake as it progresses from
+    starting to confirmation or failure.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicNumSentClientHellos">
+  <summary>The number of client hello messages sent.</summary>
+</histogram>
+
+<histogram name="Net.QuicNumSentClientHellosCryptoHandshakeConfirmed">
+  <summary>
+    The number of client hello messages sent when the crypto handshake was
+    confirmed.
   </summary>
 </histogram>
 
@@ -5699,6 +6950,165 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="NewTabPage.AppsPageDragSource" enum="AppsPageDragSource">
+  <summary>
+    Histogram for the source of app page drags. For any succesful drop onto an
+    apps pane of the NTP, this logs where the drag originated.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.DefaultPageType" enum="NtpPaneType">
+  <summary>The default pane when the NTP is first opened.</summary>
+</histogram>
+
+<histogram name="NewTabPage.HoverTimeClicked">
+  <summary>
+    Histogram of the time, in milliseconds, users have the cursor over a most
+    visited thumbnail before clicking.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.HoverTimeNotClicked">
+  <summary>
+    Histogram of the time, in milliseconds, users have the cursor over a most
+    visited thumbnail before moving it away from the thumbnail without clicking.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.MobilePromo" enum="NewTabPageMobilePromo">
+  <summary>
+    Android: Tallies counts for how the user interacted with the NTP promo page.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.MostVisited">
+  <summary>
+    Histogram for user clicks of the most visited thumbnails. The value is equal
+    to the index of the thumbnail.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.MostVisitedAction" enum="NtpFollowAction">
+  <summary>
+    Action taken by the user on the Most Visited NTP pane.  If the user switches
+    panes during this use of the NTP, this action is sometimes not recorded. Ask
+    mpearson@ for details.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.NonVisibleScreenshots">
+  <summary>
+    The number of screenshots that were cached for the non-visible but ranked
+    suggestions on the Suggested NTP pane.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.NonVisibleSuggestedSiteRank">
+  <summary>
+    Given that the user has typed a URL, and given that that specific URL was
+    ranked but not visible on the Suggested pane of the NTP, this is the rank
+    that the Suggested pane had for that URL.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.OtherSessionsMenu" enum="NtpOtherSessionsType">
+  <summary>
+    Histogram for usage of the menu on the NTP that allows the user to access
+    tabs from other devices.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.PreviousSelectedPageType" enum="NtpPaneType">
+  <summary>
+    The pane that had been previously selected when the user switches panes in
+    the NTP.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.Promo.Bubble" enum="NtpPromoAction">
+  <summary>Histogram for NTP bubble promo activity.</summary>
+</histogram>
+
+<histogram name="NewTabPage.Promo.Notification" enum="NtpPromoAction">
+  <summary>Histogram for NTP notification promo activity.</summary>
+</histogram>
+
+<histogram name="NewTabPage.SearchURLs.Total">
+  <summary>TBD.</summary>
+</histogram>
+
+<histogram name="NewTabPage.SelectedPageType" enum="NtpPaneType">
+  <summary>The pane selected when the user switches panes in the NTP.</summary>
+</histogram>
+
+<histogram name="NewTabPage.SessionRestore">
+  <summary>
+    Histogram for user clicks of the Recently Closed items. The value is the
+    recency of the entry being restored (0 is most recent).
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.SingleSessionPageSwitches">
+  <summary>
+    Histogram to track how many times a user switched pages in a single NTP
+    session.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.SuggestedSite">
+  <summary>
+    Histogram for user clicks of the suggested site thumbnails. The value is
+    equal to the index of the thumbnail.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.SuggestedSitesAction" enum="NtpFollowAction">
+  <summary>Action taken by the user on the Suggested Sites NTP pane.</summary>
+</histogram>
+
+<histogram name="NewTabPage.SuggestedSitesLoadTime">
+  <summary>Time to load the Suggested Sites NTP pane, in milliseconds.</summary>
+</histogram>
+
+<histogram name="NewTabPage.SuggestedSitesViewTime">
+  <summary>Time spent on the Suggested Sites NTP pane, in seconds.</summary>
+</histogram>
+
+<histogram name="NewTabPage.VisibleScreenshots">
+  <summary>
+    The number of screenshots that were cached for the visible suggestions on
+    the Suggested NTP pane.
+  </summary>
+</histogram>
+
+<histogram name="NewTabPage.VisibleSuggestedSiteRank">
+  <summary>
+    Given that the user has typed a URL, and given that that specific URL was
+    visible on the Suggested pane of the NTP, this is the rank that the
+    Suggested pane had for that URL.
+  </summary>
+</histogram>
+
+<histogram name="ntp.searchurls.total">
+  <summary>TBD</summary>
+</histogram>
+
+<histogram name="NtpHandler.AttachShownPageType" enum="NtpPaneType">
+  <obsolete>
+    Deprecated 10/2011. No longer tracked, replaced with
+    NewTabPage.DefaultPageType
+  </obsolete>
+  <summary>The default pane when the NTP is first opened.</summary>
+</histogram>
+
+<histogram name="NtpHandler.SelectedShownPageType" enum="NtpPaneType">
+  <obsolete>
+    Deprecated 10/2011. No longer tracked, replaced with
+    NewTabPage.SelectedPageType
+  </obsolete>
+  <summary>The pane selected when the user switches panes in the NTP.</summary>
+</histogram>
+
 <histogram name="OfflinePolicy.SuccessfulResourceLoadPercentage" units="%">
   <summary>
     When a page is loaded in offline mode, the percentage of resources on that
@@ -5803,6 +7213,30 @@ other types of suffix sets.
     Overscroll gestures initiated by the user. Note that not all overcroll
     gestures started are completed (e.g. the overscroll gesture is aborted if
     user clicks or presses a key during the gesture).
+  </summary>
+</histogram>
+
+<histogram name="PasswordManager.OtherPossibleUsernamesUsage"
+    enum="OtherPossibleUsernamesUsage">
+  <summary>
+    Breakdown of how other possible usernames are displayed. Recorded every time
+    we autofill a password form.
+  </summary>
+</histogram>
+
+<histogram name="PasswordManager.TimesGeneratedPasswordUsed">
+  <summary>
+    The number of times each generated password has been used to log in.
+    Recorded by iterating over stored passwords once per run. This information
+    is persisted and synced.
+  </summary>
+</histogram>
+
+<histogram name="PasswordManager.TimesPasswordUsed">
+  <summary>
+    The number of times each saved password has been used to log in. Does not
+    include generated passwords. Recorded by iterating over stored passwords
+    once per run. This information is persisted and synced.
   </summary>
 </histogram>
 
@@ -7170,6 +8604,26 @@ other types of suffix sets.
     Time from when a prerendered page is started to when it is first used due to
     user navigation. If the page is never used, it is not included in this
     histogram.
+  </summary>
+</histogram>
+
+<histogram name="Profile.AppCount">
+  <summary>The number of installed apps when a profile is opened.</summary>
+</histogram>
+
+<histogram name="Profile.CreateResult" enum="ProfileCreateResult">
+  <summary>Result (final status) when creating a new profile.</summary>
+</histogram>
+
+<histogram name="Profile.CreateTime" units="milliseconds">
+  <summary>Back-end time elapsed while creating a new profile.</summary>
+</histogram>
+
+<histogram name="Profile.CreateTimeCanceled" units="milliseconds">
+  <summary>
+    Time elapsed before the user decided to cancel creation of a new profile.
+    Since only managed-user profile creation can be canceled, this time comes
+    from managed-user registration.
   </summary>
 </histogram>
 
@@ -8562,6 +10016,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SimpleCache.CheckCRCResult" enum="CheckCRCResult">
+  <summary>
+    Whether or not the CRC was checked at the moment when the last reference to
+    a read-only entry stream is closed.
+  </summary>
+</histogram>
+
 <histogram name="SimpleCache.CreationToIndex" units="milliseconds">
   <summary>
     The time from the creation of the simple cache backend until the index has
@@ -8634,6 +10095,17 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.IndexCreatedEntryCount">
   <summary>The number of entries in a newly created index file.</summary>
+</histogram>
+
+<histogram name="SimpleCache.IndexEntriesLoaded">
+  <summary>Number of entries loaded from the index file on start.</summary>
+</histogram>
+
+<histogram name="SimpleCache.IndexEntriesRestored">
+  <summary>
+    Number of entries restored from disk when there was no index or the index
+    was corrupted.
+  </summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexInitializationWaiters">
@@ -8846,6 +10318,35 @@ other types of suffix sets.
   <summary>Error codes returned by sqlite the web db.</summary>
 </histogram>
 
+<histogram name="Sync.AuthInvalidationRejectedTokenAgeLong" units="days">
+  <summary>
+    Age of all auth tokens rejected by the invalidation server. Measured from
+    the time they were created.
+  </summary>
+</histogram>
+
+<histogram name="Sync.AuthInvalidationRejectedTokenAgeShort"
+    units="milliseconds">
+  <summary>
+    Age of auth tokens younger than one hour that were rejected by the
+    invalidation server. Measured from the time they were created.
+  </summary>
+</histogram>
+
+<histogram name="Sync.AuthServerRejectedTokenAgeLong" units="days">
+  <summary>
+    Age of all auth tokens rejected by the sync server. Measured from the time
+    they were created.
+  </summary>
+</histogram>
+
+<histogram name="Sync.AuthServerRejectedTokenAgeShort" units="milliseconds">
+  <summary>
+    Age of auth tokens younger than one hour that were rejected by the sync
+    server. Measured from the time they were created.
+  </summary>
+</histogram>
+
 <histogram name="Tab.RestoreResult" enum="BooleanSuccess">
   <summary>
     When the browser restores a tab, whether the load was successful. Loads can
@@ -8862,6 +10363,22 @@ other types of suffix sets.
     When the browser restores a tab, whether the user waits for completion of
     the load or if the user gives up by switching to another tab or leaving
     Chrome.
+  </summary>
+</histogram>
+
+<histogram name="Tab.StatusWhenDisplayed" enum="TabStatus">
+  <summary>
+    The status of a tab collected each time the tab is displayed on Android,
+    including user switching to the tab and displays of newly created tabs, such
+    as NTP or tabs opened to handle intents.
+  </summary>
+</histogram>
+
+<histogram name="Tab.StatusWhenSwitchedBackToForeground" enum="TabStatus">
+  <summary>
+    The status of a tab collected each time the user switches to it on Android.
+    That does not include tabs being created at the time the user switches to
+    them, such as NTP or tabs opened to handle intents.
   </summary>
 </histogram>
 
@@ -8943,6 +10460,13 @@ other types of suffix sets.
   <summary>Tracks touchpad ThreeFingerSwipe setting on startup.</summary>
 </histogram>
 
+<histogram name="Translate.AlwaysTranslateLang">
+  <summary>
+    The number of times the always translate option was selected in the
+    translate infobar.
+  </summary>
+</histogram>
+
 <histogram name="Translate.CaptureText" units="milliseconds">
   <summary>
     The time spent capturing plain text from the DOM. This is reported by
@@ -8954,6 +10478,20 @@ other types of suffix sets.
   <summary>
     A page may provide a Content-Language HTTP header or a META tag. For each
     page load, measures whether the Content-Language header exists and is valid.
+  </summary>
+</histogram>
+
+<histogram name="Translate.DeclineTranslate">
+  <summary>
+    The number of times the &quot;Nope&quot; (don't translate) was clicked in
+    the translate infobar.
+  </summary>
+</histogram>
+
+<histogram name="Translate.DeclineTranslateCloseInfobar">
+  <summary>
+    The number of times the translate infobar was closed without the user
+    translating the page.
   </summary>
 </histogram>
 
@@ -8980,8 +10518,52 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Translate.LocalesOnDisabledByPrefs" enum="LanguageCode">
+  <summary>
+    Logs the user locale when the Translate feature is disabled by the user.
+    This is recorded each time a webpage is loaded and prefs for translation is
+    checked. This allows us to investigate the correlation between the user
+    locale and the usage rates of the Translate.
+  </summary>
+</histogram>
+
+<histogram name="Translate.ModifyOriginalLang">
+  <summary>
+    The number of times the original language in the translate infobar has been
+    changed.
+  </summary>
+</histogram>
+
+<histogram name="Translate.ModifyTargetLang">
+  <summary>
+    The number of times the target language in the translate infobar has been
+    changed.
+  </summary>
+</histogram>
+
+<histogram name="Translate.NeverTranslateLang">
+  <summary>
+    The number of times the never translate option was selected in the translate
+    infobar.
+  </summary>
+</histogram>
+
+<histogram name="Translate.NeverTranslateSite">
+  <summary>
+    The number of times the never translate site was selected in the translate
+    infobar.
+  </summary>
+</histogram>
+
 <histogram name="Translate.PageScheme" enum="TranslateScheme">
   <summary>Counts translation target page schemes.</summary>
+</histogram>
+
+<histogram name="Translate.ReportLanguageDetectionError">
+  <summary>
+    The number of times the &quot;report this error&quot; of options menu is
+    selected in the translate infobar.
+  </summary>
 </histogram>
 
 <histogram name="Translate.RevertTranslation">
@@ -8991,11 +10573,38 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Translate.ServerReportedUnsupportedLanguage">
+  <summary>
+    The number of times the detected language is not supported by Translate
+    Element.
+  </summary>
+</histogram>
+
+<histogram name="Translate.ShowBeforeTranslateInfobar">
+  <obsolete>
+    Deprecated 7/2010. No longer tracked.
+  </obsolete>
+  <summary>
+    The number of times an infobar proposing to translate a page has been shown.
+  </summary>
+</histogram>
+
 <histogram name="Translate.ShowErrorInfobar" enum="TranslateError">
   <summary>
     Chrome Translate shows an error infobar when an error happens on translation
     and the infobar message depends on what kind of error happens. This metric
     counts how often each error message is shown.
+  </summary>
+</histogram>
+
+<histogram name="Translate.SimilarLanguageMatch" enum="BooleanMatched">
+  <summary>
+    This metrics is logged whenever a page is loaded. The logged value is
+    &quot;Mathced&quot; when the CLD-detected language differs from the page
+    language code , and the two languages are such similar languages. In that
+    case, Chrome ignore the CLD-determined language and instead uses the page
+    language code. The page language code is decided by Content-Language and
+    HTML lang attribute.
   </summary>
 </histogram>
 
@@ -9015,6 +10624,13 @@ other types of suffix sets.
 
 <histogram name="Translate.TimeToTranslate" units="milliseconds">
   <summary>The time from starting translation to the completion.</summary>
+</histogram>
+
+<histogram name="Translate.Translate">
+  <summary>
+    The number of times the translate button was clicked in the translate
+    infobar.
+  </summary>
 </histogram>
 
 <histogram name="Translate.UnsupportedLanguageAtInitiation" enum="LanguageCode">
@@ -9042,9 +10658,19 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Variations.DisabledNoEntropyProvider" enum="BooleanHit">
+  <obsolete>
+    Deprecated 1/2013. No longer tracked.
+  </obsolete>
   <summary>
     A count of the number of times we hit the code where a field trial is
     disabled because no entropy provider was provided.
+  </summary>
+</histogram>
+
+<histogram name="Variations.FailedRequestErrorCode" enum="NetErrorCodes">
+  <summary>
+    The counts of network error codes encountered by VariationsService when an
+    attempt to fetch a variations seed from the server fails.
   </summary>
 </histogram>
 
@@ -9083,13 +10709,25 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Variations.SeedEmpty" enum="BooleanHit">
-  <summary>Hit if no variations seed exists in local state on startup.</summary>
+<histogram name="Variations.ResourceRequestsAllowed"
+    enum="VariationsResourceRequestsAllowedState">
+  <summary>
+    Counts the number of times the VariationsService is allowed or not allowed
+    to make a request due to the ResourceRequestAllowedNotifier.
+  </summary>
+</histogram>
+
+<histogram name="Variations.SeedEmpty" enum="BooleanEmpty">
+  <summary>
+    Records whether the variations seed in local state is empty (does not exist)
+    on startup.
+  </summary>
 </histogram>
 
 <histogram name="Variations.SeedFetchResponseCode">
   <summary>
-    The count of HTTP Response codes encountered by the VariationsService.
+    The counts of HTTP response codes encountered by VariationsService when
+    attempting to fetch a variations seed from the server.
   </summary>
 </histogram>
 
@@ -9102,13 +10740,27 @@ other types of suffix sets.
 
 <histogram name="Variations.ServerStudyExpiredUniformity1Percent"
     enum="BooleanExpired">
+  <obsolete>
+    Deprecated 11/2012. No longer tracked.
+  </obsolete>
   <summary>
     Whether or not the 1-Percent uniformity trial from the Variations server was
     expired when loaded.
   </summary>
 </histogram>
 
+<histogram name="Variations.TimeSinceLastFetchAttempt" units="minutes">
+  <summary>
+    The time since the previous attempt to fetch the variations seed within the
+    same session, with 0 indicating that this is the first attempt. Recorded
+    when a variations seed fetch is attempted by the VariationsService.
+  </summary>
+</histogram>
+
 <histogram name="Variations.UniformityTrialExpired" enum="BooleanHit">
+  <obsolete>
+    Deprecated 1/2013. No longer tracked.
+  </obsolete>
   <summary>
     A count of the number of times we hit the code where the
     UMA-Uniformity-Trial-1-Percent field trial is disabled as a result of the
@@ -9118,6 +10770,9 @@ other types of suffix sets.
 
 <histogram name="Variations.UniformityTrialGroupNotActive"
     enum="UniformityTrialGroupNotActive">
+  <obsolete>
+    Deprecated 1/2013. No longer tracked.
+  </obsolete>
   <summary>
     Tracks whether the UMA-Uniformity-Trial-1-Percent field trial was not active
     and which factors contributed to it.
@@ -9197,6 +10852,14 @@ other types of suffix sets.
   <summary>
     Measures the time taken by Google Online Wallet server's update instument
     API call.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.FeatureObserver" enum="FeatureObserver">
+  <summary>
+    Count of how many instances of WebCore::Page use various features. Each
+    WebCore::Page instance has a WebCore::UseCounter instance. It records and
+    reports feature usage (e.g. via UseCounter::count() method).
   </summary>
 </histogram>
 
@@ -9378,6 +11041,21 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebHistory.OAuthTokenCompletion" enum="BooleanSuccess">
+  <summary>
+    Whether getting the OAuth token was successful for a web history query. On
+    visits to the chrome://history page this token is obtained and then used to
+    get the user's synced web history.
+  </summary>
+</histogram>
+
+<histogram name="WebHistory.OAuthTokenResponseCode" units="code">
+  <summary>
+    HTTP Response code returned by the server when trying to fetch the OAuth
+    token for a web history query.
+  </summary>
+</histogram>
+
 <histogram name="WebHistory.QueryCompletion" enum="WebHistoryStatus">
   <summary>
     Whether the web history API call was successful. Every time a signed-in user
@@ -9393,6 +11071,68 @@ other types of suffix sets.
     call triggered by visiting chrome://history receives the data, measuring how
     much time it took for the server to reply.
   </summary>
+</histogram>
+
+<histogram name="WebRTC.AudioCaptureTime" units="milliseconds">
+  <summary>Duration in milliseconds of WebRTC audio capture session.</summary>
+</histogram>
+
+<histogram name="WebRTC.AudioInputChannelLayout" enum="ChannelLayout">
+  <summary>Audio input channel layout in WebRTC.</summary>
+</histogram>
+
+<histogram name="WebRTC.AudioInputFramesPerBuffer" enum="AudioFramesPerBuffer">
+  <summary>Size of WebRTC audio input buffers (in audio frames).</summary>
+</histogram>
+
+<histogram name="WebRTC.AudioInputFramesPerBufferUnexpected"
+    units="audio frames">
+  <summary>
+    Size of WebRTC audio input buffers (atypical values, in audio frames).
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.AudioInputSampleRate" enum="AudioSampleRate">
+  <summary>Audio input sample rate for WebRTC (in Hz).</summary>
+</histogram>
+
+<histogram name="WebRTC.AudioInputSampleRateUnexpected" units="Hz">
+  <summary>
+    Audio input sample rate for WebRTC (atypical values, in Hz).
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.AudioOutputChannelLayout" enum="ChannelLayout">
+  <summary>Audio output channel layout in WebRTC.</summary>
+</histogram>
+
+<histogram name="WebRTC.AudioOutputFramesPerBuffer" enum="AudioFramesPerBuffer">
+  <summary>Size of WebRTC audio output buffers (in audio frames).</summary>
+</histogram>
+
+<histogram name="WebRTC.AudioOutputFramesPerBufferUnexpected"
+    units="audio frames">
+  <summary>
+    Size of WebRTC audio output buffers (atypical values, in audio frames).
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.AudioOutputSampleRate" enum="AudioSampleRate">
+  <summary>Audio output sample rate for WebRTC (in Hz).</summary>
+</histogram>
+
+<histogram name="WebRTC.AudioOutputSampleRateUnexpected" units="Hz">
+  <summary>
+    Audio output sample rate for WebRTC (atypical values, in Hz).
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.AudioRenderTime" units="milliseconds">
+  <summary>Duration in milliseconds of WebRTC audio render session.</summary>
+</histogram>
+
+<histogram name="WebRTC.webkitApiCount" enum="JavaScriptAPIName">
+  <summary>Counts number of calls to WebRTC APIs from JavaScript.</summary>
 </histogram>
 
 <histogram name="WinTimeTicks.FailedToChangeCores" enum="WindowsVersion">
@@ -9438,6 +11178,30 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="ZeroSuggest.AllResults">
+  <summary>
+    The number of results (either query or URL) from ZeroSuggest. This is set
+    every time a successful response from ZeroSuggest is recieved, which can be
+    every time the user focuses on the omnibox.
+  </summary>
+</histogram>
+
+<histogram name="ZeroSuggest.QueryResults">
+  <summary>
+    The number of query results returned from ZeroSuggest. This is set every
+    time a successful response from ZeroSuggest is recieved, which can be every
+    time the user focuses on the omnibox.
+  </summary>
+</histogram>
+
+<histogram name="ZeroSuggest.URLResults">
+  <summary>
+    The number of URL results returned from ZeroSuggest. This is set every time
+    a successful response from ZeroSuggest is recieved, which can be every time
+    the user focuses on the omnibox.
+  </summary>
+</histogram>
+
 </histograms>
 
 <!-- Enum types -->
@@ -9469,6 +11233,54 @@ other types of suffix sets.
   <int value="1" label="TrimMemoryRunningLow"/>
   <int value="2" label="TrimMemoryRunningCritical"/>
   <int value="3" label="LowMemory"/>
+</enum>
+
+<enum name="AppLaunch" type="int">
+  <int value="0" label="NTP_APPS_MAXIMIZED"/>
+  <int value="1" label="NTP_APPS_COLLAPSED"/>
+  <int value="2" label="NTP_APPS_MENU"/>
+  <int value="3" label="NTP_MOST_VISITED"/>
+  <int value="4" label="NTP_RECENTLY_CLOSED"/>
+  <int value="5" label="BOOKMARK_BAR"/>
+  <int value="6" label="CONTENT_NAVIGATION"/>
+  <int value="7" label="SESSION_RESTORE"/>
+  <int value="8" label="AUTOLAUNCH"/>
+  <int value="9" label="OMNIBOX_APP"/>
+  <int value="10" label="OMNIBOX_LOCATION"/>
+  <int value="11" label="OMNIBOX_INSTANT"/>
+  <int value="12" label="EXTENSION_API"/>
+  <int value="13" label="CMD_LINE_APP"/>
+  <int value="14" label="CMD_LINE_URL"/>
+  <int value="15" label="NTP_WEBSTORE"/>
+  <int value="16" label="NTP_APP_RE_ENABLE"/>
+  <int value="17" label="CMD_LINE_APP_LEGACY"/>
+  <int value="18" label="NTP_WEBSTORE_FOOTER"/>
+  <int value="19" label="NTP_WEBSTORE_PLUS_ICON"/>
+  <int value="20" label="APP_LIST_MAIN"/>
+  <int value="21" label="APP_LIST_SEARCH"/>
+</enum>
+
+<enum name="AppLaunchContainer" type="int">
+  <int value="0" label="LAUNCH_WINDOW"/>
+  <int value="1" label="LAUNCH_PANEL"/>
+  <int value="2" label="LAUNCH_TAB"/>
+  <int value="3" label="LAUNCH_NONE (v2 packaged apps)"/>
+</enum>
+
+<enum name="AppPromoAction" type="int">
+  <int value="0" label="PROMO_LAUNCH_APP"/>
+  <int value="1" label="PROMO_LAUNCH_WEB_STORE"/>
+  <int value="2" label="PROMO_CLOSE"/>
+  <int value="3" label="PROMO_EXPIRE"/>
+  <int value="4" label="PROMO_SEEN"/>
+</enum>
+
+<enum name="AppsPageDragSource" type="int">
+  <int value="0" label="Same apps pane"/>
+  <int value="1" label="Different apps pane"/>
+  <int value="2" label="Most visited pane"/>
+  <int value="3" label="Bookmarks pane"/>
+  <int value="4" label="Outside of NTP (e.g. bookmarks bar)"/>
 </enum>
 
 <enum name="AsyncDNSConfigParsePosix" type="int">
@@ -9529,9 +11341,51 @@ other types of suffix sets.
   </int>
 </enum>
 
+<enum name="AudioCodec" type="int">
+  <int value="0" label="kUnknownAudioCodec"/>
+  <int value="1" label="kCodecAAC"/>
+  <int value="2" label="kCodecMP3"/>
+  <int value="3" label="kCodecPCM"/>
+  <int value="4" label="kCodecVorbis"/>
+  <int value="5" label="kCodecFLAC"/>
+  <int value="6" label="kCodecAMR_NB"/>
+  <int value="7" label="kCodecAMR_WB"/>
+  <int value="8" label="kCodecPCM_MULAW"/>
+  <int value="9" label="kCodecGSM_MS"/>
+  <int value="10" label="kCodecPCM_S16BE"/>
+  <int value="11" label="kCodecPCM_S24BE"/>
+  <int value="12" label="kCodecOpus"/>
+</enum>
+
+<enum name="AudioFramesPerBuffer" type="int">
+  <int value="0" label="k160"/>
+  <int value="1" label="k320"/>
+  <int value="2" label="k440"/>
+  <int value="3" label="k480"/>
+  <int value="4" label="k640"/>
+  <int value="5" label="k880"/>
+  <int value="6" label="k960"/>
+  <int value="7" label="k1440"/>
+  <int value="8" label="k1920"/>
+</enum>
+
 <enum name="AudioRendererEvents" type="int">
   <int value="0" label="Initialized"/>
   <int value="1" label="Runtime error"/>
+</enum>
+
+<enum name="AudioSampleRate" type="int">
+  <int value="0" label="k8000Hz"/>
+  <int value="1" label="k16000Hz"/>
+  <int value="2" label="k32000Hz"/>
+  <int value="3" label="k48000Hz"/>
+  <int value="4" label="k96000Hz"/>
+  <int value="5" label="k11025Hz"/>
+  <int value="6" label="k22050Hz"/>
+  <int value="7" label="k44100Hz"/>
+  <int value="8" label="k88200Hz"/>
+  <int value="9" label="k176400Hz"/>
+  <int value="10" label="k192000Hz"/>
 </enum>
 
 <enum name="AutocheckoutBubble" type="int">
@@ -9791,6 +11645,11 @@ other types of suffix sets.
   <int value="1" label="Duplicate"/>
 </enum>
 
+<enum name="BooleanEmpty" type="int">
+  <int value="0" label="Not Empty"/>
+  <int value="1" label="Empty"/>
+</enum>
+
 <enum name="BooleanEnabled" type="int">
   <int value="0" label="Disabled"/>
   <int value="1" label="Enabled"/>
@@ -9814,6 +11673,11 @@ other types of suffix sets.
 <enum name="BooleanHttps" type="int">
   <int value="0" label="HTTP"/>
   <int value="1" label="HTTPS"/>
+</enum>
+
+<enum name="BooleanMatched" type="int">
+  <int value="0" label="Not matched"/>
+  <int value="1" label="Matched"/>
 </enum>
 
 <enum name="BooleanOrphan" type="int">
@@ -9859,6 +11723,45 @@ other types of suffix sets.
 <enum name="BooleanWiped" type="int">
   <int value="0" label="Re-enabled"/>
   <int value="1" label="Wiped out"/>
+</enum>
+
+<enum name="ChannelLayout" type="int">
+  <int value="0" label="CHANNEL_LAYOUT_NONE"/>
+  <int value="1" label="CHANNEL_LAYOUT_UNSUPPORTED"/>
+  <int value="2" label="CHANNEL_LAYOUT_MONO"/>
+  <int value="3" label="CHANNEL_LAYOUT_STEREO"/>
+  <int value="4" label="CHANNEL_LAYOUT_2_1"/>
+  <int value="5" label="CHANNEL_LAYOUT_SURROUND"/>
+  <int value="6" label="CHANNEL_LAYOUT_4POINT0"/>
+  <int value="7" label="CHANNEL_LAYOUT_2_2"/>
+  <int value="8" label="CHANNEL_LAYOUT_QUAD"/>
+  <int value="9" label="CHANNEL_LAYOUT_5POINT0"/>
+  <int value="10" label="CHANNEL_LAYOUT_5POINT1"/>
+  <int value="11" label="CHANNEL_LAYOUT_5POINT0_BACK"/>
+  <int value="12" label="CHANNEL_LAYOUT_5POINT1_BACK"/>
+  <int value="13" label="CHANNEL_LAYOUT_7POINT0"/>
+  <int value="14" label="CHANNEL_LAYOUT_7POINT1"/>
+  <int value="15" label="CHANNEL_LAYOUT_7POINT1_WIDE"/>
+  <int value="16" label="CHANNEL_LAYOUT_STEREO_DOWNMIX"/>
+  <int value="17" label="CHANNEL_LAYOUT_2POINT1"/>
+  <int value="18" label="CHANNEL_LAYOUT_3_1"/>
+  <int value="19" label="CHANNEL_LAYOUT_4_1"/>
+  <int value="20" label="CHANNEL_LAYOUT_6_0"/>
+  <int value="21" label="CHANNEL_LAYOUT_6_0_FRONT"/>
+  <int value="22" label="CHANNEL_LAYOUT_HEXAGONAL"/>
+  <int value="23" label="CHANNEL_LAYOUT_6_1"/>
+  <int value="24" label="CHANNEL_LAYOUT_6_1_BACK"/>
+  <int value="25" label="CHANNEL_LAYOUT_6_1_FRONT"/>
+  <int value="26" label="CHANNEL_LAYOUT_7_0_FRONT"/>
+  <int value="27" label="CHANNEL_LAYOUT_7_1_WIDE_BACK"/>
+  <int value="28" label="CHANNEL_LAYOUT_OCTAGONAL"/>
+  <int value="29" label="CHANNEL_LAYOUT_DISCRETE"/>
+</enum>
+
+<enum name="CheckCRCResult" type="int">
+  <int value="0" label="Was never read to end"/>
+  <int value="1" label="CRC check not done"/>
+  <int value="2" label="CRC check done"/>
 </enum>
 
 <enum name="ClipboardAction" type="int">
@@ -10683,10 +12586,23 @@ other types of suffix sets.
   <int value="11004" label="WSANO_DATA"/>
 </enum>
 
+<enum name="ExtensionBackgroundPageType" type="int">
+  <int value="0" label="None"/>
+  <int value="1" label="Persistent"/>
+  <int value="2" label="Event Page"/>
+</enum>
+
 <enum name="ExtensionDisabledUIUserResponse" type="int">
   <int value="0" label="IGNORED"/>
   <int value="1" label="REENABLE"/>
   <int value="2" label="UNINSTALL"/>
+</enum>
+
+<enum name="ExtensionFileWriteResult" type="int">
+  <int value="0" label="SUCCESS"/>
+  <int value="1" label="CANT_CREATE_TEMP_CRX"/>
+  <int value="2" label="CANT_WRITE_CRX_DATA"/>
+  <int value="3" label="CANT_READ_CRX_FILE"/>
 </enum>
 
 <enum name="ExtensionFunctions" type="int">
@@ -10800,7 +12716,7 @@ other types of suffix sets.
   <int value="105" label="TERMINALPRIVATE_OPENTERMINALPROCESS"/>
   <int value="106" label="SERIAL_CLOSE"/>
   <int value="107" label="CONTEXTMENUS_REMOVE"/>
-  <int value="108" label="FILEBROWSERPRIVATE_REQUESTLOCALFILESYSTEM"/>
+  <int value="108" label="FILEBROWSERPRIVATE_REQUESTFILESYSTEM"/>
   <int value="109" label="ECHOPRIVATE_GETREGISTRATIONCODE"/>
   <int value="110" label="TABS_GETCURRENT"/>
   <int value="111" label="FONTSETTINGS_CLEARDEFAULTFIXEDFONTSIZE"/>
@@ -11153,6 +13069,116 @@ other types of suffix sets.
   <int value="458" label="AUDIO_SETACTIVEDEVICES"/>
   <int value="459" label="AUDIO_SETPROPERTIES"/>
   <int value="460" label="USB_RESETDEVICE"/>
+  <int value="461" label="SYSTEMINFO_CPU_GET"/>
+  <int value="462" label="SYSTEMINFO_MEMORY_GET"/>
+  <int value="463" label="ACTIVITYLOGPRIVATE_GETEXTENSIONACTIVITIES"/>
+</enum>
+
+<enum name="ExtensionInstallCause" type="int">
+  <int value="0" label="INSTALL_CAUSE_UNSET"/>
+  <int value="1" label="INSTALL_CAUSE_USER_DOWNLOAD"/>
+  <int value="2" label="INSTALL_CAUSE_UPDATE"/>
+  <int value="3" label="INSTALL_CAUSE_EXTERNAL_FILE"/>
+  <int value="4" label="INSTALL_CAUSE_AUTOMATION"/>
+</enum>
+
+<enum name="ExtensionLaunchType" type="int">
+  <int value="0" label="PINNED"/>
+  <int value="1" label="REGULAR"/>
+  <int value="2" label="FULLSCREEN"/>
+</enum>
+
+<enum name="ExtensionLocation" type="int">
+  <int value="0" label="INVALID"/>
+  <int value="1" label="INTERNAL"/>
+  <int value="2" label="EXTERNAL_PREF"/>
+  <int value="3" label="EXTERNAL_REGISTRY"/>
+  <int value="4" label="LOAD"/>
+  <int value="5" label="COMPONENT"/>
+  <int value="6" label="EXTERNAL_PREF_DOWNLOAD"/>
+  <int value="7" label="EXTERNAL_POLICY_DOWNLOAD"/>
+</enum>
+
+<enum name="ExtensionPermission" type="int">
+  <int value="0" label="UNKNOWN"/>
+  <int value="1" label="NONE"/>
+  <int value="2" label="BOOKMARKS"/>
+  <int value="3" label="GEOLOCATION"/>
+  <int value="4" label="BROWSING_HISTORY"/>
+  <int value="5" label="TABS"/>
+  <int value="6" label="MANAGEMENT"/>
+  <int value="7" label="DEBUGGER"/>
+  <int value="8" label="1_HOST"/>
+  <int value="9" label="2_HOSTS"/>
+  <int value="10" label="3_HOSTS"/>
+  <int value="11" label="4_OR_MORE_HOSTS"/>
+  <int value="12" label="ALL_HOSTS"/>
+  <int value="13" label="FULL_ACCESS"/>
+  <int value="14" label="CLIPBOARD"/>
+  <int value="15" label="TTS_ENGINE"/>
+  <int value="16" label="CONTENT_SETTINGS"/>
+  <int value="17" label="PRIVACY"/>
+  <int value="18" label="MANAGED_MODE"/>
+  <int value="19" label="INPUT"/>
+  <int value="20" label="AUDIO_CAPTURE"/>
+  <int value="21" label="VIDEO_CAPTURE"/>
+  <int value="22" label="DOWNLOADS"/>
+  <int value="23" label="FILE_SYSTEM_WRITE"/>
+  <int value="24" label="ALL_MEDIA_GALLERIES"/>
+  <int value="25" label="SERIAL"/>
+  <int value="26" label="SOCKET_ANY_HOST"/>
+  <int value="27" label="SOCKET_DOMAIN_HOSTS"/>
+  <int value="28" label="SOCKET_SPECIFIC_HOSTS"/>
+</enum>
+
+<enum name="ExtensionType" type="int">
+  <int value="0" label="UNKNOWN"/>
+  <int value="1" label="EXTENSION"/>
+  <int value="2" label="THEME"/>
+  <int value="3" label="USER_SCRIPT"/>
+  <int value="4" label="HOSTED_APP"/>
+  <int value="5" label="LEGACY_PACKAGED_APP"/>
+  <int value="6" label="PLATFORM_APP"/>
+</enum>
+
+<enum name="ExtensionUnpackFailureReason" type="int">
+  <summary>
+    Reasons the sandboxed extension unpacker can fail.  See enum FailureReason
+    in src/chrome/browser/extensions/sandboxed_extension_unpacker.h .
+  </summary>
+  <int value="0" label="COULD_NOT_GET_TEMP_DIRECTORY"/>
+  <int value="1" label="COULD_NOT_CREATE_TEMP_DIRECTORY"/>
+  <int value="2" label="FAILED_TO_COPY_EXTENSION_FILE_TO_TEMP_DIRECTORY"/>
+  <int value="3" label="COULD_NOT_GET_SANDBOX_FRIENDLY_PATH"/>
+  <int value="4" label="COULD_NOT_LOCALIZE_EXTENSION"/>
+  <int value="5" label="INVALID_MANIFEST"/>
+  <int value="6" label="UNPACKER_CLIENT_FAILED"/>
+  <int value="7" label="UTILITY_PROCESS_CRASHED_WHILE_TRYING_TO_INSTALL"/>
+  <int value="8" label="CRX_FILE_NOT_READABLE"/>
+  <int value="9" label="CRX_HEADER_INVALID"/>
+  <int value="10" label="CRX_MAGIC_NUMBER_INVALID"/>
+  <int value="11" label="CRX_VERSION_NUMBER_INVALID"/>
+  <int value="12" label="CRX_EXCESSIVELY_LARGE_KEY_OR_SIGNATURE"/>
+  <int value="13" label="CRX_ZERO_KEY_LENGTH"/>
+  <int value="14" label="CRX_ZERO_SIGNATURE_LENGTH"/>
+  <int value="15" label="CRX_PUBLIC_KEY_INVALID"/>
+  <int value="16" label="CRX_SIGNATURE_INVALID"/>
+  <int value="17" label="CRX_SIGNATURE_VERIFICATION_INITIALIZATION_FAILED"/>
+  <int value="18" label="CRX_SIGNATURE_VERIFICATION_FAILED"/>
+  <int value="19" label="ERROR_SERIALIZING_MANIFEST_JSON"/>
+  <int value="20" label="ERROR_SAVING_MANIFEST_JSON"/>
+  <int value="21" label="COULD_NOT_READ_IMAGE_DATA_FROM_DISK"/>
+  <int value="22" label="DECODED_IMAGES_DO_NOT_MATCH_THE_MANIFEST"/>
+  <int value="23" label="INVALID_PATH_FOR_BROWSER_IMAGE"/>
+  <int value="24" label="ERROR_REMOVING_OLD_IMAGE_FILE"/>
+  <int value="25" label="INVALID_PATH_FOR_BITMAP_IMAGE"/>
+  <int value="26" label="ERROR_RE_ENCODING_THEME_IMAGE"/>
+  <int value="27" label="ERROR_SAVING_THEME_IMAGE"/>
+  <int value="28" label="COULD_NOT_READ_CATALOG_DATA_FROM_DISK"/>
+  <int value="29" label="INVALID_CATALOG_DATA"/>
+  <int value="30" label="INVALID_PATH_FOR_CATALOG"/>
+  <int value="31" label="ERROR_SERIALIZING_CATALOG"/>
+  <int value="32" label="ERROR_SAVING_CATALOG"/>
 </enum>
 
 <enum name="ExternalDeviceAction" type="int">
@@ -11176,6 +13202,91 @@ other types of suffix sets.
   <int value="1" label="FALLBACK_SSL3">Fell back on SSL 3.0.</int>
   <int value="2" label="FALLBACK_TLS1">Fell back on TLS 1.0.</int>
   <int value="3" label="FALLBACK_TLS1_1">Fell back on TLS 1.1.</int>
+</enum>
+
+<enum name="FeatureObserver" type="int">
+<!-- See http://src.chromium.org/viewvc/blink/trunk/Source/core/page/UseCounter.h -->
+
+  <int value="0" label="PageDestruction"/>
+  <int value="1" label="LegacyNotifications"/>
+  <int value="2" label="MultipartMainResource"/>
+  <int value="3" label="PrefixedIndexedDB"/>
+  <int value="4" label="WorkerStart"/>
+  <int value="5" label="SharedWorkerStart"/>
+  <int value="6" label="LegacyWebAudioNoteOn"/>
+  <int value="7" label="WebAudioStart"/>
+  <int value="8" label="PrefixedContentSecurityPolicy"/>
+  <int value="9" label="UnprefixedIndexedDB"/>
+  <int value="10" label="OpenWebDatabase"/>
+  <int value="11" label="LegacyHTMLNotifications"/>
+  <int value="12" label="LegacyTextNotifications"/>
+  <int value="13" label="UnprefixedRequestAnimationFrame"/>
+  <int value="14" label="PrefixedRequestAnimationFrame"/>
+  <int value="15" label="ContentSecurityPolicy"/>
+  <int value="16" label="ContentSecurityPolicyReportOnly"/>
+  <int value="17" label="PrefixedContentSecurityPolicyReportOnly"/>
+  <int value="18" label="PrefixedTransitionEndEvent"/>
+  <int value="19" label="UnprefixedTransitionEndEvent"/>
+  <int value="20" label="PrefixedAndUnprefixedTransitionEndEvent"/>
+  <int value="21" label="AutoFocusAttribute"/>
+  <int value="22" label="DeprecatedAutoSaveAttribute"/>
+  <int value="23" label="DataListElement"/>
+  <int value="24" label="FormAttribute"/>
+  <int value="25" label="IncrementalAttribute"/>
+  <int value="26" label="InputTypeColor"/>
+  <int value="27" label="InputTypeDate"/>
+  <int value="28" label="InputTypeDateTime"/>
+  <int value="29" label="InputTypeDateTimeFallback"/>
+  <int value="30" label="InputTypeDateTimeLocal"/>
+  <int value="31" label="InputTypeEmail"/>
+  <int value="32" label="InputTypeMonth"/>
+  <int value="33" label="InputTypeNumber"/>
+  <int value="34" label="InputTypeRange"/>
+  <int value="35" label="InputTypeSearch"/>
+  <int value="36" label="InputTypeTel"/>
+  <int value="37" label="InputTypeTime"/>
+  <int value="38" label="InputTypeURL"/>
+  <int value="39" label="InputTypeWeek"/>
+  <int value="40" label="InputTypeWeekFallback"/>
+  <int value="41" label="ListAttribute"/>
+  <int value="42" label="MaxAttribute"/>
+  <int value="43" label="MinAttribute"/>
+  <int value="44" label="PatternAttribute"/>
+  <int value="45" label="PlaceholderAttribute"/>
+  <int value="46" label="PrecisionAttribute"/>
+  <int value="47" label="PrefixedDirectoryAttribute"/>
+  <int value="48" label="PrefixedSpeechAttribute"/>
+  <int value="49" label="RequiredAttribute"/>
+  <int value="50" label="ResultsAttribute"/>
+  <int value="51" label="StepAttribute"/>
+  <int value="52" label="PageVisits"/>
+  <int value="53" label="HTMLMarqueeElement"/>
+  <int value="54" label="CSSOverflowMarquee"/>
+  <int value="55" label="Reflection"/>
+  <int value="56" label="CursorVisibility"/>
+  <int value="57" label="StorageInfo"/>
+  <int value="58" label="XFrameOptions"/>
+  <int value="59" label="XFrameOptionsSameOrigin"/>
+  <int value="60" label="XFrameOptionsSameOriginWithBadAncestorChain"/>
+  <int value="61" label="DeprecatedFlexboxWebContent"/>
+  <int value="62" label="DeprecatedFlexboxChrome"/>
+  <int value="63" label="DeprecatedFlexboxChromeExtension"/>
+  <int value="64" label="SVGTRefElement"/>
+  <int value="65" label="UnprefixedPerformanceTimeline"/>
+  <int value="66" label="PrefixedPerformanceTimeline"/>
+  <int value="67" label="UnprefixedUserTiming"/>
+  <int value="68" label="PrefixedUserTiming"/>
+  <int value="69" label="WindowEvent"/>
+  <int value="70" label="ContentSecurityPolicyWithBaseElement"/>
+  <int value="71" label="PrefixedMediaAddKey"/>
+  <int value="72" label="PrefixedMediaGenerateKeyRequest"/>
+  <int value="73" label="WebAudioLooping"/>
+  <int value="74" label="DocumentClear"/>
+  <int value="75" label="PrefixedTransitionMediaFeature"/>
+  <int value="76" label="SVGFontElement"/>
+  <int value="77" label="XMLDocument"/>
+  <int value="78" label="XSLProcessingInstruction"/>
+  <int value="79" label="XSLTProcessor"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -11667,6 +13778,16 @@ other types of suffix sets.
   </int>
 </enum>
 
+<enum name="GetUserDataTempDirResult" type="int">
+  <int value="0" label="SUCCESS"/>
+  <int value="1" label="CANT_GET_PARENT_PATH"/>
+  <int value="2" label="CANT_GET_UDT_PATH"/>
+  <int value="3" label="NOT_A_DIRECTORY"/>
+  <int value="4" label="CANT_CREATE_DIR"/>
+  <int value="5" label="CANT_WRITE_TO_PATH"/>
+  <int value="6" label="UNSET"/>
+</enum>
+
 <enum name="GoogleNowEvent" type="int">
   <summary>
     Events in Google Now component extension. See var DiagnosticEvent.
@@ -11896,6 +14017,13 @@ other types of suffix sets.
   <int value="3" label="IPV6_GLOBAL_ADDRESS_MISSING"/>
   <int value="4" label="IPV6_GLOBAL_ADDRESS_PRESENT"/>
   <int value="5" label="IPV6_INTERFACE_ARRAY_TOO_SHORT"/>
+</enum>
+
+<enum name="JavaScriptAPIName" type="int">
+  <int value="0" label="GetUserMedia"/>
+  <int value="1" label="PeerConnection00"/>
+  <int value="2" label="DeprecatedPeerConnection"/>
+  <int value="3" label="RTCPeerConnection"/>
 </enum>
 
 <enum name="LanguageCode" type="int">
@@ -12469,6 +14597,12 @@ other types of suffix sets.
   <int value="3" label="Failure Threshold Reached"/>
 </enum>
 
+<enum name="LinuxAudioIO" type="int">
+  <int value="0" label="PulseAudio"/>
+  <int value="1" label="ALSA"/>
+  <int value="2" label="Cras"/>
+</enum>
+
 <enum name="LinuxGlibcVersion" type="int">
   <int value="0" label="Not Parseable"/>
   <int value="1" label="Unknown"/>
@@ -12541,9 +14675,36 @@ other types of suffix sets.
   <int value="37" label="WTV (Windows Television)"/>
 </enum>
 
+<enum name="MediaKeyError" type="int">
+  <int value="1" label="kUnknownError"/>
+  <int value="2" label="kClientError"/>
+  <int value="3" label="kServiceError"/>
+  <int value="4" label="kOutputError"/>
+  <int value="5" label="kHardwareChangeError"/>
+  <int value="6" label="kDomainError"/>
+</enum>
+
+<enum name="MediaKeyException" type="int">
+  <int value="0" label="kUnknownResultId"/>
+  <int value="1" label="kSuccess"/>
+  <int value="2" label="kKeySystemNotSupported"/>
+  <int value="3" label="kInvalidPlayerState"/>
+</enum>
+
 <enum name="MouseEventFollowedByClick" type="int">
   <int value="0" label="Missed event before click"/>
   <int value="1" label="Caught event before click"/>
+</enum>
+
+<enum name="MSECodec" type="int">
+  <int value="0" label="(Unknown)"/>
+  <int value="1" label="VP8"/>
+  <int value="2" label="VP9"/>
+  <int value="3" label="Vorbis"/>
+  <int value="4" label="H.264"/>
+  <int value="5" label="MPEG2 AAC"/>
+  <int value="6" label="MPEG4 AAC"/>
+  <int value="7" label="EAC3"/>
 </enum>
 
 <enum name="NavigationScheme" type="int">
@@ -12962,6 +15123,60 @@ other types of suffix sets.
   <int value="14" label="HTTP_GET_FAILED"/>
 </enum>
 
+<enum name="NewTabPageMobilePromo" type="int">
+  <summary>
+    These values are defined inside the PromoImpressionBuckets enum in
+    chrome/browser/ui/webui/ntp/android/promo_handler.cc
+  </summary>
+  <int value="0" label="Shown from most visited page"/>
+  <int value="1" label="Shown from open tabs page"/>
+  <int value="2" label="Shown from sync promo page"/>
+  <int value="3" label="User pressed 'Try Chrome'"/>
+  <int value="4" label="User dismissed the promo"/>
+</enum>
+
+<enum name="NtpFollowAction" type="int">
+  <int value="0" label="PAGE_TRANSITION_LINK"/>
+  <int value="1" label="PAGE_TRANSITION_TYPED"/>
+  <int value="2" label="PAGE_TRANSITION_AUTO_BOOKMARK"/>
+  <int value="3" label="PAGE_TRANSITION_AUTO_SUBFRAME"/>
+  <int value="4" label="PAGE_TRANSITION_MANUAL_SUBFRAME"/>
+  <int value="5" label="PAGE_TRANSITION_GENERATED"/>
+  <int value="6" label="PAGE_TRANSITION_START_PAGE"/>
+  <int value="7" label="PAGE_TRANSITION_FORM_SUBMIT"/>
+  <int value="8" label="PAGE_TRANSITION_RELOAD"/>
+  <int value="9" label="PAGE_TRANSITION_KEYWORD"/>
+  <int value="10" label="PAGE_TRANSITION_KEYWORD_GENERATED"/>
+  <int value="11" label="Clicked on a tile."/>
+  <int value="12" label="Clicked to other NTP pane."/>
+  <int value="13" label="Other action"/>
+</enum>
+
+<enum name="NtpOtherSessionsType" type="int">
+  <int value="0" label="Menu initialized"/>
+  <int value="1" label="Menu shown"/>
+  <int value="2" label="Link clicked"/>
+  <int value="3" label="Link context menu shown"/>
+  <int value="4" label="Device context menu shown"/>
+  <int value="5" label="Unused/previous device context menu shown"/>
+  <int value="6" label="Collapse Session"/>
+  <int value="7" label="Expand Session"/>
+  <int value="8" label="Open All"/>
+</enum>
+
+<enum name="NtpPaneType" type="int">
+  <int value="1" label="MostVisited"/>
+  <int value="2" label="Apps"/>
+  <int value="3" label="Bookmarks"/>
+  <int value="4" label="Suggestions"/>
+</enum>
+
+<enum name="NtpPromoAction" type="int">
+  <int value="0" label="NTP Promo viewed"/>
+  <int value="1" label="NTP Promo closed"/>
+  <int value="2" label="NTP Promo link clicked"/>
+</enum>
+
 <enum name="OfflineStatus" type="int">
   <int value="0" label="Fresh data load from Cache"/>
   <int value="1" label="Successful network request (validation or fetch)."/>
@@ -13094,6 +15309,14 @@ other types of suffix sets.
   <int value="34" label="ERANGE">Numerical result out of range</int>
 </enum>
 
+<enum name="OtherPossibleUsernamesUsage" type="int">
+  <int value="0" label="Nothing to Autofill"/>
+  <int value="1" label="No other possible usernames"/>
+  <int value="2" label="Other possible usernames present, but none were shown"/>
+  <int value="3" label="Other possible username was shown, but not selected"/>
+  <int value="4" label="Other possible username was selected"/>
+</enum>
+
 <enum name="OverscrollMode" type="int">
   <summary>Direction of the overscroll gesture.</summary>
   <int value="1" label="North">Scrolled from bottom towards top</int>
@@ -13151,6 +15374,25 @@ other types of suffix sets.
   <int value="8" label="Other"/>
 </enum>
 
+<enum name="PipelineStatus" type="int">
+  <int value="0" label="PIPELINE_OK"/>
+  <int value="1" label="PIPELINE_ERROR_URL_NOT_FOUND"/>
+  <int value="2" label="PIPELINE_ERROR_NETWORK"/>
+  <int value="3" label="PIPELINE_ERROR_DECODE"/>
+  <int value="4" label="PIPELINE_ERROR_DECRYPT"/>
+  <int value="5" label="PIPELINE_ERROR_ABORT"/>
+  <int value="6" label="PIPELINE_ERROR_INITIALIZATION_FAILED"/>
+  <int value="7" label="PIPELINE_ERROR_REQUIRED_FILTER_MISSING"/>
+  <int value="8" label="PIPELINE_ERROR_COULD_NOT_RENDER"/>
+  <int value="9" label="PIPELINE_ERROR_READ"/>
+  <int value="10" label="PIPELINE_ERROR_OPERATION_PENDING"/>
+  <int value="11" label="PIPELINE_ERROR_INVALID_STATE"/>
+  <int value="12" label="DEMUXER_ERROR_COULD_NOT_OPEN"/>
+  <int value="13" label="DEMUXER_ERROR_COULD_NOT_PARSE"/>
+  <int value="14" label="DEMUXER_ERROR_NO_SUPPORTED_STREAMS"/>
+  <int value="15" label="DECODER_ERROR_NOT_SUPPORTED"/>
+</enum>
+
 <enum name="PlatformFileError" type="int">
   <int value="0" label="OK"/>
   <int value="1" label="FAILED"/>
@@ -13190,6 +15432,11 @@ other types of suffix sets.
   <int value="0" label="Brightness Down"/>
   <int value="1" label="Brightness Up"/>
   <int value="2" label="Brightness Absolute"/>
+</enum>
+
+<enum name="PreconnectedNavigation" type="int">
+  <int value="0" label="Page nav. preceded by a pre-connect"/>
+  <int value="1" label="No recent pre-connect to the page"/>
 </enum>
 
 <enum name="PreconnectMotivation" type="int">
@@ -13391,6 +15638,14 @@ other types of suffix sets.
   <int value="3" label="tapdown + tapunconfirmed"/>
 </enum>
 
+<enum name="ProfileCreateResult" type="int">
+  <int value="0" label="Failed locally"/>
+  <int value="1" label="Failed remotely"/>
+  <int value="2" label="Created but not initialized (should never happen)"/>
+  <int value="3" label="Succeeded"/>
+  <int value="4" label="Canceled"/>
+</enum>
+
 <enum name="ProtocolVersion" type="int">
   <int value="0" label="UNKNOWN"/>
   <int value="1" label="HTTP 1.1"/>
@@ -13432,6 +15687,13 @@ other types of suffix sets.
   <int value="20" label="DOMAIN_TWIMG_COM"/>
   <int value="21" label="DOMAIN_AKAMAIHD_NET"/>
   <int value="22" label="DOMAIN_NUM_EVENTS"/>
+</enum>
+
+<enum name="QuicHandshakeState" type="int">
+  <int value="0" label="STARTED"/>
+  <int value="1" label="ENCRYPTION_ESTABLISHED"/>
+  <int value="2" label="HANDSHAKE_CONFIRMED"/>
+  <int value="3" label="FAILED"/>
 </enum>
 
 <enum name="ResolutionCategory" type="int">
@@ -13702,6 +15964,19 @@ other types of suffix sets.
   </summary>
   <int value="0" label="Success"/>
   <int value="1" label="Failure"/>
+</enum>
+
+<enum name="SideloadUIEvents" type="int">
+  <int value="0" label="Extension installed"/>
+  <int value="1" label="Extension ignored"/>
+  <int value="2" label="Extension re-enabled"/>
+  <int value="3" label="Extension uninstalled"/>
+</enum>
+
+<enum name="SideloadWipeoutBubble" type="int">
+  <int value="0" label="Learn more"/>
+  <int value="1" label="Settings page"/>
+  <int value="2" label="Dismiss"/>
 </enum>
 
 <enum name="SimpleCacheIndexInitializeMethod" type="int">
@@ -14039,6 +16314,13 @@ other types of suffix sets.
   <int value="2" label="Leave Chrome"/>
 </enum>
 
+<enum name="TabStatus" type="int">
+  <int value="0" label="Memory resident"/>
+  <int value="1" label="Evicted and reloaded"/>
+  <int value="2" label="Reloaded due to cold start"/>
+  <int value="3" label="Partially evicted"/>
+</enum>
+
 <enum name="TabSwitchedToForegroundLaunchedWithURL" type="int">
   <int value="0" label="Launched without an URL"/>
   <int value="1" label="Launched with an URL"/>
@@ -14133,6 +16415,17 @@ other types of suffix sets.
   <int value="2" label="unexpected other schemes"/>
 </enum>
 
+<enum name="UncacheableReason" type="int">
+  <int value="0" label="kNoData"/>
+  <int value="1" label="kPre11PartialResponse"/>
+  <int value="2" label="kNoStrongValidatorOnPartialResponse"/>
+  <int value="3" label="kShortMaxAge"/>
+  <int value="4" label="kExpiresTooSoon"/>
+  <int value="5" label="kHasMustRevalidate"/>
+  <int value="6" label="kNoCache"/>
+  <int value="7" label="kNoStore"/>
+</enum>
+
 <enum name="UniformityTrialGroupNotActive" type="int">
   <int value="0" label="Invalid"/>
   <int value="1" label="Group not reported"/>
@@ -14193,12 +16486,65 @@ other types of suffix sets.
   <int value="42" label="kErrorCodeUpdateCanceledByChannelChange"/>
 </enum>
 
+<enum name="UrlResolutionResult" type="int">
+  <int value="0" label="Absolute URL"/>
+  <int value="1" label="Resolutions Differ"/>
+  <int value="2" label="Resolutions Agree"/>
+</enum>
+
+<enum name="URLSchemeForHistogram" type="int">
+  <int value="0" label="kUnknownURLScheme"/>
+  <int value="1" label="kMissingURLScheme"/>
+  <int value="2" label="kHttpURLScheme"/>
+  <int value="3" label="kHttpsURLScheme"/>
+  <int value="4" label="kFtpURLScheme"/>
+  <int value="5" label="kChromeExtensionURLScheme"/>
+  <int value="6" label="kJavascriptURLScheme"/>
+  <int value="7" label="kFileURLScheme"/>
+  <int value="8" label="kBlobURLScheme"/>
+  <int value="9" label="kDataURLScheme"/>
+  <int value="10" label="kFileSystemScheme"/>
+</enum>
+
+<enum name="VariationsResourceRequestsAllowedState" type="int">
+  <int value="0" label="Resource requests allowed"/>
+  <int value="1" label="Resource requests not allowed"/>
+  <int value="2" label="Notified that requests became allowed"/>
+</enum>
+
 <enum name="VAVDAH264DecoderFailure" type="int">
   <int value="0" label="FRAME_MBS_ONLY_FLAG_NOT_ONE"/>
   <int value="1" label="GAPS_IN_FRAME_NUM"/>
   <int value="2" label="MID_STREAM_RESOLUTION_CHANGE"/>
   <int value="3" label="INTERLACED_STREAM"/>
   <int value="4" label="VAAPI_ERROR"/>
+</enum>
+
+<enum name="VideoCodec" type="int">
+  <int value="0" label="kUnknownVideoCodec"/>
+  <int value="1" label="kCodecH264"/>
+  <int value="2" label="kCodecVC1"/>
+  <int value="3" label="kCodecMPEG2"/>
+  <int value="4" label="kCodecMPEG4"/>
+  <int value="5" label="kCodecTheora"/>
+  <int value="6" label="kCodecVP8"/>
+  <int value="7" label="kCodecVP9"/>
+</enum>
+
+<enum name="VideoCodecProfile" type="int">
+  <int value="0" label="H.264 Baseline"/>
+  <int value="1" label="H.264 Main"/>
+  <int value="2" label="H.264 Extended"/>
+  <int value="3" label="H.264 High"/>
+  <int value="4" label="H.264 High10"/>
+  <int value="5" label="H.264 High422"/>
+  <int value="6" label="H.264 High444"/>
+  <int value="7" label="H.264 ScalableBaseline"/>
+  <int value="8" label="H.264 ScalableHigh"/>
+  <int value="9" label="H.264 StereoHigh"/>
+  <int value="10" label="H.264 MultiviewHigh"/>
+  <int value="11" label="VP8"/>
+  <int value="12" label="VP9"/>
 </enum>
 
 <enum name="ViewFileType" type="int">
@@ -14526,6 +16872,19 @@ other types of suffix sets.
   <affected-histogram name="PLT.LoadType"/>
 </fieldtrial>
 
+<fieldtrial name="DefaultAppsExperiment">
+  <group name="NoDefaultApps" label="User's without default apps installed"/>
+  <group name="WithDefaultApps" label="User's with default apps installed"/>
+  <affected-histogram name="Extensions.AppTabLaunchType"/>
+  <affected-histogram name="Extensions.ExtensionInstalled"/>
+  <affected-histogram name="Extensions.ExtensionUninstalled"/>
+  <affected-histogram name="NewTabPage.DefaultPageType"/>
+  <affected-histogram name="NewTabPage.SelectedPageType"/>
+  <affected-histogram name="NtpHandler.AttachShownPageType"/>
+  <affected-histogram name="NtpHandler.SelectedShownPageType"/>
+  <affected-histogram name="Profile.AppCount"/>
+</fieldtrial>
+
 <fieldtrial name="DefaultPinnedApps">
   <group name="Existing"/>
   <group name="Control"/>
@@ -14730,6 +17089,7 @@ other types of suffix sets.
 <fieldtrial name="LevelDBEnvRetry" separator="">
   <group name="RenameFile" label="RenameFile"/>
   <group name="LockFile" label="LockFile"/>
+  <group name="CreateDir" label="CreateDir"/>
   <affected-histogram name="LevelDBEnv.IDB.RetryRecoveredFromErrorIn"/>
   <affected-histogram name="LevelDBEnv.IDB.TimeUntilSuccessFor"/>
   <affected-histogram name="LevelDBEnv.RetryRecoveredFromErrorIn"/>
@@ -15356,6 +17716,14 @@ other types of suffix sets.
   <affected-histogram name="NetConnectivity3.StartPacket.Send6.SeriesAcked"/>
 </fieldtrial>
 
+<fieldtrial name="NetProxyResolverExecutionTime">
+  <group name="UrlOver2K" label="URL length was over 2K"/>
+  <group name="UrlOver4K" label="URL length was over 4K"/>
+  <group name="UrlOver8K" label="URL length was over 8K"/>
+  <group name="UrlOver128K" label="URL length was over 128K"/>
+  <affected-histogram name="Net.ProxyResolver.ExecutionTime"/>
+</fieldtrial>
+
 <fieldtrial name="OmniboxProviderTime" separator=".">
   <group name="Bookmark"/>
   <group name="Builtin"/>
@@ -15751,6 +18119,18 @@ other types of suffix sets.
   <affected-histogram name="SB2.MalwareInterstitialTimeTakeMeBack"/>
 </fieldtrial>
 
+<fieldtrial name="SideloadWipeout">
+  <group name="Enabled" label="Sideload Wipeout Active."/>
+  <group name="Disabled" label="Control group."/>
+  <affected-histogram name="DisabledExtension.ExtensionWipedStatus"/>
+  <affected-histogram name="DisabledExtension.SideloadWipeoutCount"/>
+  <affected-histogram name="DisabledExtension.SideloadWipeoutNeeded"/>
+  <affected-histogram name="DisabledExtension.UserSelection"/>
+  <affected-histogram name="Extensions.ExternalExtensionEvent"/>
+  <affected-histogram name="Extensions.InstallSource"/>
+  <affected-histogram name="Extensions.UpdateSource"/>
+</fieldtrial>
+
 <fieldtrial name="SocketType">
   <group name="HTTPProxy" label="HTTP proxy socket"/>
   <group name="SOCK" label="SOCKS socket"/>
@@ -15831,6 +18211,14 @@ other types of suffix sets.
   <group name="Full_Handshake" label="Full"/>
   <affected-histogram name="Net.SSL_Connection_Latency"/>
   <affected-histogram name="Net.SSL_Connection_Latency_Google"/>
+</fieldtrial>
+
+<fieldtrial name="WebStoreLinkExperiment">
+  <group name="Disabled" label="Neither extra webstore link is visible"/>
+  <group name="FooterLink" label="Link in bottom right of footer"/>
+  <group name="PlusIcon" label="Plus icon in apps page"/>
+  <affected-histogram name="Extensions.AppLaunch"/>
+  <affected-histogram name="NewTabPage.DefaultPageType"/>
 </fieldtrial>
 
 </fieldtrials>

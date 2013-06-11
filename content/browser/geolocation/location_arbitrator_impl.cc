@@ -70,6 +70,12 @@ void GeolocationArbitratorImpl::DoStartProviders() {
 }
 
 void GeolocationArbitratorImpl::StopProviders() {
+  // Reset the reference location state (provider+position)
+  // so that future starts use fresh locations from
+  // the newly constructed providers.
+  position_provider_ = NULL;
+  position_ = Geoposition();
+
   providers_.clear();
   is_running_ = false;
 }
@@ -127,7 +133,7 @@ AccessTokenStore* GeolocationArbitratorImpl::NewAccessTokenStore() {
 }
 
 AccessTokenStore* GeolocationArbitratorImpl::GetAccessTokenStore() {
-  if (!access_token_store_)
+  if (!access_token_store_.get())
     access_token_store_ = NewAccessTokenStore();
   return access_token_store_.get();
 }

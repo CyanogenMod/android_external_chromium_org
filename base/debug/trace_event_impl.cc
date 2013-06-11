@@ -18,6 +18,7 @@
 #include "base/stringprintf.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/cancellation_flag.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/sys_info.h"
@@ -26,7 +27,6 @@
 #include "base/threading/thread_id_name_manager.h"
 #include "base/threading/thread_local.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 
 #if defined(OS_WIN)
 #include "base/debug/trace_event_win.h"
@@ -773,6 +773,7 @@ TraceLog::Options TraceLog::TraceOptionsFromString(const std::string& options) {
 
 TraceLog::TraceLog()
     : enable_count_(0),
+      num_traces_recorded_(0),
       logged_events_(NULL),
       dispatching_to_observer_list_(false),
       watch_category_(NULL),
@@ -836,12 +837,18 @@ void TraceLog::EnableIncludedCategoryGroup(int category_index) {
 }
 
 void TraceLog::SetCategoryGroupEnabled(int category_index, bool is_enabled) {
-  g_category_group_enabled[category_index] =
-      is_enabled ? TraceLog::CATEGORY_ENABLED : 0;
+  g_category_group_enabled[category_index] = is_enabled ? CATEGORY_ENABLED : 0;
 
 #if defined(OS_ANDROID)
   ApplyATraceEnabledFlag(&g_category_group_enabled[category_index]);
 #endif
+}
+
+bool TraceLog::IsCategoryGroupEnabled(
+    const unsigned char* category_group_enabled) {
+  // On Android, ATrace and normal trace can be enabled independently.
+  // This function checks if the normal trace is enabled.
+  return *category_group_enabled & CATEGORY_ENABLED;
 }
 
 void TraceLog::EnableIncludedCategoryGroups() {
@@ -927,6 +934,8 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
     return;
   }
 
+  num_traces_recorded_++;
+
   dispatching_to_observer_list_ = true;
   FOR_EACH_OBSERVER(EnabledStateChangedObserver, enabled_state_observer_list_,
                     OnTraceLogWillEnable());
@@ -999,6 +1008,13 @@ void TraceLog::SetDisabled() {
   for (int i = 0; i < g_category_index; i++)
     SetCategoryGroupEnabled(i, false);
   AddThreadNameMetadataEvents();
+}
+
+int TraceLog::GetNumTracesRecorded() {
+  AutoLock lock(lock_);
+  if (enable_count_ == 0)
+    return -1;
+  return num_traces_recorded_;
 }
 
 void TraceLog::AddEnabledStateObserver(EnabledStateChangedObserver* listener) {
@@ -1116,7 +1132,7 @@ void TraceLog::AddTraceEventWithThreadIdAndTimestamp(
 
   do {
     AutoLock lock(lock_);
-    if (*category_group_enabled != CATEGORY_ENABLED)
+    if (!IsCategoryGroupEnabled(category_group_enabled))
       return;
 
     event_callback_copy = event_callback_;
@@ -1511,4 +1527,3 @@ ScopedTrace::~ScopedTrace() {
 }
 
 }  // namespace trace_event_internal
-

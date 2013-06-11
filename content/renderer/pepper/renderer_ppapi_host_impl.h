@@ -87,8 +87,6 @@ class RendererPpapiHostImpl
   virtual bool IsValidInstance(PP_Instance instance) const OVERRIDE;
   virtual webkit::ppapi::PluginInstance* GetPluginInstance(
       PP_Instance instance) const OVERRIDE;
-  virtual webkit::ppapi::PluginDelegate::PlatformGraphics2D*
-      GetPlatformGraphics2D(PP_Resource resource) OVERRIDE;
   virtual RenderView* GetRenderViewForInstance(
       PP_Instance instance) const OVERRIDE;
   virtual WebKit::WebPluginContainer* GetContainerForInstance(
@@ -103,6 +101,10 @@ class RendererPpapiHostImpl
       base::PlatformFile handle,
       bool should_close_source) OVERRIDE;
   virtual bool IsRunningInProcess() const OVERRIDE;
+  virtual void CreateBrowserResourceHost(
+      PP_Instance instance,
+      const IPC::Message& nested_msg,
+      const base::Callback<void(int)>& callback) const OVERRIDE;
 
  private:
   RendererPpapiHostImpl(webkit::ppapi::PluginModule* module,

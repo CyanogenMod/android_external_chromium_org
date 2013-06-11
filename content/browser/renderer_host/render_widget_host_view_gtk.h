@@ -25,7 +25,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 #include "webkit/plugins/npapi/gtk_plugin_container_manager.h"
 
 typedef struct _GtkClipboard GtkClipboard;
@@ -91,7 +91,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects) OVERRIDE;
+      const std::vector<gfx::Rect>& copy_rects,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -334,6 +335,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk
   scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
 
   ui::GtkSignalRegistrar signals_;
+
+  ui::LatencyInfo software_latency_info_;
 };
 
 }  // namespace content

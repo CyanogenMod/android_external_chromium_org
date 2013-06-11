@@ -23,7 +23,7 @@
 #include "content/common/content_export.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
 #include "ipc/ipc_message_macros.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperation.h"
+#include "third_party/WebKit/public/platform/WebFilterOperation.h"
 
 #ifndef CONTENT_COMMON_CC_MESSAGES_H_
 #define CONTENT_COMMON_CC_MESSAGES_H_
@@ -191,6 +191,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::YUVVideoDrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(y_plane_resource_id)
   IPC_STRUCT_TRAITS_MEMBER(u_plane_resource_id)
   IPC_STRUCT_TRAITS_MEMBER(v_plane_resource_id)
+  IPC_STRUCT_TRAITS_MEMBER(a_plane_resource_id)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::SharedQuadState)
@@ -222,6 +223,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::CompositorFrameMetadata)
   IPC_STRUCT_TRAITS_MEMBER(location_bar_offset)
   IPC_STRUCT_TRAITS_MEMBER(location_bar_content_translation)
   IPC_STRUCT_TRAITS_MEMBER(overdraw_bottom_height)
+  IPC_STRUCT_TRAITS_MEMBER(latency_info)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::GLFrameData)
@@ -231,7 +233,8 @@ IPC_STRUCT_TRAITS_BEGIN(cc::GLFrameData)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::SoftwareFrameData)
+  IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(size)
   IPC_STRUCT_TRAITS_MEMBER(damage_rect)
-  IPC_STRUCT_TRAITS_MEMBER(dib_id)
+  IPC_STRUCT_TRAITS_MEMBER(handle)
 IPC_STRUCT_TRAITS_END()

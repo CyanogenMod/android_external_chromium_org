@@ -9,8 +9,8 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
-#include "base/string_number_conversions.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/sys_byteorder.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
@@ -225,7 +225,7 @@ void VpxVideoDecoder::DoDecryptOrDecodeBuffer(
     const scoped_refptr<DecoderBuffer>& buffer) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_NE(state_, kDecodeFinished);
-  DCHECK_EQ(status != DemuxerStream::kOk, !buffer) << status;
+  DCHECK_EQ(status != DemuxerStream::kOk, !buffer.get()) << status;
 
   if (state_ == kUninitialized)
     return;
@@ -243,18 +243,8 @@ void VpxVideoDecoder::DoDecryptOrDecodeBuffer(
     return;
   }
 
-  if (status == DemuxerStream::kConfigChanged) {
-    if (!ConfigureDecoder()) {
-      state_ = kError;
-      base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-      return;
-    }
-
-    ReadFromDemuxerStream();
-    return;
-  }
-
-  DCHECK_EQ(status, DemuxerStream::kOk);
+  // VideoFrameStream ensures no kConfigChanged is passed to VideoDecoders.
+  DCHECK_EQ(status, DemuxerStream::kOk) << status;
   DecodeBuffer(buffer);
 }
 
@@ -266,7 +256,7 @@ void VpxVideoDecoder::DecodeBuffer(
   DCHECK_NE(state_, kError);
   DCHECK(reset_cb_.is_null());
   DCHECK(!read_cb_.is_null());
-  DCHECK(buffer);
+  DCHECK(buffer.get());
 
   // Transition to kDecodeFinished on the first end of stream buffer.
   if (state_ == kNormal && buffer->IsEndOfStream()) {
@@ -290,7 +280,7 @@ void VpxVideoDecoder::DecodeBuffer(
   }
 
   // If we didn't get a frame we need more data.
-  if (!video_frame) {
+  if (!video_frame.get()) {
     ReadFromDemuxerStream();
     return;
   }
@@ -405,26 +395,26 @@ void VpxVideoDecoder::CopyVpxImageTo(
   CopyYPlane(vpx_image->planes[VPX_PLANE_Y],
              vpx_image->stride[VPX_PLANE_Y],
              vpx_image->d_h,
-             *video_frame);
+             video_frame->get());
   CopyUPlane(vpx_image->planes[VPX_PLANE_U],
              vpx_image->stride[VPX_PLANE_U],
              vpx_image->d_h / 2,
-             *video_frame);
+             video_frame->get());
   CopyVPlane(vpx_image->planes[VPX_PLANE_V],
              vpx_image->stride[VPX_PLANE_V],
              vpx_image->d_h / 2,
-             *video_frame);
+             video_frame->get());
   if (!vpx_codec_alpha_)
     return;
   if (!vpx_image_alpha) {
-    MakeOpaqueAPlane(vpx_image->stride[VPX_PLANE_Y], vpx_image->d_h,
-                     *video_frame);
+    MakeOpaqueAPlane(
+        vpx_image->stride[VPX_PLANE_Y], vpx_image->d_h, video_frame->get());
     return;
   }
   CopyAPlane(vpx_image_alpha->planes[VPX_PLANE_Y],
              vpx_image->stride[VPX_PLANE_Y],
              vpx_image->d_h,
-             *video_frame);
+             video_frame->get());
 }
 
 }  // namespace media

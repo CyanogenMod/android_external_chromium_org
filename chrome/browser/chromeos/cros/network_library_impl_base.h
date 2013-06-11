@@ -86,10 +86,6 @@ class NetworkLibraryImplBase : public NetworkLibrary {
       const std::string& device_path,
       NetworkDeviceObserver* observer) OVERRIDE;
 
-  virtual void Lock() OVERRIDE;
-  virtual void Unlock() OVERRIDE;
-  virtual bool IsLocked() OVERRIDE;
-
   virtual void AddPinOperationObserver(
       PinOperationObserver* observer) OVERRIDE;
   virtual void RemovePinOperationObserver(
@@ -140,17 +136,9 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   virtual bool wimax_enabled() const OVERRIDE;
   virtual bool cellular_enabled() const OVERRIDE;
   virtual bool mobile_enabled() const OVERRIDE;
-  virtual bool ethernet_busy() const OVERRIDE;
-  virtual bool wifi_busy() const OVERRIDE;
-  virtual bool wimax_busy() const OVERRIDE;
-  virtual bool cellular_busy() const OVERRIDE;
-  virtual bool mobile_busy() const OVERRIDE;
   virtual bool wifi_scanning() const OVERRIDE;
   virtual bool cellular_initializing() const OVERRIDE;
   virtual bool offline_mode() const OVERRIDE;
-  virtual std::string GetCheckPortalList() const OVERRIDE;
-  // virtual SetCheckPortalList implemented in derived classes.
-  // virtual SetDefaultCheckPortalList implemented in derived classes.
   virtual const std::string& IPAddress() const OVERRIDE;
 
   virtual const NetworkDevice* FindNetworkDeviceByPath(

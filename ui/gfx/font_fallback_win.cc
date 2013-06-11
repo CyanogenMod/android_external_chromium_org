@@ -9,7 +9,7 @@
 #include "base/memory/singleton.h"
 #include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "ui/gfx/font.h"
 
@@ -48,7 +48,7 @@ void GetFontNamesFromFilename(const std::string& filename,
 
 // Returns true if |text| contains only ASCII digits.
 bool ContainsOnlyDigits(const std::string& text) {
-  return text.find_first_not_of("0123456789") == string16::npos;
+  return text.find_first_not_of("0123456789") == base::string16::npos;
 }
 
 // Appends a Font with the given |name| and |size| to |fonts| unless the last

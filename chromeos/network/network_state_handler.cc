@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/format_macros.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chromeos/network/device_state.h"
 #include "chromeos/network/managed_state.h"
@@ -70,6 +70,8 @@ const char NetworkStateHandler::kMatchTypeDefault[] = "default";
 const char NetworkStateHandler::kMatchTypeWireless[] = "wireless";
 const char NetworkStateHandler::kMatchTypeMobile[] = "mobile";
 const char NetworkStateHandler::kMatchTypeNonVirtual[] = "non-virtual";
+const char NetworkStateHandler::kDefaultCheckPortalList[] =
+    "ethernet,wifi,cellular";
 
 NetworkStateHandler::NetworkStateHandler() {
 }
@@ -123,8 +125,8 @@ void NetworkStateHandler::SetTechnologyEnabled(
     bool enabled,
     const network_handler::ErrorCallback& error_callback) {
   std::string technology = GetTechnologyForType(type);
-  NET_LOG_EVENT("SetTechnologyEnabled",
-                base::StringPrintf("%s:%d", technology.c_str(), enabled));
+  NET_LOG_USER("SetTechnologyEnabled",
+               base::StringPrintf("%s:%d", technology.c_str(), enabled));
   shill_property_handler_->SetTechnologyEnabled(
       technology, enabled, error_callback);
   // Signal Technology state changed -> ENABLING
@@ -255,7 +257,7 @@ void NetworkStateHandler::GetNetworkList(NetworkStateList* list) const {
 }
 
 void NetworkStateHandler::RequestScan() const {
-  NET_LOG_EVENT("RequestScan", "");
+  NET_LOG_USER("RequestScan", "");
   shill_property_handler_->RequestScan();
 }
 
@@ -267,7 +269,7 @@ void NetworkStateHandler::WaitForScan(const std::string& type,
 }
 
 void NetworkStateHandler::ConnectToBestWifiNetwork() {
-  NET_LOG_EVENT("ConnectToBestWifiNetwork", "");
+  NET_LOG_USER("ConnectToBestWifiNetwork", "");
   WaitForScan(flimflam::kTypeWifi,
               base::Bind(&internal::ShillPropertyHandler::ConnectToBestServices,
                          shill_property_handler_->AsWeakPtr()));
@@ -304,6 +306,12 @@ void NetworkStateHandler::SetConnectingNetwork(
     NET_LOG_EVENT("SetConnectingNetwork", GetManagedStateLogName(network));
   else
     NET_LOG_ERROR("SetConnectingNetwork to unknown network", service_path);
+}
+
+void NetworkStateHandler::SetCheckPortalList(
+    const std::string& check_portal_list) {
+  NET_LOG_EVENT("SetCheckPortalList", check_portal_list);
+  shill_property_handler_->SetCheckPortalList(check_portal_list);
 }
 
 void NetworkStateHandler::GetNetworkStatePropertiesForTest(
@@ -459,6 +467,11 @@ void NetworkStateHandler::UpdateDeviceProperty(const std::string& device_path,
 
   if (key == flimflam::kScanningProperty && device->scanning() == false)
     ScanCompleted(device->type());
+}
+
+void NetworkStateHandler::CheckPortalListChanged(
+    const std::string& check_portal_list) {
+  check_portal_list_ = check_portal_list;
 }
 
 void NetworkStateHandler::NotifyManagerPropertyChanged() {

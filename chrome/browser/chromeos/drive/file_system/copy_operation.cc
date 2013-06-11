@@ -11,9 +11,9 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/create_file_operation.h"
+#include "chrome/browser/chromeos/drive/file_system/download_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/move_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
-#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
@@ -44,20 +44,23 @@ CopyOperation::CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
                              JobScheduler* scheduler,
                              internal::ResourceMetadata* metadata,
                              internal::FileCache* cache,
-                             FileSystemInterface* file_system,
                              google_apis::DriveServiceInterface* drive_service)
   : blocking_task_runner_(blocking_task_runner),
     observer_(observer),
     scheduler_(scheduler),
     metadata_(metadata),
     cache_(cache),
-    file_system_(file_system),
     drive_service_(drive_service),
     create_file_operation_(new CreateFileOperation(blocking_task_runner,
                                                    observer,
                                                    scheduler,
                                                    metadata,
                                                    cache)),
+    download_operation_(new DownloadOperation(blocking_task_runner,
+                                              observer,
+                                              scheduler,
+                                              metadata,
+                                              cache)),
     move_operation_(new MoveOperation(observer, scheduler, metadata)),
     weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -89,8 +92,11 @@ void CopyOperation::TransferFileFromRemoteToLocal(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  file_system_->GetFileByPath(
+  download_operation_->EnsureFileDownloadedByPath(
       remote_src_file_path,
+      ClientContext(USER_INITIATED),
+      GetFileContentInitializedCallback(),
+      google_apis::GetContentCallback(),
       base::Bind(&CopyOperation::OnGetFileCompleteForTransferFile,
                  weak_ptr_factory_.GetWeakPtr(),
                  local_dest_file_path,
@@ -190,7 +196,7 @@ void CopyOperation::ScheduleTransferRegularFileAfterGetResourceEntry(
 
   cache_->StoreLocallyModifiedOnUIThread(
       entry->resource_id(),
-      entry->file_specific_info().file_md5(),
+      entry->file_specific_info().md5(),
       local_file_path,
       internal::FileCache::FILE_OPERATION_COPY,
       callback);
@@ -246,7 +252,8 @@ void CopyOperation::MoveEntryFromRootDirectory(
     const base::FilePath& file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
-  DCHECK_EQ(util::kDriveMyDriveRootPath, file_path.DirName().value());
+  DCHECK_EQ(util::GetDriveMyDriveRootPath().value(),
+            file_path.DirName().value());
 
   // Return if there is an error or |dir_path| is the root directory.
   if (error != FILE_ERROR_OK ||
@@ -321,8 +328,11 @@ void CopyOperation::CopyAfterGetResourceEntryPair(
   }
 
   const base::FilePath& src_file_path = result->first.path;
-  file_system_->GetFileByPath(
+  download_operation_->EnsureFileDownloadedByPath(
       src_file_path,
+      ClientContext(USER_INITIATED),
+      GetFileContentInitializedCallback(),
+      google_apis::GetContentCallback(),
       base::Bind(&CopyOperation::OnGetFileCompleteForCopy,
                  weak_ptr_factory_.GetWeakPtr(),
                  dest_file_path,

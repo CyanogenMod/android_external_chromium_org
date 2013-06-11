@@ -33,8 +33,8 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/download/download_create_info.h"
 #include "content/browser/download/download_file.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
@@ -68,9 +68,12 @@ void DeleteDownloadedFile(const base::FilePath& path) {
 // Wrapper around DownloadFile::Detach and DownloadFile::Cancel that
 // takes ownership of the DownloadFile and hence implicitly destroys it
 // at the end of the function.
-static void DownloadFileDetach(scoped_ptr<DownloadFile> download_file) {
+static base::FilePath DownloadFileDetach(
+    scoped_ptr<DownloadFile> download_file) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  base::FilePath full_path = download_file->FullPath();
   download_file->Detach();
+  return full_path;
 }
 
 static void DownloadFileCancel(scoped_ptr<DownloadFile> download_file) {
@@ -275,19 +278,17 @@ void DownloadItemImpl::UpdateObservers() {
   FOR_EACH_OBSERVER(Observer, observers_, OnDownloadUpdated(this));
 }
 
-void DownloadItemImpl::DangerousDownloadValidated() {
+void DownloadItemImpl::ValidateDangerousDownload() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(IN_PROGRESS, GetState());
+  DCHECK(!IsDone());
   DCHECK(IsDangerous());
 
   VLOG(20) << __FUNCTION__ << " download=" << DebugString(true);
 
-  if (GetState() != IN_PROGRESS)
+  if (IsDone() || !IsDangerous())
     return;
 
-  UMA_HISTOGRAM_ENUMERATION("Download.DangerousDownloadValidated",
-                            GetDangerType(),
-                            DOWNLOAD_DANGER_TYPE_MAX);
+  RecordDangerousDownloadAccept(GetDangerType());
 
   danger_type_ = DOWNLOAD_DANGER_TYPE_USER_VALIDATED;
 
@@ -298,6 +299,25 @@ void DownloadItemImpl::DangerousDownloadValidated() {
   UpdateObservers();
 
   MaybeCompleteDownload();
+}
+
+void DownloadItemImpl::StealDangerousDownload(
+    const AcquireFileCallback& callback) {
+  VLOG(20) << __FUNCTION__ << "() download = " << DebugString(true);
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(IsDangerous());
+  if (download_file_) {
+    BrowserThread::PostTaskAndReplyWithResult(
+        BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(&DownloadFileDetach, base::Passed(&download_file_)),
+        callback);
+  } else {
+    callback.Run(current_path_);
+  }
+  current_path_.clear();
+  Remove();
+  // We have now been deleted.
 }
 
 void DownloadItemImpl::Pause() {
@@ -350,9 +370,15 @@ void DownloadItemImpl::Cancel(bool user_cancel) {
     return;
   }
 
-  last_reason_ = user_cancel ?
-      DOWNLOAD_INTERRUPT_REASON_USER_CANCELED :
-      DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN;
+  if (IsDangerous()) {
+    RecordDangerousDownloadDiscard(
+        user_cancel ? DOWNLOAD_DISCARD_DUE_TO_USER_ACTION
+                    : DOWNLOAD_DISCARD_DUE_TO_SHUTDOWN,
+        GetDangerType());
+  }
+
+  last_reason_ = user_cancel ? DOWNLOAD_INTERRUPT_REASON_USER_CANCELED
+                             : DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN;
 
   RecordDownloadCount(CANCELLED_COUNT);
 
@@ -381,36 +407,6 @@ void DownloadItemImpl::Cancel(bool user_cancel) {
   TransitionTo(CANCELLED_INTERNAL);
 }
 
-void DownloadItemImpl::Delete(DeleteReason reason) {
-  VLOG(20) << __FUNCTION__ << "() download = " << DebugString(true);
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  switch (reason) {
-    case DELETE_DUE_TO_USER_DISCARD:
-      UMA_HISTOGRAM_ENUMERATION(
-          "Download.UserDiscard", GetDangerType(),
-          DOWNLOAD_DANGER_TYPE_MAX);
-      break;
-    case DELETE_DUE_TO_BROWSER_SHUTDOWN:
-      UMA_HISTOGRAM_ENUMERATION(
-          "Download.Discard", GetDangerType(),
-          DOWNLOAD_DANGER_TYPE_MAX);
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  // Delete the file if it exists and is not owned by a DownloadFile object.
-  // (In the latter case the DownloadFile object will delete it on cancel.)
-  if (!current_path_.empty() && download_file_.get() == NULL) {
-    BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                            base::Bind(&DeleteDownloadedFile, current_path_));
-    current_path_.clear();
-  }
-  Remove();
-  // We have now been deleted.
-}
-
 void DownloadItemImpl::Remove() {
   VLOG(20) << __FUNCTION__ << "() download = " << DebugString(true);
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -427,7 +423,7 @@ void DownloadItemImpl::Remove() {
 void DownloadItemImpl::OpenDownload() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (state_ == IN_PROGRESS_INTERNAL) {
+  if (!IsDone()) {
     // We don't honor the open_when_complete_ flag for temporary
     // downloads. Don't set it because it shows up in the UI.
     if (!IsTemporary())
@@ -497,13 +493,27 @@ bool DownloadItemImpl::CanResume() const {
        resume_mode == RESUME_MODE_USER_CONTINUE);
 }
 
-// TODO(rdsmith): Figure out whether or not we want this probe routine
-// to consider interrupted (resumably) downloads partial downloads.
-// Conceptually the answer is probably yes, but everywhere that currently
-// uses the routine is using it as a synonym for IsInProgress().
-bool DownloadItemImpl::IsPartialDownload() const {
-  DownloadState state = InternalToExternalState(state_);
-  return (state == IN_PROGRESS);
+bool DownloadItemImpl::IsDone() const {
+  switch (state_) {
+    case IN_PROGRESS_INTERNAL:
+    case COMPLETING_INTERNAL:
+      return false;
+
+    case COMPLETE_INTERNAL:
+    case CANCELLED_INTERNAL:
+      return true;
+
+    case INTERRUPTED_INTERNAL:
+      return !CanResume();
+
+    case RESUMING_INTERNAL:
+      return false;
+
+    case MAX_DOWNLOAD_INTERNAL_STATE:
+      break;
+  }
+  NOTREACHED();
+  return true;
 }
 
 bool DownloadItemImpl::IsInProgress() const {
@@ -693,8 +703,8 @@ bool DownloadItemImpl::CanOpenDownload() {
   // We can open the file or mark it for opening on completion if the download
   // is expected to complete successfully. Exclude temporary downloads, since
   // they aren't owned by the download system.
-  return (IsInProgress() || IsComplete()) && !IsTemporary() &&
-      !file_externally_removed_;
+  return (!IsDone() || IsComplete()) && !IsTemporary() &&
+         !file_externally_removed_;
 }
 
 bool DownloadItemImpl::ShouldOpenFileBasedOnExtension() {
@@ -1068,18 +1078,6 @@ void DownloadItemImpl::OnDownloadFileInitialized(
     return;
   }
 
-  // If we're resuming an interrupted download, we may already know the download
-  // target so we can skip target name determination. GetFullPath() is non-empty
-  // for interrupted downloads where the intermediate file is still present, and
-  // also for downloads with forced paths.
-  if (!GetTargetFilePath().empty() && !GetFullPath().empty()) {
-    // TODO(rdsmith/asanka): Check to confirm that the target path isn't
-    // present on disk; if it is, we should re-do filename determination to
-    // give the user a chance not to collide.
-    MaybeCompleteDownload();
-    return;
-  }
-
   delegate_->DetermineDownloadTarget(
       this, base::Bind(&DownloadItemImpl::OnDownloadTargetDetermined,
                        weak_ptr_factory_.GetWeakPtr()));
@@ -1121,6 +1119,19 @@ void DownloadItemImpl::OnDownloadTargetDetermined(
   // that they are both on the same device and subject to same
   // space/permission/availability constraints.
   DCHECK(intermediate_path.DirName() == target_path.DirName());
+
+  // During resumption, we may choose to proceed with the same intermediate
+  // file. No rename is necessary if our intermediate file already has the
+  // correct name.
+  //
+  // The intermediate name may change from its original value during filename
+  // determination on resumption, for example if the reason for the interruption
+  // was the download target running out space, resulting in a user prompt.
+  if (intermediate_path == current_path_) {
+    OnDownloadRenamedToIntermediateName(DOWNLOAD_INTERRUPT_REASON_NONE,
+                                        intermediate_path);
+    return;
+  }
 
   // Rename to intermediate name.
   // TODO(asanka): Skip this rename if AllDataSaved() is true. This avoids a
@@ -1399,9 +1410,11 @@ void DownloadItemImpl::ReleaseDownloadFile(bool destroy_file) {
     current_path_.clear();
   } else {
     BrowserThread::PostTask(
-        BrowserThread::FILE, FROM_HERE,
-        // Will be deleted at end of task execution.
-        base::Bind(&DownloadFileDetach, base::Passed(&download_file_)));
+        BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&DownloadFileDetach),
+                   // Will be deleted at end of task execution.
+                   base::Passed(&download_file_)));
   }
   // Don't accept any more messages from the DownloadFile, and null
   // out any previous "all data received".  This also breaks links to

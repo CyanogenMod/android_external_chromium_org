@@ -5,8 +5,13 @@
 #ifndef CHROME_BROWSER_MEDIA_GALLERIES_FILEAPI_MEDIA_FILE_SYSTEM_MOUNT_POINT_PROVIDER_H_
 #define CHROME_BROWSER_MEDIA_GALLERIES_FILEAPI_MEDIA_FILE_SYSTEM_MOUNT_POINT_PROVIDER_H_
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/file_system_mount_point_provider.h"
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace fileapi {
 class AsyncFileUtilAdapter;
@@ -21,11 +26,13 @@ class DeviceMediaAsyncFileUtil;
 class MediaFileSystemMountPointProvider
     : public fileapi::FileSystemMountPointProvider {
  public:
+  static const char kMediaTaskRunnerName[];
   static const char kMediaPathFilterKey[];
   static const char kMTPDeviceDelegateURLKey[];
 
-  explicit MediaFileSystemMountPointProvider(
-      const base::FilePath& profile_path);
+  MediaFileSystemMountPointProvider(
+      const base::FilePath& profile_path,
+      base::SequencedTaskRunner* media_task_runner);
   virtual ~MediaFileSystemMountPointProvider();
 
   // FileSystemMountPointProvider implementation.
@@ -69,11 +76,13 @@ class MediaFileSystemMountPointProvider
   // Store the profile path. We need this to create temporary snapshot files.
   const base::FilePath profile_path_;
 
+  scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
+
   scoped_ptr<MediaPathFilter> media_path_filter_;
   scoped_ptr<fileapi::CopyOrMoveFileValidatorFactory>
       media_copy_or_move_file_validator_factory_;
 
-  scoped_ptr<fileapi::AsyncFileUtilAdapter> native_media_file_util_;
+  scoped_ptr<fileapi::AsyncFileUtil> native_media_file_util_;
   scoped_ptr<DeviceMediaAsyncFileUtil> device_media_async_file_util_;
   scoped_ptr<fileapi::AsyncFileUtil> picasa_file_util_;
   scoped_ptr<fileapi::AsyncFileUtil> itunes_file_util_;

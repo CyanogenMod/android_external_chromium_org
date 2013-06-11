@@ -5,6 +5,7 @@
 
 import logging
 import sys
+import os
 
 from telemetry.core import browser
 from telemetry.core import possible_browser
@@ -16,6 +17,7 @@ from telemetry.core.platform import cros_platform_backend
 ALL_BROWSER_TYPES = ','.join([
     'cros-chrome',
     'cros-chrome-guest',
+    'system-guest',
     ])
 
 class PossibleCrOSBrowser(possible_browser.PossibleBrowser):
@@ -45,13 +47,17 @@ class PossibleCrOSBrowser(possible_browser.PossibleBrowser):
 def FindAllAvailableBrowsers(options):
   """Finds all available chromeos browsers, locally and remotely."""
   # Check if we are on a chromeos device.
-  if sys.platform.startswith('linux'):
-    with open('/etc/lsb-release', 'r') as f:
+  lsb_release = '/etc/lsb-release'
+  if sys.platform.startswith('linux') and os.path.exists(lsb_release):
+    with open(lsb_release, 'r') as f:
       res = f.read()
       if res.count('CHROMEOS_RELEASE_NAME'):
         return [PossibleCrOSBrowser('system', options,
                                     cros_interface.CrOSInterface(),
-                                    is_guest=False)]
+                                    is_guest=False),
+                PossibleCrOSBrowser('system-guest', options,
+                                    cros_interface.CrOSInterface(),
+                                    is_guest=True)]
 
   if options.cros_remote == None:
     logging.debug('No --remote specified, will not probe for CrOS.')

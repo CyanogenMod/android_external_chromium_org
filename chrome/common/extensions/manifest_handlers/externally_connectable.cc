@@ -4,19 +4,32 @@
 
 #include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 
-#include "base/utf_string_conversions.h"
+#include <algorithm>
+
+#include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/api/manifest_types.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/extensions/permissions/api_permission_set.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/url_pattern.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+
+namespace rcd = net::registry_controlled_domains;
 
 namespace extensions {
 
 namespace externally_connectable_errors {
-  const char kErrorInvalid[] = "Invalid value for 'externally_connectable'";
-  const char kErrorInvalidMatchPattern[] = "Invalid match pattern '*'";
-  const char kErrorInvalidId[] = "Invalid ID '*'";
+const char kErrorInvalid[] = "Invalid value for 'externally_connectable'";
+const char kErrorInvalidMatchPattern[] = "Invalid match pattern '*'";
+const char kErrorInvalidId[] = "Invalid ID '*'";
+const char kErrorTopLevelDomainsNotAllowed[] =
+    "\"*\" is an effective top level domain for which wildcard subdomains such "
+    "as \"*\" are not allowed";
+const char kErrorWildcardHostsNotAllowed[] =
+    "Wildcard domain patterns such as \"*\" are not allowed";
 }
 
 namespace keys = extension_manifest_keys;
@@ -24,8 +37,17 @@ namespace errors = externally_connectable_errors;
 using api::manifest_types::ExternallyConnectable;
 
 namespace {
+
 const char kAllIds[] = "*";
+
+template <typename T>
+std::vector<T> Sorted(const std::vector<T>& in) {
+  std::vector<T> out = in;
+  std::sort(out.begin(), out.end());
+  return out;
 }
+
+} // namespace
 
 ExternallyConnectableHandler::ExternallyConnectableHandler() {}
 
@@ -40,6 +62,10 @@ bool ExternallyConnectableHandler::Parse(Extension* extension,
       ExternallyConnectableInfo::FromValue(*externally_connectable, error);
   if (!info)
     return false;
+  if (!info->matches.is_empty()) {
+    PermissionsData::GetInitialAPIPermissions(extension)->insert(
+        APIPermission::kWebConnectable);
+  }
   extension->SetManifestData(keys::kExternallyConnectable, info.release());
   return true;
 }
@@ -80,19 +106,55 @@ scoped_ptr<ExternallyConnectableInfo> ExternallyConnectableInfo::FromValue(
             errors::kErrorInvalidMatchPattern, *it);
         return scoped_ptr<ExternallyConnectableInfo>();
       }
+
+      // Wildcard hosts are not allowed.
+      if (pattern.host().empty()) {
+        *error = ErrorUtils::FormatErrorMessageUTF16(
+            errors::kErrorWildcardHostsNotAllowed, *it);
+        return scoped_ptr<ExternallyConnectableInfo>();
+      }
+
+      // Wildcards on subdomains of a TLD are not allowed.
+      size_t registry_length = rcd::GetRegistryLength(
+          pattern.host(),
+          // This means that things that look like TLDs - the foobar in
+          // http://google.foobar - count as TLDs.
+          rcd::INCLUDE_UNKNOWN_REGISTRIES,
+          // This means that effective TLDs like appspot.com count as TLDs;
+          // codereview.appspot.com and evil.appspot.com are different.
+          rcd::INCLUDE_PRIVATE_REGISTRIES);
+
+      if (registry_length == std::string::npos) {
+        // The URL parsing combined with host().empty() should have caught this.
+        NOTREACHED() << *it;
+        *error = ErrorUtils::FormatErrorMessageUTF16(
+            errors::kErrorInvalidMatchPattern, *it);
+        return scoped_ptr<ExternallyConnectableInfo>();
+      }
+
+      // Broad match patterns like "*.com", "*.co.uk", and even "*.appspot.com"
+      // are not allowed. However just "appspot.com" is ok.
+      if (registry_length == 0 && pattern.match_subdomains()) {
+        *error = ErrorUtils::FormatErrorMessageUTF16(
+            errors::kErrorTopLevelDomainsNotAllowed,
+            pattern.host().c_str(),
+            *it);
+        return scoped_ptr<ExternallyConnectableInfo>();
+      }
+
       matches.AddPattern(pattern);
     }
   }
 
   std::vector<std::string> ids;
-  bool matches_all_ids = false;
+  bool all_ids = false;
 
   if (externally_connectable->ids) {
     for (std::vector<std::string>::iterator it =
              externally_connectable->ids->begin();
          it != externally_connectable->ids->end(); ++it) {
       if (*it == kAllIds) {
-        matches_all_ids = true;
+        all_ids = true;
       } else if (Extension::IdIsValid(*it)) {
         ids.push_back(*it);
       } else {
@@ -104,7 +166,7 @@ scoped_ptr<ExternallyConnectableInfo> ExternallyConnectableInfo::FromValue(
   }
 
   return make_scoped_ptr(
-      new ExternallyConnectableInfo(matches, ids, matches_all_ids));
+      new ExternallyConnectableInfo(matches, ids, all_ids));
 }
 
 ExternallyConnectableInfo::~ExternallyConnectableInfo() {}
@@ -112,7 +174,14 @@ ExternallyConnectableInfo::~ExternallyConnectableInfo() {}
 ExternallyConnectableInfo::ExternallyConnectableInfo(
     const URLPatternSet& matches,
     const std::vector<std::string>& ids,
-    bool matches_all_ids)
-    : matches(matches), ids(ids), matches_all_ids(matches_all_ids) {}
+    bool all_ids)
+    : matches(matches), ids(Sorted(ids)), all_ids(all_ids) {}
+
+bool ExternallyConnectableInfo::IdCanConnect(const std::string& id) {
+  if (all_ids)
+    return true;
+  DCHECK(base::STLIsSorted(ids));
+  return std::binary_search(ids.begin(), ids.end(), id);
+}
 
 }   // namespace extensions

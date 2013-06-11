@@ -23,7 +23,7 @@
 #include "cc/layers/render_surface.h"
 #include "cc/trees/occlusion_tracker.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
+#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect.h"
@@ -94,6 +94,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual void SetBackgroundColor(SkColor background_color);
   SkColor background_color() const { return background_color_; }
+  // If contents_opaque(), return an opaque color else return a
+  // non-opaque color.  Tries to return background_color(), if possible.
+  SkColor SafeOpaqueBackgroundColor() const;
 
   // A layer's bounds are in logical, non-page-scaled pixels (however, the
   // root layer's bounds are in physical pixels).
@@ -205,6 +208,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetScrollOffset(gfx::Vector2d scroll_offset);
   gfx::Vector2d scroll_offset() const { return scroll_offset_; }
+  void SetScrollOffsetFromImplSide(gfx::Vector2d scroll_offset);
 
   void SetMaxScrollOffset(gfx::Vector2d max_scroll_offset);
   gfx::Vector2d max_scroll_offset() const { return max_scroll_offset_; }
@@ -268,10 +272,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   Layer* replica_layer() { return replica_layer_.get(); }
   const Layer* replica_layer() const { return replica_layer_.get(); }
 
-  bool has_mask() const { return !!mask_layer_; }
-  bool has_replica() const { return !!replica_layer_; }
+  bool has_mask() const { return !!mask_layer_.get(); }
+  bool has_replica() const { return !!replica_layer_.get(); }
   bool replica_has_mask() const {
-    return replica_layer_ && (mask_layer_ || replica_layer_->mask_layer_);
+    return replica_layer_.get() &&
+           (mask_layer_.get() || replica_layer_->mask_layer_.get());
   }
 
   // These methods typically need to be overwritten by derived classes.
@@ -316,8 +321,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool AddAnimation(scoped_ptr<Animation> animation);
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
-
-  void TransferAnimationsTo(Layer* layer);
 
   void SuspendAnimations(double monotonic_time);
   void ResumeAnimations(double monotonic_time);

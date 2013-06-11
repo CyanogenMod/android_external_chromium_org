@@ -360,11 +360,13 @@ cr.define('options', function() {
       };
 
       // Languages section.
-      $('language-button').onclick = function(event) {
+      var showLanguageOptions = function(event) {
         OptionsPage.navigateToPage('languages');
         chrome.send('coreOptionsUserMetricsAction',
             ['Options_LanuageAndSpellCheckSettings']);
       };
+      $('language-button').onclick = showLanguageOptions;
+      $('manage-languages').onclick = showLanguageOptions;
 
       // Downloads section.
       Preferences.getInstance().addEventListener('download.default_directory',
@@ -438,17 +440,6 @@ cr.define('options', function() {
         $('factory-reset-restart').onclick = function(event) {
           OptionsPage.navigateToPage('factoryResetData');
         };
-      }
-
-      // Kiosk section (CrOS only).
-      if (cr.isChromeOS) {
-        if (loadTimeData.getBoolean('enableKioskSection')) {
-          $('kiosk-section').hidden = false;
-
-          $('manage-kiosk-apps-button').onclick = function(event) {
-            OptionsPage.navigateToPage('kioskAppsOverlay');
-          };
-        }
       }
 
       // System section.
@@ -690,11 +681,26 @@ cr.define('options', function() {
         expander.textContent = loadTimeData.getString('hideAdvancedSettings');
     },
 
-    updateInstantCheckboxState_: function(enabled, checked, checkboxLabel) {
+    /**
+     * Updates the Instant checkbox section.
+     * @param {boolean} visible Is the checkbox visible?
+     * @param {boolean} enabled Is the checkbox enabled?
+     * @param {boolean} checked Is the checkbox checked?
+     * @param {string} checkboxLabel Label to show next to the checkbox.
+     * @private
+     */
+    updateInstantCheckboxState_: function(visible, enabled, checked,
+                                          checkboxLabel) {
+      var checkboxSection = $('instant-enabled-setting');
       var checkbox = $('instant-enabled-control');
-      checkbox.disabled = !enabled;
-      checkbox.checked = checked;
-      $('instant-enabled-label').textContent = checkboxLabel;
+      if (visible) {
+        $('instant-enabled-setting').style.display = 'block';
+        checkbox.disabled = !enabled;
+        checkbox.checked = checked;
+        $('instant-enabled-label').textContent = checkboxLabel;
+      } else {
+        $('instant-enabled-setting').style.display = 'none';
+      }
     },
 
     /**
@@ -1054,6 +1060,38 @@ cr.define('options', function() {
       }
 
       this.setProfileViewButtonsStatus_();
+    },
+
+    /**
+     * Reports a local error (e.g., disk full) to the "create" overlay during
+     * profile creation.
+     * @private
+     */
+    showCreateProfileLocalError_: function() {
+      CreateProfileOverlay.onLocalError();
+    },
+
+    /**
+    * Reports a remote error (e.g., a network error during limited-user
+    * registration) to the "create" overlay during profile creation.
+    * @private
+    */
+    showCreateProfileRemoteError_: function() {
+      CreateProfileOverlay.onRemoteError();
+    },
+
+    /**
+    * Reports successful profile creation to the "create" overlay.
+     * @param {Object} profileInfo An object of the form:
+     *     profileInfo = {
+     *       name: "Profile Name",
+     *       filePath: "/path/to/profile/data/on/disk"
+     *       isManaged: (true|false),
+     *     };
+    * @private
+    */
+    showCreateProfileSuccess_: function(profileInfo) {
+      CreateProfileOverlay.onSuccess(profileInfo);
     },
 
     /**
@@ -1436,6 +1474,9 @@ cr.define('options', function() {
     'setupPageZoomSelector',
     'setupProxySettingsSection',
     'showBluetoothSettings',
+    'showCreateProfileLocalError',
+    'showCreateProfileRemoteError',
+    'showCreateProfileSuccess',
     'showMouseControls',
     'showTouchpadControls',
     'updateAccountPicture',

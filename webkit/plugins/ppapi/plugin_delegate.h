@@ -10,7 +10,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/process.h"
 #include "base/shared_memory.h"
@@ -34,9 +34,9 @@
 #include "ppapi/shared_impl/dir_contents.h"
 #include "ui/gfx/size.h"
 #include "webkit/common/fileapi/file_system_types.h"
+#include "webkit/common/quota/quota_types.h"
 #include "webkit/glue/clipboard_client.h"
 #include "webkit/plugins/webkit_plugins_export.h"
-#include "webkit/quota/quota_types.h"
 
 class GURL;
 class SkBitmap;
@@ -63,6 +63,7 @@ class Point;
 
 namespace gpu {
 class CommandBuffer;
+struct Mailbox;
 }
 
 namespace ppapi {
@@ -162,6 +163,7 @@ class PluginDelegate {
     virtual void RemoveInstance(PP_Instance instance) = 0;
 
     virtual base::ProcessId GetPeerProcessId() = 0;
+    virtual int GetPluginChildId() = 0;
   };
 
   // Represents an image. This is to allow the browser layer to supply a correct
@@ -219,12 +221,8 @@ class PluginDelegate {
     virtual bool Init(const int32* attrib_list,
                       PlatformContext3D* share_context) = 0;
 
-    // If the plugin instance is backed by an OpenGL, return its ID in the
-    // compositors namespace. Otherwise return 0. Returns 0 by default.
-    virtual unsigned GetBackingTextureId() = 0;
-
-    // Returns the parent context that allocated the backing texture ID.
-    virtual WebKit::WebGraphicsContext3D* GetParentContext() = 0;
+    // Retrieves the mailbox name for the front buffer backing the context.
+    virtual void GetBackingMailbox(::gpu::Mailbox* mailbox) = 0;
 
     // Returns true if the backing texture is always opaque.
     virtual bool IsOpaque() = 0;
@@ -411,9 +409,6 @@ class PluginDelegate {
 
   // The caller will own the pointer returned from this.
   virtual PlatformContext3D* CreateContext3D() = 0;
-
-  // Set that the context will now present to the delegate.
-  virtual void ReparentContext(PlatformContext3D*) = 0;
 
   // If |device_id| is empty, the default video capture device will be used. The
   // user can start using the returned object to capture video right away.

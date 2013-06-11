@@ -233,7 +233,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
   static size_t GetMinGoAwayFrameSize();
   // The maximum number of nacks which can be transmitted in a single ack packet
   // without exceeding kMaxPacketSize.
-  static size_t GetMaxUnackedPackets(bool include_version);
+  static size_t GetMaxUnackedPackets(QuicPacketHeader header);
   // Size in bytes required for a serialized version negotiation packet
   size_t GetVersionNegotiationPacketSize(size_t number_versions);
 
@@ -246,7 +246,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
   // Returns the associated data from the encrypted packet |encrypted| as a
   // stringpiece.
   static base::StringPiece GetAssociatedDataFromEncryptedPacket(
-      const QuicEncryptedPacket& encrypted, bool includes_version);
+      const QuicEncryptedPacket& encrypted,
+      QuicGuidLength guid_length,
+      bool includes_version,
+      QuicSequenceNumberLength sequence_number_length);
 
   // Returns a SerializedPacket whose |packet| member is owned by the caller,
   // and is populated with the fields in |header| and |frames|, or is NULL if
@@ -340,7 +343,9 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessPacketHeader(QuicPacketHeader* header,
                            const QuicEncryptedPacket& packet);
 
-  bool ProcessPacketSequenceNumber(QuicPacketSequenceNumber* sequence_number);
+  bool ProcessPacketSequenceNumber(
+      QuicSequenceNumberLength sequence_number_length,
+      QuicPacketSequenceNumber* sequence_number);
   bool ProcessFrameData();
   bool ProcessStreamFrame(QuicStreamFrame* frame);
   bool ProcessAckFrame(QuicAckFrame* frame);
@@ -352,19 +357,20 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessConnectionCloseFrame(QuicConnectionCloseFrame* frame);
   bool ProcessGoAwayFrame(QuicGoAwayFrame* frame);
 
-  bool DecryptPayload(QuicPacketSequenceNumber packet_sequence_number,
-                      bool version_flag,
+  bool DecryptPayload(const QuicPacketHeader& header,
                       const QuicEncryptedPacket& packet);
 
   // Returns the full packet sequence number from the truncated
   // wire format version and the last seen packet sequence number.
   QuicPacketSequenceNumber CalculatePacketSequenceNumberFromWire(
+      QuicSequenceNumberLength sequence_number_length,
       QuicPacketSequenceNumber packet_sequence_number) const;
 
   // Computes the wire size in bytes of the payload of |frame|.
   size_t ComputeFrameLength(const QuicFrame& frame);
 
   static bool AppendPacketSequenceNumber(
+      QuicSequenceNumberLength sequence_number_length,
       QuicPacketSequenceNumber packet_sequence_number,
       QuicDataWriter* writer);
 
@@ -400,6 +406,8 @@ class NET_EXPORT_PRIVATE QuicFramer {
   QuicErrorCode error_;
   // Updated by ProcessPacketHeader when it succeeds.
   QuicPacketSequenceNumber last_sequence_number_;
+  // Updated by WritePacketHeader.
+  QuicGuid last_serialized_guid_;
   // Buffer containing decrypted payload data during parsing.
   scoped_ptr<QuicData> decrypted_;
   // Version of the protocol being used.

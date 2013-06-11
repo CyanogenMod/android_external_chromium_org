@@ -88,6 +88,7 @@ LOCAL_SRC_FILES := \
 	media/base/djb2.cc \
 	media/base/filter_collection.cc \
 	media/base/media.cc \
+	media/base/media_keys.cc \
 	media/base/media_log.cc \
 	media/base/media_switches.cc \
 	media/base/multi_channel_resampler.cc \
@@ -203,7 +204,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \

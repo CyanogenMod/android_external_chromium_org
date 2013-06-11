@@ -85,7 +85,7 @@ FileError UpdateLocalStateForCreateFile(
   ResourceEntry entry = ConvertToResourceEntry(*resource_entry);
   FileError error = metadata->AddEntry(entry);
 
-  // Depending on timing, the metadata may have inserted via change list feed
+  // Depending on timing, the metadata may have inserted via change list
   // already. So, FILE_ERROR_EXISTS is not an error.
   if (error == FILE_ERROR_EXISTS)
     error = FILE_ERROR_OK;
@@ -102,7 +102,7 @@ FileError UpdateLocalStateForCreateFile(
     if (file_util::CreateTemporaryFile(&empty_file)) {
       cache_store_error =  cache->Store(
           entry.resource_id(),
-          entry.file_specific_info().file_md5(),
+          entry.file_specific_info().md5(),
           empty_file,
           internal::FileCache::FILE_OPERATION_MOVE);
     }

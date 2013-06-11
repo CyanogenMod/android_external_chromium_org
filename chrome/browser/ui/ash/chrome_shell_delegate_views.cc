@@ -9,6 +9,7 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/caps_lock_delegate_views.h"
+#include "chrome/browser/ui/ash/session_state_delegate_views.h"
 #include "chrome/browser/ui/ash/window_positioner.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -17,6 +18,7 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_service.h"
 
 #if defined(OS_WIN)
@@ -53,6 +55,13 @@ void ChromeShellDelegate::ToggleSpokenFeedback(
     ash::AccessibilityNotificationVisibility notify) {
 }
 
+void ChromeShellDelegate::SetLargeCursorEnabled(bool enalbed) {
+}
+
+bool ChromeShellDelegate::IsLargeCursorEnabled() const {
+  return false;
+}
+
 bool ChromeShellDelegate::IsHighContrastEnabled() const {
   return false;
 }
@@ -73,6 +82,10 @@ ash::MagnifierType ChromeShellDelegate::GetMagnifierType() const {
 
 ash::CapsLockDelegate* ChromeShellDelegate::CreateCapsLockDelegate() {
   return new CapsLockDelegate();
+}
+
+ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
+  return new SessionStateDelegate;
 }
 
 void ChromeShellDelegate::SaveScreenMagnifierScale(double scale) {
@@ -115,6 +128,12 @@ void ChromeShellDelegate::Observe(int type,
                                   const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_ASH_SESSION_STARTED: {
+      // If we are launched to service a windows 8 search request then let the
+      // IPC which carries the search string create the browser and initiate
+      // the navigation.
+      if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kWindows8Search))
+        break;
       // If Chrome ASH is launched when no browser is open in the desktop,
       // we should execute the startup code.
       // If there are browsers open in the desktop, we create a browser window

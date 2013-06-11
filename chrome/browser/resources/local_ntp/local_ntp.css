@@ -6,6 +6,7 @@ body {
   background-color: white;
   cursor: default;
   font-family: arial, sans-serif;
+  font-size: small;
   margin: 0;
   overflow-x: hidden;
 }
@@ -89,6 +90,7 @@ body.custom-theme #logo {
   border: 1px solid rgb(185, 185, 185);
   border-radius: 1px;
   border-top-color: rgb(160, 160, 160);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
   cursor: text;
   font-size: 18px;
   height: 36px;
@@ -242,7 +244,8 @@ body.fakebox-focused #cursor {
   border-color: #7f7f7f
 }
 
-.mv-thumb {
+.mv-thumb,
+.mv-mask {
   border: none;
   cursor: pointer;
   height: 83px;
@@ -259,6 +262,18 @@ body.fakebox-focused #cursor {
   left: 0;
   position: absolute;
   width: 140px;
+}
+
+.mv-mask {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.mv-page:focus .mv-mask {
+  -webkit-transition: background-color 100ms ease-in-out;
+  background: -webkit-linear-gradient(rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0) 80%, rgba(255, 255, 255, 0.9));
+  background-color: black;
 }
 
 .mv-x-hide .mv-x {
@@ -326,7 +341,7 @@ body.rtl .mv-page .mv-x {
 
 /* The notification shown when a tile is blacklisted. */
 #mv-notice {
-  font-size: 75%;
+  font-size: 12px;
   font-weight: bold;
   opacity: 1;
   padding: 10px 0;
@@ -371,7 +386,7 @@ body.rtl .mv-page .mv-x {
   bottom: 0;
   color: #fff;
   cursor: default;
-  font-size: 75%;
+  font-size: 13px;
   position: absolute;
   right: 13px;
   text-align: left;

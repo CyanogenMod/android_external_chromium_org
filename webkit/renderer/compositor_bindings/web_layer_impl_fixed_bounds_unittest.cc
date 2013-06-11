@@ -7,8 +7,8 @@
 #include "cc/test/geometry_test_utils.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/public/platform/WebFloatPoint.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
 #include "ui/gfx/point3_f.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl_fixed_bounds.h"
@@ -131,6 +131,7 @@ void CompareFixedBoundsLayerAndNormalLayer(
   cc::LayerTreeHostCommon::CalculateDrawProperties(
       root_layer->layer(),
       kDeviceViewportSize,
+      gfx::Transform(),
       kDeviceScaleFactor,
       kPageScaleFactor,
       root_layer->layer(),
@@ -149,6 +150,7 @@ void CompareFixedBoundsLayerAndNormalLayer(
   cc::LayerTreeHostCommon::CalculateDrawProperties(
       root_layer->layer(),
       kDeviceViewportSize,
+      gfx::Transform(),
       kDeviceScaleFactor,
       kPageScaleFactor,
       root_layer->layer(),

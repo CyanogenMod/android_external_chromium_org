@@ -10,11 +10,11 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/common/content_export.h"
-#include "webkit/quota/quota_client.h"
-#include "webkit/quota/quota_task.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/browser/quota/quota_client.h"
+#include "webkit/browser/quota/quota_task.h"
+#include "webkit/common/quota/quota_types.h"
 
 namespace content {
 class IndexedDBContextImpl;
@@ -25,9 +25,8 @@ class IndexedDBContextImpl;
 class IndexedDBQuotaClient : public quota::QuotaClient,
                              public quota::QuotaTaskObserver {
  public:
-  CONTENT_EXPORT IndexedDBQuotaClient(
-      base::MessageLoopProxy* tracker_thread,
-      IndexedDBContextImpl* indexed_db_context);
+  CONTENT_EXPORT IndexedDBQuotaClient(base::MessageLoopProxy* tracker_thread,
+                                      IndexedDBContextImpl* indexed_db_context);
   CONTENT_EXPORT virtual ~IndexedDBQuotaClient();
 
   // QuotaClient method overrides
@@ -44,6 +43,7 @@ class IndexedDBQuotaClient : public quota::QuotaClient,
   virtual void DeleteOriginData(const GURL& origin,
                                 quota::StorageType type,
                                 const DeletionCallback& callback) OVERRIDE;
+
  private:
   scoped_refptr<base::MessageLoopProxy> webkit_thread_message_loop_;
   scoped_refptr<IndexedDBContextImpl> indexed_db_context_;

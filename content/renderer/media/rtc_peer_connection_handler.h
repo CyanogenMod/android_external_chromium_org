@@ -9,9 +9,9 @@
 #include "base/compiler_specific.h"
 #include "content/common/content_export.h"
 #include "content/renderer/media/peer_connection_handler_base.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCPeerConnectionHandler.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCStatsRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCStatsResponse.h"
+#include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandler.h"
+#include "third_party/WebKit/public/platform/WebRTCStatsRequest.h"
+#include "third_party/WebKit/public/platform/WebRTCStatsResponse.h"
 
 namespace WebKit {
 class WebFrame;
@@ -127,7 +127,10 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   virtual void getStats(
       const WebKit::WebRTCStatsRequest& request) OVERRIDE;
   virtual WebKit::WebRTCDataChannelHandler* createDataChannel(
-      const WebKit::WebString& label, bool reliable) OVERRIDE;
+      const WebKit::WebString& label,
+      const WebKit::WebRTCDataChannelInit& init) OVERRIDE;
+  virtual WebKit::WebRTCDataChannelHandler* createDataChannel(
+      const WebKit::WebString& label, bool reliable);
   virtual WebKit::WebRTCDTMFSenderHandler* createDTMFSender(
       const WebKit::WebMediaStreamTrack& track) OVERRIDE;
   virtual void stop() OVERRIDE;

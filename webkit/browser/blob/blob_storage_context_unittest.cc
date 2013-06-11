@@ -28,7 +28,7 @@ void SetupBasicBlob(BlobStorageHost* host, const std::string& id) {
 TEST(BlobStorageContextTest, IncrementDecrementRef) {
   BlobStorageContext context;
   BlobStorageHost host(&context);
-  MessageLoop fake_io_message_loop;
+  base::MessageLoop fake_io_message_loop;
 
   // Build up a basic blob.
   const std::string kId("id");
@@ -58,7 +58,7 @@ TEST(BlobStorageContextTest, IncrementDecrementRef) {
 TEST(BlobStorageContextTest, BlobDataHandle) {
   BlobStorageContext context;
   BlobStorageHost host(&context);
-  MessageLoop fake_io_message_loop;
+  base::MessageLoop fake_io_message_loop;
 
   // Build up a basic blob.
   const std::string kId("id");
@@ -89,7 +89,7 @@ TEST(BlobStorageContextTest, CompoundBlobs) {
   const std::string kId2("id2");
   const std::string kId2Prime("id2.prime");
 
-  MessageLoop fake_io_message_loop;
+  base::MessageLoop fake_io_message_loop;
 
   // Setup a set of blob data for testing.
   base::Time time1, time2;
@@ -121,20 +121,20 @@ TEST(BlobStorageContextTest, CompoundBlobs) {
   scoped_ptr<BlobDataHandle> blob_data_handle;
 
   // Test a blob referring to only data and a file.
-  blob_data_handle = context.AddFinishedBlob(blob_data1);
+  blob_data_handle = context.AddFinishedBlob(blob_data1.get());
   ASSERT_TRUE(blob_data_handle.get());
-  EXPECT_TRUE(*(blob_data_handle->data()) == *blob_data1);
+  EXPECT_TRUE(*(blob_data_handle->data()) == *blob_data1.get());
 
   // Test a blob composed in part with another blob.
-  blob_data_handle = context.AddFinishedBlob(blob_data2);
+  blob_data_handle = context.AddFinishedBlob(blob_data2.get());
   ASSERT_TRUE(blob_data_handle.get());
-  EXPECT_TRUE(*(blob_data_handle->data()) == *canonicalized_blob_data2);
+  EXPECT_TRUE(*(blob_data_handle->data()) == *canonicalized_blob_data2.get());
 }
 
 TEST(BlobStorageContextTest, PublicBlobUrls) {
   BlobStorageContext context;
   BlobStorageHost host(&context);
-  MessageLoop fake_io_message_loop;
+  base::MessageLoop fake_io_message_loop;
 
   // Build up a basic blob.
   const std::string kId("id");
@@ -166,7 +166,7 @@ TEST(BlobStorageContextTest, PublicBlobUrls) {
 TEST(BlobStorageContextTest, HostCleanup) {
   BlobStorageContext context;
   scoped_ptr<BlobStorageHost> host(new BlobStorageHost(&context));
-  MessageLoop fake_io_message_loop;
+  base::MessageLoop fake_io_message_loop;
 
   // Build up a basic blob and register a url
   const std::string kId("id");
@@ -185,7 +185,7 @@ TEST(BlobStorageContextTest, HostCleanup) {
 TEST(BlobStorageContextTest, EarlyContextDeletion) {
   scoped_ptr<BlobStorageContext> context(new BlobStorageContext);
   BlobStorageHost host(context.get());
-  MessageLoop fake_io_message_loop;
+  base::MessageLoop fake_io_message_loop;
 
   // Deleting the context should not induce crashes.
   context.reset();

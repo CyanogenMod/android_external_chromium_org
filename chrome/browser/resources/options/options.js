@@ -17,6 +17,7 @@ var CookiesView = options.CookiesView;
 var CreateProfileOverlay = options.CreateProfileOverlay;
 var EditDictionaryOverlay = cr.IsMac ? null : options.EditDictionaryOverlay;
 var FactoryResetOverlay = options.FactoryResetOverlay;
+var ManagedUserCreateConfirmOverlay = options.ManagedUserCreateConfirmOverlay;
 var ManagedUserLearnMoreOverlay = options.ManagedUserLearnMoreOverlay;
 var FontSettings = options.FontSettings;
 var HandlerOptions = options.HandlerOptions;
@@ -130,11 +131,14 @@ function load() {
                               BrowserOptions.getInstance());
   OptionsPage.registerOverlay(LanguageOptions.getInstance(),
                               BrowserOptions.getInstance(),
-                              [$('language-button')]);
+                              [$('language-button'),
+                               $('manage-languages')]);
   OptionsPage.registerOverlay(ManageProfileOverlay.getInstance(),
                               BrowserOptions.getInstance());
   if (loadTimeData.getBoolean('managedUsersEnabled') &&
       !cr.isChromeOS) {
+    OptionsPage.registerOverlay(ManagedUserCreateConfirmOverlay.getInstance(),
+                                BrowserOptions.getInstance());
     OptionsPage.registerOverlay(ManagedUserLearnMoreOverlay.getInstance(),
                                 CreateProfileOverlay.getInstance());
   }
@@ -180,11 +184,6 @@ function load() {
     OptionsPage.registerOverlay(KeyboardOverlay.getInstance(),
                                 BrowserOptions.getInstance(),
                                 [$('keyboard-settings-button')]);
-    OptionsPage.registerOverlay(KioskAppsOverlay.getInstance(),
-                                BrowserOptions.getInstance(),
-                                [$('manage-kiosk-apps-button')]);
-    OptionsPage.registerOverlay(KioskDisableBailoutConfirm.getInstance(),
-                                KioskAppsOverlay.getInstance());
     OptionsPage.registerOverlay(PointerOverlay.getInstance(),
                                 BrowserOptions.getInstance(),
                                 [$('pointer-settings-button')]);

@@ -63,7 +63,7 @@ RenderWidgetHelper::BackingStoreMsgProxy::BackingStoreMsgProxy(
 RenderWidgetHelper::BackingStoreMsgProxy::~BackingStoreMsgProxy() {
   // If the paint message was never dispatched, then we need to let the
   // helper know that we are going away.
-  if (!cancelled_ && helper_)
+  if (!cancelled_ && helper_.get())
     helper_->OnDiscardBackingStoreMsg(this);
 }
 
@@ -250,6 +250,7 @@ void RenderWidgetHelper::CreateNewWindow(
     bool no_javascript_access,
     base::ProcessHandle render_process,
     int* route_id,
+    int* main_frame_route_id,
     int* surface_id,
     SessionStorageNamespace* session_storage_namespace) {
   if (params.opener_suppressed || no_javascript_access) {
@@ -259,32 +260,38 @@ void RenderWidgetHelper::CreateNewWindow(
     // it. Because of this, we will immediately show and navigate the window
     // in OnCreateWindowOnUI, using the params provided here.
     *route_id = MSG_ROUTING_NONE;
+    *main_frame_route_id = MSG_ROUTING_NONE;
     *surface_id = 0;
   } else {
     *route_id = GetNextRoutingID();
+    *main_frame_route_id = GetNextRoutingID();
     *surface_id = GpuSurfaceTracker::Get()->AddSurfaceForRenderer(
         render_process_id_, *route_id);
     // Block resource requests until the view is created, since the HWND might
     // be needed if a response ends up creating a plugin.
     resource_dispatcher_host_->BlockRequestsForRoute(
         render_process_id_, *route_id);
+    resource_dispatcher_host_->BlockRequestsForRoute(
+        render_process_id_, *main_frame_route_id);
   }
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&RenderWidgetHelper::OnCreateWindowOnUI,
-                 this, params, *route_id,
+                 this, params, *route_id, *main_frame_route_id,
                  make_scoped_refptr(session_storage_namespace)));
 }
 
 void RenderWidgetHelper::OnCreateWindowOnUI(
     const ViewHostMsg_CreateWindow_Params& params,
     int route_id,
+    int main_frame_route_id,
     SessionStorageNamespace* session_storage_namespace) {
   RenderViewHostImpl* host =
       RenderViewHostImpl::FromID(render_process_id_, params.opener_id);
   if (host)
-    host->CreateNewWindow(route_id, params, session_storage_namespace);
+    host->CreateNewWindow(route_id, main_frame_route_id, params,
+        session_storage_namespace);
 }
 
 void RenderWidgetHelper::OnResumeRequestsForView(int route_id) {
@@ -348,8 +355,9 @@ TransportDIB* RenderWidgetHelper::MapTransportDIB(TransportDIB::Id dib_id) {
   return TransportDIB::Map(fd);
 }
 
-void RenderWidgetHelper::AllocTransportDIB(
-    size_t size, bool cache_in_browser, TransportDIB::Handle* result) {
+void RenderWidgetHelper::AllocTransportDIB(uint32 size,
+                                           bool cache_in_browser,
+                                           TransportDIB::Handle* result) {
   scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
   if (!shared_memory->CreateAnonymous(size)) {
     result->fd = -1;

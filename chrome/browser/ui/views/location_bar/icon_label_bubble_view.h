@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/size.h"
 #include "ui/views/view.h"
 
@@ -33,7 +33,8 @@ class IconLabelBubbleView : public views::View {
                       int contained_image,
                       const gfx::Font& font,
                       int font_y_offset,
-                      SkColor color,
+                      SkColor text_color,
+                      SkColor parent_background_color,
                       bool elide_in_middle);
   virtual ~IconLabelBubbleView();
 
@@ -51,6 +52,13 @@ class IconLabelBubbleView : public views::View {
   gfx::Size GetSizeForLabelWidth(int width) const;
 
  private:
+  // Amount of padding at the edges of the bubble.  If |by_icon| is true, this
+  // is the padding next to the icon; otherwise it's the padding next to the
+  // label.  (We increase padding next to the label by the amount of padding
+  // "built in" to the icon in order to make the bubble appear to have
+  // symmetrical padding.)
+  static int GetBubbleOuterPadding(bool by_icon);
+
   // views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 

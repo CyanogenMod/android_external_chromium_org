@@ -9,8 +9,8 @@
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/md5.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
@@ -222,7 +222,7 @@ void PrinterJobHandler::OnJobSpoolFailed() {
 }
 
 PrinterJobHandler::~PrinterJobHandler() {
-  if (printer_watcher_)
+  if (printer_watcher_.get())
     printer_watcher_->StopWatching();
 }
 
@@ -538,7 +538,7 @@ void PrinterJobHandler::JobSpooled(PlatformJobId local_job_id) {
 }
 
 bool PrinterJobHandler::UpdatePrinterInfo() {
-  if (!printer_watcher_) {
+  if (!printer_watcher_.get()) {
     LOG(ERROR) << "CP_CONNECTOR: Printer watcher is missing."
                << " Check printer server url for printer id: "
                << printer_info_cloud_.printer_id;
@@ -583,7 +583,7 @@ void PrinterJobHandler::OnReceivePrinterCaps(
     const std::string& printer_name,
     const printing::PrinterCapsAndDefaults& caps_and_defaults) {
   printing::PrinterBasicInfo printer_info;
-  if (printer_watcher_)
+  if (printer_watcher_.get())
     printer_watcher_->GetCurrentPrinterInfo(&printer_info);
 
   std::string post_data;
@@ -666,8 +666,8 @@ void PrinterJobHandler::OnReceivePrinterCaps(
 void PrinterJobHandler::DoPrint(const JobDetails& job_details,
                                 const std::string& printer_name) {
   job_spooler_ = print_system_->CreateJobSpooler();
-  DCHECK(job_spooler_);
-  if (!job_spooler_)
+  DCHECK(job_spooler_.get());
+  if (!job_spooler_.get())
     return;
   string16 document_name =
       printing::PrintBackend::SimplifyDocumentTitle(

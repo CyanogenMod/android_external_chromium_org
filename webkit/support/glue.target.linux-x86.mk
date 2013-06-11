@@ -12,6 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
@@ -34,15 +35,12 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/glue/cpp_bound_class.cc \
-	webkit/glue/cpp_variant.cc \
 	webkit/glue/cursor_utils.cc \
 	webkit/glue/fling_curve_configuration.cc \
 	webkit/glue/fling_animator_impl_android.cc \
 	webkit/glue/ftp_directory_listing_response_delegate.cc \
 	webkit/glue/glue_serialize_deprecated.cc \
 	webkit/glue/image_decoder.cc \
-	webkit/glue/latin1_string_conversions.cc \
 	webkit/glue/npruntime_util.cc \
 	webkit/glue/resource_loader_bridge.cc \
 	webkit/glue/resource_request_body.cc \
@@ -53,13 +51,11 @@ LOCAL_SRC_FILES := \
 	webkit/glue/web_discardable_memory_impl.cc \
 	webkit/glue/webclipboard_impl.cc \
 	webkit/glue/webcookie.cc \
-	webkit/glue/webdropdata.cc \
 	webkit/glue/webfallbackthemeengine_impl.cc \
 	webkit/glue/webfileutilities_impl.cc \
 	webkit/glue/webkit_glue.cc \
 	webkit/glue/webkitplatformsupport_impl.cc \
 	webkit/glue/webmenuitem.cc \
-	webkit/glue/webpreferences.cc \
 	webkit/glue/websocketstreamhandle_impl.cc \
 	webkit/glue/webthemeengine_impl_android.cc \
 	webkit/glue/webthread_impl.cc \
@@ -116,7 +112,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -170,14 +165,13 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/ui/gl \
-	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
+	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(LOCAL_PATH)/v8/include \
 	$(PWD)/frameworks/wilhelm/include \

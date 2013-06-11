@@ -20,14 +20,14 @@
 #include "net/base/net_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPHeaderVisitor.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPLoadInfo.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoadTiming.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/public/platform/WebHTTPLoadInfo.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebURLLoadTiming.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/glue/ftp_directory_listing_response_delegate.h"
@@ -211,6 +211,7 @@ void PopulateURLResponse(
   extra_data->set_was_npn_negotiated(info.was_npn_negotiated);
   extra_data->set_was_alternate_protocol_available(
       info.was_alternate_protocol_available);
+  extra_data->set_connection_info(info.connection_info);
   extra_data->set_was_fetched_via_proxy(info.was_fetched_via_proxy);
 
   // If there's no received headers end time, don't set load timing.  This is
@@ -222,7 +223,7 @@ void PopulateURLResponse(
     response->setLoadTiming(timing);
   }
 
-  if (info.devtools_info) {
+  if (info.devtools_info.get()) {
     WebHTTPLoadInfo load_info;
 
     load_info.setHTTPStatusCode(info.devtools_info->http_status_code);
@@ -250,7 +251,7 @@ void PopulateURLResponse(
     response->setHTTPLoadInfo(load_info);
   }
 
-  const net::HttpResponseHeaders* headers = info.headers;
+  const net::HttpResponseHeaders* headers = info.headers.get();
   if (!headers)
     return;
 
@@ -552,7 +553,7 @@ void WebURLLoaderImpl::Context::Start(
       }
     }
     request_body->set_identifier(request.httpBody().identifier());
-    bridge_->SetRequestBody(request_body);
+    bridge_->SetRequestBody(request_body.get());
   }
 
   if (sync_load_response) {
@@ -637,6 +638,7 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
     }
   }
 
+  scoped_refptr<Context> protect(this);
   client_->didReceiveResponse(loader_, response);
 
   // We may have been cancelled after didReceiveResponse, which would leave us
@@ -646,7 +648,7 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
 
   DCHECK(!ftp_listing_delegate_.get());
   DCHECK(!multipart_delegate_.get());
-  if (info.headers && info.mime_type == "multipart/x-mixed-replace") {
+  if (info.headers.get() && info.mime_type == "multipart/x-mixed-replace") {
     std::string content_type;
     info.headers->EnumerateHeader(NULL, "content-type", &content_type);
 

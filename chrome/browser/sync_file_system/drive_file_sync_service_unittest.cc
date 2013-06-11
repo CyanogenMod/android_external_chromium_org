@@ -17,7 +17,6 @@ namespace sync_file_system {
 
 namespace {
 
-const char* kServiceName = DriveFileSyncService::kServiceName;
 const char kSyncRootResourceId[] = "folder:sync_root_resource_id";
 
 void DidInitialize(bool* done, SyncStatusCode status, bool created) {
@@ -33,6 +32,10 @@ void ExpectEqStatus(bool* done,
   EXPECT_EQ(expected, actual);
 }
 
+void ExpectOkStatus(SyncStatusCode status) {
+  EXPECT_EQ(SYNC_STATUS_OK, status);
+}
+
 }  // namespace
 
 class DriveFileSyncServiceTest : public testing::Test {
@@ -45,7 +48,7 @@ class DriveFileSyncServiceTest : public testing::Test {
         sync_service_(NULL) {}
 
   virtual void SetUp() OVERRIDE {
-    ASSERT_TRUE(RegisterSyncableFileSystem(kServiceName));
+    RegisterSyncableFileSystem();
     fake_api_util_ = new drive::FakeAPIUtil;
 
     ASSERT_TRUE(scoped_base_dir_.CreateUniqueTempDir());
@@ -64,6 +67,7 @@ class DriveFileSyncServiceTest : public testing::Test {
         base_dir_,
         scoped_ptr<drive::APIUtilInterface>(fake_api_util_),
         scoped_ptr<DriveMetadataStore>(metadata_store_)).Pass();
+    message_loop_.RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
@@ -73,7 +77,7 @@ class DriveFileSyncServiceTest : public testing::Test {
     message_loop_.RunUntilIdle();
 
     base_dir_ = base::FilePath();
-    ASSERT_TRUE(RevokeSyncableFileSystem(kServiceName));
+    RevokeSyncableFileSystem();
   }
 
   virtual ~DriveFileSyncServiceTest() {
@@ -84,6 +88,52 @@ class DriveFileSyncServiceTest : public testing::Test {
   drive::FakeAPIUtil* fake_api_util() { return fake_api_util_; }
   DriveMetadataStore* metadata_store() { return metadata_store_; }
   DriveFileSyncService* sync_service() { return sync_service_.get(); }
+  std::map<GURL, std::string>* pending_batch_sync_origins() {
+    return &(sync_service()->pending_batch_sync_origins_);
+  }
+
+  // Helper function to add an origin to the given origin sync status. To make
+  // naming easier, each origin, resourceID, etc. will all share the same
+  // prefixes and only be distinguished by the given suffix ID which could be a
+  // number (1, 2, 3, etc.) or a letter (A, B, C, etc.).
+  // e.g. originA, originB, folder:resource_idA, folder:resource_idB, etc.
+  void AddOrigin(std::string status, const char* suffix) {
+    const GURL origin(std::string("chrome-extension://app_") + suffix);
+    const std::string resource_id(std::string("folder:resource_id") + suffix);
+
+    if (status == "Pending") {
+      pending_batch_sync_origins()->insert(std::make_pair(origin, resource_id));
+    } else if (status == "Enabled") {
+      metadata_store()->AddIncrementalSyncOrigin(origin, resource_id);
+    } else if (status == "Disabled") {
+      metadata_store()->AddIncrementalSyncOrigin(origin, resource_id);
+      metadata_store()->DisableOrigin(origin, base::Bind(&ExpectOkStatus));
+    } else {
+      NOTREACHED();
+    }
+  }
+
+  bool VerifyOriginStatusCount(size_t expected_pending,
+                               size_t expected_enabled,
+                               size_t expected_disabled) {
+    size_t actual_pending = pending_batch_sync_origins()->size();
+    size_t actual_enabled = metadata_store()->incremental_sync_origins().size();
+    size_t actual_disabled = metadata_store()->disabled_origins().size();
+
+    // Prints which counts don't match up if any.
+    EXPECT_EQ(expected_pending, actual_pending);
+    EXPECT_EQ(expected_enabled, actual_enabled);
+    EXPECT_EQ(expected_disabled, actual_disabled);
+
+    // If any count doesn't match, the original line number can be printed by
+    // simply adding ASSERT_TRUE on the call to this function.
+    if (expected_pending == actual_pending &&
+        expected_enabled == actual_enabled &&
+        expected_disabled == actual_disabled)
+      return true;
+
+    return false;
+  }
 
  private:
   base::ScopedTempDir scoped_base_dir_;
@@ -102,7 +152,7 @@ class DriveFileSyncServiceTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(DriveFileSyncServiceTest);
 };
 
-TEST_F(DriveFileSyncServiceTest, DeleteOriginDirectory) {
+TEST_F(DriveFileSyncServiceTest, UninstallOrigin) {
   // Add fake app origin directory using fake drive_sync_client.
   std::string origin_dir_resource_id = "uninstalledappresourceid";
   fake_api_util()->PushRemoteChange("parent_id",
@@ -127,8 +177,77 @@ TEST_F(DriveFileSyncServiceTest, DeleteOriginDirectory) {
   EXPECT_TRUE(done);
 
   // Assert the App's origin folder was marked as deleted.
-  EXPECT_TRUE(fake_api_util()->remote_resources().find(origin_dir_resource_id)
-                  ->second.deleted);
+  EXPECT_TRUE(fake_api_util()->remote_resources().find(
+      origin_dir_resource_id)->second.deleted);
+}
+
+TEST_F(DriveFileSyncServiceTest, DisableOriginForTrackingChangesPendingOrigin) {
+  // Disable a pending origin after DriveFileSystemService has already started.
+  const GURL origin("chrome-extension://app");
+  std::string origin_resource_id = "app_resource_id";
+  pending_batch_sync_origins()->insert(std::make_pair(origin,
+                                                      origin_resource_id));
+  ASSERT_TRUE(VerifyOriginStatusCount(1u, 0u, 0u));
+
+  // Pending origins that are disabled are dropped and do not go to disabled.
+  sync_service()->DisableOriginForTrackingChanges(origin,
+                                                  base::Bind(&ExpectOkStatus));
+  message_loop()->RunUntilIdle();
+  ASSERT_TRUE(VerifyOriginStatusCount(0u, 0u, 0u));
+}
+
+TEST_F(DriveFileSyncServiceTest,
+       DisableOriginForTrackingChangesIncrementalOrigin) {
+  // Disable a pending origin after DriveFileSystemService has already started.
+  const GURL origin("chrome-extension://app");
+  std::string origin_resource_id = "app_resource_id";
+  metadata_store()->AddIncrementalSyncOrigin(origin, origin_resource_id);
+  ASSERT_TRUE(VerifyOriginStatusCount(0u, 1u, 0u));
+
+  sync_service()->DisableOriginForTrackingChanges(origin,
+                                                  base::Bind(&ExpectOkStatus));
+  message_loop()->RunUntilIdle();
+  ASSERT_TRUE(VerifyOriginStatusCount(0u, 0u, 1u));
+}
+
+TEST_F(DriveFileSyncServiceTest, EnableOriginForTrackingChanges) {
+  const GURL origin("chrome-extension://app");
+  std::string origin_resource_id = "app_resource_id";
+  metadata_store()->AddIncrementalSyncOrigin(origin, origin_resource_id);
+  metadata_store()->DisableOrigin(origin, base::Bind(&ExpectOkStatus));
+  ASSERT_TRUE(VerifyOriginStatusCount(0u, 0u, 1u));
+
+  // Re-enable the previously disabled origin. It initially goes to pending
+  // status and then to enabled (incremental) again when NotifyTasksDone() in
+  // DriveFileSyncTaskManager invokes MaybeStartFetchChanges() and pending
+  // origins > 0.
+  sync_service()->EnableOriginForTrackingChanges(origin,
+                                                 base::Bind(&ExpectOkStatus));
+  message_loop()->RunUntilIdle();
+  ASSERT_TRUE(VerifyOriginStatusCount(0u, 1u, 0u));
+}
+
+TEST_F(DriveFileSyncServiceTest, GetOriginStatusMap) {
+  RemoteFileSyncService::OriginStatusMap origin_status_map;
+  sync_service()->GetOriginStatusMap(&origin_status_map);
+  ASSERT_EQ(0u, origin_status_map.size());
+
+  // Add 3 pending, 2 enabled and 1 disabled sync origin.
+  AddOrigin("Pending", "p0");
+  AddOrigin("Pending", "p1");
+  AddOrigin("Pending", "p2");
+  AddOrigin("Enabled", "e0");
+  AddOrigin("Enabled", "e1");
+  AddOrigin("Disabled", "d0");
+
+  sync_service()->GetOriginStatusMap(&origin_status_map);
+  ASSERT_EQ(6u, origin_status_map.size());
+  EXPECT_EQ("Pending", origin_status_map[GURL("chrome-extension://app_p0")]);
+  EXPECT_EQ("Pending", origin_status_map[GURL("chrome-extension://app_p1")]);
+  EXPECT_EQ("Pending", origin_status_map[GURL("chrome-extension://app_p2")]);
+  EXPECT_EQ("Enabled", origin_status_map[GURL("chrome-extension://app_e0")]);
+  EXPECT_EQ("Enabled", origin_status_map[GURL("chrome-extension://app_e1")]);
+  EXPECT_EQ("Disabled", origin_status_map[GURL("chrome-extension://app_d0")]);
 }
 
 }  // namespace sync_file_system

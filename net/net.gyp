@@ -51,12 +51,12 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../crypto/crypto.gyp:crypto',
         '../sdch/sdch.gyp:sdch',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/zlib/zlib.gyp:zlib',
+        '../url/url.gyp:url_lib',
         'net_resources',
       ],
       'sources': [
@@ -336,6 +336,7 @@
         'disk_cache/disk_cache.h',
         'disk_cache/disk_format.cc',
         'disk_cache/disk_format.h',
+        'disk_cache/disk_format_base.h',
         'disk_cache/entry_impl.cc',
         'disk_cache/entry_impl.h',
         'disk_cache/errors.h',
@@ -570,6 +571,7 @@
         'http/http_server_properties.h',
         'http/http_server_properties_impl.cc',
         'http/http_server_properties_impl.h',
+        'http/http_status_code.cc',
         'http/http_status_code.h',
         'http/http_stream.h',
         'http/http_stream_base.h',
@@ -716,6 +718,10 @@
         'quic/crypto/aes_128_gcm_12_encrypter_openssl.cc',
         'quic/crypto/cert_compressor.cc',
         'quic/crypto/cert_compressor.h',
+        'quic/crypto/channel_id.cc',
+        'quic/crypto/channel_id.h',
+        'quic/crypto/channel_id_nss.cc',
+        'quic/crypto/channel_id_openssl.cc',
         'quic/crypto/common_cert_set.cc',
         'quic/crypto/common_cert_set.h',
         'quic/crypto/crypto_framer.cc',
@@ -1180,6 +1186,7 @@
               'ocsp/nss_ocsp.h',
               'quic/crypto/aes_128_gcm_12_decrypter_nss.cc',
               'quic/crypto/aes_128_gcm_12_encrypter_nss.cc',
+              'quic/crypto/channel_id_nss.cc',
               'quic/crypto/p256_key_exchange_nss.cc',
               'socket/nss_ssl_util.cc',
               'socket/nss_ssl_util.h',
@@ -1212,6 +1219,7 @@
               'cert/x509_util_openssl.h',
               'quic/crypto/aes_128_gcm_12_decrypter_openssl.cc',
               'quic/crypto/aes_128_gcm_12_encrypter_openssl.cc',
+              'quic/crypto/channel_id_openssl.cc',
               'quic/crypto/p256_key_exchange_openssl.cc',
               'quic/crypto/scoped_evp_cipher_ctx.cc',
               'quic/crypto/scoped_evp_cipher_ctx.h',
@@ -1403,13 +1411,6 @@
             ],
           },
         ],
-        [ 'OS == "linux"', {
-            'dependencies': [
-              '../build/linux/system.gyp:dbus',
-              '../dbus/dbus.gyp:dbus',
-            ],
-          },
-        ],
       ],
       'target_conditions': [
         # These source files are excluded by default platform rules, but they
@@ -1450,11 +1451,11 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../crypto/crypto.gyp:crypto',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/zlib/zlib.gyp:zlib',
+        '../url/url.gyp:url_lib',
         'net',
         'net_test_support',
       ],
@@ -1593,6 +1594,7 @@
         'http/http_response_headers_unittest.cc',
         'http/http_security_headers_unittest.cc',
         'http/http_server_properties_impl_unittest.cc',
+        'http/http_status_code_unittest.cc',
         'http/http_stream_factory_impl_unittest.cc',
         'http/http_stream_parser_unittest.cc',
         'http/http_transaction_unittest.cc',
@@ -1651,6 +1653,7 @@
         'quic/crypto/aes_128_gcm_12_decrypter_test.cc',
         'quic/crypto/aes_128_gcm_12_encrypter_test.cc',
         'quic/crypto/cert_compressor_test.cc',
+        'quic/crypto/channel_id_test.cc',
         'quic/crypto/common_cert_set_test.cc',
         'quic/crypto/crypto_framer_test.cc',
         'quic/crypto/crypto_handshake_test.cc',
@@ -1666,6 +1669,8 @@
         'quic/crypto/strike_register_test.cc',
         'quic/test_tools/crypto_test_utils.cc',
         'quic/test_tools/crypto_test_utils.h',
+        'quic/test_tools/crypto_test_utils_nss.cc',
+        'quic/test_tools/crypto_test_utils_openssl.cc',
         'quic/test_tools/mock_clock.cc',
         'quic/test_tools/mock_clock.h',
         'quic/test_tools/mock_crypto_client_stream.cc',
@@ -1762,8 +1767,7 @@
         'spdy/spdy_session_spdy2_unittest.cc',
         'spdy/spdy_session_test_util.cc',
         'spdy/spdy_session_test_util.h',
-        'spdy/spdy_stream_spdy3_unittest.cc',
-        'spdy/spdy_stream_spdy2_unittest.cc',
+        'spdy/spdy_stream_unittest.cc',
         'spdy/spdy_stream_test_util.cc',
         'spdy/spdy_stream_test_util.h',
         'spdy/spdy_test_util_common.cc',
@@ -1896,11 +1900,13 @@
             'sources!': [
               'cert/nss_cert_database_unittest.cc',
               'cert/x509_util_nss_unittest.cc',
+              'quic/test_tools/crypto_test_utils_nss.cc',
               'ssl/client_cert_store_impl_unittest.cc',
             ],
           }, {  # else !use_openssl: remove the unneeded files
             'sources!': [
               'cert/x509_util_openssl_unittest.cc',
+              'quic/test_tools/crypto_test_utils_openssl.cc',
               'socket/ssl_client_socket_openssl_unittest.cc',
               'ssl/openssl_client_key_store_unittest.cc',
             ],
@@ -2043,13 +2049,6 @@
               }],
             ],
         }],
-        [ 'OS == "linux"', {
-            'dependencies': [
-              '../build/linux/system.gyp:dbus',
-              '../dbus/dbus.gyp:dbus_test_support',
-            ],
-          },
-        ],
         [ 'OS == "android"', {
             'dependencies': [
               '../third_party/openssl/openssl.gyp:openssl',
@@ -2078,8 +2077,8 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_perf',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
+        '../url/url.gyp:url_lib',
         'net',
         'net_test_support',
       ],
@@ -2117,9 +2116,9 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../net/tools/tld_cleanup/tld_cleanup.gyp:tld_cleanup_util',
         '../testing/gtest.gyp:gtest',
+        '../url/url.gyp:url_lib',
         'net',
       ],
       'export_dependent_settings': [
@@ -2319,7 +2318,7 @@
           'variables': { 'enable_wexit_time_destructors': 1, },
           'dependencies': [
             '../base/base.gyp:base',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
+            '../url/url.gyp:url_lib',
             '../v8/tools/gyp/v8.gyp:v8',
             'net'
           ],
@@ -2390,8 +2389,8 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
             '../testing/gtest.gyp:gtest',
+            '../url/url.gyp:url_lib',
             'net',
             'net_with_v8',
           ],
@@ -2407,7 +2406,7 @@
           'variables': { 'enable_wexit_time_destructors': 1, },
           'dependencies': [
             '../base/base.gyp:base',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
+            '../url/url.gyp:url_lib',
             'net',
           ],
           'sources': [
@@ -2444,7 +2443,7 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
+            '../url/url.gyp:url_lib',
             'net',
           ],
           'sources': [
@@ -2599,10 +2598,10 @@
           'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base',
-            '../crypto/crypto.gyp:crypto',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
+            '../crypto/crypto.gyp:crypto',
             '../third_party/openssl/openssl.gyp:openssl',
+            '../url/url.gyp:url_lib',
             'flip_balsa_and_epoll_library',
             'net',
           ],
@@ -2682,6 +2681,8 @@
             'quic/test_tools/quic_session_peer.h',
             'quic/test_tools/crypto_test_utils.cc',
             'quic/test_tools/crypto_test_utils.h',
+            'quic/test_tools/crypto_test_utils_nss.cc',
+            'quic/test_tools/crypto_test_utils_openssl.cc',
             'quic/test_tools/mock_clock.cc',
             'quic/test_tools/mock_clock.h',
             'quic/test_tools/mock_random.cc',
@@ -2722,6 +2723,19 @@
             'tools/quic/test_tools/quic_test_utils.h',
             'tools/quic/test_tools/run_all_unittests.cc',
           ],
+	  'conditions': [
+	    [ 'use_openssl==1', {
+		# When building for OpenSSL, we need to exclude NSS specific tests.
+		'sources!': [
+                  'quic/test_tools/crypto_test_utils_nss.cc',
+		],
+	      }, {  # else !use_openssl: remove the unneeded files
+		'sources!': [
+                  'quic/test_tools/crypto_test_utils_openssl.cc',
+		],
+	      },
+	    ],
+	  ],
         }
       ]
     }],

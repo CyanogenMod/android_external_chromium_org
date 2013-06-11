@@ -27,7 +27,7 @@ FileError GetFileLocalState(internal::ResourceMetadata* metadata,
                             ResourceEntry* entry,
                             base::FilePath* drive_file_path,
                             base::FilePath* cache_file_path) {
-  FileError error = metadata->GetResourceEntryById(resource_id, NULL, entry);
+  FileError error = metadata->GetResourceEntryById(resource_id, entry);
   if (error != FILE_ERROR_OK)
     return error;
 
@@ -39,7 +39,7 @@ FileError GetFileLocalState(internal::ResourceMetadata* metadata,
     return FILE_ERROR_NOT_FOUND;
 
   return cache->GetFile(resource_id,
-                        entry->file_specific_info().file_md5(),
+                        entry->file_specific_info().md5(),
                         cache_file_path);
 }
 
@@ -53,7 +53,7 @@ FileError UpdateFileLocalState(
   if (entry.resource_id().empty())
     return FILE_ERROR_NOT_A_FILE;
 
-  FileError error = metadata->RefreshEntry(entry, NULL, NULL);
+  FileError error = metadata->RefreshEntry(entry);
   if (error != FILE_ERROR_OK)
     return error;
 
@@ -63,7 +63,7 @@ FileError UpdateFileLocalState(
 
   // Clear the dirty bit if we have updated an existing file.
   return cache->ClearDirty(entry.resource_id(),
-                           entry.file_specific_info().file_md5());
+                           entry.file_specific_info().md5());
 }
 
 }  // namespace

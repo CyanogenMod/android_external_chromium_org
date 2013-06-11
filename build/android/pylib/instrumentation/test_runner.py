@@ -66,13 +66,15 @@ class TestRunner(base_test_runner.BaseTestRunner):
       -  tool: Name of the Valgrind tool.
       -  wait_for_debugger: blocks until the debugger is connected.
       -  disable_assertions: Whether to disable java assertions on the device.
+      -  push_deps: If True, push all dependencies to the device.
       device: Attached android device.
       shard_index: Shard index.
       test_pkg: A TestPackage object.
       ports_to_forward: A list of port numbers for which to set up forwarders.
                         Can be optionally requested by a test case.
     """
-    super(TestRunner, self).__init__(device, options.tool, options.build_type)
+    super(TestRunner, self).__init__(device, options.tool, options.build_type,
+                                     options.push_deps)
     self._lighttp_port = constants.LIGHTTPD_RANDOM_PORT_FIRST + shard_index
 
     self.build_type = options.build_type
@@ -108,7 +110,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
       dst_src = dest_host_pair.split(':',1)
       dst_layer = dst_src[0]
       host_src = dst_src[1]
-      host_test_files_path = constants.CHROME_DIR + '/' + host_src
+      host_test_files_path = constants.DIR_SOURCE_ROOT + '/' + host_src
       if os.path.exists(host_test_files_path):
         self.adb.PushIfNeeded(host_test_files_path,
                               self.adb.GetExternalStorage() + '/' +
@@ -144,7 +146,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     # because it may have race condition when multiple processes are trying to
     # launch lighttpd with same port at same time.
     http_server_ports = self.LaunchTestHttpServer(
-        os.path.join(constants.CHROME_DIR), self._lighttp_port)
+        os.path.join(constants.DIR_SOURCE_ROOT), self._lighttp_port)
     if self.ports_to_forward:
       port_pairs = [(port, port) for port in self.ports_to_forward]
       # We need to remember which ports the HTTP server is using, since the

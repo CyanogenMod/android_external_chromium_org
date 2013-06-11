@@ -72,9 +72,6 @@ void CrosMock::SetNetworkLibraryStatusAreaExpectations() {
       .Times(AnyNumber());
   EXPECT_CALL(*mock_network_library_, RemoveObserverForAllNetworks(_))
       .Times(AnyNumber());
-  EXPECT_CALL(*mock_network_library_, IsLocked())
-      .Times(AnyNumber())
-      .WillRepeatedly((Return(false)));
   EXPECT_CALL(*mock_network_library_, FindCellularDevice())
       .Times(AnyNumber())
       .WillRepeatedly((Return((const NetworkDevice*)(NULL))));
@@ -156,6 +153,10 @@ void CrosMock::SetNetworkLibraryStatusAreaExpectations() {
   EXPECT_CALL(*mock_network_library_, cellular_initializing())
       .Times(AnyNumber())
       .WillRepeatedly((Return(false)));
+  EXPECT_CALL(*mock_network_library_, AddUserActionObserver(_))
+        .Times(AnyNumber());
+  EXPECT_CALL(*mock_network_library_, LoadOncNetworks(_, _))
+        .Times(AnyNumber());
 
   // Set specific expectations for interesting functions:
 
@@ -174,10 +175,6 @@ void CrosMock::SetNetworkLibraryStatusAreaExpectations() {
       .RetiresOnSaturation();
 
   // NetworkMenu::InitMenuItems() calls:
-  EXPECT_CALL(*mock_network_library_, IsLocked())
-      .Times(AnyNumber())
-      .WillRepeatedly((Return(false)))
-      .RetiresOnSaturation();
   EXPECT_CALL(*mock_network_library_, ethernet_connected())
       .Times(AnyNumber())
       .WillRepeatedly((Return(false)))

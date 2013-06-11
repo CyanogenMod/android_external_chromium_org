@@ -9,7 +9,7 @@
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decryptor.h"
@@ -98,7 +98,6 @@ void DecryptingVideoDecoder::Reset(const base::Closure& closure) {
   DVLOG(2) << "Reset() - state: " << state_;
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(state_ == kIdle ||
-         state_ == kPendingConfigChange ||
          state_ == kPendingDemuxerRead ||
          state_ == kPendingDecode ||
          state_ == kWaitingForKey ||
@@ -115,9 +114,7 @@ void DecryptingVideoDecoder::Reset(const base::Closure& closure) {
   // Defer the resetting process in this case. The |reset_cb_| will be fired
   // after the read callback is fired - see DecryptAndDecodeBuffer() and
   // DeliverFrame().
-  if (state_ == kPendingConfigChange ||
-      state_ == kPendingDemuxerRead ||
-      state_ == kPendingDecode) {
+  if (state_ == kPendingDemuxerRead || state_ == kPendingDecode) {
     DCHECK(!read_cb_.is_null());
     return;
   }
@@ -208,35 +205,6 @@ void DecryptingVideoDecoder::FinishInitialization(bool success) {
   base::ResetAndReturn(&init_cb_).Run(PIPELINE_OK);
 }
 
-void DecryptingVideoDecoder::FinishConfigChange(bool success) {
-  DVLOG(2) << "FinishConfigChange()";
-  DCHECK(message_loop_->BelongsToCurrentThread());
-
-  if (state_ == kStopped)
-    return;
-
-  DCHECK_EQ(state_, kPendingConfigChange) << state_;
-  DCHECK(!read_cb_.is_null());
-
-  if (!success) {
-    state_ = kError;
-    base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-    if (!reset_cb_.is_null())
-      base::ResetAndReturn(&reset_cb_).Run();
-    return;
-  }
-
-  // Config change succeeded.
-  if (!reset_cb_.is_null()) {
-    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
-    DoReset();
-    return;
-  }
-
-  state_ = kPendingDemuxerRead;
-  ReadFromDemuxerStream();
-}
-
 void DecryptingVideoDecoder::ReadFromDemuxerStream() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
@@ -257,18 +225,7 @@ void DecryptingVideoDecoder::DecryptAndDecodeBuffer(
 
   DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
   DCHECK(!read_cb_.is_null());
-  DCHECK_EQ(buffer != NULL, status == DemuxerStream::kOk) << status;
-
-  if (status == DemuxerStream::kConfigChanged) {
-    DVLOG(2) << "DecryptAndDecodeBuffer() - kConfigChanged";
-
-    state_ = kPendingConfigChange;
-    decryptor_->DeinitializeDecoder(Decryptor::kVideo);
-    decryptor_->InitializeVideoDecoder(
-        demuxer_stream_->video_decoder_config(), BindToCurrentLoop(base::Bind(
-            &DecryptingVideoDecoder::FinishConfigChange, weak_this_)));
-    return;
-  }
+  DCHECK_EQ(buffer.get() != NULL, status == DemuxerStream::kOk) << status;
 
   if (!reset_cb_.is_null()) {
     base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
@@ -283,7 +240,8 @@ void DecryptingVideoDecoder::DecryptAndDecodeBuffer(
     return;
   }
 
-  DCHECK_EQ(status, DemuxerStream::kOk);
+  // VideoFrameStream ensures no kConfigChanged is passed to VideoDecoders.
+  DCHECK_EQ(status, DemuxerStream::kOk) << status;
   pending_buffer_to_decode_ = buffer;
   state_ = kPendingDecode;
   DecodePendingBuffer();
@@ -319,7 +277,7 @@ void DecryptingVideoDecoder::DeliverFrame(
 
   DCHECK_EQ(state_, kPendingDecode) << state_;
   DCHECK(!read_cb_.is_null());
-  DCHECK(pending_buffer_to_decode_);
+  DCHECK(pending_buffer_to_decode_.get());
 
   bool need_to_try_again_if_nokey_is_returned = key_added_while_decode_pending_;
   key_added_while_decode_pending_ = false;
@@ -334,7 +292,7 @@ void DecryptingVideoDecoder::DeliverFrame(
     return;
   }
 
-  DCHECK_EQ(status == Decryptor::kSuccess, frame != NULL);
+  DCHECK_EQ(status == Decryptor::kSuccess, frame.get() != NULL);
 
   if (status == Decryptor::kError) {
     DVLOG(2) << "DeliverFrame() - kError";

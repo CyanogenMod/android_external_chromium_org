@@ -64,7 +64,7 @@ void Env::RemoveObserver(EnvObserver* observer) {
 }
 
 #if !defined(OS_MACOSX)
-MessageLoop::Dispatcher* Env::GetDispatcher() {
+base::MessageLoop::Dispatcher* Env::GetDispatcher() {
 #if defined(USE_X11)
   return base::MessagePumpAuraX11::Current();
 #else
@@ -82,7 +82,7 @@ void Env::RootWindowActivated(RootWindow* root_window) {
 // Env, private:
 
 void Env::Init() {
-#if !defined(USE_X11) && !defined(USE_MESSAGEPUMP_LINUX)
+#if !defined(USE_X11) && !defined(USE_OZONE)
   dispatcher_.reset(CreateDispatcher());
 #endif
 #if defined(USE_X11)

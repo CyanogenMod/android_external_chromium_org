@@ -74,6 +74,10 @@ TESTDIRS = (
     'net/data',
 )
 
+PRUNEDDIRS = (
+    'courgette',
+)
+
 
 def GetSourceDirectory():
   return os.path.realpath(
@@ -99,7 +103,7 @@ class MyTarFile(tarfile.TarFile):
 
       # Remove contents of non-essential directories, but preserve gyp files,
       # so that build/gyp_chromium can work.
-      for nonessential_dir in (NONESSENTIAL_DIRS + TESTDIRS):
+      for nonessential_dir in (NONESSENTIAL_DIRS + TESTDIRS + PRUNEDDIRS):
         dir_path = os.path.join(GetSourceDirectory(), nonessential_dir)
         if (name.startswith(dir_path) and
             os.path.isfile(name) and
@@ -130,10 +134,16 @@ def main(argv):
     print 'Cannot find the src directory ' + GetSourceDirectory()
     return 1
 
-  # This command is from src/DEPS; please keep them in sync.
+  # These two commands are from src/DEPS; please keep them in sync.
   if subprocess.call(['python', 'build/util/lastchange.py', '-o',
                       'build/util/LASTCHANGE'], cwd=GetSourceDirectory()) != 0:
     print 'Could not run build/util/lastchange.py to update LASTCHANGE.'
+    return 1
+  if subprocess.call(['python', 'build/util/lastchange.py', '-s',
+                      'src/third_party/WebKit', '-o',
+                      'src/build/util/LASTCHANGE.blink'],
+                     cwd=GetSourceDirectory()) != 0:
+    print 'Could not run build/util/lastchange.py to update LASTCHANGE.blink.'
     return 1
 
   output_fullname = args[0] + '.tar'

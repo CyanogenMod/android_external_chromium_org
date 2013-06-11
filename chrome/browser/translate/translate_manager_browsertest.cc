@@ -11,8 +11,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_service.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/test_extension_system.h"
@@ -28,9 +28,9 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/language_detection_details.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "chrome/common/translate/language_detection_details.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -45,7 +45,6 @@
 #include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/render_view_test.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_renderer_host.h"
 #include "grit/generated_resources.h"
 #include "ipc/ipc_test_sink.h"
@@ -55,7 +54,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/cld/languages/public/languages.h"
 
-using content::BrowserThread;
 using content::NavigationController;
 using content::RenderViewHostTester;
 using content::WebContents;
@@ -99,8 +97,7 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
   TranslateManagerBrowserTest()
       : pref_callback_(
             base::Bind(&TranslateManagerBrowserTest::OnPreferenceChanged,
-                       base::Unretained(this))),
-        ui_thread_(BrowserThread::UI, &message_loop_) {
+                       base::Unretained(this))) {
   }
 
   // Simulates navigating to a page and getting the page contents and language
@@ -275,8 +272,6 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
 
   void SimulateSupportedLanguagesURLFetch(
       bool success, const std::vector<std::string>& languages) {
-    net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(1);
-    ASSERT_TRUE(fetcher);
     net::URLRequestStatus status;
     status.set_status(success ? net::URLRequestStatus::SUCCESS :
                                 net::URLRequestStatus::FAILED);
@@ -296,11 +291,15 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
       }
       data += "}})";
     }
-    fetcher->set_url(fetcher->GetOriginalURL());
-    fetcher->set_status(status);
-    fetcher->set_response_code(success ? 200 : 500);
-    fetcher->SetResponseString(data);
-    fetcher->delegate()->OnURLFetchComplete(fetcher);
+    for (int id = 1; id <= 2; ++id) {
+      net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(id);
+      ASSERT_TRUE(fetcher);
+      fetcher->set_url(fetcher->GetOriginalURL());
+      fetcher->set_status(status);
+      fetcher->set_response_code(success ? 200 : 500);
+      fetcher->SetResponseString(data);
+      fetcher->delegate()->OnURLFetchComplete(fetcher);
+    }
   }
 
   void SetPrefObserverExpectation(const char* path) {
@@ -312,7 +311,6 @@ class TranslateManagerBrowserTest : public ChromeRenderViewHostTestHarness,
  private:
   content::NotificationRegistrar notification_registrar_;
   net::TestURLFetcherFactory url_fetcher_factory_;
-  content::TestBrowserThread ui_thread_;
   content::RenderViewTest::RendererWebKitPlatformSupportImplNoSandbox
       webkit_platform_support_;
 

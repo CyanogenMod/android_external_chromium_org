@@ -10,8 +10,8 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -74,7 +74,7 @@ EmbeddedTestServer::EmbeddedTestServer(
     : io_thread_(io_thread),
       port_(-1),
       weak_factory_(this) {
-  DCHECK(io_thread_);
+  DCHECK(io_thread_.get());
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 

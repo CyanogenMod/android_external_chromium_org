@@ -14,8 +14,8 @@
 #include "base/i18n/rtl.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
@@ -1298,11 +1298,6 @@ void BookmarkBarView::Init() {
     // else case: we'll receive notification back from the BookmarkModel when
     // done loading, then we'll populate the bar.
   }
-
-  // The first check for the app launcher is asynchronous, run it now.
-  apps::GetIsAppLauncherEnabled(
-      base::Bind(&BookmarkBarView::OnAppLauncherEnabledCompleted,
-                 base::Unretained(this)));
 }
 
 int BookmarkBarView::GetBookmarkButtonCount() {
@@ -1873,9 +1868,4 @@ void BookmarkBarView::OnAppsPageShortcutVisibilityPrefChanged() {
   apps_page_shortcut_->SetVisible(visible);
   UpdateBookmarksSeparatorVisibility();
   Layout();
-}
-
-void BookmarkBarView::OnAppLauncherEnabledCompleted(bool app_launcher_enabled) {
-  // Disregard |app_launcher_enabled|, use apps::WasAppLauncherEnable instead.
-  OnAppsPageShortcutVisibilityPrefChanged();
 }

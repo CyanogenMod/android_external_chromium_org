@@ -15,6 +15,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
@@ -64,20 +65,16 @@ LOCAL_SRC_FILES := \
 	content/common/appcache/appcache_backend_proxy.cc \
 	content/common/appcache/appcache_dispatcher.cc \
 	content/common/browser_plugin/browser_plugin_constants.cc \
+	content/common/browser_rendering_stats.cc \
 	content/common/cc_messages.cc \
-	content/common/child_histogram_message_filter.cc \
-	content/common/child_process.cc \
 	content/common/child_process_host_impl.cc \
-	content/common/child_thread.cc \
 	content/common/clipboard_messages.cc \
 	content/common/content_constants_internal.cc \
 	content/common/content_ipc_logging.cc \
 	content/common/content_message_generator.cc \
 	content/common/content_param_traits.cc \
 	content/common/content_paths.cc \
-	content/common/database_util.cc \
 	content/common/db_message_filter.cc \
-	content/common/fileapi/file_system_dispatcher.cc \
 	content/common/find_match_rect_android.cc \
 	content/common/font_list.cc \
 	content/common/font_list_android.cc \
@@ -117,24 +114,16 @@ LOCAL_SRC_FILES := \
 	content/common/net/url_fetcher.cc \
 	content/common/net/url_request_user_data.cc \
 	content/common/page_zoom.cc \
-	content/common/partial_circular_buffer.cc \
 	content/common/pepper_renderer_instance_data.cc \
 	content/common/process_type.cc \
-	content/common/quota_dispatcher.cc \
-	content/common/request_extra_data.cc \
-	content/common/resource_dispatcher.cc \
 	content/common/resource_messages.cc \
 	content/common/sandbox_util.cc \
 	content/common/savable_url_schemes.cc \
 	content/common/set_process_title.cc \
-	content/common/socket_stream_dispatcher.cc \
 	content/common/socket_stream_handle_data.cc \
 	content/common/ssl_status_serialization.cc \
 	content/common/swapped_out_messages.cc \
-	content/common/thread_safe_sender.cc \
 	content/common/url_schemes.cc \
-	content/common/webkitplatformsupport_impl.cc \
-	content/common/webmessageportchannel_impl.cc \
 	content/public/common/common_param_traits.cc \
 	content/public/common/content_client.cc \
 	content/public/common/window_container_type.cc \
@@ -185,7 +174,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -239,13 +227,12 @@ LOCAL_C_INCLUDES := \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/content \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
-	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
+	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

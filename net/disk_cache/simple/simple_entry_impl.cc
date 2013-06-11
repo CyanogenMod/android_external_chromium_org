@@ -13,7 +13,7 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/threading/worker_pool.h"
 #include "base/time.h"
@@ -109,15 +109,17 @@ SimpleEntryImpl::SimpleEntryImpl(SimpleBackendImpl* backend,
   COMPILE_ASSERT(arraysize(data_size_) == arraysize(crc32s_end_offset_),
                  arrays_should_be_same_size);
   COMPILE_ASSERT(arraysize(data_size_) == arraysize(crc32s_),
-                 arrays_should_be_same_size2);
+                 arrays_should_be_same_size);
   COMPILE_ASSERT(arraysize(data_size_) == arraysize(have_written_),
-                 arrays_should_be_same_size3);
+                 arrays_should_be_same_size);
+  COMPILE_ASSERT(arraysize(data_size_) == arraysize(crc_check_state_),
+                 arrays_should_be_same_size);
   MakeUninitialized();
 }
 
 int SimpleEntryImpl::OpenEntry(Entry** out_entry,
                                const CompletionCallback& callback) {
-  DCHECK(backend_);
+  DCHECK(backend_.get());
   // This enumeration is used in histograms, add entries only at end.
   enum OpenEntryIndexEnum {
     INDEX_NOEXIST = 0,
@@ -126,7 +128,7 @@ int SimpleEntryImpl::OpenEntry(Entry** out_entry,
     INDEX_MAX = 3,
   };
   OpenEntryIndexEnum open_entry_index_enum = INDEX_NOEXIST;
-  if (backend_) {
+  if (backend_.get()) {
     if (backend_->index()->Has(key_))
       open_entry_index_enum = INDEX_HIT;
     else
@@ -147,7 +149,7 @@ int SimpleEntryImpl::OpenEntry(Entry** out_entry,
 
 int SimpleEntryImpl::CreateEntry(Entry** out_entry,
                                  const CompletionCallback& callback) {
-  DCHECK(backend_);
+  DCHECK(backend_.get());
   int ret_value = net::ERR_FAILED;
   if (state_ == STATE_UNINITIALIZED &&
       pending_operations_.size() == 0) {
@@ -171,7 +173,7 @@ int SimpleEntryImpl::CreateEntry(Entry** out_entry,
   // have the entry in the index but we don't have the created files yet, this
   // way we never leak files. CreationOperationComplete will remove the entry
   // from the index if the creation fails.
-  if (backend_)
+  if (backend_.get())
     backend_->index()->Insert(key_);
 
   RunNextOperationIfNeeded();
@@ -274,7 +276,7 @@ int SimpleEntryImpl::WriteData(int stream_index,
     RecordWriteResult(WRITE_RESULT_INVALID_ARGUMENT);
     return net::ERR_INVALID_ARGUMENT;
   }
-  if (backend_ && offset + buf_len > backend_->GetMaxFileSize()) {
+  if (backend_.get() && offset + buf_len > backend_->GetMaxFileSize()) {
     RecordWriteResult(WRITE_RESULT_OVER_MAX_SIZE);
     return net::ERR_FAILED;
   }
@@ -287,9 +289,17 @@ int SimpleEntryImpl::WriteData(int stream_index,
     // prevents from previous possibly-conflicting writes that could be stacked
     // in the |pending_operations_|. We could optimize this for when we have
     // only read operations enqueued.
+    // TODO(gavinp,pasko): For performance, don't use a copy of an IOBuffer
+    // here to avoid paying the price of the RefCountedThreadSafe atomic
+    // operations.
+    IOBuffer* buf_copy = NULL;
+    if (buf) {
+      buf_copy = new IOBuffer(buf_len);
+      memcpy(buf_copy->data(), buf->data(), buf_len);
+    }
     pending_operations_.push(
         base::Bind(&SimpleEntryImpl::WriteDataInternal, this, stream_index,
-                   offset, make_scoped_refptr(buf), buf_len,
+                   offset, make_scoped_refptr(buf_copy), buf_len,
                    CompletionCallback(), truncate));
     ret_value = buf_len;
   } else {
@@ -367,6 +377,7 @@ void SimpleEntryImpl::MakeUninitialized() {
   std::memset(crc32s_, 0, sizeof(crc32s_));
   std::memset(have_written_, 0, sizeof(have_written_));
   std::memset(data_size_, 0, sizeof(data_size_));
+  std::memset(crc_check_state_, 0, sizeof(crc_check_state_));
 }
 
 void SimpleEntryImpl::ReturnEntryToCaller(Entry** out_entry) {
@@ -377,14 +388,14 @@ void SimpleEntryImpl::ReturnEntryToCaller(Entry** out_entry) {
 }
 
 void SimpleEntryImpl::RemoveSelfFromBackend() {
-  if (!backend_)
+  if (!backend_.get())
     return;
   backend_->OnDeactivated(this);
   backend_.reset();
 }
 
 void SimpleEntryImpl::MarkAsDoomed() {
-  if (!backend_)
+  if (!backend_.get())
     return;
   backend_->index()->Remove(key_);
   RemoveSelfFromBackend();
@@ -500,6 +511,13 @@ void SimpleEntryImpl::CloseInternal() {
     Closure reply = base::Bind(&SimpleEntryImpl::CloseOperationComplete, this);
     synchronous_entry_ = NULL;
     WorkerPool::PostTaskAndReply(FROM_HERE, task, reply, true);
+
+    for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+      if (!have_written_[i]) {
+        UMA_HISTOGRAM_ENUMERATION("SimpleCache.CheckCRCResult",
+                                  crc_check_state_[i], CRC_CHECK_MAX);
+      }
+    }
   } else {
     synchronous_entry_ = NULL;
     CloseOperationComplete();
@@ -535,7 +553,7 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
   buf_len = std::min(buf_len, GetDataSize(stream_index) - offset);
 
   state_ = STATE_IO_PENDING;
-  if (backend_)
+  if (backend_.get())
     backend_->index()->UseIfExists(key_);
 
   scoped_ptr<uint32> read_crc32(new uint32());
@@ -571,7 +589,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
   }
   DCHECK_EQ(STATE_READY, state_);
   state_ = STATE_IO_PENDING;
-  if (backend_)
+  if (backend_.get())
     backend_->index()->UseIfExists(key_);
   // It is easy to incrementally compute the CRC from [0 .. |offset + buf_len|)
   // if |offset == 0| or we have already computed the CRC for [0 .. offset).
@@ -715,13 +733,19 @@ void SimpleEntryImpl::ReadOperationComplete(
                                  completion_callback,
                                  base::Passed(&new_result));
       WorkerPool::PostTaskAndReply(FROM_HERE, task, reply, true);
+      crc_check_state_[stream_index] = CRC_CHECK_DONE;
       return;
     }
   }
-  if (*result >= 0)
-    RecordReadResult(READ_RESULT_SUCCESS);
-  else
+  if (*result < 0) {
     RecordReadResult(READ_RESULT_SYNC_READ_FAILURE);
+  } else {
+    RecordReadResult(READ_RESULT_SUCCESS);
+    if (crc_check_state_[stream_index] == CRC_CHECK_NEVER_READ_TO_END &&
+        offset + *result == GetDataSize(stream_index)) {
+      crc_check_state_[stream_index] = CRC_CHECK_NOT_DONE;
+    }
+  }
   EntryOperationComplete(stream_index, completion_callback, result.Pass());
 }
 
@@ -778,7 +802,7 @@ void SimpleEntryImpl::SetSynchronousData() {
   last_modified_ = synchronous_entry_->last_modified();
   for (int i = 0; i < kSimpleEntryFileCount; ++i)
     data_size_[i] = synchronous_entry_->data_size(i);
-  if (backend_)
+  if (backend_.get())
     backend_->index()->UpdateEntrySize(key_, synchronous_entry_->GetFileSize());
 }
 

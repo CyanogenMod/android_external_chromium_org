@@ -13,7 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
@@ -31,14 +31,11 @@ class BookmarkLoadDetails;
 class BookmarkModel;
 class BookmarkModelObserver;
 class BookmarkStorage;
+struct BookmarkTitleMatch;
 class Profile;
 
 namespace base {
 class SequencedTaskRunner;
-}
-
-namespace bookmark_utils {
-struct TitleMatch;
 }
 
 namespace chrome {
@@ -372,6 +369,13 @@ class BookmarkModel : public content::NotificationObserver,
   // BookmarkNodeChildrenReordered method.
   void SortChildren(const BookmarkNode* parent);
 
+  // Order the children of |parent| as specified in |ordered_nodes|.  This
+  // function should only be used to reorder the child nodes of |parent| and
+  // is not meant to move nodes between different parent. Notifies observers
+  // using the BookmarkNodeChildrenReordered method.
+  void ReorderChildren(const BookmarkNode* parent,
+                       const std::vector<BookmarkNode*>& ordered_nodes);
+
   // Sets the date when the folder was modified.
   void SetDateFolderModified(const BookmarkNode* node, const base::Time time);
 
@@ -383,7 +387,7 @@ class BookmarkModel : public content::NotificationObserver,
   void GetBookmarksWithTitlesMatching(
       const string16& text,
       size_t max_count,
-      std::vector<bookmark_utils::TitleMatch>* matches);
+      std::vector<BookmarkTitleMatch>* matches);
 
   // Sets the store to NULL, making it so the BookmarkModel does not persist
   // any changes to disk. This is only useful during testing to speed up

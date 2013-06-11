@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_SYNC_PROFILE_SYNC_SERVICE_H_
 #define CHROME_BROWSER_SYNC_PROFILE_SYNC_SERVICE_H_
 
-#include <list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,17 +16,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "chrome/browser/invalidation/invalidation_frontend.h"
 #include "chrome/browser/invalidation/invalidator_storage.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/sync/backend_unrecoverable_error_handler.h"
-#include "chrome/browser/sync/failed_datatypes_handler.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
+#include "chrome/browser/sync/glue/data_type_encryption_handler.h"
 #include "chrome/browser/sync/glue/data_type_manager.h"
 #include "chrome/browser/sync/glue/data_type_manager_observer.h"
+#include "chrome/browser/sync/glue/failed_data_types_handler.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/profile_sync_service_base.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
@@ -126,6 +126,7 @@ class EncryptedData;
 //   Additionally, the current sync configuration can be fetched by calling
 //    * GetRegisteredDataTypes()
 //    * GetPreferredDataTypes()
+//    * GetActiveDataTypes()
 //    * IsUsingSecondaryPassphrase()
 //    * EncryptEverythingEnabled()
 //    * IsPassphraseRequired()/IsPassphraseRequiredForDecryption()
@@ -162,7 +163,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
                            public syncer::UnrecoverableErrorHandler,
                            public content::NotificationObserver,
                            public BrowserContextKeyedService,
-                           public invalidation::InvalidationFrontend {
+                           public invalidation::InvalidationFrontend,
+                           public browser_sync::DataTypeEncryptionHandler {
  public:
   typedef browser_sync::SyncBackendHost::Status Status;
 
@@ -233,7 +235,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // ProfileSyncServiceBase implementation.
   virtual bool HasSyncSetupCompleted() const OVERRIDE;
   virtual bool ShouldPushChanges() OVERRIDE;
-  virtual syncer::ModelTypeSet GetPreferredDataTypes() const OVERRIDE;
+  virtual syncer::ModelTypeSet GetActiveDataTypes() const OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual bool HasObserver(Observer* observer) const OVERRIDE;
@@ -316,11 +318,14 @@ class ProfileSyncService : public ProfileSyncServiceBase,
       const syncer::SyncProtocolError& error) OVERRIDE;
 
   // DataTypeManagerObserver implementation.
-  virtual void OnConfigureBlocked() OVERRIDE;
   virtual void OnConfigureDone(
       const browser_sync::DataTypeManager::ConfigureResult& result) OVERRIDE;
   virtual void OnConfigureRetry() OVERRIDE;
   virtual void OnConfigureStart() OVERRIDE;
+
+  // DataTypeEncryptionHandler implementation.
+  virtual bool IsPassphraseRequired() const OVERRIDE;
+  virtual syncer::ModelTypeSet GetEncryptedDataTypes() const OVERRIDE;
 
   // Update the last auth error and notify observers of error state.
   void UpdateAuthErrorState(const GoogleServiceAuthError& error);
@@ -376,9 +381,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   tracked_objects::Location unrecoverable_error_location() {
     return unrecoverable_error_location_;
   }
-
-  // Returns true if OnPassphraseRequired has been called for any reason.
-  virtual bool IsPassphraseRequired() const;
 
   // Returns true if OnPassphraseRequired has been called for decryption and
   // we have an encrypted data type enabled.
@@ -499,6 +501,10 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   virtual void ChangePreferredDataTypes(
       syncer::ModelTypeSet preferred_types);
 
+  // Returns the set of types which are preferred for enabling. This is a
+  // superset of the active types (see GetActiveTypes()).
+  virtual syncer::ModelTypeSet GetPreferredDataTypes() const;
+
   // Gets the set of all data types that could be allowed (the set that
   // should be advertised to the user).  These will typically only change
   // via a command-line option.  See class comment for more on what it means
@@ -554,17 +560,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // encryption_pending() must be checked.
   virtual bool EncryptEverythingEnabled() const;
 
-  // Fills |encrypted_types| with the set of currently encrypted types. Does
-  // not account for types pending encryption.
-  virtual syncer::ModelTypeSet GetEncryptedDataTypes() const;
-
-#if defined(OS_ANDROID)
-  // Android does not display password prompts, passwords are only allowed to be
-  // synced if Cryptographer has already been initialized and does not have
-  // pending keys.
-  bool ShouldEnablePasswordSyncForAndroid() const;
-#endif
-
   // Returns true if the syncer is waiting for new datatypes to be encrypted.
   virtual bool encryption_pending() const;
 
@@ -586,7 +581,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   SyncGlobalError* sync_global_error() { return sync_global_error_.get(); }
 
   // TODO(sync): This is only used in tests.  Can we remove it?
-  const FailedDatatypesHandler& failed_datatypes_handler() const;
+  const browser_sync::FailedDataTypesHandler& failed_data_types_handler() const;
 
   browser_sync::DataTypeManager::ConfigureStatus configure_status() {
     return configure_status_;
@@ -760,11 +755,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Create and register a new datatype controller.
   void RegisterNewDataType(syncer::ModelType data_type);
 
-  // Helper method to process SyncConfigureDone after unwinding the stack that
-  // originally posted this SyncConfigureDone.
-  void OnSyncConfigureDone(
-      browser_sync::DataTypeManager::ConfigureResult result);
-
   // Reconfigures the data type manager with the latest enabled types.
   // Note: Does not initialize the backend if it is not already initialized.
   // This function needs to be called only after sync has been initialized
@@ -848,6 +838,11 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Whether the SyncBackendHost has been initialized.
   bool backend_initialized_;
 
+  // Set when sync receives DISABLED_BY_ADMIN error from server. Prevents
+  // ProfileSyncService from starting backend till browser restarted or user
+  // signed out.
+  bool sync_disabled_by_admin_;
+
   // Set to true if a signin has completed but we're still waiting for the
   // backend to refresh its credentials.
   bool is_auth_in_progress_;
@@ -910,8 +905,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // This is used to show sync errors in the wrench menu.
   scoped_ptr<SyncGlobalError> sync_global_error_;
 
-  // keeps track of data types that failed to load.
-  FailedDatatypesHandler failed_datatypes_handler_;
+  // Tracks the set of failed data types (those that encounter an error
+  // or must delay loading for some reason).
+  browser_sync::FailedDataTypesHandler failed_data_types_handler_;
 
   scoped_ptr<browser_sync::BackendUnrecoverableErrorHandler>
       backend_unrecoverable_error_handler_;

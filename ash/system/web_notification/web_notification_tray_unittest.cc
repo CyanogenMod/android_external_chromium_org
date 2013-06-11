@@ -12,8 +12,8 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/test/ash_test_base.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/message_center_util.h"
@@ -56,26 +56,34 @@ class WebNotificationTrayTest : public test::AshTestBase {
 
  protected:
   void AddNotification(const std::string& id) {
-    GetMessageCenter()->AddNotification(
+    scoped_ptr<message_center::Notification> notification;
+    notification.reset(new message_center::Notification(
         message_center::NOTIFICATION_TYPE_SIMPLE,
         id,
         ASCIIToUTF16("Test Web Notification"),
         ASCIIToUTF16("Notification message body."),
+        gfx::Image(),
         ASCIIToUTF16("www.test.org"),
         "" /* extension id */,
         NULL /* optional_fields */,
-        NULL /* delegate */);
+        NULL /* delegate */));
+    GetMessageCenter()->AddNotification(notification.Pass());
   }
 
   void UpdateNotification(const std::string& old_id,
                           const std::string& new_id) {
-    GetMessageCenter()->UpdateNotification(
-        old_id,
+    scoped_ptr<message_center::Notification> notification;
+    notification.reset(new message_center::Notification(
+        message_center::NOTIFICATION_TYPE_SIMPLE,
         new_id,
         ASCIIToUTF16("Updated Web Notification"),
         ASCIIToUTF16("Updated message body."),
-        NULL,
-        NULL);
+        gfx::Image(),
+        ASCIIToUTF16("www.test.org"),
+        "" /* extension id */,
+        NULL /* optional_fields */,
+        NULL /* delegate */));
+    GetMessageCenter()->UpdateNotification(old_id, notification.Pass());
   }
 
   void RemoveNotification(const std::string& id) {

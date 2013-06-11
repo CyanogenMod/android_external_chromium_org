@@ -11,9 +11,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/download_create_info.h"
@@ -93,7 +93,8 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_METHOD0(ShouldOpenFileBasedOnExtension, bool());
   MOCK_METHOD0(OpenDownload, void());
   MOCK_METHOD0(ShowDownloadInShell, void());
-  MOCK_METHOD0(DangerousDownloadValidated, void());
+  MOCK_METHOD0(ValidateDangerousDownload, void());
+  MOCK_METHOD1(StealDangerousDownload, void(const AcquireFileCallback&));
   MOCK_METHOD3(UpdateProgress, void(int64, int64, const std::string&));
   MOCK_METHOD1(Cancel, void(bool));
   MOCK_METHOD0(MarkAsComplete, void());
@@ -107,14 +108,13 @@ class MockDownloadItemImpl : public DownloadItemImpl {
 
   MOCK_METHOD2(MockStart, void(DownloadFile*, DownloadRequestHandleInterface*));
 
-  MOCK_METHOD1(Delete, void(DeleteReason));
   MOCK_METHOD0(Remove, void());
   MOCK_CONST_METHOD1(TimeRemaining, bool(base::TimeDelta*));
   MOCK_CONST_METHOD0(CurrentSpeed, int64());
   MOCK_CONST_METHOD0(PercentComplete, int());
   MOCK_CONST_METHOD0(AllDataSaved, bool());
   MOCK_CONST_METHOD1(MatchesQuery, bool(const string16& query));
-  MOCK_CONST_METHOD0(IsPartialDownload, bool());
+  MOCK_CONST_METHOD0(IsDone, bool());
   MOCK_CONST_METHOD0(IsInProgress, bool());
   MOCK_CONST_METHOD0(IsCancelled, bool());
   MOCK_CONST_METHOD0(IsInterrupted, bool());
@@ -472,10 +472,8 @@ class DownloadManagerTest : public testing::Test {
   virtual void TearDown() {
     while (MockDownloadItemImpl*
            item = mock_download_item_factory_->PopItem()) {
-      EXPECT_CALL(*item, IsDangerous())
-          .WillOnce(Return(false));
-      EXPECT_CALL(*item, IsPartialDownload())
-          .WillOnce(Return(false));
+      EXPECT_CALL(*item, GetState())
+          .WillOnce(Return(DownloadItem::CANCELLED));
     }
     EXPECT_CALL(GetMockObserver(), ManagerGoingDown(download_manager_.get()))
         .WillOnce(Return());

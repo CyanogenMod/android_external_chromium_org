@@ -10,20 +10,20 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
 #include "base/sys_info.h"
 #include "base/time.h"
-#include "media/video/capture/screen/mouse_cursor_shape.h"
-#include "media/video/capture/screen/screen_capturer.h"
 #include "remoting/proto/control.pb.h"
 #include "remoting/proto/internal.pb.h"
 #include "remoting/proto/video.pb.h"
 #include "remoting/protocol/cursor_shape_stub.h"
 #include "remoting/protocol/message_decoder.h"
-#include "remoting/protocol/video_stub.h"
 #include "remoting/protocol/util.h"
+#include "remoting/protocol/video_stub.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
+#include "third_party/webrtc/modules/desktop_capture/mouse_cursor_shape.h"
+#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 
 namespace remoting {
 
@@ -35,7 +35,7 @@ VideoScheduler::VideoScheduler(
     scoped_refptr<base::SingleThreadTaskRunner> capture_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> encode_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
-    scoped_ptr<media::ScreenCapturer> capturer,
+    scoped_ptr<webrtc::ScreenCapturer> capturer,
     scoped_ptr<VideoEncoder> encoder,
     protocol::CursorShapeStub* cursor_stub,
     protocol::VideoStub* video_stub)
@@ -88,8 +88,10 @@ void VideoScheduler::OnCaptureCompleted(webrtc::DesktopFrame* frame) {
 }
 
 void VideoScheduler::OnCursorShapeChanged(
-    scoped_ptr<media::MouseCursorShape> cursor_shape) {
+    webrtc::MouseCursorShape* cursor_shape) {
   DCHECK(capture_task_runner_->BelongsToCurrentThread());
+
+  scoped_ptr<webrtc::MouseCursorShape> owned_cursor(cursor_shape);
 
   // Do nothing if the scheduler is being stopped.
   if (!capturer_)
@@ -278,14 +280,14 @@ void VideoScheduler::SendCursorShape(
 
 void VideoScheduler::EncodeFrame(
     scoped_ptr<webrtc::DesktopFrame> frame,
-    int sequence_number) {
+    int64 sequence_number) {
   DCHECK(encode_task_runner_->BelongsToCurrentThread());
 
   // If there is nothing to encode then send an empty keep-alive packet.
   if (!frame || frame->updated_region().is_empty()) {
     scoped_ptr<VideoPacket> packet(new VideoPacket());
     packet->set_flags(VideoPacket::LAST_PARTITION);
-    packet->set_sequence_number(sequence_number);
+    packet->set_client_sequence_number(sequence_number);
     network_task_runner_->PostTask(
         FROM_HERE, base::Bind(&VideoScheduler::SendVideoPacket, this,
                               base::Passed(&packet)));
@@ -300,11 +302,11 @@ void VideoScheduler::EncodeFrame(
 }
 
 void VideoScheduler::EncodedDataAvailableCallback(
-    int sequence_number,
+    int64 sequence_number,
     scoped_ptr<VideoPacket> packet) {
   DCHECK(encode_task_runner_->BelongsToCurrentThread());
 
-  packet->set_sequence_number(sequence_number);
+  packet->set_client_sequence_number(sequence_number);
 
   bool last = (packet->flags() & VideoPacket::LAST_PACKET) != 0;
   if (last) {

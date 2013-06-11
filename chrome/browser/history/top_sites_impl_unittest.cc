@@ -9,8 +9,8 @@
 #include "base/format_macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
@@ -285,7 +285,7 @@ class TopSitesImplTest : public HistoryUnitTestBase {
                             base::RefCountedMemory* bytes) {
     scoped_refptr<base::RefCountedBytes> encoded_image;
     TopSitesImpl::EncodeBitmap(image, &encoded_image);
-    return ThumbnailsAreEqual(encoded_image, bytes);
+    return ThumbnailsAreEqual(encoded_image.get(), bytes);
   }
 
   // Recreates top sites. This forces top sites to reread from the db.

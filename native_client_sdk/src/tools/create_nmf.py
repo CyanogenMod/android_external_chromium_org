@@ -610,10 +610,16 @@ def GetDefaultLibPath(config):
 
   osname = getos.GetPlatform()
   libpath = [
+    # Core toolchain libraries
     'toolchain/%s_x86_glibc/x86_64-nacl/lib' % osname,
     'toolchain/%s_x86_glibc/x86_64-nacl/lib32' % osname,
+    # naclports installed libraries
+    'toolchain/%s_x86_glibc/x86_64-nacl/usr/lib' % osname,
+    'toolchain/%s_x86_glibc/i686-nacl/usr/lib' % osname,
+    # SDK bundle libraries
     'lib/glibc_x86_32/%s' % config,
     'lib/glibc_x86_64/%s' % config,
+    # naclports bundle libraries
     'ports/lib/glibc_x86_32/%s' % config,
     'ports/lib/glibc_x86_64/%s' % config,
   ]
@@ -666,10 +672,10 @@ def main(argv):
     DebugPrint.debug_mode = True
 
   if options.toolchain is not None:
-    print 'warning: option -t/--toolchain is deprecated.'
+    sys.stderr.write('warning: option -t/--toolchain is deprecated.\n')
 
   if len(args) < 1:
-    raise Error('No nexe files specified.  See --help for more info')
+    parser.error('No nexe files specified.  See --help for more info')
 
   canonicalized = ParseExtraFiles(options.extra_files, sys.stderr)
   if canonicalized is None:
@@ -679,7 +685,7 @@ def main(argv):
   for ren in options.name:
     parts = ren.split(',')
     if len(parts) != 2:
-      raise Error('Expecting --name=<orig_arch.so>,<new_name.so>')
+      parser.error('Expecting --name=<orig_arch.so>,<new_name.so>')
     remap[parts[0]] = parts[1]
 
   if options.path_prefix:
@@ -689,9 +695,9 @@ def main(argv):
 
   for libpath in options.lib_path:
     if not os.path.exists(libpath):
-      raise Error('Specified library path does not exist: %s' % libpath)
-    if not os.path.isdir(libpath):
-      raise Error('Specified library is not a directory: %s' % libpath)
+      sys.stderr.write('Specified library path does not exist: %s\n' % libpath)
+    elif not os.path.isdir(libpath):
+      sys.stderr.write('Specified library is not a directory: %s\n' % libpath)
 
   if not options.no_default_libpath:
     # Add default libraries paths to the end of the search path.

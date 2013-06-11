@@ -8,19 +8,22 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/bookmark_model_loaded_observer.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
@@ -94,14 +97,10 @@ std::vector<base::FilePath>& ProfilesToDelete() {
 int64 ComputeFilesSize(const base::FilePath& directory,
                        const base::FilePath::StringType& pattern) {
   int64 running_size = 0;
-  file_util::FileEnumerator iter(directory, false,
-                                 file_util::FileEnumerator::FILES,
-                                 pattern);
-  while (!iter.Next().empty()) {
-    file_util::FileEnumerator::FindInfo info;
-    iter.GetFindInfo(&info);
-    running_size += file_util::FileEnumerator::GetFilesize(info);
-  }
+  base::FileEnumerator iter(directory, false, base::FileEnumerator::FILES,
+                            pattern);
+  while (!iter.Next().empty())
+    running_size += iter.GetInfo().GetSize();
   return running_size;
 }
 
@@ -163,31 +162,6 @@ void QueueProfileDirectoryForDeletion(const base::FilePath& path) {
   ProfilesToDelete().push_back(path);
 }
 
-// Called upon completion of profile creation. This function takes care of
-// launching a new browser window and signing the user in to their Google
-// account.
-void OnOpenWindowForNewProfile(
-    chrome::HostDesktopType desktop_type,
-    const ProfileManager::CreateCallback& callback,
-    Profile* profile,
-    Profile::CreateStatus status) {
-  // Invoke the callback before we open a window for this new profile, so the
-  // callback has a chance to update the profile state first (to do things like
-  // sign in the profile).
-  if (!callback.is_null())
-    callback.Run(profile, status);
-
-  if (status == Profile::CREATE_STATUS_INITIALIZED) {
-
-    ProfileManager::FindOrCreateNewWindowForProfile(
-        profile,
-        chrome::startup::IS_PROCESS_STARTUP,
-        chrome::startup::IS_FIRST_RUN,
-        desktop_type,
-        false);
-  }
-}
-
 #if defined(OS_CHROMEOS)
 void CheckCryptohomeIsMounted(chromeos::DBusMethodCallStatus call_status,
                               bool is_mounted) {
@@ -242,6 +216,11 @@ void ProfileManager::AllowGetDefaultProfile() {
 }
 
 // static
+bool ProfileManager::IsGetDefaultProfileAllowed() {
+  return s_allow_get_default_profile;
+}
+
+// static
 // TODO(nkostylev): Remove this method once all clients are migrated.
 Profile* ProfileManager::GetDefaultProfile() {
   CHECK(s_allow_get_default_profile)
@@ -269,6 +248,16 @@ Profile* ProfileManager::GetDefaultProfileOrOffTheRecord() {
 Profile* ProfileManager::GetLastUsedProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   return profile_manager->GetLastUsedProfile(profile_manager->user_data_dir_);
+}
+
+// static
+Profile* ProfileManager::GetLastUsedProfileAllowedByPolicy() {
+  Profile* profile = GetLastUsedProfile();
+  if (IncognitoModePrefs::GetAvailability(profile->GetPrefs()) ==
+      IncognitoModePrefs::FORCED) {
+    return profile->GetOffTheRecordProfile();
+  }
+  return profile;
 }
 
 // static
@@ -441,7 +430,7 @@ Profile* ProfileManager::GetDefaultProfile(
     // many of the browser and ui tests fail. We do return the OTR profile
     // if the login-profile switch is passed so that we can test this.
     // TODO(davemoore) Fix the tests so they allow OTR profiles.
-    if (ShouldGoOffTheRecord())
+    if (ShouldGoOffTheRecord(profile))
       return profile->GetOffTheRecordProfile();
     return profile;
   }
@@ -481,6 +470,7 @@ std::vector<Profile*> ProfileManager::GetLoadedProfiles() const {
 }
 
 Profile* ProfileManager::GetProfile(const base::FilePath& profile_dir) {
+  TRACE_EVENT0("browser", "ProfileManager::GetProfile")
   // If the profile is already loaded (e.g., chrome.exe launched twice), just
   // return it.
   Profile* profile = GetProfileByPath(profile_dir);
@@ -507,24 +497,20 @@ void ProfileManager::CreateProfileAsync(
   // Make sure that this profile is not pending deletion.
   if (std::find(ProfilesToDelete().begin(), ProfilesToDelete().end(),
       profile_path) != ProfilesToDelete().end()) {
-    callback.Run(NULL, Profile::CREATE_STATUS_FAIL);
+    if (!callback.is_null())
+      callback.Run(NULL, Profile::CREATE_STATUS_LOCAL_FAIL);
     return;
   }
 
+  // Create the profile if needed and collect its ProfileInfo.
   ProfilesInfoMap::iterator iter = profiles_info_.find(profile_path);
+  ProfileInfo* info = NULL;
+
   if (iter != profiles_info_.end()) {
-    ProfileInfo* info = iter->second.get();
-    if (info->created) {
-      // Profile has already been created. Run callback immediately.
-      callback.Run(info->profile.get(), Profile::CREATE_STATUS_INITIALIZED);
-    } else {
-      // Profile is being created. Add callback to list.
-      info->callbacks.push_back(callback);
-    }
+    info = iter->second.get();
   } else {
     // Initiate asynchronous creation process.
-    ProfileInfo* info =
-        RegisterProfile(CreateProfileAsyncHelper(profile_path, this), false);
+    info = RegisterProfile(CreateProfileAsyncHelper(profile_path, this), false);
     ProfileInfoCache& cache = GetProfileInfoCache();
     // Get the icon index from the user's icon url
     size_t icon_index;
@@ -534,11 +520,22 @@ void ProfileManager::CreateProfileAsync(
       cache.AddProfileToCache(profile_path, name, string16(), icon_index,
                               is_managed);
     }
-    info->callbacks.push_back(callback);
 
     if (is_managed) {
       content::RecordAction(
           UserMetricsAction("ManagedMode_LocallyManagedUserCreated"));
+    }
+  }
+
+  // Call or enqueue the callback.
+  if (!callback.is_null()) {
+    if (iter != profiles_info_.end() && info->created) {
+        // Profile has already been created. Run callback immediately.
+        callback.Run(info->profile.get(), Profile::CREATE_STATUS_INITIALIZED);
+    } else {
+      // Profile is either already in the process of being created, or new.
+      // Add callback to the list.
+      info->callbacks.push_back(callback);
     }
   }
 }
@@ -575,7 +572,7 @@ bool ProfileManager::AddProfile(Profile* profile) {
   }
 
   RegisterProfile(profile, true);
-  DoFinalInit(profile, ShouldGoOffTheRecord());
+  DoFinalInit(profile, ShouldGoOffTheRecord(profile));
   return true;
 }
 
@@ -863,7 +860,7 @@ void ProfileManager::OnProfileCreated(Profile* profile,
   info->callbacks.swap(callbacks);
 
   // Invoke CREATED callback for normal profiles.
-  bool go_off_the_record = ShouldGoOffTheRecord();
+  bool go_off_the_record = ShouldGoOffTheRecord(profile);
   if (success && !go_off_the_record)
     RunCallbacks(callbacks, profile, Profile::CREATE_STATUS_CREATED);
 
@@ -885,7 +882,7 @@ void ProfileManager::OnProfileCreated(Profile* profile,
   // Invoke INITIALIZED or FAIL for all profiles.
   RunCallbacks(callbacks, profile,
                profile ? Profile::CREATE_STATUS_INITIALIZED :
-                         Profile::CREATE_STATUS_FAIL);
+                         Profile::CREATE_STATUS_LOCAL_FAIL);
 }
 
 base::FilePath ProfileManager::GenerateNextProfileDirectoryPath() {
@@ -908,14 +905,11 @@ base::FilePath ProfileManager::GenerateNextProfileDirectoryPath() {
   return new_path;
 }
 
-// TODO(robertshield): ProfileManager should not be opening windows and should
-// not have to care about HostDesktopType. See http://crbug.com/153864
 // static
-void ProfileManager::CreateMultiProfileAsync(
+base::FilePath ProfileManager::CreateMultiProfileAsync(
     const string16& name,
     const string16& icon_url,
     const CreateCallback& callback,
-    chrome::HostDesktopType desktop_type,
     bool is_managed) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -924,12 +918,11 @@ void ProfileManager::CreateMultiProfileAsync(
   base::FilePath new_path = profile_manager->GenerateNextProfileDirectoryPath();
 
   profile_manager->CreateProfileAsync(new_path,
-                                      base::Bind(&OnOpenWindowForNewProfile,
-                                                 desktop_type,
-                                                 callback),
+                                      callback,
                                       name,
                                       icon_url,
                                       is_managed);
+  return new_path;
 }
 
 // static
@@ -1033,11 +1026,11 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
     profile->GetPrefs()->SetBoolean(prefs::kProfileIsManaged, is_managed);
 }
 
-bool ProfileManager::ShouldGoOffTheRecord() {
+bool ProfileManager::ShouldGoOffTheRecord(Profile* profile) {
   bool go_off_the_record = false;
 #if defined(OS_CHROMEOS)
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (!logged_in_ &&
+  if (profile->GetPath().BaseName().value() == chrome::kInitialProfile &&
       (!command_line.HasSwitch(switches::kTestType) ||
        command_line.HasSwitch(chromeos::switches::kLoginProfile))) {
     go_off_the_record = true;
@@ -1046,11 +1039,9 @@ bool ProfileManager::ShouldGoOffTheRecord() {
   return go_off_the_record;
 }
 
-// TODO(robertshield): ProfileManager should not be opening windows and should
-// not have to care about HostDesktopType. See http://crbug.com/153864
 void ProfileManager::ScheduleProfileForDeletion(
     const base::FilePath& profile_dir,
-    chrome::HostDesktopType desktop_type) {
+    const CreateCallback& callback) {
   DCHECK(IsMultipleProfilesEnabled());
 
   PrefService* local_state = g_browser_process->local_state();
@@ -1075,13 +1066,8 @@ void ProfileManager::ScheduleProfileForDeletion(
       // correct last used profile is set for any notification observers.
       local_state->SetString(prefs::kProfileLastUsed,
                              new_path.BaseName().MaybeAsASCII());
-      // TODO(robertshield): This desktop type needs to come from the invoker,
-      // currently that involves plumbing this through web UI.
-      chrome::HostDesktopType desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
       CreateProfileAsync(new_path,
-                         base::Bind(&OnOpenWindowForNewProfile,
-                                    desktop_type,
-                                    CreateCallback()),
+                         callback,
                          string16(),
                          string16(),
                          false);

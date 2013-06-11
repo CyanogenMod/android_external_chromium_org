@@ -11,7 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_thread_delegate.h"
@@ -339,7 +339,7 @@ bool BrowserThread::PostBlockingPoolSequencedTask(
 
 // static
 base::SequencedWorkerPool* BrowserThread::GetBlockingPool() {
-  return g_globals.Get().blocking_pool;
+  return g_globals.Get().blocking_pool.get();
 }
 
 // static
@@ -457,7 +457,7 @@ BrowserThread::GetMessageLoopProxyForThread(ID identifier) {
 }
 
 // static
-MessageLoop* BrowserThread::UnsafeGetMessageLoopForThread(ID identifier) {
+base::MessageLoop* BrowserThread::UnsafeGetMessageLoopForThread(ID identifier) {
   if (g_globals == NULL)
     return NULL;
 

@@ -16,8 +16,8 @@
 #include "base/prefs/pref_registry.h"
 #include "base/prefs/pref_value_store.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/value_conversions.h"
 #include "build/build_config.h"
 
@@ -79,7 +79,7 @@ void PrefService::InitFromStorage(bool async) {
     read_error_callback_.Run(user_pref_store_->ReadPrefs());
   } else {
     // Guarantee that initialization happens after this function returned.
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&PersistentPrefStore::ReadPrefsAsync,
                    user_pref_store_.get(),

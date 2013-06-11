@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "net/tools/fetch/http_server_request_info.h"
 #include "net/tools/fetch/http_server_response_info.h"
 
@@ -31,7 +31,7 @@ void HttpListenSocket::Accept() {
     scoped_refptr<HttpListenSocket> sock(
         new HttpListenSocket(conn, delegate_));
     // It's up to the delegate to AddRef if it wants to keep it around.
-    DidAccept(this, sock);
+    DidAccept(this, sock.get());
   }
 }
 

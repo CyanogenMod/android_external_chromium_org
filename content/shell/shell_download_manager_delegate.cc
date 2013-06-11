@@ -17,8 +17,8 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
@@ -91,7 +91,8 @@ bool ShellDownloadManagerDelegate::ShouldOpenDownload(
       DownloadItem* item,
       const DownloadOpenDelayedCallback& callback) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree) &&
-      WebKitTestController::Get()->IsMainWindow(item->GetWebContents())) {
+      WebKitTestController::Get()->IsMainWindow(item->GetWebContents()) &&
+      item->GetMimeType() == "text/html") {
     WebKitTestController::Get()->OpenURL(
         net::FilePathToFileURL(item->GetFullPath()));
   }
@@ -184,6 +185,7 @@ void ShellDownloadManagerDelegate::ChooseDownloadPath(
     char *filename;
     filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
     result = base::FilePath(filename);
+    g_free(filename);
   }
   gtk_widget_destroy(dialog);
 #else

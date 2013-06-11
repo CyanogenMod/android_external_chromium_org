@@ -13,10 +13,7 @@
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/drive/change_list_loader_observer.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
-#include "chrome/browser/chromeos/drive/file_system/operations.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
-#include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
 class PrefChangeRegistrar;
@@ -42,7 +39,21 @@ class JobScheduler;
 namespace internal {
 class ChangeListLoader;
 class ResourceMetadata;
+class SyncClient;
 }  // namespace internal
+
+namespace file_system {
+class CopyOperation;
+class CreateDirectoryOperation;
+class CreateFileOperation;
+class DownloadOperation;
+class MoveOperation;
+class OperationObserver;
+class RemoveOperation;
+class SearchOperation;
+class TouchOperation;
+class UpdateOperation;
+}  // namespace file_system
 
 // The production implementation of FileSystemInterface.
 class FileSystem : public FileSystemInterface,
@@ -64,9 +75,9 @@ class FileSystem : public FileSystemInterface,
   virtual void CheckForUpdates() OVERRIDE;
   virtual void GetResourceEntryById(
       const std::string& resource_id,
-      const GetResourceEntryWithFilePathCallback& callback) OVERRIDE;
+      const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void Search(const std::string& search_query,
-                      const GURL& next_feed,
+                      const GURL& next_url,
                       const SearchCallback& callback) OVERRIDE;
   virtual void SearchMetadata(const std::string& query,
                               int options,
@@ -157,11 +168,10 @@ class FileSystem : public FileSystemInterface,
   // Used to propagate events from ChangeListLoader.
   virtual void OnDirectoryChanged(
       const base::FilePath& directory_path) OVERRIDE;
-  virtual void OnFeedFromServerLoaded() OVERRIDE;
-  virtual void OnInitialFeedLoaded() OVERRIDE;
+  virtual void OnLoadFromServerComplete() OVERRIDE;
+  virtual void OnInitialLoadComplete() OVERRIDE;
 
-  // Used in tests to update the file system from |feed_list|.
-  // See also the comment at ChangeListLoader::UpdateFromFeed().
+  // Used in tests to update the file system using the change list loader.
   internal::ChangeListLoader* change_list_loader() {
     return change_list_loader_.get();
   }
@@ -239,8 +249,8 @@ class FileSystem : public FileSystemInterface,
       google_apis::GDataErrorCode status,
       scoped_ptr<google_apis::AboutResource> about_resource);
 
-  // Callback for handling results of ReloadFeedFromServerIfNeeded() initiated
-  // from CheckForUpdates().
+  // Part of CheckForUpdates(). Called when
+  // ChangeListLoader::CheckForUpdates() is complete.
   void OnUpdateChecked(FileError error);
 
   // Changes state of hosted documents visibility, triggers directory refresh.
@@ -295,21 +305,8 @@ class FileSystem : public FileSystemInterface,
   // ResourceMetadata::GetResourceEntryById() is complete.
   // |callback| must not be null.
   void GetResourceEntryByIdAfterGetEntry(
-      const GetResourceEntryWithFilePathCallback& callback,
+      const GetResourceEntryCallback& callback,
       FileError error,
-      const base::FilePath& file_path,
-      scoped_ptr<ResourceEntry> entry);
-
-  // Part of GetFileByResourceId(). Called after
-  // ResourceMetadata::GetResourceEntryById() is complete.
-  // |get_file_callback| must not be null.
-  // |get_content_callback| may be null.
-  void GetFileByResourceIdAfterGetEntry(
-      const ClientContext& context,
-      const GetFileCallback& get_file_callback,
-      const google_apis::GetContentCallback& get_content_callback,
-      FileError error,
-      const base::FilePath& file_path,
       scoped_ptr<ResourceEntry> entry);
 
   // Part of RefreshDirectory(). Called after
@@ -372,6 +369,8 @@ class FileSystem : public FileSystemInterface,
 
   scoped_ptr<PrefChangeRegistrar> pref_registrar_;
 
+  scoped_ptr<internal::SyncClient> sync_client_;
+
   // The loader is used to load the change lists.
   scoped_ptr<internal::ChangeListLoader> change_list_loader_;
 
@@ -379,7 +378,16 @@ class FileSystem : public FileSystemInterface,
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
 
-  file_system::Operations operations_;
+  // Implementation of each file system operation.
+  scoped_ptr<file_system::CopyOperation> copy_operation_;
+  scoped_ptr<file_system::CreateDirectoryOperation> create_directory_operation_;
+  scoped_ptr<file_system::CreateFileOperation> create_file_operation_;
+  scoped_ptr<file_system::MoveOperation> move_operation_;
+  scoped_ptr<file_system::RemoveOperation> remove_operation_;
+  scoped_ptr<file_system::TouchOperation> touch_operation_;
+  scoped_ptr<file_system::DownloadOperation> download_operation_;
+  scoped_ptr<file_system::UpdateOperation> update_operation_;
+  scoped_ptr<file_system::SearchOperation> search_operation_;
 
   // Polling interval for checking updates in seconds.
   int polling_interval_sec_;

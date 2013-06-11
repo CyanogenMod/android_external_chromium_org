@@ -5,7 +5,7 @@
 #include "chrome/test/base/testing_browser_process.h"
 
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -323,6 +323,12 @@ TestingBrowserProcess::media_file_system_registry() {
 bool TestingBrowserProcess::created_local_state() const {
     return (local_state_ != NULL);
 }
+
+#if defined(ENABLE_WEBRTC)
+WebRtcLogUploader* TestingBrowserProcess::webrtc_log_uploader() {
+  return NULL;
+}
+#endif
 
 void TestingBrowserProcess::SetBookmarkPromptController(
     BookmarkPromptController* controller) {

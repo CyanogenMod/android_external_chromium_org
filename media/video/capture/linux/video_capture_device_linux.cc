@@ -19,7 +19,8 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/stringprintf.h"
+#include "base/files/file_enumerator.h"
+#include "base/strings/stringprintf.h"
 
 namespace media {
 
@@ -35,6 +36,8 @@ enum { kCaptureSelectWaitMs = 10 };
 // MJPEG is prefered if the width or height is larger than this.
 enum { kMjpegWidth = 640 };
 enum { kMjpegHeight = 480 };
+// Typical framerate, in fps
+enum { kTypicalFramerate = 30 };
 
 // V4L2 color formats VideoCaptureDeviceLinux support.
 static const int32 kV4l2RawFmts[] = {
@@ -100,15 +103,14 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
   device_names->clear();
 
   base::FilePath path("/dev/");
-  file_util::FileEnumerator enumerator(
-      path, false, file_util::FileEnumerator::FILES, "video*");
+  base::FileEnumerator enumerator(
+      path, false, base::FileEnumerator::FILES, "video*");
 
   while (!enumerator.Next().empty()) {
-    file_util::FileEnumerator::FindInfo info;
-    enumerator.GetFindInfo(&info);
+    base::FileEnumerator::FileInfo info = enumerator.GetInfo();
 
     Name name;
-    name.unique_id = path.value() + info.filename;
+    name.unique_id = path.value() + info.GetName().value();
     if ((fd = open(name.unique_id.c_str() , O_RDONLY)) < 0) {
       // Failed to open this device.
       continue;
@@ -123,7 +125,7 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
         name.device_name = base::StringPrintf("%s", cap.card);
         device_names->push_back(name);
       } else {
-        DVLOG(1) << "No usable formats reported by " << info.filename;
+        DVLOG(1) << "No usable formats reported by " << info.GetName().value();
       }
     }
     close(fd);
@@ -284,6 +286,30 @@ void VideoCaptureDeviceLinux::OnAllocate(int width,
     SetErrorState("Failed to set camera format");
     return;
   }
+
+  // Set capture framerate in the form of capture interval.
+  v4l2_streamparm streamparm;
+  memset(&streamparm, 0, sizeof(v4l2_streamparm));
+  streamparm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  // The following line checks that the driver knows about framerate get/set.
+  if (ioctl(device_fd_, VIDIOC_G_PARM, &streamparm) >= 0) {
+    // Now check if the device is able to accept a capture framerate set.
+    if (streamparm.parm.capture.capability & V4L2_CAP_TIMEPERFRAME) {
+      streamparm.parm.capture.timeperframe.numerator = 1;
+      streamparm.parm.capture.timeperframe.denominator =
+          (frame_rate) ? frame_rate : kTypicalFramerate;
+
+      if (ioctl(device_fd_, VIDIOC_S_PARM, &streamparm) < 0) {
+        SetErrorState("Failed to set camera framerate");
+        return;
+      }
+      DVLOG(2) << "Actual camera driverframerate: "
+               << streamparm.parm.capture.timeperframe.denominator << "/"
+               << streamparm.parm.capture.timeperframe.numerator;
+    }
+  }
+  // TODO(mcasas): what should be done if the camera driver does not allow
+  // framerate configuration, or the actual one is different from the desired?
 
   // Store our current width and height.
   VideoCaptureCapability current_settings;

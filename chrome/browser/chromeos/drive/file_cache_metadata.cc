@@ -6,10 +6,11 @@
 
 #include "base/callback.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
+#include "base/threading/thread_restrictions.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 
@@ -26,119 +27,10 @@ enum DBOpenStatus {
   DB_OPEN_MAX_VALUE,
 };
 
-// A map table of resource ID to file path.
-typedef std::map<std::string, base::FilePath> ResourceIdToFilePathMap;
-
-// Scans cache subdirectory and build or update |cache_map| with found files.
-//
-// The resource IDs and file paths of discovered files are collected as a
-// ResourceIdToFilePathMap, if these are processed properly.
-void ScanCacheDirectory(
-    const std::vector<base::FilePath>& cache_paths,
-    FileCache::CacheSubDirectoryType sub_dir_type,
-    FileCacheMetadata::CacheMap* cache_map,
-    ResourceIdToFilePathMap* processed_file_map) {
-  DCHECK(cache_map);
-  DCHECK(processed_file_map);
-
-  file_util::FileEnumerator enumerator(cache_paths[sub_dir_type],
-                                       false,  // not recursive
-                                       file_util::FileEnumerator::FILES,
-                                       util::kWildCard);
-  for (base::FilePath current = enumerator.Next(); !current.empty();
-       current = enumerator.Next()) {
-    // Extract resource_id and md5 from filename.
-    std::string resource_id;
-    std::string md5;
-    std::string extra_extension;
-    util::ParseCacheFilePath(current, &resource_id, &md5, &extra_extension);
-
-    // Determine cache state.
-    FileCacheEntry cache_entry;
-    cache_entry.set_md5(md5);
-    if (sub_dir_type == FileCache::CACHE_TYPE_PERSISTENT)
-      cache_entry.set_is_persistent(true);
-
-    if (extra_extension == util::kMountedArchiveFileExtension) {
-      // Mounted archives in cache should be unmounted upon logout/shutdown.
-      // But if we encounter a mounted file at start, delete it and create an
-      // entry with not PRESENT state.
-      DCHECK(sub_dir_type == FileCache::CACHE_TYPE_PERSISTENT);
-      file_util::Delete(current, false);
-    } else {
-      // The cache file is present.
-      cache_entry.set_is_present(true);
-
-      // Adds the dirty bit if |md5| indicates that the file is dirty, and
-      // the file is in the persistent directory.
-      if (md5 == util::kLocallyModifiedFileExtension) {
-        if (sub_dir_type == FileCache::CACHE_TYPE_PERSISTENT) {
-          cache_entry.set_is_dirty(true);
-        } else {
-          LOG(WARNING) << "Removing a dirty file in tmp directory: "
-                       << current.value();
-          file_util::Delete(current, false);
-          continue;
-        }
-      }
-    }
-
-    // Create and insert new entry into cache map.
-    cache_map->insert(std::make_pair(resource_id, cache_entry));
-    processed_file_map->insert(std::make_pair(resource_id, current));
-  }
-}
-
-void ScanCachePaths(const std::vector<base::FilePath>& cache_paths,
-                    FileCacheMetadata::CacheMap* cache_map) {
-  DVLOG(1) << "Scanning directories";
-
-  // Scan cache persistent and tmp directories to enumerate all files and create
-  // corresponding entries for cache map.
-  ResourceIdToFilePathMap persistent_file_map;
-  ScanCacheDirectory(cache_paths,
-                     FileCache::CACHE_TYPE_PERSISTENT,
-                     cache_map,
-                     &persistent_file_map);
-  ResourceIdToFilePathMap tmp_file_map;
-  ScanCacheDirectory(cache_paths,
-                     FileCache::CACHE_TYPE_TMP,
-                     cache_map,
-                     &tmp_file_map);
-
-  // On DB corruption, keep only dirty-and-committed files in persistent
-  // directory. Other files are deleted or moved to temporary directory.
-  for (ResourceIdToFilePathMap::const_iterator iter =
-           persistent_file_map.begin();
-       iter != persistent_file_map.end(); ++iter) {
-    const std::string& resource_id = iter->first;
-    const base::FilePath& file_path = iter->second;
-
-    FileCacheMetadata::CacheMap::iterator cache_map_iter =
-        cache_map->find(resource_id);
-    if (cache_map_iter != cache_map->end()) {
-      FileCacheEntry* cache_entry = &cache_map_iter->second;
-      const bool is_dirty = cache_entry->is_dirty();
-      if (!is_dirty) {
-        // If the file is not dirty, move to temporary directory.
-        base::FilePath new_file_path =
-            cache_paths[FileCache::CACHE_TYPE_TMP].Append(
-                file_path.BaseName());
-        DLOG(WARNING) << "Moving: " << file_path.value()
-                      << " to: " << new_file_path.value();
-        file_util::Move(file_path, new_file_path);
-        cache_entry->set_is_persistent(false);
-      }
-    }
-  }
-  DVLOG(1) << "Directory scan finished";
-}
-
 // Returns true if |md5| matches the one in |cache_entry| with some
 // exceptions. See the function definition for details.
-bool CheckIfMd5Matches(
-    const std::string& md5,
-    const FileCacheEntry& cache_entry) {
+bool CheckIfMd5Matches(const std::string& md5,
+                       const FileCacheEntry& cache_entry) {
   if (cache_entry.is_dirty()) {
     // If the entry is dirty, its MD5 may have been replaced by "local"
     // during cache initialization, so we don't compare MD5.
@@ -159,174 +51,82 @@ bool CheckIfMd5Matches(
   return false;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// FileCacheMetadata implementation with std::map.
-// Used for testing.
+}  // namespace
 
-class FakeCacheMetadata : public FileCacheMetadata {
- public:
-  explicit FakeCacheMetadata(
-      base::SequencedTaskRunner* blocking_task_runner);
+// static
+const base::FilePath::CharType* FileCacheMetadata::kCacheMetadataDBPath =
+    FILE_PATH_LITERAL("cache_metadata.db");
 
- private:
-  virtual ~FakeCacheMetadata();
+FileCacheMetadata::Iterator::Iterator(scoped_ptr<leveldb::Iterator> it)
+    : it_(it.Pass()) {
+  base::ThreadRestrictions::AssertIOAllowed();
+  DCHECK(it_);
 
-  // FileCacheMetadata overrides:
-  virtual bool Initialize(
-      const std::vector<base::FilePath>& cache_paths) OVERRIDE;
-  virtual void AddOrUpdateCacheEntry(
-      const std::string& resource_id,
-      const FileCacheEntry& cache_entry) OVERRIDE;
-  virtual void RemoveCacheEntry(const std::string& resource_id) OVERRIDE;
-  virtual bool GetCacheEntry(const std::string& resource_id,
-                             const std::string& md5,
-                             FileCacheEntry* cache_entry) OVERRIDE;
-  virtual void RemoveTemporaryFiles() OVERRIDE;
-  virtual void Iterate(const CacheIterateCallback& callback) OVERRIDE;
+  it_->SeekToFirst();
+  AdvanceInternal();
+}
 
-  CacheMap cache_map_;
+FileCacheMetadata::Iterator::~Iterator() {
+  base::ThreadRestrictions::AssertIOAllowed();
+}
 
-  DISALLOW_COPY_AND_ASSIGN(FakeCacheMetadata);
-};
+bool FileCacheMetadata::Iterator::IsAtEnd() const {
+  base::ThreadRestrictions::AssertIOAllowed();
+  return !it_->Valid();
+}
 
-FakeCacheMetadata::FakeCacheMetadata(
+std::string FileCacheMetadata::Iterator::GetKey() const {
+  base::ThreadRestrictions::AssertIOAllowed();
+  DCHECK(!IsAtEnd());
+  return it_->key().ToString();
+}
+
+const FileCacheEntry& FileCacheMetadata::Iterator::GetValue() const {
+  base::ThreadRestrictions::AssertIOAllowed();
+  DCHECK(!IsAtEnd());
+  return entry_;
+}
+
+void FileCacheMetadata::Iterator::Advance() {
+  base::ThreadRestrictions::AssertIOAllowed();
+  DCHECK(!IsAtEnd());
+
+  it_->Next();
+  AdvanceInternal();
+}
+
+bool FileCacheMetadata::Iterator::HasError() const {
+  base::ThreadRestrictions::AssertIOAllowed();
+  return !it_->status().ok();
+}
+
+void FileCacheMetadata::Iterator::AdvanceInternal() {
+  for (; it_->Valid(); it_->Next()) {
+    // Skip unparsable broken entries.
+    // TODO(hashimoto): Broken entries should be cleaned up at some point.
+    if (entry_.ParseFromArray(it_->value().data(), it_->value().size()))
+      break;
+  }
+}
+
+FileCacheMetadata::FileCacheMetadata(
     base::SequencedTaskRunner* blocking_task_runner)
-    : FileCacheMetadata(blocking_task_runner) {
+    : blocking_task_runner_(blocking_task_runner) {
   AssertOnSequencedWorkerPool();
 }
 
-FakeCacheMetadata::~FakeCacheMetadata() {
+FileCacheMetadata::~FileCacheMetadata() {
   AssertOnSequencedWorkerPool();
 }
 
-bool FakeCacheMetadata::Initialize(
-    const std::vector<base::FilePath>& cache_paths) {
+FileCacheMetadata::InitializeResult FileCacheMetadata::Initialize(
+    const base::FilePath& db_directory_path) {
   AssertOnSequencedWorkerPool();
 
-  ScanCachePaths(cache_paths, &cache_map_);
-  return true;
-}
-
-void FakeCacheMetadata::AddOrUpdateCacheEntry(
-    const std::string& resource_id,
-    const FileCacheEntry& cache_entry) {
-  AssertOnSequencedWorkerPool();
-
-  CacheMap::iterator iter = cache_map_.find(resource_id);
-  if (iter == cache_map_.end()) {  // New resource, create new entry.
-    cache_map_.insert(std::make_pair(resource_id, cache_entry));
-  } else {  // Resource exists.
-    cache_map_[resource_id] = cache_entry;
-  }
-}
-
-void FakeCacheMetadata::RemoveCacheEntry(const std::string& resource_id) {
-  AssertOnSequencedWorkerPool();
-
-  CacheMap::iterator iter = cache_map_.find(resource_id);
-  if (iter != cache_map_.end()) {
-    // Delete the FileCacheEntry and remove it from the map.
-    cache_map_.erase(iter);
-  }
-}
-
-bool FakeCacheMetadata::GetCacheEntry(const std::string& resource_id,
-                                      const std::string& md5,
-                                      FileCacheEntry* entry) {
-  DCHECK(entry);
-  AssertOnSequencedWorkerPool();
-
-  CacheMap::iterator iter = cache_map_.find(resource_id);
-  if (iter == cache_map_.end()) {
-    DVLOG(1) << "Can't find " << resource_id << " in cache map";
-    return false;
-  }
-
-  const FileCacheEntry& cache_entry = iter->second;
-
-  if (!CheckIfMd5Matches(md5, cache_entry)) {
-    return false;
-  }
-
-  *entry = cache_entry;
-  return true;
-}
-
-void FakeCacheMetadata::RemoveTemporaryFiles() {
-  AssertOnSequencedWorkerPool();
-
-  CacheMap::iterator iter = cache_map_.begin();
-  while (iter != cache_map_.end()) {
-    if (!iter->second.is_persistent()) {
-      // Post-increment the iterator to avoid iterator invalidation.
-      cache_map_.erase(iter++);
-    } else {
-      ++iter;
-    }
-  }
-}
-
-void FakeCacheMetadata::Iterate(const CacheIterateCallback& callback) {
-  AssertOnSequencedWorkerPool();
-
-  for (CacheMap::const_iterator iter = cache_map_.begin();
-       iter != cache_map_.end(); ++iter) {
-    callback.Run(iter->first, iter->second);
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// FileCacheMetadata implementation with level::db.
-
-class FileCacheMetadataDB : public FileCacheMetadata {
- public:
-  explicit FileCacheMetadataDB(
-      base::SequencedTaskRunner* blocking_task_runner);
-
- private:
-  virtual ~FileCacheMetadataDB();
-
-  // FileCacheMetadata overrides:
-  virtual bool Initialize(
-      const std::vector<base::FilePath>& cache_paths) OVERRIDE;
-  virtual void AddOrUpdateCacheEntry(
-      const std::string& resource_id,
-      const FileCacheEntry& cache_entry) OVERRIDE;
-  virtual void RemoveCacheEntry(const std::string& resource_id) OVERRIDE;
-  virtual bool GetCacheEntry(const std::string& resource_id,
-                             const std::string& md5,
-                             FileCacheEntry* cache_entry) OVERRIDE;
-  virtual void RemoveTemporaryFiles() OVERRIDE;
-  virtual void Iterate(const CacheIterateCallback& callback) OVERRIDE;
-
-  // Helper function to insert |cache_map| entries into the database.
-  void InsertMapIntoDB(const CacheMap& cache_map);
-
-  scoped_ptr<leveldb::DB> level_db_;
-
-  DISALLOW_COPY_AND_ASSIGN(FileCacheMetadataDB);
-};
-
-FileCacheMetadataDB::FileCacheMetadataDB(
-    base::SequencedTaskRunner* blocking_task_runner)
-    : FileCacheMetadata(blocking_task_runner) {
-  AssertOnSequencedWorkerPool();
-}
-
-FileCacheMetadataDB::~FileCacheMetadataDB() {
-  AssertOnSequencedWorkerPool();
-}
-
-bool FileCacheMetadataDB::Initialize(
-    const std::vector<base::FilePath>& cache_paths) {
-  AssertOnSequencedWorkerPool();
-
-  const base::FilePath db_path =
-      cache_paths[FileCache::CACHE_TYPE_META].Append(
-          kCacheMetadataDBPath);
+  const base::FilePath db_path = db_directory_path.Append(kCacheMetadataDBPath);
   DVLOG(1) << "db path=" << db_path.value();
 
-  bool scan_cache = !file_util::PathExists(db_path);
+  bool created = !file_util::PathExists(db_path);
 
   leveldb::DB* level_db = NULL;
   leveldb::Options options;
@@ -349,37 +149,20 @@ bool FileCacheMetadataDB::Initialize(
       UMA_HISTOGRAM_ENUMERATION("Drive.CacheDBOpenStatus",
                                 DB_OPEN_FAILURE_UNRECOVERABLE,
                                 DB_OPEN_MAX_VALUE);
-      // Failed to open the cache metadata DB. Drive will be disabled.
-      return false;
+      return INITIALIZE_FAILED;
     }
 
-    scan_cache = true;
+    created = true;
   }
   UMA_HISTOGRAM_ENUMERATION("Drive.CacheDBOpenStatus", uma_status,
                             DB_OPEN_MAX_VALUE);
   DCHECK(level_db);
   level_db_.reset(level_db);
 
-  // We scan the cache directories to initialize the cache database if we
-  // were previously using the cache map.
-  if (scan_cache) {
-    CacheMap cache_map;
-    ScanCachePaths(cache_paths, &cache_map);
-    InsertMapIntoDB(cache_map);
-  }
-
-  return true;
+  return created ? INITIALIZE_CREATED : INITIALIZE_OPENED;
 }
 
-void FileCacheMetadataDB::InsertMapIntoDB(const CacheMap& cache_map) {
-  DVLOG(1) << "InsertMapIntoDB";
-  for (CacheMap::const_iterator it = cache_map.begin();
-       it != cache_map.end(); ++it) {
-    AddOrUpdateCacheEntry(it->first, it->second);
-  }
-}
-
-void FileCacheMetadataDB::AddOrUpdateCacheEntry(
+void FileCacheMetadata::AddOrUpdateCacheEntry(
     const std::string& resource_id,
     const FileCacheEntry& cache_entry) {
   AssertOnSequencedWorkerPool();
@@ -393,16 +176,16 @@ void FileCacheMetadataDB::AddOrUpdateCacheEntry(
                    leveldb::Slice(serialized));
 }
 
-void FileCacheMetadataDB::RemoveCacheEntry(const std::string& resource_id) {
+void FileCacheMetadata::RemoveCacheEntry(const std::string& resource_id) {
   AssertOnSequencedWorkerPool();
 
   DVLOG(1) << "RemoveCacheEntry, resource_id=" << resource_id;
   level_db_->Delete(leveldb::WriteOptions(), leveldb::Slice(resource_id));
 }
 
-bool FileCacheMetadataDB::GetCacheEntry(const std::string& resource_id,
-                                        const std::string& md5,
-                                        FileCacheEntry* entry) {
+bool FileCacheMetadata::GetCacheEntry(const std::string& resource_id,
+                                      const std::string& md5,
+                                      FileCacheEntry* entry) {
   DCHECK(entry);
   AssertOnSequencedWorkerPool();
 
@@ -430,64 +213,12 @@ bool FileCacheMetadataDB::GetCacheEntry(const std::string& resource_id,
   return true;
 }
 
-void FileCacheMetadataDB::RemoveTemporaryFiles() {
+scoped_ptr<FileCacheMetadata::Iterator> FileCacheMetadata::GetIterator() {
   AssertOnSequencedWorkerPool();
 
   scoped_ptr<leveldb::Iterator> iter(level_db_->NewIterator(
       leveldb::ReadOptions()));
-  for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
-    FileCacheEntry cache_entry;
-    const bool ok = cache_entry.ParseFromArray(iter->value().data(),
-                                               iter->value().size());
-    if (ok && !cache_entry.is_persistent())
-      level_db_->Delete(leveldb::WriteOptions(), iter->key());
-  }
-}
-
-void FileCacheMetadataDB::Iterate(const CacheIterateCallback& callback) {
-  AssertOnSequencedWorkerPool();
-
-  scoped_ptr<leveldb::Iterator> iter(level_db_->NewIterator(
-      leveldb::ReadOptions()));
-  for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
-    FileCacheEntry cache_entry;
-    const bool ok = cache_entry.ParseFromArray(iter->value().data(),
-                                               iter->value().size());
-    if (ok)
-      callback.Run(iter->key().ToString(), cache_entry);
-  }
-}
-
-}  // namespace
-
-// static
-const base::FilePath::CharType* FileCacheMetadata::kCacheMetadataDBPath =
-    FILE_PATH_LITERAL("cache_metadata.db");
-
-
-FileCacheMetadata::FileCacheMetadata(
-    base::SequencedTaskRunner* blocking_task_runner)
-    : blocking_task_runner_(blocking_task_runner) {
-  AssertOnSequencedWorkerPool();
-}
-
-FileCacheMetadata::~FileCacheMetadata() {
-  AssertOnSequencedWorkerPool();
-}
-
-// static
-scoped_ptr<FileCacheMetadata> FileCacheMetadata::CreateCacheMetadata(
-    base::SequencedTaskRunner* blocking_task_runner) {
-  return scoped_ptr<FileCacheMetadata>(
-      new FileCacheMetadataDB(blocking_task_runner));
-}
-
-// static
-scoped_ptr<FileCacheMetadata>
-FileCacheMetadata::CreateCacheMetadataForTesting(
-    base::SequencedTaskRunner* blocking_task_runner) {
-  return scoped_ptr<FileCacheMetadata>(
-      new FakeCacheMetadata(blocking_task_runner));
+  return make_scoped_ptr(new Iterator(iter.Pass()));
 }
 
 void FileCacheMetadata::AssertOnSequencedWorkerPool() {

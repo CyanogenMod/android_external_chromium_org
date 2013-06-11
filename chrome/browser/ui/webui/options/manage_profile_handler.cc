@@ -9,7 +9,7 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -60,6 +60,20 @@ bool GetProfilePathFromArgs(const ListValue* args,
   return base::GetValueAsFilePath(*file_path_value, profile_file_path);
 }
 
+void OnNewDefaultProfileCreated(
+    chrome::HostDesktopType desktop_type,
+    Profile* profile,
+    Profile::CreateStatus status) {
+  if (status == Profile::CREATE_STATUS_INITIALIZED) {
+    ProfileManager::FindOrCreateNewWindowForProfile(
+      profile,
+      chrome::startup::IS_PROCESS_STARTUP,
+      chrome::startup::IS_FIRST_RUN,
+      desktop_type,
+      false);
+  }
+}
+
 }  // namespace
 
 ManageProfileHandler::ManageProfileHandler()
@@ -88,8 +102,11 @@ void ManageProfileHandler::GetLocalizedValues(
     { "createProfileTitle", IDS_PROFILES_CREATE_TITLE },
     { "createProfileInstructions", IDS_PROFILES_CREATE_INSTRUCTIONS },
     { "createProfileConfirm", IDS_PROFILES_CREATE_CONFIRM },
-    { "createProfileShortcut", IDS_PROFILES_CREATE_SHORTCUT },
-    { "removeProfileShortcut", IDS_PROFILES_REMOVE_SHORTCUT },
+    { "createProfileLocalError", IDS_PROFILES_CREATE_LOCAL_ERROR },
+    { "createProfileRemoteError", IDS_PROFILES_CREATE_REMOTE_ERROR },
+    { "createProfileShortcutCheckbox", IDS_PROFILES_CREATE_SHORTCUT_CHECKBOX },
+    { "createProfileShortcutButton", IDS_PROFILES_CREATE_SHORTCUT_BUTTON },
+    { "removeProfileShortcutButton", IDS_PROFILES_REMOVE_SHORTCUT_BUTTON },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -116,9 +133,6 @@ void ManageProfileHandler::InitializePage() {
 void ManageProfileHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("setProfileNameAndIcon",
       base::Bind(&ManageProfileHandler::SetProfileNameAndIcon,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("deleteProfile",
-      base::Bind(&ManageProfileHandler::DeleteProfile,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("requestDefaultProfileIcons",
       base::Bind(&ManageProfileHandler::RequestDefaultProfileIcons,
@@ -298,36 +312,6 @@ void ManageProfileHandler::SetProfileNameAndIcon(const ListValue* args) {
     cache.SetIsUsingGAIAPictureOfProfileAtIndex(profile_index, false);
   }
   ProfileMetrics::LogProfileUpdate(profile_file_path);
-}
-
-void ManageProfileHandler::DeleteProfile(const ListValue* args) {
-  DCHECK(args);
-#if defined(ENABLE_MANAGED_USERS)
-  // This handler could have been called in managed mode, for example because
-  // the user fiddled with the web inspector. Silently return in this case.
-  ManagedUserService* service =
-      ManagedUserServiceFactory::GetForProfile(Profile::FromWebUI(web_ui()));
-  if (service->ProfileIsManaged())
-    return;
-#endif
-
-  if (!ProfileManager::IsMultipleProfilesEnabled())
-    return;
-
-  ProfileMetrics::LogProfileDeleteUser(ProfileMetrics::PROFILE_DELETED);
-
-  base::FilePath profile_file_path;
-  if (!GetProfilePathFromArgs(args, &profile_file_path))
-    return;
-
-  Browser* browser =
-      chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
-  chrome::HostDesktopType desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
-  if (browser)
-    desktop_type = browser->host_desktop_type();
-
-  g_browser_process->profile_manager()->ScheduleProfileForDeletion(
-      profile_file_path, desktop_type);
 }
 
 #if defined(ENABLE_SETTINGS_APP)

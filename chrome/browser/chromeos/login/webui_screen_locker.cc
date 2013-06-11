@@ -5,11 +5,11 @@
 #include "chrome/browser/chromeos/login/webui_screen_locker.h"
 
 #include "ash/shell.h"
-#include "ash/wm/session_state_controller.h"
-#include "ash/wm/session_state_observer.h"
+#include "ash/wm/lock_state_controller.h"
+#include "ash/wm/lock_state_observer.h"
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
@@ -35,7 +35,7 @@
 namespace {
 
 // URL which corresponds to the login WebUI.
-const char kLoginURL[] = "chrome://oobe/login";
+const char kLoginURL[] = "chrome://oobe/login#lock";
 
 }  // namespace
 
@@ -50,11 +50,11 @@ WebUIScreenLocker::WebUIScreenLocker(ScreenLocker* screen_locker)
       webui_ready_(false),
       weak_factory_(this) {
   set_should_emit_login_prompt_visible(false);
-  ash::Shell::GetInstance()->session_state_controller()->AddObserver(this);
+  ash::Shell::GetInstance()->lock_state_controller()->AddObserver(this);
   DBusThreadManager::Get()->GetPowerManagerClient()->AddObserver(this);
 }
 
-void WebUIScreenLocker::LockScreen(bool unlock_on_input) {
+void WebUIScreenLocker::LockScreen() {
   gfx::Rect bounds(ash::Shell::GetScreen()->GetPrimaryDisplay().bounds());
 
   lock_time_ = base::TimeTicks::Now();
@@ -72,12 +72,10 @@ void WebUIScreenLocker::LockScreen(bool unlock_on_input) {
   // Subscribe to crash events.
   content::WebContentsObserver::Observe(GetWebContents());
 
-  // User list consisting of a single logged-in user.
-  UserList users(1, chromeos::UserManager::Get()->GetLoggedInUser());
   login_display_.reset(new WebUILoginDisplay(this));
   login_display_->set_background_bounds(bounds);
   login_display_->set_parent_window(GetNativeWindow());
-  login_display_->Init(users, false, true, false);
+  login_display_->Init(screen_locker()->users(), false, true, false);
 
   static_cast<OobeUI*>(GetWebUI()->GetController())->ShowSigninScreen(
       login_display_.get(), login_display_.get());
@@ -140,7 +138,8 @@ void WebUIScreenLocker::FocusUserPod() {
 
 WebUIScreenLocker::~WebUIScreenLocker() {
   DBusThreadManager::Get()->GetPowerManagerClient()->RemoveObserver(this);
-  ash::Shell::GetInstance()->session_state_controller()->RemoveObserver(this);
+  ash::Shell::GetInstance()->
+      lock_state_controller()->RemoveObserver(this);
   // In case of shutdown, lock_window_ may be deleted before WebUIScreenLocker.
   if (lock_window_) {
     lock_window_->RemoveObserver(this);
@@ -211,8 +210,7 @@ bool WebUIScreenLocker::IsSigninInProgress() const {
 }
 
 void WebUIScreenLocker::Login(const UserContext& user_context) {
-  chromeos::ScreenLocker::default_screen_locker()->Authenticate(
-      ASCIIToUTF16(user_context.password));
+  chromeos::ScreenLocker::default_screen_locker()->Authenticate(user_context);
 }
 
 void WebUIScreenLocker::LoginAsRetailModeUser() {
@@ -242,6 +240,10 @@ void WebUIScreenLocker::OnStartEnterpriseEnrollment() {
 }
 
 void WebUIScreenLocker::OnStartDeviceReset() {
+  NOTREACHED();
+}
+
+void WebUIScreenLocker::OnStartKioskAutolaunchScreen() {
   NOTREACHED();
 }
 
@@ -275,11 +277,11 @@ void WebUIScreenLocker::OnLockWindowReady() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// SessionStateObserver override.
+// SessionLockStateObserver override.
 
-void WebUIScreenLocker::OnSessionStateEvent(
-    ash::SessionStateObserver::EventType event) {
-  if (event == ash::SessionStateObserver::EVENT_LOCK_ANIMATION_FINISHED) {
+void WebUIScreenLocker::OnLockStateEvent(
+    ash::LockStateObserver::EventType event) {
+  if (event == ash::LockStateObserver::EVENT_LOCK_ANIMATION_FINISHED) {
     // Release capture if any.
     aura::client::GetCaptureClient(GetNativeWindow()->GetRootWindow())->
         SetCapture(NULL);

@@ -4,7 +4,7 @@
 
 #include "chrome/common/extensions/api/extension_action/page_action_handler.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -54,6 +54,12 @@ bool PageActionHandler::Parse(Extension* extension, string16* error) {
       *error = ASCIIToUTF16(errors::kInvalidPageAction);
       return false;
     }
+  }
+
+  // An extension cannot have both browser and page actions.
+  if (extension->manifest()->HasKey(keys::kBrowserAction)) {
+    *error = ASCIIToUTF16(errors::kOneUISurfaceOnly);
+    return false;
   }
 
   // If page_action_value is not NULL, then there was a valid page action.

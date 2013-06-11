@@ -73,7 +73,7 @@ const char kReceivingEndDoesntExistError[] =
 class ExtensionImpl : public extensions::ChromeV8Extension {
  public:
   explicit ExtensionImpl(extensions::Dispatcher* dispatcher,
-                         v8::Handle<v8::Context> context)
+                         extensions::ChromeV8Context* context)
       : extensions::ChromeV8Extension(dispatcher, context) {
     RouteFunction("CloseChannel",
         base::Bind(&ExtensionImpl::CloseChannel, base::Unretained(this)));
@@ -95,43 +95,65 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
     if (!renderview)
       return v8::Undefined();
 
-    if (args.Length() >= 2 && args[0]->IsInt32() && args[1]->IsString()) {
-      int port_id = args[0]->Int32Value();
-      if (!HasPortData(port_id)) {
-        return v8::ThrowException(v8::Exception::Error(
-          v8::String::New(kPortClosedError)));
-      }
-      std::string message = *v8::String::Utf8Value(args[1]->ToString());
-      renderview->Send(new ExtensionHostMsg_PostMessage(
-          renderview->GetRoutingID(), port_id, message));
+    // Arguments are (int32 port_id, object message).
+    CHECK_EQ(2, args.Length());
+    CHECK(args[0]->IsInt32());
+
+    int port_id = args[0]->Int32Value();
+    if (!HasPortData(port_id)) {
+      return v8::ThrowException(v8::Exception::Error(
+        v8::String::New(kPortClosedError)));
     }
+
+    // The message can be any base::Value but IPC can't serialize that, so we
+    // give it a singleton base::ListValue instead, or an empty list if the
+    // argument was undefined (v8 value converter will return NULL for this).
+    scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
+    scoped_ptr<base::Value> message(
+        converter->FromV8Value(args[1], context()->v8_context()));
+    ListValue message_as_list;
+    if (message)
+      message_as_list.Append(message.release());
+
+    renderview->Send(new ExtensionHostMsg_PostMessage(
+        renderview->GetRoutingID(), port_id, message_as_list));
+
     return v8::Undefined();
   }
 
   // Forcefully disconnects a port.
   v8::Handle<v8::Value> CloseChannel(const v8::Arguments& args) {
-    if (args.Length() >= 2 && args[0]->IsInt32() && args[1]->IsBoolean()) {
-      int port_id = args[0]->Int32Value();
-      if (!HasPortData(port_id)) {
-        return v8::Undefined();
-      }
-      // Send via the RenderThread because the RenderView might be closing.
-      bool notify_browser = args[1]->BooleanValue();
-      if (notify_browser)
-        content::RenderThread::Get()->Send(
-            new ExtensionHostMsg_CloseChannel(port_id, std::string()));
-      ClearPortData(port_id);
+    // Arguments are (int32 port_id, boolean notify_browser).
+    CHECK_EQ(2, args.Length());
+    CHECK(args[0]->IsInt32());
+    CHECK(args[1]->IsBoolean());
+
+    int port_id = args[0]->Int32Value();
+    if (!HasPortData(port_id))
+      return v8::Undefined();
+
+    // Send via the RenderThread because the RenderView might be closing.
+    bool notify_browser = args[1]->BooleanValue();
+    if (notify_browser) {
+      content::RenderThread::Get()->Send(
+          new ExtensionHostMsg_CloseChannel(port_id, std::string()));
     }
+
+    ClearPortData(port_id);
+
     return v8::Undefined();
   }
 
   // A new port has been created for a context.  This occurs both when script
   // opens a connection, and when a connection is opened to this script.
   v8::Handle<v8::Value> PortAddRef(const v8::Arguments& args) {
-    if (args.Length() >= 1 && args[0]->IsInt32()) {
-      int port_id = args[0]->Int32Value();
-      ++GetPortData(port_id).ref_count;
-    }
+    // Arguments are (int32 port_id).
+    CHECK_EQ(1, args.Length());
+    CHECK(args[0]->IsInt32());
+
+    int port_id = args[0]->Int32Value();
+    ++GetPortData(port_id).ref_count;
+
     return v8::Undefined();
   }
 
@@ -139,15 +161,18 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
   // frames with a reference to a given port, we will disconnect it and notify
   // the other end of the channel.
   v8::Handle<v8::Value> PortRelease(const v8::Arguments& args) {
-    if (args.Length() >= 1 && args[0]->IsInt32()) {
-      int port_id = args[0]->Int32Value();
-      if (HasPortData(port_id) && --GetPortData(port_id).ref_count == 0) {
-        // Send via the RenderThread because the RenderView might be closing.
-        content::RenderThread::Get()->Send(
-            new ExtensionHostMsg_CloseChannel(port_id, std::string()));
-        ClearPortData(port_id);
-      }
+    // Arguments are (int32 port_id).
+    CHECK_EQ(1, args.Length());
+    CHECK(args[0]->IsInt32());
+
+    int port_id = args[0]->Int32Value();
+    if (HasPortData(port_id) && --GetPortData(port_id).ref_count == 0) {
+      // Send via the RenderThread because the RenderView might be closing.
+      content::RenderThread::Get()->Send(
+          new ExtensionHostMsg_CloseChannel(port_id, std::string()));
+      ClearPortData(port_id);
     }
+
     return v8::Undefined();
   }
 
@@ -164,10 +189,9 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
   };
 
   static void GCCallback(v8::Isolate* isolate,
-                         v8::Persistent<v8::Value> object,
-                         void* parameter) {
+                         v8::Persistent<v8::Object>* object,
+                         GCCallbackArgs* args) {
     v8::HandleScope handle_scope;
-    GCCallbackArgs* args = static_cast<GCCallbackArgs*>(parameter);
     v8::Handle<v8::Context> context = args->callback->CreationContext();
     v8::Context::Scope context_scope(context);
     WebKit::WebScopedMicrotaskSuppression suppression;
@@ -195,7 +219,7 @@ namespace extensions {
 
 ChromeV8Extension* MiscellaneousBindings::Get(
     Dispatcher* dispatcher,
-    v8::Handle<v8::Context> context) {
+    ChromeV8Context* context) {
   return new ExtensionImpl(dispatcher, context);
 }
 
@@ -216,12 +240,17 @@ void MiscellaneousBindings::DispatchOnConnect(
   bool port_created = false;
   std::string source_url_spec = source_url.spec();
 
+  // TODO(kalman): pass in the full ChromeV8ContextSet; call ForEach.
   for (ChromeV8ContextSet::ContextSet::const_iterator it = contexts.begin();
        it != contexts.end(); ++it) {
     if (restrict_to_render_view &&
         restrict_to_render_view != (*it)->GetRenderView()) {
       continue;
     }
+
+    // TODO(kalman): remove when ContextSet::ForEach is available.
+    if ((*it)->v8_context().IsEmpty())
+      continue;
 
     v8::Handle<v8::Value> tab = v8::Null();
     if (!source_tab.empty())
@@ -236,27 +265,18 @@ void MiscellaneousBindings::DispatchOnConnect(
       v8::String::New(source_url_spec.c_str(), source_url_spec.size())
     };
 
-    v8::Handle<v8::Value> retval;
-    v8::TryCatch try_catch;
-    if (!(*it)->CallChromeHiddenMethod("Port.dispatchOnConnect",
-                                      arraysize(arguments), arguments,
-                                      &retval)) {
-      continue;
-    }
-
-    if (try_catch.HasCaught()) {
-      LOG(ERROR) << "Exception caught when calling Port.dispatchOnConnect.";
-      continue;
-    }
+    v8::Handle<v8::Value> retval = (*it)->module_system()->CallModuleMethod(
+        "miscellaneous_bindings",
+        "dispatchOnConnect",
+        arraysize(arguments), arguments);
 
     if (retval.IsEmpty()) {
-      LOG(ERROR) << "Empty return value from Port.dispatchOnConnect.";
+      LOG(ERROR) << "Empty return value from dispatchOnConnect.";
       continue;
     }
 
     CHECK(retval->IsBoolean());
-    if (retval->BooleanValue())
-      port_created = true;
+    port_created |= retval->BooleanValue();
   }
 
   // If we didn't create a port, notify the other end of the channel (treat it
@@ -272,10 +292,11 @@ void MiscellaneousBindings::DispatchOnConnect(
 void MiscellaneousBindings::DeliverMessage(
     const ChromeV8ContextSet::ContextSet& contexts,
     int target_port_id,
-    const std::string& message,
+    const base::ListValue& message,
     content::RenderView* restrict_to_render_view) {
   v8::HandleScope handle_scope;
 
+  // TODO(kalman): pass in the full ChromeV8ContextSet; call ForEach.
   for (ChromeV8ContextSet::ContextSet::const_iterator it = contexts.begin();
        it != contexts.end(); ++it) {
     if (restrict_to_render_view &&
@@ -283,32 +304,43 @@ void MiscellaneousBindings::DeliverMessage(
       continue;
     }
 
+    // TODO(kalman): remove when ContextSet::ForEach is available.
+    if ((*it)->v8_context().IsEmpty())
+      continue;
+
+    v8::Handle<v8::Context> context = (*it)->v8_context();
+    v8::Context::Scope context_scope(context);
+
     // Check to see whether the context has this port before bothering to create
     // the message.
     v8::Handle<v8::Value> port_id_handle = v8::Integer::New(target_port_id);
-    v8::Handle<v8::Value> has_port;
-    v8::TryCatch try_catch;
-    if (!(*it)->CallChromeHiddenMethod("Port.hasPort", 1, &port_id_handle,
-                                       &has_port)) {
-      continue;
-    }
-
-    if (try_catch.HasCaught()) {
-      LOG(ERROR) << "Exception caught when calling Port.hasPort.";
-      continue;
-    }
+    v8::Handle<v8::Value> has_port = (*it)->module_system()->CallModuleMethod(
+        "miscellaneous_bindings",
+        "hasPort",
+        1, &port_id_handle);
 
     CHECK(!has_port.IsEmpty());
     if (!has_port->BooleanValue())
       continue;
 
     std::vector<v8::Handle<v8::Value> > arguments;
-    arguments.push_back(v8::String::New(message.c_str(), message.size()));
+
+    // Convert the message to a v8 object; either a value or undefined.
+    // See PostMessage for more details.
+    if (message.empty()) {
+      arguments.push_back(v8::Undefined());
+    } else {
+      CHECK_EQ(1u, message.GetSize());
+      const base::Value* message_value = NULL;
+      message.Get(0, &message_value);
+      scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
+      arguments.push_back(converter->ToV8Value(message_value, context));
+    }
+
     arguments.push_back(port_id_handle);
-    CHECK((*it)->CallChromeHiddenMethod("Port.dispatchOnMessage",
-                                        arguments.size(),
-                                        &arguments[0],
-                                        NULL));
+    (*it)->module_system()->CallModuleMethod("miscellaneous_bindings",
+                                             "dispatchOnMessage",
+                                             &arguments);
   }
 }
 
@@ -320,12 +352,17 @@ void MiscellaneousBindings::DispatchOnDisconnect(
     content::RenderView* restrict_to_render_view) {
   v8::HandleScope handle_scope;
 
+  // TODO(kalman): pass in the full ChromeV8ContextSet; call ForEach.
   for (ChromeV8ContextSet::ContextSet::const_iterator it = contexts.begin();
        it != contexts.end(); ++it) {
     if (restrict_to_render_view &&
         restrict_to_render_view != (*it)->GetRenderView()) {
       continue;
     }
+
+    // TODO(kalman): remove when ContextSet::ForEach is available.
+    if ((*it)->v8_context().IsEmpty())
+      continue;
 
     std::vector<v8::Handle<v8::Value> > arguments;
     arguments.push_back(v8::Integer::New(port_id));
@@ -334,9 +371,9 @@ void MiscellaneousBindings::DispatchOnDisconnect(
     } else {
       arguments.push_back(v8::Null());
     }
-    (*it)->CallChromeHiddenMethod("Port.dispatchOnDisconnect",
-                                  arguments.size(), &arguments[0],
-                                  NULL);
+    (*it)->module_system()->CallModuleMethod("miscellaneous_bindings",
+                                             "dispatchOnDisconnect",
+                                             &arguments);
   }
 }
 

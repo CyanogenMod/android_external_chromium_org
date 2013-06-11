@@ -45,10 +45,10 @@
 #include "ppapi/thunk/ppb_gamepad_api.h"
 #include "ppapi/thunk/resource_creation_api.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/public/platform/WebCanvas.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebUserGestureToken.h"
 #include "ui/base/ime/text_input_type.h"
@@ -111,8 +111,7 @@ class PPB_URLLoader_Impl;
 class WEBKIT_PLUGINS_EXPORT PluginInstance :
     public base::RefCounted<PluginInstance>,
     public base::SupportsWeakPtr<PluginInstance>,
-    public ::ppapi::PPB_Instance_Shared,
-    public NON_EXPORTED_BASE(cc::TextureLayerClient) {
+    public ::ppapi::PPB_Instance_Shared {
  public:
   // Create and return a PluginInstance object which supports the most recent
   // version of PPP_Instance possible by querying the given get_plugin_interface
@@ -166,10 +165,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // full-frame plugins, as otherwise there could be other elements on top.  The
   // slow path can also be triggered if there is an overlapping frame.
   void ScrollRect(int dx, int dy, const gfx::Rect& rect);
-
-  // If the plugin instance is backed by a texture, return its texture ID in the
-  // compositor's namespace. Otherwise return 0. Returns 0 by default.
-  unsigned GetBackingTextureId();
 
   // Commit the backing texture to the screen once the side effects some
   // rendering up to an offscreen SwapBuffers are visible.
@@ -483,11 +478,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   virtual void DeliverSamples(PP_Instance instance,
                               PP_Resource audio_frames,
                               const PP_DecryptedBlockInfo* block_info) OVERRIDE;
-
-  // TextureLayerClient implementation.
-  virtual unsigned PrepareTexture(cc::ResourceUpdateQueue* queue) OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
-  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox) OVERRIDE;
 
   // Reset this instance as proxied. Assigns the instance a new module, resets
   // cached interfaces to point to the out-of-process proxy and re-sends

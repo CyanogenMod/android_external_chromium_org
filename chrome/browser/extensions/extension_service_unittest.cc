@@ -13,6 +13,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/json/json_reader.h"
@@ -22,10 +23,10 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/app_sync_data.h"
@@ -67,6 +68,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
@@ -104,8 +106,8 @@
 #include "testing/platform_test.h"
 #include "webkit/base/origin_url_conversions.h"
 #include "webkit/browser/database/database_tracker.h"
+#include "webkit/browser/quota/quota_manager.h"
 #include "webkit/plugins/npapi/mock_plugin_list.h"
-#include "webkit/quota/quota_manager.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/extensions/install_limiter.h"
@@ -284,6 +286,7 @@ class MockProviderVisitor
       : ids_found_(0),
         fake_base_path_(fake_base_path),
         expected_creation_flags_(Extension::NO_FLAGS) {
+    profile_.reset(new TestingProfile);
   }
 
   MockProviderVisitor(base::FilePath fake_base_path,
@@ -298,6 +301,7 @@ class MockProviderVisitor
     provider_.reset(new extensions::ExternalProviderImpl(
         this,
         new extensions::ExternalTestingLoader(json_data, fake_base_path_),
+        profile_.get(),
         Manifest::EXTERNAL_PREF,
         Manifest::EXTERNAL_PREF_DOWNLOAD,
         Extension::NO_FLAGS));
@@ -407,6 +411,7 @@ class MockProviderVisitor
   int expected_creation_flags_;
   scoped_ptr<extensions::ExternalProviderImpl> provider_;
   scoped_ptr<DictionaryValue> prefs_;
+  scoped_ptr<TestingProfile> profile_;
 
   DISALLOW_COPY_AND_ASSIGN(MockProviderVisitor);
 };
@@ -455,8 +460,8 @@ void ExtensionServiceTestBase::InitializeExtensionService(
       params.pref_file, loop_.message_loop_proxy());
   scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
       new user_prefs::PrefRegistrySyncable);
-  scoped_ptr<PrefServiceSyncable> prefs(builder.CreateSyncable(registry));
-  chrome::RegisterUserPrefs(registry);
+  scoped_ptr<PrefServiceSyncable> prefs(builder.CreateSyncable(registry.get()));
+  chrome::RegisterUserPrefs(registry.get());
   profile_builder.SetPrefService(prefs.Pass());
   profile_builder.SetPath(params.profile_path);
   profile_ = profile_builder.Build();
@@ -800,9 +805,9 @@ class ExtensionServiceTest
         EXPECT_EQ(1u, loaded_.size()) << path.value();
         EXPECT_EQ(expected_extensions_count_, service_->extensions()->size()) <<
             path.value();
-        extension = loaded_[0];
-        EXPECT_TRUE(service_->GetExtensionById(extension->id(), false)) <<
-            path.value();
+        extension = loaded_[0].get();
+        EXPECT_TRUE(service_->GetExtensionById(extension->id(), false))
+            << path.value();
       }
 
       for (std::vector<string16>::iterator err = errors.begin();
@@ -1212,7 +1217,7 @@ TEST_F(ExtensionServiceTest, LoadAllExtensionsFromDirectorySuccess) {
   AddPattern(&expected_patterns, "file:///*");
   AddPattern(&expected_patterns, "http://*.google.com/*");
   AddPattern(&expected_patterns, "https://*.google.com/*");
-  const Extension* extension = loaded_[0];
+  const Extension* extension = loaded_[0].get();
   const extensions::UserScriptList& scripts =
       extensions::ContentScriptsInfo::GetContentScripts(extension);
   ASSERT_EQ(2u, scripts.size());
@@ -1252,17 +1257,18 @@ TEST_F(ExtensionServiceTest, LoadAllExtensionsFromDirectorySuccess) {
   EXPECT_EQ(std::string("My extension 2"), loaded_[1]->name());
   EXPECT_EQ(std::string(), loaded_[1]->description());
   EXPECT_EQ(loaded_[1]->GetResourceURL("background.html"),
-            extensions::BackgroundInfo::GetBackgroundURL(loaded_[1]));
-  EXPECT_EQ(
-      0u, extensions::ContentScriptsInfo::GetContentScripts(loaded_[1]).size());
+            extensions::BackgroundInfo::GetBackgroundURL(loaded_[1].get()));
+  EXPECT_EQ(0u,
+            extensions::ContentScriptsInfo::GetContentScripts(loaded_[1].get())
+                .size());
 
   // We don't parse the plugins section on Chrome OS.
 #if defined(OS_CHROMEOS)
   EXPECT_TRUE(!extensions::PluginInfo::HasPlugins(loaded_[1]));
 #else
-  ASSERT_TRUE(extensions::PluginInfo::HasPlugins(loaded_[1]));
+  ASSERT_TRUE(extensions::PluginInfo::HasPlugins(loaded_[1].get()));
   const std::vector<extensions::PluginInfo>* plugins =
-      extensions::PluginInfo::GetPlugins(loaded_[1]);
+      extensions::PluginInfo::GetPlugins(loaded_[1].get());
   ASSERT_TRUE(plugins);
   ASSERT_EQ(2u, plugins->size());
   EXPECT_EQ(loaded_[1]->path().AppendASCII("content_plugin.dll").value(),
@@ -1279,9 +1285,9 @@ TEST_F(ExtensionServiceTest, LoadAllExtensionsFromDirectorySuccess) {
   EXPECT_EQ(std::string(good2), loaded_[index]->id());
   EXPECT_EQ(std::string("My extension 3"), loaded_[index]->name());
   EXPECT_EQ(std::string(), loaded_[index]->description());
-  EXPECT_EQ(
-      0u,
-      extensions::ContentScriptsInfo::GetContentScripts(loaded_[index]).size());
+  EXPECT_EQ(0u,
+            extensions::ContentScriptsInfo::GetContentScripts(
+                loaded_[index].get()).size());
   EXPECT_EQ(Manifest::INTERNAL, loaded_[index]->location());
 };
 
@@ -1349,8 +1355,8 @@ TEST_F(ExtensionServiceTest, CleanupOnStartup) {
   // Wait for GarbageCollectExtensions task to complete.
   loop_.RunUntilIdle();
 
-  file_util::FileEnumerator dirs(extensions_install_dir_, false,
-                                 file_util::FileEnumerator::DIRECTORIES);
+  base::FileEnumerator dirs(extensions_install_dir_, false,
+                            base::FileEnumerator::DIRECTORIES);
   size_t count = 0;
   while (!dirs.Next().empty())
     count++;
@@ -2410,8 +2416,9 @@ TEST_F(ExtensionServiceTest, InstallAppsWithUnlimitedStorage) {
   EXPECT_TRUE(extension->HasAPIPermission(
       APIPermission::kUnlimitedStorage));
   EXPECT_TRUE(extension->web_extent().MatchesURL(
-                  extension->GetFullLaunchURL()));
-  const GURL origin1(extension->GetFullLaunchURL().GetOrigin());
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension)));
+  const GURL origin1(
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension).GetOrigin());
   EXPECT_TRUE(profile_->GetExtensionSpecialStoragePolicy()->
       IsStorageUnlimited(origin1));
 
@@ -2423,8 +2430,9 @@ TEST_F(ExtensionServiceTest, InstallAppsWithUnlimitedStorage) {
   EXPECT_TRUE(extension->HasAPIPermission(
       APIPermission::kUnlimitedStorage));
   EXPECT_TRUE(extension->web_extent().MatchesURL(
-                  extension->GetFullLaunchURL()));
-  const GURL origin2(extension->GetFullLaunchURL().GetOrigin());
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension)));
+  const GURL origin2(
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension).GetOrigin());
   EXPECT_EQ(origin1, origin2);
   EXPECT_TRUE(profile_->GetExtensionSpecialStoragePolicy()->
       IsStorageUnlimited(origin2));
@@ -2457,7 +2465,8 @@ TEST_F(ExtensionServiceTest, InstallAppsAndCheckStorageProtection) {
   ASSERT_EQ(1u, service_->extensions()->size());
   EXPECT_TRUE(extension->is_app());
   const std::string id1 = extension->id();
-  const GURL origin1(extension->GetFullLaunchURL().GetOrigin());
+  const GURL origin1(
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension).GetOrigin());
   EXPECT_TRUE(profile_->GetExtensionSpecialStoragePolicy()->
       IsStorageProtected(origin1));
 
@@ -2466,7 +2475,8 @@ TEST_F(ExtensionServiceTest, InstallAppsAndCheckStorageProtection) {
   ValidatePrefKeyCount(++pref_count);
   ASSERT_EQ(2u, service_->extensions()->size());
   const std::string id2 = extension->id();
-  const GURL origin2(extension->GetFullLaunchURL().GetOrigin());
+  const GURL origin2(
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension).GetOrigin());
   ASSERT_NE(origin1, origin2);
   EXPECT_TRUE(profile_->GetExtensionSpecialStoragePolicy()->
       IsStorageProtected(origin2));
@@ -2825,8 +2835,8 @@ TEST_F(ExtensionServiceTest, LoadExtensionsWithPlugins) {
 
 namespace {
 
-bool IsExtension(const Extension& extension) {
-  return extension.GetType() == Manifest::TYPE_EXTENSION;
+bool IsExtension(const Extension* extension) {
+  return extension->GetType() == Manifest::TYPE_EXTENSION;
 }
 
 }  // namespace
@@ -2877,8 +2887,8 @@ TEST_F(ExtensionServiceTest, UpdatePendingExtension) {
 
 namespace {
 
-bool IsTheme(const Extension& extension) {
-  return extension.is_theme();
+bool IsTheme(const Extension* extension) {
+  return extension->is_theme();
 }
 
 }  // namespace
@@ -3971,7 +3981,8 @@ TEST_F(ExtensionServiceTest, ClearAppData) {
   const std::string id1 = extension->id();
   EXPECT_TRUE(extension->HasAPIPermission(
       APIPermission::kUnlimitedStorage));
-  const GURL origin1(extension->GetFullLaunchURL().GetOrigin());
+  const GURL origin1(
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension).GetOrigin());
   EXPECT_TRUE(profile_->GetExtensionSpecialStoragePolicy()->
       IsStorageUnlimited(origin1));
   base::string16 origin_id = webkit_base::GetOriginIdentifierFromURL(origin1);
@@ -3984,8 +3995,9 @@ TEST_F(ExtensionServiceTest, ClearAppData) {
   EXPECT_TRUE(extension->HasAPIPermission(
       APIPermission::kUnlimitedStorage));
   EXPECT_TRUE(extension->web_extent().MatchesURL(
-                  extension->GetFullLaunchURL()));
-  const GURL origin2(extension->GetFullLaunchURL().GetOrigin());
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension)));
+  const GURL origin2(
+      extensions::AppLaunchInfo::GetFullLaunchURL(extension).GetOrigin());
   EXPECT_EQ(origin1, origin2);
   EXPECT_TRUE(profile_->GetExtensionSpecialStoragePolicy()->
       IsStorageUnlimited(origin2));
@@ -4204,7 +4216,8 @@ void ExtensionServiceTest::TestExternalProvider(
   // Uninstall the extension and reload. Nothing should happen because the
   // preference should prevent us from reinstalling.
   std::string id = loaded_[0]->id();
-  bool no_uninstall = management_policy_->MustRemainEnabled(loaded_[0], NULL);
+  bool no_uninstall =
+      management_policy_->MustRemainEnabled(loaded_[0].get(), NULL);
   service_->UninstallExtension(id, false, NULL);
   loop_.RunUntilIdle();
 
@@ -4236,7 +4249,7 @@ void ExtensionServiceTest::TestExternalProvider(
   ValidateIntegerPref(good_crx, "state", Extension::ENABLED);
   ValidateIntegerPref(good_crx, "location", location);
 
-  if (management_policy_->MustRemainEnabled(loaded_[0], NULL)) {
+  if (management_policy_->MustRemainEnabled(loaded_[0].get(), NULL)) {
     EXPECT_EQ(2, provider->visit_count());
   } else {
     // Now test an externally triggered uninstall (deleting the registry key or
@@ -4578,6 +4591,19 @@ TEST_F(ExtensionServiceTest, ExternalPrefProvider) {
   {
     ScopedBrowserLocale guard("en-US");
     EXPECT_EQ(2, visitor.Visit(json_data));
+  }
+
+  // Test keep_if_present.
+  json_data =
+      "{"
+      "  \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\": {"
+      "    \"external_crx\": \"RandomExtension.crx\","
+      "    \"external_version\": \"1.0\","
+      "    \"keep_if_present\": true"
+      "  }"
+      "}";
+  {
+    EXPECT_EQ(0, visitor.Visit(json_data));
   }
 
   // Test is_bookmark_app.

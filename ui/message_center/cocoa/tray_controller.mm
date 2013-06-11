@@ -20,6 +20,10 @@
   return YES;
 }
 
+- (void)cancelOperation:(id)sender {
+  [self orderOut:self];
+}
+
 @end
 
 @implementation MCTrayController
@@ -27,7 +31,8 @@
 - (id)initWithMessageCenterTray:(message_center::MessageCenterTray*)tray {
   scoped_nsobject<MCTrayWindow> window(
       [[MCTrayWindow alloc] initWithContentRect:ui::kWindowSizeDeterminedLater
-                                      styleMask:NSBorderlessWindowMask
+                                      styleMask:NSBorderlessWindowMask |
+                                                NSNonactivatingPanelMask
                                         backing:NSBackingStoreBuffered
                                           defer:NO]);
   if ((self = [super initWithWindow:window])) {
@@ -47,27 +52,35 @@
   return self;
 }
 
-- (void)showTrayAt:(NSPoint)point {
+- (void)showTrayAtRightOf:(NSPoint)rightPoint atLeftOf:(NSPoint)leftPoint {
+  NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
+  NSRect screenFrame = [screen visibleFrame];
+
   NSRect frame = [[viewController_ view] frame];
-  frame.origin.x = point.x;
-  frame.origin.y = point.y - NSHeight(frame);
+
+  if (rightPoint.x + NSWidth(frame) < NSMaxX(screenFrame)) {
+    frame.origin.x = rightPoint.x;
+    frame.origin.y = rightPoint.y - NSHeight(frame);
+  } else {
+    frame.origin.x = leftPoint.x - NSWidth(frame);
+    frame.origin.y = leftPoint.y - NSHeight(frame);
+  }
+
   [[self window] setFrame:frame display:YES];
+  [viewController_ scrollToTop];
   [self showWindow:nil];
 }
 
 - (void)onMessageCenterTrayChanged {
-  CGFloat oldHeight = NSHeight([[viewController_ view] frame]);
   [viewController_ onMessageCenterTrayChanged];
-  CGFloat newHeight = NSHeight([[viewController_ view] frame]);
-
-  NSRect windowFrame = [[self window] frame];
-  CGFloat delta = newHeight - oldHeight;
-  windowFrame.origin.y -= delta;
-  windowFrame.size.height += delta;
-  [[self window] setFrame:windowFrame display:YES];
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification {
+  // The settings bubble data structures assume that the settings dialog is
+  // visible only for short periods of time: There's a fixed list of permissions
+  // for example.
+  [viewController_ hideSettings:self];
+
   tray_->HideMessageCenterBubble();
 }
 

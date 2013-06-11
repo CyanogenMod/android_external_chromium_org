@@ -5,7 +5,7 @@
 #include "net/proxy/proxy_resolver_v8_tracing.h"
 
 #include "base/bind.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/cancellation_flag.h"
@@ -471,7 +471,7 @@ ProxyResolverV8* ProxyResolverV8Tracing::Job::v8_resolver() {
   return parent_->v8_resolver_.get();
 }
 
-MessageLoop* ProxyResolverV8Tracing::Job::worker_loop() {
+base::MessageLoop* ProxyResolverV8Tracing::Job::worker_loop() {
   return parent_->thread_->message_loop();
 }
 
@@ -570,6 +570,36 @@ void ProxyResolverV8Tracing::Job::RecordMetrics() const {
     UPDATE_HISTOGRAMS("Net.ProxyResolver.BlockingDNSMode.");
 
 #undef UPDATE_HISTOGRAMS
+
+  // Histograms to better understand http://crbug.com/240536 -- long
+  // URLs can cause a significant slowdown in PAC execution. Figure out how
+  // severe this is in the wild.
+  if (!blocking_dns_) {
+    size_t url_size = url_.spec().size();
+
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "Net.ProxyResolver.URLSize", url_size, 1, 200000, 50);
+
+    if (url_size > 2048) {
+      UMA_HISTOGRAM_MEDIUM_TIMES("Net.ProxyResolver.ExecutionTime_UrlOver2K",
+                                 metrics_execution_time_);
+    }
+
+    if (url_size > 4096) {
+      UMA_HISTOGRAM_MEDIUM_TIMES("Net.ProxyResolver.ExecutionTime_UrlOver4K",
+                                 metrics_execution_time_);
+    }
+
+    if (url_size > 8192) {
+      UMA_HISTOGRAM_MEDIUM_TIMES("Net.ProxyResolver.ExecutionTime_UrlOver8K",
+                                 metrics_execution_time_);
+    }
+
+    if (url_size > 131072) {
+      UMA_HISTOGRAM_MEDIUM_TIMES("Net.ProxyResolver.ExecutionTime_UrlOver128K",
+                                 metrics_execution_time_);
+    }
+  }
 }
 
 
@@ -1077,7 +1107,7 @@ ProxyResolverV8Tracing::ProxyResolverV8Tracing(
 
 ProxyResolverV8Tracing::~ProxyResolverV8Tracing() {
   // Note, all requests should have been cancelled.
-  CHECK(!set_pac_script_job_);
+  CHECK(!set_pac_script_job_.get());
   CHECK_EQ(0, num_outstanding_callbacks_);
 
   // Join the worker thread. See http://crbug.com/69710. Note that we call
@@ -1094,7 +1124,7 @@ int ProxyResolverV8Tracing::GetProxyForURL(const GURL& url,
                                            const BoundNetLog& net_log) {
   DCHECK(CalledOnValidThread());
   DCHECK(!callback.is_null());
-  DCHECK(!set_pac_script_job_);
+  DCHECK(!set_pac_script_job_.get());
 
   scoped_refptr<Job> job = new Job(this);
 
@@ -1116,7 +1146,7 @@ LoadState ProxyResolverV8Tracing::GetLoadState(RequestHandle request) const {
 }
 
 void ProxyResolverV8Tracing::CancelSetPacScript() {
-  DCHECK(set_pac_script_job_);
+  DCHECK(set_pac_script_job_.get());
   set_pac_script_job_->Cancel();
   set_pac_script_job_ = NULL;
 }
@@ -1139,7 +1169,7 @@ int ProxyResolverV8Tracing::SetPacScript(
   // Note that there should not be any outstanding (non-cancelled) Jobs when
   // setting the PAC script (ProxyService should guarantee this). If there are,
   // then they might complete in strange ways after the new script is set.
-  DCHECK(!set_pac_script_job_);
+  DCHECK(!set_pac_script_job_.get());
   CHECK_EQ(0, num_outstanding_callbacks_);
 
   set_pac_script_job_ = new Job(this);

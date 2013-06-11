@@ -12,7 +12,7 @@
 #include "base/lazy_instance.h"
 #include "base/md5.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
@@ -318,7 +318,8 @@ void DevToolsFileHelper::AddUserConfirmedFileSystem(
   DictionaryPrefUpdate update(profile_->GetPrefs(),
                               prefs::kDevToolsFileSystemPaths);
   DictionaryValue* file_systems_paths_value = update.Get();
-  file_systems_paths_value->Set(file_system_path, Value::CreateNullValue());
+  file_systems_paths_value->SetWithoutPathExpansion(file_system_path,
+                                                    Value::CreateNullValue());
 
   FileSystem filesystem = CreateFileSystemStruct(web_contents_,
                                                  file_system_id,

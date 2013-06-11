@@ -14,7 +14,7 @@
 #include "base/memory/singleton.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
@@ -229,6 +229,26 @@ const Experiment::Choice kSimpleCacheBackendChoices[] = {
     switches::kUseSimpleCacheBackend, "on"}
 };
 
+const Experiment::Choice kTabCaptureUpscaleQualityChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_FAST,
+    switches::kTabCaptureUpscaleQuality, "fast" },
+  { IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_GOOD,
+    switches::kTabCaptureUpscaleQuality, "good" },
+  { IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_BEST,
+    switches::kTabCaptureUpscaleQuality, "best" },
+};
+
+const Experiment::Choice kTabCaptureDownscaleQualityChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_FAST,
+    switches::kTabCaptureDownscaleQuality, "fast" },
+  { IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_GOOD,
+    switches::kTabCaptureDownscaleQuality, "good" },
+  { IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_BEST,
+    switches::kTabCaptureDownscaleQuality, "best" },
+};
+
 // RECORDING USER METRICS FOR FLAGS:
 // -----------------------------------------------------------------------------
 // The first line of the experiment is the internal name. If you'd like to
@@ -283,31 +303,6 @@ const Experiment kExperiments[] = {
     kOsWin,
     SINGLE_VALUE_TYPE(switches::kConflictingModulesCheck)
   },
-  {
-    "cloud-print-proxy",  // FLAGS:RECORD_UMA
-    IDS_FLAGS_CLOUD_PRINT_CONNECTOR_NAME,
-    IDS_FLAGS_CLOUD_PRINT_CONNECTOR_DESCRIPTION,
-    // For a Chrome build, we know we have a PDF plug-in on Windows, so it's
-    // fully enabled.
-    // Otherwise, where we know Windows could be working if a viable PDF
-    // plug-in could be supplied, we'll keep the lab enabled. Mac and Linux
-    // always have PDF rasterization available, so no flag needed there.
-#if !defined(GOOGLE_CHROME_BUILD)
-    kOsWin,
-#else
-    0,
-#endif
-    SINGLE_VALUE_TYPE(switches::kEnableCloudPrintProxy)
-  },
-#if defined(OS_WIN)
-  {
-    "print-raster",
-    IDS_FLAGS_PRINT_RASTER_NAME,
-    IDS_FLAGS_PRINT_RASTER_DESCRIPTION,
-    kOsWin,
-    SINGLE_VALUE_TYPE(switches::kPrintRaster)
-  },
-#endif  // OS_WIN
   {
     "ignore-gpu-blacklist",
     IDS_FLAGS_IGNORE_GPU_BLACKLIST_NAME,
@@ -688,6 +683,14 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableAutologin)
   },
   {
+    "enable-quic",
+    IDS_FLAGS_ENABLE_QUIC_NAME,
+    IDS_FLAGS_ENABLE_QUIC_DESCRIPTION,
+    kOsAll,
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableQuic,
+                              switches::kDisableQuic)
+  },
+  {
     "enable-async-dns",
     IDS_FLAGS_ENABLE_ASYNC_DNS_NAME,
     IDS_FLAGS_ENABLE_ASYNC_DNS_DESCRIPTION,
@@ -695,6 +698,15 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableAsyncDns,
                               switches::kDisableAsyncDns)
   },
+#if defined(ANDROID) && !defined(GOOGLE_TV)
+  {
+    "enable-media-source",
+    IDS_FLAGS_ENABLE_WEBKIT_MEDIA_SOURCE_NAME,
+    IDS_FLAGS_ENABLE_WEBKIT_MEDIA_SOURCE_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableWebKitMediaSource)
+  },
+#else
   {
     "disable-media-source",
     IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_NAME,
@@ -702,12 +714,20 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kDisableWebKitMediaSource)
   },
+#endif
+  {
+    "enable-encrypted-media",
+    IDS_FLAGS_ENABLE_ENCRYPTED_MEDIA_NAME,
+    IDS_FLAGS_ENABLE_ENCRYPTED_MEDIA_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kEnableEncryptedMedia)
+  },
   {
     "disable-encrypted-media",
-    IDS_FLAGS_DISABLE_ENCRYPTED_MEDIA_NAME,
-    IDS_FLAGS_DISABLE_ENCRYPTED_MEDIA_DESCRIPTION,
+    IDS_FLAGS_DISABLE_PREFIXED_ENCRYPTED_MEDIA_NAME,
+    IDS_FLAGS_DISABLE_PREFIXED_ENCRYPTED_MEDIA_DESCRIPTION,
     kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kDisableEncryptedMedia)
+    SINGLE_VALUE_TYPE(switches::kDisableLegacyEncryptedMedia)
   },
   {
     "enable-opus-playback",
@@ -812,13 +832,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_CSS_SHADERS_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kEnableCssShaders)
-  },
-  {
-    "enable-extension-activity-ui",
-    IDS_FLAGS_ENABLE_EXTENSION_ACTIVITY_UI_NAME,
-    IDS_FLAGS_ENABLE_EXTENSION_ACTIVITY_UI_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableExtensionActivityUI)
   },
   {
     "disable-ntp-other-sessions-menu",
@@ -968,13 +981,6 @@ const Experiment kExperiments[] = {
   },
 #endif
   {
-    "use-client-login-signin-flow",
-    IDS_FLAGS_USE_CLIENT_LOGIN_SIGNIN_FLOW_NAME,
-    IDS_FLAGS_USE_CLIENT_LOGIN_SIGNIN_FLOW_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux,
-    SINGLE_VALUE_TYPE(switches::kUseClientLoginSigninFlow)
-  },
-  {
     "enable-desktop-guest-mode",
     IDS_FLAGS_DESKTOP_GUEST_MODE_NAME,
     IDS_FLAGS_DESKTOP_GUEST_MODE_DESCRIPTION,
@@ -1082,13 +1088,6 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kDisableQuickofficeComponentApp),
   },
-  {
-    "enable-kiosk-app-settings",
-    IDS_FLAGS_ENABLE_KIOSK_APP_SETTINGS_NAME,
-    IDS_FLAGS_ENABLE_KIOSK_APP_SETTINGS_DESCRIPTION,
-    kOsCrOSOwnerOnly,
-    SINGLE_VALUE_TYPE(chromeos::switches::kEnableKioskAppSettings),
-  },
 #endif  // defined(OS_CHROMEOS)
   {
     "views-textfield",
@@ -1141,11 +1140,11 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kAshDisableTabScrubbing),
   },
-  { "ash-drag-and-drop-applist-to-launcher",
+  { "ash-disable-drag-and-drop-applist-to-launcher",
     IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_NAME,
     IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshDragAndDropAppListToLauncher),
+    SINGLE_VALUE_TYPE(ash::switches::kAshDisableDragAndDropAppListToLauncher),
   },
   { "ash-enable-workspace-scrubbing",
     IDS_FLAGS_ENABLE_WORKSPACE_SCRUBBING_NAME,
@@ -1175,6 +1174,12 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONFIGURATION_HANDLERS_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kUseNewNetworkConfigurationHandlers),
+  },
+  { "use-new-network-connection-handler",
+    IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONNECTION_HANDLER_NAME,
+    IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONNECTION_HANDLER_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(chromeos::switches::kUseNewNetworkConnectionHandler),
   },
   {
     "ash-enable-new-audio-handler2",
@@ -1394,17 +1399,10 @@ const Experiment kExperiments[] = {
     "enable-google-now",
     IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_NAME,
     IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_DESCRIPTION,
-    kOsWin | kOsCrOS,
+    kOsWin | kOsCrOS | kOsMac,
     SINGLE_VALUE_TYPE(switches::kEnableGoogleNowIntegration)
   },
 #endif
-  {
-    "enable-translate-alpha-languages",
-    IDS_FLAGS_ENABLE_TRANSLATE_ALPHA_LANGUAGES_NAME,
-    IDS_FLAGS_ENABLE_TRANSLATE_ALPHA_LANGUAGES_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableTranslateAlphaLanguages)
-  },
 #if defined(OS_CHROMEOS)
   {
     "enable-virtual-keyboard",
@@ -1418,7 +1416,7 @@ const Experiment kExperiments[] = {
     "enable-simple-cache-backend",
     IDS_FLAGS_ENABLE_SIMPLE_CACHE_BACKEND_NAME,
     IDS_FLAGS_ENABLE_SIMPLE_CACHE_BACKEND_DESCRIPTION,
-    kOsAndroid,
+    kOsAll,
     MULTI_VALUE_TYPE(kSimpleCacheBackendChoices)
   },
   {
@@ -1463,6 +1461,13 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kEnableResetProfileSettings)
   },
+  {
+    "enable-device-discovery",
+    IDS_FLAGS_ENABLE_DEVICE_DISCOVERY_NAME,
+    IDS_FLAGS_ENABLE_DEVICE_DISCOVERY_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kEnableDeviceDiscovery)
+  },
 #if defined(OS_MACOSX)
   {
     "enable-app-list-shim",
@@ -1470,6 +1475,69 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_APP_LIST_SHIM_DESCRIPTION,
     kOsMac,
     SINGLE_VALUE_TYPE(switches::kEnableAppListShim)
+  },
+  {
+    "enable-app-shims",
+    IDS_FLAGS_ENABLE_APP_SHIMS_NAME,
+    IDS_FLAGS_ENABLE_APP_SHIMS_DESCRIPTION,
+    kOsMac,
+    SINGLE_VALUE_TYPE(switches::kEnableAppShims)
+  },
+#endif
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
+  {
+    "enable-omnibox-auto-completion-for-ime",
+    IDS_FLAGS_ENABLE_OMNIBOX_AUTO_COMPLETION_FOR_IME_NAME,
+    IDS_FLAGS_ENABLE_OMNIBOX_AUTO_COMPLETION_FOR_IME_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnableOmniboxAutoCompletionForIme)
+  },
+#endif
+#if defined(USE_AURA)
+  {
+    "tab-capture-upscale-quality",
+    IDS_FLAGS_TAB_CAPTURE_UPSCALE_QUALITY_NAME,
+    IDS_FLAGS_TAB_CAPTURE_UPSCALE_QUALITY_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kTabCaptureUpscaleQualityChoices)
+  },
+  {
+    "tab-capture-downscale-quality",
+    IDS_FLAGS_TAB_CAPTURE_DOWNSCALE_QUALITY_NAME,
+    IDS_FLAGS_TAB_CAPTURE_DOWNSCALE_QUALITY_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kTabCaptureDownscaleQualityChoices)
+  },
+#endif
+  {
+    "enable-spelling-service-feedback",
+    IDS_FLAGS_ENABLE_SPELLING_SERVICE_FEEDBACK_NAME,
+    IDS_FLAGS_ENABLE_SPELLING_SERVICE_FEEDBACK_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableSpellingServiceFeedback)
+  },
+  {
+    "enable-webgl-draft-extensions",
+    IDS_FLAGS_ENABLE_WEBGL_DRAFT_EXTENSIONS_NAME,
+    IDS_FLAGS_ENABLE_WEBGL_DRAFT_EXTENSIONS_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kEnableWebGLDraftExtensions)
+  },
+  {
+    "high-dpi-support",
+    IDS_FLAGS_HIDPI_NAME,
+    IDS_FLAGS_HIDPI_DESCRIPTION,
+    kOsWin,
+    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(switches::kHighDPISupport,"1",
+        switches::kHighDPISupport,"0")
+  },
+#if defined(OS_CHROMEOS)
+  {
+    "enable-quickoffice-editing",
+    IDS_FLAGS_ENABLE_QUICKOFFICE_DESKTOP_EDIT_NAME,
+    IDS_FLAGS_ENABLE_QUICKOFFICE_DESKTOP_EDIT_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnableQuickofficeEdit),
   },
 #endif
 };

@@ -8,9 +8,9 @@
 
 #include "ash/display/display_info.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/size_f.h"
@@ -36,7 +36,8 @@ DisplayInfo DisplayInfo::CreateFromSpecWithID(const std::string& spec,
   const int kDefaultHostWindowWidth = 1366;
   const int kDefaultHostWindowHeight = 768;
 
-  static int64 synthesized_display_id = 1000;
+  // Use larger than max int to catch overflow early.
+  static int64 synthesized_display_id = 2200000000LL;
 
 #if defined(OS_WIN)
   gfx::Rect bounds(aura::RootWindowHost::GetNativeScreenSize());

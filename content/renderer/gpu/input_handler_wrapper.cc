@@ -6,7 +6,7 @@
 
 #include "content/renderer/gpu/input_event_filter.h"
 #include "content/renderer/gpu/input_handler_manager.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
+#include "third_party/WebKit/public/platform/Platform.h"
 
 namespace content {
 
@@ -39,14 +39,6 @@ void InputHandlerWrapper::TransferActiveWheelFlingAnimation(
 
 void InputHandlerWrapper::WillShutdown() {
   input_handler_manager_->RemoveInputHandler(routing_id_);
-}
-
-void InputHandlerWrapper::DidHandleInputEvent() {
-  input_handler_manager_->filter()->DidHandleInputEvent();
-}
-
-void InputHandlerWrapper::DidNotHandleInputEvent(bool send_to_widget) {
-  input_handler_manager_->filter()->DidNotHandleInputEvent(send_to_widget);
 }
 
 WebKit::WebGestureCurve* InputHandlerWrapper::CreateFlingAnimationCurve(

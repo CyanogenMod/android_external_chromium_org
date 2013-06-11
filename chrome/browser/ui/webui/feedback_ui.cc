@@ -10,14 +10,15 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/files/file_enumerator.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
@@ -581,7 +582,7 @@ void FeedbackHandler::GetMostRecentScreenshotsDrive(
 
 
 void FeedbackHandler::HandleSendReport(const ListValue* list_value) {
-  if (!feedback_data_) {
+  if (!feedback_data_.get()) {
     LOG(ERROR) << "Bug report hasn't been intialized yet.";
     return;
   }
@@ -704,9 +705,8 @@ void FeedbackUI::GetMostRecentScreenshots(
   std::string pattern =
       std::string(ScreenshotSource::kScreenshotPrefix) + "*" +
                   ScreenshotSource::kScreenshotSuffix;
-  file_util::FileEnumerator screenshots(filepath, false,
-                                        file_util::FileEnumerator::FILES,
-                                        pattern);
+  base::FileEnumerator screenshots(filepath, false,
+                                   base::FileEnumerator::FILES, pattern);
   base::FilePath screenshot = screenshots.Next();
 
   std::vector<std::string> screenshot_filepaths;

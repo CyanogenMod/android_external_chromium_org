@@ -16,7 +16,7 @@
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/time.h"
 #include "base/version.h"
 #include "chrome/browser/extensions/updater/request_queue_impl.h"
@@ -197,7 +197,7 @@ bool ExtensionDownloader::AddExtension(const Extension& extension,
   // data.  At the moment there is no extra data that an extension can
   // communicate to the the gallery update servers.
   std::string update_url_data;
-  if (!extension.UpdatesFromGallery())
+  if (!ManifestURL::UpdatesFromGallery(&extension))
     update_url_data = delegate_->GetUpdateUrlData(extension.id());
 
   return AddExtensionData(extension.id(), *extension.version(),

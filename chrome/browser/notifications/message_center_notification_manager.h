@@ -34,6 +34,9 @@ class MessageCenterNotificationManager
   // NotificationUIManager
   virtual bool DoesIdExist(const std::string& notification_id) OVERRIDE;
   virtual bool CancelById(const std::string& notification_id) OVERRIDE;
+  virtual std::set<std::string> GetAllIdsByProfileAndSourceOrigin(
+      Profile* profile,
+      const GURL& source) OVERRIDE;
   virtual bool CancelAllBySourceOrigin(const GURL& source_origin) OVERRIDE;
   virtual bool CancelAllByProfile(Profile* profile) OVERRIDE;
   virtual void CancelAll() OVERRIDE;
@@ -49,11 +52,13 @@ class MessageCenterNotificationManager
   virtual void DisableNotificationsFromSource(
       const std::string& notification_id) OVERRIDE;
   virtual void ShowSettings(const std::string& notification_id) OVERRIDE;
-  virtual void ShowSettingsDialog(gfx::NativeView context) OVERRIDE;
+  virtual message_center::NotifierSettingsDelegate* ShowSettingsDialog(
+      gfx::NativeView context) OVERRIDE;
 
   // MessageCenterObserver
   virtual void OnNotificationRemoved(const std::string& notification_id,
                                      bool by_user) OVERRIDE;
+  virtual void OnNotificationCenterClosed() OVERRIDE;
 
  private:
   class ImageDownloadsObserver {

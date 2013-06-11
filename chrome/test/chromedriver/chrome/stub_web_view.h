@@ -20,7 +20,7 @@ class StubWebView : public WebView {
   // Overridden from WebView:
   virtual std::string GetId() OVERRIDE;
   virtual Status ConnectIfNecessary() OVERRIDE;
-  virtual DevToolsClient* GetDevToolsClient() OVERRIDE;
+  virtual Status HandleReceivedEvents() OVERRIDE;
   virtual Status Load(const std::string& url) OVERRIDE;
   virtual Status Reload() OVERRIDE;
   virtual Status EvaluateScript(const std::string& frame,
@@ -51,8 +51,8 @@ class StubWebView : public WebView {
   virtual Status GetCookies(scoped_ptr<base::ListValue>* cookies) OVERRIDE;
   virtual Status DeleteCookie(const std::string& name,
                               const std::string& url) OVERRIDE;
-  virtual Status WaitForPendingNavigations(
-      const std::string& frame_id) OVERRIDE;
+  virtual Status WaitForPendingNavigations(const std::string& frame_id,
+                                           int timeout) OVERRIDE;
   virtual Status IsPendingNavigation(
       const std::string& frame_id, bool* is_pending) OVERRIDE;
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;

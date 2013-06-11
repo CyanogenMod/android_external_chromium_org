@@ -5,7 +5,7 @@
 #include "chrome/test/chromedriver/chrome/performance_logger.h"
 
 #include "base/json/json_writer.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/devtools_client.h"
 #include "chrome/test/chromedriver/chrome/log.h"
@@ -14,16 +14,16 @@
 namespace {
 
 // DevTools event domain prefixes to intercept.
-const char* kDomains[] = {"Network.", "Page.", "Timeline."};
+const char* const kDomains[] = {"Network.", "Page.", "Timeline."};
 
-const char* kDomainEnableCommands[] = {
+const char* const kDomainEnableCommands[] = {
     "Network.enable", "Page.enable", "Timeline.start"
 };
 
 // Returns whether the event belongs to one of kDomains.
 bool ShouldLogEvent(const std::string& method) {
   for (size_t i_domain = 0; i_domain < arraysize(kDomains); ++i_domain) {
-    if (StartsWithASCII(method, kDomains[i_domain], true))
+    if (StartsWithASCII(method, kDomains[i_domain], true /* case_sensitive */))
       return true;
   }
   return false;
@@ -44,13 +44,12 @@ Status PerformanceLogger::OnConnected(DevToolsClient* client) {
   return Status(kOk);
 }
 
-void PerformanceLogger::OnEvent(
+Status PerformanceLogger::OnEvent(
     DevToolsClient* client,
     const std::string& method,
     const base::DictionaryValue& params) {
-  if (!ShouldLogEvent(method)) {
-    return;
-  }
+  if (!ShouldLogEvent(method))
+    return Status(kOk);
 
   base::DictionaryValue log_message_dict;
   log_message_dict.SetString("webview", client->GetId());
@@ -62,4 +61,5 @@ void PerformanceLogger::OnEvent(
   base::JSONWriter::Write(&log_message_dict, &log_message_json);
 
   log_->AddEntry(Log::kLog, log_message_json);
+  return Status(kOk);
 }

@@ -12,22 +12,6 @@
 var ScrollBar = cr.ui.define('div');
 
 /**
- * Creates a vertical scrollbar.
- *
- * @param {Element} parent Parent element, must have a relative or absolute
- *     positioning.
- * @param {Element=} opt_scrollableArea Element with scrollable contents.
- *     If not passed, then call attachToView manually when the scrollable
- *     element becomes available.
- */
-ScrollBar.createVertical = function(parent, opt_scrollableArea) {
-  var scrollbar = new ScrollBar();
-  parent.appendChild(scrollbar);
-  if (opt_scrollableArea)
-    scrollbar.attachToView(opt_scrollableArea);
-};
-
-/**
  * Mode of the scrollbar. As for now, only vertical scrollbars are supported.
  * @type {number}
  */
@@ -70,10 +54,21 @@ ScrollBar.prototype.decorate = function() {
                                 this.onButtonPressed_.bind(this));
   window.addEventListener('mouseup', this.onMouseUp_.bind(this));
   window.addEventListener('mousemove', this.onMouseMove_.bind(this));
+};
 
-  // Unfortunately we need to pool, since we can't easily detect resizing
-  // and content changes.
-  setInterval(this.redraw_.bind(this), 50);
+/**
+ * Initialize a scrollbar.
+ *
+ * @param {Element} parent Parent element, must have a relative or absolute
+ *     positioning.
+ * @param {Element=} opt_scrollableArea Element with scrollable contents.
+ *     If not passed, then call attachToView manually when the scrollable
+ *     element becomes available.
+ */
+ScrollBar.prototype.initialize = function(parent, opt_scrollableArea) {
+  parent.appendChild(this);
+  if (opt_scrollableArea)
+    this.attachToView(opt_scrollableArea);
 };
 
 /**
@@ -83,7 +78,10 @@ ScrollBar.prototype.decorate = function() {
 ScrollBar.prototype.attachToView = function(view) {
   this.view_ = view;
   this.view_.addEventListener('scroll', this.onScroll_.bind(this));
-  this.redraw_();
+  this.view_.addEventListener('relayout', this.onRelayout_.bind(this));
+  this.domObserver_ = new WebKitMutationObserver(this.onDomChanged_.bind(this));
+  this.domObserver_.observe(this.view_, {subtree: true, attributes: true});
+  this.onRelayout_();
 };
 
 /**
@@ -91,6 +89,19 @@ ScrollBar.prototype.attachToView = function(view) {
  * @private
  */
 ScrollBar.prototype.onScroll_ = function() {
+  this.scrollTop_ = this.view_.scrollTop;
+  this.redraw_();
+};
+
+/**
+ * Relayout handler.
+ * @private
+ */
+ScrollBar.prototype.onRelayout_ = function() {
+  this.scrollHeight_ = this.view_.scrollHeight;
+  this.clientHeight_ = this.view_.clientHeight;
+  this.offsetTop_ = this.view_.offsetTop;
+  this.scrollTop_ = this.view_.scrollTop;
   this.redraw_();
 };
 
@@ -134,16 +145,35 @@ ScrollBar.prototype.onMouseMove_ = function(event) {
     this.onMouseUp_(event);
     return;
   }
-  var clientSize = this.view_.clientHeight;
-  var totalSize = this.view_.scrollHeight;
+  var clientSize = this.getClientHeight();
+  var totalSize = this.getTotalHeight();
   var buttonSize = Math.max(50, clientSize / totalSize * clientSize);
 
   var buttonPosition = this.buttonPressedPosition_ +
       (event.screenY - this.buttonPressedEvent_.screenY);
+  // Ensures the scrollbar is in the view.
+  buttonPosition =
+      Math.max(0, Math.min(buttonPosition, clientSize - buttonSize));
   var scrollPosition = totalSize * (buttonPosition / clientSize);
 
+  this.scrollTop_ = scrollPosition;
   this.view_.scrollTop = scrollPosition;
   this.redraw_();
+};
+
+/**
+ * Handles changed in Dom by redrawing the scrollbar. Ignores consecutive calls.
+ * @private
+ */
+ScrollBar.prototype.onDomChanged_ = function() {
+  if (this.domChangedTimer_) {
+    clearTimeout(this.domChangedTimer_);
+    this.domChangedTimer_ = null;
+  }
+  this.domChangedTimer_ = setTimeout(function() {
+    this.onRelayout_();
+    this.domChangedTimer_ = null;
+  }.bind(this), 50);
 };
 
 /**
@@ -154,17 +184,100 @@ ScrollBar.prototype.redraw_ = function() {
   if (!this.view_)
     return;
 
-  var clientSize = this.view_.clientHeight;
-  var clientTop = this.view_.offsetTop;
-  var scrollPosition = this.view_.scrollTop;
-  var totalSize = this.view_.scrollHeight;
-
-  this.hidden = totalSize <= clientSize;
+  var clientSize = this.getClientHeight();
+  var clientTop = this.offsetTop_;
+  var scrollPosition = this.scrollTop_;
+  var totalSize = this.getTotalHeight();
+  var hidden = totalSize <= clientSize;
 
   var buttonSize = Math.max(50, clientSize / totalSize * clientSize);
   var buttonPosition = scrollPosition / (totalSize - clientSize) *
       (clientSize - buttonSize);
+  var buttonTop = buttonPosition + clientTop;
 
-  this.button_.style.top = buttonPosition + clientTop + 'px';
-  this.button_.style.height = buttonSize + 'px';
+  var time = Date.now();
+  if (this.hidden != hidden ||
+      this.lastButtonTop_ != buttonTop ||
+      this.lastButtonSize_ != buttonSize) {
+    requestAnimationFrame(function() {
+      this.hidden = hidden;
+      this.button_.style.top = buttonTop + 'px';
+      this.button_.style.height = buttonSize + 'px';
+    }.bind(this));
+  }
+
+  this.lastButtonTop_ = buttonTop;
+  this.lastButtonSize_ = buttonSize;
+};
+
+/**
+ * Returns the viewport height of the view.
+ * @return {number} The viewport height of the view in px.
+ * @protected
+ */
+ScrollBar.prototype.getClientHeight = function() {
+  return this.clientHeight_;
+};
+
+/**
+ * Returns the total height of the view.
+ * @return {number} The total height of the view in px.
+ * @protected
+ */
+ScrollBar.prototype.getTotalHeight = function() {
+  return this.scrollHeight_;
+};
+
+/**
+ * Creates a new scroll bar for elements in the main panel.
+ * @extends {ScrollBar}
+ * @constructor
+ */
+var MainPanelScrollBar = cr.ui.define('div');
+
+/**
+ * Inherits after ScrollBar.
+ */
+MainPanelScrollBar.prototype.__proto__ = ScrollBar.prototype;
+
+/** @override */
+MainPanelScrollBar.prototype.decorate = function() {
+  ScrollBar.prototype.decorate.call(this);
+
+  /**
+   * Margin for the transparent preview panel at the bottom.
+   * @type {number}
+   * @private
+   */
+  this.bottomMarginForPanel_ = 0;
+};
+
+/**
+ * GReturns the viewport height of the view, considering the preview panel.
+ *
+ * @return {number} The viewport height of the view in px.
+ * @override
+ * @protected
+ */
+MainPanelScrollBar.prototype.getClientHeight = function() {
+  return this.clientHeight_ - this.bottomMarginForPanel_;
+};
+
+/**
+ * Returns the total height of the view, considering the preview panel.
+ *
+ * @return {number} The total height of the view in px.
+ * @override
+ * @protected
+ */
+MainPanelScrollBar.prototype.getTotalHeight = function() {
+  return this.scrollHeight_ - this.bottomMarginForPanel_;
+};
+
+/**
+ * Sets the bottom margin height of the view for the transparent preview panel.
+ * @param {number} margin Margin to be set in px.
+ */
+MainPanelScrollBar.prototype.setBottomMarginForPanel = function(margin) {
+  this.bottomMarginForPanel_ = margin;
 };

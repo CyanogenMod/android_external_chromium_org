@@ -6,7 +6,7 @@
 
 #include <android/bitmap.h>
 
-#include "android_webview/browser/in_process_renderer/in_process_view_renderer.h"
+#include "android_webview/browser/in_process_view_renderer.h"
 #include "android_webview/common/aw_switches.h"
 #include "android_webview/common/renderer_picture_map.h"
 #include "android_webview/public/browser/draw_gl.h"
@@ -353,7 +353,8 @@ bool BrowserViewRendererImpl::DrawSW(jobject java_canvas,
     }
 
     ScopedJavaLocalRef<jobject> jcanvas(env, java_canvas);
-    java_helper_->DrawBitmapIntoCanvas(env, jbitmap, jcanvas);
+    java_helper_->DrawBitmapIntoCanvas(env, jbitmap, jcanvas,
+                                       clip.x(), clip.y());
     return true;
   }
 

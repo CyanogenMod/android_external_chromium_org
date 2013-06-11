@@ -4,8 +4,8 @@
 
 #include "base/command_line.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -374,6 +374,9 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, BlockException) {
 // Crashes on Mac Asan.  http://crbug.com/239169
 #if defined(OS_MACOSX)
 #define MAYBE_LoadAllBlockedPlugins DISABLED_LoadAllBlockedPlugins
+// TODO(jschuh): Flaky plugin tests. crbug.com/244653
+#elif defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#define MAYBE_LoadAllBlockedPlugins DISABLED_LoadAllBlockedPlugins
 #else
 #define MAYBE_LoadAllBlockedPlugins LoadAllBlockedPlugins
 #endif
@@ -409,6 +412,8 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, MAYBE_LoadAllBlockedPlugins) {
 }
 
 // If this flakes, use http://crbug.com/113057.
+// TODO(jschuh): Hanging plugin tests. crbug.com/244653
+#if !defined(OS_WIN) && !defined(ARCH_CPU_X86_64)
 IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, NoCallbackAtLoad) {
   browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_PLUGINS, CONTENT_SETTING_BLOCK);
@@ -434,6 +439,7 @@ IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, NoCallbackAtLoad) {
 
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
+#endif
 
 IN_PROC_BROWSER_TEST_F(ClickToPlayPluginTest, DeleteSelfAtLoad) {
   browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(

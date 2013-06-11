@@ -50,7 +50,11 @@ class FakeDevToolsClient : public DevToolsClient {
   }
   virtual void AddListener(DevToolsEventListener* listener) OVERRIDE {}
   virtual Status HandleEventsUntil(
-      const ConditionalFunc& conditional_func) OVERRIDE {
+      const ConditionalFunc& conditional_func,
+      const base::TimeDelta& timeout) OVERRIDE {
+    return Status(kOk);
+  }
+  virtual Status HandleReceivedEvents() OVERRIDE {
     return Status(kOk);
   }
 

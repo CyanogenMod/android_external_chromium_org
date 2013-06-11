@@ -4,8 +4,8 @@
 
 #include "chrome_frame/navigation_constraints.h"
 
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/url_constants.h"
 #include "chrome_frame/utils.h"
 #include "extensions/common/constants.h"
@@ -32,7 +32,7 @@ bool NavigationConstraintsImpl::IsSchemeAllowed(const GURL& url) {
 
   // Additional checking for view-source. Allow only http and https
   // URLs in view source.
-  if (url.SchemeIs(chrome::kViewSourceScheme)) {
+  if (url.SchemeIs(content::kViewSourceScheme)) {
     GURL sub_url(url.path());
     if (sub_url.SchemeIs(chrome::kHttpScheme) ||
         sub_url.SchemeIs(chrome::kHttpsScheme))

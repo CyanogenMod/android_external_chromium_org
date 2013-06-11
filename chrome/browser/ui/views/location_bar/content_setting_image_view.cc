@@ -4,171 +4,158 @@
 
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/browser/ui/views/content_setting_bubble_contents.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
-#include "content/public/browser/web_contents.h"
-#include "third_party/skia/include/core/SkShader.h"
-#include "ui/base/animation/slide_animation.h"
-#include "ui/base/animation/tween.h"
+#include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/canvas.h"
-#include "ui/gfx/skia_util.h"
-#include "ui/views/border.h"
+#include "ui/gfx/color_utils.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/layout/box_layout.h"
 #include "ui/views/widget/widget.h"
-
-using content::WebContents;
 
 
 namespace {
-// Animation parameters.
-const int kFrameRateHz = 60;
-const int kOpenTimeMs = 150;
-const int kFullOpenedTimeMs = 3200;
-const int kMoveTimeMs = kFullOpenedTimeMs + 2 * kOpenTimeMs;
-
-// The fraction of the animation we'll spend animating the string into view, and
-// then again animating it closed -  total animation (slide out, show, then
-// slide in) is 1.0.
-const double kAnimatingFraction = kOpenTimeMs * 1.0 / kMoveTimeMs;
-
-// Margins for animated box (pixels).
-const int kHorizMargin = 4;
-const int kIconLabelSpacing = 4;
+const int kBackgroundImages[] = IMAGE_GRID(IDR_OMNIBOX_CONTENT_SETTING_BUBBLE);
+const int kStayOpenTimeMS = 3200;  // Time spent with animation fully open.
 }
 
+
+// static
+const int ContentSettingImageView::kOpenTimeMS = 150;
+const int ContentSettingImageView::kAnimationDurationMS =
+    (kOpenTimeMS * 2) + kStayOpenTimeMS;
 
 ContentSettingImageView::ContentSettingImageView(
     ContentSettingsType content_type,
-    const int background_images[],
     LocationBarView* parent,
     const gfx::Font& font,
     int font_y_offset,
-    SkColor font_color)
+    SkColor text_color,
+    SkColor parent_background_color)
     : parent_(parent),
-      text_label_(NULL),
-      icon_(new views::ImageView),
-      font_(font),
-      font_color_(font_color),
-      pause_animation_(false),
-      pause_animation_state_(0.0),
-      text_size_(0),
-      visible_text_size_(0),
-      force_draw_text_(false),
-      background_painter_(background_images),
       content_setting_image_model_(
           ContentSettingImageModel::CreateContentSettingImageModel(
               content_type)),
+      background_painter_(
+          views::Painter::CreateImageGridPainter(kBackgroundImages)),
+      icon_(new views::ImageView),
+      text_label_(new views::Label),
+      slide_animator_(this),
+      pause_animation_(false),
+      pause_animation_state_(0.0),
       bubble_widget_(NULL) {
-  SetLayoutManager(new views::BoxLayout(
-      views::BoxLayout::kHorizontal, 0, 0, 0));
   icon_->SetHorizontalAlignment(views::ImageView::LEADING);
   AddChildView(icon_);
+
+  text_label_->SetVisible(false);
+  text_label_->set_border(
+      views::Border::CreateEmptyBorder(font_y_offset, 0, 0, 0));
+  text_label_->SetFont(font);
+  text_label_->SetEnabledColor(text_color);
+  // Calculate the actual background color for the label.  The background images
+  // are painted atop |parent_background_color|.  We grab the color of the
+  // middle pixel of the middle image of the background, which we treat as the
+  // representative color of the entire background (reasonable, given the
+  // current appearance of these images).  Then we alpha-blend it over the
+  // parent background color to determine the actual color the label text will
+  // sit atop.
+  const SkBitmap& bitmap(
+      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          kBackgroundImages[4])->GetRepresentation(
+          ui::SCALE_FACTOR_100P).sk_bitmap());
+  SkAutoLockPixels pixel_lock(bitmap);
+  SkColor background_image_color =
+      bitmap.getColor(bitmap.width() / 2, bitmap.height() / 2);
+  // Tricky bit: We alpha blend an opaque version of |background_image_color|
+  // against |parent_background_color| using the original image grid color's
+  // alpha. This is because AlphaBlend(a, b, 255) always returns |a| unchanged
+  // even if |a| is a color with non-255 alpha.
+  text_label_->SetBackgroundColor(
+      color_utils::AlphaBlend(SkColorSetA(background_image_color, 255),
+                              parent_background_color,
+                              SkColorGetA(background_image_color)));
+  text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  text_label_->SetElideBehavior(views::Label::NO_ELIDE);
+  AddChildView(text_label_);
+
   TouchableLocationBarView::Init(this);
+
+  slide_animator_.SetSlideDuration(kAnimationDurationMS);
+  slide_animator_.SetTweenType(ui::Tween::LINEAR);
 }
 
 ContentSettingImageView::~ContentSettingImageView() {
-  if (bubble_widget_) {
+  if (bubble_widget_)
     bubble_widget_->RemoveObserver(this);
-    bubble_widget_ = NULL;
-  }
 }
 
-void ContentSettingImageView::Update(WebContents* web_contents) {
-  if (web_contents) {
+int ContentSettingImageView::GetBuiltInHorizontalPadding() const {
+  return GetBuiltInHorizontalPaddingImpl();
+}
+
+void ContentSettingImageView::Update(content::WebContents* web_contents) {
+  if (web_contents)
     content_setting_image_model_->UpdateFromWebContents(web_contents);
-  }
+
   if (!content_setting_image_model_->is_visible()) {
     SetVisible(false);
     return;
   }
-  SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+
+  icon_->SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
       content_setting_image_model_->get_icon()));
-  SetTooltipText(UTF8ToUTF16(content_setting_image_model_->get_tooltip()));
+  icon_->SetTooltipText(
+      UTF8ToUTF16(content_setting_image_model_->get_tooltip()));
   SetVisible(true);
 
-  TabSpecificContentSettings* content_settings = NULL;
-  if (web_contents) {
-    content_settings =
-        TabSpecificContentSettings::FromWebContents(web_contents);
-  }
-
+  // If the content blockage should be indicated to the user, start the
+  // animation and record that we indicated the blockage.
+  TabSpecificContentSettings* content_settings = web_contents ?
+      TabSpecificContentSettings::FromWebContents(web_contents) : NULL;
   if (!content_settings || content_settings->IsBlockageIndicated(
       content_setting_image_model_->get_content_settings_type()))
     return;
 
-  // The content blockage was not yet indicated to the user. Start indication
-  // animation and clear "not yet shown" flag.
+  // We just ignore this blockage if we're already showing some other string to
+  // the user.  If this becomes a problem, we could design some sort of queueing
+  // mechanism to show one after the other, but it doesn't seem important now.
+  int string_id = content_setting_image_model_->explanatory_string_id();
+  if (string_id && !background_showing()) {
+    text_label_->SetText(l10n_util::GetStringUTF16(string_id));
+    text_label_->SetVisible(true);
+    slide_animator_.Show();
+  }
+
   content_settings->SetBlockageHasBeenIndicated(
       content_setting_image_model_->get_content_settings_type());
-
-  int animated_string_id =
-      content_setting_image_model_->explanatory_string_id();
-  // Check if the string for animation is available.
-  if (!animated_string_id)
-    return;
-
-  StartLabelAnimation(l10n_util::GetStringUTF16(animated_string_id),
-                      kMoveTimeMs);
 }
 
-void ContentSettingImageView::SetImage(const gfx::ImageSkia* image_skia) {
-  icon_->SetImage(image_skia);
-}
-
-void ContentSettingImageView::SetTooltipText(const string16& tooltip) {
-  icon_->SetTooltipText(tooltip);
-}
-
-gfx::Size ContentSettingImageView::GetPreferredSize() {
-  // Height will be ignored by the LocationBarView.
-  gfx::Size preferred_size(views::View::GetPreferredSize());
-  int non_label_width = preferred_size.width() -
-      (text_label_ ? text_label_->GetPreferredSize().width() : 0);
-  // When view is animated |visible_text_size_| > 0, it is 0 otherwise.
-  preferred_size.set_width(non_label_width + visible_text_size_);
-  return preferred_size;
-}
-
-void ContentSettingImageView::OnGestureEvent(ui::GestureEvent* event) {
-  if (event->type() == ui::ET_GESTURE_TAP) {
-    AnimationOnClick();
-    OnClick(parent_);
-    event->SetHandled();
-  } else if (event->type() == ui::ET_GESTURE_TAP_DOWN) {
-    event->SetHandled();
-  }
+// static
+int ContentSettingImageView::GetBubbleOuterPadding(bool by_icon) {
+  return LocationBarView::GetItemPadding() - LocationBarView::kBubblePadding +
+      (by_icon ? 0 : LocationBarView::kIconInternalPadding);
 }
 
 void ContentSettingImageView::AnimationEnded(const ui::Animation* animation) {
-  if (!pause_animation_ && !force_draw_text_) {
-    SetLayoutManager(new views::BoxLayout(
-        views::BoxLayout::kHorizontal, 0, 0, 0));
-    RemoveChildView(text_label_);  // will also delete the view.
-    text_label_ = NULL;
+  slide_animator_.Reset();
+  if (!pause_animation_) {
+    text_label_->SetVisible(false);
     parent_->Layout();
     parent_->SchedulePaint();
   }
-  slide_animator_->Reset();
 }
 
 void ContentSettingImageView::AnimationProgressed(
     const ui::Animation* animation) {
-  if (pause_animation_)
-    return;
-
-  visible_text_size_ = GetTextAnimationSize(slide_animator_->GetCurrentValue(),
-                                            text_size_);
-
-  parent_->Layout();
-  parent_->SchedulePaint();
+  if (!pause_animation_) {
+    parent_->Layout();
+    parent_->SchedulePaint();
+  }
 }
 
 void ContentSettingImageView::AnimationCanceled(
@@ -176,101 +163,38 @@ void ContentSettingImageView::AnimationCanceled(
   AnimationEnded(animation);
 }
 
-int ContentSettingImageView::GetBuiltInHorizontalPadding() const {
-  return GetBuiltInHorizontalPaddingImpl();
-}
-
-void ContentSettingImageView::OnWidgetDestroying(views::Widget* widget) {
-  if (bubble_widget_) {
-    bubble_widget_->RemoveObserver(this);
-    bubble_widget_ = NULL;
+gfx::Size ContentSettingImageView::GetPreferredSize() {
+  // Height will be ignored by the LocationBarView.
+  gfx::Size size(icon_->GetPreferredSize());
+  if (background_showing()) {
+    double state = slide_animator_.GetCurrentValue();
+    // The fraction of the animation we'll spend animating the string into view,
+    // which is also the fraction we'll spend animating it closed; total
+    // animation (slide out, show, then slide in) is 1.0.
+    const double kOpenFraction =
+        static_cast<double>(kOpenTimeMS) / kAnimationDurationMS;
+    double size_fraction = 1.0;
+    if (state < kOpenFraction)
+      size_fraction = state / kOpenFraction;
+    if (state > (1.0 - kOpenFraction))
+      size_fraction = (1.0 - state) / kOpenFraction;
+    size.Enlarge(
+        size_fraction * (text_label_->GetPreferredSize().width() +
+            GetTotalSpacingWhileAnimating()), 0);
+    size.SetToMax(background_painter_->GetMinimumSize());
   }
-
-  UnpauseAnimation();
+  return size;
 }
 
-void ContentSettingImageView::OnClick(LocationBarView* parent) {
-  WebContents* web_contents = parent->GetWebContents();
-  if (!web_contents)
-    return;
-  if (bubble_widget_)
-    return;
-
-  Profile* profile = parent->profile();
-  ContentSettingBubbleContents* bubble = new ContentSettingBubbleContents(
-      ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          parent->delegate()->GetContentSettingBubbleModelDelegate(),
-          web_contents,
-          profile,
-          content_setting_image_model_->get_content_settings_type()),
-      web_contents,
-      this,
-      views::BubbleBorder::TOP_RIGHT);
-  bubble_widget_ = parent->delegate()->CreateViewsBubble(bubble);
-  bubble_widget_->AddObserver(this);
-  bubble->GetWidget()->Show();
-}
-
-void ContentSettingImageView::StartLabelAnimation(string16 animated_text,
-                                                  int duration_ms) {
-  if (!slide_animator_.get()) {
-    slide_animator_.reset(new ui::SlideAnimation(this));
-    slide_animator_->SetSlideDuration(duration_ms);
-    slide_animator_->SetTweenType(ui::Tween::LINEAR);
-  }
-
-  // Do not start animation if already in progress.
-  if (!slide_animator_->is_animating()) {
-    // Initialize animated string. It will be cleared when animation is
-    // completed.
-    if (!text_label_) {
-      text_label_ = new views::Label;
-      text_label_->SetElideBehavior(views::Label::NO_ELIDE);
-      text_label_->SetFont(font_);
-      SetLayoutManager(new views::BoxLayout(
-          views::BoxLayout::kHorizontal, kHorizMargin, 0, kIconLabelSpacing));
-      AddChildView(text_label_);
-    }
-    text_label_->SetText(animated_text);
-    text_size_ = font_.GetStringWidth(animated_text);
-    text_size_ += kHorizMargin;
-    slide_animator_->Show();
-  }
-}
-
-int ContentSettingImageView::GetTextAnimationSize(double state,
-                                                  int text_size) {
-  if (state >= 1.0) {
-    // Animaton is over, clear the variables.
-    return 0;
-  } else if (state < kAnimatingFraction) {
-    return static_cast<int>(text_size * state / kAnimatingFraction);
-  } else if (state > (1.0 - kAnimatingFraction)) {
-    return static_cast<int>(text_size * (1.0 - state) / kAnimatingFraction);
-  } else {
-    return text_size;
-  }
-}
-
-void ContentSettingImageView::PauseAnimation() {
-  if (pause_animation_)
-    return;
-
-  pause_animation_ = true;
-  pause_animation_state_ = slide_animator_->GetCurrentValue();
-}
-
-void ContentSettingImageView::UnpauseAnimation() {
-  if (!pause_animation_)
-    return;
-
-  slide_animator_->Reset(pause_animation_state_);
-  pause_animation_ = false;
-  slide_animator_->Show();
-}
-
-void ContentSettingImageView::AlwaysDrawText() {
-  force_draw_text_ = true;
+void ContentSettingImageView::Layout() {
+  const int icon_width = icon_->GetPreferredSize().width();
+  icon_->SetBounds(
+      std::min((width() - icon_width) / 2, GetBubbleOuterPadding(true)), 0,
+      icon_width, height());
+  text_label_->SetBounds(
+      icon_->bounds().right() + LocationBarView::GetItemPadding(), 0,
+      std::max(width() - GetTotalSpacingWhileAnimating() - icon_width, 0),
+      text_label_->GetPreferredSize().height());
 }
 
 bool ContentSettingImageView::OnMousePressed(const ui::MouseEvent& event) {
@@ -280,23 +204,59 @@ bool ContentSettingImageView::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 void ContentSettingImageView::OnMouseReleased(const ui::MouseEvent& event) {
-  if (!HitTestPoint(event.location()))
-    return;
+  if (HitTestPoint(event.location()))
+    OnClick();
+}
 
-  AnimationOnClick();
-  OnClick(parent_);
+void ContentSettingImageView::OnGestureEvent(ui::GestureEvent* event) {
+  if (event->type() == ui::ET_GESTURE_TAP)
+    OnClick();
+  if ((event->type() == ui::ET_GESTURE_TAP) ||
+      (event->type() == ui::ET_GESTURE_TAP_DOWN))
+    event->SetHandled();
 }
 
 void ContentSettingImageView::OnPaintBackground(gfx::Canvas* canvas) {
-  if (force_draw_text_ || (slide_animator_.get() &&
-      (slide_animator_->is_animating() || pause_animation_)))
-    background_painter_.Paint(canvas, size());
+  if (background_showing())
+    background_painter_->Paint(canvas, size());
 }
 
-void ContentSettingImageView::AnimationOnClick() {
-  // Stop animation.
-  if (slide_animator_.get() && slide_animator_->is_animating()) {
-    PauseAnimation();
-    slide_animator_->Reset();
+void ContentSettingImageView::OnWidgetDestroying(views::Widget* widget) {
+  DCHECK_EQ(bubble_widget_, widget);
+  bubble_widget_->RemoveObserver(this);
+  bubble_widget_ = NULL;
+
+  if (pause_animation_) {
+    slide_animator_.Reset(pause_animation_state_);
+    pause_animation_ = false;
+    slide_animator_.Show();
+  }
+}
+
+int ContentSettingImageView::GetTotalSpacingWhileAnimating() const {
+  return GetBubbleOuterPadding(true) + LocationBarView::GetItemPadding() +
+      GetBubbleOuterPadding(false);
+}
+
+void ContentSettingImageView::OnClick() {
+  if (slide_animator_.is_animating()) {
+    if (!pause_animation_) {
+      pause_animation_ = true;
+      pause_animation_state_ = slide_animator_.GetCurrentValue();
+    }
+    slide_animator_.Reset();
+  }
+
+  content::WebContents* web_contents = parent_->GetWebContents();
+  if (web_contents && !bubble_widget_) {
+    bubble_widget_ =
+        parent_->delegate()->CreateViewsBubble(new ContentSettingBubbleContents(
+            ContentSettingBubbleModel::CreateContentSettingBubbleModel(
+                parent_->delegate()->GetContentSettingBubbleModelDelegate(),
+                web_contents, parent_->profile(),
+                content_setting_image_model_->get_content_settings_type()),
+            web_contents, this, views::BubbleBorder::TOP_RIGHT));
+    bubble_widget_->AddObserver(this);
+    bubble_widget_->Show();
   }
 }

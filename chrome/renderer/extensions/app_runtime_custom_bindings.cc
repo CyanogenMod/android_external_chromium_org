@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/strings/string_number_conversions.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBlob.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSerializedScriptValue.h"
 
@@ -58,7 +58,7 @@ namespace extensions {
 
 AppRuntimeCustomBindings::AppRuntimeCustomBindings(
     Dispatcher* dispatcher,
-    v8::Handle<v8::Context> context) : ChromeV8Extension(dispatcher, context) {
+    ChromeV8Context* context) : ChromeV8Extension(dispatcher, context) {
   RouteFunction("DeserializeString", base::Bind(&DeserializeString));
   RouteFunction("SerializeToString", base::Bind(&SerializeToString));
   RouteFunction("CreateBlob", base::Bind(&CreateBlob));

@@ -1,6 +1,5 @@
 include_rules = [
   "+cc",
-  "+components/tracing",
   "+media/audio",
   "+media/base",
   "-webkit/browser",
@@ -10,6 +9,6 @@ include_rules = [
 specific_include_rules = {
 # Java bridge code passes NPAPI types to the browser process. Crazy!
   "java_bridge_messages\.h": [
-    "+content/common_child"
+    "+content/child"
   ]
 }

@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/search/instant_page.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_controller.h"
@@ -112,14 +112,18 @@ void InstantPage::SetDisplayInstantResults(bool display_instant_results) {
       routing_id(), display_instant_results));
 }
 
-void InstantPage::KeyCaptureChanged(bool is_key_capture_enabled) {
-  Send(new ChromeViewMsg_SearchBoxKeyCaptureChanged(
-      routing_id(), is_key_capture_enabled));
+void InstantPage::FocusChanged(OmniboxFocusState state,
+                               OmniboxFocusChangeReason reason) {
+  Send(new ChromeViewMsg_SearchBoxFocusChanged(routing_id(), state, reason));
 }
 
 void InstantPage::SendMostVisitedItems(
-    const std::vector<InstantMostVisitedItemIDPair>& items) {
+    const std::vector<InstantMostVisitedItem>& items) {
   Send(new ChromeViewMsg_SearchBoxMostVisitedItemsChanged(routing_id(), items));
+}
+
+void InstantPage::ToggleVoiceSearch() {
+  Send(new ChromeViewMsg_SearchBoxToggleVoiceSearch(routing_id()));
 }
 
 InstantPage::InstantPage(Delegate* delegate, const std::string& instant_url)
@@ -158,6 +162,18 @@ bool InstantPage::ShouldProcessFocusOmnibox() {
 }
 
 bool InstantPage::ShouldProcessNavigateToURL() {
+  return false;
+}
+
+bool InstantPage::ShouldProcessDeleteMostVisitedItem() {
+  return false;
+}
+
+bool InstantPage::ShouldProcessUndoMostVisitedDeletion() {
+  return false;
+}
+
+bool InstantPage::ShouldProcessUndoAllMostVisitedDeletions() {
   return false;
 }
 
@@ -236,11 +252,14 @@ void InstantPage::DidFailProvisionalLoad(
 void InstantPage::OnSetSuggestions(
     int page_id,
     const std::vector<InstantSuggestion>& suggestions) {
-  if (contents()->IsActiveEntry(page_id)) {
-    OnInstantSupportDetermined(page_id, true);
-    if (ShouldProcessSetSuggestions())
-      delegate_->SetSuggestions(contents(), suggestions);
-  }
+  if (!contents()->IsActiveEntry(page_id))
+    return;
+
+  OnInstantSupportDetermined(page_id, true);
+  if (!ShouldProcessSetSuggestions())
+    return;
+
+  delegate_->SetSuggestions(contents(), suggestions);
 }
 
 void InstantPage::OnInstantSupportDetermined(int page_id,
@@ -262,20 +281,26 @@ void InstantPage::OnInstantSupportDetermined(int page_id,
 void InstantPage::OnShowInstantOverlay(int page_id,
                                        int height,
                                        InstantSizeUnits units) {
-  if (contents()->IsActiveEntry(page_id)) {
-    OnInstantSupportDetermined(page_id, true);
-    delegate_->LogDropdownShown();
-    if (ShouldProcessShowInstantOverlay())
-      delegate_->ShowInstantOverlay(contents(), height, units);
-  }
+  if (!contents()->IsActiveEntry(page_id))
+    return;
+
+  OnInstantSupportDetermined(page_id, true);
+  delegate_->LogDropdownShown();
+  if (!ShouldProcessShowInstantOverlay())
+    return;
+
+  delegate_->ShowInstantOverlay(contents(), height, units);
 }
 
 void InstantPage::OnFocusOmnibox(int page_id, OmniboxFocusState state) {
-  if (contents()->IsActiveEntry(page_id)) {
-    OnInstantSupportDetermined(page_id, true);
-    if (ShouldProcessFocusOmnibox())
-      delegate_->FocusOmnibox(contents(), state);
-  }
+  if (!contents()->IsActiveEntry(page_id))
+    return;
+
+  OnInstantSupportDetermined(page_id, true);
+  if (!ShouldProcessFocusOmnibox())
+    return;
+
+  delegate_->FocusOmnibox(contents(), state);
 }
 
 void InstantPage::OnSearchBoxNavigate(int page_id,
@@ -283,22 +308,46 @@ void InstantPage::OnSearchBoxNavigate(int page_id,
                                       content::PageTransition transition,
                                       WindowOpenDisposition disposition,
                                       bool is_search_type) {
-  if (contents()->IsActiveEntry(page_id)) {
-    OnInstantSupportDetermined(page_id, true);
-    if (ShouldProcessNavigateToURL())
-      delegate_->NavigateToURL(
-          contents(), url, transition, disposition, is_search_type);
-  }
+  if (!contents()->IsActiveEntry(page_id))
+    return;
+
+  OnInstantSupportDetermined(page_id, true);
+  if (!ShouldProcessNavigateToURL())
+    return;
+
+  delegate_->NavigateToURL(
+      contents(), url, transition, disposition, is_search_type);
 }
 
-void InstantPage::OnDeleteMostVisitedItem(InstantRestrictedID restricted_id) {
-  delegate_->DeleteMostVisitedItem(restricted_id);
+void InstantPage::OnDeleteMostVisitedItem(int page_id, const GURL& url) {
+  if (!contents()->IsActiveEntry(page_id))
+    return;
+
+  OnInstantSupportDetermined(page_id, true);
+  if (!ShouldProcessDeleteMostVisitedItem())
+    return;
+
+  delegate_->DeleteMostVisitedItem(url);
 }
 
-void InstantPage::OnUndoMostVisitedDeletion(InstantRestrictedID restricted_id) {
-  delegate_->UndoMostVisitedDeletion(restricted_id);
+void InstantPage::OnUndoMostVisitedDeletion(int page_id, const GURL& url) {
+  if (!contents()->IsActiveEntry(page_id))
+    return;
+
+  OnInstantSupportDetermined(page_id, true);
+  if (!ShouldProcessUndoMostVisitedDeletion())
+    return;
+
+  delegate_->UndoMostVisitedDeletion(url);
 }
 
-void InstantPage::OnUndoAllMostVisitedDeletions() {
+void InstantPage::OnUndoAllMostVisitedDeletions(int page_id) {
+  if (!contents()->IsActiveEntry(page_id))
+    return;
+
+  OnInstantSupportDetermined(page_id, true);
+  if (!ShouldProcessUndoAllMostVisitedDeletions())
+    return;
+
   delegate_->UndoAllMostVisitedDeletions();
 }

@@ -53,6 +53,8 @@ TEST(RectTest, Intersects) {
     bool intersects;
   } tests[] = {
     { 0, 0, 0, 0, 0, 0, 0, 0, false },
+    { 0, 0, 0, 0, -10, -10, 20, 20, false },
+    { -10, 0, 0, 20, 0, -10, 20, 0, false },
     { 0, 0, 10, 10, 0, 0, 10, 10, true },
     { 0, 0, 10, 10, 10, 10, 10, 10, false },
     { 10, 10, 10, 10, 0, 0, 10, 10, false },
@@ -65,6 +67,7 @@ TEST(RectTest, Intersects) {
     Rect r1(tests[i].x1, tests[i].y1, tests[i].w1, tests[i].h1);
     Rect r2(tests[i].x2, tests[i].y2, tests[i].w2, tests[i].h2);
     EXPECT_EQ(tests[i].intersects, r1.Intersects(r2));
+    EXPECT_EQ(tests[i].intersects, r2.Intersects(r1));
   }
 }
 
@@ -239,30 +242,47 @@ TEST(RectTest, Subtract) {
   result.Subtract(Rect(15, 15, 20, 20));
   EXPECT_EQ(Rect(10, 10, 20, 20).ToString(), result.ToString());
 
-  // Complete intersection in the x-direction
+  // Complete intersection in the x-direction, top edge is fully covered.
   result = Rect(10, 10, 20, 20);
   result.Subtract(Rect(10, 15, 20, 20));
   EXPECT_EQ(Rect(10, 10, 20, 5).ToString(), result.ToString());
 
-  // Complete intersection in the x-direction
+  // Complete intersection in the x-direction, top edge is fully covered.
   result = Rect(10, 10, 20, 20);
   result.Subtract(Rect(5, 15, 30, 20));
   EXPECT_EQ(Rect(10, 10, 20, 5).ToString(), result.ToString());
 
-  // Complete intersection in the x-direction
+  // Complete intersection in the x-direction, bottom edge is fully covered.
   result = Rect(10, 10, 20, 20);
   result.Subtract(Rect(5, 5, 30, 20));
   EXPECT_EQ(Rect(10, 25, 20, 5).ToString(), result.ToString());
 
-  // Complete intersection in the y-direction
+  // Complete intersection in the x-direction, none of the edges is fully
+  // covered.
+  result = Rect(10, 10, 20, 20);
+  result.Subtract(Rect(5, 15, 30, 1));
+  EXPECT_EQ(Rect(10, 10, 20, 20).ToString(), result.ToString());
+
+  // Complete intersection in the y-direction, left edge is fully covered.
   result = Rect(10, 10, 20, 20);
   result.Subtract(Rect(10, 10, 10, 30));
   EXPECT_EQ(Rect(20, 10, 10, 20).ToString(), result.ToString());
 
-  // Complete intersection in the y-direction
+  // Complete intersection in the y-direction, left edge is fully covered.
   result = Rect(10, 10, 20, 20);
   result.Subtract(Rect(5, 5, 20, 30));
   EXPECT_EQ(Rect(25, 10, 5, 20).ToString(), result.ToString());
+
+  // Complete intersection in the y-direction, right edge is fully covered.
+  result = Rect(10, 10, 20, 20);
+  result.Subtract(Rect(20, 5, 20, 30));
+  EXPECT_EQ(Rect(10, 10, 10, 20).ToString(), result.ToString());
+
+  // Complete intersection in the y-direction, none of the edges is fully
+  // covered.
+  result = Rect(10, 10, 20, 20);
+  result.Subtract(Rect(15, 5, 1, 30));
+  EXPECT_EQ(Rect(10, 10, 20, 20).ToString(), result.ToString());
 }
 
 TEST(RectTest, IsEmpty) {

@@ -317,6 +317,8 @@ class AutofillPolicyHandler : public TypeCheckingPolicyHandler {
   DISALLOW_COPY_AND_ASSIGN(AutofillPolicyHandler);
 };
 
+#if !defined(OS_ANDROID)
+
 // ConfigurationPolicyHandler for the DownloadDirectory policy.
 class DownloadDirPolicyHandler : public TypeCheckingPolicyHandler {
  public:
@@ -344,6 +346,8 @@ class DiskCacheDirPolicyHandler : public TypeCheckingPolicyHandler {
  private:
   DISALLOW_COPY_AND_ASSIGN(DiskCacheDirPolicyHandler);
 };
+
+#endif  // !defined(OS_ANDROID)
 
 // ConfigurationPolicyHandler for the FileSelectionDialogsHandler policy.
 class FileSelectionDialogsHandler : public TypeCheckingPolicyHandler {
@@ -498,6 +502,22 @@ class JavascriptPolicyHandler : public ConfigurationPolicyHandler {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(JavascriptPolicyHandler);
+};
+
+// Handles URLBlacklist policies.
+class URLBlacklistPolicyHandler : public ConfigurationPolicyHandler {
+ public:
+  URLBlacklistPolicyHandler();
+  virtual ~URLBlacklistPolicyHandler();
+
+  // ConfigurationPolicyHandler methods:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(URLBlacklistPolicyHandler);
 };
 
 // Handles RestoreOnStartup policy.

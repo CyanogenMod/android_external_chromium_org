@@ -10,9 +10,9 @@
 #include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/run_loop.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/sandboxed_unpacker.h"
 #include "chrome/browser/extensions/webstore_startup_installer.h"
@@ -143,7 +143,7 @@ class ValidateCrxHelper : public SandboxedUnpackerClient {
                               Manifest::INTERNAL,
                               0, /* no special creation flags */
                               temp_dir_,
-                              file_thread_proxy,
+                              file_thread_proxy.get(),
                               this));
     unpacker->Start();
   }
@@ -337,7 +337,7 @@ std::string StartupHelper::WebStoreIdFromLimitedInstallCmdLine(
 }
 
 StartupHelper::~StartupHelper() {
-  if (pack_job_)
+  if (pack_job_.get())
     pack_job_->ClearClient();
 }
 

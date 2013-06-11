@@ -213,9 +213,19 @@ void AudioInputRendererHost::OnCreateStream(
     return;
   }
 
+  media::AudioParameters audio_params(config.params);
+  if (media_stream_manager_->audio_input_device_manager()->
+      ShouldUseFakeDevice()) {
+    audio_params.Reset(
+        media::AudioParameters::AUDIO_FAKE,
+        config.params.channel_layout(), config.params.channels(), 0,
+        config.params.sample_rate(), config.params.bits_per_sample(),
+        config.params.frames_per_buffer());
+  }
+
   // Check if we have the permission to open the device and which device to use.
   std::string device_id = media::AudioManagerBase::kDefaultDeviceId;
-  if (session_id != AudioInputDeviceManager::kFakeOpenSessionId) {
+  if (audio_params.format() != media::AudioParameters::AUDIO_FAKE) {
     const StreamDeviceInfo* info = media_stream_manager_->
         audio_input_device_manager()->GetOpenedDeviceInfoById(session_id);
     if (!info) {
@@ -226,16 +236,6 @@ void AudioInputRendererHost::OnCreateStream(
     }
 
     device_id = info->device.id;
-  }
-
-  media::AudioParameters audio_params(config.params);
-  if (media_stream_manager_->audio_input_device_manager()->
-      ShouldUseFakeDevice()) {
-    audio_params.Reset(
-        media::AudioParameters::AUDIO_FAKE,
-        config.params.channel_layout(), config.params.channels(), 0,
-        config.params.sample_rate(), config.params.bits_per_sample(),
-        config.params.frames_per_buffer());
   }
 
   // Create a new AudioEntry structure.
@@ -268,10 +268,10 @@ void AudioInputRendererHost::OnCreateStream(
   entry->writer.reset(writer.release());
   if (WebContentsCaptureUtil::IsWebContentsDeviceId(device_id)) {
     entry->controller = media::AudioInputController::CreateForStream(
-        audio_manager_,
+        audio_manager_->GetWorkerLoop(),
         this,
         WebContentsAudioInputStream::Create(
-            device_id, audio_params, audio_manager_->GetMessageLoop()),
+            device_id, audio_params, audio_manager_->GetWorkerLoop()),
         entry->writer.get());
   } else {
     // TODO(henrika): replace CreateLowLatency() with Create() as soon
@@ -285,7 +285,7 @@ void AudioInputRendererHost::OnCreateStream(
         entry->writer.get());
   }
 
-  if (!entry->controller) {
+  if (!entry->controller.get()) {
     SendErrorMessage(stream_id);
     return;
   }
@@ -395,7 +395,7 @@ AudioInputRendererHost::AudioEntry* AudioInputRendererHost::LookupByController(
   // TODO(hclam): Implement a faster look up method.
   for (AudioEntryMap::iterator i = audio_entries_.begin();
        i != audio_entries_.end(); ++i) {
-    if (controller == i->second->controller)
+    if (controller == i->second->controller.get())
       return i->second;
   }
   return NULL;

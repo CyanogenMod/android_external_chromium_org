@@ -212,9 +212,8 @@ ssl3_CngPlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
     DWORD           dwFlags           = 0;
     VOID           *pPaddingInfo      = NULL;
 
-    /* Always encode using PKCS#1 block type, with no OID/encoded DigestInfo */
+    /* Always encode using PKCS#1 block type. */
     BCRYPT_PKCS1_PADDING_INFO rsaPaddingInfo;
-    rsaPaddingInfo.pszAlgId = NULL;
 
     if (key->dwKeySpec != CERT_NCRYPT_KEY_SPEC) {
         PR_SetError(SEC_ERROR_LIBRARY_FAILURE, 0);
@@ -227,8 +226,29 @@ ssl3_CngPlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
 
     switch (keyType) {
         case rsaKey:
-            hashItem.data = hash->md5;
-            hashItem.len  = sizeof(SSL3Hashes);
+            switch (hash->hashAlg) {
+                case SEC_OID_UNKNOWN:
+                    /* No OID/encoded DigestInfo. */
+                    rsaPaddingInfo.pszAlgId = NULL;
+                    break;
+                case SEC_OID_SHA1:
+                    rsaPaddingInfo.pszAlgId = BCRYPT_SHA1_ALGORITHM;
+                    break;
+                case SEC_OID_SHA256:
+                    rsaPaddingInfo.pszAlgId = BCRYPT_SHA256_ALGORITHM;
+                    break;
+                case SEC_OID_SHA384:
+                    rsaPaddingInfo.pszAlgId = BCRYPT_SHA384_ALGORITHM;
+                    break;
+                case SEC_OID_SHA512:
+                    rsaPaddingInfo.pszAlgId = BCRYPT_SHA512_ALGORITHM;
+                    break;
+                default:
+                    PORT_SetError(SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM);
+                    return SECFailure;
+            }
+            hashItem.data = hash->u.raw;
+            hashItem.len  = hash->len;
             dwFlags       = BCRYPT_PAD_PKCS1;
             pPaddingInfo  = &rsaPaddingInfo;
             break;
@@ -239,8 +259,13 @@ ssl3_CngPlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
             } else {
                 doDerEncode = isTLS;
             }
-            hashItem.data = hash->sha;
-            hashItem.len  = sizeof(hash->sha);
+            if (hash->hashAlg == SEC_OID_UNKNOWN) {
+                hashItem.data = hash->u.s.sha;
+                hashItem.len  = sizeof(hash->u.s.sha);
+            } else {
+                hashItem.data = hash->u.raw;
+                hashItem.len  = hash->len;
+            }
             break;
         default:
             PORT_SetError(SEC_ERROR_INVALID_KEY);
@@ -315,11 +340,34 @@ ssl3_CAPIPlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
 
     buf->data = NULL;
 
+    switch (hash->hashAlg) {
+        case SEC_OID_UNKNOWN:
+            hashAlg = 0;
+            break;
+        case SEC_OID_SHA1:
+            hashAlg = CALG_SHA1;
+            break;
+        case SEC_OID_SHA256:
+            hashAlg = CALG_SHA_256;
+            break;
+        case SEC_OID_SHA384:
+            hashAlg = CALG_SHA_384;
+            break;
+        case SEC_OID_SHA512:
+            hashAlg = CALG_SHA_512;
+            break;
+        default:
+            PORT_SetError(SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM);
+            return SECFailure;
+    }
+
     switch (keyType) {
         case rsaKey:
-            hashAlg       = CALG_SSL3_SHAMD5;
-            hashItem.data = hash->md5;
-            hashItem.len  = sizeof(SSL3Hashes);
+            if (hashAlg == 0) {
+                hashAlg = CALG_SSL3_SHAMD5;
+            }
+            hashItem.data = hash->u.raw;
+            hashItem.len = hash->len;
             break;
         case dsaKey:
         case ecKey:
@@ -328,9 +376,14 @@ ssl3_CAPIPlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
             } else {
                 doDerEncode = isTLS;
             }
-            hashAlg       = CALG_SHA1;
-            hashItem.data = hash->sha;
-            hashItem.len  = sizeof(hash->sha);
+            if (hashAlg == 0) {
+                hashAlg = CALG_SHA1;
+                hashItem.data = hash->u.s.sha;
+                hashItem.len = sizeof(hash->u.s.sha);
+            } else {
+                hashItem.data = hash->u.raw;
+                hashItem.len = hash->len;
+            }
             break;
         default:
             PORT_SetError(SEC_ERROR_INVALID_KEY);
@@ -433,6 +486,7 @@ ssl3_PlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
     CSSM_CSP_HANDLE cspHandle           = 0;
     const CSSM_KEY *cssmKey             = NULL;
     CSSM_ALGORITHMS sigAlg;
+    CSSM_ALGORITHMS digestAlg;
     const CSSM_ACCESS_CREDENTIALS * cssmCreds = NULL;
     CSSM_RETURN     cssmRv;
     CSSM_DATA       hashData;
@@ -468,11 +522,38 @@ ssl3_PlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
         goto done;    /* error code was set. */
 
     sigAlg = cssmKey->KeyHeader.AlgorithmId;
+
+    digestAlg = CSSM_ALGID_NONE;
+    if (keyType == rsaKey) {
+        switch (hash->hashAlg) {
+            case SEC_OID_UNKNOWN:
+                break;
+            case SEC_OID_SHA1:
+                digestAlg = CSSM_ALGID_SHA1;
+                break;
+            case SEC_OID_SHA224:
+                digestAlg = CSSM_ALGID_SHA224;
+                break;
+            case SEC_OID_SHA256:
+                digestAlg = CSSM_ALGID_SHA256;
+                break;
+            case SEC_OID_SHA384:
+                digestAlg = CSSM_ALGID_SHA384;
+                break;
+            case SEC_OID_SHA512:
+                digestAlg = CSSM_ALGID_SHA512;
+                break;
+            default:
+                PORT_SetError(SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM);
+                goto done;
+        }
+    }
+
     switch (keyType) {
         case rsaKey:
             PORT_Assert(sigAlg == CSSM_ALGID_RSA);
-            hashData.Data   = hash->md5;
-            hashData.Length = sizeof(SSL3Hashes);
+            hashData.Data   = hash->u.raw;
+            hashData.Length = hash->len;
             break;
         case dsaKey:
         case ecKey:
@@ -483,8 +564,13 @@ ssl3_PlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
                 PORT_Assert(sigAlg == CSSM_ALGID_DSA);
                 doDerEncode = isTLS;
             }
-            hashData.Data   = hash->sha;
-            hashData.Length = sizeof(hash->sha);
+            if (hash->hashAlg == SEC_OID_UNKNOWN) {
+                hashData.Data   = hash->u.s.sha;
+                hashData.Length = sizeof(hash->u.s.sha);
+            } else {
+                hashData.Data   = hash->u.raw;
+                hashData.Length = hash->len;
+            }
             break;
         default:
             PORT_SetError(SEC_ERROR_INVALID_KEY);
@@ -527,7 +613,7 @@ ssl3_PlatformSignHashes(SSL3Hashes *hash, PlatformKey key, SECItem *buf,
         }
     }
 
-    cssmRv = CSSM_SignData(cssmSignature, &hashData, 1, CSSM_ALGID_NONE,
+    cssmRv = CSSM_SignData(cssmSignature, &hashData, 1, digestAlg,
                            &signatureData);
     if (cssmRv) {
         PORT_SetError(SSL_ERROR_SIGN_HASHES_FAILURE);

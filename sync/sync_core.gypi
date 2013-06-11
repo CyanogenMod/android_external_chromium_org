@@ -12,11 +12,11 @@
   'dependencies': [
     '../base/base.gyp:base',
     '../base/base.gyp:base_i18n',
-    '../build/temp_gyp/googleurl.gyp:googleurl',
     '../crypto/crypto.gyp:crypto',
     '../google_apis/google_apis.gyp:google_apis',
     '../net/net.gyp:net',
     '../sql/sql.gyp:sql',
+    '../url/url.gyp:url_lib',
   ],
   'conditions': [
     ['OS=="linux" and chromeos==1', {
@@ -101,6 +101,8 @@
     'protocol/proto_value_conversions.h',
     'protocol/sync_protocol_error.cc',
     'protocol/sync_protocol_error.h',
+    'sessions/data_type_tracker.cc',
+    'sessions/data_type_tracker.h',
     'sessions/debug_info_getter.h',
     'sessions/nudge_tracker.cc',
     'sessions/nudge_tracker.h',
@@ -139,7 +141,7 @@
     'syncable/on_disk_directory_backing_store.h',
     'syncable/parent_child_index.cc',
     'syncable/parent_child_index.h',
-    'syncable/scoped_index_updater.h',
+    'syncable/scoped_kernel_lock.cc',
     'syncable/scoped_kernel_lock.h',
     'syncable/scoped_parent_child_index_updater.cc',
     'syncable/scoped_parent_child_index_updater.h',

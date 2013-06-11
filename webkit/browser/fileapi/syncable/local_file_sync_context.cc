@@ -13,8 +13,8 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
-#include "webkit/browser/fileapi/local_file_system_operation.h"
 #include "webkit/browser/fileapi/syncable/file_change.h"
 #include "webkit/browser/fileapi/syncable/local_file_change_tracker.h"
 #include "webkit/browser/fileapi/syncable/local_origin_change_observer.h"
@@ -33,9 +33,11 @@ using fileapi::LocalFileSystemOperation;
 namespace sync_file_system {
 
 namespace {
+
 const int kMaxConcurrentSyncableOperation = 3;
 const int kNotifyChangesDurationInSec = 1;
 const int kMaxURLsToFetchForLocalSync = 5;
+
 }  // namespace
 
 LocalFileSyncContext::LocalFileSyncContext(
@@ -50,7 +52,6 @@ LocalFileSyncContext::LocalFileSyncContext(
 
 void LocalFileSyncContext::MaybeInitializeFileSystemContext(
     const GURL& source_url,
-    const std::string& service_name,
     FileSystemContext* file_system_context,
     const SyncStatusCallback& callback) {
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
@@ -72,7 +73,7 @@ void LocalFileSyncContext::MaybeInitializeFileSystemContext(
   io_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&LocalFileSyncContext::InitializeFileSystemContextOnIOThread,
-                 this, source_url, service_name,
+                 this, source_url,
                  make_scoped_refptr(file_system_context)));
 }
 
@@ -200,9 +201,6 @@ void LocalFileSyncContext::ApplyRemoteChange(
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!sync_status()->IsWritable(url));
   DCHECK(!sync_status()->IsWriting(url));
-  LocalFileSystemOperation* operation = CreateFileSystemOperationForSync(
-      file_system_context);
-  DCHECK(operation);
 
   FileSystemOperation::StatusCallback operation_callback;
   if (change.change() == FileChange::FILE_CHANGE_ADD_OR_UPDATE) {
@@ -219,7 +217,10 @@ void LocalFileSyncContext::ApplyRemoteChange(
     operation_callback = base::Bind(
         &LocalFileSyncContext::DidApplyRemoteChange, this, url, callback);
   }
-  operation->Remove(url, true /* recursive */, operation_callback);
+  FileSystemURL url_for_sync = CreateSyncableFileSystemURLForSync(
+      file_system_context, url);
+  file_system_context->operation_runner()->Remove(
+      url_for_sync, true /* recursive */, operation_callback);
 }
 
 void LocalFileSyncContext::DidRemoveExistingEntryForApplyRemoteChange(
@@ -240,9 +241,9 @@ void LocalFileSyncContext::DidRemoveExistingEntryForApplyRemoteChange(
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!sync_status()->IsWritable(url));
   DCHECK(!sync_status()->IsWriting(url));
-  LocalFileSystemOperation* operation =
-      CreateFileSystemOperationForSync(file_system_context);
-  DCHECK(operation);
+
+  FileSystemURL url_for_sync = CreateSyncableFileSystemURLForSync(
+      file_system_context, url);
   FileSystemOperation::StatusCallback operation_callback = base::Bind(
       &LocalFileSyncContext::DidApplyRemoteChange, this, url, callback);
 
@@ -254,13 +255,14 @@ void LocalFileSyncContext::DidRemoveExistingEntryForApplyRemoteChange(
       if (dir_path.empty() ||
           fileapi::VirtualPath::DirName(dir_path) == dir_path) {
         // Copying into the root directory.
-        operation->CopyInForeignFile(local_path, url, operation_callback);
+        file_system_context->operation_runner()->CopyInForeignFile(
+            local_path, url_for_sync, operation_callback);
       } else {
         FileSystemURL dir_url = file_system_context->CreateCrackedFileSystemURL(
-            url.origin(),
-            url.mount_type(),
-            fileapi::VirtualPath::DirName(url.virtual_path()));
-        operation->CreateDirectory(
+            url_for_sync.origin(),
+            url_for_sync.mount_type(),
+            fileapi::VirtualPath::DirName(url_for_sync.virtual_path()));
+        file_system_context->operation_runner()->CreateDirectory(
             dir_url,
             false /* exclusive */,
             true /* recursive */,
@@ -274,8 +276,9 @@ void LocalFileSyncContext::DidRemoveExistingEntryForApplyRemoteChange(
       break;
     }
     case SYNC_FILE_TYPE_DIRECTORY:
-      operation->CreateDirectory(
-          url, false /* exclusive */, true /* recursive */, operation_callback);
+      file_system_context->operation_runner()->CreateDirectory(
+          url_for_sync, false /* exclusive */, true /* recursive */,
+          operation_callback);
       break;
     case SYNC_FILE_TYPE_UNKNOWN:
       NOTREACHED() << "File type unknown for ADD_OR_UPDATE change";
@@ -324,11 +327,11 @@ void LocalFileSyncContext::GetFileMetadata(
     return;
   }
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-  LocalFileSystemOperation* operation = CreateFileSystemOperationForSync(
-      file_system_context);
-  DCHECK(operation);
-  operation->GetMetadata(
-      url, base::Bind(&LocalFileSyncContext::DidGetFileMetadata,
+
+  FileSystemURL url_for_sync = CreateSyncableFileSystemURLForSync(
+      file_system_context, url);
+  file_system_context->operation_runner()->GetMetadata(
+      url_for_sync, base::Bind(&LocalFileSyncContext::DidGetFileMetadata,
                       this, callback));
 }
 
@@ -440,13 +443,12 @@ void LocalFileSyncContext::ShutdownOnIOThread() {
 
 void LocalFileSyncContext::InitializeFileSystemContextOnIOThread(
     const GURL& source_url,
-    const std::string& service_name,
     FileSystemContext* file_system_context) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(file_system_context);
   if (!file_system_context->change_tracker()) {
     // First registers the service name.
-    RegisterSyncableFileSystem(service_name);
+    RegisterSyncableFileSystem();
     // Create and initialize LocalFileChangeTracker and call back this method
     // later again.
     std::set<GURL>* origins_with_changes = new std::set<GURL>;
@@ -461,7 +463,7 @@ void LocalFileSyncContext::InitializeFileSystemContextOnIOThread(
                    origins_with_changes),
         base::Bind(&LocalFileSyncContext::DidInitializeChangeTrackerOnIOThread,
                    this, base::Owned(tracker_ptr),
-                   source_url, service_name,
+                   source_url,
                    make_scoped_refptr(file_system_context),
                    base::Owned(origins_with_changes)));
     return;
@@ -508,7 +510,6 @@ SyncStatusCode LocalFileSyncContext::InitializeChangeTrackerOnFileThread(
 void LocalFileSyncContext::DidInitializeChangeTrackerOnIOThread(
     scoped_ptr<LocalFileChangeTracker>* tracker_ptr,
     const GURL& source_url,
-    const std::string& service_name,
     FileSystemContext* file_system_context,
     std::set<GURL>* origins_with_changes,
     SyncStatusCode status) {
@@ -525,8 +526,7 @@ void LocalFileSyncContext::DidInitializeChangeTrackerOnIOThread(
                                        origins_with_changes->end());
   ScheduleNotifyChangesUpdatedOnIOThread();
 
-  InitializeFileSystemContextOnIOThread(source_url, service_name,
-                                        file_system_context);
+  InitializeFileSystemContextOnIOThread(source_url, file_system_context);
 }
 
 void LocalFileSyncContext::DidInitialize(
@@ -736,10 +736,10 @@ void LocalFileSyncContext::DidCreateDirectoryForCopyIn(
     return;
   }
 
-  LocalFileSystemOperation* operation = CreateFileSystemOperationForSync(
-      file_system_context);
-  DCHECK(operation);
-  operation->CopyInForeignFile(local_path, dest_url, callback);
+  FileSystemURL url_for_sync = CreateSyncableFileSystemURLForSync(
+      file_system_context, dest_url);
+  file_system_context->operation_runner()->CopyInForeignFile(
+      local_path, url_for_sync, callback);
 }
 
 }  // namespace sync_file_system

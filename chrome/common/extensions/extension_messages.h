@@ -57,8 +57,8 @@ IPC_STRUCT_BEGIN(ExtensionHostMsg_DOMAction_Params)
   // List of arguments.
   IPC_STRUCT_MEMBER(ListValue, arguments)
 
-  // Extra logging information.
-  IPC_STRUCT_MEMBER(std::string, extra)
+  // Type of DOM API call.
+  IPC_STRUCT_MEMBER(int, call_type)
 IPC_STRUCT_END()
 
 // Parameters structure for ExtensionHostMsg_Request.
@@ -290,18 +290,19 @@ IPC_MESSAGE_ROUTED4(ExtensionMsg_Response,
                     ListValue /* response wrapper (see comment above) */,
                     std::string /* error */)
 
-// This message is optionally routed.  If used as a control message, it
-// will call a javascript function in every registered context in the
-// target process.  If routed, it will be restricted to the contexts that
-// are part of the target RenderView.
+// This message is optionally routed.  If used as a control message, it will
+// call a javascript function |function_name| from module |module_name| in
+// every registered context in the target process.  If routed, it will be
+// restricted to the contexts that are part of the target RenderView.
+//
 // If |extension_id| is non-empty, the function will be invoked only in
 // contexts owned by the extension. |args| is a list of primitive Value types
 // that are passed to the function.
 IPC_MESSAGE_ROUTED5(ExtensionMsg_MessageInvoke,
                     std::string /* extension_id */,
+                    std::string /* module_name */,
                     std::string /* function_name */,
                     ListValue /* args */,
-                    GURL /* event URL */,
                     bool /* delivered as part of a user gesture */)
 
 // Tell the renderer process all known extension function names.
@@ -420,7 +421,7 @@ IPC_MESSAGE_ROUTED4(ExtensionMsg_DispatchOnConnect,
 // Deliver a message sent with ExtensionHostMsg_PostMessage.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DeliverMessage,
                     int /* target_port_id */,
-                    std::string /* message */)
+                    ListValue /* message arguments, a 0-or-1 length list */)
 
 // Dispatch the Port.onDisconnect event for message channels.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DispatchOnDisconnect,
@@ -530,7 +531,7 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ExtensionHostMsg_OpenChannelToTab,
 // by ViewHostMsg_OpenChannelTo*.
 IPC_MESSAGE_ROUTED2(ExtensionHostMsg_PostMessage,
                     int /* port_id */,
-                    std::string /* message */)
+                    ListValue /* message arguments, a 0-or-1 length list */)
 
 // Send a message to an extension process.  The handle is the value returned
 // by ViewHostMsg_OpenChannelTo*.

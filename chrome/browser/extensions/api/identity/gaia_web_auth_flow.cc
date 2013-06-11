@@ -15,19 +15,19 @@ namespace extensions {
 
 GaiaWebAuthFlow::GaiaWebAuthFlow(Delegate* delegate,
                                  Profile* profile,
-                                 chrome::HostDesktopType host_desktop_type,
                                  const std::string& extension_id,
-                                 const OAuth2Info& oauth2_info)
+                                 const OAuth2Info& oauth2_info,
+                                 const std::string& locale)
     : delegate_(delegate),
-      profile_(profile),
-      host_desktop_type_(host_desktop_type) {
+      profile_(profile) {
   const char kOAuth2RedirectPathFormat[] = "/%s#";
   const char kOAuth2AuthorizeFormat[] =
       "%s?response_type=token&approval_prompt=force&authuser=0&"
       "client_id=%s&"
       "scope=%s&"
       "origin=chrome-extension://%s/&"
-      "redirect_uri=%s:/%s";
+      "redirect_uri=%s:/%s&"
+      "hl=%s";
 
   std::vector<std::string> client_id_parts;
   base::SplitString(oauth2_info.client_id, '.', &client_id_parts);
@@ -45,7 +45,8 @@ GaiaWebAuthFlow::GaiaWebAuthFlow(Delegate* delegate,
           .c_str(),
       extension_id.c_str(),
       redirect_scheme_.c_str(),
-      extension_id.c_str()));
+      extension_id.c_str(),
+      locale.c_str()));
 }
 
 GaiaWebAuthFlow::~GaiaWebAuthFlow() {
@@ -79,9 +80,23 @@ void GaiaWebAuthFlow::OnUbertokenFailure(const GoogleServiceAuthError& error) {
 }
 
 void GaiaWebAuthFlow::OnAuthFlowFailure(WebAuthFlow::Failure failure) {
-  DCHECK(failure == WebAuthFlow::WINDOW_CLOSED);
+  GaiaWebAuthFlow::Failure gaia_failure;
+
+  switch (failure) {
+    case WebAuthFlow::WINDOW_CLOSED:
+      gaia_failure = GaiaWebAuthFlow::WINDOW_CLOSED;
+      break;
+    case WebAuthFlow::LOAD_FAILED:
+      gaia_failure = GaiaWebAuthFlow::LOAD_FAILED;
+      break;
+    default:
+      NOTREACHED() << "Unexpected error from web auth flow: " << failure;
+      gaia_failure = GaiaWebAuthFlow::LOAD_FAILED;
+      break;
+  }
+
   delegate_->OnGaiaFlowFailure(
-      GaiaWebAuthFlow::WINDOW_CLOSED,
+      gaia_failure,
       GoogleServiceAuthError(GoogleServiceAuthError::NONE),
       std::string());
 }
@@ -151,13 +166,10 @@ void GaiaWebAuthFlow::OnAuthFlowTitleChange(const std::string& title) {
 }
 
 scoped_ptr<WebAuthFlow> GaiaWebAuthFlow::CreateWebAuthFlow(GURL url) {
-  gfx::Rect initial_bounds;
   return scoped_ptr<WebAuthFlow>(new WebAuthFlow(this,
                                                  profile_,
                                                  url,
-                                                 WebAuthFlow::INTERACTIVE,
-                                                 initial_bounds,
-                                                 host_desktop_type_));
+                                                 WebAuthFlow::INTERACTIVE));
 }
 
 }  // extensions

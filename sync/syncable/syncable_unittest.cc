@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/test/values_test_util.h"
 #include "base/threading/platform_thread.h"
@@ -134,7 +134,7 @@ TEST_F(SyncableGeneralTest, General) {
     Entry e(&rtrans, GET_BY_ID, id);
     ASSERT_FALSE(e.good());  // Hasn't been written yet.
 
-    Directory::ChildHandles child_handles;
+    Directory::Metahandles child_handles;
     dir.GetChildHandlesById(&rtrans, rtrans.root_id(), &child_handles);
     EXPECT_TRUE(child_handles.empty());
 
@@ -159,11 +159,11 @@ TEST_F(SyncableGeneralTest, General) {
     Entry e(&rtrans, GET_BY_ID, id);
     ASSERT_TRUE(e.good());
 
-    Directory::ChildHandles child_handles;
+    Directory::Metahandles child_handles;
     dir.GetChildHandlesById(&rtrans, rtrans.root_id(), &child_handles);
     EXPECT_EQ(1u, child_handles.size());
 
-    for (Directory::ChildHandles::iterator i = child_handles.begin();
+    for (Directory::Metahandles::iterator i = child_handles.begin();
          i != child_handles.end(); ++i) {
       EXPECT_EQ(*i, written_metahandle);
     }
@@ -171,7 +171,7 @@ TEST_F(SyncableGeneralTest, General) {
     dir.GetChildHandlesByHandle(&rtrans, root_metahandle, &child_handles);
     EXPECT_EQ(1u, child_handles.size());
 
-    for (Directory::ChildHandles::iterator i = child_handles.begin();
+    for (Directory::Metahandles::iterator i = child_handles.begin();
          i != child_handles.end(); ++i) {
       EXPECT_EQ(*i, written_metahandle);
     }
@@ -472,11 +472,11 @@ class SyncableDirectoryTest : public testing::Test {
   }
 
   bool IsInDirtyMetahandles(int64 metahandle) {
-    return 1 == dir_->kernel_->dirty_metahandles->count(metahandle);
+    return 1 == dir_->kernel_->dirty_metahandles.count(metahandle);
   }
 
   bool IsInMetahandlesToPurge(int64 metahandle) {
-    return 1 == dir_->kernel_->metahandles_to_purge->count(metahandle);
+    return 1 == dir_->kernel_->metahandles_to_purge.count(metahandle);
   }
 
   void CheckPurgeEntriesWithTypeInSucceeded(ModelTypeSet types_to_purge,
@@ -488,7 +488,7 @@ class SyncableDirectoryTest : public testing::Test {
       dir_->GetAllMetaHandles(&trans, &all_set);
       EXPECT_EQ(4U, all_set.size());
       if (before_reload)
-        EXPECT_EQ(6U, dir_->kernel_->metahandles_to_purge->size());
+        EXPECT_EQ(6U, dir_->kernel_->metahandles_to_purge.size());
       for (MetahandleSet::iterator iter = all_set.begin();
            iter != all_set.end(); ++iter) {
         Entry e(&trans, GET_BY_HANDLE, *iter);
@@ -586,7 +586,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsMetahandlesToPurge) {
   }
 
   ModelTypeSet to_purge(BOOKMARKS);
-  dir_->PurgeEntriesWithTypeIn(to_purge, ModelTypeSet());
+  dir_->PurgeEntriesWithTypeIn(to_purge, ModelTypeSet(), ModelTypeSet());
 
   Directory::SaveChangesSnapshot snapshot1;
   base::AutoLock scoped_lock(dir_->kernel_->save_changes_mutex);
@@ -595,7 +595,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsMetahandlesToPurge) {
 
   to_purge.Clear();
   to_purge.Put(PREFERENCES);
-  dir_->PurgeEntriesWithTypeIn(to_purge, ModelTypeSet());
+  dir_->PurgeEntriesWithTypeIn(to_purge, ModelTypeSet(), ModelTypeSet());
 
   dir_->HandleSaveChangesFailure(snapshot1);
 
@@ -916,7 +916,7 @@ TEST_F(SyncableDirectoryTest, TestDelete) {
 }
 
 TEST_F(SyncableDirectoryTest, TestGetUnsynced) {
-  Directory::UnsyncedMetaHandles handles;
+  Directory::Metahandles handles;
   int64 handle1, handle2;
   {
     WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
@@ -1774,7 +1774,7 @@ TEST_F(OnDiskSyncableDirectoryTest, TestPurgeEntriesWithTypeIn) {
     ASSERT_EQ(10U, all_set.size());
   }
 
-  dir_->PurgeEntriesWithTypeIn(types_to_purge, ModelTypeSet());
+  dir_->PurgeEntriesWithTypeIn(types_to_purge, ModelTypeSet(), ModelTypeSet());
 
   // We first query the in-memory data, and then reload the directory (without
   // saving) to verify that disk does not still have the data.
@@ -2033,7 +2033,7 @@ TEST_F(OnDiskSyncableDirectoryTest, TestSaveChangesFailureWithPurge) {
   ASSERT_TRUE(dir_->good());
 
   ModelTypeSet set(BOOKMARKS);
-  dir_->PurgeEntriesWithTypeIn(set, ModelTypeSet());
+  dir_->PurgeEntriesWithTypeIn(set, ModelTypeSet(), ModelTypeSet());
   EXPECT_TRUE(IsInMetahandlesToPurge(handle1));
   ASSERT_FALSE(dir_->SaveChanges());
   EXPECT_TRUE(IsInMetahandlesToPurge(handle1));

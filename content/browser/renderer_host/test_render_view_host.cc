@@ -18,8 +18,8 @@
 #include "content/test/test_web_contents.h"
 #include "media/base/video_frame.h"
 #include "ui/gfx/rect.h"
-#include "webkit/dom_storage/dom_storage_types.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/dom_storage/dom_storage_types.h"
+#include "webkit/common/webpreferences.h"
 
 namespace content {
 
@@ -64,6 +64,7 @@ void InitNavigateParams(ViewHostMsg_FrameNavigate_Params* params,
 TestRenderWidgetHostView::TestRenderWidgetHostView(RenderWidgetHost* rwh)
     : rwh_(RenderWidgetHostImpl::From(rwh)),
       is_showing_(false) {
+  rwh_->SetView(this);
 }
 
 TestRenderWidgetHostView::~TestRenderWidgetHostView() {
@@ -109,6 +110,8 @@ void TestRenderWidgetHostView::RenderViewGone(base::TerminationStatus status,
                                               int error_code) {
   delete this;
 }
+
+void TestRenderWidgetHostView::Destroy() { delete this; }
 
 gfx::Rect TestRenderWidgetHostView::GetViewBounds() const {
   return gfx::Rect();
@@ -240,11 +243,13 @@ TestRenderViewHost::TestRenderViewHost(
     RenderViewHostDelegate* delegate,
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
+    int main_frame_routing_id,
     bool swapped_out)
     : RenderViewHostImpl(instance,
                          delegate,
                          widget_delegate,
                          routing_id,
+                         main_frame_routing_id,
                          swapped_out,
                          CreateSessionStorageNamespace(instance)),
       render_view_created_(false),
@@ -252,11 +257,10 @@ TestRenderViewHost::TestRenderViewHost(
       simulate_fetch_via_proxy_(false),
       simulate_history_list_was_cleared_(false),
       contents_mime_type_("text/html") {
-  // For normal RenderViewHosts, this is freed when |Shutdown()| is
-  // called.  For TestRenderViewHost, the view is explicitly
-  // deleted in the destructor below, because
-  // TestRenderWidgetHostView::Destroy() doesn't |delete this|.
-  SetView(new TestRenderWidgetHostView(this));
+  // TestRenderWidgetHostView installs itself into this->view_ in its
+  // constructor, and deletes itself when TestRenderWidgetHostView::Destroy() is
+  // called.
+  new TestRenderWidgetHostView(this);
 
   main_frame_id_ = kFrameId;
 }
@@ -264,9 +268,6 @@ TestRenderViewHost::TestRenderViewHost(
 TestRenderViewHost::~TestRenderViewHost() {
   if (delete_counter_)
     ++*delete_counter_;
-
-  // Since this isn't a traditional view, we have to delete it.
-  delete GetView();
 }
 
 bool TestRenderViewHost::CreateRenderView(

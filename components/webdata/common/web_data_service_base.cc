@@ -26,7 +26,6 @@ using content::BrowserThread;
 WebDataServiceBase::WebDataServiceBase(scoped_refptr<WebDatabaseService> wdbs,
                                        const ProfileErrorCallback& callback)
     : wdbs_(wdbs),
-      db_loaded_(false),
       profile_error_callback_(callback) {
   // WebDataService requires DB thread if instantiated.
   // Set WebDataServiceFactory::GetInstance()->SetTestingFactory(&profile, NULL)
@@ -34,65 +33,48 @@ WebDataServiceBase::WebDataServiceBase(scoped_refptr<WebDatabaseService> wdbs,
   DCHECK(BrowserThread::IsWellKnownThread(BrowserThread::DB));
 }
 
-void WebDataServiceBase::WebDatabaseLoaded() {
-  db_loaded_ = true;
-}
-
-void WebDataServiceBase::WebDatabaseLoadFailed(sql::InitStatus status) {
-  if (!profile_error_callback_.is_null())
-    profile_error_callback_.Run(status);
-}
-
 void WebDataServiceBase::ShutdownOnUIThread() {
-  db_loaded_ = false;
 }
 
 void WebDataServiceBase::Init() {
   DCHECK(wdbs_.get());
-  wdbs_->AddObserver(this);
+  wdbs_->RegisterDBErrorCallback(profile_error_callback_);
   wdbs_->LoadDatabase();
 }
 
 void WebDataServiceBase::UnloadDatabase() {
-  if (!wdbs_)
+  if (!wdbs_.get())
     return;
   wdbs_->UnloadDatabase();
 }
 
 void WebDataServiceBase::ShutdownDatabase() {
-  if (!wdbs_)
+  if (!wdbs_.get())
     return;
   wdbs_->ShutdownDatabase();
 }
 
 void WebDataServiceBase::CancelRequest(Handle h) {
-  if (!wdbs_)
+  if (!wdbs_.get())
     return;
   wdbs_->CancelRequest(h);
 }
 
-content::NotificationSource WebDataServiceBase::GetNotificationSource() {
-  return content::Source<WebDataServiceBase>(this);
-}
-
 bool WebDataServiceBase::IsDatabaseLoaded() {
-  return db_loaded_;
+  if (!wdbs_)
+    return false;
+  return wdbs_->db_loaded();
 }
 
-void WebDataServiceBase::AddDBObserver(WebDatabaseObserver* observer) {
+void WebDataServiceBase::RegisterDBLoadedCallback(
+    const base::Callback<void(void)>& callback) {
   if (!wdbs_)
     return;
-  wdbs_->AddObserver(observer);
-}
-
-void WebDataServiceBase::RemoveDBObserver(WebDatabaseObserver* observer) {
-  if (!wdbs_)
-    return;
-  wdbs_->RemoveObserver(observer);
+  wdbs_->RegisterDBLoadedCallback(callback);
 }
 
 WebDatabase* WebDataServiceBase::GetDatabase() {
-  if (!wdbs_)
+  if (!wdbs_.get())
     return NULL;
   return wdbs_->GetDatabaseOnDB();
 }

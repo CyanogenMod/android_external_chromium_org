@@ -7,12 +7,12 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/mock_time_provider.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -506,6 +506,8 @@ TEST_F(TemplateURLServiceTest, AddSameKeyword) {
 }
 
 TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
+  test_util_.VerifyLoad();
+
   TemplateURL* original1 = AddKeywordWithDate(
       "replaceable", "keyword1", "http://test1", std::string(), std::string(),
       std::string(), true, "UTF-8", Time(), Time());
@@ -525,24 +527,20 @@ TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
   data.SetURL(std::string(extensions::kExtensionScheme) + "://test4");
   data.safe_for_autoreplace = false;
 
-  // Extension keywords should override replaceable keywords.
+  // Both replaceable and non-replaceable keywords should be uniquified.
   TemplateURL* extension1 = new TemplateURL(test_util_.profile(), data);
   model()->Add(extension1);
   ASSERT_EQ(extension1,
             model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword1")));
-  model()->Remove(extension1);
   EXPECT_EQ(original1,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword1")));
-
-  // They should not override non-replaceable keywords.
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("test1")));
   data.SetKeyword(ASCIIToUTF16("keyword2"));
   TemplateURL* extension2 = new TemplateURL(test_util_.profile(), data);
   model()->Add(extension2);
-  ASSERT_EQ(original2,
+  ASSERT_EQ(extension2,
             model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword2")));
-  model()->Remove(original2);
-  EXPECT_EQ(extension2,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword2")));
+  EXPECT_EQ(original2,
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("test2")));
 
   // They should override extension keywords added earlier.
   data.SetKeyword(ASCIIToUTF16("keyword3"));
@@ -550,9 +548,8 @@ TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
   model()->Add(extension3);
   ASSERT_EQ(extension3,
             model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword3")));
-  model()->Remove(extension3);
   EXPECT_EQ(original3,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword3")));
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword3_")));
 }
 
 TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
@@ -561,16 +558,18 @@ TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
   // Similar to the AddSameKeyword test, but with an extension keyword masking a
   // replaceable TemplateURL.  We should still do correct conflict resolution
   // between the non-template URLs.
-  AddKeywordWithDate(
-      "replaceable", "keyword", "http://test1", std::string(),  std::string(),
-      std::string(), true, "UTF-8", Time(), Time());
   TemplateURL* extension = AddKeywordWithDate(
       "extension", "keyword",
       std::string(extensions::kExtensionScheme) + "://test2", std::string(),
       std::string(), std::string(), false, "UTF-8", Time(), Time());
+  // Adding a keyword that matches the extension should cause the extension
+  // to uniquify.
+  AddKeywordWithDate(
+      "replaceable", "keyword", "http://test1", std::string(),  std::string(),
+      std::string(), true, "UTF-8", Time(), Time());
 
   // Adding another replaceable keyword should remove the existing one, but
-  // leave the extension as the associated URL for this keyword.
+  // leave the extension as is.
   TemplateURLData data;
   data.short_name = ASCIIToUTF16("name1");
   data.SetKeyword(ASCIIToUTF16("keyword"));
@@ -579,13 +578,12 @@ TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
   TemplateURL* t_url = new TemplateURL(test_util_.profile(), data);
   model()->Add(t_url);
   EXPECT_EQ(extension,
-            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword")));
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword_")));
   EXPECT_TRUE(model()->GetTemplateURLForHost("test1") == NULL);
   EXPECT_EQ(t_url, model()->GetTemplateURLForHost("test3"));
 
   // Adding a nonreplaceable keyword should remove the existing replaceable
-  // keyword and replace the extension as the associated URL for this keyword,
-  // but not evict the extension from the service entirely.
+  // keyword.
   data.short_name = ASCIIToUTF16("name2");
   data.SetURL("http://test4");
   data.safe_for_autoreplace = false;
@@ -594,15 +592,8 @@ TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
   EXPECT_EQ(t_url2,
             model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword")));
   EXPECT_TRUE(model()->GetTemplateURLForHost("test3") == NULL);
-  // Note that extensions don't use host-based keywords, so we can't check that
-  // the extension is still in the model using GetTemplateURLForHost(); and we
-  // have to create a full-fledged Extension to use
-  // GetTemplateURLForExtension(), which is annoying, so just grab all the URLs
-  // from the model and search for |extension| within them.
-  TemplateURLService::TemplateURLVector template_urls(
-      model()->GetTemplateURLs());
-  EXPECT_FALSE(std::find(template_urls.begin(), template_urls.end(),
-                         extension) == template_urls.end());
+  EXPECT_EQ(extension,
+            model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword_")));
 }
 
 TEST_F(TemplateURLServiceTest, GenerateKeyword) {
@@ -920,6 +911,83 @@ TEST_F(TemplateURLServiceTest, DefaultSearchProviderLoadedFromPrefs) {
 
   ASSERT_TRUE(model()->GetDefaultSearchProvider());
   AssertEquals(*cloned_url, *model()->GetDefaultSearchProvider());
+}
+
+TEST_F(TemplateURLServiceTest, ResetNonExtensionURLs) {
+  test_util_.VerifyLoad();
+
+  TemplateURL* new_provider = AddKeywordWithDate(
+      "short_name", "keyword", "http://test.com/search?t={searchTerms}",
+      std::string(), std::string(), std::string(),
+      true, "UTF-8", Time(), Time());
+  model()->SetDefaultSearchProvider(new_provider);
+  AddKeywordWithDate(
+      "extension1", "ext_keyword",
+      std::string(extensions::kExtensionScheme) + "://test1", std::string(),
+      std::string(), std::string(), false, "UTF-8", Time(), Time());
+  TemplateURL* default_provider = model()->GetDefaultSearchProvider();
+  EXPECT_NE(SEARCH_ENGINE_GOOGLE,
+      TemplateURLPrepopulateData::GetEngineType(default_provider->url()));
+
+  // Non-extension URLs should go away. Default search engine is Google again.
+  model()->ResetNonExtensionURLs();
+  default_provider = model()->GetDefaultSearchProvider();
+  ASSERT_TRUE(default_provider);
+  EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
+      TemplateURLPrepopulateData::GetEngineType(default_provider->url()));
+  EXPECT_TRUE(model()->GetTemplateURLForKeyword(ASCIIToUTF16("ext_keyword")));
+  EXPECT_FALSE(model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword")));
+
+  // Reload URLs. Result should be the same, as extension keywords are now
+  // persisted.
+  test_util_.ResetModel(true);
+  default_provider = model()->GetDefaultSearchProvider();
+  ASSERT_TRUE(default_provider);
+  EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
+      TemplateURLPrepopulateData::GetEngineType(default_provider->url()));
+  EXPECT_TRUE(model()->GetTemplateURLForKeyword(ASCIIToUTF16("ext_keyword")));
+  EXPECT_FALSE(model()->GetTemplateURLForKeyword(ASCIIToUTF16("keyword")));
+}
+
+TEST_F(TemplateURLServiceTest, ResetURLsWithManagedDefault) {
+  // Set a managed preference that establishes a default search provider.
+  const char kName[] = "test1";
+  const char kKeyword[] = "test.com";
+  const char kSearchURL[] = "http://test.com/search?t={searchTerms}";
+  const char kIconURL[] = "http://test.com/icon.jpg";
+  const char kEncodings[] = "UTF-16;UTF-32";
+  const char kAlternateURL[] = "http://test.com/search#t={searchTerms}";
+  const char kSearchTermsReplacementKey[] = "espv";
+  test_util_.SetManagedDefaultSearchPreferences(true, kName, kKeyword,
+                                                kSearchURL, std::string(),
+                                                kIconURL, kEncodings,
+                                                kAlternateURL,
+                                                kSearchTermsReplacementKey);
+  test_util_.VerifyLoad();
+  // Verify that the default manager we are getting is the managed one.
+  TemplateURLData data;
+  data.short_name = ASCIIToUTF16(kName);
+  data.SetKeyword(ASCIIToUTF16(kKeyword));
+  data.SetURL(kSearchURL);
+  data.favicon_url = GURL(kIconURL);
+  data.show_in_default_list = true;
+  base::SplitString(kEncodings, ';', &data.input_encodings);
+  data.alternate_urls.push_back(kAlternateURL);
+  data.search_terms_replacement_key = kSearchTermsReplacementKey;
+  Profile* profile = test_util_.profile();
+  scoped_ptr<TemplateURL> expected_managed_default(new TemplateURL(profile,
+                                                                    data));
+  EXPECT_TRUE(model()->is_default_search_managed());
+  const TemplateURL* actual_managed_default =
+      model()->GetDefaultSearchProvider();
+  ExpectSimilar(expected_managed_default.get(), actual_managed_default);
+
+  // The following call has no effect on the managed search engine.
+  model()->ResetNonExtensionURLs();
+
+  EXPECT_TRUE(model()->is_default_search_managed());
+  actual_managed_default = model()->GetDefaultSearchProvider();
+  ExpectSimilar(expected_managed_default.get(), actual_managed_default);
 }
 
 TEST_F(TemplateURLServiceTest, UpdateKeywordSearchTermsForURL) {

@@ -35,12 +35,14 @@
 #include "content/public/common/top_controls_state.h"
 #include "content/public/renderer/render_view.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_pepper_helper.h"
 #include "content/renderer/render_widget.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
+#include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebFileSystem.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
@@ -54,9 +56,9 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebViewClient.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/glue/webpreferences.h"
-#include "webkit/media/webmediaplayer_delegate.h"
+#include "webkit/common/webpreferences.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
+#include "webkit/renderer/media/webmediaplayer_delegate.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
@@ -164,6 +166,7 @@ class RendererPpapiHost;
 class RendererWebColorChooserImpl;
 class RenderWidgetFullscreenPepper;
 class SpeechRecognitionDispatcher;
+class StatsCollectionController;
 class WebPluginDelegateProxy;
 struct CustomContextMenuContext;
 struct FaviconURL;
@@ -212,6 +215,7 @@ class CONTENT_EXPORT RenderViewImpl
       const WebPreferences& webkit_prefs,
       SharedRenderViewCounter* counter,
       int32 routing_id,
+      int32 main_frame_routing_id,
       int32 surface_id,
       int64 session_storage_namespace_id,
       const string16& frame_name,
@@ -266,6 +270,12 @@ class CONTENT_EXPORT RenderViewImpl
   // Functions to add and remove observers for this object.
   void AddObserver(RenderViewObserver* observer);
   void RemoveObserver(RenderViewObserver* observer);
+
+  // Returns the StatsCollectionObserver associated with this view, or NULL
+  // if one wasn't created;
+  StatsCollectionObserver* GetStatsCollectionObserver() {
+    return stats_collection_observer_.get();
+  }
 
   // Adds the given file chooser request to the file_chooser_completion_ queue
   // (see that var for more) and requests the chooser be displayed if there are
@@ -526,6 +536,7 @@ class CONTENT_EXPORT RenderViewImpl
       WebKit::WebFrame* frame,
       WebKit::WebApplicationCacheHostClient* client);
   virtual WebKit::WebCookieJar* cookieJar(WebKit::WebFrame* frame);
+  virtual void didAccessInitialDocument(WebKit::WebFrame* frame);
   virtual void didCreateFrame(WebKit::WebFrame* parent,
                               WebKit::WebFrame* child);
   virtual void didDisownOpener(WebKit::WebFrame* frame);
@@ -866,6 +877,7 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, NavigateFrame);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            ShouldUpdateSelectionTextFromContextMenuParams);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, BasicRenderFrame);
 
   typedef std::map<GURL, double> HostZoomLevels;
 
@@ -1367,6 +1379,8 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Helper objects ------------------------------------------------------------
 
+  scoped_ptr<RenderFrameImpl> main_render_frame_;
+
   RendererWebCookieJarImpl cookie_jar_;
 
   // The next group of objects all implement RenderViewObserver, so are deleted
@@ -1518,14 +1532,20 @@ class CONTENT_EXPORT RenderViewImpl
   // DOM automation bindings are enabled.
   scoped_ptr<DomAutomationController> dom_automation_controller_;
 
+   // Allows JS to read out a variety of internal various metrics. The JS object
+   // is only exposed when the stats collection bindings are enabled.
+   scoped_ptr<StatsCollectionController> stats_collection_controller_;
+
   // This field stores drag/drop related info for the event that is currently
   // being handled. If the current event results in starting a drag/drop
   // session, this info is sent to the browser along with other drag/drop info.
   DragEventSourceInfo possible_drag_event_info_;
 
-  // NOTE: pepper_helper_ should be last member because its constructor calls
-  // AddObservers method of RenderViewImpl from c-tor.
+  // NOTE: pepper_helper_ and stats_collection_observer_ should be the last
+  // members because their constructors call the AddObservers method of
+  // RenderViewImpl.
   scoped_ptr<RenderViewPepperHelper> pepper_helper_;
+  scoped_ptr<StatsCollectionObserver> stats_collection_observer_;
 
   // ---------------------------------------------------------------------------
   // ADDING NEW DATA? Please see if it fits appropriately in one of the above

@@ -41,17 +41,17 @@
         'content_resources.gyp:content_resources',
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../ipc/ipc.gyp:ipc',
         '../media/media.gyp:media',
         '../net/net.gyp:net',
         '../net/net.gyp:net_resources',
         '../skia/skia.gyp:skia',
-        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '../third_party/WebKit/public/blink.gyp:blink',
         '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit_test_support',
         '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
+        '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
         '../webkit/support/webkit_support.gyp:webkit_resources',
         '../webkit/support/webkit_support.gyp:webkit_support',
@@ -281,8 +281,13 @@
       'type': 'none',
       'dependencies': [
         'browser/devtools/devtools_resources.gyp:devtools_resources',
+        'content_resources.gyp:content_resources',
         'content_shell_resources',
+        '<(DEPTH)/net/net.gyp:net_resources',
+        '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
+        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_resources',
+        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_strings',
       ],
       'variables': {
         'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
@@ -361,6 +366,9 @@
       'msvs_settings': {
         'VCLinkerTool': {
           'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
+        },
+        'VCManifestTool': {
+          'AdditionalManifestFiles': 'shell/app/shell.exe.manifest',
         },
       },
       'conditions': [

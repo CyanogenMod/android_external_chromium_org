@@ -7,7 +7,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/timer.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
@@ -44,13 +43,6 @@ class ToastContentsView : public views::WidgetDelegateView,
   views::Widget* CreateWidget(gfx::NativeView parent);
   void SetContents(MessageView* view);
 
-  // Expiration timer control.
-  // (Re-)initializes the timer, initially and on notification update.
-  void ResetTimeout(int priority);
-  void SuspendTimer();
-  // (Re-)starts the timer, initially or after it was supended.
-  void StartTimer();
-
   // Shows the new toast for the first time, animated.
   // |origin| is the right-bottom corner of the toast.
   void RevealWithAnimation(gfx::Point origin);
@@ -76,6 +68,7 @@ class ToastContentsView : public views::WidgetDelegateView,
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
  private:
   // Overridden from ui::AnimationDelegate:
@@ -102,13 +95,6 @@ class ToastContentsView : public views::WidgetDelegateView,
 
   // Id if the corresponding Notification.
   std::string id_;
-
-  // Expiration timer values.
-  base::TimeDelta timeout_;
-  base::TimeDelta passed_;
-  base::Time start_time_;
-  scoped_ptr<base::OneShotTimer<ToastContentsView> > timer_;
-
 
   scoped_ptr<ui::SlideAnimation> bounds_animation_;
   scoped_ptr<ui::SlideAnimation> fade_animation_;

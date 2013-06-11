@@ -9,19 +9,20 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "extensions/common/constants.h"
 #include "grit/renderer_resources.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystemType.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebFileSystem.h"
+#include "third_party/WebKit/public/platform/WebFileSystemType.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace extensions {
 
-FileSystemNatives::FileSystemNatives(v8::Handle<v8::Context> context)
+FileSystemNatives::FileSystemNatives(ChromeV8Context* context)
     : ObjectBackedNativeHandler(context) {
   RouteFunction("GetFileEntry",
       base::Bind(&FileSystemNatives::GetFileEntry, base::Unretained(this)));
@@ -38,7 +39,8 @@ v8::Handle<v8::Value> FileSystemNatives::GetIsolatedFileSystem(
   DCHECK(args.Length() == 1 || args.Length() == 2);
   DCHECK(args[0]->IsString());
   std::string file_system_id(*v8::String::Utf8Value(args[0]));
-  WebKit::WebFrame* webframe = WebKit::WebFrame::frameForContext(v8_context());
+  WebKit::WebFrame* webframe =
+      WebKit::WebFrame::frameForContext(context()->v8_context());
   DCHECK(webframe);
 
   GURL context_url =
@@ -91,7 +93,8 @@ v8::Handle<v8::Value> FileSystemNatives::GetFileEntry(
   DCHECK(args[4]->IsBoolean());
   bool is_directory = args[4]->BooleanValue();
 
-  WebKit::WebFrame* webframe = WebKit::WebFrame::frameForContext(v8_context());
+  WebKit::WebFrame* webframe =
+      WebKit::WebFrame::frameForContext(context()->v8_context());
   DCHECK(webframe);
   return webframe->createFileEntry(
       type,

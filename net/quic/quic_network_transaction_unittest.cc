@@ -100,7 +100,6 @@ class QuicNetworkTransactionTest : public PlatformTest {
     header.packet_sequence_number = num;
     header.entropy_flag = false;
     header.fec_flag = false;
-    header.fec_entropy_flag = false;
     header.fec_group = 0;
 
     QuicRstStreamFrame rst(stream_id, QUIC_STREAM_NO_ERROR);
@@ -117,7 +116,6 @@ class QuicNetworkTransactionTest : public PlatformTest {
     header.packet_sequence_number = num;
     header.entropy_flag = false;
     header.fec_flag = false;
-    header.fec_entropy_flag = false;
     header.fec_group = 0;
 
     QuicAckFrame ack_frame(0, QuicTime::Zero(), 0);
@@ -139,7 +137,6 @@ class QuicNetworkTransactionTest : public PlatformTest {
     header.packet_sequence_number = 2;
     header.entropy_flag = false;
     header.fec_flag = false;
-    header.fec_entropy_flag = false;
     header.fec_group = 0;
 
     QuicAckFrame ack(largest_received, QuicTime::Zero(), least_unacked);
@@ -218,7 +215,6 @@ class QuicNetworkTransactionTest : public PlatformTest {
     header_.fec_group = 0;
     header_.entropy_flag = false;
     header_.fec_flag = false;
-    header_.fec_entropy_flag = false;
   }
 
   void CreateSession() {
@@ -240,7 +236,7 @@ class QuicNetworkTransactionTest : public PlatformTest {
   void CheckWasQuicResponse(const scoped_ptr<HttpNetworkTransaction>& trans) {
     const HttpResponseInfo* response = trans->GetResponseInfo();
     ASSERT_TRUE(response != NULL);
-    ASSERT_TRUE(response->headers != NULL);
+    ASSERT_TRUE(response->headers.get() != NULL);
     EXPECT_EQ("HTTP/1.1 200 OK", response->headers->GetStatusLine());
     EXPECT_TRUE(response->was_fetched_via_spdy);
     EXPECT_TRUE(response->was_npn_negotiated);
@@ -251,7 +247,7 @@ class QuicNetworkTransactionTest : public PlatformTest {
   void CheckWasHttpResponse(const scoped_ptr<HttpNetworkTransaction>& trans) {
     const HttpResponseInfo* response = trans->GetResponseInfo();
     ASSERT_TRUE(response != NULL);
-    ASSERT_TRUE(response->headers != NULL);
+    ASSERT_TRUE(response->headers.get() != NULL);
     EXPECT_EQ("HTTP/1.1 200 OK", response->headers->GetStatusLine());
     EXPECT_FALSE(response->was_fetched_via_spdy);
     EXPECT_FALSE(response->was_npn_negotiated);
@@ -275,7 +271,7 @@ class QuicNetworkTransactionTest : public PlatformTest {
 
   void SendRequestAndExpectHttpResponse(const std::string& expected) {
     scoped_ptr<HttpNetworkTransaction> trans(
-        new HttpNetworkTransaction(DEFAULT_PRIORITY, session_));
+        new HttpNetworkTransaction(DEFAULT_PRIORITY, session_.get()));
     RunTransaction(trans.get());
     CheckWasHttpResponse(trans);
     CheckResponseData(trans.get(), expected);
@@ -283,7 +279,7 @@ class QuicNetworkTransactionTest : public PlatformTest {
 
   void SendRequestAndExpectQuicResponse(const std::string& expected) {
     scoped_ptr<HttpNetworkTransaction> trans(
-        new HttpNetworkTransaction(DEFAULT_PRIORITY, session_));
+        new HttpNetworkTransaction(DEFAULT_PRIORITY, session_.get()));
     RunTransaction(trans.get());
     CheckWasQuicResponse(trans);
     CheckResponseData(trans.get(), expected);
@@ -331,7 +327,8 @@ class QuicNetworkTransactionTest : public PlatformTest {
 };
 
 TEST_F(QuicNetworkTransactionTest, ForceQuic) {
-  params_.origin_port_to_force_quic_on = 80;
+  params_.origin_to_force_quic_on =
+      HostPortPair::FromString("www.google.com:80");
 
   QuicStreamId stream_id = 3;
   scoped_ptr<QuicEncryptedPacket> req(
@@ -404,7 +401,8 @@ TEST_F(QuicNetworkTransactionTest, ForceQuic) {
 }
 
 TEST_F(QuicNetworkTransactionTest, ForceQuicWithErrorConnecting) {
-  params_.origin_port_to_force_quic_on = 80;
+  params_.origin_to_force_quic_on =
+      HostPortPair::FromString("www.google.com:80");
 
   MockRead quic_reads[] = {
     MockRead(ASYNC, ERR_SOCKET_NOT_CONNECTED),
@@ -416,7 +414,7 @@ TEST_F(QuicNetworkTransactionTest, ForceQuicWithErrorConnecting) {
   CreateSession();
 
   scoped_ptr<HttpNetworkTransaction> trans(
-      new HttpNetworkTransaction(DEFAULT_PRIORITY, session_));
+      new HttpNetworkTransaction(DEFAULT_PRIORITY, session_.get()));
   TestCompletionCallback callback;
   int rv = trans->Start(&request_, callback.callback(), net_log_.bound());
   EXPECT_EQ(ERR_IO_PENDING, rv);
@@ -425,7 +423,8 @@ TEST_F(QuicNetworkTransactionTest, ForceQuicWithErrorConnecting) {
 
 TEST_F(QuicNetworkTransactionTest, DoNotForceQuicForHttps) {
   // Attempt to "force" quic on 443, which will not be honored.
-  params_.origin_port_to_force_quic_on = 443;
+  params_.origin_to_force_quic_on =
+      HostPortPair::FromString("www.google.com:443");
 
   MockRead http_reads[] = {
     MockRead("HTTP/1.1 200 OK\r\n\r\n"),

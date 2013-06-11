@@ -21,14 +21,14 @@
 #include "base/compiler_specific.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/worker_pool.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
@@ -562,10 +562,10 @@ class HostResolverImpl::ProcTask
         completed_attempt_error_(ERR_UNEXPECTED),
         had_non_speculative_request_(false),
         net_log_(job_net_log) {
-    if (!params_.resolver_proc)
+    if (!params_.resolver_proc.get())
       params_.resolver_proc = HostResolverProc::GetDefault();
     // If default is unset, use the system proc.
-    if (!params_.resolver_proc)
+    if (!params_.resolver_proc.get())
       params_.resolver_proc = new SystemHostResolverProc();
   }
 
@@ -917,7 +917,7 @@ class HostResolverImpl::IPv6ProbeJob {
       : resolver_(resolver),
         net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_IPV6_PROBE_JOB)),
         result_(false, IPV6_SUPPORT_MAX, OK) {
-    DCHECK(resolver);
+    DCHECK(resolver.get());
     net_log_.BeginEvent(NetLog::TYPE_IPV6_PROBE_RUNNING);
     const bool kIsSlow = true;
     base::WorkerPool::PostTaskAndReply(
@@ -939,7 +939,7 @@ class HostResolverImpl::IPv6ProbeJob {
     net_log_.EndEvent(NetLog::TYPE_IPV6_PROBE_RUNNING,
                       base::Bind(&IPv6SupportResult::ToNetLogValue,
                                  base::Unretained(&result_)));
-    if (!resolver_)
+    if (!resolver_.get())
       return;
     resolver_->IPv6ProbeSetDefaultAddressFamily(
         result_.ipv6_supported ? ADDRESS_FAMILY_UNSPECIFIED
@@ -963,7 +963,7 @@ class HostResolverImpl::LoopbackProbeJob {
   explicit LoopbackProbeJob(const base::WeakPtr<HostResolverImpl>& resolver)
       : resolver_(resolver),
         result_(false) {
-    DCHECK(resolver);
+    DCHECK(resolver.get());
     const bool kIsSlow = true;
     base::WorkerPool::PostTaskAndReply(
         FROM_HERE,
@@ -981,7 +981,7 @@ class HostResolverImpl::LoopbackProbeJob {
   }
 
   void OnProbeComplete() {
-    if (!resolver_)
+    if (!resolver_.get())
       return;
     resolver_->SetHaveOnlyLoopbackAddresses(result_);
   }
@@ -1260,7 +1260,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
     // TODO(szym): Check if this is still needed.
     if (!req->info().is_speculative()) {
       had_non_speculative_request_ = true;
-      if (proc_task_)
+      if (proc_task_.get())
         proc_task_->set_had_non_speculative_request();
     }
 
@@ -1543,7 +1543,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
   // Performs Job's last rites. Completes all Requests. Deletes this.
   void CompleteRequests(const HostCache::Entry& entry,
                         base::TimeDelta ttl) {
-    CHECK(resolver_);
+    CHECK(resolver_.get());
 
     // This job must be removed from resolver's |jobs_| now to make room for a
     // new job with the same key in case one of the OnComplete callbacks decides
@@ -1613,7 +1613,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
 
       // Check if the resolver was destroyed as a result of running the
       // callback. If it was, we could continue, but we choose to bail.
-      if (!resolver_)
+      if (!resolver_.get())
         return;
     }
   }
@@ -2116,7 +2116,7 @@ void HostResolverImpl::AbortAllInProgressJobs() {
   base::WeakPtr<HostResolverImpl> self = weak_ptr_factory_.GetWeakPtr();
 
   // Then Abort them.
-  for (size_t i = 0; self && i < jobs_to_abort.size(); ++i) {
+  for (size_t i = 0; self.get() && i < jobs_to_abort.size(); ++i) {
     jobs_to_abort[i]->Abort();
     jobs_to_abort[i] = NULL;
   }
@@ -2132,7 +2132,7 @@ void HostResolverImpl::TryServingAllJobsFromHosts() {
   // Life check to bail once |this| is deleted.
   base::WeakPtr<HostResolverImpl> self = weak_ptr_factory_.GetWeakPtr();
 
-  for (JobMap::iterator it = jobs_.begin(); self && it != jobs_.end(); ) {
+  for (JobMap::iterator it = jobs_.begin(); self.get() && it != jobs_.end();) {
     Job* job = it->second;
     ++it;
     // This could remove |job| from |jobs_|, but iterator will remain valid.
@@ -2193,7 +2193,7 @@ void HostResolverImpl::OnDNSChanged() {
   AbortAllInProgressJobs();
 
   // |this| may be deleted inside AbortAllInProgressJobs().
-  if (self)
+  if (self.get())
     TryServingAllJobsFromHosts();
 }
 
@@ -2202,9 +2202,8 @@ bool HostResolverImpl::HaveDnsConfig() const {
   // ScopedDefaultHostResolverProc.
   // The alternative is to use NetworkChangeNotifier to override DnsConfig,
   // but that would introduce construction order requirements for NCN and SDHRP.
-  return (dns_client_.get() != NULL) &&
-         (dns_client_->GetConfig() != NULL) &&
-         !(proc_params_.resolver_proc == NULL &&
+  return (dns_client_.get() != NULL) && (dns_client_->GetConfig() != NULL) &&
+         !(proc_params_.resolver_proc.get() == NULL &&
            HostResolverProc::GetDefault() != NULL);
 }
 

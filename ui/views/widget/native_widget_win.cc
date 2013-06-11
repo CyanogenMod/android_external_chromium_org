@@ -161,6 +161,9 @@ ui::Layer* NativeWidgetWin::GetLayer() {
   return NULL;
 }
 
+void NativeWidgetWin::ReorderNativeViews() {
+}
+
 void NativeWidgetWin::ViewRemoved(View* view) {
   if (drop_target_.get())
     drop_target_->ResetTargetViewIfEquals(view);
@@ -640,7 +643,7 @@ void NativeWidgetWin::HandleCreate() {
     tooltip_manager_.reset();
   }
 
-  delegate_->OnNativeWidgetCreated();
+  delegate_->OnNativeWidgetCreated(true);
 }
 
 void NativeWidgetWin::HandleDestroying() {

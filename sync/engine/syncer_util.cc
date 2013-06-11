@@ -12,7 +12,7 @@
 #include "base/base64.h"
 #include "base/location.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "sync/engine/conflict_resolver.h"
 #include "sync/engine/syncer_proto_util.h"
 #include "sync/engine/syncer_types.h"
@@ -242,7 +242,7 @@ UpdateAttemptResponse AttemptToUpdateEntry(
       }
     }
   } else if (entry->Get(IS_DIR)) {
-    Directory::ChildHandles handles;
+    Directory::Metahandles handles;
     trans->directory()->GetChildHandlesById(trans, id, &handles);
     if (!handles.empty()) {
       // If we have still-existing children, then we need to deal with
@@ -492,14 +492,14 @@ void MarkDeletedChildrenSynced(
   // may be sensible if this code shows up in profiling.
   if (deleted_folders->empty())
     return;
-  Directory::UnsyncedMetaHandles handles;
+  Directory::Metahandles handles;
   {
     syncable::ReadTransaction trans(FROM_HERE, dir);
     dir->GetUnsyncedMetaHandles(&trans, &handles);
   }
   if (handles.empty())
     return;
-  Directory::UnsyncedMetaHandles::iterator it;
+  Directory::Metahandles::iterator it;
   for (it = handles.begin() ; it != handles.end() ; ++it) {
     // Single transaction / entry we deal with.
     WriteTransaction trans(FROM_HERE, SYNCER, dir);

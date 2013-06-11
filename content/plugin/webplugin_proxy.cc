@@ -11,9 +11,9 @@
 #include "base/memory/scoped_handle.h"
 #include "base/shared_memory.h"
 #include "build/build_config.h"
-#include "content/common_child/npobject_proxy.h"
-#include "content/common_child/npobject_util.h"
-#include "content/common_child/plugin_messages.h"
+#include "content/child/npobject_proxy.h"
+#include "content/child/npobject_util.h"
+#include "content/child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/public/common/content_client.h"
@@ -220,8 +220,10 @@ NPObject* WebPluginProxy::GetWindowScriptNPObject() {
   if (!success)
     return NULL;
 
-  window_npobject_ = NPObjectProxy::Create(
-      channel_, npobject_route_id, host_render_view_routing_id_, page_url_);
+  window_npobject_ = NPObjectProxy::Create(channel_.get(),
+                                           npobject_route_id,
+                                           host_render_view_routing_id_,
+                                           page_url_);
 
   return window_npobject_;
 }
@@ -237,8 +239,10 @@ NPObject* WebPluginProxy::GetPluginElement() {
   if (!success)
     return NULL;
 
-  plugin_element_ = NPObjectProxy::Create(
-      channel_, npobject_route_id, host_render_view_routing_id_, page_url_);
+  plugin_element_ = NPObjectProxy::Create(channel_.get(),
+                                          npobject_route_id,
+                                          host_render_view_routing_id_,
+                                          page_url_);
 
   return plugin_element_;
 }
@@ -278,7 +282,7 @@ WebPluginResourceClient* WebPluginProxy::GetResourceClient(int id) {
 }
 
 int WebPluginProxy::GetRendererId() {
-  if (channel_)
+  if (channel_.get())
     return channel_->renderer_id();
   return -1;
 }

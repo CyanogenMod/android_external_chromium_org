@@ -71,6 +71,10 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
     ++manager_updates_;
   }
 
+  virtual void CheckPortalListChanged(
+      const std::string& check_portal_list) OVERRIDE {
+  }
+
   virtual void ManagedStateListChanged(
       ManagedState::ManagedType type) OVERRIDE {
     AddStateListUpdate(GetTypeString(type));
@@ -236,7 +240,7 @@ class ShillPropertyHandlerTest : public testing::Test {
                flimflam::kStateIdle, add_to_watchlist);
   }
 
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   scoped_ptr<TestListener> listener_;
   scoped_ptr<internal::ShillPropertyHandler> shill_property_handler_;
   ShillManagerClient::TestInterface* manager_test_;

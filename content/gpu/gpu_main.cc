@@ -11,10 +11,11 @@
 #include "base/debug/trace_event.h"
 #include "base/message_loop.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
+#include "content/child/child_process.h"
 #include "content/common/gpu/gpu_config.h"
 #include "content/common/sandbox_linux.h"
 #include "content/gpu/gpu_child_thread.h"
@@ -38,7 +39,7 @@
 #include "content/common/gpu/media/exynos_video_decode_accelerator.h"
 #include "content/common/gpu/media/omx_video_decode_accelerator.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-#include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
+#include "content/common/gpu/media/vaapi_wrapper.h"
 #endif
 
 #if defined(USE_X11)
@@ -276,24 +277,22 @@ namespace {
 void CreateDummyGlContext() {
   scoped_refptr<gfx::GLSurface> surface(
       gfx::GLSurface::CreateOffscreenGLSurface(false, gfx::Size(1, 1)));
-  if (!surface) {
+  if (!surface.get()) {
     VLOG(1) << "gfx::GLSurface::CreateOffscreenGLSurface failed";
     return;
   }
 
   // On Linux, this is needed to make sure /dev/nvidiactl has
   // been opened and its descriptor cached.
-  scoped_refptr<gfx::GLContext> context(
-      gfx::GLContext::CreateGLContext(NULL,
-                                      surface,
-                                      gfx::PreferDiscreteGpu));
-  if (!context) {
+  scoped_refptr<gfx::GLContext> context(gfx::GLContext::CreateGLContext(
+      NULL, surface.get(), gfx::PreferDiscreteGpu));
+  if (!context.get()) {
     VLOG(1) << "gfx::GLContext::CreateGLContext failed";
     return;
   }
 
   // Similarly, this is needed for /dev/nvidia0.
-  if (context->MakeCurrent(surface)) {
+  if (context->MakeCurrent(surface.get())) {
     context->ReleaseCurrent(surface.get());
   } else {
     VLOG(1)  << "gfx::GLContext::MakeCurrent failed";
@@ -324,7 +323,7 @@ void WarmUpSandbox() {
   else
     OmxVideoDecodeAccelerator::PreSandboxInitialization();
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-  VaapiVideoDecodeAccelerator::PreSandboxInitialization();
+  VaapiWrapper::PreSandboxInitialization();
 #endif
 
 #if defined(OS_WIN)

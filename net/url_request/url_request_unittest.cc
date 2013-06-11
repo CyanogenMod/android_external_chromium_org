@@ -21,12 +21,12 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/capturing_net_log.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
@@ -1759,7 +1759,7 @@ TEST_F(URLRequestTest, SetJobPriorityBeforeJobStart) {
 
   scoped_refptr<URLRequestTestJob> job =
       new URLRequestTestJob(&req, &default_network_delegate_);
-  AddTestInterceptor()->set_main_intercept_job(job);
+  AddTestInterceptor()->set_main_intercept_job(job.get());
   EXPECT_EQ(DEFAULT_PRIORITY, job->priority());
 
   req.SetPriority(LOW);
@@ -1776,7 +1776,7 @@ TEST_F(URLRequestTest, SetJobPriority) {
 
   scoped_refptr<URLRequestTestJob> job =
       new URLRequestTestJob(&req, &default_network_delegate_);
-  AddTestInterceptor()->set_main_intercept_job(job);
+  AddTestInterceptor()->set_main_intercept_job(job.get());
 
   req.SetPriority(LOW);
   req.Start();
@@ -1812,7 +1812,7 @@ TEST_F(URLRequestTest, DelayedCookieCallback) {
   scoped_refptr<DelayedCookieMonster> delayed_cm =
       new DelayedCookieMonster();
   scoped_refptr<CookieStore> cookie_store = delayed_cm;
-  context.set_cookie_store(delayed_cm);
+  context.set_cookie_store(delayed_cm.get());
 
   // Set up a cookie.
   {
@@ -4575,7 +4575,7 @@ TEST_F(URLRequestTestHTTP, SetSubsequentJobPriority) {
       new URLRequestRedirectJob(
           &req, &default_network_delegate_, test_server_.GetURL("echo"),
           URLRequestRedirectJob::REDIRECT_302_FOUND);
-  AddTestInterceptor()->set_main_intercept_job(redirect_job);
+  AddTestInterceptor()->set_main_intercept_job(redirect_job.get());
 
   req.SetPriority(LOW);
   req.Start();
@@ -4583,7 +4583,7 @@ TEST_F(URLRequestTestHTTP, SetSubsequentJobPriority) {
 
   scoped_refptr<URLRequestTestJob> job =
       new URLRequestTestJob(&req, &default_network_delegate_);
-  AddTestInterceptor()->set_main_intercept_job(job);
+  AddTestInterceptor()->set_main_intercept_job(job.get());
 
   // Should trigger |job| to be started.
   base::MessageLoop::current()->Run();
@@ -5182,7 +5182,7 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
     scoped_refptr<net::X509Certificate> root_cert =
       ImportCertFromFile(GetTestCertsDirectory(), "ocsp-test-root.pem");
     CHECK_NE(static_cast<X509Certificate*>(NULL), root_cert);
-    test_root_.reset(new ScopedTestRoot(root_cert));
+    test_root_.reset(new ScopedTestRoot(root_cert.get()));
 
 #if defined(USE_NSS) || defined(OS_IOS)
     SetURLRequestContextForNSSHttpIO(&context_);

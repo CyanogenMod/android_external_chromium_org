@@ -12,15 +12,14 @@
 #include "base/logging.h"
 #include "base/prefs/pref_value_map.h"
 #include "base/stl_util.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/extensions/external_policy_loader.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/policy/policy_error_map.h"
 #include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/policy/policy_path_parser.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chrome/browser/prefs/proxy_prefs.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -33,6 +32,10 @@
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "policy/policy_constants.h"
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/policy/policy_path_parser.h"
+#endif
 
 namespace policy {
 
@@ -678,6 +681,9 @@ void AutofillPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
   }
 }
 
+// Android doesn't support these policies, and doesn't have a policy_path_parser
+// implementation.
+#if !defined(OS_ANDROID)
 
 // DownloadDirPolicyHandler implementation -------------------------------------
 
@@ -733,6 +739,7 @@ void DiskCacheDirPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
   }
 }
 
+#endif  // !defined(OS_ANDROID)
 
 // FileSelectionDialogsHandler implementation ----------------------------------
 
@@ -1390,6 +1397,74 @@ void JavascriptPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
     prefs->SetValue(prefs::kManagedDefaultJavaScriptSetting,
                     Value::CreateIntegerValue(setting));
   }
+}
+
+// URLBlacklistPolicyHandler implementation ------------------------------------
+
+URLBlacklistPolicyHandler::URLBlacklistPolicyHandler() {
+}
+
+URLBlacklistPolicyHandler::~URLBlacklistPolicyHandler() {
+}
+
+bool URLBlacklistPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
+                                                    PolicyErrorMap* errors) {
+  const Value* disabled_schemes = policies.GetValue(key::kDisabledSchemes);
+  const Value* url_blacklist = policies.GetValue(key::kURLBlacklist);
+
+  if (disabled_schemes && !disabled_schemes->IsType(Value::TYPE_LIST)) {
+    errors->AddError(key::kDisabledSchemes,
+                     IDS_POLICY_TYPE_ERROR,
+                     ValueTypeToString(Value::TYPE_LIST));
+  }
+
+  if (url_blacklist && !url_blacklist->IsType(Value::TYPE_LIST)) {
+      errors->AddError(key::kURLBlacklist,
+                       IDS_POLICY_TYPE_ERROR,
+                       ValueTypeToString(Value::TYPE_LIST));
+  }
+
+  return true;
+}
+
+void URLBlacklistPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
+                                                    PrefValueMap* prefs) {
+  const base::Value* url_blacklist_policy =
+      policies.GetValue(key::kURLBlacklist);
+  const base::ListValue* url_blacklist = NULL;
+  if (url_blacklist_policy)
+    url_blacklist_policy->GetAsList(&url_blacklist);
+  const base::Value* disabled_schemes_policy =
+      policies.GetValue(key::kDisabledSchemes);
+  const base::ListValue* disabled_schemes = NULL;
+  if (disabled_schemes_policy)
+    disabled_schemes_policy->GetAsList(&disabled_schemes);
+
+  scoped_ptr<base::ListValue> merged_url_blacklist(new base::ListValue());
+
+  // We start with the DisabledSchemes because we have size limit when
+  // handling URLBacklists.
+  if (disabled_schemes_policy) {
+    for (base::ListValue::const_iterator entry(disabled_schemes->begin());
+         entry != disabled_schemes->end(); ++entry) {
+      std::string entry_value;
+      if ((*entry)->GetAsString(&entry_value)) {
+        entry_value.append("://*");
+        merged_url_blacklist->AppendString(entry_value);
+      }
+    }
+  }
+
+  if (url_blacklist_policy) {
+    for (base::ListValue::const_iterator entry(url_blacklist->begin());
+         entry != url_blacklist->end(); ++entry) {
+      if ((*entry)->IsType(Value::TYPE_STRING))
+        merged_url_blacklist->Append((*entry)->DeepCopy());
+    }
+  }
+
+  if (disabled_schemes_policy || url_blacklist_policy)
+    prefs->SetValue(prefs::kUrlBlacklist, merged_url_blacklist.release());
 }
 
 // RestoreOnStartupPolicyHandler implementation --------------------------------

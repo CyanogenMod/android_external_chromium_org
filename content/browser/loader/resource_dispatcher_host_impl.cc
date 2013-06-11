@@ -68,13 +68,13 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_start.h"
 #include "net/base/auth.h"
-#include "net/cert/cert_status_flags.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_data_stream.h"
+#include "net/cert/cert_status_flags.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_response_headers.h"
@@ -84,9 +84,9 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "webkit/appcache/appcache_interceptor.h"
-#include "webkit/appcache/appcache_interfaces.h"
+#include "webkit/browser/appcache/appcache_interceptor.h"
 #include "webkit/browser/blob/blob_storage_controller.h"
+#include "webkit/common/appcache/appcache_interfaces.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/glue/resource_request_body.h"
 #include "webkit/glue/webkit_glue.h"
@@ -182,7 +182,7 @@ bool ShouldServiceRequest(int process_type,
   }
 
   // Check if the renderer is permitted to upload the requested files.
-  if (request_data.request_body) {
+  if (request_data.request_body.get()) {
     const std::vector<ResourceRequestBody::Element>* uploads =
         request_data.request_body->elements();
     std::vector<ResourceRequestBody::Element>::const_iterator iter;
@@ -280,8 +280,8 @@ int BuildLoadFlagsForRequest(
 }
 
 int GetCertID(net::URLRequest* request, int child_id) {
-  if (request->ssl_info().cert) {
-    return CertStore::GetInstance()->StoreCert(request->ssl_info().cert,
+  if (request->ssl_info().cert.get()) {
+    return CertStore::GetInstance()->StoreCert(request->ssl_info().cert.get(),
                                                child_id);
   }
   return 0;
@@ -915,6 +915,14 @@ void ResourceDispatcherHostImpl::BeginRequest(
   int process_type = filter_->process_type();
   int child_id = filter_->child_id();
 
+  // Reject invalid priority.
+  int priority = static_cast<int>(request_data.priority);
+  if (priority < net::MINIMUM_PRIORITY || priority >= net::NUM_PRIORITIES) {
+    RecordAction(UserMetricsAction("BadMessageTerminate_RDH"));
+    filter_->BadMessageReceived();
+    return;
+  }
+
   // If we crash here, figure out what URL the renderer was requesting.
   // http://crbug.com/91398
   char url_buf[128];
@@ -1009,7 +1017,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
   request->SetPriority(request_data.priority);
 
   // Resolve elements from request_body and prepare upload data.
-  if (request_data.request_body) {
+  if (request_data.request_body.get()) {
     request->set_upload(make_scoped_ptr(
         request_data.request_body->ResolveElementsAndCreateUploadDataStream(
             filter_->blob_storage_context()->controller(),

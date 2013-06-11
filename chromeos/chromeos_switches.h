@@ -43,7 +43,6 @@ CHROMEOS_EXPORT extern const char kEnableCarrierSwitching[];
 CHROMEOS_EXPORT extern const char kEnableChromeAudioSwitching[];
 CHROMEOS_EXPORT extern const char kEnableChromeCaptivePortalDetector[];
 CHROMEOS_EXPORT extern const char kEnableKioskMode[];
-CHROMEOS_EXPORT extern const char kEnableKioskAppSettings[];
 CHROMEOS_EXPORT extern const char kEnableRequestTabletSite[];
 CHROMEOS_EXPORT extern const char kEnableScreensaverExtensions[];
 CHROMEOS_EXPORT extern const char kEnableStaticIPConfig[];
@@ -69,9 +68,11 @@ CHROMEOS_EXPORT extern const char kNoDiscardTabs[];
 #ifndef NDEBUG
 CHROMEOS_EXPORT extern const char kOobeSkipPostLogin[];
 #endif
+CHROMEOS_EXPORT extern const char kSkipHWIDCheck[];
 CHROMEOS_EXPORT extern const char kSmsTestMessages[];
 CHROMEOS_EXPORT extern const char kStubCrosSettings[];
 CHROMEOS_EXPORT extern const char kUseNewNetworkConfigurationHandlers[];
+CHROMEOS_EXPORT extern const char kUseNewNetworkConnectionHandler[];
 
 }  // namespace switches
 }  // namespace chromeos

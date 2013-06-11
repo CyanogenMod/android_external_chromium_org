@@ -41,9 +41,12 @@ void PulseAudioUnifiedStream::ReadCallback(pa_stream* handle, size_t length,
   static_cast<PulseAudioUnifiedStream*>(user_data)->ReadData();
 }
 
-PulseAudioUnifiedStream::PulseAudioUnifiedStream(const AudioParameters& params,
-                                                 AudioManagerBase* manager)
+PulseAudioUnifiedStream::PulseAudioUnifiedStream(
+    const AudioParameters& params,
+    const std::string& input_device_id,
+    AudioManagerBase* manager)
     : params_(params),
+      input_device_id_(input_device_id),
       manager_(manager),
       pa_context_(NULL),
       pa_mainloop_(NULL),
@@ -77,9 +80,8 @@ bool PulseAudioUnifiedStream::Open() {
                                  params_, &StreamNotifyCallback, NULL, this))
     return false;
 
-  // TODO(xians): Add support for non-default device.
   if (!pulse::CreateInputStream(pa_mainloop_, pa_context_, &input_stream_,
-                                params_, AudioManagerBase::kDefaultDeviceId,
+                                params_, input_device_id_,
                                 &StreamNotifyCallback, this))
     return false;
 
@@ -155,7 +157,6 @@ void PulseAudioUnifiedStream::WriteData(size_t requested_bytes) {
     uint32 hardware_delay = pulse::GetHardwareLatencyInBytes(
         output_stream_, params_.sample_rate(),
         params_.GetBytesPerFrame());
-    source_callback_->WaitTillDataReady();
     fifo_->Read(input_data_buffer_.get(), requested_bytes);
     input_bus_->FromInterleaved(
         input_data_buffer_.get(), params_.frames_per_buffer(), 2);

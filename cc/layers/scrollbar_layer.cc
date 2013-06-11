@@ -180,10 +180,11 @@ void ScrollbarLayer::CreateUpdaterIfNeeded() {
   texture_format_ =
       layer_tree_host()->GetRendererCapabilities().best_texture_format;
 
-  if (!track_updater_) {
+  if (!track_updater_.get()) {
     track_updater_ = CachingBitmapContentLayerUpdater::Create(
         scoped_ptr<LayerPainter>(
-          new ScrollbarPartPainter(scrollbar_.get(), TRACK)).Pass(),
+            new ScrollbarPartPainter(scrollbar_.get(), TRACK))
+            .Pass(),
         rendering_stats_instrumentation(),
         id());
   }
@@ -192,10 +193,11 @@ void ScrollbarLayer::CreateUpdaterIfNeeded() {
         layer_tree_host()->contents_texture_manager());
   }
 
-  if (!thumb_updater_) {
+  if (!thumb_updater_.get()) {
     thumb_updater_ = CachingBitmapContentLayerUpdater::Create(
         scoped_ptr<LayerPainter>(
-            new ScrollbarPartPainter(scrollbar_.get(), THUMB)).Pass(),
+            new ScrollbarPartPainter(scrollbar_.get(), THUMB))
+            .Pass(),
         rendering_stats_instrumentation(),
         id());
   }
@@ -258,7 +260,7 @@ gfx::Rect ScrollbarLayer::ScrollbarLayerRectToContentRect(
       layer_rect, contents_scale_y(), contents_scale_y());
   // We should never return a rect bigger than the content_bounds().
   gfx::Size clamped_size = expanded_rect.size();
-  clamped_size.ClampToMax(content_bounds());
+  clamped_size.SetToMin(content_bounds());
   expanded_rect.set_size(clamped_size);
   return expanded_rect;
 }

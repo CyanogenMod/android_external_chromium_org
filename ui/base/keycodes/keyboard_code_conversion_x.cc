@@ -13,7 +13,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 namespace ui {
 
@@ -339,6 +339,10 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
     case XK_guillemotleft:
     case XK_guillemotright:
     case XK_degree:
+    // In the case of canadian multilingual keyboard layout, VKEY_OEM_102 is
+    // assigned to ugrave key.
+    case XK_ugrave:
+    case XK_Ugrave:
       return VKEY_OEM_102;  // international backslash key in 102 keyboard.
 
     // When evdev is in use, /usr/share/X11/xkb/symbols/inet maps F13-18 keys

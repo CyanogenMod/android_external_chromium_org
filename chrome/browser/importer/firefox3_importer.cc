@@ -7,11 +7,12 @@
 #include <set>
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_html_reader.h"
 #include "chrome/browser/bookmarks/imported_bookmark_entry.h"
 #include "chrome/browser/browser_process.h"
@@ -432,11 +433,7 @@ void Firefox3Importer::GetSearchEnginesXMLFiles(
               engine.substr(index + kProfilePrefix.length()));
       } else {
         // Looks like absolute path to the file.
-#if defined(OS_WIN)
-        file = base::FilePath(UTF8ToWide(engine));
-#else
-        file = base::FilePath(engine);
-#endif
+        file = base::FilePath::FromUTF8Unsafe(engine);
       }
       files->push_back(file);
     } while (s.Step() && !cancelled());
@@ -457,8 +454,7 @@ void Firefox3Importer::GetSearchEnginesXMLFiles(
 #endif
 
   // Get search engine definition from file system.
-  file_util::FileEnumerator engines(app_path, false,
-                                    file_util::FileEnumerator::FILES);
+  base::FileEnumerator engines(app_path, false, base::FileEnumerator::FILES);
   for (base::FilePath engine_path = engines.Next();
        !engine_path.value().empty(); engine_path = engines.Next()) {
     files->push_back(engine_path);

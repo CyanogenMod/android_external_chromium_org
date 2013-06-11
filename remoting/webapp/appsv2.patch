@@ -21,14 +21,14 @@ diff --git a/remoting/webapp/host_controller.js b/remoting/webapp/host_controlle
 index 83c9844..98f63c3 100644
 --- a/host_controller.js
 +++ b/host_controller.js
-@@ -356,7 +356,7 @@ remoting.HostController.prototype.getLocalHostStateAndId = function(onDone) {
-     onDone(hostId);
+@@ -31,7 +31,7 @@ remoting.HostController.prototype.getLocalHostStateAndId = function(onDone) {
    };
+
    try {
--    this.plugin_.getDaemonConfig(onConfig);
+-    this.hostDispatcher_.getDaemonVersion(printVersion);
 +    onConfig('{}');
    } catch (err) {
-     onDone(null);
+     console.log('Host version not available.');
    }
 diff --git a/remoting/webapp/main.html b/remoting/webapp/main.html
 index 061caeb..f61e532 100644
@@ -46,7 +46,7 @@ diff --git a/remoting/webapp/manifest.json b/remoting/webapp/manifest.json
 index d1f8d1f..67bf660 100644
 --- a/manifest.json
 +++ b/manifest.json
-@@ -5,30 +5,16 @@
+@@ -5,30 +5,15 @@
    "manifest_version": 2,
    "default_locale": "en",
    "app": {
@@ -58,7 +58,6 @@ index d1f8d1f..67bf660 100644
 +      "scripts": ["background.js"]
 +     }
 +   },
-+  "key": "chromotingappsv2",
    "icons": {
      "128": "chromoting128.webp",
      "48": "chromoting48.webp",
@@ -96,7 +95,7 @@ index d1f8d1f..67bf660 100644
 -    { "path": "remoting_host_plugin.plugin", "public": false }
 -  ],
 +  "oauth2": {
-+    "client_id": "45833509441.apps.googleusercontent.com",
++    "client_id": "45833509441-oqgdhgddn085c7cq9djknefjo0tedtua.apps.googleusercontent.com",
 +    "scopes": [
 +      "https://www.googleapis.com/auth/chromoting https://www.googleapis.com/auth/googletalk https://www.googleapis.com/auth/userinfo#email"
 +    ]
@@ -135,9 +134,9 @@ index f89072a..2fadd83 100644
    remoting.stats = new remoting.ConnectionStats(
        document.getElementById('statistics'));
    remoting.formatIq = new remoting.FormatIq();
-@@ -133,9 +130,6 @@ remoting.initHomeScreenUi = function () {
-   document.getElementById('share-button').disabled =
-       !remoting.hostController.isPluginSupported();
+@@ -156,9 +151,6 @@ remoting.initHomeScreenUi = function () {
+   remoting.hostController = new remoting.HostController();
+   document.getElementById('share-button').disabled = !isIT2MeSupported_();
    remoting.setMode(remoting.AppMode.HOME);
 -  if (!remoting.oauth2.isAuthenticated()) {
 -    document.getElementById('auth-dialog').hidden = false;

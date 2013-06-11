@@ -5,33 +5,25 @@
 #include "chrome/browser/web_applications/web_app.h"
 
 #include "base/files/file_path.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_renderer_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::BrowserThread;
 using content::RenderViewHostTester;
 
 class WebApplicationTest : public ChromeRenderViewHostTestHarness {
- public:
-  WebApplicationTest() : ui_thread_(BrowserThread::UI, &message_loop_) {
-  }
-
- private:
+ protected:
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
     extensions::TabHelper::CreateForWebContents(web_contents());
     FaviconTabHelper::CreateForWebContents(web_contents());
   }
-
-  content::TestBrowserThread ui_thread_;
 };
 
 #if defined(OS_MACOSX)

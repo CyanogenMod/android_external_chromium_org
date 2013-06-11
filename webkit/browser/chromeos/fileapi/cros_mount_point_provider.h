@@ -14,8 +14,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "webkit/browser/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/quota/special_storage_policy.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace fileapi {
@@ -31,7 +31,38 @@ namespace chromeos {
 
 class FileAccessPermissions;
 
-// An interface to provide local filesystem paths.
+// CrosMountPointProvider is a Chrome OS specific implementation of
+// ExternalFileSystemMountPointProvider. This class is responsible for a
+// number of things, including:
+//
+// - Add system mount points
+// - Grant/revoke/check file access permissions
+// - Create FileSystemOperation per file system type
+// - Create FileStreamReader/Writer per file system type
+//
+// Chrome OS specific mount points:
+//
+// "Downloads" is a mount point for user's Downloads directory on the local
+// disk, where downloaded files are stored by default.
+//
+// "archive" is a mount point for an archive file, such as a zip file. This
+// mount point exposes contents of an archive file via cros_disks and AVFS
+// <http://avf.sourceforge.net/>.
+//
+// "removable" is a mount point for removable media such as an SD card.
+// Insertion and removal of removable media are handled by cros_disks.
+//
+// "oem" is a read-only mount point for a directory containing OEM data.
+//
+// "drive" is a mount point for Google Drive. Drive is integrated with the
+// FileSystem API layer via drive::FileSystemProxy. This mount point is added
+// by drive::DriveIntegrationService.
+//
+// These mount points are placed under the "external" namespace, and file
+// system URLs for these mount points look like:
+//
+//   filesystem:<origin>/external/<mount_name>/...
+//
 class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
     : public fileapi::ExternalFileSystemMountPointProvider {
  public:
@@ -46,6 +77,10 @@ class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
       scoped_refptr<fileapi::ExternalMountPoints> mount_points,
       fileapi::ExternalMountPoints* system_mount_points);
   virtual ~CrosMountPointProvider();
+
+  // Adds system mount points, such as "archive", and "removable". This
+  // function is no-op if these mount points are already present.
+  void AddSystemMountPoints();
 
   // Returns true if CrosMountpointProvider can handle |url|, i.e. its
   // file system type matches with what this provider supports.
@@ -113,9 +148,8 @@ class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
   scoped_ptr<FileAccessPermissions> file_access_permissions_;
   scoped_ptr<fileapi::AsyncFileUtilAdapter> local_file_util_;
 
-  // Mount points specific to the owning context.
-  //
-  // Add/Remove MountPoints will affect only these mount points.
+  // Mount points specific to the owning context (i.e. per-profile mount
+  // points).
   //
   // It is legal to have mount points with the same name as in
   // system_mount_points_. Also, mount point paths may overlap with mount point

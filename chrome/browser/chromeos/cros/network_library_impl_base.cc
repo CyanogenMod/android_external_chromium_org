@@ -196,27 +196,6 @@ void NetworkLibraryImplBase::DeleteDeviceFromDeviceObserversMap(
 
 //////////////////////////////////////////////////////////////////////////////
 
-void NetworkLibraryImplBase::Lock() {
-  if (is_locked_)
-    return;
-  is_locked_ = true;
-  NotifyNetworkManagerChanged(true);  // Forced update.
-}
-
-void NetworkLibraryImplBase::Unlock() {
-  DCHECK(is_locked_);
-  if (!is_locked_)
-    return;
-  is_locked_ = false;
-  NotifyNetworkManagerChanged(true);  // Forced update.
-}
-
-bool NetworkLibraryImplBase::IsLocked() {
-  return is_locked_;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-
 void NetworkLibraryImplBase::AddPinOperationObserver(
     PinOperationObserver* observer) {
   if (!pin_operation_observers_.HasObserver(observer))
@@ -426,26 +405,6 @@ bool NetworkLibraryImplBase::mobile_enabled() const {
   return cellular_enabled() || wimax_enabled();
 }
 
-bool NetworkLibraryImplBase::ethernet_busy() const {
-  return busy_devices_ & (1 << TYPE_ETHERNET);
-}
-
-bool NetworkLibraryImplBase::wifi_busy() const {
-  return busy_devices_ & (1 << TYPE_WIFI);
-}
-
-bool NetworkLibraryImplBase::wimax_busy() const {
-  return busy_devices_ & (1 << TYPE_WIMAX);
-}
-
-bool NetworkLibraryImplBase::cellular_busy() const {
-  return busy_devices_ & (1 << TYPE_CELLULAR);
-}
-
-bool NetworkLibraryImplBase::mobile_busy() const {
-  return cellular_busy() || wimax_busy();
-}
-
 bool NetworkLibraryImplBase::wifi_scanning() const {
   return wifi_scanning_;
 }
@@ -460,10 +419,6 @@ bool NetworkLibraryImplBase::cellular_initializing() const {
 }
 
 bool NetworkLibraryImplBase::offline_mode() const { return offline_mode_; }
-
-std::string NetworkLibraryImplBase::GetCheckPortalList() const {
-  return check_portal_list_;
-}
 
 // Returns the IP address for the active network.
 // TODO(stevenjb): Fix this for VPNs. See chromium-os:13972.

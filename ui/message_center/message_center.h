@@ -14,6 +14,8 @@
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/notification_types.h"
 
+class TrayViewControllerTest;
+
 namespace base {
 class DictionaryValue;
 }
@@ -29,6 +31,7 @@ namespace message_center {
 
 class MessageCenterObserver;
 class NotificationList;
+class NotifierSettingsDelegate;
 
 class MESSAGE_CENTER_EXPORT MessageCenter {
  public:
@@ -57,8 +60,13 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
     virtual void ShowSettings(const std::string& notification_id) = 0;
 
     // Request to show the notification settings dialog. |context| is necessary
-    // to create a new window.
-    virtual void ShowSettingsDialog(gfx::NativeView context) = 0;
+    // to create a new window. Returns the NotifierSettingsDelegate belonging to
+    // the settings dialog.   On platforms where the dialog is a standalone
+    // window, this is owned by  the window and valid while the window is open.
+    // On platforms where the  settings dialog is shown in the tray, this is
+    // owned by the tray and valid  while the tray is showing settings.
+    virtual NotifierSettingsDelegate* ShowSettingsDialog(
+        gfx::NativeView context) = 0;
   };
 
   // Called to set the delegate.  Generally called only once, except in tests.
@@ -80,36 +88,18 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
 
   // Getters of the current notifications.
   virtual const NotificationList::Notifications& GetNotifications() = 0;
+  // Gets all notifications being shown as popups.
   virtual NotificationList::PopupNotifications GetPopupNotifications() = 0;
 
   // Basic operations of notification: add/remove/update.
 
-  // Adds a new notification. |id| is a unique identifier, used to update or
-  // remove notifications. |title| and |meesage| describe the notification text.
-  // Use SetNotificationIcon, SetNotificationImage, or SetNotificationButtonIcon
-  // to set images. If |extension_id| is provided then 'Disable extension' will
-  // appear in a dropdown menu and the id will be used to disable notifications
-  // from the extension. Otherwise if |display_source| is provided, a menu item
-  // showing the source and allowing notifications from that source to be
-  // disabled will be shown. All actual disabling is handled by the Delegate.
-  virtual void AddNotification(NotificationType type,
-                               const std::string& id,
-                               const string16& title,
-                               const string16& message,
-                               const string16& display_source,
-                               const std::string& extension_id,
-                               const base::DictionaryValue* optional_fields,
-                               NotificationDelegate* delegate) = 0;
+  // Adds a new notification.
+  virtual void AddNotification(scoped_ptr<Notification> notification) = 0;
 
   // Updates an existing notification with id = old_id and set its id to new_id.
-  // |delegate| and |optional_fields| can be NULL in case of no updates on
-  // those fields.
-  virtual void UpdateNotification(const std::string& old_id,
-                                  const std::string& new_id,
-                                  const string16& title,
-                                  const string16& message,
-                                  const base::DictionaryValue* optional_fields,
-                                  NotificationDelegate* delegate) = 0;
+  virtual void UpdateNotification(
+      const std::string& old_id,
+      scoped_ptr<Notification> new_notification) = 0;
 
   // Removes an existing notification.
   virtual void RemoveNotification(const std::string& id, bool by_user) = 0;
@@ -131,25 +121,75 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
 
   // Operations happening especially from GUIs: click, expand, disable,
   // and settings.
-  // TODO(mukai): settings can be in another class?
+  // Searches through the notifications and disables any that match the
+  // extension id given.
   virtual void DisableNotificationsByExtension(const std::string& id) = 0;
-  virtual void DisableNotificationsByUrl(const std::string& id) = 0;
+
+  // Disables all notifications that match the given url by querying the
+  // delegate and also by matching display_source.
+  // TODO(dewittj): Is display_source matching necessary?
+  virtual void DisableNotificationsByUrl(const std::string& url) = 0;
+
+  // TODO(mukai): settings can be in another class?
+  // Shows the settings for a web notification (profile is identified by the
+  // given notification id).
   virtual void ShowNotificationSettings(const std::string& id) = 0;
-  virtual void ShowNotificationSettingsDialog(gfx::NativeView context) = 0;
+
+  // Shows the rich notification settings dialog.
+  virtual NotifierSettingsDelegate* ShowNotificationSettingsDialog(
+      gfx::NativeView context) = 0;
+
+  // Reformat a notification to show its entire text content.
   virtual void ExpandNotification(const std::string& id) = 0;
+
+  // This should be called by UI classes when a notification is clicked to
+  // trigger the notification's delegate callback and also update the message
+  // center observers.
   virtual void ClickOnNotification(const std::string& id) = 0;
+
+  // This should be called by UI classes when a notification button is clicked
+  // to trigger the notification's delegate callback and also update the message
+  // center observers.
   virtual void ClickOnNotificationButton(const std::string& id,
                                          int button_index) = 0;
+
+  // This should be called by UI classes after a visible notification popup
+  // closes, indicating that the notification has been shown to the user.
+  // |mark_notification_as_read|, if false, will unset the read bit on a
+  // notification, increasing the unread count of the center.
   virtual void MarkSinglePopupAsShown(const std::string& id,
                                       bool mark_notification_as_read) = 0;
+
+  // This should be called by UI classes when a notification is first displayed
+  // to the user, in order to decrement the unread_count for the tray, and to
+  // notify observers that the notification is visible.
   virtual void DisplayedNotification(const std::string& id) = 0;
+
+  // This can be called to change the quiet mode state (without a timeout).
   virtual void SetQuietMode(bool in_quiet_mode) = 0;
+
+  // Temporarily enables quiet mode for |expires_in| time.
   virtual void EnterQuietModeWithExpire(const base::TimeDelta& expires_in) = 0;
+
   // Informs the notification list whether the message center is visible.
   // This affects whether or not a message has been "read".
   virtual void SetMessageCenterVisible(bool visible) = 0;
 
+  // Allows querying the visibility of the center.
+  virtual bool IsMessageCenterVisible() = 0;
+
+  // UI classes should call this when there is cause to leave popups visible for
+  // longer than the default (for example, when the mouse hovers over a popup).
+  virtual void PausePopupTimers() = 0;
+
+  // UI classes should call this when the popup timers should restart (for
+  // example, after the mouse leaves the popup.)
+  virtual void RestartPopupTimers() = 0;
+
  protected:
+  friend class ::TrayViewControllerTest;
+  virtual void DisableTimersForTest() = 0;
+
   MessageCenter();
   virtual ~MessageCenter();
 

@@ -8,8 +8,8 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
@@ -64,7 +64,7 @@ class ServiceStateURLRequestDelegate : public net::URLRequest::Delegate {
     const int kBufSize = 100000;
     scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(kBufSize));
     int num_bytes = 0;
-    while (request->Read(buf, kBufSize, &num_bytes)) {
+    while (request->Read(buf.get(), kBufSize, &num_bytes)) {
       data_.append(buf->data(), buf->data() + num_bytes);
     }
   }

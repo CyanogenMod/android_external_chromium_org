@@ -8,12 +8,31 @@
 
 namespace cc {
 
+namespace {
+
+class FakeRasterWorkerPool : public RasterWorkerPool {
+ public:
+  FakeRasterWorkerPool() : RasterWorkerPool(NULL, 1) {}
+
+  virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE {}
+};
+
+}  // namespace
+
 FakeTileManager::FakeTileManager(TileManagerClient* client)
     : TileManager(client,
                   NULL,
-                  RasterWorkerPool::Create(1),
+                  make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),
                   1,
                   false,
-                  NULL,
-                  false) {}
+                  NULL) {}
+
+FakeTileManager::FakeTileManager(TileManagerClient* client,
+                                 ResourceProvider* resource_provider)
+    : TileManager(client,
+                  resource_provider,
+                  make_scoped_ptr<RasterWorkerPool>(new FakeRasterWorkerPool),
+                  1,
+                  false,
+                  NULL) {}
 }

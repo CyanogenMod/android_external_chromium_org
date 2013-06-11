@@ -11,7 +11,7 @@
 #include "ash/magnifier/magnifier_constants.h"
 #include "ash/shell.h"
 #include "base/callback.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/time.h"
 
 namespace app_list {
@@ -181,6 +181,12 @@ class ASH_EXPORT ShellDelegate {
 
   // Returns the current screen magnifier mode.
   virtual MagnifierType GetMagnifierType() const = 0;
+
+  // Invoked to enable Large Cursor.
+  virtual void SetLargeCursorEnabled(bool enabled) = 0;
+
+  // Returns if Large Cursor is enabled or not.
+  virtual bool IsLargeCursorEnabled() const = 0;
 
   // Returns true if the user want to show accesibility menu even when all the
   // accessibility features are disabled.

@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/common/view_message_enums.h"
 
@@ -29,6 +29,7 @@ struct CONTENT_EXPORT RenderViewImplParams {
                        const WebPreferences& webkit_prefs,
                        SharedRenderViewCounter* counter,
                        int32 routing_id,
+                       int32 main_frame_routing_id,
                        int32 surface_id,
                        int64 session_storage_namespace_id,
                        const string16& frame_name,
@@ -45,6 +46,7 @@ struct CONTENT_EXPORT RenderViewImplParams {
   const WebPreferences& webkit_prefs;
   SharedRenderViewCounter* counter;
   int32 routing_id;
+  int32 main_frame_routing_id;
   int32 surface_id;
   int64 session_storage_namespace_id;
   const string16& frame_name;

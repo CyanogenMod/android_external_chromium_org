@@ -48,6 +48,18 @@ class PictureLayerImplTest : public testing::Test {
   virtual ~PictureLayerImplTest() {
   }
 
+  void SetupDefaultTrees() {
+    gfx::Size tile_size(100, 100);
+    gfx::Size layer_bounds(100, 100);
+
+    scoped_refptr<FakePicturePileImpl> pending_pile =
+        FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+    scoped_refptr<FakePicturePileImpl> active_pile =
+        FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+
+    SetupTrees(pending_pile, active_pile);
+  }
+
   void SetupTrees(
       scoped_refptr<PicturePileImpl> pending_pile,
       scoped_refptr<PicturePileImpl> active_pile) {
@@ -58,8 +70,6 @@ class PictureLayerImplTest : public testing::Test {
         host_impl_.active_tree()->LayerById(id_));
 
     SetupPendingTree(pending_pile);
-    pending_layer_ = static_cast<FakePictureLayerImpl*>(
-        host_impl_.pending_tree()->LayerById(id_));
     pending_layer_->UpdateTwinLayer();
   }
 
@@ -86,6 +96,9 @@ class PictureLayerImplTest : public testing::Test {
         FakePictureLayerImpl::CreateWithPile(pending_tree, id_, pile);
     pending_layer->SetDrawsContent(true);
     pending_tree->SetRootLayer(pending_layer.PassAs<LayerImpl>());
+
+    pending_layer_ = static_cast<FakePictureLayerImpl*>(
+        host_impl_.pending_tree()->LayerById(id_));
   }
 
   static void VerifyAllTilesExistAndHavePile(
@@ -187,6 +200,7 @@ class PictureLayerImplTest : public testing::Test {
   FakePictureLayerImpl* pending_layer_;
   FakePictureLayerImpl* active_layer_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(PictureLayerImplTest);
 };
 
@@ -629,6 +643,54 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
   ASSERT_EQ(2u, active_layer_->tilings()->num_tilings());
 }
 
+#define EXPECT_BOTH_EQ(expression, x)         \
+  do {                                        \
+    EXPECT_EQ(pending_layer_->expression, x); \
+    EXPECT_EQ(active_layer_->expression, x);  \
+  } while (false)
+
+TEST_F(PictureLayerImplTest, DontAddLowResDuringAnimation) {
+  SetupDefaultTrees();
+
+  float low_res_factor = host_impl_.settings().low_res_contents_scale_factor;
+  float contents_scale = 1.f;
+  float device_scale = 1.f;
+  float page_scale = 1.f;
+  bool animating_transform = true;
+
+  // Animating, so don't create low res even if there isn't one already.
+  SetContentsScaleOnBothLayers(
+      contents_scale, device_scale, page_scale, animating_transform);
+  EXPECT_BOTH_EQ(HighResTiling()->contents_scale(), 1.f);
+  EXPECT_BOTH_EQ(num_tilings(), 1u);
+
+  // Stop animating, low res gets created.
+  animating_transform = false;
+  SetContentsScaleOnBothLayers(
+      contents_scale, device_scale, page_scale, animating_transform);
+  EXPECT_BOTH_EQ(HighResTiling()->contents_scale(), 1.f);
+  EXPECT_BOTH_EQ(LowResTiling()->contents_scale(), low_res_factor);
+  EXPECT_BOTH_EQ(num_tilings(), 2u);
+
+  // Page scale animation, new high res, but not new low res because animating.
+  contents_scale = 4.f;
+  page_scale = 4.f;
+  animating_transform = true;
+  SetContentsScaleOnBothLayers(
+      contents_scale, device_scale, page_scale, animating_transform);
+  EXPECT_BOTH_EQ(HighResTiling()->contents_scale(), 4.f);
+  EXPECT_BOTH_EQ(LowResTiling()->contents_scale(), low_res_factor);
+  EXPECT_BOTH_EQ(num_tilings(), 3u);
+
+  // Stop animating, new low res gets created for final page scale.
+  animating_transform = false;
+  SetContentsScaleOnBothLayers(
+      contents_scale, device_scale, page_scale, animating_transform);
+  EXPECT_BOTH_EQ(HighResTiling()->contents_scale(), 4.f);
+  EXPECT_BOTH_EQ(LowResTiling()->contents_scale(), 4.f * low_res_factor);
+  EXPECT_BOTH_EQ(num_tilings(), 4u);
+}
+
 TEST_F(PictureLayerImplTest, DidLoseOutputSurface) {
   gfx::Size tile_size(400, 400);
   gfx::Size layer_bounds(1300, 1900);
@@ -799,11 +861,97 @@ TEST_F(PictureLayerImplTest, DisallowTileDrawQuads) {
   AddDefaultTilingsWithInvalidation(invalidation);
 
   AppendQuadsData data;
-  data.allow_tile_draw_quads = false;
+  active_layer_->WillDraw(DRAW_MODE_RESOURCELESS_SOFTWARE, NULL);
   active_layer_->AppendQuads(&quad_culler, &data);
+  active_layer_->DidDraw(NULL);
 
   ASSERT_EQ(1U, quad_culler.quad_list().size());
   EXPECT_EQ(DrawQuad::PICTURE_CONTENT, quad_culler.quad_list()[0]->material);
+}
+
+TEST_F(PictureLayerImplTest, MarkRequiredNullTiles) {
+  gfx::Size tile_size(100, 100);
+  gfx::Size layer_bounds(1000, 1000);
+
+  scoped_refptr<FakePicturePileImpl> pending_pile =
+      FakePicturePileImpl::CreateEmptyPile(tile_size, layer_bounds);
+  // Layers with entirely empty piles can't get tilings.
+  pending_pile->AddRecordingAt(0, 0);
+
+  SetupPendingTree(pending_pile);
+
+  ASSERT_TRUE(pending_layer_->CanHaveTilings());
+  pending_layer_->AddTiling(1.0f);
+  pending_layer_->AddTiling(2.0f);
+
+  // It should be safe to call this (and MarkVisibleResourcesAsRequired)
+  // on a layer with no recordings.
+  host_impl_.pending_tree()->UpdateDrawProperties();
+  pending_layer_->MarkVisibleResourcesAsRequired();
+}
+
+TEST_F(PictureLayerImplTest, MarkRequiredOffscreenTiles) {
+  gfx::Size tile_size(100, 100);
+  gfx::Size layer_bounds(200, 100);
+
+  scoped_refptr<FakePicturePileImpl> pending_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+  SetupPendingTree(pending_pile);
+
+  pending_layer_->set_fixed_tile_size(tile_size);
+  ASSERT_TRUE(pending_layer_->CanHaveTilings());
+  PictureLayerTiling* tiling = pending_layer_->AddTiling(1.f);
+  host_impl_.pending_tree()->UpdateDrawProperties();
+  EXPECT_EQ(tiling->resolution(), HIGH_RESOLUTION);
+
+  // Fake set priorities.
+  int tile_count = 0;
+  for (PictureLayerTiling::CoverageIterator iter(
+           tiling,
+           pending_layer_->contents_scale_x(),
+           gfx::Rect(pending_layer_->visible_content_rect()));
+       iter;
+       ++iter) {
+    if (!*iter)
+      continue;
+    Tile* tile = *iter;
+    TilePriority priority;
+    priority.resolution = HIGH_RESOLUTION;
+    if (++tile_count % 2) {
+      priority.time_to_visible_in_seconds = 0.f;
+      priority.distance_to_visible_in_pixels = 0.f;
+    } else {
+      priority.time_to_visible_in_seconds = 1.f;
+      priority.distance_to_visible_in_pixels = 1.f;
+    }
+    tile->SetPriority(PENDING_TREE, priority);
+  }
+
+  pending_layer_->MarkVisibleResourcesAsRequired();
+
+  int num_visible = 0;
+  int num_offscreen = 0;
+
+  for (PictureLayerTiling::CoverageIterator iter(
+           tiling,
+           pending_layer_->contents_scale_x(),
+           gfx::Rect(pending_layer_->visible_content_rect()));
+       iter;
+       ++iter) {
+    if (!*iter)
+      continue;
+    const Tile* tile = *iter;
+    if (tile->priority(PENDING_TREE).distance_to_visible_in_pixels == 0.f) {
+      EXPECT_TRUE(tile->required_for_activation());
+      num_visible++;
+    } else {
+      EXPECT_FALSE(tile->required_for_activation());
+      num_offscreen++;
+    }
+  }
+
+  EXPECT_GT(num_visible, 0);
+  EXPECT_GT(num_offscreen, 0);
 }
 
 }  // namespace

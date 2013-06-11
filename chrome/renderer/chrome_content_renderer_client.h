@@ -48,6 +48,10 @@ namespace WebKit {
 class WebSecurityOrigin;
 }
 
+#if defined(ENABLE_WEBRTC)
+class WebRtcLoggingMessageFilter;
+#endif
+
 namespace chrome {
 
 class ChromeContentRendererClient : public content::ContentRendererClient {
@@ -89,6 +93,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
                           const GURL& url,
                           const std::string& http_method,
                           bool is_initial_navigation,
+                          bool is_server_redirect,
                           bool* send_referrer) OVERRIDE;
   virtual bool WillSendRequest(WebKit::WebFrame* frame,
                                content::PageTransition transition_type,
@@ -183,6 +188,9 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   scoped_ptr<visitedlink::VisitedLinkSlave> visited_link_slave_;
   scoped_ptr<safe_browsing::PhishingClassifierFilter> phishing_classifier_;
   scoped_ptr<prerender::PrerenderDispatcher> prerender_dispatcher_;
+#if defined(ENABLE_WEBRTC)
+  scoped_refptr<WebRtcLoggingMessageFilter> webrtc_logging_message_filter_;
+#endif
 };
 
 }  // namespace chrome

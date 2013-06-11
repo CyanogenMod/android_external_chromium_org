@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "content/common/media/media_player_messages_android.h"
-#include "webkit/media/android/webmediaplayer_android.h"
-#include "webkit/media/android/webmediaplayer_manager_android.h"
+#include "webkit/renderer/media/android/webmediaplayer_android.h"
+#include "webkit/renderer/media/android/webmediaplayer_manager_android.h"
 
 namespace content {
 
@@ -46,17 +46,25 @@ bool WebMediaPlayerProxyImplAndroid::OnMessageReceived(
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPause, OnPlayerPause)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_ReadFromDemuxer, OnReadFromDemuxer)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaSeekRequest, OnMediaSeekRequest)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaConfigRequest, OnMediaConfigRequest)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_KeyAdded, OnKeyAdded)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_KeyError, OnKeyError)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_KeyMessage, OnKeyMessage)
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 void WebMediaPlayerProxyImplAndroid::Initialize(
-    int player_id, const GURL& url,
-    bool is_media_source,
+    int player_id,
+    const GURL& url,
+    media::MediaPlayerAndroid::SourceType source_type,
     const GURL& first_party_for_cookies) {
-  Send(new MediaPlayerHostMsg_MediaPlayerInitialize(
-      routing_id(), player_id, url, is_media_source, first_party_for_cookies));
+  Send(new MediaPlayerHostMsg_MediaPlayerInitialize(routing_id(),
+                                                    player_id,
+                                                    url,
+                                                    source_type,
+                                                    first_party_for_cookies));
 }
 
 void WebMediaPlayerProxyImplAndroid::Start(int player_id) {
@@ -90,15 +98,14 @@ void WebMediaPlayerProxyImplAndroid::OnMediaMetadataChanged(
     player->OnMediaMetadataChanged(duration, width, height, success);
 }
 
-void WebMediaPlayerProxyImplAndroid::OnMediaPlaybackCompleted(
-    int player_id) {
+void WebMediaPlayerProxyImplAndroid::OnMediaPlaybackCompleted(int player_id) {
   webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player)
     player->OnPlaybackComplete();
 }
 
-void WebMediaPlayerProxyImplAndroid::OnMediaBufferingUpdate(
-    int player_id, int percent) {
+void WebMediaPlayerProxyImplAndroid::OnMediaBufferingUpdate(int player_id,
+                                                            int percent) {
   webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player)
     player->OnBufferingUpdate(percent);
@@ -111,8 +118,7 @@ void WebMediaPlayerProxyImplAndroid::OnMediaSeekCompleted(
     player->OnSeekComplete(current_time);
 }
 
-void WebMediaPlayerProxyImplAndroid::OnMediaError(
-    int player_id, int error) {
+void WebMediaPlayerProxyImplAndroid::OnMediaError(int player_id, int error) {
   webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player)
     player->OnMediaError(error);
@@ -132,22 +138,19 @@ void WebMediaPlayerProxyImplAndroid::OnTimeUpdate(
     player->OnTimeUpdate(current_time);
 }
 
-void WebMediaPlayerProxyImplAndroid::OnMediaPlayerReleased(
-    int player_id) {
+void WebMediaPlayerProxyImplAndroid::OnMediaPlayerReleased(int player_id) {
   webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player)
     player->OnPlayerReleased();
 }
 
-void WebMediaPlayerProxyImplAndroid::OnDidEnterFullscreen(
-    int player_id) {
+void WebMediaPlayerProxyImplAndroid::OnDidEnterFullscreen(int player_id) {
   webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player)
     player->OnDidEnterFullscreen();
 }
 
-void WebMediaPlayerProxyImplAndroid::OnDidExitFullscreen(
-    int player_id) {
+void WebMediaPlayerProxyImplAndroid::OnDidExitFullscreen(int player_id) {
   webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player)
     player->OnDidExitFullscreen();
@@ -180,6 +183,32 @@ void WebMediaPlayerProxyImplAndroid::ReadFromDemuxerAck(
       routing_id(), player_id, params));
 }
 
+void WebMediaPlayerProxyImplAndroid::GenerateKeyRequest(
+    int player_id,
+    const std::string& key_system,
+    const std::string& type,
+    const std::vector<uint8>& init_data) {
+  Send(new MediaPlayerHostMsg_GenerateKeyRequest(
+      routing_id(), player_id, key_system, type, init_data));
+}
+
+void WebMediaPlayerProxyImplAndroid::AddKey(int player_id,
+                                            const std::string& key_system,
+                                            const std::vector<uint8>& key,
+                                            const std::vector<uint8>& init_data,
+                                            const std::string& session_id) {
+  Send(new MediaPlayerHostMsg_AddKey(
+      routing_id(), player_id, key_system, key, init_data, session_id));
+}
+
+void WebMediaPlayerProxyImplAndroid::CancelKeyRequest(
+    int player_id,
+    const std::string& key_system,
+    const std::string& session_id) {
+  Send(new MediaPlayerHostMsg_CancelKeyRequest(
+      routing_id(), player_id, key_system, session_id));
+}
+
 #if defined(GOOGLE_TV)
 void WebMediaPlayerProxyImplAndroid::RequestExternalSurface(
     int player_id, const gfx::RectF& geometry) {
@@ -200,7 +229,9 @@ void WebMediaPlayerProxyImplAndroid::DidCommitCompositorFrame() {
 #endif
 
 void WebMediaPlayerProxyImplAndroid::OnReadFromDemuxer(
-    int player_id, media::DemuxerStream::Type type, bool seek_done) {
+    int player_id,
+    media::DemuxerStream::Type type,
+    bool seek_done) {
   webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player)
     player->OnReadFromDemuxer(type, seek_done);
@@ -219,13 +250,49 @@ webkit_media::WebMediaPlayerAndroid*
 }
 
 void WebMediaPlayerProxyImplAndroid::OnMediaSeekRequest(
-    int player_id, base::TimeDelta time_to_seek, bool request_texture_peer) {
+    int player_id, base::TimeDelta time_to_seek, unsigned seek_request_id) {
   webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player) {
-    Send(new MediaPlayerHostMsg_MediaSeekRequestAck(routing_id(), player_id));
-    player->OnMediaSeekRequest(time_to_seek, request_texture_peer);
+    Send(new MediaPlayerHostMsg_MediaSeekRequestAck(routing_id(), player_id,
+        seek_request_id));
+    player->OnMediaSeekRequest(time_to_seek);
   }
 }
 
+void WebMediaPlayerProxyImplAndroid::OnMediaConfigRequest(int player_id) {
+  webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
+  if (player)
+    player->OnMediaConfigRequest();
+}
+
+void WebMediaPlayerProxyImplAndroid::OnKeyAdded(int player_id,
+                                                const std::string& key_system,
+                                                const std::string& session_id) {
+  webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
+  if (player)
+    player->OnKeyAdded(key_system, session_id);
+}
+
+void WebMediaPlayerProxyImplAndroid::OnKeyError(
+    int player_id,
+    const std::string& key_system,
+    const std::string& session_id,
+    media::MediaKeys::KeyError error_code,
+    int system_code) {
+  webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
+  if (player)
+    player->OnKeyError(key_system, session_id, error_code, system_code);
+}
+
+void WebMediaPlayerProxyImplAndroid::OnKeyMessage(
+    int player_id,
+    const std::string& key_system,
+    const std::string& session_id,
+    const std::string& message,
+    const std::string& destination_url) {
+  webkit_media::WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
+  if (player)
+    player->OnKeyMessage(key_system, session_id, message, destination_url);
+}
 
 }  // namespace content

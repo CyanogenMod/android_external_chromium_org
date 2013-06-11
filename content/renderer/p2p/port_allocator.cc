@@ -5,17 +5,17 @@
 #include "content/renderer/p2p/port_allocator.h"
 
 #include "base/bind.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "content/renderer/p2p/host_address_request.h"
 #include "jingle/glue/utils.h"
 #include "net/base/escape.h"
 #include "net/base/ip_endpoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoader.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLLoader.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
 
@@ -108,7 +108,7 @@ P2PPortAllocatorSession::P2PPortAllocatorSession(
 }
 
 P2PPortAllocatorSession::~P2PPortAllocatorSession() {
-  if (stun_address_request_)
+  if (stun_address_request_.get())
     stun_address_request_->Cancel();
 }
 
@@ -155,7 +155,7 @@ void P2PPortAllocatorSession::GetPortConfigurations() {
 }
 
 void P2PPortAllocatorSession::ResolveStunServerAddress() {
-  if (stun_address_request_)
+  if (stun_address_request_.get())
     return;
 
   stun_address_request_ =

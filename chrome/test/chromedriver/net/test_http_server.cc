@@ -8,7 +8,7 @@
 #include "base/location.h"
 #include "base/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -141,12 +141,12 @@ void TestHttpServer::StartOnServerThread(bool* success,
   } else {
     server_ = NULL;
   }
-  *success = server_;
+  *success = server_.get();
   event->Signal();
 }
 
 void TestHttpServer::StopOnServerThread(base::WaitableEvent* event) {
-  if (server_)
+  if (server_.get())
     server_ = NULL;
   event->Signal();
 }

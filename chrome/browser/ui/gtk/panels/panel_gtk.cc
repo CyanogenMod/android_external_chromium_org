@@ -12,14 +12,14 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/gtk_window_util.h"
-#include "chrome/browser/ui/gtk/panels/panel_titlebar_gtk.h"
 #include "chrome/browser/ui/gtk/panels/panel_drag_gtk.h"
+#include "chrome/browser/ui/gtk/panels/panel_titlebar_gtk.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
@@ -316,6 +316,7 @@ void PanelGtk::Init() {
   gtk_widget_show(window_container_);
 
   ConnectAccelerators();
+  SetPanelAlwaysOnTop(always_on_top_);
 }
 
 void PanelGtk::SetWindowCornerStyle(panel::CornerStyle corner_style) {
@@ -1006,8 +1007,6 @@ bool PanelGtk::IsPanelAlwaysOnTop() const {
 }
 
 void PanelGtk::SetPanelAlwaysOnTop(bool on_top) {
-  if (always_on_top_ == on_top)
-    return;
   always_on_top_ = on_top;
 
   gtk_window_set_keep_above(window_, on_top);

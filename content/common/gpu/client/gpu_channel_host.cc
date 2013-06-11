@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
@@ -44,10 +44,12 @@ void GpuChannelHost::Connect(
   // Open a channel to the GPU process. We pass NULL as the main listener here
   // since we need to filter everything to route it to the right thread.
   scoped_refptr<base::MessageLoopProxy> io_loop = factory_->GetIOLoopProxy();
-  channel_.reset(new IPC::SyncChannel(
-      channel_handle, IPC::Channel::MODE_CLIENT, NULL,
-      io_loop, true,
-      factory_->GetShutDownEvent()));
+  channel_.reset(new IPC::SyncChannel(channel_handle,
+                                      IPC::Channel::MODE_CLIENT,
+                                      NULL,
+                                      io_loop.get(),
+                                      true,
+                                      factory_->GetShutDownEvent()));
 
   sync_filter_ = new IPC::SyncMessageFilter(
       factory_->GetShutDownEvent());

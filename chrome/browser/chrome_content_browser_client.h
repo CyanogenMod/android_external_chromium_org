@@ -22,7 +22,6 @@ class QuotaPermissionContext;
 }
 
 namespace extensions {
-class Extension;
 class BrowserPermissionsPolicyDelegate;
 }
 
@@ -60,9 +59,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       bool* in_memory) OVERRIDE;
   virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
       content::WebContents* web_contents) OVERRIDE;
-  virtual void GuestWebContentsCreated(
+  virtual void GuestWebContentsAttached(
       content::WebContents* guest_web_contents,
-      content::WebContents* embedder_web_contents) OVERRIDE;
+      content::WebContents* embedder_web_contents,
+      int browser_plugin_instance_id) OVERRIDE;
   virtual void RenderProcessHostCreated(
       content::RenderProcessHost* host) OVERRIDE;
   virtual bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
@@ -257,8 +257,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
 #endif
 
  private:
+#if defined(ENABLE_PLUGINS)
   // Set of origins that can use TCP/UDP private APIs from NaCl.
   std::set<std::string> allowed_socket_origins_;
+#endif
   scoped_ptr<extensions::BrowserPermissionsPolicyDelegate>
       permissions_policy_delegate_;
 

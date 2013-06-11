@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
@@ -113,13 +113,12 @@ bool ContextGroup::Initialize(
     draw_buffer_ = GL_BACK;
   }
 
-  buffer_manager_.reset(new BufferManager(
-      memory_tracker_, feature_info_.get()));
+  buffer_manager_.reset(
+      new BufferManager(memory_tracker_.get(), feature_info_.get()));
   framebuffer_manager_.reset(
       new FramebufferManager(max_draw_buffers_, max_color_attachments_));
-  renderbuffer_manager_.reset(new RenderbufferManager(memory_tracker_,
-                                                      max_renderbuffer_size,
-                                                      max_samples));
+  renderbuffer_manager_.reset(new RenderbufferManager(
+      memory_tracker_.get(), max_renderbuffer_size, max_samples));
   shader_manager_.reset(new ShaderManager());
   program_manager_.reset(new ProgramManager(program_cache_));
 
@@ -166,7 +165,7 @@ bool ContextGroup::Initialize(
         feature_info_->workarounds().max_cube_map_texture_size);
   }
 
-  texture_manager_.reset(new TextureManager(memory_tracker_,
+  texture_manager_.reset(new TextureManager(memory_tracker_.get(),
                                             feature_info_.get(),
                                             max_texture_size,
                                             max_cube_map_texture_size));
@@ -240,8 +239,21 @@ bool ContextGroup::Initialize(
 namespace {
 
 bool IsNull(const base::WeakPtr<gles2::GLES2Decoder>& decoder) {
-  return !decoder;
+  return !decoder.get();
 }
+
+template <typename T>
+class WeakPtrEquals {
+ public:
+  explicit WeakPtrEquals(T* t) : t_(t) {}
+
+  bool operator()(const base::WeakPtr<T>& t) {
+    return t.get() == t_;
+  }
+
+ private:
+  T* const t_;
+};
 
 }  // namespace anonymous
 
@@ -252,7 +264,8 @@ bool ContextGroup::HaveContexts() {
 }
 
 void ContextGroup::Destroy(GLES2Decoder* decoder, bool have_context) {
-  decoders_.erase(std::remove(decoders_.begin(), decoders_.end(), decoder),
+  decoders_.erase(std::remove_if(decoders_.begin(), decoders_.end(),
+                                 WeakPtrEquals<gles2::GLES2Decoder>(decoder)),
                   decoders_.end());
   // If we still have contexts do nothing.
   if (HaveContexts()) {
@@ -277,8 +290,6 @@ void ContextGroup::Destroy(GLES2Decoder* decoder, bool have_context) {
   }
 
   if (texture_manager_ != NULL) {
-    mailbox_manager_->DestroyOwnedTextures(texture_manager_.get(),
-                                           have_context);
     texture_manager_->Destroy(have_context);
     texture_manager_.reset();
   }
@@ -316,7 +327,7 @@ uint32 ContextGroup::GetMemRepresented() const {
 
 void ContextGroup::LoseContexts(GLenum reset_status) {
   for (size_t ii = 0; ii < decoders_.size(); ++ii) {
-    if (decoders_[ii]) {
+    if (decoders_[ii].get()) {
       decoders_[ii]->LoseContext(reset_status);
     }
   }

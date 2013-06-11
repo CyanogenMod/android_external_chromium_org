@@ -49,7 +49,7 @@ v8.log
 /build/Release_x64
 /build/gomacc.lock
 /build/ipch/
-/build/util/LASTCHANGE
+/build/util/LASTCHANGE*
 /build/util/support
 /build/x64/
 # The Chrome OS build creates a /c symlink due to http://crbug.com/54866.
@@ -78,7 +78,7 @@ v8.log
 /chrome/chrome_version_resources.xml
 /chrome/common/extensions/api/api.xml
 /chrome/Hammer
-/chrome/installer/linux
+/chrome/installer/linux/internal
 /chrome/installer/mac/internal
 /chrome/installer/mac/third_party/xz/xz
 /chrome/installer/mini_installer.xml
@@ -253,7 +253,7 @@ v8.log
 /third_party/pywebsocket/src
 /third_party/safe_browsing/testing
 /third_party/scons-2.0.1
-/third_party/sfntly
+/third_party/sfntly/cpp
 /third_party/skia
 /third_party/smhasher
 /third_party/snappy/src
@@ -307,8 +307,8 @@ v8.log
 /webkit/data/test_shell/plugins
 /webkit/data/xbm_decoder
 /webkit/Debug
-/webkit/media/crypto/ppapi/cdm
 /webkit/Release
+/webkit/renderer/media/crypto/ppapi/cdm
 /webpagereplay_logs/
 /win8/delegate_execute/delegate_execute_version_resources.xml
 /win8/metro_driver/metro_driver_version_resources.xml

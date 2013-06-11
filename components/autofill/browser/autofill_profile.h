@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "components/autofill/browser/address.h"
 #include "components/autofill/browser/autofill_data_model.h"
 #include "components/autofill/browser/autofill_type.h"
@@ -200,7 +200,7 @@ class AutofillProfile : public AutofillDataModel {
   std::vector<NameInfo> name_;
   std::vector<EmailInfo> email_;
   CompanyInfo company_;
-  std::vector<PhoneNumber> home_number_;
+  std::vector<PhoneNumber> phone_number_;
   Address address_;
 };
 

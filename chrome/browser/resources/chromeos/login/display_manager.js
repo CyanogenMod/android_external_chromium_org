@@ -29,6 +29,9 @@
 /** @const */ var ACCELERATOR_RESET = 'reset';
 /** @const */ var ACCELERATOR_LEFT = 'left';
 /** @const */ var ACCELERATOR_RIGHT = 'right';
+/** @const */ var ACCELERATOR_DEVICE_REQUISITION = 'device_requisition';
+/** @const */ var ACCELERATOR_DEVICE_REQUISITION_REMORA =
+    'device_requisition_remora';
 
 /* Help topic identifiers. */
 /** @const */ var HELP_TOPIC_ENTERPRISE_REPORTING = 2535613;
@@ -170,6 +173,14 @@ cr.define('cr.ui.login', function() {
         if (currentStepId == SCREEN_GAIA_SIGNIN ||
             currentStepId == SCREEN_ACCOUNT_PICKER) {
           chrome.send('toggleResetScreen');
+        }
+      } else if (name == ACCELERATOR_DEVICE_REQUISITION) {
+        if (this.isOobeUI())
+          this.showDeviceRequisitionPrompt_();
+      } else if (name == ACCELERATOR_DEVICE_REQUISITION_REMORA) {
+        if (this.isOobeUI()) {
+          this.deviceRequisition_ = 'remora';
+          this.showDeviceRequisitionPrompt_();
         }
       }
 
@@ -493,6 +504,41 @@ cr.define('cr.ui.login', function() {
     },
 
     /**
+     * Shows the device requisition prompt.
+     */
+    showDeviceRequisitionPrompt_: function() {
+      if (!this.deviceRequisitionDialog_) {
+        this.deviceRequisitionDialog_ =
+            new cr.ui.dialogs.PromptDialog(document.body);
+        this.deviceRequisitionDialog_.setOkLabel(
+            loadTimeData.getString('deviceRequisitionPromptOk'));
+        this.deviceRequisitionDialog_.setCancelLabel(
+            loadTimeData.getString('deviceRequisitionPromptCancel'));
+      }
+      this.deviceRequisitionDialog_.show(
+          loadTimeData.getString('deviceRequisitionPromptText'),
+          this.deviceRequisition_,
+          this.onConfirmDeviceRequisitionPrompt_.bind(this));
+    },
+
+    /**
+     * Confirmation handle for the device requisition prompt.
+     * @param {string} value The value entered by the user.
+     */
+    onConfirmDeviceRequisitionPrompt_: function(value) {
+      this.deviceRequisition_ = value;
+      chrome.send('setDeviceRequisition', [value]);
+    },
+
+    /*
+     * Updates the device requisition string shown in the requisition prompt.
+     * @param {string} requisition The device requisition.
+     */
+    updateDeviceRequisition: function(requisition) {
+      this.deviceRequisition_ = requisition;
+    },
+
+    /**
      * Returns true if Oobe UI is shown.
      */
     isOobeUI: function() {
@@ -505,7 +551,7 @@ cr.define('cr.ui.login', function() {
      */
     isSignInToAddScreen: function() {
       return document.documentElement.getAttribute('screen') ==
-          'login-add-user';
+          'user-adding';
     },
 
     /**
@@ -527,6 +573,17 @@ cr.define('cr.ui.login', function() {
    * Initializes display manager.
    */
   DisplayManager.initialize = function() {
+    // Extracting screen type from URL.
+    var hash = window.location.hash;
+    var screenType;
+    if (!hash) {
+      console.error('Screen type not found. Setting default value "login".');
+      screenType = 'login';
+    } else {
+      screenType = hash.substring(1);
+    }
+    document.documentElement.setAttribute('screen', screenType);
+
     var link = $('enterprise-info-hint-link');
     link.addEventListener(
         'click', DisplayManager.handleEnterpriseHintLinkClick);

@@ -8,7 +8,7 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/bundle_installer.h"
 #include "chrome/browser/extensions/extension_action.h"
@@ -35,6 +35,7 @@
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/sync_helper.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
@@ -166,7 +167,7 @@ class ExtensionLoadedNotificationObserver
 
 // Returns YES if the sync promo should be shown in the bubble.
 - (BOOL)showSyncPromo {
-  return extension_->GetSyncType() == Extension::SYNC_TYPE_EXTENSION &&
+  return extensions::sync_helper::IsSyncableExtension(extension_) &&
          SyncPromoUI::ShouldShowSyncPromo(browser_->profile());
 }
 
@@ -199,11 +200,11 @@ class ExtensionLoadedNotificationObserver
    clickedOnLink:(id)link
          atIndex:(NSUInteger)charIndex {
   DCHECK_EQ(promo_.get(), aTextView);
-  std::string promo_url =
+  GURL promo_url =
       SyncPromoUI::GetSyncPromoURL(
-            GURL(), SyncPromoUI::SOURCE_EXTENSION_INSTALL_BUBBLE, false).spec();
-  chrome::NavigateParams params(chrome::GetSingletonTabNavigateParams(
-      browser_, GURL(promo_url)));
+          SyncPromoUI::SOURCE_EXTENSION_INSTALL_BUBBLE, false);
+  chrome::NavigateParams params(
+      chrome::GetSingletonTabNavigateParams(browser_, promo_url));
   chrome::Navigate(&params);
   return YES;
 }

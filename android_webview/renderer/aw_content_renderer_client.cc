@@ -9,14 +9,15 @@
 #include "android_webview/renderer/aw_render_view_ext.h"
 #include "android_webview/renderer/view_renderer.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/visitedlink/renderer/visitedlink_slave.h"
 #include "content/public/renderer/render_thread.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "net/base/net_errors.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
 
 namespace android_webview {
@@ -76,6 +77,12 @@ void AwContentRendererClient::GetNavigationErrorStrings(
     ReplaceSubstringsAfterOffset(&contents, 0, "%s",
                                  error_url.possibly_invalid_spec());
     *error_html = contents;
+  }
+  if (error_description) {
+    if (error.localizedDescription.isEmpty())
+      *error_description = ASCIIToUTF16(net::ErrorToString(error.reason));
+    else
+      *error_description = error.localizedDescription;
   }
 }
 

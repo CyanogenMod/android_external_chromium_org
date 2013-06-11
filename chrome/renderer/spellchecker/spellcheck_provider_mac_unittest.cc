@@ -4,13 +4,13 @@
 
 #include <vector>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/spellcheck_marker.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 
 namespace {
 
@@ -24,6 +24,7 @@ struct MessageParameters {
   int router_id;
   int request_id;
   string16 text;
+  std::vector<SpellCheckMarker> markers;
 };
 
 MessageParameters ReadRequestTextCheck(IPC::Message* message) {
@@ -32,7 +33,8 @@ MessageParameters ReadRequestTextCheck(IPC::Message* message) {
       message,
       &parameters.router_id,
       &parameters.request_id,
-      &parameters.text);
+      &parameters.text,
+      &parameters.markers);
   EXPECT_TRUE(ok);
   return parameters;
 }

@@ -9,8 +9,8 @@
 
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/onc/onc_signature.h"
@@ -53,7 +53,8 @@ Validator::Validator(
     : error_on_unknown_field_(error_on_unknown_field),
       error_on_wrong_recommended_(error_on_wrong_recommended),
       error_on_missing_field_(error_on_missing_field),
-      managed_onc_(managed_onc) {
+      managed_onc_(managed_onc),
+      onc_source_(ONC_SOURCE_NONE) {
 }
 
 Validator::~Validator() {

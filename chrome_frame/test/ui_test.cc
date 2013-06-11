@@ -6,8 +6,8 @@
 #include <string>
 
 #include "base/file_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
-#include "base/utf_string_conversions.h"
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_variant.h"
 #include "base/win/windows_version.h"
@@ -322,7 +322,7 @@ TEST_P(FullTabUITest, ViewSource) {
   // Expect notification for view-source window, handle new window event
   // and attach a new ie_mock_ to the received web browser
   std::wstring view_source_url;
-  view_source_url += UTF8ToWide(chrome::kViewSourceScheme);
+  view_source_url += UTF8ToWide(content::kViewSourceScheme);
   view_source_url += L":";
   view_source_url += GetSimplePageUrl();
   std::wstring url_in_new_window = kChromeProtocolPrefix;
@@ -428,12 +428,7 @@ TEST_P(FullTabUITest, DISABLED_TabCrashRefresh) {
 
 // Test that window.print() on a page results in the native Windows print dialog
 // appearing rather than Chrome's in-page print preview.
-#if defined(USE_AURA)
-// Native printing is broken with use_aura=1; see http://crbug.com/180997.
-TEST_P(FullTabUITest, DISABLED_WindowPrintOpensNativePrintDialog) {
-#else
 TEST_P(FullTabUITest, WindowPrintOpensNativePrintDialog) {
-#endif
   std::wstring window_print_url(GetTestUrl(L"window_print.html"));
   std::wstring window_print_title(L"window.print");
 
@@ -565,7 +560,7 @@ TEST_F(ContextMenuTest, CFViewSource) {
   // Expect notification for view-source window, handle new window event
   // and attach a new ie_mock_ to the received web browser
   std::wstring view_source_url;
-  view_source_url += UTF8ToWide(chrome::kViewSourceScheme);
+  view_source_url += UTF8ToWide(content::kViewSourceScheme);
   view_source_url += L":";
   view_source_url += GetSimplePageUrl();
   std::wstring url_in_new_window = kChromeProtocolPrefix;

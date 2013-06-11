@@ -8,7 +8,7 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/sha1.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/service/disk_cache_proto.pb.h"
 #include "gpu/command_buffer/service/gl_utils.h"
@@ -202,7 +202,7 @@ void MemoryProgramCache::SaveLinkedProgram(
 
   if (store_.find(sha_string) != store_.end()) {
     const StoreMap::iterator found = store_.find(sha_string);
-    const ProgramCacheValue* evicting = found->second;
+    const ProgramCacheValue* evicting = found->second.get();
     curr_size_bytes_ -= evicting->length;
     Evict(sha_string, evicting->shader_0_hash, evicting->shader_1_hash);
     store_.erase(found);

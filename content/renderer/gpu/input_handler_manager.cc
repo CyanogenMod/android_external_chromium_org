@@ -8,46 +8,64 @@
 #include "base/debug/trace_event.h"
 #include "cc/input/input_handler.h"
 #include "content/renderer/gpu/input_event_filter.h"
+#include "content/renderer/gpu/input_handler_manager_client.h"
 #include "content/renderer/gpu/input_handler_wrapper.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebActiveWheelFlingParameters.h"
 
 using WebKit::WebInputEvent;
 
 namespace content {
 
+namespace {
+
+InputEventAckState InputEventDispositionToAck(
+    InputHandlerProxy::EventDisposition disposition) {
+  switch (disposition) {
+    case InputHandlerProxy::DID_HANDLE:
+      return INPUT_EVENT_ACK_STATE_CONSUMED;
+    case InputHandlerProxy::DID_NOT_HANDLE:
+      return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+    case InputHandlerProxy::DROP_EVENT:
+      return INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
+  }
+  NOTREACHED();
+  return INPUT_EVENT_ACK_STATE_UNKNOWN;
+}
+
+} // namespace
+
 InputHandlerManager::InputHandlerManager(
-    IPC::Listener* main_listener,
-    const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy)
-    : message_loop_proxy_(message_loop_proxy) {
-  filter_ =
-      new InputEventFilter(main_listener,
-                           message_loop_proxy,
-                           base::Bind(&InputHandlerManager::HandleInputEvent,
+    const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
+    InputHandlerManagerClient* client)
+    : message_loop_proxy_(message_loop_proxy),
+      client_(client) {
+  DCHECK(client_);
+  client_->SetBoundHandler(base::Bind(&InputHandlerManager::HandleInputEvent,
                                       base::Unretained(this)));
 }
 
 InputHandlerManager::~InputHandlerManager() {
-}
-
-IPC::ChannelProxy::MessageFilter*
-InputHandlerManager::GetMessageFilter() const {
-  return filter_;
+  client_->SetBoundHandler(InputHandlerManagerClient::Handler());
 }
 
 void InputHandlerManager::AddInputHandler(
     int routing_id,
     const base::WeakPtr<cc::InputHandler>& input_handler,
     const base::WeakPtr<RenderViewImpl>& render_view_impl) {
-  DCHECK(!message_loop_proxy_->BelongsToCurrentThread());
-
-  message_loop_proxy_->PostTask(
-      FROM_HERE,
-      base::Bind(&InputHandlerManager::AddInputHandlerOnCompositorThread,
-                 base::Unretained(this),
-                 routing_id,
-                 base::MessageLoopProxy::current(),
-                 input_handler,
-                 render_view_impl));
+  if (message_loop_proxy_->BelongsToCurrentThread()) {
+    AddInputHandlerOnCompositorThread(routing_id,
+                                      base::MessageLoopProxy::current(),
+                                      input_handler,
+                                      render_view_impl);
+  } else {
+    message_loop_proxy_->PostTask(
+        FROM_HERE,
+        base::Bind(&InputHandlerManager::AddInputHandlerOnCompositorThread,
+                   base::Unretained(this),
+                   routing_id,
+                   base::MessageLoopProxy::current(),
+                   input_handler,
+                   render_view_impl));
+  }
 }
 
 void InputHandlerManager::AddInputHandlerOnCompositorThread(
@@ -65,8 +83,10 @@ void InputHandlerManager::AddInputHandlerOnCompositorThread(
   if (input_handlers_.count(routing_id) != 0)
     return;
 
-  TRACE_EVENT0("InputHandlerManager::AddInputHandler", "AddingRoute");
-  filter_->AddRoute(routing_id);
+  TRACE_EVENT1("input",
+      "InputHandlerManager::AddInputHandlerOnCompositorThread",
+      "result", "AddingRoute");
+  client_->DidAddInputHandler(routing_id);
   input_handlers_[routing_id] =
       make_scoped_refptr(new InputHandlerWrapper(this,
           routing_id, main_loop, input_handler, render_view_impl));
@@ -75,27 +95,29 @@ void InputHandlerManager::AddInputHandlerOnCompositorThread(
 void InputHandlerManager::RemoveInputHandler(int routing_id) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
 
-  TRACE_EVENT0("InputHandlerManager::RemoveInputHandler", "RemovingRoute");
+  TRACE_EVENT0("input", "InputHandlerManager::RemoveInputHandler");
 
-  filter_->RemoveRoute(routing_id);
+  client_->DidRemoveInputHandler(routing_id);
   input_handlers_.erase(routing_id);
 }
 
-void InputHandlerManager::HandleInputEvent(
+InputEventAckState InputHandlerManager::HandleInputEvent(
     int routing_id,
-    const WebInputEvent* input_event) {
+    const WebInputEvent* input_event,
+    const ui::LatencyInfo& latency_info) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
 
   InputHandlerMap::iterator it = input_handlers_.find(routing_id);
   if (it == input_handlers_.end()) {
-    TRACE_EVENT0("InputHandlerManager::HandleInputEvent",
-                 "NoInputHandlerFound");
+    TRACE_EVENT1("input", "InputHandlerManager::HandleInputEvent",
+                  "result", "NoInputHandlerFound");
     // Oops, we no longer have an interested input handler..
-    filter_->DidNotHandleInputEvent(true);
-    return;
+    return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
   }
 
-  it->second->input_handler_proxy()->HandleInputEvent(*input_event);
+  InputHandlerProxy* proxy = it->second->input_handler_proxy();
+  return InputEventDispositionToAck(
+      proxy->HandleInputEventWithLatencyInfo(*input_event, latency_info));
 }
 
 }  // namespace content

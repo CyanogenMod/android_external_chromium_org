@@ -6,8 +6,8 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/page_cycler/page_cycler.h"
@@ -323,16 +323,10 @@ IN_PROC_BROWSER_TEST_F(PageCyclerBrowserTest, ChromeErrorURL) {
 
 // Test that PageCycler will visit all the urls from a cache directory
 // successfully while in playback mode.
-#if defined(OS_LINUX)
-// Bug 159026: Fails on Linux in both debug and release mode.
-#define MAYBE_PlaybackMode DISABLED_PlaybackMode
-#elif (defined(OS_WIN) || defined(OS_MACOSX) ) && !defined(NDEBUG)
-// Bug 131333: This test fails on a XP debug bot since Build 17609.
-#define MAYBE_PlaybackMode DISABLED_PlaybackMode
-#else
-#define MAYBE_PlaybackMode PlaybackMode
-#endif
-IN_PROC_BROWSER_TEST_F(PageCyclerCachedBrowserTest, MAYBE_PlaybackMode) {
+// Disabled due to flaky timeouts.  Tracking bugs include
+// [ http://crbug.com/159026 ], [ http://crbug.com/131333 ], and
+// [ http://crbug.com/222296 ].
+IN_PROC_BROWSER_TEST_F(PageCyclerCachedBrowserTest, DISABLED_PlaybackMode) {
 #if defined(OS_MACOSX)
   // TODO(kbr): re-enable: http://crbug.com/222296
   if (base::mac::IsOSMountainLionOrLater())

@@ -30,8 +30,8 @@
 #include "ash/system/user/tray_user.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/timer.h"
-#include "base/utf_string_conversions.h"
 #include "grit/ash_strings.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/events/event_constants.h"
@@ -54,7 +54,8 @@
 #include "ash/system/chromeos/network/tray_sms.h"
 #include "ash/system/chromeos/network/tray_vpn.h"
 #include "ash/system/chromeos/power/tray_power.h"
-#include "ash/system/chromeos/screen_capture/tray_screen_capture.h"
+#include "ash/system/chromeos/screen_security/screen_capture_tray_item.h"
+#include "ash/system/chromeos/screen_security/screen_share_tray_item.h"
 #include "ash/system/chromeos/settings/tray_settings.h"
 #include "ash/system/chromeos/tray_display.h"
 #endif
@@ -172,7 +173,8 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   AddTrayItem(new internal::TrayLocale(this));
 #if defined(OS_CHROMEOS)
   AddTrayItem(new internal::TrayDisplay(this));
-  AddTrayItem(new internal::TrayScreenCapture(this));
+  AddTrayItem(new internal::ScreenCaptureTrayItem(this));
+  AddTrayItem(new internal::ScreenShareTrayItem(this));
   AddTrayItem(new internal::TrayAudio(this));
 #endif
 #if !defined(OS_WIN)
@@ -321,7 +323,7 @@ bool SystemTray::IsMouseInNotificationBubble() const {
       Shell::GetScreen()->GetCursorScreenPoint());
 }
 
-bool SystemTray::CloseSystemBubbleForTest() const {
+bool SystemTray::CloseSystemBubble() const {
   if (!system_bubble_)
     return false;
   system_bubble_->bubble()->Close();
@@ -451,7 +453,13 @@ void SystemTray::UpdateNotificationBubble() {
       this, notification_items_, SystemTrayBubble::BUBBLE_TYPE_NOTIFICATION);
   views::View* anchor;
   TrayBubbleView::AnchorType anchor_type;
-  if (system_bubble_.get() && system_bubble_->bubble_view()) {
+  // Tray items might want to show notifications while we are creating and
+  // initializing the |system_bubble_| - but it might not be fully initialized
+  // when coming here - this would produce a crashed like crbug.com/247416.
+  // As such we check the existence of the widget here.
+  if (system_bubble_.get() &&
+      system_bubble_->bubble_view() &&
+      system_bubble_->bubble_view()->GetWidget()) {
     anchor = system_bubble_->bubble_view();
     anchor_type = TrayBubbleView::ANCHOR_TYPE_BUBBLE;
   } else {

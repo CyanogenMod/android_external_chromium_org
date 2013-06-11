@@ -10,7 +10,7 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/quota/special_storage_policy.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 
 namespace {
 
@@ -70,7 +70,7 @@ DownloadManagerDelegate* TestBrowserContext::GetDownloadManagerDelegate() {
 }
 
 net::URLRequestContextGetter* TestBrowserContext::GetRequestContext() {
-  if (!request_context_) {
+  if (!request_context_.get()) {
     request_context_ = new TestContextURLRequestContextGetter(
         GetResourceContext()->GetRequestContext());
   }

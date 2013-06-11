@@ -8,15 +8,16 @@
 #include <set>
 #include <utility>
 
+#include "apps/app_load_service.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
@@ -40,6 +41,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/search/instant_extended_context_menu_observer.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -634,8 +636,7 @@ void RenderViewContextMenu::InitMenu() {
   }
   if (!instant_extended_observer_.get()) {
     instant_extended_observer_.reset(
-        new InstantExtendedContextMenuObserver(
-            source_web_contents_, params_.page_url));
+        new InstantExtendedContextMenuObserver(source_web_contents_));
   }
   observers_.AddObserver(print_preview_menu_observer_.get());
   observers_.AddObserver(instant_extended_observer_.get());
@@ -1204,7 +1205,9 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
              !source_web_contents_->GetInterstitialPage() &&
              // There are some application locales which can't be used as a
              // target language for translation.
-             TranslateManager::IsSupportedLanguage(target_lang);
+             TranslateManager::IsSupportedLanguage(target_lang) &&
+             // Disable on the Instant Extended NTP.
+             !chrome::IsInstantNTP(source_web_contents_);
     }
 
     case IDC_CONTENT_CONTEXT_OPENLINKNEWTAB:
@@ -1695,8 +1698,8 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       DCHECK(platform_app);
       DCHECK(platform_app->is_platform_app());
 
-      extensions::ExtensionSystem::Get(profile_)->extension_service()->
-          RestartExtension(platform_app->id());
+      apps::AppLoadService::Get(profile_)->RestartApplication(
+          platform_app->id());
       break;
     }
 
@@ -2028,8 +2031,7 @@ void RenderViewContextMenu::WriteURLToClipboard(const GURL& url) {
   chrome_common_net::WriteURLToClipboard(
       url,
       profile_->GetPrefs()->GetString(prefs::kAcceptLanguages),
-      ui::Clipboard::GetForCurrentThread(),
-      content::BrowserContext::GetMarkerForOffTheRecordContext(profile_));
+      ui::Clipboard::GetForCurrentThread());
 }
 
 void RenderViewContextMenu::MediaPlayerActionAt(

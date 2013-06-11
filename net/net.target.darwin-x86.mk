@@ -226,6 +226,7 @@ LOCAL_SRC_FILES := \
 	net/http/http_security_headers.cc \
 	net/http/http_server_properties.cc \
 	net/http/http_server_properties_impl.cc \
+	net/http/http_status_code.cc \
 	net/http/http_stream_factory.cc \
 	net/http/http_stream_factory_impl.cc \
 	net/http/http_stream_factory_impl_job.cc \
@@ -280,6 +281,8 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/aes_128_gcm_12_decrypter_openssl.cc \
 	net/quic/crypto/aes_128_gcm_12_encrypter_openssl.cc \
 	net/quic/crypto/cert_compressor.cc \
+	net/quic/crypto/channel_id.cc \
+	net/quic/crypto/channel_id_openssl.cc \
 	net/quic/crypto/common_cert_set.cc \
 	net/quic/crypto/crypto_framer.cc \
 	net/quic/crypto/crypto_handshake.cc \
@@ -477,7 +480,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \

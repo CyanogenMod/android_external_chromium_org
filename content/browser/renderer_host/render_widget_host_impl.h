@@ -19,12 +19,13 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/process_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "build/build_config.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/smooth_scroll_gesture_controller.h"
+#include "content/common/browser_rendering_stats.h"
 #include "content/common/view_message_enums.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host.h"
@@ -485,6 +486,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // subsystem.
   int64 GetLatencyComponentId();
 
+  static void CompositorFrameDrawn(const ui::LatencyInfo& latency_info);
+
+  // Don't check whether we expected a resize ack during layout tests.
+  static void DisableResizeAckCheckForTesting();
+
  protected:
   virtual RenderWidgetHostImpl* AsRenderWidgetHostImpl() OVERRIDE;
 
@@ -915,6 +921,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   std::queue<base::Callback<void(bool, const SkBitmap&)> > pending_snapshots_;
 
   int64 last_input_number_;
+
+  BrowserRenderingStats rendering_stats_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostImpl);
 };

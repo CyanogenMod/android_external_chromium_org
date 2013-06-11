@@ -13,9 +13,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_bstr.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome_frame/test/win_event_receiver.h"
@@ -658,8 +658,8 @@ void AccEventObserver::OnEventReceived(DWORD event,
                                        LONG object_id,
                                        LONG child_id) {
   // Process events in a separate task to stop reentrancy problems.
-  DCHECK(MessageLoop::current());
-  MessageLoop::current()->PostTask(
+  DCHECK(base::MessageLoop::current());
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,  base::Bind(&EventHandler::Handle, event_handler_.get(), event,
                              hwnd, object_id, child_id));
 }

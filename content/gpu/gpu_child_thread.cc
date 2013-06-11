@@ -11,7 +11,7 @@
 #include "base/command_line.h"
 #include "base/threading/worker_pool.h"
 #include "build/build_config.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/gpu/gpu_watchdog_thread.h"
 #include "content/public/common/content_client.h"
@@ -144,11 +144,11 @@ void GpuChildThread::OnInitialize() {
   // Defer creation of the render thread. This is to prevent it from handling
   // IPC messages before the sandbox has been enabled and all other necessary
   // initialization has succeeded.
-  gpu_channel_manager_.reset(new GpuChannelManager(
-      this,
-      watchdog_thread_,
-      ChildProcess::current()->io_message_loop_proxy(),
-      ChildProcess::current()->GetShutDownEvent()));
+  gpu_channel_manager_.reset(
+      new GpuChannelManager(this,
+                            watchdog_thread_.get(),
+                            ChildProcess::current()->io_message_loop_proxy(),
+                            ChildProcess::current()->GetShutDownEvent()));
 
   // Ensure the browser process receives the GPU info before a reply to any
   // subsequent IPC it might send.
@@ -157,7 +157,7 @@ void GpuChildThread::OnInitialize() {
 }
 
 void GpuChildThread::StopWatchdog() {
-  if (watchdog_thread_) {
+  if (watchdog_thread_.get()) {
     watchdog_thread_->Stop();
   }
 }
@@ -224,7 +224,7 @@ void GpuChildThread::OnHang() {
 
 void GpuChildThread::OnDisableWatchdog() {
   VLOG(1) << "GPU: Disabling watchdog thread";
-  if (watchdog_thread_) {
+  if (watchdog_thread_.get()) {
     // Disarm the watchdog before shutting down the message loop. This prevents
     // the future posting of tasks to the message loop.
     if (watchdog_thread_->message_loop())

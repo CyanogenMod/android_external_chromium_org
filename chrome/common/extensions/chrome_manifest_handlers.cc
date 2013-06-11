@@ -25,10 +25,12 @@
 #include "chrome/common/extensions/csp_handler.h"
 #include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_handlers/kiosk_enabled_info.h"
+#include "chrome/common/extensions/manifest_handlers/nacl_modules_handler.h"
 #include "chrome/common/extensions/manifest_handlers/offline_enabled_info.h"
 #include "chrome/common/extensions/manifest_handlers/requirements_handler.h"
 #include "chrome/common/extensions/manifest_handlers/sandboxed_page_info.h"
@@ -43,6 +45,7 @@ namespace extensions {
 void RegisterChromeManifestHandlers() {
 #if defined(ENABLE_EXTENSIONS)
   (new AppIsolationHandler)->Register();
+  (new AppLaunchManifestHandler)->Register();
   (new BackgroundManifestHandler)->Register();
   (new BrowserActionHandler)->Register();
   (new CommandsHandler)->Register();
@@ -62,6 +65,7 @@ void RegisterChromeManifestHandlers() {
   (new KioskEnabledHandler)->Register();
   (new ManagedModeHandler)->Register();
   (new MimeTypesHandlerParser)->Register();
+  (new NaClModulesHandler)->Register();
   (new OAuth2ManifestHandler)->Register();
   (new OfflineEnabledHandler)->Register();
   (new OmniboxHandler)->Register();

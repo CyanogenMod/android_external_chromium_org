@@ -13,9 +13,9 @@
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_completion_blocker.h"
 #include "chrome/browser/download/download_crx_util.h"
@@ -44,10 +44,8 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/download_handler.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/download/save_package_file_picker_chromeos.h"
 #endif
 
-using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadId;
 using content::DownloadItem;
@@ -88,35 +86,41 @@ class SafeBrowsingState : public DownloadCompletionBlocker {
 
 SafeBrowsingState::~SafeBrowsingState() {}
 
-// Returns a file path in the form that is expected by
-// platform_util::OpenItem/ShowItemInFolder, including any transformation
-// required for download abstractions layered on top of the core system,
-// e.g. download to Drive.
+// Used with GetPlatformDownloadPath() to indicate which platform path to
+// return.
+enum PlatformDownloadPathType {
+  // Return the platform specific target path.
+  PLATFORM_TARGET_PATH,
+
+  // Return the platform specific current path. If the download is in-progress
+  // and the download location is a local filesystem path, then
+  // GetPlatformDownloadPath will return the path to the intermediate file.
+  PLATFORM_CURRENT_PATH
+};
+
+// Returns a path in the form that that is expected by platform_util::OpenItem /
+// platform_util::ShowItemInFolder / DownloadTargetDeterminer.
+//
+// DownloadItems corresponding to Drive downloads use a temporary file as the
+// target path. The paths returned by DownloadItem::GetFullPath() /
+// GetTargetFilePath() refer to this temporary file. This function looks up the
+// corresponding path in Drive for these downloads.
+//
+// How the platform path is determined is based on PlatformDownloadPathType.
 base::FilePath GetPlatformDownloadPath(Profile* profile,
-                                       const DownloadItem* download) {
+                                       const DownloadItem* download,
+                                       PlatformDownloadPathType path_type) {
 #if defined(OS_CHROMEOS)
+  // Drive downloads always return the target path for all types.
   drive::DownloadHandler* drive_download_handler =
       drive::DownloadHandler::GetForProfile(profile);
   if (drive_download_handler &&
       drive_download_handler->IsDriveDownload(download))
     return drive_download_handler->GetTargetPath(download);
 #endif
-  // The caller wants to open the download or show it in a file browser. The
-  // download could be in one of three states:
-  // - Complete: The path we want is GetTargetFilePath().
-  // - Not complete, but there's an intermediate file: GetFullPath() will be
-  //     non-empty and is the location of the intermediate file. Since no target
-  //     file exits yet, use GetFullPath(). This should only happen during
-  //     ShowDownloadInShell().
-  // - Not Complete, and there's no intermediate file: GetFullPath() will be
-  //     empty. This shouldn't happen since CanShowInFolder() returns false and
-  //     this function shouldn't have been called.
-  if (download->GetState() == DownloadItem::COMPLETE) {
-    DCHECK(!download->GetTargetFilePath().empty());
-    return download->GetTargetFilePath();
-  }
 
-  DCHECK(!download->GetFullPath().empty());
+  if (path_type == PLATFORM_TARGET_PATH)
+    return download->GetTargetFilePath();
   return download->GetFullPath();
 }
 
@@ -153,17 +157,6 @@ void CheckDownloadUrlDone(
 
 }  // namespace
 
-// static
-void ChromeDownloadManagerDelegate::RegisterUserPrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-  const base::FilePath& default_download_path =
-      download_util::GetDefaultDownloadDirectory();
-  registry->RegisterFilePathPref(
-      prefs::kSaveFileDefaultDirectory,
-      default_download_path,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-}
-
 ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
     : profile_(profile),
       next_download_id_(0),
@@ -185,18 +178,20 @@ DownloadId ChromeDownloadManagerDelegate::GetNextId() {
   if (!profile_->IsOffTheRecord())
     return DownloadId(this, next_download_id_++);
 
-  return BrowserContext::GetDownloadManager(profile_->GetOriginalProfile())->
-      GetDelegate()->GetNextId();
+  return content::BrowserContext::GetDownloadManager(
+      profile_->GetOriginalProfile())->GetDelegate()->GetNextId();
 }
 
 bool ChromeDownloadManagerDelegate::DetermineDownloadTarget(
     DownloadItem* download,
     const content::DownloadTargetCallback& callback) {
-  DownloadTargetDeterminer::Start(download,
-                                  download_prefs_.get(),
-                                  last_download_path_,
-                                  this,
-                                  callback);
+  DownloadTargetDeterminer::Start(
+      download,
+      GetPlatformDownloadPath(
+          profile_, download, PLATFORM_TARGET_PATH),
+      download_prefs_.get(),
+      this,
+      callback);
   return true;
 }
 
@@ -312,32 +307,13 @@ bool ChromeDownloadManagerDelegate::GenerateFileHash() {
 }
 
 void ChromeDownloadManagerDelegate::GetSaveDir(
-    BrowserContext* browser_context,
+    content::BrowserContext* browser_context,
     base::FilePath* website_save_dir,
     base::FilePath* download_save_dir,
     bool* skip_dir_check) {
-  Profile* profile = Profile::FromBrowserContext(browser_context);
-  PrefService* prefs = profile->GetPrefs();
-
-  // Check whether the preference for the preferred directory for
-  // saving file has been explicitly set. If not, and the preference
-  // for the default download directory has been set, initialize it
-  // with the latter. Note that the defaults for both are the same.
-  const PrefService::Preference* download_default_directory =
-      prefs->FindPreference(prefs::kDownloadDefaultDirectory);
-  if (!download_default_directory->IsDefaultValue() &&
-      prefs->FindPreference(
-          prefs::kSaveFileDefaultDirectory)->IsDefaultValue()) {
-    prefs->Set(prefs::kSaveFileDefaultDirectory,
-               *(download_default_directory->GetValue()));
-  }
-
-  // Get the directory from preference.
-  *website_save_dir = prefs->GetFilePath(prefs::kSaveFileDefaultDirectory);
+  *website_save_dir = download_prefs_->SaveFilePath();
   DCHECK(!website_save_dir->empty());
-
-  *download_save_dir = prefs->GetFilePath(prefs::kDownloadDefaultDirectory);
-
+  *download_save_dir = download_prefs_->DownloadPath();
   *skip_dir_check = false;
 #if defined(OS_CHROMEOS)
   *skip_dir_check = drive::util::IsUnderDriveMountPoint(*website_save_dir);
@@ -351,13 +327,6 @@ void ChromeDownloadManagerDelegate::ChooseSavePath(
     bool can_save_as_complete,
     const content::SavePackagePathPickedCallback& callback) {
   // Deletes itself.
-#if defined(OS_CHROMEOS)
-  new SavePackageFilePickerChromeOS(
-      web_contents,
-      suggested_path,
-      can_save_as_complete,
-      callback);
-#else
   new SavePackageFilePicker(
       web_contents,
       suggested_path,
@@ -365,21 +334,26 @@ void ChromeDownloadManagerDelegate::ChooseSavePath(
       can_save_as_complete,
       download_prefs_.get(),
       callback);
-#endif
 }
 
 void ChromeDownloadManagerDelegate::OpenDownload(DownloadItem* download) {
   DCHECK_EQ(DownloadItem::COMPLETE, download->GetState());
   if (!download->CanOpenDownload())
     return;
-  platform_util::OpenItem(GetPlatformDownloadPath(profile_, download));
+  base::FilePath platform_path(
+      GetPlatformDownloadPath(profile_, download, PLATFORM_TARGET_PATH));
+  DCHECK(!platform_path.empty());
+  platform_util::OpenItem(platform_path);
 }
 
 void ChromeDownloadManagerDelegate::ShowDownloadInShell(
     DownloadItem* download) {
   if (!download->CanShowInFolder())
     return;
-  platform_util::ShowItemInFolder(GetPlatformDownloadPath(profile_, download));
+  base::FilePath platform_path(
+      GetPlatformDownloadPath(profile_, download, PLATFORM_CURRENT_PATH));
+  DCHECK(!platform_path.empty());
+  platform_util::ShowItemInFolder(platform_path);
 }
 
 void ChromeDownloadManagerDelegate::CheckForFileExistence(
@@ -398,10 +372,6 @@ void ChromeDownloadManagerDelegate::CheckForFileExistence(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&file_util::PathExists, download->GetTargetFilePath()),
       callback);
-}
-
-void ChromeDownloadManagerDelegate::ClearLastDownloadPath() {
-  last_download_path_.clear();
 }
 
 DownloadProtectionService*
@@ -456,7 +426,7 @@ void ChromeDownloadManagerDelegate::ReserveVirtualPath(
   }
 #endif
   DownloadPathReservationTracker::GetReservedPath(
-      *download, virtual_path, download_prefs_->DownloadPath(),
+      download, virtual_path, download_prefs_->DownloadPath(),
       create_directory, conflict_action, callback);
 }
 
@@ -465,20 +435,7 @@ void ChromeDownloadManagerDelegate::PromptUserForDownloadPath(
     const base::FilePath& suggested_path,
     const DownloadTargetDeterminerDelegate::FileSelectedCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DownloadFilePicker::ShowFilePicker(
-      download,
-      suggested_path,
-      base::Bind(&ChromeDownloadManagerDelegate::OnDownloadPathSelected,
-                 this,
-                 callback));
-}
-
-void ChromeDownloadManagerDelegate::OnDownloadPathSelected(
-    const DownloadTargetDeterminerDelegate::FileSelectedCallback& callback,
-    const base::FilePath& virtual_path) {
-  if (!virtual_path.empty())
-    last_download_path_ = virtual_path.DirName();
-  callback.Run(virtual_path);
+  DownloadFilePicker::ShowFilePicker(download, suggested_path, callback);
 }
 
 void ChromeDownloadManagerDelegate::DetermineLocalPath(
@@ -573,7 +530,8 @@ void ChromeDownloadManagerDelegate::Observe(
 
   scoped_refptr<extensions::CrxInstaller> installer =
       content::Source<extensions::CrxInstaller>(source).ptr();
-  content::DownloadOpenDelayedCallback callback = crx_installers_[installer];
+  content::DownloadOpenDelayedCallback callback =
+      crx_installers_[installer.get()];
   crx_installers_.erase(installer.get());
   callback.Run(installer->did_handle_successfully());
 }

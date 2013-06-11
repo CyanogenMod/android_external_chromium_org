@@ -37,6 +37,7 @@ scoped_ptr<base::DictionaryValue> ConfigDictionaryFromMessage(
 namespace remoting {
 
 NativeMessagingHost::NativeMessagingHost(
+    scoped_ptr<DaemonController> daemon_controller,
     base::PlatformFile input,
     base::PlatformFile output,
     scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
@@ -45,7 +46,7 @@ NativeMessagingHost::NativeMessagingHost(
       quit_closure_(quit_closure),
       native_messaging_reader_(input),
       native_messaging_writer_(output),
-      daemon_controller_(DaemonController::Create()),
+      daemon_controller_(daemon_controller.Pass()),
       weak_factory_(this) {
   weak_ptr_ = weak_factory_.GetWeakPtr();
 }
@@ -70,10 +71,16 @@ void NativeMessagingHost::Shutdown() {
 
 void NativeMessagingHost::ProcessMessage(scoped_ptr<base::Value> message) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
+
+  // Don't process any more messages if Shutdown() has been called.
+  if (quit_closure_.is_null())
+    return;
+
   const base::DictionaryValue* message_dict;
   if (!message->GetAsDictionary(&message_dict)) {
     LOG(ERROR) << "Expected DictionaryValue";
     Shutdown();
+    return;
   }
 
   scoped_ptr<base::DictionaryValue> response_dict(new base::DictionaryValue());
@@ -160,8 +167,8 @@ bool NativeMessagingHost::ProcessGenerateKeyPair(
     const base::DictionaryValue& message,
     scoped_ptr<base::DictionaryValue> response) {
   scoped_refptr<RsaKeyPair> key_pair = RsaKeyPair::Generate();
-  response->SetString("private_key", key_pair->ToString());
-  response->SetString("public_key", key_pair->GetPublicKey());
+  response->SetString("privateKey", key_pair->ToString());
+  response->SetString("publicKey", key_pair->GetPublicKey());
   SendResponse(response.Pass());
   return true;
 }
@@ -234,10 +241,33 @@ bool NativeMessagingHost::ProcessStopDaemon(
 bool NativeMessagingHost::ProcessGetDaemonState(
     const base::DictionaryValue& message,
     scoped_ptr<base::DictionaryValue> response) {
-  // TODO(lambroslambrou): Send the state as a string instead of an integer,
-  // and update the web-app accordingly.
   DaemonController::State state = daemon_controller_->GetState();
-  response->SetInteger("state", state);
+  switch (state) {
+    case DaemonController::STATE_NOT_IMPLEMENTED:
+      response->SetString("state", "NOT_IMPLEMENTED");
+      break;
+    case DaemonController::STATE_NOT_INSTALLED:
+      response->SetString("state", "NOT_INSTALLED");
+      break;
+    case DaemonController::STATE_INSTALLING:
+      response->SetString("state", "INSTALLING");
+      break;
+    case DaemonController::STATE_STOPPED:
+      response->SetString("state", "STOPPED");
+      break;
+    case DaemonController::STATE_STARTING:
+      response->SetString("state", "STARTING");
+      break;
+    case DaemonController::STATE_STARTED:
+      response->SetString("state", "STARTED");
+      break;
+    case DaemonController::STATE_STOPPING:
+      response->SetString("state", "STOPPING");
+      break;
+    case DaemonController::STATE_UNKNOWN:
+      response->SetString("state", "UNKNOWN");
+      break;
+  }
   SendResponse(response.Pass());
   return true;
 }
@@ -269,16 +299,27 @@ void NativeMessagingHost::SendUsageStatsConsentResponse(
     bool set_by_policy) {
   response->SetBoolean("supported", supported);
   response->SetBoolean("allowed", allowed);
-  response->SetBoolean("set_by_policy", set_by_policy);
+  response->SetBoolean("setByPolicy", set_by_policy);
   SendResponse(response.Pass());
 }
 
 void NativeMessagingHost::SendAsyncResult(
     scoped_ptr<base::DictionaryValue> response,
     DaemonController::AsyncResult result) {
-  // TODO(lambroslambrou): Send the result as a string instead of an integer,
-  // and update the web-app accordingly. See http://crbug.com/232135.
-  response->SetInteger("result", result);
+  switch (result) {
+    case DaemonController::RESULT_OK:
+      response->SetString("result", "OK");
+      break;
+    case DaemonController::RESULT_FAILED:
+      response->SetString("result", "FAILED");
+      break;
+    case DaemonController::RESULT_CANCELLED:
+      response->SetString("result", "CANCELLED");
+      break;
+    case DaemonController::RESULT_FAILED_DIRECTORY:
+      response->SetString("result", "FAILED_DIRECTORY");
+      break;
+  }
   SendResponse(response.Pass());
 }
 

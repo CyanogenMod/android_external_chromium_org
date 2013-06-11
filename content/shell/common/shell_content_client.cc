@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/common/shell_switches.h"
 #include "grit/shell_resources.h"
@@ -32,28 +32,6 @@ std::string ShellContentClient::GetUserAgent() const {
 string16 ShellContentClient::GetLocalizedString(int message_id) const {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
     switch (message_id) {
-      case IDS_FORM_VALIDATION_VALUE_MISSING:
-      case IDS_FORM_VALIDATION_VALUE_MISSING_CHECKBOX:
-      case IDS_FORM_VALIDATION_VALUE_MISSING_FILE:
-      case IDS_FORM_VALIDATION_VALUE_MISSING_MULTIPLE_FILE:
-      case IDS_FORM_VALIDATION_VALUE_MISSING_RADIO:
-      case IDS_FORM_VALIDATION_VALUE_MISSING_SELECT:
-        return ASCIIToUTF16("value missing");
-      case IDS_FORM_VALIDATION_TYPE_MISMATCH:
-      case IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL:
-      case IDS_FORM_VALIDATION_TYPE_MISMATCH_MULTIPLE_EMAIL:
-      case IDS_FORM_VALIDATION_TYPE_MISMATCH_URL:
-        return ASCIIToUTF16("type mismatch");
-      case IDS_FORM_VALIDATION_PATTERN_MISMATCH:
-        return ASCIIToUTF16("pattern mismatch");
-      case IDS_FORM_VALIDATION_TOO_LONG:
-        return ASCIIToUTF16("too long");
-      case IDS_FORM_VALIDATION_RANGE_UNDERFLOW:
-        return ASCIIToUTF16("range underflow");
-      case IDS_FORM_VALIDATION_RANGE_OVERFLOW:
-        return ASCIIToUTF16("range overflow");
-      case IDS_FORM_VALIDATION_STEP_MISMATCH:
-        return ASCIIToUTF16("step mismatch");
       case IDS_FORM_OTHER_DATE_LABEL:
         return ASCIIToUTF16("<<OtherDateLabel>>");
       case IDS_FORM_OTHER_MONTH_LABEL:

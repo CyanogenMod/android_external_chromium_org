@@ -16,7 +16,7 @@
 #include "base/message_loop.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
 #include "base/time.h"
 #include "media/base/audio_decoder_config.h"
@@ -215,13 +215,13 @@ void FFmpegDemuxerStream::EnableBitstreamConverter() {
   bitstream_converter_enabled_ = true;
 }
 
-const AudioDecoderConfig& FFmpegDemuxerStream::audio_decoder_config() {
+AudioDecoderConfig FFmpegDemuxerStream::audio_decoder_config() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   CHECK_EQ(type_, AUDIO);
   return audio_config_;
 }
 
-const VideoDecoderConfig& FFmpegDemuxerStream::video_decoder_config() {
+VideoDecoderConfig FFmpegDemuxerStream::video_decoder_config() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   CHECK_EQ(type_, VIDEO);
   return video_config_;
@@ -300,7 +300,7 @@ FFmpegDemuxer::FFmpegDemuxer(
       url_protocol_(data_source, BindToLoop(message_loop_, base::Bind(
           &FFmpegDemuxer::OnDataSourceError, base::Unretained(this)))),
       need_key_cb_(need_key_cb) {
-  DCHECK(message_loop_);
+  DCHECK(message_loop_.get());
   DCHECK(data_source_);
 }
 

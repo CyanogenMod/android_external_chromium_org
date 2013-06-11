@@ -9,11 +9,11 @@
 #include "cc/base/region.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_position_constraint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositingReasons.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayerPositionConstraint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/public/platform/WebCompositingReasons.h"
+#include "third_party/WebKit/public/platform/WebFloatPoint.h"
+#include "third_party/WebKit/public/platform/WebFloatRect.h"
+#include "third_party/WebKit/public/platform/WebLayerPositionConstraint.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
 #include "webkit/renderer/compositor_bindings/web_animation_impl.h"
 
@@ -210,11 +210,6 @@ void WebLayerImpl::resumeAnimations(double monotonic_time) {
 }
 
 bool WebLayerImpl::hasActiveAnimation() { return layer_->HasActiveAnimation(); }
-
-void WebLayerImpl::transferAnimationsTo(WebLayer* other) {
-  DCHECK(other);
-  layer_->TransferAnimationsTo(static_cast<WebLayerImpl*>(other)->layer_);
-}
 
 void WebLayerImpl::setForceRenderSurface(bool force_render_surface) {
   layer_->SetForceRenderSurface(force_render_surface);

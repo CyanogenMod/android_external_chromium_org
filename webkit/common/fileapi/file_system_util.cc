@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/base/origin_url_conversions.h"
 
@@ -180,6 +180,7 @@ quota::StorageType FileSystemTypeToQuotaStorageType(FileSystemType type) {
     case kFileSystemTypePersistent:
       return quota::kStorageTypePersistent;
     case kFileSystemTypeSyncable:
+    case kFileSystemTypeSyncableForInternalSync:
       return quota::kStorageTypeSyncable;
     default:
       return quota::kStorageTypeUnknown;
@@ -215,6 +216,7 @@ std::string GetFileSystemTypeString(FileSystemType type) {
     case kFileSystemTypeDrive:
       return "Drive";
     case kFileSystemTypeSyncable:
+    case kFileSystemTypeSyncableForInternalSync:
       return "Syncable";
     case kFileSystemTypeNativeForPlatformApp:
       return "NativeForPlatformApp";
@@ -352,6 +354,18 @@ std::string GetIsolatedFileSystemRootURIString(
     root.append(optional_root_name);
     root.append("/");
   }
+  return root;
+}
+
+std::string GetExternalFileSystemRootURIString(
+    const GURL& origin_url,
+    const std::string& mount_name) {
+  std::string root = GetFileSystemRootURI(origin_url,
+                                          kFileSystemTypeExternal).spec();
+  if (base::FilePath::FromUTF8Unsafe(mount_name).ReferencesParent())
+    return std::string();
+  root.append(mount_name);
+  root.append("/");
   return root;
 }
 

@@ -5,7 +5,7 @@
 #include "cc/layers/layer_impl.h"
 
 #include "base/debug/trace_event.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/animation/scrollbar_animation_controller_linear_fade.h"
@@ -55,9 +55,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       is_container_for_fixed_position_layers_(false),
       draw_depth_(0.f),
       compositing_reasons_(kCompositingReasonUnknown),
-#ifndef NDEBUG
-      between_will_draw_and_did_draw_(false),
-#endif
+      current_draw_mode_(DRAW_MODE_NONE),
       horizontal_scrollbar_layer_(NULL),
       vertical_scrollbar_layer_(NULL) {
   DCHECK_GT(layer_id_, 0);
@@ -70,9 +68,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
 }
 
 LayerImpl::~LayerImpl() {
-#ifndef NDEBUG
-  DCHECK(!between_will_draw_and_did_draw_);
-#endif
+  DCHECK_EQ(DRAW_MODE_NONE, current_draw_mode_);
 
   layer_tree_impl_->UnregisterLayer(this);
   layer_animation_controller_->RemoveValueObserver(this);
@@ -147,19 +143,18 @@ scoped_ptr<SharedQuadState> LayerImpl::CreateSharedQuadState() const {
   return state.Pass();
 }
 
-void LayerImpl::WillDraw(ResourceProvider* resource_provider) {
-#ifndef NDEBUG
+bool LayerImpl::WillDraw(DrawMode draw_mode,
+                         ResourceProvider* resource_provider) {
   // WillDraw/DidDraw must be matched.
-  DCHECK(!between_will_draw_and_did_draw_);
-  between_will_draw_and_did_draw_ = true;
-#endif
+  DCHECK_NE(DRAW_MODE_NONE, draw_mode);
+  DCHECK_EQ(DRAW_MODE_NONE, current_draw_mode_);
+  current_draw_mode_ = draw_mode;
+  return true;
 }
 
 void LayerImpl::DidDraw(ResourceProvider* resource_provider) {
-#ifndef NDEBUG
-  DCHECK(between_will_draw_and_did_draw_);
-  between_will_draw_and_did_draw_ = false;
-#endif
+  DCHECK_NE(DRAW_MODE_NONE, current_draw_mode_);
+  current_draw_mode_ = DRAW_MODE_NONE;
 }
 
 bool LayerImpl::ShowDebugBorders() const {
@@ -246,8 +241,8 @@ gfx::Vector2dF LayerImpl::ScrollBy(gfx::Vector2dF scroll) {
   gfx::Vector2dF max_delta = max_scroll_offset_ - scroll_offset_;
   // Clamp new_delta so that position + delta stays within scroll bounds.
   gfx::Vector2dF new_delta = (ScrollDelta() + scroll);
-  new_delta.ClampToMin(min_delta);
-  new_delta.ClampToMax(max_delta);
+  new_delta.SetToMax(min_delta);
+  new_delta.SetToMin(max_delta);
   gfx::Vector2dF unscrolled = ScrollDelta() + scroll - new_delta;
 
   SetScrollDelta(new_delta);
@@ -507,6 +502,9 @@ base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
   result->SetBoolean("DrawsContent", draws_content_);
   result->SetDouble("Opacity", opacity());
 
+  if (scrollable_)
+    result->SetBoolean("Scrollable", scrollable_);
+
   list = new base::ListValue;
   for (size_t i = 0; i < children_.size(); ++i)
     list->Append(children_[i]->LayerTreeAsJson());
@@ -693,6 +691,25 @@ void LayerImpl::SetBackgroundColor(SkColor background_color) {
 
   background_color_ = background_color;
   NoteLayerPropertyChanged();
+}
+
+SkColor LayerImpl::SafeOpaqueBackgroundColor() const {
+  SkColor color = background_color();
+  if (SkColorGetA(color) == 255 && !contents_opaque()) {
+    color = SK_ColorTRANSPARENT;
+  } else if (SkColorGetA(color) != 255 && contents_opaque()) {
+    for (const LayerImpl* layer = parent(); layer;
+         layer = layer->parent()) {
+      color = layer->background_color();
+      if (SkColorGetA(color) == 255)
+        break;
+    }
+    if (SkColorGetA(color) != 255)
+      color = layer_tree_impl()->background_color();
+    if (SkColorGetA(color) != 255)
+      color = SkColorSetA(color, 255);
+  }
+  return color;
 }
 
 void LayerImpl::SetFilters(const WebKit::WebFilterOperations& filters) {
@@ -947,6 +964,8 @@ Region LayerImpl::VisibleContentOpaqueRegion() const {
     return visible_content_rect();
   return Region();
 }
+
+void LayerImpl::DidBeginTracing() {}
 
 void LayerImpl::DidLoseOutputSurface() {}
 

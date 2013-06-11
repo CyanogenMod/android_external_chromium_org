@@ -12,7 +12,7 @@
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/size_conversions.h"
@@ -31,7 +31,6 @@ BrowserPluginCompositingHelper::BrowserPluginCompositingHelper(
       last_host_id_(0),
       last_mailbox_valid_(false),
       ack_pending_(true),
-      ack_pending_for_crashed_guest_(false),
       container_(container),
       browser_plugin_manager_(manager) {
 }
@@ -40,7 +39,7 @@ BrowserPluginCompositingHelper::~BrowserPluginCompositingHelper() {
 }
 
 void BrowserPluginCompositingHelper::DidCommitCompositorFrame() {
-  if (!delegated_layer_ || !ack_pending_)
+  if (!delegated_layer_.get() || !ack_pending_)
     return;
 
   cc::CompositorFrameAck ack;
@@ -58,7 +57,7 @@ void BrowserPluginCompositingHelper::DidCommitCompositorFrame() {
 }
 
 void BrowserPluginCompositingHelper::EnableCompositing(bool enable) {
-  if (enable && !background_layer_) {
+  if (enable && !background_layer_.get()) {
     background_layer_ = cc::SolidColorLayer::Create();
     background_layer_->SetMasksToBounds(true);
     background_layer_->SetBackgroundColor(
@@ -84,98 +83,64 @@ void BrowserPluginCompositingHelper::CheckSizeAndAdjustLayerBounds(
   }
 }
 
-// If we have a mailbox that was freed up from the compositor,
-// but we are not expected to return it to the guest renderer
-// via an ACK, we should free it because we now own it.
-// To free the mailbox memory, we need a context to consume it
-// into a texture ID and then delete this texture ID.
-// We use a shared graphics context accessible from the main
-// thread to do it.
-void BrowserPluginCompositingHelper::FreeMailboxMemory(
-    const std::string& mailbox_name,
-    unsigned sync_point) {
-  if (mailbox_name.empty())
-    return;
-
-  scoped_refptr<cc::ContextProvider> context_provider =
-      RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
-  if (!context_provider)
-    return;
-
-  WebKit::WebGraphicsContext3D *context = context_provider->Context3d();
-  // When a buffer is released from the compositor, we also get a
-  // sync point that specifies when in the command buffer
-  // it's safe to use it again.
-  // If the sync point is non-zero, we need to tell our context
-  // to wait until this sync point is reached before we can safely
-  // delete the buffer.
-  if (sync_point)
-    context->waitSyncPoint(sync_point);
-
-  unsigned texture_id = context->createTexture();
-  context->bindTexture(GL_TEXTURE_2D, texture_id);
-  context->consumeTextureCHROMIUM(
-      GL_TEXTURE_2D,
-      reinterpret_cast<const int8*>(mailbox_name.data()));
-  context->deleteTexture(texture_id);
-}
-
 void BrowserPluginCompositingHelper::MailboxReleased(
-    const std::string& mailbox_name,
-    int gpu_route_id,
-    int gpu_host_id,
+    const MailboxSwapInfo& mailbox,
     unsigned sync_point,
     bool lost_resource) {
   if (lost_resource) {
     // Recurse with an empty mailbox if the one being released was lost.
-    MailboxReleased(std::string(), gpu_route_id, gpu_host_id, 0, false);
+    MailboxSwapInfo empty_info;
+    empty_info.type = mailbox.type;
+    empty_info.route_id = mailbox.route_id;
+    empty_info.host_id = mailbox.host_id;
+    MailboxReleased(empty_info, 0, false);
     return;
   }
 
-  // This means the GPU process crashed and we have nothing further to do.
-  // Nobody is expecting an ACK and the buffer doesn't need to be deleted
-  // because it went away with the GPU process.
-  if (last_host_id_ != gpu_host_id)
+  // This means the GPU process crashed or guest crashed.
+  if (last_host_id_ != mailbox.host_id || last_route_id_ != mailbox.route_id)
     return;
 
-  // This means the guest crashed.
-  // Either ACK the last buffer, so texture transport could
-  // be destroyed of delete the mailbox if nobody wants it back.
-  if (last_route_id_ != gpu_route_id) {
-    if (!ack_pending_for_crashed_guest_) {
-      FreeMailboxMemory(mailbox_name, sync_point);
-    } else {
-      ack_pending_for_crashed_guest_ = false;
-      browser_plugin_manager_->Send(
-          new BrowserPluginHostMsg_BuffersSwappedACK(
-              host_routing_id_,
-              instance_id_,
-              gpu_route_id,
-              gpu_host_id,
-              mailbox_name,
-              sync_point));
-    }
-    return;
-  }
-
-  // We need to send an ACK to TextureImageTransportSurface
-  // for every buffer it sends us. However, if a buffer is freed up from
+  // We need to send an ACK to for every buffer sent to us.
+  // However, if a buffer is freed up from
   // the compositor in cases like switching back to SW mode without a new
-  // buffer arriving, no ACK is needed and we destroy this buffer.
+  // buffer arriving, no ACK is needed.
   if (!ack_pending_) {
-    FreeMailboxMemory(mailbox_name, sync_point);
     last_mailbox_valid_ = false;
     return;
   }
   ack_pending_ = false;
-  browser_plugin_manager_->Send(
-      new BrowserPluginHostMsg_BuffersSwappedACK(
-          host_routing_id_,
-          instance_id_,
-          gpu_route_id,
-          gpu_host_id,
-          mailbox_name,
-          sync_point));
+  switch (mailbox.type) {
+    case TEXTURE_IMAGE_TRANSPORT: {
+      std::string mailbox_name(reinterpret_cast<const char*>(mailbox.name.name),
+                               sizeof(mailbox.name.name));
+      browser_plugin_manager_->Send(
+          new BrowserPluginHostMsg_BuffersSwappedACK(
+              host_routing_id_,
+              instance_id_,
+              mailbox.route_id,
+              mailbox.host_id,
+              mailbox_name,
+              sync_point));
+      break;
+    }
+    case COMPOSITOR_FRAME: {
+      cc::CompositorFrameAck ack;
+      ack.gl_frame_data.reset(new cc::GLFrameData());
+      ack.gl_frame_data->mailbox = mailbox.name;
+      ack.gl_frame_data->size = mailbox.size;
+      ack.gl_frame_data->sync_point = sync_point;
+
+      browser_plugin_manager_->Send(
+         new BrowserPluginHostMsg_CompositorFrameACK(
+             host_routing_id_,
+             instance_id_,
+             mailbox.route_id,
+             mailbox.host_id,
+             ack));
+      break;
+    }
+  }
 }
 
 void BrowserPluginCompositingHelper::OnContainerDestroy() {
@@ -189,37 +154,29 @@ void BrowserPluginCompositingHelper::OnContainerDestroy() {
   web_layer_.reset();
 }
 
-void BrowserPluginCompositingHelper::OnBuffersSwapped(
-    const gfx::Size& size,
-    const std::string& mailbox_name,
-    int gpu_route_id,
-    int gpu_host_id,
+void BrowserPluginCompositingHelper::OnBuffersSwappedPrivate(
+    const MailboxSwapInfo& mailbox,
+    unsigned sync_point,
     float device_scale_factor) {
-  DCHECK(!delegated_layer_);
-  // If the guest crashed but the GPU process didn't, we may still have
-  // a transport surface waiting on an ACK, which we must send to
-  // avoid leaking.
-  if (last_route_id_ != gpu_route_id && last_host_id_ == gpu_host_id)
-    ack_pending_for_crashed_guest_ = ack_pending_;
-
+  DCHECK(!delegated_layer_.get());
   // If these mismatch, we are either just starting up, GPU process crashed or
   // guest renderer crashed.
   // In this case, we are communicating with a new image transport
   // surface and must ACK with the new ID's and an empty mailbox.
-  if (last_route_id_ != gpu_route_id || last_host_id_ != gpu_host_id)
+  if (last_route_id_ != mailbox.route_id || last_host_id_ != mailbox.host_id)
     last_mailbox_valid_ = false;
 
-  last_route_id_ = gpu_route_id;
-  last_host_id_ = gpu_host_id;
+  last_route_id_ = mailbox.route_id;
+  last_host_id_ = mailbox.host_id;
 
   ack_pending_ = true;
   // Browser plugin getting destroyed, do a fast ACK.
-  if (!background_layer_) {
-    MailboxReleased(mailbox_name, gpu_route_id, gpu_host_id, 0, false);
+  if (!background_layer_.get()) {
+    MailboxReleased(mailbox, sync_point, false);
     return;
   }
 
-  if (!texture_layer_) {
+  if (!texture_layer_.get()) {
     texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
     texture_layer_->SetIsDrawable(true);
     texture_layer_->SetContentsOpaque(true);
@@ -237,13 +194,17 @@ void BrowserPluginCompositingHelper::OnBuffersSwapped(
   // when a new buffer arrives.
   // Visually, this will either display a smaller part of the buffer
   // or introduce a gutter around it.
-  CheckSizeAndAdjustLayerBounds(size,
+  CheckSizeAndAdjustLayerBounds(mailbox.size,
                                 device_scale_factor,
                                 texture_layer_.get());
 
-  bool current_mailbox_valid = !mailbox_name.empty();
+  bool current_mailbox_valid = !mailbox.name.IsZero();
   if (!last_mailbox_valid_) {
-    MailboxReleased(std::string(), gpu_route_id, gpu_host_id, 0, false);
+    MailboxSwapInfo empty_info;
+    empty_info.type = mailbox.type;
+    empty_info.route_id = mailbox.route_id;
+    empty_info.host_id = mailbox.host_id;
+    MailboxReleased(empty_info, 0, false);
     if (!current_mailbox_valid)
       return;
   }
@@ -252,22 +213,49 @@ void BrowserPluginCompositingHelper::OnBuffersSwapped(
   if (current_mailbox_valid) {
     callback = base::Bind(&BrowserPluginCompositingHelper::MailboxReleased,
                           scoped_refptr<BrowserPluginCompositingHelper>(this),
-                          mailbox_name,
-                          gpu_route_id,
-                          gpu_host_id);
+                          mailbox);
   }
-  texture_layer_->SetTextureMailbox(cc::TextureMailbox(mailbox_name,
-                                                       callback));
+  texture_layer_->SetTextureMailbox(cc::TextureMailbox(mailbox.name,
+                                                       callback,
+                                                       sync_point));
   texture_layer_->SetNeedsDisplay();
   last_mailbox_valid_ = current_mailbox_valid;
+}
+
+void BrowserPluginCompositingHelper::OnBuffersSwapped(
+    const gfx::Size& size,
+    const std::string& mailbox_name,
+    int gpu_route_id,
+    int gpu_host_id,
+    float device_scale_factor) {
+  MailboxSwapInfo swap_info;
+  swap_info.name.SetName(reinterpret_cast<const int8*>(mailbox_name.data()));
+  swap_info.type = TEXTURE_IMAGE_TRANSPORT;
+  swap_info.size = size;
+  swap_info.route_id = gpu_route_id;
+  swap_info.host_id = gpu_host_id;
+  OnBuffersSwappedPrivate(swap_info, 0, device_scale_factor);
 }
 
 void BrowserPluginCompositingHelper::OnCompositorFrameSwapped(
     scoped_ptr<cc::CompositorFrame> frame,
     int route_id,
     int host_id) {
-  DCHECK(!texture_layer_);
-  if (!delegated_layer_) {
+  if (frame->gl_frame_data) {
+    MailboxSwapInfo swap_info;
+    swap_info.name = frame->gl_frame_data->mailbox;
+    swap_info.type = COMPOSITOR_FRAME;
+    swap_info.size = frame->gl_frame_data->size;
+    swap_info.route_id = route_id;
+    swap_info.host_id = host_id;
+    OnBuffersSwappedPrivate(swap_info,
+                            frame->gl_frame_data->sync_point,
+                            frame->metadata.device_scale_factor);
+    return;
+  }
+
+  DCHECK(!texture_layer_.get());
+  if (!delegated_layer_.get()) {
     delegated_layer_ = cc::DelegatedRendererLayer::Create(NULL);
     delegated_layer_->SetIsDrawable(true);
     delegated_layer_->SetContentsOpaque(true);
@@ -291,9 +279,9 @@ void BrowserPluginCompositingHelper::OnCompositorFrameSwapped(
 }
 
 void BrowserPluginCompositingHelper::UpdateVisibility(bool visible) {
-  if (texture_layer_)
+  if (texture_layer_.get())
     texture_layer_->SetIsDrawable(visible);
-  if (delegated_layer_)
+  if (delegated_layer_.get())
     delegated_layer_->SetIsDrawable(visible);
 }
 

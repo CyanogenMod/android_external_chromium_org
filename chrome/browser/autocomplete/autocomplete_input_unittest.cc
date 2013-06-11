@@ -5,8 +5,8 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 
 #include "base/basictypes.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "googleurl/src/url_parse.h"
 #include "testing/gtest/include/gtest/gtest.h"

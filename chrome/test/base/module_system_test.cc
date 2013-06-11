@@ -5,8 +5,14 @@
 #include "chrome/test/base/module_system_test.h"
 
 #include "base/callback.h"
+#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/path_service.h"
 #include "base/strings/string_piece.h"
+#include "chrome/common/chrome_paths.h"
+#include "chrome/renderer/extensions/chrome_v8_context.h"
+#include "chrome/renderer/extensions/logging_native_handler.h"
 #include "chrome/renderer/extensions/object_backed_native_handler.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -20,7 +26,7 @@ using extensions::ObjectBackedNativeHandler;
 // Native JS functions for doing asserts.
 class AssertNatives : public ObjectBackedNativeHandler {
  public:
-  explicit AssertNatives(v8::Handle<v8::Context> context)
+  explicit AssertNatives(extensions::ChromeV8Context* context)
       : ObjectBackedNativeHandler(context),
         assertion_made_(false),
         failed_(false) {
@@ -69,7 +75,7 @@ class StringSourceMap : public ModuleSystem::SourceMap {
   }
 
   void RegisterModule(const std::string& name, const std::string& source) {
-    CHECK_EQ(0u, source_map_.count(name));
+    CHECK_EQ(0u, source_map_.count(name)) << "Module " << name << " not found";
     source_map_[name] = source;
   }
 
@@ -79,29 +85,36 @@ class StringSourceMap : public ModuleSystem::SourceMap {
 
 class FailsOnException : public ModuleSystem::ExceptionHandler {
  public:
-  virtual void HandleUncaughtException() OVERRIDE {
-    FAIL();
+  virtual void HandleUncaughtException(const v8::TryCatch& try_catch) OVERRIDE {
+    FAIL() << "Uncaught exception: " << CreateExceptionString(try_catch);
   }
 };
 
 ModuleSystemTest::ModuleSystemTest()
     : isolate_(v8::Isolate::GetCurrent()),
       handle_scope_(isolate_),
-      context_(v8::Context::New(isolate_)),
+      context_(
+          new extensions::ChromeV8Context(
+              v8::Context::New(isolate_),
+              NULL,  // WebFrame
+              NULL,  // Extension
+              extensions::Feature::UNSPECIFIED_CONTEXT)),
       source_map_(new StringSourceMap()),
       should_assertions_be_made_(true) {
-  context_->Enter();
+  context_->v8_context()->Enter();
   assert_natives_ = new AssertNatives(context_.get());
   module_system_.reset(new ModuleSystem(context_.get(), source_map_.get()));
   module_system_->RegisterNativeHandler("assert", scoped_ptr<NativeHandler>(
       assert_natives_));
+  module_system_->RegisterNativeHandler("logging", scoped_ptr<NativeHandler>(
+      new extensions::LoggingNativeHandler(context_.get())));
   module_system_->SetExceptionHandlerForTest(
       scoped_ptr<ModuleSystem::ExceptionHandler>(new FailsOnException));
 }
 
 ModuleSystemTest::~ModuleSystemTest() {
   module_system_.reset();
-  context_->Exit();
+  context_->v8_context()->Exit();
 }
 
 void ModuleSystemTest::RegisterModule(const std::string& name,
@@ -120,6 +133,17 @@ void ModuleSystemTest::OverrideNativeHandler(const std::string& name,
                                              const std::string& code) {
   RegisterModule(name, code);
   module_system_->OverrideNativeHandlerForTest(name);
+}
+
+void ModuleSystemTest::RegisterTestFile(const std::string& module_name,
+                                        const std::string& file_name) {
+  base::FilePath test_js_file_path;
+  ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_js_file_path));
+  test_js_file_path = test_js_file_path.AppendASCII("extensions")
+                                       .AppendASCII(file_name);
+  std::string test_js;
+  ASSERT_TRUE(file_util::ReadFileToString(test_js_file_path, &test_js));
+  source_map_->RegisterModule(module_name, test_js);
 }
 
 void ModuleSystemTest::TearDown() {

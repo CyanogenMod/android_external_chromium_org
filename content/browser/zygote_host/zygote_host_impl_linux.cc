@@ -13,6 +13,7 @@
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/linux_util.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
@@ -22,10 +23,10 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/browser/content_browser_client.h"
@@ -371,8 +372,7 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
 
   if (!selinux_valid) {
     const base::FilePath kSelinuxPath("/selinux");
-    file_util::FileEnumerator en(kSelinuxPath, false,
-                                 file_util::FileEnumerator::FILES);
+    base::FileEnumerator en(kSelinuxPath, false, base::FileEnumerator::FILES);
     bool has_selinux_files = !en.Next().empty();
 
     selinux = access(kSelinuxPath.value().c_str(), X_OK) == 0 &&

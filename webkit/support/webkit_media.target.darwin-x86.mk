@@ -12,6 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,GYP,third_party_widevine_cdm_widevine_cdm_version_h_gyp)/widevine_cdm_version_h.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -25,29 +26,29 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/media/android/audio_decoder_android.cc \
-	webkit/media/android/media_source_delegate.cc \
-	webkit/media/android/webmediaplayer_android.cc \
-	webkit/media/android/webmediaplayer_manager_android.cc \
-	webkit/media/android/webmediaplayer_proxy_android.cc \
-	webkit/media/active_loader.cc \
-	webkit/media/buffered_data_source.cc \
-	webkit/media/buffered_resource_loader.cc \
-	webkit/media/cache_util.cc \
-	webkit/media/crypto/key_systems.cc \
-	webkit/media/crypto/key_systems_info.cc \
-	webkit/media/crypto/proxy_decryptor.cc \
-	webkit/media/media_stream_audio_renderer.cc \
-	webkit/media/simple_video_frame_provider.cc \
-	webkit/media/texttrack_impl.cc \
-	webkit/media/video_frame_provider.cc \
-	webkit/media/webaudiosourceprovider_impl.cc \
-	webkit/media/webinbandtexttrack_impl.cc \
-	webkit/media/webmediaplayer_ms.cc \
-	webkit/media/webmediaplayer_params.cc \
-	webkit/media/webmediaplayer_util.cc \
-	webkit/media/webmediasourceclient_impl.cc \
-	webkit/media/websourcebuffer_impl.cc
+	webkit/renderer/media/android/audio_decoder_android.cc \
+	webkit/renderer/media/android/media_source_delegate.cc \
+	webkit/renderer/media/android/webmediaplayer_android.cc \
+	webkit/renderer/media/android/webmediaplayer_manager_android.cc \
+	webkit/renderer/media/android/webmediaplayer_proxy_android.cc \
+	webkit/renderer/media/active_loader.cc \
+	webkit/renderer/media/buffered_data_source.cc \
+	webkit/renderer/media/buffered_resource_loader.cc \
+	webkit/renderer/media/cache_util.cc \
+	webkit/renderer/media/crypto/key_systems.cc \
+	webkit/renderer/media/crypto/key_systems_info.cc \
+	webkit/renderer/media/crypto/proxy_decryptor.cc \
+	webkit/renderer/media/media_stream_audio_renderer.cc \
+	webkit/renderer/media/simple_video_frame_provider.cc \
+	webkit/renderer/media/texttrack_impl.cc \
+	webkit/renderer/media/video_frame_provider.cc \
+	webkit/renderer/media/webaudiosourceprovider_impl.cc \
+	webkit/renderer/media/webinbandtexttrack_impl.cc \
+	webkit/renderer/media/webmediaplayer_ms.cc \
+	webkit/renderer/media/webmediaplayer_params.cc \
+	webkit/renderer/media/webmediaplayer_util.cc \
+	webkit/renderer/media/webmediasourceclient_impl.cc \
+	webkit/renderer/media/websourcebuffer_impl.cc
 
 
 # Flags passed to both C and C++ files.
@@ -98,7 +99,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -149,8 +149,7 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/npapi \

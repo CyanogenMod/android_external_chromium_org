@@ -8,8 +8,8 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/prefs/pref_service.h"
 #include "base/sequenced_task_runner.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
@@ -181,7 +181,7 @@ bool ThemeService::HasCustomImage(int id) const {
   if (!Properties::IsThemeableImage(id))
     return false;
 
-  if (theme_pack_)
+  if (theme_pack_.get())
     return theme_pack_->HasCustomImage(id);
 
   return false;

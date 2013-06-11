@@ -5,7 +5,9 @@
 #ifndef CHROME_BROWSER_CHROMEOS_ACCESSIBILITY_MAGNIFICATION_MANAGER_H_
 #define CHROME_BROWSER_CHROMEOS_ACCESSIBILITY_MAGNIFICATION_MANAGER_H_
 
-#include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
+
+class Profile;
 
 namespace chromeos {
 
@@ -48,6 +50,8 @@ class MagnificationManager {
 
   // Loads the magnifier scale from the pref.
   virtual double GetSavedScreenMagnifierScale() const = 0;
+
+  virtual void SetProfileForTest(Profile* profile) = 0;
 
  protected:
   virtual ~MagnificationManager() {}

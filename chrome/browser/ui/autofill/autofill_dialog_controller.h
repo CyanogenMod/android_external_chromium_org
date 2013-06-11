@@ -10,7 +10,7 @@
 #include "base/string16.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "components/autofill/browser/field_types.h"
-#include "components/autofill/browser/wallet/required_action.h"
+#include "components/autofill/content/browser/wallet/required_action.h"
 #include "ui/base/range/range.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/image/image.h"
@@ -37,11 +37,6 @@ namespace autofill {
 // This class defines the interface to the controller that the dialog view sees.
 class AutofillDialogController {
  public:
-  enum ValidationType {
-    VALIDATE_EDIT,   // validate user edits. Allow for empty fields.
-    VALIDATE_FINAL,  // Full form validation. Mandatory fields can't be empty.
-  };
-
   // Strings -------------------------------------------------------------------
 
   virtual string16 DialogTitle() const = 0;
@@ -168,7 +163,7 @@ class AutofillDialogController {
 
   // Returns dialog notifications that the view should currently be showing in
   // order from top to bottom.
-  virtual std::vector<DialogNotification> CurrentNotifications() const = 0;
+  virtual std::vector<DialogNotification> CurrentNotifications() = 0;
 
   // Begins or aborts the flow to sign into Wallet.
   virtual void SignInLinkClicked() = 0;

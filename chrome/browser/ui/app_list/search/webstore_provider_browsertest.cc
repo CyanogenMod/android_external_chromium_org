@@ -9,7 +9,7 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "chrome/browser/ui/app_list/search/webstore_provider.h"
@@ -125,7 +125,13 @@ class WebstoreProviderTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(WebstoreProviderTest);
 };
 
-IN_PROC_BROWSER_TEST_F(WebstoreProviderTest, Basic) {
+// Flaky on Windows: http://crbug.com/246136.
+#if defined(OS_WIN)
+#define MAYBE_Basic DISABLED_Basic
+#else
+#define MAYBE_Basic Basic
+#endif
+IN_PROC_BROWSER_TEST_F(WebstoreProviderTest, MAYBE_Basic) {
   const char kOneResult[] = "{"
       "\"search_url\": \"http://host/search\","
       "\"results\":["

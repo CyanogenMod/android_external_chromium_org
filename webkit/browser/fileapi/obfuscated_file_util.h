@@ -10,19 +10,23 @@
 
 #include "base/files/file_path.h"
 #include "base/files/file_util_proxy.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
-#include "base/timer.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/sandbox_directory_database.h"
-#include "webkit/browser/fileapi/sandbox_origin_database.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
-class Time;
+class SequencedTaskRunner;
+class TimeTicks;
+}
+
+namespace quota {
+class SpecialStoragePolicy;
 }
 
 class GURL;
@@ -30,6 +34,7 @@ class GURL;
 namespace fileapi {
 
 class FileSystemOperationContext;
+class SandboxOriginDatabaseInterface;
 
 // The overall implementation philosophy of this class is that partial failures
 // should leave us with an intact database; we'd prefer to leak the occasional
@@ -55,7 +60,10 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
     virtual bool HasFileSystemType(FileSystemType type) const = 0;
   };
 
-  explicit ObfuscatedFileUtil(const base::FilePath& file_system_directory);
+  ObfuscatedFileUtil(
+      quota::SpecialStoragePolicy* special_storage_policy,
+      const base::FilePath& file_system_directory,
+      base::SequencedTaskRunner* file_task_runner);
   virtual ~ObfuscatedFileUtil();
 
   // FileSystemFileUtil overrides.
@@ -163,6 +171,12 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // and destroys the database on the disk.
   bool DestroyDirectoryDatabase(const GURL& origin, FileSystemType type);
 
+  void ResetObjectLifetimeTracker();
+
+  void DropDatabases();
+
+  const base::TimeTicks& db_last_use_time() const { return db_last_use_time_; }
+
   // Computes a cost for storing a given file in the obfuscated FSFU.
   // As the cost of a file is independent of the cost of its parent directories,
   // this ignores all but the BaseName of the supplied path.  In order to
@@ -170,11 +184,16 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // on each path segment and add the results.
   static int64 ComputeFilePathCost(const base::FilePath& path);
 
+  void MaybePrepopulateDatabase();
+
  private:
   typedef SandboxDirectoryDatabase::FileId FileId;
   typedef SandboxDirectoryDatabase::FileInfo FileInfo;
 
   friend class ObfuscatedFileEnumerator;
+  FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest, MaybeDropDatabasesAliveCase);
+  FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
+                           MaybeDropDatabasesAlreadyDeletedCase);
 
   base::PlatformFileError GetFileInfoInternal(
       SandboxDirectoryDatabase* db,
@@ -214,6 +233,8 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       FileSystemType type,
       const base::FilePath& data_file_path);
 
+  std::string GetDirectoryDatabaseKey(const GURL& origin, FileSystemType type);
+
   // This returns NULL if |create| flag is false and a filesystem does not
   // exist for the given |origin_url| and |type|.
   // For read operations |create| should be false.
@@ -231,7 +252,6 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
                             FileSystemType type);
 
   void MarkUsed();
-  void DropDatabases();
   bool InitOriginDatabase(bool create);
 
   base::PlatformFileError GenerateNewLocalPath(
@@ -250,9 +270,24 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
 
   typedef std::map<std::string, SandboxDirectoryDatabase*> DirectoryMap;
   DirectoryMap directories_;
-  scoped_ptr<SandboxOriginDatabase> origin_database_;
+  scoped_ptr<SandboxOriginDatabaseInterface> origin_database_;
+  scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
   base::FilePath file_system_directory_;
-  base::OneShotTimer<ObfuscatedFileUtil> timer_;
+  scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
+
+  // Used to delete database after a certain period of inactivity.
+  int64 db_flush_delay_seconds_;
+  base::TimeTicks db_last_use_time_;
+
+  // Owned by MaybeDropDatabase callback, set to false when dtor runs.
+  // This only becomes valid when the PostDelayedTask callback is posted and
+  // becomes invalid again if the PostDelayedTask callback finishes. (i.e. timer
+  // runs out).
+  bool* object_lifetime_tracker_;
+
+  // If this instance is initialized for an isolated partition, this should
+  // only see a single origin.
+  GURL isolated_origin_;
 
   DISALLOW_COPY_AND_ASSIGN(ObfuscatedFileUtil);
 };

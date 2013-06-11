@@ -10,10 +10,10 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/ui/webui/managed_user_passphrase_dialog.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -54,9 +54,6 @@ class ManagedUserService : public BrowserContextKeyedService,
   // ManagedUserService (which could lead to cyclic dependencies).
   static bool ProfileIsManaged(Profile* profile);
 
-  // Returns the elevation state for specific WebContents.
-  bool IsElevatedForWebContents(const content::WebContents* web_contents) const;
-
   static void RegisterUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Returns whether managed users are enabled by Finch or the command line
@@ -79,6 +76,9 @@ class ManagedUserService : public BrowserContextKeyedService,
   // be fast.
   void GetCategoryNames(CategoryList* list);
 
+  // Returns the email address of the custodian.
+  std::string GetCustodianEmailAddress() const;
+
   // These methods allow querying and modifying the manual filtering behavior.
   // The manual behavior is set by the user and overrides all other settings
   // (whitelists or the default behavior).
@@ -90,6 +90,11 @@ class ManagedUserService : public BrowserContextKeyedService,
   void SetManualBehaviorForHosts(const std::vector<std::string>& hostnames,
                                  ManualBehavior behavior);
 
+  // Adds an access request for the given URL. The requests are stored using
+  // a prefix followed by a URIEncoded version of the URL. Each entry contains
+  // a dictionary which currently has the timestamp of the request in it.
+  void AddAccessRequest(const GURL& url);
+
   // Returns the manual behavior for the given URL.
   ManualBehavior GetManualBehaviorForURL(const GURL& url);
 
@@ -100,14 +105,6 @@ class ManagedUserService : public BrowserContextKeyedService,
   // Returns all URLS on the given host that have exceptions.
   void GetManualExceptionsForHost(const std::string& host,
                                   std::vector<GURL>* urls);
-
-  // Checks if the passphrase dialog can be skipped (the profile is already in
-  // elevated state for the given WebContents or the passphrase is empty).
-  bool CanSkipPassphraseDialog(const content::WebContents* web_contents) const;
-
-  // Handles the request to authorize as the custodian of the managed user.
-  void RequestAuthorization(content::WebContents* web_contents,
-                            const PassphraseCheckedCallback& callback);
 
   // Initializes this object. This method does nothing if the profile is not
   // managed.
@@ -123,9 +120,12 @@ class ManagedUserService : public BrowserContextKeyedService,
   // Convenience method that registers this managed user with
   // |registration_service| and initializes sync with the returned token.
   // Note that |registration_service| should belong to the custodian's profile,
-  // not this one.
-  void RegisterAndInitSync(
-      ManagedUserRegistrationService* registration_service);
+  // not this one. The |callback| will be called when registration is complete,
+  // whether it suceeded or not -- unless registration was cancelled in the
+  // ManagedUserRegistrationService manually, in which case the callback will
+  // be ignored.
+  void RegisterAndInitSync(Profile* custodian_profile,
+                           const ProfileManager::CreateCallback& callback);
 
   // Returns a pseudo-email address for systems that expect well-formed email
   // addresses (like Sync), even though we're not signed in.
@@ -180,7 +180,9 @@ class ManagedUserService : public BrowserContextKeyedService,
     DISALLOW_COPY_AND_ASSIGN(URLFilterContext);
   };
 
-  void OnManagedUserRegistered(const GoogleServiceAuthError& auth_error,
+  void OnManagedUserRegistered(const ProfileManager::CreateCallback& callback,
+                               Profile* custodian_profile,
+                               const GoogleServiceAuthError& auth_error,
                                const std::string& token);
 
   // Internal implementation for ExtensionManagementPolicy::Delegate methods.
@@ -205,9 +207,6 @@ class ManagedUserService : public BrowserContextKeyedService,
   // corresponding preference is changed.
   void UpdateManualURLs();
 
-  // Returns if the passphrase to authorize as the custodian is empty.
-  bool IsPassphraseEmpty() const;
-
   base::WeakPtrFactory<ManagedUserService> weak_ptr_factory_;
 
   // Owns us via the BrowserContextKeyedService mechanism.
@@ -215,10 +214,6 @@ class ManagedUserService : public BrowserContextKeyedService,
 
   content::NotificationRegistrar registrar_;
   PrefChangeRegistrar pref_change_registrar_;
-
-  // Stores the extension ids of the extensions which currently can be modified
-  // by the managed user.
-  std::set<std::string> elevated_for_extensions_;
 
   // Sets a profile in elevated state for testing if set to true.
   bool elevated_for_testing_;

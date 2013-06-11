@@ -10,15 +10,16 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/file_version_info.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/i18n/time_formatting.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -771,9 +772,9 @@ base::FilePath AutomatedUITest::GetMostRecentCrashDump() {
 
   bool first_file = true;
 
-  file_util::FileEnumerator enumerator(crash_dump_path,
-                                       false,  // not recursive
-                                       file_util::FileEnumerator::FILES);
+  base::FileEnumerator enumerator(crash_dump_path,
+                                  false,  // not recursive
+                                  base::FileEnumerator::FILES);
   for (base::FilePath path = enumerator.Next(); !path.value().empty();
        path = enumerator.Next()) {
     base::PlatformFileInfo file_info;

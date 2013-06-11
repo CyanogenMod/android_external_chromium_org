@@ -17,6 +17,7 @@
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
+#include "base/memory/scoped_nsobject.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/strings/sys_string_conversions.h"
@@ -36,6 +37,21 @@ base::Thread* g_io_thread = NULL;
 
 }  // namespace
 
+class AppShimController;
+
+@interface AppShimDelegate : NSObject<NSApplicationDelegate> {
+ @private
+  AppShimController* appShimController_;  // Weak. Owns us.
+  BOOL terminateNow_;
+  BOOL terminateRequested_;
+}
+
+- (id)initWithController:(AppShimController*)controller;
+
+- (void)terminateNow;
+
+@end
+
 // The AppShimController is responsible for communication with the main Chrome
 // process, and generally controls the lifetime of the app shim process.
 class AppShimController : public IPC::Listener {
@@ -44,6 +60,9 @@ class AppShimController : public IPC::Listener {
 
   // Connects to Chrome and sends a LaunchApp message.
   void Init();
+
+  // Sends a QuitApp message to Chrome.
+  void QuitApp();
 
  private:
   // IPC::Listener implemetation.
@@ -58,16 +77,16 @@ class AppShimController : public IPC::Listener {
   // dock or by Cmd+Tabbing to it.
   void OnDidActivateApplication();
 
-  // Quits the app shim process.
-  void Quit();
+  // Terminates the app shim process.
+  void Close();
 
   IPC::ChannelProxy* channel_;
+  scoped_nsobject<AppShimDelegate> nsapp_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(AppShimController);
 };
 
-AppShimController::AppShimController() : channel_(NULL) {
-}
+AppShimController::AppShimController() : channel_(NULL) {}
 
 void AppShimController::Init() {
   DCHECK(g_io_thread);
@@ -77,7 +96,7 @@ void AppShimController::Init() {
   base::FilePath user_data_dir;
   if (!chrome::GetUserDataDirectoryForBrowserBundle(chrome_bundle,
                                                     &user_data_dir)) {
-    Quit();
+    Close();
     return;
   }
 
@@ -88,7 +107,17 @@ void AppShimController::Init() {
       this, g_io_thread->message_loop_proxy());
 
   channel_->Send(new AppShimHostMsg_LaunchApp(
-      g_info->profile_dir.value(), g_info->app_mode_id));
+      g_info->profile_dir, g_info->app_mode_id,
+      CommandLine::ForCurrentProcess()->HasSwitch(app_mode::kNoLaunchApp) ?
+          apps::APP_SHIM_LAUNCH_REGISTER_ONLY : apps::APP_SHIM_LAUNCH_NORMAL));
+
+  nsapp_delegate_.reset([[AppShimDelegate alloc] initWithController:this]);
+  DCHECK(![NSApp delegate]);
+  [NSApp setDelegate:nsapp_delegate_];
+}
+
+void AppShimController::QuitApp() {
+  channel_->Send(new AppShimHostMsg_QuitApp);
 }
 
 bool AppShimController::OnMessageReceived(const IPC::Message& message) {
@@ -102,15 +131,15 @@ bool AppShimController::OnMessageReceived(const IPC::Message& message) {
 }
 
 void AppShimController::OnChannelError() {
-  LOG(ERROR) << "App shim channel error.";
-  Quit();
+  Close();
 }
 
 void AppShimController::OnLaunchAppDone(bool success) {
   if (!success) {
-    Quit();
+    Close();
     return;
   }
+
   [[[NSWorkspace sharedWorkspace] notificationCenter]
       addObserverForName:NSWorkspaceDidActivateApplicationNotification
                   object:nil
@@ -123,13 +152,45 @@ void AppShimController::OnLaunchAppDone(bool success) {
   }];
 }
 
-void AppShimController::Quit() {
-  [NSApp terminate:nil];
+void AppShimController::Close() {
+  [nsapp_delegate_ terminateNow];
 }
 
 void AppShimController::OnDidActivateApplication() {
   channel_->Send(new AppShimHostMsg_FocusApp);
 }
+
+@implementation AppShimDelegate
+
+- (id)initWithController:(AppShimController*)controller {
+  if ((self = [super init])) {
+    appShimController_ = controller;
+  }
+  return self;
+}
+
+- (NSApplicationTerminateReply)
+    applicationShouldTerminate:(NSApplication*)sender {
+  if (terminateNow_)
+    return NSTerminateNow;
+
+  appShimController_->QuitApp();
+  // Wait for the channel to close before terminating.
+  terminateRequested_ = YES;
+  return NSTerminateLater;
+}
+
+- (void)terminateNow {
+  if (terminateRequested_) {
+    [NSApp replyToApplicationShouldTerminate:NSTerminateNow];
+    return;
+  }
+
+  terminateNow_ = YES;
+  [NSApp terminate:nil];
+}
+
+@end
 
 //-----------------------------------------------------------------------------
 
@@ -259,6 +320,8 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info);
 }  // extern "C"
 
 int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
+  CommandLine::Init(info->argc, info->argv);
+
   base::mac::ScopedNSAutoreleasePool scoped_pool;
   base::AtExitManager exit_manager;
   chrome::RegisterPathProvider();
@@ -281,18 +344,31 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
   io_thread->StartWithOptions(io_thread_options);
   g_io_thread = io_thread;
 
+  // Find already running instances of Chrome.
+  NSString* chrome_bundle_path =
+      base::SysUTF8ToNSString(g_info->chrome_outer_bundle_path.value());
+  NSBundle* chrome_bundle = [NSBundle bundleWithPath:chrome_bundle_path];
+  NSArray* existing_chrome = [NSRunningApplication
+      runningApplicationsWithBundleIdentifier:[chrome_bundle bundleIdentifier]];
+
   // Launch Chrome if it isn't already running.
-  // TODO(jeremya): this opens a new browser window if Chrome is already
-  // running without any windows open.
-  CommandLine command_line(CommandLine::NO_PROGRAM);
-  command_line.AppendSwitch(switches::kSilentLaunch);
   ProcessSerialNumber psn;
-  bool success =
-      base::mac::OpenApplicationWithPath(info->chrome_outer_bundle_path,
-                                         command_line,
-                                         &psn);
-  if (!success)
-    return 1;
+  if ([existing_chrome count] > 0) {
+    OSStatus status = GetProcessForPID(
+        [[existing_chrome objectAtIndex:0] processIdentifier], &psn);
+    if (status)
+      return 1;
+
+  } else {
+    CommandLine command_line(CommandLine::NO_PROGRAM);
+    command_line.AppendSwitch(switches::kSilentLaunch);
+    bool success =
+        base::mac::OpenApplicationWithPath(info->chrome_outer_bundle_path,
+                                           command_line,
+                                           &psn);
+    if (!success)
+      return 1;
+  }
 
   // This code abuses the fact that Apple Events sent before the process is
   // fully initialized don't receive a reply until its run loop starts. Once

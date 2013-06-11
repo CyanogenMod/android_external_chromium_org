@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/permissions/bluetooth_device_permission_data.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
 #include "device/bluetooth/bluetooth_adapter.h"
@@ -46,7 +46,7 @@ PermissionMessages BluetoothDevicePermission::GetMessages() const {
 
     const std::string& device_address = i->device_address();
     string16 device_identifier;
-    if (bluetooth_adapter) {
+    if (bluetooth_adapter.get()) {
       device::BluetoothDevice* device =
           bluetooth_adapter->GetDevice(device_address);
       if (device)

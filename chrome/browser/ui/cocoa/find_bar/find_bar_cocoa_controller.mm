@@ -10,7 +10,6 @@
 #include "base/strings/sys_string_conversions.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -27,7 +26,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
-#include "ui/base/clipboard/clipboard.h"
 #import "ui/base/cocoa/find_pasteboard.h"
 #import "ui/base/cocoa/focus_tracker.h"
 
@@ -38,35 +36,6 @@ const float kFindBarCloseDuration = 0.15;
 const float kFindBarMoveDuration = 0.15;
 const float kRightEdgeOffset = 25;
 
-@interface FindTextFieldEditor : NSTextView {
- @private
-  ui::SourceTag sourceTag_;
-}
-- (id)initWithSourceTag:(ui::SourceTag)sourceTag;
-
-- (void)copy:(id)sender;
-- (void)cut:(id)sender;
-@end
-
-@implementation FindTextFieldEditor
-
-- (id)initWithSourceTag:(ui::SourceTag)sourceTag {
-  if (self = [super init]) {
-    sourceTag_ = sourceTag;
-  }
-  return self;
-}
-
-- (void)copy:(id)sender {
-  [super copy:sender];
-  ui::Clipboard::WriteSourceTag([NSPasteboard generalPasteboard], sourceTag_);
-}
-
-- (void)cut:(id)sender {
-  [super cut:sender];
-  ui::Clipboard::WriteSourceTag([NSPasteboard generalPasteboard], sourceTag_);
-}
-@end
 
 @interface FindBarCocoaController (PrivateMethods) <NSAnimationDelegate>
 // Returns the appropriate frame for a hidden find bar.
@@ -99,9 +68,13 @@ const float kRightEdgeOffset = 25;
 // bar. If |suppressPboardUpdateActions_| is true then the current tab is not
 // cleared.
 - (void)clearFindResultsForCurrentBrowser;
+
+- (BrowserWindowController*)browserWindowController;
 @end
 
 @implementation FindBarCocoaController
+
+@synthesize findBarView = findBarView_;
 
 - (id)initWithBrowser:(Browser*)browser {
   if ((self = [super initWithNibName:@"FindBar"
@@ -307,13 +280,7 @@ const float kRightEdgeOffset = 25;
 
   // The browser window might have changed while the FindBar was hidden.
   // Update its position now.
-  if (browser_) {
-    BrowserWindowController* browserWindowController =
-        [BrowserWindowController browserWindowControllerForWindow:
-            browser_->window()->GetNativeWindow()];
-    if (browserWindowController)
-      [browserWindowController layoutSubviews];
-  }
+  [[self browserWindowController] layoutSubviews];
 
   // Move to the correct horizontal position first, to prevent the FindBar
   // from jumping around when switching tabs.
@@ -469,6 +436,7 @@ const float kRightEdgeOffset = 25;
   // If the find bar is not visible, make it actually hidden, so it'll no longer
   // respond to key events.
   [findBarView_ setHidden:![self isFindBarVisible]];
+  [[self browserWindowController] onFindBarVisibilityChanged];
 }
 
 - (gfx::Point)findBarWindowPosition {
@@ -484,26 +452,6 @@ const float kRightEdgeOffset = 25;
   return NSWidth([[self view] frame]);
 }
 
-- (id)customFieldEditorForObject:(id)obj {
-  if (obj == findText_) {
-    // Lazily construct a field editor. The Cocoa UI code always runs on the
-    // same thread, so there is no race condition here.
-    if (!customTextFieldEditor_) {
-      Profile* profile = browser_ ? browser_->profile() : NULL;
-      ui::SourceTag tag =
-          content::BrowserContext::GetMarkerForOffTheRecordContext(profile);
-      customTextFieldEditor_.reset(
-          [[FindTextFieldEditor alloc] initWithSourceTag:tag]);
-    }
-
-    // This needs to be called every time, otherwise notifications
-    // aren't sent correctly.
-    DCHECK(customTextFieldEditor_.get());
-    [customTextFieldEditor_.get() setFieldEditor:YES];
-    return customTextFieldEditor_.get();
-  }
-  return nil;
-}
 @end
 
 @implementation FindBarCocoaController (PrivateMethods)
@@ -544,6 +492,7 @@ const float kRightEdgeOffset = 25;
   if (!animate) {
     [findBarView_ setFrame:endFrame];
     [findBarView_ setHidden:![self isFindBarVisible]];
+    [[self browserWindowController] onFindBarVisibilityChanged];
     showHideAnimation_.reset(nil);
     return;
   }
@@ -551,9 +500,12 @@ const float kRightEdgeOffset = 25;
   // If animating, ensure that the find bar is not hidden. Hidden status will be
   // updated at the end of the animation.
   [findBarView_ setHidden:NO];
+  //[[self browserWindowController] onFindBarVisibilityChanged];
 
   // Reset the frame to what was saved above.
   [findBarView_ setFrame:startFrame];
+
+  [[self browserWindowController] onFindBarVisibilityChanged];
 
   showHideAnimation_.reset([self createAnimationForView:findBarView_
                                                 toFrame:endFrame
@@ -652,4 +604,12 @@ const float kRightEdgeOffset = 25;
     findBarBridge_->ClearResults(findTabHelper->find_result());
   }
 }
+
+- (BrowserWindowController*)browserWindowController {
+  if (!browser_)
+    return nil;
+  return [BrowserWindowController
+      browserWindowControllerForWindow:browser_->window()->GetNativeWindow()];
+}
+
 @end

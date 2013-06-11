@@ -11,11 +11,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/sha1.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "components/autofill/browser/autocheckout_page_meta_data.h"
 #include "components/autofill/browser/autofill_metrics.h"
 #include "components/autofill/browser/autofill_type.h"
@@ -658,7 +658,7 @@ bool FormStructure::IsAutocheckoutEnabled() const {
   return !autocheckout_url_prefix_.empty();
 }
 
-bool FormStructure::ShouldSkipField(const FormFieldData field) const {
+bool FormStructure::ShouldSkipField(const FormFieldData& field) const {
   return (field.is_checkable || field.form_control_type == "password") &&
       !IsAutocheckoutEnabled();
 }
@@ -1178,7 +1178,7 @@ void FormStructure::IdentifySections(bool has_author_specified_sections) {
       // Forms often ask for multiple phone numbers -- e.g. both a daytime and
       // evening phone number.  Our phone number detection is also generally a
       // little off.  Hence, ignore this field type as a signal here.
-      if (AutofillType(current_type).group() == AutofillType::PHONE)
+      if (AutofillType(current_type).group() == AutofillType::PHONE_HOME)
         already_saw_current_type = false;
 
       // Some forms have adjacent fields of the same type.  Two common examples:

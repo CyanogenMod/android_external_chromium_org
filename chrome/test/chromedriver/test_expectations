@@ -37,6 +37,8 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     'CorrectEventFiringTest.testShouldFireEventsInTheRightOrder',
     'CorrectEventFiringTest.testShouldFireFocusEventWhenClicking',
     'DragAndDropTest.testDragTooFar',
+    # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=374
+    'ElementFindingTest.testShouldNotBeAbleToFindAnElementOnABlankPage',
     'ExecutingAsyncJavascriptTest.includesAlertTextInUnhandledAlertException',
     'ExecutingAsyncJavascriptTest.shouldCatchErrorsWithMessageAndStacktraceWhenExecutingInitialScript',
     'ExecutingAsyncJavascriptTest.throwsIfAlertHappensDuringScript',
@@ -56,18 +58,17 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     'MiscTest.testShouldBeAbleToGetTheSourceOfAnXmlDocument',
     'PageLoadingTest.shouldBeAbleToDisableAcceptOfInsecureSslCertsWithRequiredCapability',
     'PageLoadingTest.testShouldNotWaitIndefinitelyIfAnExternalResourceFailsToLoad',
-    'PageLoadingTest.testShouldTimeoutIfAPageTakesTooLongToLoad',
     # PerformanceLoggingTest is for firefox only; "performance" log deprecated.
     'PerformanceLoggingTest.*',
     'ProxySettingTest.canConfigureProxyWithRequiredCapability',
     'ProxySettingTest.requiredProxyCapabilityShouldHavePriority',
     'RenderedWebElementTest.testShouldHandleNonIntegerPositionAndSize',
-    'SessionHandlingTest.callingQuitAfterClosingTheLastWindowIsANoOp',
     # Broken because AddWebStorage.java is broken.
     'SessionStorageTest.*',
     'SqlDatabaseTest.*',
     'SvgDocumentTest.testClickOnSvgElement',
     'TakesScreenshotTest.testShouldCaptureScreenshot',
+    'TakesScreenshotTest.testShouldCaptureScreenshotAtIFramePage',
     'TakesScreenshotTest.testShouldCaptureScreenshotWithLongX',
     'TakesScreenshotTest.testShouldCaptureScreenshotWithLongY',
     'TakesScreenshotTest.testShouldCaptureScreenshotWithTooLong',
@@ -89,20 +90,14 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
 ]
 _REVISION_NEGATIVE_FILTER['28'] = [] + _REVISION_NEGATIVE_FILTER['HEAD']
 _REVISION_NEGATIVE_FILTER['27'] = [] + _REVISION_NEGATIVE_FILTER['HEAD']
-_REVISION_NEGATIVE_FILTER['26'] = [
-    'AlertsTest.testHandlesTwoAlertsFromOneInteraction',
-    'AlertsTest.testShouldAllowAUserToSetTheValueOfAPrompt',
-    'UploadTest.testFileUploading',
-    'CorrectEventFiringTest.testUploadingFileShouldFireOnChangeEvent',
-    'FormHandlingTest.testShouldBeAbleToAlterTheContentsOfAFileUploadInputElement',
-    'FormHandlingTest.testShouldBeAbleToUploadTheSameFileTwice',
-    'FormHandlingTest.testShouldBeAbleToSendKeysToAFileUploadInputElementInAnXhtmlDocument',
-] + _REVISION_NEGATIVE_FILTER['HEAD']
 
 _OS_NEGATIVE_FILTER = {}
 _OS_NEGATIVE_FILTER['win'] = [
     # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=282
     'PageLoadingTest.testShouldNotHangIfDocumentOpenCallIsNeverFollowedByDocumentCloseCall',
+    # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=373
+    'RenderedWebElementTest.testHoverPersists',
+    'RenderedWebElementTest.canClickOnASuckerFishStyleMenu',
 ]
 _OS_NEGATIVE_FILTER['linux'] = []
 _OS_NEGATIVE_FILTER['mac'] = [
@@ -112,15 +107,11 @@ _OS_NEGATIVE_FILTER['mac'] = [
     'FormHandlingTest.handleFormWithJavascriptAction',
     # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=354
     'AlertsTest.testShouldAllowUsersToAcceptAnAlertInAFrame',
+    # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=375
+    'PageLoadingTest.testShouldBeAbleToNavigateBackInTheBrowserHistoryInPresenceOfIframes',
 ]
 _OS_NEGATIVE_FILTER['android'] = [
     'AlertsTest.*',
-    'BasicKeyboardInterfaceTest.testBasicKeyboardInput',
-    'BasicKeyboardInterfaceTest.testBasicKeyboardInputOnActiveElement',
-    'BasicKeyboardInterfaceTest.testSendingKeyDownOnly',
-    'BasicKeyboardInterfaceTest.testSendingKeysToActiveElement',
-    'BasicKeyboardInterfaceTest.testSendingKeysWithShiftPressed',
-    'BasicKeyboardInterfaceTest.testSendingKeyUp',
     'BasicMouseInterfaceTest.testCannotMoveToANullLocator',
     'BasicMouseInterfaceTest.testDoubleClick',
     'BasicMouseInterfaceTest.testDoubleClickThenGet',
@@ -185,6 +176,7 @@ _OS_NEGATIVE_FILTER['android'] = [
     'SelectElementTest.shouldAllowUserToDeselectAllWhenSelectSupportsMultipleSelections',
     'SelectElementTest.shouldAllowUserToDeselectOptionsByVisibleText',
     'SessionHandlingTest.callingAnyOperationAfterClosingTheLastWindowShouldThrowAnException',
+    'SessionHandlingTest.callingQuitAfterClosingTheLastWindowIsANoOp',
     'TakesScreenshotTest.testCaptureToBase64',
     'TakesScreenshotTest.testSaveScreenshotAsFile',
     'TextHandlingTest.testShouldBeAbleToEnterDatesAfterFillingInOtherValuesFirst',
@@ -193,9 +185,13 @@ _OS_NEGATIVE_FILTER['android'] = [
     'TouchFlickTest.*',
     'TouchScrollTest.*',
     'TouchSingleTapTest.*',
-    # Passes locally but not on bots??
-    'TypingTest.*',
 
+    # These tests start multiple sessions, which is not supported on a single
+    # Android device.
+    "AvailableLogsTest.shouldBeAbleToEnableProfilerLog",
+    "GetLogsTest.turningOffLogShouldMeanNoLogMessages",
+    "SessionHandlingTest.callingAnyOperationAfterQuitShouldThrowAnException",
+    "SessionHandlingTest.callingQuitMoreThanOnceOnASessionIsANoOp",
     # Test is written using local files; doesn't work on Android.
     'UploadTest.testFileUploading',
     # Not applicable on Android.

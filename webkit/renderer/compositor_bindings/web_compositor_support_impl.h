@@ -6,10 +6,10 @@
 #define WEBKIT_RENDERER_COMPOSITOR_BINDINGS_WEB_COMPOSITOR_SUPPORT_IMPL_H_
 
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_proxy.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorSupport.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayer.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebTransformOperations.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "third_party/WebKit/public/platform/WebCompositorSupport.h"
+#include "third_party/WebKit/public/platform/WebLayer.h"
+#include "third_party/WebKit/public/platform/WebTransformOperations.h"
 
 namespace WebKit {
 class WebGraphicsContext3D;

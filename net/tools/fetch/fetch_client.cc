@@ -11,8 +11,8 @@
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_counters.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -161,15 +161,15 @@ int main(int argc, char** argv) {
   session_params.proxy_service = proxy_service.get();
   session_params.http_auth_handler_factory = http_auth_handler_factory.get();
   session_params.http_server_properties = &http_server_properties;
-  session_params.ssl_config_service = ssl_config_service;
+  session_params.ssl_config_service = ssl_config_service.get();
 
   scoped_refptr<net::HttpNetworkSession> network_session(
       new net::HttpNetworkSession(session_params));
   if (use_cache) {
-    factory = new net::HttpCache(network_session,
+    factory = new net::HttpCache(network_session.get(),
                                  net::HttpCache::DefaultBackend::InMemory(0));
   } else {
-    factory = new net::HttpNetworkLayer(network_session);
+    factory = new net::HttpNetworkLayer(network_session.get());
   }
 
   {

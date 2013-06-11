@@ -72,36 +72,6 @@ void AppendToHeaderBlock(const char* const extra_headers[],
                          int extra_header_count,
                          SpdyHeaderBlock* headers);
 
-// Writes |str| of the given |len| to the buffer pointed to by |buffer_handle|.
-// Uses a template so buffer_handle can be a char* or an unsigned char*.
-// Updates the |*buffer_handle| pointer by |len|
-// Returns the number of bytes written into *|buffer_handle|
-template<class T>
-int AppendToBuffer(const char* str,
-                   int len,
-                   T** buffer_handle,
-                   int* buffer_len_remaining) {
-  DCHECK_GT(len, 0);
-  DCHECK(NULL != buffer_handle) << "NULL buffer handle";
-  DCHECK(NULL != *buffer_handle) << "NULL pointer";
-  DCHECK(NULL != buffer_len_remaining)
-      << "NULL buffer remainder length pointer";
-  DCHECK_GE(*buffer_len_remaining, len) << "Insufficient buffer size";
-  memcpy(*buffer_handle, str, len);
-  *buffer_handle += len;
-  *buffer_len_remaining -= len;
-  return len;
-}
-
-// Writes |val| to a location of size |len|, in big-endian format.
-// in the buffer pointed to by |buffer_handle|.
-// Updates the |*buffer_handle| pointer by |len|
-// Returns the number of bytes written
-int AppendToBuffer(int val,
-                   int len,
-                   unsigned char** buffer_handle,
-                   int* buffer_len_remaining);
-
 // Create an async MockWrite from the given SpdyFrame.
 MockWrite CreateMockWrite(const SpdyFrame& req);
 
@@ -279,6 +249,10 @@ class SpdyTestUtil {
  public:
   explicit SpdyTestUtil(NextProto protocol);
 
+  // Add the appropriate headers to put |url| into |block|.
+  void AddUrlToHeaderBlock(base::StringPiece url,
+                           SpdyHeaderBlock* headers) const;
+
   scoped_ptr<SpdyHeaderBlock> ConstructGetHeaderBlock(
       base::StringPiece url) const;
   scoped_ptr<SpdyHeaderBlock> ConstructPostHeaderBlock(
@@ -303,6 +277,16 @@ class SpdyTestUtil {
                                 int tail_header_count) const;
 
   // Construct a generic SpdyControlFrame.
+  SpdyFrame* ConstructSpdyControlFrame(
+      scoped_ptr<SpdyHeaderBlock> headers,
+      bool compressed,
+      SpdyStreamId stream_id,
+      RequestPriority request_priority,
+      SpdyFrameType type,
+      SpdyControlFlags flags,
+      SpdyStreamId associated_stream_id) const;
+
+  // Construct a generic SpdyControlFrame.
   //
   // Warning: extra_header_count is the number of header-value pairs in
   // extra_headers (so half the number of elements), but tail_headers_size is
@@ -320,15 +304,8 @@ class SpdyTestUtil {
       int tail_headers_size,
       SpdyStreamId associated_stream_id) const;
 
-  // Construct an expected SPDY reply string.
-  // |extra_headers| are the extra header-value pairs, which typically
-  // will vary the most between calls.
-  // |buffer| is the buffer we're filling in.
-  // Returns the number of bytes written into |buffer|.
-  int ConstructSpdyReplyString(const char* const extra_headers[],
-                               int extra_header_count,
-                               char* buffer,
-                               int buffer_length) const;
+  // Construct an expected SPDY reply string from the given headers.
+  std::string ConstructSpdyReplyString(const SpdyHeaderBlock& headers) const;
 
   // Construct an expected SPDY SETTINGS frame.
   // |settings| are the settings to set.
@@ -390,10 +367,107 @@ class SpdyTestUtil {
                                   int extra_header_count,
                                   int stream_id) const;
 
+  // Constructs a standard SPDY push SYN frame.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdyPush(const char* const extra_headers[],
+                               int extra_header_count,
+                               int stream_id,
+                               int associated_stream_id);
+  SpdyFrame* ConstructSpdyPush(const char* const extra_headers[],
+                               int extra_header_count,
+                               int stream_id,
+                               int associated_stream_id,
+                               const char* url);
+  SpdyFrame* ConstructSpdyPush(const char* const extra_headers[],
+                               int extra_header_count,
+                               int stream_id,
+                               int associated_stream_id,
+                               const char* url,
+                               const char* status,
+                               const char* location);
+
+  SpdyFrame* ConstructSpdyPushHeaders(int stream_id,
+                                      const char* const extra_headers[],
+                                      int extra_header_count);
+
+  // Constructs a standard SPDY SYN_REPLY frame to match the SPDY GET.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdyGetSynReply(const char* const extra_headers[],
+                                      int extra_header_count,
+                                      int stream_id);
+
+  // Constructs a standard SPDY SYN_REPLY frame to match the SPDY GET.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdyGetSynReplyRedirect(int stream_id);
+
+  // Constructs a standard SPDY SYN_REPLY frame with an Internal Server
+  // Error status code.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdySynReplyError(int stream_id);
+
+  // Constructs a standard SPDY SYN_REPLY frame with the specified status code.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdySynReplyError(const char* const status,
+                                        const char* const* const extra_headers,
+                                        int extra_header_count,
+                                        int stream_id);
+
+  // Constructs a standard SPDY POST SYN frame.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdyPost(const char* url,
+                               SpdyStreamId stream_id,
+                               int64 content_length,
+                               RequestPriority priority,
+                               const char* const extra_headers[],
+                               int extra_header_count);
+
+  // Constructs a chunked transfer SPDY POST SYN frame.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructChunkedSpdyPost(const char* const extra_headers[],
+                                      int extra_header_count);
+
+  // Constructs a standard SPDY SYN_REPLY frame to match the SPDY POST.
+  // |extra_headers| are the extra header-value pairs, which typically
+  // will vary the most between calls.
+  // Returns a SpdyFrame.
+  SpdyFrame* ConstructSpdyPostSynReply(const char* const extra_headers[],
+                                       int extra_header_count);
+
+  // Constructs a single SPDY data frame with the contents "hello!"
+  SpdyFrame* ConstructSpdyBodyFrame(int stream_id,
+                                    bool fin);
+
+  // Constructs a single SPDY data frame with the given content.
+  SpdyFrame* ConstructSpdyBodyFrame(int stream_id, const char* data,
+                                    uint32 len, bool fin);
+
+  // Wraps |frame| in the payload of a data frame in stream |stream_id|.
+  SpdyFrame* ConstructWrappedSpdyFrame(const scoped_ptr<SpdyFrame>& frame,
+                                       int stream_id);
+
+  const SpdyHeaderInfo MakeSpdyHeader(SpdyFrameType type);
+
   NextProto protocol() const { return protocol_; }
   SpdyMajorVersion spdy_version() const { return spdy_version_; }
   bool is_spdy2() const { return protocol_ < kProtoSPDY3; }
   scoped_ptr<SpdyFramer> CreateFramer() const;
+
+  const char* GetMethodKey() const;
+  const char* GetStatusKey() const;
+  const char* GetHostKey() const;
+  const char* GetSchemeKey() const;
+  const char* GetVersionKey() const;
+  const char* GetPathKey() const;
 
  private:
   const NextProto protocol_;

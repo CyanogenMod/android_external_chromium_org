@@ -11,8 +11,6 @@
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace {
-
 class OmniboxControllerTest : public testing::Test {
  protected:
   OmniboxControllerTest();
@@ -71,27 +69,14 @@ TEST_F(OmniboxControllerTest, CheckDefaultAutocompleteProviders) {
   // Ensure we have at least one provider.
   ASSERT_NE(0, observed_providers);
 
-  // Ensure that a valid kInstantUIZeroSuggestUrlPrefix adds TYPE_ZERO_SUGGEST.
-  int providers_with_zero_suggest =
-      observed_providers | AutocompleteProvider::TYPE_ZERO_SUGGEST;
-  GetPrefs()->SetString(prefs::kInstantUIZeroSuggestUrlPrefix,
-                        "http://dummy.url.com/");
-  CreateController();
-  AssertProviders(providers_with_zero_suggest);
-  GetPrefs()->SetString(prefs::kInstantUIZeroSuggestUrlPrefix, std::string());
-
   // Ensure instant extended includes all the basic ones save for those that are
   // not expected to run in instant extended.
   int providers_with_instant_extended =
       observed_providers &
-      ~AutocompleteProvider::TYPE_HISTORY_CONTENTS &
       ~AutocompleteProvider::TYPE_SHORTCUTS;
   // TODO(beaudoin): remove TYPE_SEARCH once it's no longer needed to pass
   // the Instant suggestion through via FinalizeInstantQuery.
   chrome::EnableInstantExtendedAPIForTesting();
   CreateController();
   AssertProviders(providers_with_instant_extended);
-
 }
-
-}  // namespace

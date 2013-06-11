@@ -74,8 +74,7 @@ class CC_EXPORT Picture
   void Raster(SkCanvas* canvas,
               SkDrawPictureCallback* callback,
               gfx::Rect content_rect,
-              float contents_scale,
-              bool enable_lcd_text);
+              float contents_scale);
 
   scoped_ptr<base::Value> AsValue() const;
 
@@ -111,6 +110,8 @@ class CC_EXPORT Picture
     int current_x_;
     int current_y_;
   };
+
+  void EmitTraceSnapshot();
 
  private:
   explicit Picture(gfx::Rect layer_rect);

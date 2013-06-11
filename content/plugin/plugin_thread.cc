@@ -20,9 +20,9 @@
 #include "base/lazy_instance.h"
 #include "base/process_util.h"
 #include "base/threading/thread_local.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
+#include "content/child/npobject_util.h"
 #include "content/common/plugin_process_messages.h"
-#include "content/common_child/npobject_util.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/plugin/content_plugin_client.h"
 #include "ipc/ipc_channel_handle.h"
@@ -118,7 +118,7 @@ PluginThread::PluginThread()
 
   scoped_refptr<webkit::npapi::PluginLib> plugin(
       webkit::npapi::PluginLib::CreatePluginLib(plugin_path));
-  if (plugin) {
+  if (plugin.get()) {
     plugin->NP_Initialize();
     // For OOP plugins the plugin dll will be unloaded during process shutdown
     // time.
@@ -174,7 +174,7 @@ void PluginThread::OnCreateChannel(int renderer_id,
   scoped_refptr<PluginChannel> channel(PluginChannel::GetPluginChannel(
       renderer_id, ChildProcess::current()->io_message_loop_proxy()));
   IPC::ChannelHandle channel_handle;
-  if (channel) {
+  if (channel.get()) {
     channel_handle.name = channel->channel_handle().name;
 #if defined(OS_POSIX)
     // On POSIX, pass the renderer-side FD.

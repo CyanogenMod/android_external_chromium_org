@@ -10,18 +10,19 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
@@ -121,8 +122,11 @@
 #if defined(OS_CHROMEOS)
 #include "ash/accelerators/accelerator_controller.h"
 #include "ash/accelerators/accelerator_table.h"
+#include "ash/magnifier/magnifier_constants.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
+#include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/audio/audio_handler.h"
 #include "chromeos/audio/audio_pref_handler.h"
 #endif
@@ -246,7 +250,8 @@ void CheckCanOpenURL(Browser* browser, const char* spec) {
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
   EXPECT_EQ(url, contents->GetURL());
-  EXPECT_EQ(net::FormatUrl(url, std::string()), contents->GetTitle());
+  string16 title = UTF8ToUTF16(url.spec() + " was blocked");
+  EXPECT_NE(title, contents->GetTitle());
 }
 
 // Verifies that access to the given url |spec| is blocked.
@@ -289,8 +294,7 @@ void DownloadAndVerifyFile(
   EXPECT_EQ(
       1u, observer.NumDownloadsSeenInState(content::DownloadItem::COMPLETE));
   EXPECT_TRUE(file_util::PathExists(downloaded));
-  file_util::FileEnumerator enumerator(
-      dir, false, file_util::FileEnumerator::FILES);
+  base::FileEnumerator enumerator(dir, false, base::FileEnumerator::FILES);
   EXPECT_EQ(file, enumerator.Next().BaseName());
   EXPECT_EQ(base::FilePath(), enumerator.Next());
 }
@@ -299,9 +303,9 @@ void DownloadAndVerifyFile(
 int CountScreenshots() {
   DownloadPrefs* download_prefs = DownloadPrefs::FromBrowserContext(
       ash::Shell::GetInstance()->delegate()->GetCurrentBrowserContext());
-  file_util::FileEnumerator enumerator(download_prefs->DownloadPath(),
-                                       false, file_util::FileEnumerator::FILES,
-                                       "Screenshot*");
+  base::FileEnumerator enumerator(download_prefs->DownloadPath(),
+                                  false, base::FileEnumerator::FILES,
+                                  "Screenshot*");
   int count = 0;
   while (!enumerator.Next().empty())
     count++;
@@ -807,7 +811,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
 
   // First check that nothing happens.
   content::TestNavigationObserver no_safesearch_observer(
-      content::NotificationService::AllSources());
+      browser()->tab_strip_model()->GetActiveWebContents());
   chrome::FocusLocationBar(browser());
   LocationBar* location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "http://google.com/");
@@ -833,7 +837,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
   EXPECT_TRUE(prefs->GetBoolean(prefs::kForceSafeSearch));
 
   content::TestNavigationObserver safesearch_observer(
-      content::NotificationService::AllSources());
+      browser()->tab_strip_model()->GetActiveWebContents());
 
   // Verify that searching from google.com works.
   chrome::FocusLocationBar(browser());
@@ -1696,6 +1700,70 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, URLBlacklist) {
   }
 }
 
+IN_PROC_BROWSER_TEST_F(PolicyTest, FileURLBlacklist) {
+  // Check that FileURLs can be blacklisted and DisabledSchemes works together
+  // with URLblacklisting and URLwhitelisting.
+
+  base::FilePath test_path;
+  PathService::Get(chrome::DIR_TEST_DATA, &test_path);
+  const std::string base_path = "file://" + test_path.AsUTF8Unsafe() +"/";
+  const std::string folder_path = base_path + "apptest/";
+  const std::string file_path1 = base_path + "title1.html";
+  const std::string file_path2 = folder_path + "basic.html";
+
+  CheckCanOpenURL(browser(), file_path1.c_str());
+  CheckCanOpenURL(browser(), file_path2.c_str());
+
+  // Set a blacklist for all the files.
+  base::ListValue blacklist;
+  blacklist.Append(base::Value::CreateStringValue("file://*"));
+  PolicyMap policies;
+  policies.Set(key::kURLBlacklist, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER, blacklist.DeepCopy());
+  UpdateProviderPolicy(policies);
+  FlushBlacklistPolicy();
+
+  CheckURLIsBlocked(browser(), file_path1.c_str());
+  CheckURLIsBlocked(browser(), file_path2.c_str());
+
+  // Replace the URLblacklist with disabling the file scheme.
+  blacklist.Remove(base::StringValue("file://*"), NULL);
+  policies.Set(key::kURLBlacklist, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER, blacklist.DeepCopy());
+  UpdateProviderPolicy(policies);
+  FlushBlacklistPolicy();
+
+  PrefService* prefs = browser()->profile()->GetPrefs();
+  const base::ListValue* list_url = prefs->GetList(prefs::kUrlBlacklist);
+  EXPECT_EQ(list_url->Find(base::StringValue("file://*")),
+            list_url->end());
+
+  base::ListValue disabledscheme;
+  disabledscheme.Append(base::Value::CreateStringValue("file"));
+  policies.Set(key::kDisabledSchemes, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER, disabledscheme.DeepCopy());
+  UpdateProviderPolicy(policies);
+  FlushBlacklistPolicy();
+
+  list_url = prefs->GetList(prefs::kUrlBlacklist);
+  EXPECT_NE(list_url->Find(base::StringValue("file://*")),
+            list_url->end());
+
+  // Whitelist one folder and blacklist an another just inside.
+  base::ListValue whitelist;
+  whitelist.Append(base::Value::CreateStringValue(base_path));
+  policies.Set(key::kURLWhitelist, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER, whitelist.DeepCopy());
+  blacklist.Append(base::Value::CreateStringValue(folder_path));
+  policies.Set(key::kURLBlacklist, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER, blacklist.DeepCopy());
+  UpdateProviderPolicy(policies);
+  FlushBlacklistPolicy();
+
+  CheckCanOpenURL(browser(), file_path1.c_str());
+  CheckURLIsBlocked(browser(), file_path2.c_str());
+}
+
 // Flaky on Linux. http://crbug.com/155459
 #if defined(OS_LINUX)
 #define MAYBE_DisableScreenshotsFeedback DISABLED_DisableScreenshotsFeedback
@@ -1801,6 +1869,124 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, SessionLengthLimit) {
   base::RunLoop().RunUntilIdle();
   Mock::VerifyAndClearExpectations(&observer);
 }
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, LargeCursorEnabled) {
+  // Verifies that the large cursor accessibility feature can be controlled
+  // through policy.
+  chromeos::AccessibilityManager* accessibility_manager =
+      chromeos::AccessibilityManager::Get();
+
+  // Manually enable the large cursor.
+  accessibility_manager->EnableLargeCursor(true);
+  EXPECT_TRUE(accessibility_manager->IsLargeCursorEnabled());
+
+  // Verify that policy overrides the manual setting.
+  PolicyMap policies;
+  policies.Set(key::kLargeCursorEnabled, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateBooleanValue(false));
+  UpdateProviderPolicy(policies);
+  EXPECT_FALSE(accessibility_manager->IsLargeCursorEnabled());
+
+  // Verify that the large cursor cannot be enabled manually anymore.
+  accessibility_manager->EnableLargeCursor(true);
+  EXPECT_FALSE(accessibility_manager->IsLargeCursorEnabled());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, SpokenFeedbackEnabled) {
+  // Verifies that the spoken feedback accessibility feature can be controlled
+  // through policy.
+  chromeos::AccessibilityManager* accessibility_manager =
+      chromeos::AccessibilityManager::Get();
+
+  // Manually enable spoken feedback.
+  accessibility_manager->EnableSpokenFeedback(
+      true, NULL, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_TRUE(accessibility_manager->IsSpokenFeedbackEnabled());
+
+  // Verify that policy overrides the manual setting.
+  PolicyMap policies;
+  policies.Set(key::kSpokenFeedbackEnabled, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateBooleanValue(false));
+  UpdateProviderPolicy(policies);
+  EXPECT_FALSE(accessibility_manager->IsSpokenFeedbackEnabled());
+
+  // Verify that spoken feedback cannot be enabled manually anymore.
+  accessibility_manager->EnableSpokenFeedback(
+      true, NULL, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_FALSE(accessibility_manager->IsSpokenFeedbackEnabled());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, HighContrastEnabled) {
+  // Verifies that the high contrast mode accessibility feature can be
+  // controlled through policy.
+  chromeos::AccessibilityManager* accessibility_manager =
+      chromeos::AccessibilityManager::Get();
+
+  // Manually enable high contrast mode.
+  accessibility_manager->EnableHighContrast(true);
+  EXPECT_TRUE(accessibility_manager->IsHighContrastEnabled());
+
+  // Verify that policy overrides the manual setting.
+  PolicyMap policies;
+  policies.Set(key::kHighContrastEnabled, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateBooleanValue(false));
+  UpdateProviderPolicy(policies);
+  EXPECT_FALSE(accessibility_manager->IsHighContrastEnabled());
+
+  // Verify that high contrast mode cannot be enabled manually anymore.
+  accessibility_manager->EnableHighContrast(true);
+  EXPECT_FALSE(accessibility_manager->IsHighContrastEnabled());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, ScreenMagnifierTypeNone) {
+  // Verifies that the screen magnifier can be disabled through policy.
+  chromeos::MagnificationManager* magnification_manager =
+      chromeos::MagnificationManager::Get();
+
+  // Manually enable the full-screen magnifier.
+  magnification_manager->SetMagnifierType(ash::MAGNIFIER_FULL);
+  magnification_manager->SetMagnifierEnabled(true);
+  EXPECT_EQ(ash::MAGNIFIER_FULL, magnification_manager->GetMagnifierType());
+  EXPECT_TRUE(magnification_manager->IsMagnifierEnabled());
+
+  // Verify that policy overrides the manual setting.
+  PolicyMap policies;
+  policies.Set(key::kScreenMagnifierType, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateIntegerValue(0));
+  UpdateProviderPolicy(policies);
+  EXPECT_FALSE(magnification_manager->IsMagnifierEnabled());
+
+  // Verify that the screen magnifier cannot be enabled manually anymore.
+  magnification_manager->SetMagnifierEnabled(true);
+  EXPECT_FALSE(magnification_manager->IsMagnifierEnabled());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, ScreenMagnifierTypeFull) {
+  // Verifies that the full-screen magnifier can be enabled through policy.
+  chromeos::MagnificationManager* magnification_manager =
+      chromeos::MagnificationManager::Get();
+
+  // Verify that the screen magnifier is initially disabled.
+  EXPECT_FALSE(magnification_manager->IsMagnifierEnabled());
+
+  // Verify that policy can enable the full-screen magnifier.
+  PolicyMap policies;
+  policies.Set(key::kScreenMagnifierType, POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateIntegerValue(ash::MAGNIFIER_FULL));
+  UpdateProviderPolicy(policies);
+  EXPECT_EQ(ash::MAGNIFIER_FULL, magnification_manager->GetMagnifierType());
+  EXPECT_TRUE(magnification_manager->IsMagnifierEnabled());
+
+  // Verify that the screen magnifier cannot be disabled manually anymore.
+  magnification_manager->SetMagnifierEnabled(false);
+  EXPECT_TRUE(magnification_manager->IsMagnifierEnabled());
+}
+
 #endif
 
 namespace {
@@ -2173,7 +2359,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
             &MediaStreamDevicesControllerBrowserTest::FinishAudioTest,
             this));
 
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 }
 
@@ -2230,7 +2416,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
             &MediaStreamDevicesControllerBrowserTest::FinishVideoTest,
             this));
 
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 }
 

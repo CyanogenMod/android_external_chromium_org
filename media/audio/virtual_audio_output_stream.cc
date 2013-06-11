@@ -4,7 +4,7 @@
 
 #include "media/audio/virtual_audio_output_stream.h"
 
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/audio/virtual_audio_input_stream.h"
 
 namespace media {
@@ -74,10 +74,6 @@ double VirtualAudioOutputStream::ProvideInput(AudioBus* audio_bus,
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(callback_);
 
-  // A VirtualAudioInputStream with a larger buffer size may be calling this
-  // multiple times without waiting, so we need to block and ensure the data is
-  // ready to prevent glitching.
-  callback_->WaitTillDataReady();
   const int frames = callback_->OnMoreData(audio_bus, AudioBuffersState());
   if (frames < audio_bus->frames())
     audio_bus->ZeroFramesPartial(frames, audio_bus->frames() - frames);

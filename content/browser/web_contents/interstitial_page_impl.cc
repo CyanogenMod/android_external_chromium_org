@@ -9,9 +9,9 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
@@ -225,8 +225,6 @@ void InterstitialPageImpl::Show() {
                          net::EscapePath(delegate_->GetHTMLContents());
   render_view_host_->NavigateToURL(GURL(data_url));
 
-  notification_registrar_.Add(this, NOTIFICATION_NAV_ENTRY_COMMITTED,
-      Source<NavigationController>(&web_contents_->GetController()));
   notification_registrar_.Add(this, NOTIFICATION_NAV_ENTRY_PENDING,
       Source<NavigationController>(&web_contents_->GetController()));
   notification_registrar_.Add(
@@ -322,9 +320,6 @@ void InterstitialPageImpl::Observe(
         TakeActionOnResourceDispatcher(CANCEL);
       }
       break;
-    case NOTIFICATION_NAV_ENTRY_COMMITTED:
-      OnNavigatingAwayOrTabClosing();
-      break;
     case NOTIFICATION_DOM_OPERATION_RESPONSE:
       if (enabled()) {
         Details<DomOperationNotificationDetails> dom_op_details(
@@ -335,6 +330,11 @@ void InterstitialPageImpl::Observe(
     default:
       NOTREACHED();
   }
+}
+
+void InterstitialPageImpl::NavigationEntryCommitted(
+    const LoadCommittedDetails& load_details) {
+  OnNavigatingAwayOrTabClosing();
 }
 
 void InterstitialPageImpl::WebContentsDestroyed(WebContents* web_contents) {
@@ -490,15 +490,19 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
   scoped_refptr<SiteInstance> site_instance =
       SiteInstance::Create(browser_context);
   DOMStorageContextImpl* dom_storage_context =
-      static_cast<DOMStorageContextImpl*>(
-          BrowserContext::GetStoragePartition(
-              browser_context, site_instance)->GetDOMStorageContext());
+      static_cast<DOMStorageContextImpl*>(BrowserContext::GetStoragePartition(
+          browser_context, site_instance.get())->GetDOMStorageContext());
   SessionStorageNamespaceImpl* session_storage_namespace_impl =
       new SessionStorageNamespaceImpl(dom_storage_context);
 
-  RenderViewHostImpl* render_view_host = new RenderViewHostImpl(
-      site_instance, this, this, MSG_ROUTING_NONE, false,
-      session_storage_namespace_impl);
+  RenderViewHostImpl* render_view_host =
+      new RenderViewHostImpl(site_instance.get(),
+                             this,
+                             this,
+                             MSG_ROUTING_NONE,
+                             MSG_ROUTING_NONE,
+                             false,
+                             session_storage_namespace_impl);
   web_contents_->RenderViewForInterstitialPageCreated(render_view_host);
   return render_view_host;
 }
@@ -666,6 +670,7 @@ gfx::Rect InterstitialPageImpl::GetRootWindowResizerRect() const {
 
 void InterstitialPageImpl::CreateNewWindow(
     int route_id,
+    int main_frame_route_id,
     const ViewHostMsg_CreateWindow_Params& params,
     SessionStorageNamespace* session_storage_namespace) {
   NOTREACHED() << "InterstitialPage does not support showing popups yet.";

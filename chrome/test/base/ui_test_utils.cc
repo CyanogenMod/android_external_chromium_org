@@ -19,9 +19,9 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -193,9 +193,8 @@ bool GetCurrentTabTitle(const Browser* browser, string16* title) {
 
 void WaitForNavigations(NavigationController* controller,
                         int number_of_navigations) {
-  content::TestNavigationObserver observer(
-      content::Source<NavigationController>(controller),
-      number_of_navigations);
+  content::TestNavigationObserver observer(controller->GetWebContents(),
+                                           number_of_navigations);
   base::RunLoop run_loop;
   observer.WaitForObservation(
       base::Bind(&content::RunThisRunLoop, base::Unretained(&run_loop)),
@@ -226,13 +225,8 @@ Browser* OpenURLOffTheRecord(Profile* profile, const GURL& url) {
 }
 
 void NavigateToURL(chrome::NavigateParams* params) {
-  content::TestNavigationObserver observer(
-      content::NotificationService::AllSources(), 1);
   chrome::Navigate(params);
-  base::RunLoop run_loop;
-  observer.WaitForObservation(
-      base::Bind(&content::RunThisRunLoop, base::Unretained(&run_loop)),
-      content::GetQuitTaskForRunLoop(&run_loop));
+  content::WaitForLoadStop(params->target_contents);
 }
 
 void NavigateToURL(Browser* browser, const GURL& url) {
@@ -253,11 +247,8 @@ static void NavigateToURLWithDispositionBlockUntilNavigationsComplete(
   TabStripModel* tab_strip = browser->tab_strip_model();
   if (disposition == CURRENT_TAB && tab_strip->GetActiveWebContents())
       content::WaitForLoadStop(tab_strip->GetActiveWebContents());
-  NavigationController* controller =
-      tab_strip->GetActiveWebContents() ?
-      &tab_strip->GetActiveWebContents()->GetController() : NULL;
   content::TestNavigationObserver same_tab_observer(
-      content::Source<NavigationController>(controller),
+      tab_strip->GetActiveWebContents(),
       number_of_navigations);
 
   std::set<Browser*> initial_browsers;

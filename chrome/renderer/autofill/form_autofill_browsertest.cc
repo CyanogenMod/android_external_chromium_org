@@ -8,15 +8,13 @@
 #include "base/string16.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/test/base/chrome_render_view_test.h"
 #include "components/autofill/common/form_data.h"
 #include "components/autofill/common/web_element_descriptor.h"
-#include "components/autofill/renderer/form_autofill_util.h"
-#include "components/autofill/renderer/form_cache.h"
+#include "components/autofill/content/renderer/form_autofill_util.h"
+#include "components/autofill/content/renderer/form_cache.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFormControlElement.h"
@@ -24,6 +22,8 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSelectElement.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "webkit/glue/web_io_operators.h"
 
 using WebKit::WebDocument;
@@ -210,7 +210,7 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldAutofilled) {
 // We should be able to extract a radio or a checkbox field that has been
 // autofilled.
 TEST_F(FormAutofillTest, WebFormControlElementToClickableFormField) {
-  LoadHTML("<INPUT type=\"checkbox\" id=\"checkbox\" value=\"mail\"/>"
+  LoadHTML("<INPUT type=\"checkbox\" id=\"checkbox\" value=\"mail\" checked/>"
            "<INPUT type=\"radio\" id=\"radio\" value=\"male\"/>");
 
   WebFrame* frame = GetMainFrame();
@@ -228,6 +228,7 @@ TEST_F(FormAutofillTest, WebFormControlElementToClickableFormField) {
   expected.form_control_type = "checkbox";
   expected.is_autofilled = true;
   expected.is_checkable = true;
+  expected.is_checked = true;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
 
   web_element = frame->document().getElementById("radio");
@@ -239,6 +240,7 @@ TEST_F(FormAutofillTest, WebFormControlElementToClickableFormField) {
   expected.form_control_type = "radio";
   expected.is_autofilled = true;
   expected.is_checkable = true;
+  expected.is_checked = false;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
 }
 

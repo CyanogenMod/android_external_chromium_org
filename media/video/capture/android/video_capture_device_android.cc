@@ -9,8 +9,8 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "jni/VideoCapture_jni.h"
 #include "media/base/video_util.h"
 
@@ -106,7 +106,7 @@ bool VideoCaptureDeviceAndroid::Init() {
 
   j_capture_.Reset(Java_VideoCapture_createVideoCapture(
       env, base::android::GetApplicationContext(), id,
-      reinterpret_cast<jlong>(this)));
+      reinterpret_cast<jint>(this)));
 
   return true;
 }

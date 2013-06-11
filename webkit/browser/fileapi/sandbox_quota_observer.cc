@@ -8,9 +8,9 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
 #include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/quota/quota_client.h"
+#include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/quota/quota_client.h"
-#include "webkit/quota/quota_manager.h"
 
 namespace fileapi {
 
@@ -42,7 +42,7 @@ void SandboxQuotaObserver::OnUpdate(const FileSystemURL& url,
   DCHECK(SandboxMountPointProvider::IsSandboxType(url.type()));
   DCHECK(update_notify_runner_->RunsTasksOnCurrentThread());
 
-  if (quota_manager_proxy_) {
+  if (quota_manager_proxy_.get()) {
     quota_manager_proxy_->NotifyStorageModified(
         quota::QuotaClient::kFileSystem,
         url.origin(),
@@ -83,7 +83,7 @@ void SandboxQuotaObserver::OnEndUpdate(const FileSystemURL& url) {
 
 void SandboxQuotaObserver::OnAccess(const FileSystemURL& url) {
   DCHECK(SandboxMountPointProvider::IsSandboxType(url.type()));
-  if (quota_manager_proxy_) {
+  if (quota_manager_proxy_.get()) {
     quota_manager_proxy_->NotifyStorageAccessed(
         quota::QuotaClient::kFileSystem,
         url.origin(),
@@ -95,10 +95,11 @@ void SandboxQuotaObserver::SetUsageCacheEnabled(
     const GURL& origin,
     FileSystemType type,
     bool enabled) {
-  if (quota_manager_proxy_) {
+  if (quota_manager_proxy_.get()) {
     quota_manager_proxy_->SetUsageCacheEnabled(
         quota::QuotaClient::kFileSystem,
-        origin, FileSystemTypeToQuotaStorageType(type),
+        origin,
+        FileSystemTypeToQuotaStorageType(type),
         enabled);
   }
 }

@@ -10,13 +10,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
@@ -28,6 +29,7 @@
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/io_thread.h"
+#include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
@@ -57,7 +59,7 @@
 
 #if defined(USE_AURA)
 #include "ash/shell.h"
-#include "ash/wm/session_state_controller.h"
+#include "ash/wm/lock_state_controller.h"
 #endif
 
 using content::BrowserThread;
@@ -334,7 +336,8 @@ SigninScreenHandler::SigninScreenHandler(
       is_first_update_state_call_(true),
       offline_login_active_(false),
       last_network_state_(NetworkStateInformer::UNKNOWN),
-      has_pending_auth_ui_(false) {
+      has_pending_auth_ui_(false),
+      ignore_next_user_abort_frame_error_(false) {
   DCHECK(network_state_informer_);
   DCHECK(error_screen_actor_);
   network_state_informer_->AddObserver(this);
@@ -381,6 +384,7 @@ void SigninScreenHandler::DeclareLocalizedValues(
   builder->Add("signinButton", IDS_LOGIN_BUTTON);
   builder->Add("shutDown", IDS_SHUTDOWN_BUTTON);
   builder->Add("addUser", IDS_ADD_USER_BUTTON);
+  builder->Add("cancelUserAdding", IDS_CANCEL_USER_ADDING);
   builder->Add("browseAsGuest", IDS_GO_INCOGNITO_BUTTON);
   builder->Add("cancel", IDS_CANCEL);
   builder->Add("signOutUser", IDS_SCREEN_LOCK_SIGN_OUT);
@@ -432,7 +436,7 @@ void SigninScreenHandler::DeclareLocalizedValues(
                IDS_LOGIN_PUBLIC_ACCOUNT_ENTER_ACCESSIBLE_NAME);
 
   if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
-   builder->Add("demoLoginMessage", IDS_KIOSK_MODE_LOGIN_MESSAGE);
+    builder->Add("demoLoginMessage", IDS_KIOSK_MODE_LOGIN_MESSAGE);
 }
 
 void SigninScreenHandler::Show(bool oobe_ui) {
@@ -721,6 +725,7 @@ void SigninScreenHandler::ReloadGaiaScreen() {
   }
   LOG(WARNING) << "Reload auth extension frame.";
   frame_state_ = FRAME_STATE_LOADING;
+  ignore_next_user_abort_frame_error_ = true;
   CallJS("login.GaiaSigninScreen.doReload");
 }
 
@@ -786,6 +791,8 @@ void SigninScreenHandler::RegisterMessages() {
   AddCallback("loginVisible", &SigninScreenHandler::HandleLoginVisible);
   AddCallback("cancelPasswordChangedFlow",
               &SigninScreenHandler::HandleCancelPasswordChangedFlow);
+  AddCallback("cancelUserAdding",
+              &SigninScreenHandler::HandleCancelUserAdding);
   AddCallback("migrateUserData", &SigninScreenHandler::HandleMigrateUserData);
   AddCallback("resyncUserData", &SigninScreenHandler::HandleResyncUserData);
   AddCallback("loginUIStateChanged",
@@ -999,9 +1006,7 @@ void SigninScreenHandler::UpdateAuthParams(DictionaryValue* params) {
   // bool single_user = users.size() == 1;
   // chromeos::CrosSettings::Get()->GetString(chromeos::kDeviceOwner, &owner);
 
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  bool managed_users_enabled =
-      command_line->HasSwitch(::switches::kEnableManagedUsers);
+  bool managed_users_enabled = ManagedUserService::AreManagedUsersEnabled();
   bool managed_users_can_create = false;
   if (managed_users_enabled)
     managed_users_can_create = delegate_->GetUsers().size() > 0;
@@ -1064,6 +1069,8 @@ void SigninScreenHandler::LoadAuthExtension(
       test_pass_.clear();
     }
   }
+  frame_state_ = FRAME_STATE_LOADING;
+  ignore_next_user_abort_frame_error_ = true;
   CallJS("login.GaiaSigninScreen.loadAuthExtension", params);
 }
 
@@ -1149,7 +1156,7 @@ void SigninScreenHandler::HandleOfflineLogin(const base::ListValue* args) {
 }
 
 void SigninScreenHandler::HandleShutdownSystem() {
-  ash::Shell::GetInstance()->session_state_controller()->RequestShutdown();
+  ash::Shell::GetInstance()->lock_state_controller()->RequestShutdown();
 }
 
 void SigninScreenHandler::HandleLoadWallpaper(const std::string& email) {
@@ -1199,6 +1206,13 @@ void SigninScreenHandler::HandleToggleResetScreen() {
   }
 }
 
+void SigninScreenHandler::HandleToggleKioskAutolaunchScreen() {
+  if (delegate_ &&
+      !g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
+    delegate_->ShowKioskAutolaunchScreen();
+  }
+}
+
 void SigninScreenHandler::HandleLaunchHelpApp(double help_topic_id) {
   if (!delegate_)
     return;
@@ -1216,7 +1230,6 @@ void SigninScreenHandler::FillUserDictionary(User* user,
       user->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT;
   bool is_locally_managed_user =
       user->GetType() == User::USER_TYPE_LOCALLY_MANAGED;
-  bool signed_in = user == UserManager::Get()->GetLoggedInUser();
 
   user_dict->SetString(kKeyUsername, email);
   user_dict->SetString(kKeyEmailAddress, user->display_email());
@@ -1224,7 +1237,7 @@ void SigninScreenHandler::FillUserDictionary(User* user,
   user_dict->SetBoolean(kKeyPublicAccount, is_public_account);
   user_dict->SetBoolean(kKeyLocallyManagedUser, is_locally_managed_user);
   user_dict->SetInteger(kKeyOauthTokenStatus, user->oauth_token_status());
-  user_dict->SetBoolean(kKeySignedIn, signed_in);
+  user_dict->SetBoolean(kKeySignedIn, user->is_logged_in());
   user_dict->SetBoolean(kKeyIsOwner, is_owner);
 
   if (is_public_account) {
@@ -1259,10 +1272,6 @@ void SigninScreenHandler::SendUserList(bool animated) {
   bool single_user = users.size() == 1;
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
     const std::string& email = (*it)->email();
-    if (is_signin_to_add && (*it)->is_logged_in()) {
-      // Skip all users that are already signed in.
-      continue;
-    }
 
     std::string owner;
     chromeos::CrosSettings::Get()->GetString(chromeos::kDeviceOwner, &owner);
@@ -1273,7 +1282,7 @@ void SigninScreenHandler::SendUserList(bool animated) {
       FillUserDictionary(*it, is_owner, user_dict);
       bool is_public_account =
           ((*it)->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT);
-      bool signed_in = *it == UserManager::Get()->GetLoggedInUser();
+      bool signed_in = (*it)->is_logged_in();
       // Single user check here is necessary because owner info might not be
       // available when running into login screen on first boot.
       // See http://crosbug.com/12723
@@ -1429,6 +1438,11 @@ void SigninScreenHandler::HandleCancelPasswordChangedFlow() {
       weak_factory_.GetWeakPtr()));
 }
 
+void SigninScreenHandler::HandleCancelUserAdding() {
+  if (delegate_)
+    delegate_->CancelUserAdding();
+}
+
 void SigninScreenHandler::HandleMigrateUserData(
     const std::string& old_password) {
   if (delegate_)
@@ -1444,6 +1458,13 @@ void SigninScreenHandler::HandleLoginUIStateChanged(const std::string& source,
                                                     bool new_value) {
   LOG(INFO) << "Login WebUI >> active: " << new_value << ", "
             << "source: " << source;
+
+  if (!KioskAppManager::Get()->GetAutoLaunchApp().empty() &&
+      KioskAppManager::Get()->IsAutoLaunchRequested()) {
+    LOG(INFO) << "Showing auto-launch warning";
+    HandleToggleKioskAutolaunchScreen();
+    return;
+  }
 
   if (source == kSourceGaiaSignin) {
     ui_state_ = UI_STATE_GAIA_SIGNIN;
@@ -1467,9 +1488,21 @@ void SigninScreenHandler::HandleFrameLoadingCompleted(int status) {
     LOG(INFO) << "Gaia frame is loaded";
     frame_state_ = FRAME_STATE_LOADED;
   } else {
+    // Ignore net::ERR_ABORTED frame error once.
+    if (ignore_next_user_abort_frame_error_ &&
+        frame_error_ == net::ERR_ABORTED) {
+      LOG(WARNING) << "Ignore gaia frame error: "  << frame_error_;
+      ignore_next_user_abort_frame_error_ = false;
+      return;
+    }
+
     LOG(WARNING) << "Gaia frame error: "  << frame_error_;
     frame_state_ = FRAME_STATE_ERROR;
   }
+
+  // Frame load okay and other frame error clears the flag.
+  ignore_next_user_abort_frame_error_ = false;
+
   if (network_state_informer_->state() != NetworkStateInformer::ONLINE)
     return;
   if (frame_state_ == FRAME_STATE_LOADED) {

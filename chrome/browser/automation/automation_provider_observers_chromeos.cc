@@ -100,7 +100,7 @@ LoginObserver::~LoginObserver() {
 void LoginObserver::OnLoginFailure(const chromeos::LoginFailure& error) {
   scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
   return_value->SetString("error_string", error.GetErrorString());
-  AutomationJSONReply(automation_, reply_message_.release())
+  AutomationJSONReply(automation_.get(), reply_message_.release())
       .SendSuccess(return_value.get());
   delete this;
 }
@@ -110,7 +110,8 @@ void LoginObserver::OnLoginSuccess(
     bool pending_requests,
     bool using_oauth) {
   controller_->set_login_status_consumer(NULL);
-  AutomationJSONReply(automation_, reply_message_.release()).SendSuccess(NULL);
+  AutomationJSONReply(automation_.get(), reply_message_.release())
+      .SendSuccess(NULL);
   delete this;
 }
 
@@ -155,7 +156,7 @@ void WizardControllerObserver::Observe(
 void WizardControllerObserver::SendReply(const std::string& screen_name) {
   scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
   return_value->SetString("next_screen", screen_name);
-  AutomationJSONReply(automation_, reply_message_.release())
+  AutomationJSONReply(automation_.get(), reply_message_.release())
       .SendSuccess(return_value.get());
   delete this;
 }
@@ -179,7 +180,7 @@ void ScreenLockUnlockObserver::Observe(
     const content::NotificationDetails& details) {
   DCHECK(type == chrome::NOTIFICATION_SCREEN_LOCK_STATE_CHANGED);
   if (automation_) {
-    AutomationJSONReply reply(automation_, reply_message_.release());
+    AutomationJSONReply reply(automation_.get(), reply_message_.release());
     bool is_screen_locked = *content::Details<bool>(details).ptr();
     if (lock_screen_ == is_screen_locked)
       reply.SendSuccess(NULL);
@@ -206,7 +207,7 @@ void ScreenUnlockObserver::OnLoginFailure(const chromeos::LoginFailure& error) {
   if (automation_) {
     scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
     return_value->SetString("error_string", error.GetErrorString());
-    AutomationJSONReply(automation_, reply_message_.release())
+    AutomationJSONReply(automation_.get(), reply_message_.release())
         .SendSuccess(return_value.get());
   }
   delete this;
@@ -229,8 +230,8 @@ void NetworkScanObserver::OnNetworkManagerChanged(NetworkLibrary* obj) {
     return;
 
   if (automation_) {
-    AutomationJSONReply(automation_,
-                        reply_message_.release()).SendSuccess(NULL);
+    AutomationJSONReply(automation_.get(), reply_message_.release())
+        .SendSuccess(NULL);
   }
   delete this;
 }
@@ -253,9 +254,10 @@ void ToggleNetworkDeviceObserver::OnNetworkManagerChanged(NetworkLibrary* obj) {
   if ((device_ == "ethernet" && enable_ == obj->ethernet_enabled()) ||
       (device_ == "wifi" && enable_ == obj->wifi_enabled()) ||
       (device_ == "cellular" && enable_ == obj->cellular_enabled())) {
-    if (automation_)
-      AutomationJSONReply(automation_,
-                          reply_message_.release()).SendSuccess(NULL);
+    if (automation_) {
+      AutomationJSONReply(automation_.get(), reply_message_.release())
+          .SendSuccess(NULL);
+    }
     delete this;
   }
 }
@@ -280,7 +282,7 @@ void NetworkStatusObserver::OnNetworkManagerChanged(NetworkLibrary* obj) {
     if (automation_) {
       scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
       return_value->SetString("error_string", "Network not found.");
-      AutomationJSONReply(automation_, reply_message_.release())
+      AutomationJSONReply(automation_.get(), reply_message_.release())
           .SendSuccess(return_value.get());
     }
     delete this;
@@ -300,14 +302,15 @@ void NetworkConnectObserver::NetworkStatusCheck(const chromeos::Network*
     if (automation_) {
       scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
       return_value->SetString("error_string", network->GetErrorString());
-      AutomationJSONReply(automation_, reply_message_.release())
+      AutomationJSONReply(automation_.get(), reply_message_.release())
           .SendSuccess(return_value.get());
     }
     delete this;
   } else if (network->connected()) {
-    if (automation_)
-      AutomationJSONReply(automation_,
-                          reply_message_.release()).SendSuccess(NULL);
+    if (automation_) {
+      AutomationJSONReply(automation_.get(), reply_message_.release())
+          .SendSuccess(NULL);
+    }
     delete this;
   }
 
@@ -324,8 +327,8 @@ NetworkDisconnectObserver::NetworkDisconnectObserver(
 void NetworkDisconnectObserver::NetworkStatusCheck(const chromeos::Network*
                                                    network) {
   if (!network->connected()) {
-      AutomationJSONReply(automation_, reply_message_.release()).SendSuccess(
-                                                                 NULL);
+      AutomationJSONReply(automation_.get(), reply_message_.release())
+          .SendSuccess(NULL);
       delete this;
   }
 }
@@ -391,14 +394,15 @@ void VirtualConnectObserver::OnNetworkManagerChanged(NetworkLibrary* cros) {
     if (automation_) {
       scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
       return_value->SetString("error_string", virt->GetErrorString());
-      AutomationJSONReply(automation_, reply_message_.release())
+      AutomationJSONReply(automation_.get(), reply_message_.release())
           .SendSuccess(return_value.get());
     }
     delete this;
   } else if (virt->connected()) {
-    if (automation_)
-      AutomationJSONReply(automation_,
-                          reply_message_.release()).SendSuccess(NULL);
+    if (automation_) {
+      AutomationJSONReply(automation_.get(), reply_message_.release())
+          .SendSuccess(NULL);
+    }
     delete this;
   }
   // The network is in the NetworkLibrary's list, but there's no failure or
@@ -437,12 +441,12 @@ void EnrollmentObserver::OnEnrollmentComplete(bool succeeded) {
   enrollment_screen_->RemoveTestingObserver(this);
   if (automation_) {
     if (succeeded) {
-      AutomationJSONReply(automation_,
-                          reply_message_.release()).SendSuccess(NULL);
+      AutomationJSONReply(automation_.get(), reply_message_.release())
+          .SendSuccess(NULL);
     } else {
       scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
       return_value->SetString("error_string", "Enrollment failed.");
-      AutomationJSONReply(automation_, reply_message_.release())
+      AutomationJSONReply(automation_.get(), reply_message_.release())
           .SendSuccess(return_value.get());
     }
   }

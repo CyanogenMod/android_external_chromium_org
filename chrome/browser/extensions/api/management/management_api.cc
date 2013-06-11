@@ -15,9 +15,9 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/management/management_api_constants.h"
 #include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/event_router.h"
@@ -34,6 +34,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_handlers/offline_enabled_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -138,7 +139,7 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
 
   if (extension.is_app()) {
     info->app_launch_url.reset(new std::string(
-        extension.GetFullLaunchURL().spec()));
+        AppLaunchInfo::GetFullLaunchURL(&extension).spec()));
   }
 
   const ExtensionIconSet::IconMap& icons =
@@ -394,9 +395,9 @@ void ManagementGetPermissionWarningsByManifestFunction::OnParseSuccess(
     return;
   }
 
-  std::vector<std::string> warnings = CreateWarningsList(extension);
-  results_ = management::GetPermissionWarningsByManifest::Results::Create(
-      warnings);
+  std::vector<std::string> warnings = CreateWarningsList(extension.get());
+  results_ =
+      management::GetPermissionWarningsByManifest::Results::Create(warnings);
   SendResponse(true);
 
   // Matched with AddRef() in RunImpl().

@@ -7,10 +7,10 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/shell/common/shell_switches.h"
 #include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebPreferences.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/webpreferences.h"
 
 namespace content {
 
@@ -50,7 +50,6 @@ void ExportLayoutTestSpecificPreferences(
   to->javascript_can_open_windows_automatically =
       from.javaScriptCanOpenWindowsAutomatically;
   to->user_style_sheet_location = from.userStyleSheetLocation;
-  to->touch_drag_drop_enabled = from.touchDragDropEnabled;
 }
 
 // Applies settings that differ between layout tests and regular mode. Some

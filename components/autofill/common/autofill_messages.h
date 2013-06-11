@@ -77,9 +77,15 @@ IPC_STRUCT_TRAITS_BEGIN(autofill::FormDataPredictions)
   IPC_STRUCT_TRAITS_MEMBER(fields)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(autofill::UsernamesCollectionKey)
+  IPC_STRUCT_TRAITS_MEMBER(username)
+  IPC_STRUCT_TRAITS_MEMBER(password)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(autofill::PasswordFormFillData)
   IPC_STRUCT_TRAITS_MEMBER(basic_data)
   IPC_STRUCT_TRAITS_MEMBER(additional_logins)
+  IPC_STRUCT_TRAITS_MEMBER(other_possible_usernames)
   IPC_STRUCT_TRAITS_MEMBER(wait_for_username)
 IPC_STRUCT_TRAITS_END()
 
@@ -207,9 +213,8 @@ IPC_MESSAGE_ROUTED3(AutofillHostMsg_TextFieldDidChange,
                     base::TimeTicks /* timestamp */)
 
 // Shows the Autocheckout bubble if the conditions are right.
-IPC_MESSAGE_ROUTED3(AutofillHostMsg_MaybeShowAutocheckoutBubble,
-                    GURL /* source_url */,
-                    content::SSLStatus /* ssl_status */,
+IPC_MESSAGE_ROUTED2(AutofillHostMsg_MaybeShowAutocheckoutBubble,
+                    autofill::FormData /* form */,
                     gfx::RectF /* bounding_box */)
 
 // Queries the browser for Autofill suggestions for a form input field.

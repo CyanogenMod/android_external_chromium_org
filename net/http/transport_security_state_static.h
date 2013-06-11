@@ -649,6 +649,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {11, true, "\006google\002ws", false, kGooglePins, DOMAIN_GOOGLE_WS },
   {23, true, "\005learn\013doubleclick\003net", false, kNoPins, DOMAIN_NOT_PINNED },
   {16, false, "\003www\006paypal\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, false, "\006paypal\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {16, false, "\003www\006elanex\003biz", true, kNoPins, DOMAIN_NOT_PINNED },
   {12, true, "\006jottit\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {19, true, "\015sunshinepress\003org", true, kNoPins, DOMAIN_NOT_PINNED },
@@ -812,6 +813,10 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {14, false, "\001p\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {18, false, "\005paste\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {21, false, "\010pastebin\006linode\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {21, true, "\017inertianetworks\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {14, false, "\010carezone\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, true, "\011conformal\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, true, "\012cyphertite\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

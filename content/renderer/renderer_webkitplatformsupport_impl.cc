@@ -10,19 +10,20 @@
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
 #include "base/shared_memory.h"
-#include "base/utf_string_conversions.h"
-#include "content/common/database_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "content/child/database_util.h"
+#include "content/child/fileapi/webfilesystem_impl.h"
+#include "content/child/indexed_db/proxy_webidbfactory_impl.h"
+#include "content/child/npobject_util.h"
+#include "content/child/thread_safe_sender.h"
+#include "content/child/webblobregistry_impl.h"
+#include "content/child/webmessageportchannel_impl.h"
 #include "content/common/file_utilities_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/mime_registry_messages.h"
-#include "content/common/thread_safe_sender.h"
 #include "content/common/view_messages.h"
-#include "content/common/webmessageportchannel_impl.h"
-#include "content/common_child/fileapi/webfilesystem_impl.h"
-#include "content/common_child/indexed_db/proxy_webidbfactory_impl.h"
-#include "content/common_child/npobject_util.h"
-#include "content/common_child/webblobregistry_impl.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
@@ -38,16 +39,16 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_hardware_config.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebBlobRegistry.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileInfo.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebHyphenator.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamCenter.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamCenterClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/platform/WebBlobRegistry.h"
+#include "third_party/WebKit/public/platform/WebFileInfo.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebHyphenator.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
@@ -57,13 +58,13 @@
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/win/WebSandboxSupport.h"
+#include "third_party/WebKit/public/platform/win/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_MACOSX)
 #include "content/common/mac/font_descriptor.h"
 #include "content/common/mac/font_loader.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/mac/WebSandboxSupport.h"
+#include "third_party/WebKit/public/platform/mac/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
@@ -72,8 +73,8 @@
 
 #include "base/synchronization/lock.h"
 #include "content/common/child_process_sandbox_support_impl_linux.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/linux/WebFontFamily.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/linux/WebSandboxSupport.h"
+#include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
+#include "third_party/WebKit/public/platform/linux/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -229,7 +230,7 @@ WebKit::WebMimeRegistry* RendererWebKitPlatformSupportImpl::mimeRegistry() {
 WebKit::WebFileUtilities*
 RendererWebKitPlatformSupportImpl::fileUtilities() {
   if (!file_utilities_) {
-    file_utilities_.reset(new FileUtilities(thread_safe_sender_));
+    file_utilities_.reset(new FileUtilities(thread_safe_sender_.get()));
     file_utilities_->set_sandbox_enabled(sandboxEnabled());
   }
   return file_utilities_.get();
@@ -361,12 +362,8 @@ RendererWebKitPlatformSupportImpl::createLocalStorageNamespace(
 //------------------------------------------------------------------------------
 
 WebIDBFactory* RendererWebKitPlatformSupportImpl::idbFactory() {
-  if (!web_idb_factory_) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
-      web_idb_factory_.reset(WebIDBFactory::create());
-    else
-      web_idb_factory_.reset(new RendererWebIDBFactoryImpl());
-  }
+  if (!web_idb_factory_)
+    web_idb_factory_.reset(new RendererWebIDBFactoryImpl());
   return web_idb_factory_.get();
 }
 
@@ -680,16 +677,6 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
     double sample_rate,
     WebAudioDevice::RenderCallback* callback,
     const WebKit::WebString& input_device_id) {
-  if (input_device_id != "default") {
-    // Only allow audio input if we know for sure that WebKit is giving us the
-    // "default" input device.
-    // TODO(crogers): add support for non-default audio input devices when
-    // using synchronized audio I/O in WebAudio.
-    if (input_channels > 0)
-      DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
-    input_channels = 0;
-  }
-
   // The |channels| does not exactly identify the channel layout of the
   // device. The switch statement below assigns a best guess to the channel
   // layout based on number of channels.
@@ -725,12 +712,21 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
       layout = media::CHANNEL_LAYOUT_STEREO;
   }
 
+  int session_id = 0;
+  if (input_device_id.isNull() ||
+      !base::StringToInt(UTF16ToUTF8(input_device_id), &session_id)) {
+    if (input_channels > 0)
+      DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
+
+    input_channels = 0;
+  }
+
   media::AudioParameters params(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
       layout, input_channels,
       static_cast<int>(sample_rate), 16, buffer_size);
 
-  return new RendererWebAudioDeviceImpl(params, callback);
+  return new RendererWebAudioDeviceImpl(params, callback, session_id);
 }
 
 //------------------------------------------------------------------------------
@@ -763,8 +759,8 @@ void RendererWebKitPlatformSupportImpl::screenColorProfile(
 
 WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
   // thread_safe_sender_ can be NULL when running some tests.
-  if (!blob_registry_.get() && thread_safe_sender_)
-    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
+  if (!blob_registry_.get() && thread_safe_sender_.get())
+    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_.get()));
   return blob_registry_.get();
 }
 
@@ -889,12 +885,12 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
 
 WebKit::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     createSharedOffscreenGraphicsContext3DProvider() {
-  if (!shared_offscreen_context_ ||
+  if (!shared_offscreen_context_.get() ||
       shared_offscreen_context_->DestroyedOnMainThread()) {
     shared_offscreen_context_ =
         RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
   }
-  if (!shared_offscreen_context_)
+  if (!shared_offscreen_context_.get())
     return NULL;
   return new webkit::gpu::WebGraphicsContext3DProviderImpl(
       shared_offscreen_context_);

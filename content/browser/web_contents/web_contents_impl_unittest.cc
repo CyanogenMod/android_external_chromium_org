@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
-#include "content/browser/renderer_host/frame_tree_node.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
+#include "content/browser/web_contents/frame_tree_node.h"
 #include "content/browser/web_contents/interstitial_page_impl.h"
 #include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
@@ -184,7 +184,7 @@ class TestInterstitialPage : public InterstitialPageImpl {
   virtual RenderViewHost* CreateRenderViewHost() OVERRIDE {
     return new TestRenderViewHost(
         SiteInstance::Create(web_contents()->GetBrowserContext()),
-        this, this, MSG_ROUTING_NONE, false);
+        this, this, MSG_ROUTING_NONE, MSG_ROUTING_NONE, false);
   }
 
   virtual WebContentsView* CreateWebContentsView() OVERRIDE {
@@ -235,28 +235,18 @@ class TestInterstitialPageStateGuard : public TestInterstitialPage::Delegate {
 
 class WebContentsImplTest : public RenderViewHostImplTestHarness {
  public:
-  WebContentsImplTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_),
-        file_user_blocking_thread_(
-            BrowserThread::FILE_USER_BLOCKING, &message_loop_),
-        io_thread_(BrowserThread::IO, &message_loop_) {
-  }
-
   virtual void SetUp() {
     RenderViewHostImplTestHarness::SetUp();
     WebUIControllerFactory::RegisterFactory(&factory_);
   }
 
   virtual void TearDown() {
-    RenderViewHostImplTestHarness::TearDown();
     WebUIControllerFactory::UnregisterFactoryForTesting(&factory_);
+    RenderViewHostImplTestHarness::TearDown();
   }
 
  private:
   WebContentsImplTestWebUIControllerFactory factory_;
-  TestBrowserThread ui_thread_;
-  TestBrowserThread file_user_blocking_thread_;
-  TestBrowserThread io_thread_;
 };
 
 class TestWebContentsObserver : public WebContentsObserver {
@@ -338,19 +328,19 @@ TEST_F(WebContentsImplTest, UpdateMaxPageID) {
   // Starts at -1.
   EXPECT_EQ(-1, contents()->GetMaxPageID());
   EXPECT_EQ(-1, contents()->GetMaxPageIDForSiteInstance(instance1));
-  EXPECT_EQ(-1, contents()->GetMaxPageIDForSiteInstance(instance2));
+  EXPECT_EQ(-1, contents()->GetMaxPageIDForSiteInstance(instance2.get()));
 
   // Make sure max_page_id_ is monotonically increasing per SiteInstance.
   contents()->UpdateMaxPageID(3);
   contents()->UpdateMaxPageID(1);
   EXPECT_EQ(3, contents()->GetMaxPageID());
   EXPECT_EQ(3, contents()->GetMaxPageIDForSiteInstance(instance1));
-  EXPECT_EQ(-1, contents()->GetMaxPageIDForSiteInstance(instance2));
+  EXPECT_EQ(-1, contents()->GetMaxPageIDForSiteInstance(instance2.get()));
 
-  contents()->UpdateMaxPageIDForSiteInstance(instance2, 7);
+  contents()->UpdateMaxPageIDForSiteInstance(instance2.get(), 7);
   EXPECT_EQ(3, contents()->GetMaxPageID());
   EXPECT_EQ(3, contents()->GetMaxPageIDForSiteInstance(instance1));
-  EXPECT_EQ(7, contents()->GetMaxPageIDForSiteInstance(instance2));
+  EXPECT_EQ(7, contents()->GetMaxPageIDForSiteInstance(instance2.get()));
 }
 
 // Test simple same-SiteInstance navigation.
@@ -1960,8 +1950,8 @@ TEST_F(WebContentsImplTest, CopyStateFromAndPruneSourceInterstitial) {
   EXPECT_FALSE(other_contents->ShowingInterstitialPage());
 }
 
-// Makes sure that CopyStateFromAndPrune does the right thing if the object
-// CopyStateFromAndPrune is invoked on is showing an interstitial.
+// Makes sure that CopyStateFromAndPrune cannot be called if the target is
+// showing an interstitial.
 TEST_F(WebContentsImplTest, CopyStateFromAndPruneTargetInterstitial) {
   // Navigate to a page.
   GURL url1("http://www.google.com");
@@ -1989,27 +1979,10 @@ TEST_F(WebContentsImplTest, CopyStateFromAndPruneTargetInterstitial) {
   interstitial->TestDidNavigate(1, url3);
   EXPECT_TRUE(interstitial->is_showing());
   EXPECT_EQ(2, other_controller.GetEntryCount());
-  other_contents->ExpectSetHistoryLengthAndPrune(
-      NavigationEntryImpl::FromNavigationEntry(
-          other_controller.GetEntryAtIndex(0))->site_instance(), 1,
-      other_controller.GetEntryAtIndex(0)->GetPageID());
-  other_controller.CopyStateFromAndPrune(&controller());
 
-  // The merged controller should only have two entries: url1 and url2.
-  ASSERT_EQ(2, other_controller.GetEntryCount());
-  EXPECT_EQ(1, other_controller.GetCurrentEntryIndex());
-  EXPECT_EQ(url1, other_controller.GetEntryAtIndex(0)->GetURL());
-  EXPECT_EQ(url3, other_controller.GetEntryAtIndex(1)->GetURL());
-
-  // It should have a transient entry.
-  EXPECT_TRUE(other_controller.GetTransientEntry());
-
-  // And the interstitial should be showing.
-  EXPECT_TRUE(other_contents->ShowingInterstitialPage());
-
-  // And the interstitial should do a reload on don't proceed.
-  EXPECT_TRUE(static_cast<InterstitialPageImpl*>(
-      other_contents->GetInterstitialPage())->reload_on_dont_proceed());
+  // Ensure that we do not allow calling CopyStateFromAndPrune when an
+  // interstitial is showing in the target.
+  EXPECT_FALSE(other_controller.CanPruneAllButVisible());
 }
 
 // Regression test for http://crbug.com/168611 - the URLs passed by the

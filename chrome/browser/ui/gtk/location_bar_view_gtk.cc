@@ -16,9 +16,9 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/accessibility/accessibility_events.h"
 #include "chrome/browser/command_updater.h"
@@ -106,10 +106,11 @@ namespace {
 // We are positioned with a little bit of extra space that we don't use now.
 const int kTopMargin = 1;
 const int kBottomMargin = 1;
-const int kLeftMargin = 1;
-const int kRightMargin = 1;
 // We draw a border on the top and bottom (but not on left or right).
 const int kBorderThickness = 1;
+
+const int kPopupEdgeThickness = 1;
+const int kNormalEdgeThickness = 2;
 
 // Spacing needed to align the bubble with the left side of the omnibox.
 const int kFirstRunBubbleLeftSpacing = 4;
@@ -1077,7 +1078,7 @@ void LocationBarViewGtk::Observe(int type,
         gtk_util::ForceFontSizePixels(tab_to_search_hint_trailing_label_,
                                       browser_defaults::kOmniboxFontPixelSize);
 
-        const int top_bottom = popup_window_mode_ ? kBorderThickness : 0;
+        const int top_bottom = popup_window_mode_ ? kPopupEdgeThickness : 0;
         gtk_alignment_set_padding(GTK_ALIGNMENT(location_entry_alignment_),
                                   kTopMargin + kBorderThickness,
                                   kBottomMargin + kBorderThickness,
@@ -1105,20 +1106,54 @@ gboolean LocationBarViewGtk::HandleExpose(GtkWidget* widget,
                                           GdkEventExpose* event) {
   // If we're not using GTK theming, draw our own border over the edge pixels
   // of the background.
-  if (!GtkThemeService::GetFrom(browser_->profile())->UsingNativeTheme()) {
-    int left, center, right;
-    if (popup_window_mode_) {
-      left = right = IDR_LOCATIONBG_POPUPMODE_EDGE;
-      center = IDR_LOCATIONBG_POPUPMODE_CENTER;
-    } else {
-      left = IDR_LOCATIONBG_L;
-      center = IDR_LOCATIONBG_C;
-      right = IDR_LOCATIONBG_R;
+  GtkThemeService* theme_service =
+      GtkThemeService::GetFrom(browser_->profile());
+  if (!theme_service->UsingNativeTheme()) {
+    // Perform a scoped paint to fill in the background color.
+    {
+      gfx::CanvasSkiaPaint canvas(event, /*opaque=*/false);
+
+      GtkAllocation allocation;
+      gtk_widget_get_allocation(widget, &allocation);
+
+      int thickness = popup_window_mode_ ?
+          kPopupEdgeThickness : kNormalEdgeThickness;
+      gfx::Rect bounds(allocation);
+      bounds.Inset(thickness, thickness);
+
+      const SkColor color = SK_ColorWHITE;
+      if (popup_window_mode_) {
+        canvas.FillRect(bounds, color);
+      } else {
+        SkPaint paint;
+        paint.setStyle(SkPaint::kFill_Style);
+        paint.setColor(color);
+        const int kBorderCornerRadius = 2;
+        canvas.DrawRoundRect(bounds, kBorderCornerRadius, paint);
+      }
     }
 
-    NineBox background(left, center, right,
-                       0, 0, 0, 0, 0, 0);
-    background.RenderToWidget(widget);
+    if (popup_window_mode_) {
+      NineBox(IDR_OMNIBOX_POPUP_BORDER_TOP_LEFT,
+              IDR_OMNIBOX_POPUP_BORDER_TOP,
+              IDR_OMNIBOX_POPUP_BORDER_TOP_RIGHT,
+              IDR_OMNIBOX_POPUP_BORDER_LEFT,
+              IDR_OMNIBOX_POPUP_BORDER_CENTER,
+              IDR_OMNIBOX_POPUP_BORDER_RIGHT,
+              IDR_OMNIBOX_POPUP_BORDER_BOTTOM_LEFT,
+              IDR_OMNIBOX_POPUP_BORDER_BOTTOM,
+              IDR_OMNIBOX_POPUP_BORDER_BOTTOM_RIGHT).RenderToWidget(widget);
+    } else {
+      NineBox(IDR_OMNIBOX_BORDER_TOP_LEFT,
+              IDR_OMNIBOX_BORDER_TOP,
+              IDR_OMNIBOX_BORDER_TOP_RIGHT,
+              IDR_OMNIBOX_BORDER_LEFT,
+              IDR_OMNIBOX_BORDER_CENTER,
+              IDR_OMNIBOX_BORDER_RIGHT,
+              IDR_OMNIBOX_BORDER_BOTTOM_LEFT,
+              IDR_OMNIBOX_BORDER_BOTTOM,
+              IDR_OMNIBOX_BORDER_BOTTOM_RIGHT).RenderToWidget(widget);
+    }
   }
 
   // Draw ExtensionAction backgrounds and borders, if necessary.  The borders

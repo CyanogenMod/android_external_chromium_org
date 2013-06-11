@@ -9,6 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
@@ -32,9 +33,9 @@ bool next_proto_is_spdy(NextProto next_proto) {
 
 // Parses a URL into the scheme, host, and path components required for a
 // SPDY request.
-void ParseUrl(const char* const url, std::string* scheme, std::string* host,
+void ParseUrl(base::StringPiece url, std::string* scheme, std::string* host,
               std::string* path) {
-  GURL gurl(url);
+  GURL gurl(url.as_string());
   path->assign(gurl.PathForRequest());
   scheme->assign(gurl.scheme());
   host->assign(gurl.host());
@@ -137,31 +138,6 @@ void AppendToHeaderBlock(const char* const extra_headers[],
     }
     (*headers)[this_header] = new_value;
   }
-}
-
-// Writes |val| to a location of size |len|, in big-endian format.
-// in the buffer pointed to by |buffer_handle|.
-// Updates the |*buffer_handle| pointer by |len|
-// Returns the number of bytes written
-int AppendToBuffer(int val,
-                   int len,
-                   unsigned char** buffer_handle,
-                   int* buffer_len_remaining) {
-  if (len <= 0)
-    return 0;
-  DCHECK((size_t) len <= sizeof(len)) << "Data length too long for data type";
-  DCHECK(NULL != buffer_handle) << "NULL buffer handle";
-  DCHECK(NULL != *buffer_handle) << "NULL pointer";
-  DCHECK(NULL != buffer_len_remaining)
-      << "NULL buffer remainder length pointer";
-  DCHECK_GE(*buffer_len_remaining, len) << "Insufficient buffer size";
-  for (int i = 0; i < len; i++) {
-    int shift = (8 * (len - (i + 1)));
-    unsigned char val_chunk = (val >> shift) & 0x0FF;
-    *(*buffer_handle)++ = val_chunk;
-    *buffer_len_remaining += 1;
-  }
-  return len;
 }
 
 // Create a MockWrite from the given SpdyFrame.
@@ -435,7 +411,7 @@ net::HttpNetworkSession::Params SpdySessionDependencies::CreateSessionParams(
   params.host_resolver = session_deps->host_resolver.get();
   params.cert_verifier = session_deps->cert_verifier.get();
   params.proxy_service = session_deps->proxy_service.get();
-  params.ssl_config_service = session_deps->ssl_config_service;
+  params.ssl_config_service = session_deps->ssl_config_service.get();
   params.http_auth_handler_factory =
       session_deps->http_auth_handler_factory.get();
   params.http_server_properties = &session_deps->http_server_properties;
@@ -480,8 +456,7 @@ SpdyURLRequestContext::SpdyURLRequestContext(NextProto protocol)
   SpdySessionPoolPeer pool_peer(network_session->spdy_session_pool());
   pool_peer.EnableSendingInitialSettings(false);
   storage_.set_http_transaction_factory(new HttpCache(
-      network_session,
-      HttpCache::DefaultBackend::InMemory(0)));
+      network_session.get(), HttpCache::DefaultBackend::InMemory(0)));
 }
 
 SpdyURLRequestContext::~SpdyURLRequestContext() {
@@ -549,16 +524,32 @@ SpdyTestUtil::SpdyTestUtil(NextProto protocol)
   DCHECK(next_proto_is_spdy(protocol)) << "Invalid protocol: " << protocol;
 }
 
+void SpdyTestUtil::AddUrlToHeaderBlock(base::StringPiece url,
+                                       SpdyHeaderBlock* headers) const {
+  if (is_spdy2()) {
+    (*headers)["url"] = url.as_string();
+  } else {
+    std::string scheme, host, path;
+    ParseUrl(url, &scheme, &host, &path);
+    (*headers)[GetSchemeKey()] = scheme;
+    (*headers)[GetHostKey()] = host;
+    (*headers)[GetPathKey()] = path;
+  }
+}
+
+// TODO(akalin): Change the functions below to use
+// AddUrlToHeaderBlock().
+
 scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructGetHeaderBlock(
     base::StringPiece url) const {
   std::string scheme, host, path;
   ParseUrl(url.data(), &scheme, &host, &path);
   const char* const headers[] = {
-    is_spdy2() ? "method"  : ":method",  "GET",
-    is_spdy2() ? "url"     : ":path",    path.c_str(),
-    is_spdy2() ? "host"    : ":host",    host.c_str(),
-    is_spdy2() ? "scheme"  : ":scheme",  scheme.c_str(),
-    is_spdy2() ? "version" : ":version", "HTTP/1.1"
+    GetMethodKey(),  "GET",
+    GetPathKey(),    path.c_str(),
+    GetHostKey(),    host.c_str(),
+    GetSchemeKey(),  scheme.c_str(),
+    GetVersionKey(), "HTTP/1.1"
   };
   scoped_ptr<SpdyHeaderBlock> header_block(new SpdyHeaderBlock());
   AppendToHeaderBlock(headers, arraysize(headers) / 2, header_block.get());
@@ -572,12 +563,12 @@ scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructPostHeaderBlock(
   ParseUrl(url.data(), &scheme, &host, &path);
   std::string length_str = base::Int64ToString(content_length);
   const char* const headers[] = {
-    is_spdy2() ? "method"  : ":method",  "POST",
-    is_spdy2() ? "url"     : ":path",    path.c_str(),
-    is_spdy2() ? "host"    : ":host",    host.c_str(),
-    is_spdy2() ? "scheme"  : ":scheme",  scheme.c_str(),
-    is_spdy2() ? "version" : ":version", "HTTP/1.1",
-    "content-length",               length_str.c_str()
+    GetMethodKey(),   "POST",
+    GetPathKey(),     path.c_str(),
+    GetHostKey(),     host.c_str(),
+    GetSchemeKey(),   scheme.c_str(),
+    GetVersionKey(),  "HTTP/1.1",
+    "content-length", length_str.c_str()
   };
   scoped_ptr<SpdyHeaderBlock> header_block(new SpdyHeaderBlock());
   AppendToHeaderBlock(headers, arraysize(headers) / 2, header_block.get());
@@ -636,15 +627,12 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyFrame(const SpdyHeaderInfo& header_info,
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyControlFrame(
-    const char* const extra_headers[],
-    int extra_header_count,
+    scoped_ptr<SpdyHeaderBlock> headers,
     bool compressed,
     SpdyStreamId stream_id,
     RequestPriority request_priority,
     SpdyFrameType type,
     SpdyControlFlags flags,
-    const char* const* tail_headers,
-    int tail_header_size,
     SpdyStreamId associated_stream_id) const {
   EXPECT_GE(type, FIRST_CONTROL_TYPE);
   EXPECT_LE(type, LAST_CONTROL_TYPE);
@@ -661,84 +649,47 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyControlFrame(
     0,  // length
     DATA_FLAG_NONE
   };
+  return ConstructSpdyFrame(header_info, headers.Pass());
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyControlFrame(
+    const char* const extra_headers[],
+    int extra_header_count,
+    bool compressed,
+    SpdyStreamId stream_id,
+    RequestPriority request_priority,
+    SpdyFrameType type,
+    SpdyControlFlags flags,
+    const char* const* tail_headers,
+    int tail_header_size,
+    SpdyStreamId associated_stream_id) const {
   scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
   AppendToHeaderBlock(extra_headers, extra_header_count, headers.get());
   if (tail_headers && tail_header_size)
     AppendToHeaderBlock(tail_headers, tail_header_size / 2, headers.get());
-  return ConstructSpdyFrame(header_info, headers.Pass());
+  return ConstructSpdyControlFrame(
+      headers.Pass(), compressed, stream_id,
+      request_priority, type, flags, associated_stream_id);
 }
 
-int SpdyTestUtil::ConstructSpdyReplyString(const char* const extra_headers[],
-                                           int extra_header_count,
-                                           char* buffer,
-                                           int buffer_length) const {
-  int frame_size = 0;
-  char* buffer_write = buffer;
-  int buffer_left = buffer_length;
-  SpdyHeaderBlock headers;
-  if (!buffer || !buffer_length)
-    return 0;
-  // Copy in the extra headers.
-  AppendToHeaderBlock(extra_headers, extra_header_count, &headers);
-  // The iterator gets us the list of header/value pairs in sorted order.
-  SpdyHeaderBlock::iterator next = headers.begin();
-  SpdyHeaderBlock::iterator last = headers.end();
-  for ( ; next != last; ++next) {
-    // Write the header.
-    int value_len, current_len, offset;
-    const char* header_string = next->first.c_str();
-    if (!is_spdy2() && header_string && header_string[0] == ':')
-      header_string++;
-    frame_size += AppendToBuffer(header_string,
-                                 strlen(header_string),
-                                 &buffer_write,
-                                 &buffer_left);
-    frame_size += AppendToBuffer(": ",
-                                 strlen(": "),
-                                 &buffer_write,
-                                 &buffer_left);
-    // Write the value(s).
-    const char* value_string = next->second.c_str();
-    // Check if it's split among two or more values.
-    value_len = next->second.length();
-    current_len = strlen(value_string);
-    offset = 0;
-    // Handle the first N-1 values.
-    while (current_len < value_len) {
-      // Finish this line -- write the current value.
-      frame_size += AppendToBuffer(value_string + offset,
-                                   current_len - offset,
-                                   &buffer_write,
-                                   &buffer_left);
-      frame_size += AppendToBuffer("\n",
-                                   strlen("\n"),
-                                   &buffer_write,
-                                   &buffer_left);
-      // Advance to next value.
-      offset = current_len + 1;
-      current_len += 1 + strlen(value_string + offset);
-      // Start another line -- add the header again.
-      frame_size += AppendToBuffer(header_string,
-                                   next->first.length(),
-                                   &buffer_write,
-                                   &buffer_left);
-      frame_size += AppendToBuffer(": ",
-                                   strlen(": "),
-                                   &buffer_write,
-                                   &buffer_left);
+std::string SpdyTestUtil::ConstructSpdyReplyString(
+    const SpdyHeaderBlock& headers) const {
+  std::string reply_string;
+  for (SpdyHeaderBlock::const_iterator it = headers.begin();
+       it != headers.end(); ++it) {
+    std::string key = it->first;
+    // Remove leading colon from "special" headers (for SPDY3 and
+    // above).
+    if (spdy_version() >= SPDY3 && key[0] == ':')
+      key = key.substr(1);
+    std::vector<std::string> values;
+    base::SplitString(it->second, '\0', &values);
+    for (std::vector<std::string>::const_iterator it2 = values.begin();
+         it2 != values.end(); ++it2) {
+      reply_string += key + ": " + *it2 + "\n";
     }
-    EXPECT_EQ(value_len, current_len);
-    // Copy the last (or only) value.
-    frame_size += AppendToBuffer(value_string + offset,
-                                 value_len - offset,
-                                 &buffer_write,
-                                 &buffer_left);
-    frame_size += AppendToBuffer("\n",
-                                 strlen("\n"),
-                                 &buffer_write,
-                                 &buffer_left);
   }
-  return frame_size;
+  return reply_string;
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdySettings(
@@ -805,11 +756,11 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyGet(const char* const extra_headers[],
   const bool spdy2 = is_spdy2();
   const char* url = (spdy2 && !direct) ? "http://www.google.com/" : "/";
   const char* const kStandardGetHeaders[] = {
-    spdy2 ? "method"  : ":method",  "GET",
-    spdy2 ? "host"    : ":host",    "www.google.com",
-    spdy2 ? "scheme"  : ":scheme",  "http",
-    spdy2 ? "version" : ":version", "HTTP/1.1",
-    spdy2 ? "url"     : ":path",    url
+    GetMethodKey(),  "GET",
+    GetHostKey(),    "www.google.com",
+    GetSchemeKey(),  "http",
+    GetVersionKey(), "HTTP/1.1",
+    GetPathKey(),    url
   };
   return ConstructSpdyControlFrame(extra_headers,
                                    extra_header_count,
@@ -827,12 +778,11 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyConnect(
     const char* const extra_headers[],
     int extra_header_count,
     int stream_id) const {
-  const bool spdy2 = is_spdy2();
   const char* const kConnectHeaders[] = {
-    spdy2 ? "method"  : ":method",  "CONNECT",
-    spdy2 ? "url"     : ":path",    "www.google.com:443",
-    spdy2 ? "host"    : ":host",    "www.google.com",
-    spdy2 ? "version" : ":version", "HTTP/1.1",
+    GetMethodKey(),  "CONNECT",
+    GetPathKey(),    "www.google.com:443",
+    GetHostKey(),    "www.google.com",
+    GetVersionKey(), "HTTP/1.1",
   };
   return ConstructSpdyControlFrame(extra_headers,
                                    extra_header_count,
@@ -846,8 +796,277 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyConnect(
                                    0);
 }
 
+SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
+                                           int extra_header_count,
+                                           int stream_id,
+                                           int associated_stream_id) {
+  const char* const kStandardGetHeaders[] = {
+    "hello",         "bye",
+    GetStatusKey(),  "200",
+    GetVersionKey(), "HTTP/1.1"
+  };
+  return ConstructSpdyControlFrame(extra_headers,
+                                   extra_header_count,
+                                   false,
+                                   stream_id,
+                                   LOWEST,
+                                   SYN_STREAM,
+                                   CONTROL_FLAG_NONE,
+                                   kStandardGetHeaders,
+                                   arraysize(kStandardGetHeaders),
+                                   associated_stream_id);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
+                                           int extra_header_count,
+                                           int stream_id,
+                                           int associated_stream_id,
+                                           const char* url) {
+  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
+  (*headers)["hello"] = "bye";
+  (*headers)[GetStatusKey()] = "200 OK";
+  (*headers)[GetVersionKey()] = "HTTP/1.1";
+  AddUrlToHeaderBlock(url, headers.get());
+  AppendToHeaderBlock(extra_headers, extra_header_count, headers.get());
+  return ConstructSpdyControlFrame(headers.Pass(),
+                                   false,
+                                   stream_id,
+                                   LOWEST,
+                                   SYN_STREAM,
+                                   CONTROL_FLAG_NONE,
+                                   associated_stream_id);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
+                                           int extra_header_count,
+                                           int stream_id,
+                                           int associated_stream_id,
+                                           const char* url,
+                                           const char* status,
+                                           const char* location) {
+  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
+  (*headers)["hello"] = "bye";
+  (*headers)[GetStatusKey()] = status;
+  (*headers)[GetVersionKey()] = "HTTP/1.1";
+  (*headers)["location"] = location;
+  AddUrlToHeaderBlock(url, headers.get());
+  AppendToHeaderBlock(extra_headers, extra_header_count, headers.get());
+  return ConstructSpdyControlFrame(headers.Pass(),
+                                   false,
+                                   stream_id,
+                                   LOWEST,
+                                   SYN_STREAM,
+                                   CONTROL_FLAG_NONE,
+                                   associated_stream_id);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyPushHeaders(
+    int stream_id,
+    const char* const extra_headers[],
+    int extra_header_count) {
+  const char* const kStandardGetHeaders[] = {
+    GetStatusKey(), "200 OK",
+    GetVersionKey(), "HTTP/1.1"
+  };
+  return ConstructSpdyControlFrame(extra_headers,
+                                   extra_header_count,
+                                   false,
+                                   stream_id,
+                                   LOWEST,
+                                   HEADERS,
+                                   CONTROL_FLAG_NONE,
+                                   kStandardGetHeaders,
+                                   arraysize(kStandardGetHeaders),
+                                   0);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdySynReplyError(
+    const char* const status,
+    const char* const* const extra_headers,
+    int extra_header_count,
+    int stream_id) {
+  const char* const kStandardGetHeaders[] = {
+    "hello", "bye",
+    GetStatusKey(), status,
+    GetVersionKey(), "HTTP/1.1"
+  };
+  return ConstructSpdyControlFrame(extra_headers,
+                                   extra_header_count,
+                                   false,
+                                   stream_id,
+                                   LOWEST,
+                                   SYN_REPLY,
+                                   CONTROL_FLAG_NONE,
+                                   kStandardGetHeaders,
+                                   arraysize(kStandardGetHeaders),
+                                   0);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyGetSynReplyRedirect(int stream_id) {
+  static const char* const kExtraHeaders[] = {
+    "location", "http://www.foo.com/index.php",
+  };
+  return ConstructSpdySynReplyError("301 Moved Permanently", kExtraHeaders,
+                                    arraysize(kExtraHeaders)/2, stream_id);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdySynReplyError(int stream_id) {
+  return ConstructSpdySynReplyError("500 Internal Server Error", NULL, 0, 1);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyGetSynReply(
+    const char* const extra_headers[],
+    int extra_header_count,
+    int stream_id) {
+  const char* const kStandardGetHeaders[] = {
+    "hello", "bye",
+    GetStatusKey(), "200",
+    GetVersionKey(), "HTTP/1.1"
+  };
+  return ConstructSpdyControlFrame(extra_headers,
+                                   extra_header_count,
+                                   false,
+                                   stream_id,
+                                   LOWEST,
+                                   SYN_REPLY,
+                                   CONTROL_FLAG_NONE,
+                                   kStandardGetHeaders,
+                                   arraysize(kStandardGetHeaders),
+                                   0);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyPost(const char* url,
+                                           SpdyStreamId stream_id,
+                                           int64 content_length,
+                                           RequestPriority priority,
+                                           const char* const extra_headers[],
+                                           int extra_header_count) {
+  const SpdyHeaderInfo kSynStartHeader = {
+    SYN_STREAM,
+    stream_id,
+    0,                      // Associated stream ID
+    ConvertRequestPriorityToSpdyPriority(priority, spdy_version_),
+    kSpdyCredentialSlotUnused,
+    CONTROL_FLAG_NONE,
+    false,                  // Compressed
+    RST_STREAM_INVALID,
+    NULL,                   // Data
+    0,                      // Length
+    DATA_FLAG_NONE
+  };
+  return ConstructSpdyFrame(
+      kSynStartHeader, ConstructPostHeaderBlock(url, content_length));
+}
+
+SpdyFrame* SpdyTestUtil::ConstructChunkedSpdyPost(
+    const char* const extra_headers[],
+    int extra_header_count) {
+  const char* post_headers[] = {
+    GetMethodKey(), "POST",
+    GetPathKey(), "/",
+    GetHostKey(), "www.google.com",
+    GetSchemeKey(), "http",
+    GetVersionKey(), "HTTP/1.1"
+  };
+  return ConstructSpdyControlFrame(extra_headers,
+                                   extra_header_count,
+                                   false,
+                                   1,
+                                   LOWEST,
+                                   SYN_STREAM,
+                                   CONTROL_FLAG_NONE,
+                                   post_headers,
+                                   arraysize(post_headers),
+                                   0);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyPostSynReply(
+    const char* const extra_headers[],
+    int extra_header_count) {
+  const char* const kStandardGetHeaders[] = {
+    "hello", "bye",
+    GetStatusKey(), "200",
+    GetPathKey(), "/index.php",
+    GetVersionKey(), "HTTP/1.1"
+  };
+  return ConstructSpdyControlFrame(extra_headers,
+                                   extra_header_count,
+                                   false,
+                                   1,
+                                   LOWEST,
+                                   SYN_REPLY,
+                                   CONTROL_FLAG_NONE,
+                                   kStandardGetHeaders,
+                                   arraysize(kStandardGetHeaders),
+                                   0);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyBodyFrame(int stream_id, bool fin) {
+  SpdyFramer framer(spdy_version_);
+  return framer.CreateDataFrame(
+      stream_id, kUploadData, kUploadDataSize,
+      fin ? DATA_FLAG_FIN : DATA_FLAG_NONE);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyBodyFrame(int stream_id,
+                                                const char* data,
+                                                uint32 len,
+                                                bool fin) {
+  SpdyFramer framer(spdy_version_);
+  return framer.CreateDataFrame(
+      stream_id, data, len, fin ? DATA_FLAG_FIN : DATA_FLAG_NONE);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructWrappedSpdyFrame(
+    const scoped_ptr<SpdyFrame>& frame,
+    int stream_id) {
+  return ConstructSpdyBodyFrame(stream_id, frame->data(),
+                                frame->size(), false);
+}
+
+const SpdyHeaderInfo SpdyTestUtil::MakeSpdyHeader(SpdyFrameType type) {
+  const SpdyHeaderInfo kHeader = {
+    type,
+    1,                            // Stream ID
+    0,                            // Associated stream ID
+    ConvertRequestPriorityToSpdyPriority(LOWEST, spdy_version_),
+    kSpdyCredentialSlotUnused,
+    CONTROL_FLAG_FIN,             // Control Flags
+    false,                        // Compressed
+    RST_STREAM_INVALID,
+    NULL,                         // Data
+    0,                            // Length
+    DATA_FLAG_NONE
+  };
+  return kHeader;
+}
+
 scoped_ptr<SpdyFramer> SpdyTestUtil::CreateFramer() const {
   return scoped_ptr<SpdyFramer>(new SpdyFramer(spdy_version_));
+}
+
+const char* SpdyTestUtil::GetMethodKey() const {
+  return is_spdy2() ? "method" : ":method";
+}
+
+const char* SpdyTestUtil::GetStatusKey() const {
+  return is_spdy2() ? "status" : ":status";
+}
+
+const char* SpdyTestUtil::GetHostKey() const {
+  return is_spdy2() ? "host" : ":host";
+}
+
+const char* SpdyTestUtil::GetSchemeKey() const {
+  return is_spdy2() ? "scheme" : ":scheme";
+}
+
+const char* SpdyTestUtil::GetVersionKey() const {
+  return is_spdy2() ? "version" : ":version";
+}
+
+const char* SpdyTestUtil::GetPathKey() const {
+  return is_spdy2() ? "url" : ":path";
 }
 
 }  // namespace net

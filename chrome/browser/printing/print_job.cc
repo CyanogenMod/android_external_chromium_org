@@ -106,7 +106,7 @@ PrintJobWorker* PrintJob::DetachWorker(PrintJobWorkerOwner* new_owner) {
   return NULL;
 }
 
-MessageLoop* PrintJob::message_loop() {
+base::MessageLoop* PrintJob::message_loop() {
   return ui_message_loop_;
 }
 
@@ -392,12 +392,8 @@ JobEventDetails::JobEventDetails(Type type,
 JobEventDetails::~JobEventDetails() {
 }
 
-PrintedDocument* JobEventDetails::document() const {
-  return document_;
-}
+PrintedDocument* JobEventDetails::document() const { return document_.get(); }
 
-PrintedPage* JobEventDetails::page() const {
-  return page_;
-}
+PrintedPage* JobEventDetails::page() const { return page_.get(); }
 
 }  // namespace printing

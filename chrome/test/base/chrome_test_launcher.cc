@@ -7,21 +7,23 @@
 #include <stack>
 
 #include "base/command_line.h"
-#include "base/files/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/process_util.h"
 #include "base/run_loop.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/test/test_file_util.h"
 #include "chrome/app/chrome_main_delegate.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/chrome_test_suite.h"
 #include "content/public/app/content_main.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_utils.h"
+#include "ui/base/test/ui_controls.h"
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_application_mac.h"
@@ -37,8 +39,12 @@
 #endif
 
 #if defined(USE_AURA)
-#include "chrome/test/base/ui_controls.h"
-#include "chrome/test/base/ui_controls_aura.h"
+#include "ui/aura/test/ui_controls_factory_aura.h"
+#include "ui/base/test/ui_controls_aura.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "ash/test/ui_controls_factory_ash.h"
 #endif
 
 const char kEmptyTestName[] = "InProcessBrowserTest.Empty";
@@ -53,6 +59,12 @@ class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
   }
 
   virtual int RunTestSuite(int argc, char** argv) OVERRIDE {
+    content::AddPreRunMessageLoopHook(base::Bind(
+        &ChromeTestLauncherDelegate::PreRunMessageLoop,
+        base::Unretained(this)));
+    content::AddPostRunMessageLoopHook(base::Bind(
+        &ChromeTestLauncherDelegate::PostRunMessageLoop,
+        base::Unretained(this)));
     return ChromeTestSuite(argc, argv).Run();
   }
 
@@ -78,7 +90,9 @@ class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
     return true;
   }
 
-  virtual void PreRunMessageLoop(base::RunLoop* run_loop) OVERRIDE {
+  void PreRunMessageLoop(base::RunLoop* run_loop) {
+    // TODO(phajdan.jr): Remove message loop hooks after switch to Aura.
+    // This includes removing content::Add{Pre,Post}RunMessageLoopHook.
 #if !defined(USE_AURA) && defined(TOOLKIT_VIEWS)
     if (content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
       linked_ptr<views::AcceleratorHandler> handler(
@@ -89,7 +103,9 @@ class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
 #endif
   }
 
-  virtual void PostRunMessageLoop() OVERRIDE {
+  void PostRunMessageLoop(base::RunLoop* run_loop) {
+    // TODO(phajdan.jr): Remove message loop hooks after switch to Aura.
+    // This includes removing content::Add{Pre,Post}RunMessageLoopHook.
 #if !defined(USE_AURA) && defined(TOOLKIT_VIEWS)
     if (content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
       DCHECK_EQ(handlers_.empty(), false);
@@ -97,6 +113,7 @@ class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
     }
 #endif
   }
+
 
  protected:
   virtual content::ContentMainDelegate* CreateContentMainDelegate() OVERRIDE {
@@ -140,12 +157,13 @@ int main(int argc, char** argv) {
 // Only allow ui_controls to be used in interactive_ui_tests, since they depend
 // on focus and can't be sharded.
 #if defined(INTERACTIVE_TESTS)
+  ui_controls::EnableUIControls();
 
 #if defined(OS_CHROMEOS)
-  ui_controls::InstallUIControlsAura(ui_controls::CreateAshUIControls());
+  ui_controls::InstallUIControlsAura(ash::test::CreateAshUIControls());
 #elif defined(USE_AURA)
   // TODO(win_ash): when running interactive_ui_tests for Win Ash, use above.
-  ui_controls::InstallUIControlsAura(ui_controls::CreateUIControlsAura(NULL));
+  ui_controls::InstallUIControlsAura(aura::test::CreateUIControlsAura(NULL));
 #endif
 
 #endif

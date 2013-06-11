@@ -14,7 +14,7 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/syncable/sync_file_status.h"
 #include "webkit/browser/fileapi/syncable/sync_status_code.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 
 namespace fileapi {
 class FileSystemContext;
@@ -114,8 +114,7 @@ class SyncFileSystemRequestFileSystemFunction
   // Returns the file system context for this extension.
   fileapi::FileSystemContext* GetFileSystemContext();
 
-  void DidInitializeFileSystemContext(const std::string& service_name,
-                                      sync_file_system::SyncStatusCode status);
+  void DidInitializeFileSystemContext(sync_file_system::SyncStatusCode status);
   void DidOpenFileSystem(base::PlatformFileError error,
                          const std::string& file_system_name,
                          const GURL& root_url);

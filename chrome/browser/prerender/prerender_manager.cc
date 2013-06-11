@@ -16,8 +16,8 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/common/cancelable_request.h"
@@ -56,6 +56,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/favicon_url.h"
+#include "extensions/common/constants.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
@@ -421,6 +422,14 @@ bool PrerenderManager::MaybeUsePrerenderedPage(WebContents* web_contents,
       prerender_data->contents()->prerender_contents()) {
     if (web_contents == new_web_contents)
       return false;  // Do not swap in to ourself.
+
+    // We cannot swap in if there is no last committed entry, because we would
+    // show a blank page under an existing entry from the current tab.  Even if
+    // there is a pending entry, it may not commit.
+    // TODO(creis): If there is a pending navigation and no last committed
+    // entry, we might be able to transfer the network request instead.
+    if (!new_web_contents->GetController().CanPruneAllButVisible())
+      return false;
   }
 
   // Do not use the prerendered version if there is an opener object.
@@ -721,7 +730,7 @@ bool PrerenderManager::IsNoUseGroup() {
 }
 
 bool PrerenderManager::IsWebContentsPrerendering(
-    WebContents* web_contents,
+    const WebContents* web_contents,
     Origin* origin) const {
   DCHECK(CalledOnValidThread());
   if (PrerenderContents* prerender_contents =
@@ -751,7 +760,7 @@ bool PrerenderManager::IsWebContentsPrerendering(
 }
 
 PrerenderContents* PrerenderManager::GetPrerenderContents(
-    content::WebContents* web_contents) const {
+    const content::WebContents* web_contents) const {
   DCHECK(CalledOnValidThread());
   for (ScopedVector<PrerenderData>::const_iterator it =
            active_prerenders_.begin();
@@ -878,7 +887,7 @@ bool PrerenderManager::IsValidHttpMethod(const std::string& method) {
 
 // static
 bool PrerenderManager::DoesURLHaveValidScheme(const GURL& url) {
-  return IsWebURL(url);
+  return IsWebURL(url) || url.SchemeIs(extensions::kExtensionScheme);
 }
 
 DictionaryValue* PrerenderManager::GetAsValue() const {
@@ -1429,11 +1438,13 @@ void PrerenderManager::RecordLikelyLoginOnURL(const GURL& url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!IsWebURL(url))
     return;
-  if (logged_in_predictor_table_) {
+  if (logged_in_predictor_table_.get()) {
     BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
+        BrowserThread::DB,
+        FROM_HERE,
         base::Bind(&LoggedInPredictorTable::AddDomainFromURL,
-                   logged_in_predictor_table_, url));
+                   logged_in_predictor_table_,
+                   url));
   }
   std::string key = LoggedInPredictorTable::GetKey(url);
   if (!logged_in_state_.get())
@@ -1449,7 +1460,7 @@ void PrerenderManager::CheckIfLikelyLoggedInOnURL(
     bool* database_was_present,
     const base::Closure& result_cb) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!logged_in_predictor_table_) {
+  if (!logged_in_predictor_table_.get()) {
     *database_was_present = false;
     *lookup_result = false;
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, result_cb);
@@ -1508,11 +1519,12 @@ void PrerenderManager::CookieChangedAnyCookiesLeftLookupResult(
   if (cookies_exist)
     return;
 
-  if (logged_in_predictor_table_) {
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(&LoggedInPredictorTable::DeleteDomain,
-                   logged_in_predictor_table_, domain_key));
+  if (logged_in_predictor_table_.get()) {
+    BrowserThread::PostTask(BrowserThread::DB,
+                            FROM_HERE,
+                            base::Bind(&LoggedInPredictorTable::DeleteDomain,
+                                       logged_in_predictor_table_,
+                                       domain_key));
   }
 
   if (logged_in_state_.get())

@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_proxy.h"
-#include "content/common/child_process.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "content/child/child_process.h"
 #include "content/common/p2p_messages.h"
 #include "content/renderer/p2p/host_address_request.h"
 #include "content/renderer/p2p/socket_client.h"
@@ -85,7 +85,7 @@ void P2PSocketDispatcher::OnChannelClosing() {
 }
 
 base::MessageLoopProxy* P2PSocketDispatcher::message_loop() {
-  return message_loop_;
+  return message_loop_.get();
 }
 
 int P2PSocketDispatcher::RegisterClient(P2PSocketClient* client) {

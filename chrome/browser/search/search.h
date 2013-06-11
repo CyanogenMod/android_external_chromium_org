@@ -10,7 +10,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "chrome/common/instant_types.h"
 
 class GURL;
 class Profile;
@@ -65,6 +66,12 @@ bool IsQueryExtractionEnabled(Profile* profile);
 // Returns whether the local-only version of Instant Extended API is enabled.
 bool IsLocalOnlyInstantExtendedAPIEnabled();
 
+// Extracts and returns search terms from |url|. Returns empty string if the URL
+// is not secure or doesn't have a search term replacement key.  Does not
+// consider IsQueryExtractionEnabled() and does not check for a privileged
+// process, so most callers should use GetSearchTerms() below instead.
+string16 GetSearchTermsFromURL(Profile* profile, const GURL& url);
+
 // Returns the search terms attached to a specific NavigationEntry, or empty
 // string otherwise. Does not consider IsQueryExtractionEnabled(), so most
 // callers should use GetSearchTerms() below instead.
@@ -97,6 +104,9 @@ void RegisterInstantUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
 // Sets the default value of prefs::kSearchInstantEnabled based on field trials.
 void SetInstantExtendedPrefDefault(Profile* profile);
+
+// Returns whether the Instant checkbox in chrome://settings/ should be shown.
+bool IsInstantCheckboxVisible();
 
 // Returns whether the Instant checkbox in chrome://settings/ should be enabled
 // (i.e., toggleable). This returns true iff prefs::kSearchSuggestEnabled is
@@ -167,6 +177,12 @@ bool IsPrivilegedURLForInstant(const GURL& url);
 // InstantLoader.
 int GetInstantLoaderStalenessTimeoutSec();
 
+// Returns true if |contents| corresponds to an Instant overlay.
+bool IsInstantOverlay(const content::WebContents* contents);
+
+// Returns true if |contents| corresponds to a preloaded instant extended NTP.
+bool IsPreloadedInstantExtendedNTP(const content::WebContents* contents);
+
 // -----------------------------------------------------
 // The following APIs are exposed for use in tests only.
 // -----------------------------------------------------
@@ -221,6 +237,11 @@ bool DefaultSearchProviderSupportsInstant(Profile* profile);
 // Let tests reset the gate that prevents metrics from being sent more than
 // once.
 void ResetInstantExtendedOptInStateGateForTest();
+
+// Returns true if |items_a| and |items_b| are equal.
+bool AreMostVisitedItemsEqual(
+    const std::vector<InstantMostVisitedItem>& items_a,
+    const std::vector<InstantMostVisitedItem>& items_b);
 
 }  // namespace chrome
 

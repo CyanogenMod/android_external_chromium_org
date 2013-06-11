@@ -5,14 +5,20 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/notifications/notification.h"
+#include "chrome/browser/notifications/notification_test_util.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/notifications/sync_notifier/synced_notification.h"
+#include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "sync/api/sync_data.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/protocol/synced_notification_specifics.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notification_types.h"
 
@@ -22,7 +28,6 @@ using sync_pb::EntitySpecifics;
 using sync_pb::SyncedNotificationSpecifics;
 
 namespace {
-
 const uint64 kFakeCreationTime = 42;
 const int kProtobufPriority = static_cast<int>(
     sync_pb::CoalescedSyncedNotification_Priority_LOW);
@@ -75,11 +80,17 @@ const sync_pb::CoalescedSyncedNotification_ReadState kDismissed =
     sync_pb::CoalescedSyncedNotification_ReadState_DISMISSED;
 }  // namespace
 
+namespace notifier {
+
 // Stub out the NotificationUIManager for unit testing.
 class StubNotificationUIManager : public NotificationUIManager {
  public:
   StubNotificationUIManager()
-      : notification_(GURL(), GURL(), string16(), string16(), NULL) {}
+      : notification_(GURL(),
+                      GURL(),
+                      string16(),
+                      string16(),
+                      new MockNotificationDelegate("stub")) {}
   virtual ~StubNotificationUIManager() {}
 
   // Adds a notification to be displayed. Virtual for unit test override.
@@ -87,6 +98,7 @@ class StubNotificationUIManager : public NotificationUIManager {
       OVERRIDE {
     // Make a deep copy of the notification that we can inspect.
     notification_ = notification;
+    profile_ = profile;
   }
 
   // Returns true if any notifications match the supplied ID, either currently
@@ -99,6 +111,16 @@ class StubNotificationUIManager : public NotificationUIManager {
   // displayed or in the queue.  Returns true if anything was removed.
   virtual bool CancelById(const std::string& notification_id) OVERRIDE {
     return false;
+  }
+
+  virtual std::set<std::string> GetAllIdsByProfileAndSourceOrigin(
+      Profile* profile,
+      const GURL& source) OVERRIDE {
+    std::set<std::string> notification_ids;
+    if (source == notification_.origin_url() &&
+        profile->IsSameProfile(profile_))
+      notification_ids.insert(notification_.notification_id());
+    return notification_ids;
   }
 
   // Removes notifications matching the |source_origin| (which could be an
@@ -122,11 +144,13 @@ class StubNotificationUIManager : public NotificationUIManager {
  private:
   DISALLOW_COPY_AND_ASSIGN(StubNotificationUIManager);
   Notification notification_;
+  Profile* profile_;
 };
 
 class SyncedNotificationTest : public testing::Test {
  public:
-  SyncedNotificationTest() {}
+  SyncedNotificationTest()
+      : ui_thread_(content::BrowserThread::UI, &message_loop_) {}
   virtual ~SyncedNotificationTest() {}
 
   // Methods from testing::Test.
@@ -403,6 +427,9 @@ class SyncedNotificationTest : public testing::Test {
   }
 
  private:
+  base::MessageLoopForIO message_loop_;
+  content::TestBrowserThread ui_thread_;
+
   DISALLOW_COPY_AND_ASSIGN(SyncedNotificationTest);
 };
 
@@ -459,7 +486,7 @@ TEST_F(SyncedNotificationTest, GetImageURLTest) {
   EXPECT_EQ(expected_image_url, found_image_url);
 }
 
-// TODO(petewil): test with a multi-line body
+// TODO(petewil): test with a multi-line message
 TEST_F(SyncedNotificationTest, GetTextTest) {
   std::string found_text = notification1_->GetText();
   std::string expected_text(kText1);
@@ -567,62 +594,101 @@ TEST_F(SyncedNotificationTest, ShowTest) {
   // Call the method under test using the pre-populated data.
   notification1_->Show(&notification_manager, NULL, NULL);
 
+  const Notification notification = notification_manager.notification();
+
   // Check the base fields of the notification.
+  EXPECT_EQ(message_center::NOTIFICATION_TYPE_IMAGE, notification.type());
+  EXPECT_EQ(kTitle1, UTF16ToUTF8(notification.title()));
+  EXPECT_EQ(kText1, UTF16ToUTF8(notification.message()));
+  EXPECT_EQ(kExpectedOriginUrl, notification.origin_url().spec());
+  EXPECT_EQ(kKey1, UTF16ToUTF8(notification.replace_id()));
+
+  EXPECT_EQ(kFakeCreationTime, notification.timestamp().ToDoubleT());
+  EXPECT_EQ(kNotificationPriority, notification.priority());
+
+  EXPECT_EQ(UTF8ToUTF16(kButtonOneTitle), notification.buttons()[0].title);
+  EXPECT_EQ(UTF8ToUTF16(kButtonTwoTitle), notification.buttons()[1].title);
+
+  EXPECT_EQ(UTF8ToUTF16(kContainedTitle1), notification.items()[0].title);
+  EXPECT_EQ(UTF8ToUTF16(kContainedTitle2), notification.items()[1].title);
+  EXPECT_EQ(UTF8ToUTF16(kContainedTitle3), notification.items()[2].title);
+
+  EXPECT_EQ(UTF8ToUTF16(kContainedMessage1), notification.items()[0].message);
+  EXPECT_EQ(UTF8ToUTF16(kContainedMessage2), notification.items()[1].message);
+  EXPECT_EQ(UTF8ToUTF16(kContainedMessage3), notification.items()[2].message);
+}
+
+TEST_F(SyncedNotificationTest, AddBitmapToFetchQueueTest) {
+  scoped_ptr<SyncedNotification> notification6;
+  notification6.reset(new SyncedNotification(sync_data1_));
+
+  // Add two bitmaps to the queue.
+  notification6->AddBitmapToFetchQueue(GURL(kIconUrl1));
+  notification6->AddBitmapToFetchQueue(GURL(kIconUrl2));
+
+  EXPECT_EQ(2, notification6->active_fetcher_count_);
+  EXPECT_EQ(GURL(kIconUrl1), notification6->fetchers_[0]->url());
+  EXPECT_EQ(GURL(kIconUrl2), notification6->fetchers_[1]->url());
+
+  notification6->AddBitmapToFetchQueue(GURL(kIconUrl2));
+  EXPECT_EQ(2, notification6->active_fetcher_count_);
+}
+
+TEST_F(SyncedNotificationTest, OnFetchCompleteTest) {
+  if (!UseRichNotifications())
+    return;
+
+  StubNotificationUIManager notification_manager;
+
+  // Set up the internal state that FetchBitmaps() would have set.
+  notification1_->notification_manager_ = &notification_manager;
+
+  // Add two bitmaps to the queue for us to match up.
+  notification1_->AddBitmapToFetchQueue(GURL(kIconUrl1));
+  notification1_->AddBitmapToFetchQueue(GURL(kIconUrl2));
+  EXPECT_EQ(2, notification1_->active_fetcher_count_);
+
+  // Put some realistic looking bitmap data into the url_fetcher.
+  SkBitmap bitmap;
+
+  // Put a real bitmap into "bitmap".  2x2 bitmap of green 32 bit pixels.
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 2, 2);
+  bitmap.allocPixels();
+  bitmap.eraseColor(SK_ColorGREEN);
+
+  notification1_->OnFetchComplete(GURL(kIconUrl1), &bitmap);
+  EXPECT_EQ(1, notification1_->active_fetcher_count_);
+
+  // When we call OnFetchComplete on the second bitmap, show should be called.
+  notification1_->OnFetchComplete(GURL(kIconUrl2), &bitmap);
+  EXPECT_EQ(0, notification1_->active_fetcher_count_);
+
+  // Since we check Show() thoroughly in its own test, we only check cursorily.
   EXPECT_EQ(message_center::NOTIFICATION_TYPE_IMAGE,
             notification_manager.notification().type());
   EXPECT_EQ(kTitle1,
             UTF16ToUTF8(notification_manager.notification().title()));
   EXPECT_EQ(kText1,
-            UTF16ToUTF8(notification_manager.notification().body()));
-  EXPECT_EQ(kExpectedOriginUrl,
-            notification_manager.notification().origin_url().spec());
-  EXPECT_EQ(kIconUrl1, notification_manager.notification().icon_url().spec());
-  EXPECT_EQ(kKey1,
-            UTF16ToUTF8(notification_manager.notification().replace_id()));
-  const DictionaryValue* actual_fields =
-      notification_manager.notification().optional_fields();
+            UTF16ToUTF8(notification_manager.notification().message()));
 
-  // Check the optional fields of the notification.
-  // Make an optional fields struct like we expect, compare it with actual.
-  DictionaryValue expected_fields;
-  expected_fields.SetDouble(message_center::kTimestampKey, kFakeCreationTime);
-  expected_fields.SetInteger(message_center::kPriorityKey,
-                             kNotificationPriority);
-  expected_fields.SetString(message_center::kButtonOneTitleKey,
-                            kButtonOneTitle);
-  expected_fields.SetString(message_center::kButtonOneIconUrlKey,
-                            kButtonOneIconUrl);
-  expected_fields.SetString(message_center::kButtonTwoTitleKey,
-                            kButtonTwoTitle);
-  expected_fields.SetString(message_center::kButtonTwoIconUrlKey,
-                            kButtonTwoIconUrl);
+  // TODO(petewil): Check that the bitmap in the notification is what we expect.
+  // This fails today, the type info is different.
+  // EXPECT_TRUE(gfx::BitmapsAreEqual(
+  //     image, notification1_->GetAppIconBitmap()));
+}
 
-  // Fill the individual notification fields for a mutiple notification.
-  base::ListValue* items = new base::ListValue();
-  DictionaryValue* item1 = new DictionaryValue();
-  DictionaryValue* item2 = new DictionaryValue();
-  DictionaryValue* item3 = new DictionaryValue();
-  item1->SetString(message_center::kItemTitleKey,
-                   UTF8ToUTF16(kContainedTitle1));
-  item1->SetString(message_center::kItemMessageKey,
-                   UTF8ToUTF16(kContainedMessage1));
-  item2->SetString(message_center::kItemTitleKey,
-                   UTF8ToUTF16(kContainedTitle2));
-  item2->SetString(message_center::kItemMessageKey,
-                   UTF8ToUTF16(kContainedMessage2));
-  item3->SetString(message_center::kItemTitleKey,
-                   UTF8ToUTF16(kContainedTitle3));
-  item3->SetString(message_center::kItemMessageKey,
-                   UTF8ToUTF16(kContainedMessage3));
-  items->Append(item1);
-  items->Append(item2);
-  items->Append(item3);
-  expected_fields.Set(message_center::kItemsKey, items);
+TEST_F(SyncedNotificationTest, QueueBitmapFetchJobsTest) {
+  if (!UseRichNotifications())
+    return;
 
-  EXPECT_TRUE(expected_fields.Equals(actual_fields))
-      << "Expected: " << expected_fields
-      << ", but actual: " << *actual_fields;
+  StubNotificationUIManager notification_manager;
 
+  notification1_->QueueBitmapFetchJobs(&notification_manager, NULL, NULL);
+
+  // There should be 4 urls in the queue, icon, image, and two buttons.
+  EXPECT_EQ(4, notification1_->active_fetcher_count_);
 }
 
 // TODO(petewil): Add a test for a notification being read and or deleted.
+
+}  // namespace notifier

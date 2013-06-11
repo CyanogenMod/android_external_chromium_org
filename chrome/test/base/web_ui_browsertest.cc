@@ -12,7 +12,7 @@
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
 #include "chrome/browser/profiles/profile.h"
@@ -267,10 +267,7 @@ void WebUIBrowserTest::PreLoadJavascriptLibraries(
 void WebUIBrowserTest::BrowsePreload(const GURL& browse_to) {
   WebUIJsInjectionReadyObserver injection_observer(this);
   content::TestNavigationObserver navigation_observer(
-      content::Source<NavigationController>(
-          &browser()->tab_strip_model()->
-              GetActiveWebContents()->GetController()),
-      1);
+      browser()->tab_strip_model()->GetActiveWebContents());
   chrome::NavigateParams params(browser(), GURL(browse_to),
                                 content::PAGE_TRANSITION_TYPED);
   params.disposition = CURRENT_TAB;
@@ -343,7 +340,7 @@ class MockWebUIDataSource : public content::URLDataSource {
     std::string dummy_html = "<html><body>Dummy</body></html>";
     scoped_refptr<base::RefCountedString> response =
         base::RefCountedString::TakeString(&dummy_html);
-    callback.Run(response);
+    callback.Run(response.get());
   }
 
   virtual std::string GetMimeType(const std::string& path) const OVERRIDE {

@@ -10,7 +10,9 @@
 #include "base/command_line.h"
 #include "base/hash.h"
 #include "base/json/json_writer.h"
+#include "base/metrics/field_trial.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/spellchecker/word_trimmer.h"
 #include "chrome/common/chrome_switches.h"
@@ -29,6 +31,9 @@ namespace {
 
 // The default URL where feedback data is sent.
 const char kFeedbackServiceURL[] = "https://www.googleapis.com/rpc";
+
+// The minimum number of seconds between sending batches of feedback.
+const int kMinIntervalSeconds = 5;
 
 // Returns a hash of |session_start|, the current timestamp, and
 // |suggestion_index|.
@@ -107,9 +112,18 @@ FeedbackSender::FeedbackSender(net::URLRequestContextGetter* request_context,
       misspelling_counter_(0),
       session_start_(base::Time::Now()),
       feedback_service_url_(kFeedbackServiceURL) {
+  // This guard is temporary.
+  // TODO(rouslan): Remove the guard. http://crbug.com/247726
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableSpellingServiceFeedback) ||
+      base::FieldTrialList::FindFullName(kFeedbackFieldTrialName) !=
+          kFeedbackFieldTrialEnabledGroupName) {
+    return;
+  }
+
   // The command-line switch is for testing and temporary.
-  // TODO(rouslan): Remove the command-line switch when testing is complete by
-  // August 2013.
+  // TODO(rouslan): Remove the command-line switch when testing is complete.
+  // http://crbug.com/247726
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kSpellingServiceFeedbackUrl)) {
     feedback_service_url_ =
@@ -117,9 +131,21 @@ FeedbackSender::FeedbackSender(net::URLRequestContextGetter* request_context,
             switches::kSpellingServiceFeedbackUrl));
   }
 
+  int interval_seconds = chrome::spellcheck_common::kFeedbackIntervalSeconds;
+  // This command-line switch is for testing and temporary.
+  // TODO(rouslan): Remove the command-line switch when testing is complete.
+  // http://crbug.com/247726
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSpellingServiceFeedbackIntervalSeconds)) {
+    base::StringToInt(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                          switches::kSpellingServiceFeedbackIntervalSeconds),
+                      &interval_seconds);
+    if (interval_seconds < kMinIntervalSeconds)
+      interval_seconds = kMinIntervalSeconds;
+  }
+
   timer_.Start(FROM_HERE,
-               base::TimeDelta::FromSeconds(
-                   chrome::spellcheck_common::kFeedbackIntervalSeconds),
+               base::TimeDelta::FromSeconds(interval_seconds),
                this,
                &FeedbackSender::RequestDocumentMarkers);
 }
@@ -142,6 +168,17 @@ void FeedbackSender::AddedToDictionary(uint32 hash) {
     return;
   misspelling->action.type = SpellcheckAction::TYPE_ADD_TO_DICT;
   misspelling->timestamp = base::Time::Now();
+  const std::set<uint32>& misspellings = feedback_.FindMisspellings(
+      misspelling->context.substr(misspelling->location, misspelling->length));
+  for (std::set<uint32>::const_iterator it = misspellings.begin();
+       it != misspellings.end();
+       ++it) {
+    Misspelling* duplicate_misspelling = feedback_.GetMisspelling(*it);
+    if (duplicate_misspelling && !duplicate_misspelling->action.IsFinal()) {
+      duplicate_misspelling->action.type = SpellcheckAction::TYPE_ADD_TO_DICT;
+      duplicate_misspelling->timestamp = misspelling->timestamp;
+    }
+  }
 }
 
 void FeedbackSender::IgnoredSuggestions(uint32 hash) {
@@ -186,6 +223,10 @@ void FeedbackSender::OnSpellcheckResults(
     int renderer_process_id,
     const string16& text,
     const std::vector<SpellCheckMarker>& markers) {
+  // Don't collect feedback if not going to send it.
+  if (!timer_.IsRunning())
+    return;
+
   // Generate a map of marker offsets to marker hashes. This map helps to
   // efficiently lookup feedback data based on the position of the misspelling
   // in text

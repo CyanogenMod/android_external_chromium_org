@@ -8,7 +8,7 @@
 #include <functional>
 #include <utility>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/history/history_tab_helper.h"
 #include "chrome/browser/history/history_types.h"
@@ -702,6 +702,8 @@ Value* PrerenderContents::GetAsValue() const {
   base::TimeTicks current_time = base::TimeTicks::Now();
   base::TimeDelta duration = current_time - load_start_time_;
   dict_value->SetInteger("duration", duration.InSeconds());
+  dict_value->SetBoolean("is_loaded", prerender_contents_ &&
+                                      !prerender_contents_->IsLoading());
   return dict_value;
 }
 

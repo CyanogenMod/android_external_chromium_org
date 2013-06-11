@@ -58,21 +58,10 @@ class MESSAGE_CENTER_EXPORT NotificationList {
   void SetMessageCenterVisible(bool visible,
                                std::set<std::string>* updated_ids);
 
-  void AddNotification(NotificationType type,
-                       const std::string& id,
-                       const string16& title,
-                       const string16& message,
-                       const string16& display_source,
-                       const std::string& extension_id,
-                       const base::DictionaryValue* optional_fields,
-                       NotificationDelegate* delegate);
+  void AddNotification(scoped_ptr<Notification> notification);
 
   void UpdateNotificationMessage(const std::string& old_id,
-                                 const std::string& new_id,
-                                 const string16& title,
-                                 const string16& message,
-                                 const base::DictionaryValue* optional_fields,
-                                 NotificationDelegate* delegate);
+                                 scoped_ptr<Notification> new_notification);
 
   void RemoveNotification(const std::string& id);
 
@@ -105,6 +94,7 @@ class MESSAGE_CENTER_EXPORT NotificationList {
   // used to limit the number of notifications for the DEFAULT priority.
   // The returned list is sorted by timestamp, newer first.
   PopupNotifications GetPopupNotifications();
+  Notification* GetPopup(const std::string& id);
 
   // Marks the popups for the |priority| as shown.
   void MarkPopupsAsShown(int priority);
@@ -137,6 +127,7 @@ class MESSAGE_CENTER_EXPORT NotificationList {
   const Notifications& GetNotifications();
   size_t NotificationCount() const;
   size_t unread_count() const { return unread_count_; }
+  bool is_message_center_visible() const { return message_center_visible_; }
 
  private:
   friend class test::NotificationListTest;

@@ -24,7 +24,6 @@
 #include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/permissions/permission_message.h"
-#include "chrome/common/extensions/user_script.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/url_pattern.h"
@@ -100,18 +99,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     REINSTALL,
     UPGRADE,
     NEW_INSTALL
-  };
-
-  enum SyncType {
-    SYNC_TYPE_NONE = 0,
-    SYNC_TYPE_EXTENSION,
-    SYNC_TYPE_APP
-  };
-
-  // An NaCl module included in the extension.
-  struct NaClModuleInfo {
-    GURL url;
-    std::string mime_type;
   };
 
   // A base class for parsed manifest data that APIs want to store on
@@ -196,10 +183,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Returns true if the specified file is an extension.
   static bool IsExtension(const base::FilePath& file_name);
 
-  // Fills the |info| dictionary with basic information about the extension.
-  // |enabled| is injected for easier testing.
-  void GetBasicInfo(bool enabled, base::DictionaryValue* info) const;
-
   // See Type definition in Manifest.
   Manifest::Type GetType() const;
 
@@ -256,21 +239,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Whether context menu should be shown for page and browser actions.
   bool ShowConfigureContextMenus() const;
 
-  // Gets the fully resolved absolute launch URL.
-  GURL GetFullLaunchURL() const;
-
-  // Returns true if this extension updates itself using the extension
-  // gallery.
-  bool UpdatesFromGallery() const;
-
   // Returns true if this extension or app includes areas within |origin|.
   bool OverlapsWithOrigin(const GURL& origin) const;
-
-  // Returns the sync bucket to use for this extension.
-  SyncType GetSyncType() const;
-
-  // Returns true if the extension should be synced.
-  bool IsSyncable() const;
 
   // Returns true if the extension requires a valid ordinal for sorting, e.g.,
   // for displaying in a launcher or new tab page.
@@ -314,9 +284,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool converted_from_user_script() const {
     return converted_from_user_script_;
   }
-  const std::vector<NaClModuleInfo>& nacl_modules() const {
-    return nacl_modules_;
-  }
   PermissionsData* permissions_data() { return permissions_data_.get(); }
   const PermissionsData* permissions_data() const {
     return permissions_data_.get();
@@ -352,15 +319,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool is_legacy_packaged_app() const;
   bool is_extension() const;
   bool can_be_incognito_enabled() const;
+
   void AddWebExtentPattern(const URLPattern& pattern);
   const URLPatternSet& web_extent() const { return extent_; }
-  const std::string& launch_local_path() const { return launch_local_path_; }
-  const std::string& launch_web_url() const { return launch_web_url_; }
-  extension_misc::LaunchContainer launch_container() const {
-    return launch_container_;
-  }
-  int launch_width() const { return launch_width_; }
-  int launch_height() const { return launch_height_; }
 
   // Theme-related.
   bool is_theme() const;
@@ -403,29 +364,12 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
                   const char* list_error,
                   const char* value_error,
                   string16* error);
-  bool LoadLaunchContainer(string16* error);
-  bool LoadLaunchURL(string16* error);
 
   bool LoadSharedFeatures(string16* error);
   bool LoadDescription(string16* error);
   bool LoadManifestVersion(string16* error);
-  bool LoadNaClModules(string16* error);
-
-  // Returns true if the extension has more than one "UI surface". For example,
-  // an extension that has a browser action and a page action.
-  bool HasMultipleUISurfaces() const;
-
-  // Updates the launch URL and extents for the extension using the given
-  // |override_url|.
-  void OverrideLaunchUrl(const GURL& override_url);
 
   bool CheckMinimumChromeVersion(string16* error) const;
-
-  // Check that platform app features are valid. Called after InitFromValue.
-  bool CheckPlatformAppFeatures(string16* error) const;
-
-  // Check that features don't conflict. Called after InitFromValue.
-  bool CheckConflictingFeatures(string16* error) const;
 
   // The extension's human-readable name. Name is used for display purpose. It
   // might be wrapped with unicode bidi control characters so that it is
@@ -469,9 +413,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // different UI if so).
   bool converted_from_user_script_;
 
-  // Optional list of NaCl modules and associated properties.
-  std::vector<NaClModuleInfo> nacl_modules_;
-
   // The public key used to sign the contents of the crx package.
   std::string public_key_;
 
@@ -488,25 +429,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // initialization happens from the same thread (this can happen when certain
   // parts of the initialization process need information from previous parts).
   base::ThreadChecker thread_checker_;
-
-  // The local path inside the extension to use with the launcher.
-  std::string launch_local_path_;
-
-  // A web url to use with the launcher. Note that this might be relative or
-  // absolute. If relative, it is relative to web_origin.
-  std::string launch_web_url_;
-
-  // The window type that an app's manifest specifies to launch into.
-  // This is not always the window type an app will open into, because
-  // users can override the way each app launches.  See
-  // ExtensionPrefs::GetLaunchContainer(), which looks at a per-app pref
-  // to decide what container an app will launch in.
-  extension_misc::LaunchContainer launch_container_;
-
-  // The default size of the container when launching. Only respected for
-  // containers like panels and windows.
-  int launch_width_;
-  int launch_height_;
 
   // Should this app be shown in the app launcher.
   bool display_in_launcher_;

@@ -45,7 +45,10 @@ class APIAction : public Action {
   explicit APIAction(const sql::Statement& s);
 
   // Record the action in the database.
-  virtual void Record(sql::Connection* db) OVERRIDE;
+  virtual bool Record(sql::Connection* db) OVERRIDE;
+
+  virtual scoped_ptr<api::activity_log_private::ExtensionActivity>
+      ConvertToExtensionActivity() OVERRIDE;
 
   // Used to associate tab IDs with URLs. It will swap out the int in args with
   // a URL as a string. If the tab is in incognito mode, we leave it alone as
@@ -76,6 +79,6 @@ class APIAction : public Action {
   DISALLOW_COPY_AND_ASSIGN(APIAction);
 };
 
-}  // namespace
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_ACTIVITY_LOG_API_ACTIONS_H_

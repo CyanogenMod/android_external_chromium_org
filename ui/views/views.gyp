@@ -24,10 +24,10 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../../build/temp_gyp/googleurl.gyp:googleurl',
         '../../skia/skia.gyp:skia',
         '../../third_party/icu/icu.gyp:icui18n',
         '../../third_party/icu/icu.gyp:icuuc',
+        '../../url/url.gyp:url_lib',
         '../base/strings/ui_strings.gyp:ui_strings',
         '../compositor/compositor.gyp:compositor',
         '../native_theme/native_theme.gyp:native_theme',
@@ -69,6 +69,8 @@
         'color_constants.cc',
         'color_constants.h',
         'context_menu_controller.h',
+        'controls/button/blue_button.cc',
+        'controls/button/blue_button.h',
         'controls/button/button.cc',
         'controls/button/button.h',
         'controls/button/button_dropdown.cc',
@@ -328,6 +330,8 @@
         'view.h',
         'view_constants.cc',
         'view_constants.h',
+        'view_constants_aura.cc',
+        'view_constants_aura.h',
         'view_aura.cc',
         'view_model.cc',
         'view_model.h',
@@ -421,6 +425,8 @@
         'widget/widget_message_filter.cc',
         'widget/widget_message_filter.h',
         'widget/widget_observer.h',
+        'widget/window_reorderer.cc',
+        'widget/window_reorderer.h',
         'win/fullscreen_handler.cc',
         'win/fullscreen_handler.h',
         'win/hwnd_message_handler.cc',
@@ -493,6 +499,8 @@
           'sources/': [
             ['exclude', 'corewm'],
             ['exclude', 'widget/desktop_aura'],
+            ['exclude', 'widget/window_reorderer.h'],
+            ['exclude', 'widget/window_reorderer.cc'],
           ],
           'sources!': [
             'widget/native_widget_aura_window_observer.cc',
@@ -651,12 +659,12 @@
         #                 factored out. (for some reason it pulls in a bunch
         #                 unrelated things like v8, sqlite nss...).
         '../../chrome/chrome_resources.gyp:packed_resources',
-        '../../build/temp_gyp/googleurl.gyp:googleurl',
         '../../skia/skia.gyp:skia',
         '../../testing/gmock.gyp:gmock',
         '../../testing/gtest.gyp:gtest',
         '../../third_party/icu/icu.gyp:icui18n',
         '../../third_party/icu/icu.gyp:icuuc',
+        '../../url/url.gyp:url_lib',
         '../base/strings/ui_strings.gyp:ui_strings',
         '../compositor/compositor.gyp:compositor',
         '../compositor/compositor.gyp:compositor_test_support',
@@ -706,6 +714,7 @@
         'corewm/tooltip_controller_unittest.cc',
         'corewm/visibility_controller_unittest.cc',
         'corewm/window_animations_unittest.cc',
+        'corewm/window_util_unittest.cc',
         'focus/focus_manager_test.h',
         'focus/focus_manager_test.cc',
         'focus/focus_manager_unittest.cc',
@@ -718,11 +727,13 @@
         'view_model_utils_unittest.cc',
         'view_unittest.cc',
         'window/dialog_client_view_unittest.cc',
+        'window/dialog_delegate_unittest.cc',
         'widget/desktop_aura/desktop_capture_client_unittest.cc',
         'widget/native_widget_aura_unittest.cc',
         'widget/native_widget_unittest.cc',
         'widget/native_widget_win_unittest.cc',
         'widget/widget_unittest.cc',
+        'widget/window_reorderer_unittest.cc',
         'run_all_unittests.cc',
       ],
       'conditions': [
@@ -751,6 +762,12 @@
             '../../base/allocator/allocator.gyp:allocator',
           ],
         }],
+        ['OS=="linux" and linux_use_tcmalloc==1', {
+           # See http://crbug.com/162998#c4 for why this is needed.
+          'dependencies': [
+            '../../base/allocator/allocator.gyp:allocator',
+          ],
+        }],
         [ 'use_aura==1', {
           'dependencies': [
             '../aura/aura.gyp:aura_test_support',
@@ -766,6 +783,7 @@
           'sources/': [
             ['exclude', 'corewm'],
             ['exclude', 'widget/desktop_aura'],
+            ['exclude', 'widget/window_reorderer_unittest.cc']
           ],
         }],
       ],
@@ -863,12 +881,12 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
-        '../../build/temp_gyp/googleurl.gyp:googleurl',
         '../../chrome/chrome_resources.gyp:packed_resources',
         '../../content/content.gyp:content',
         '../../skia/skia.gyp:skia',
         '../../third_party/icu/icu.gyp:icui18n',
         '../../third_party/icu/icu.gyp:icuuc',
+        '../../url/url.gyp:url_lib',
         '../ui.gyp:ui',
         '../ui.gyp:ui_resources',
         'controls/webview/webview.gyp:webview',
@@ -998,7 +1016,6 @@
         ['use_aura==1', {
           'dependencies': [
             '../compositor/compositor.gyp:compositor',
-            '../compositor/compositor.gyp:compositor_test_support',
           ],
         }],
         ['OS=="win"', {

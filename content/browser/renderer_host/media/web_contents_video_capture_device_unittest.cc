@@ -22,7 +22,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "content/test/test_web_contents.h"
 #include "media/base/video_util.h"
@@ -175,7 +175,8 @@ class CaptureTestView : public TestRenderWidgetHostView {
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback) OVERRIDE {
     SkColor c = ConvertRgbToYuv(controller_->GetSolidColor());
-    media::FillYUV(target, SkColorGetR(c), SkColorGetG(c), SkColorGetB(c));
+    media::FillYUV(
+        target.get(), SkColorGetR(c), SkColorGetG(c), SkColorGetB(c));
     callback.Run(true);
     controller_->SignalCopy();
   }
@@ -197,9 +198,11 @@ class CaptureTestView : public TestRenderWidgetHostView {
     if (subscriber_ && subscriber_->ShouldCaptureFrame(present_time,
                                                        &target, &callback)) {
       SkColor c = ConvertRgbToYuv(controller_->GetSolidColor());
-      media::FillYUV(target, SkColorGetR(c), SkColorGetG(c), SkColorGetB(c));
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-          base::Bind(callback, present_time, true));
+      media::FillYUV(
+          target.get(), SkColorGetR(c), SkColorGetG(c), SkColorGetB(c));
+      BrowserThread::PostTask(BrowserThread::UI,
+                              FROM_HERE,
+                              base::Bind(callback, present_time, true));
       controller_->SignalCopy();
     }
   }
@@ -227,10 +230,11 @@ class CaptureTestRenderViewHost : public TestRenderViewHost {
                             RenderViewHostDelegate* delegate,
                             RenderWidgetHostDelegate* widget_delegate,
                             int routing_id,
+                            int main_frame_routing_id,
                             bool swapped_out,
                             CaptureTestSourceController* controller)
       : TestRenderViewHost(instance, delegate, widget_delegate, routing_id,
-                           swapped_out),
+                           main_frame_routing_id, swapped_out),
         controller_(controller) {
     // Override the default view installed by TestRenderViewHost; we need
     // our special subclass which has mocked-out tab capture support.
@@ -287,10 +291,12 @@ class CaptureTestRenderViewHostFactory : public RenderViewHostFactory {
       RenderViewHostDelegate* delegate,
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
+      int main_frame_routing_id,
       bool swapped_out,
       SessionStorageNamespace* session_storage_namespace) OVERRIDE {
     return new CaptureTestRenderViewHost(instance, delegate, widget_delegate,
-                                         routing_id, swapped_out, controller_);
+                                         routing_id, main_frame_routing_id,
+                                         swapped_out, controller_);
   }
  private:
   CaptureTestSourceController* controller_;
@@ -411,8 +417,8 @@ class StubConsumer : public media::VideoCaptureDevice::EventHandler {
 // Test harness that sets up a minimal environment with necessary stubs.
 class WebContentsVideoCaptureDeviceTest : public testing::Test {
  public:
-  WebContentsVideoCaptureDeviceTest() {}
-
+  // This is public because C++ method pointer scoping rules are silly and make
+  // this hard to use with Bind().
   void ResetWebContents() {
     web_contents_.reset();
   }
@@ -427,10 +433,6 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
     // custom RenderViewHostFactory, or else we implant some kind of delegated
     // CopyFromBackingStore functionality into TestRenderViewHost itself.
 
-    // The main thread will serve as the UI thread as well as the test thread.
-    // We'll manually pump the run loop at appropriate times in the test.
-    ui_thread_.reset(new TestBrowserThread(BrowserThread::UI, &message_loop_));
-
     render_process_host_factory_.reset(new MockRenderProcessHostFactory());
     // Create our (self-registering) RVH factory, so that when we create a
     // WebContents, it in turn creates CaptureTestRenderViewHosts.
@@ -441,10 +443,10 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
 
     scoped_refptr<SiteInstance> site_instance =
         SiteInstance::Create(browser_context_.get());
-    static_cast<SiteInstanceImpl*>(site_instance.get())->
-        set_render_process_host_factory(render_process_host_factory_.get());
+    SiteInstanceImpl::set_render_process_host_factory(
+        render_process_host_factory_.get());
     web_contents_.reset(
-        TestWebContents::Create(browser_context_.get(), site_instance));
+        TestWebContents::Create(browser_context_.get(), site_instance.get()));
 
     // This is actually a CaptureTestRenderViewHost.
     RenderWidgetHostImpl* rwh =
@@ -457,7 +459,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
 
     device_.reset(WebContentsVideoCaptureDevice::Create(device_id));
 
-    content::RunAllPendingInMessageLoop();
+    base::RunLoop().RunUntilIdle();
   }
 
   virtual void TearDown() {
@@ -471,14 +473,15 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
       device_.reset();
     }
 
-    content::RunAllPendingInMessageLoop();
+    base::RunLoop().RunUntilIdle();
 
     // Destroy the browser objects.
     web_contents_.reset();
     browser_context_.reset();
 
-    content::RunAllPendingInMessageLoop();
+    base::RunLoop().RunUntilIdle();
 
+    SiteInstanceImpl::set_render_process_host_factory(NULL);
     render_view_host_factory_.reset();
     render_process_host_factory_.reset();
   }
@@ -512,11 +515,6 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   // The controller controls which pixel patterns to produce.
   CaptureTestSourceController controller_;
 
-  // We run the UI message loop on the main thread. The capture device
-  // will also spin up its own threads.
-  base::MessageLoopForUI message_loop_;
-  scoped_ptr<TestBrowserThread> ui_thread_;
-
   // Self-registering RenderProcessHostFactory.
   scoped_ptr<MockRenderProcessHostFactory> render_process_host_factory_;
 
@@ -531,7 +529,7 @@ class WebContentsVideoCaptureDeviceTest : public testing::Test {
   // Finally, the WebContentsVideoCaptureDevice under test.
   scoped_ptr<media::VideoCaptureDevice> device_;
 
-  DISALLOW_COPY_AND_ASSIGN(WebContentsVideoCaptureDeviceTest);
+  TestBrowserThreadBundle thread_bundle_;
 };
 
 TEST_F(WebContentsVideoCaptureDeviceTest, InvalidInitialWebContentsError) {
@@ -557,7 +555,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, WebContentsDestroyed) {
   SimulateDrawEvent();
   ASSERT_NO_FATAL_FAILURE(consumer()->WaitForNextColor(SK_ColorRED));
 
-  content::RunAllPendingInMessageLoop();
+  base::RunLoop().RunUntilIdle();
 
   // Post a task to close the tab. We should see an error reported to the
   // consumer.
@@ -581,7 +579,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest,
   // DestroyCaptureMachineOnUIThread() tasks pending on the current (UI) message
   // loop. These should both succeed without crashing, and the machine should
   // wind up in the idle state.
-  content::RunAllPendingInMessageLoop();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(WebContentsVideoCaptureDeviceTest, StopWithRendererWorkToDo) {
@@ -592,7 +590,8 @@ TEST_F(WebContentsVideoCaptureDeviceTest, StopWithRendererWorkToDo) {
                      consumer());
   device()->Start();
   // Make a point of not running the UI messageloop here.
-  content::RunAllPendingInMessageLoop();
+  // TODO(ajwong): Why do we care?
+  base::RunLoop().RunUntilIdle();
 
   for (int i = 0; i < 10; ++i)
     SimulateDrawEvent();
@@ -604,14 +603,14 @@ TEST_F(WebContentsVideoCaptureDeviceTest, StopWithRendererWorkToDo) {
   // loop. These should both succeed without crashing, and the machine should
   // wind up in the idle state.
   ASSERT_FALSE(consumer()->HasError());
-  content::RunAllPendingInMessageLoop();
+  base::RunLoop().RunUntilIdle();
   ASSERT_FALSE(consumer()->HasError());
 }
 
 TEST_F(WebContentsVideoCaptureDeviceTest, DeviceRestart) {
   device()->Allocate(kTestWidth, kTestHeight, kTestFramesPerSecond, consumer());
   device()->Start();
-  content::RunAllPendingInMessageLoop();
+  base::RunLoop().RunUntilIdle();
   source()->SetSolidColor(SK_ColorRED);
   SimulateDrawEvent();
   SimulateDrawEvent();
@@ -626,7 +625,7 @@ TEST_F(WebContentsVideoCaptureDeviceTest, DeviceRestart) {
   // Device is stopped, but content can still be animating.
   SimulateDrawEvent();
   SimulateDrawEvent();
-  content::RunAllPendingInMessageLoop();
+  base::RunLoop().RunUntilIdle();
 
   device()->Start();
   source()->SetSolidColor(SK_ColorBLUE);

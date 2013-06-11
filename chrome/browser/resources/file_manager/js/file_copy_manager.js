@@ -87,21 +87,24 @@ FileCopyManager.Task = function(targetDirEntry, opt_zipBaseDirEntry) {
  */
 FileCopyManager.Task.prototype.setEntries = function(entries, callback) {
   var self = this;
-
-  var onEntriesRecursed = function(result) {
-    // Deeper directory is moved earier.
-    self.pendingDirectories = result.dirEntries.sort(
-        function(a, b) { return a.fullPath < b.fullPath; });
-    self.pendingFiles = result.fileEntries;
-    self.pendingBytes = result.fileBytes;
-    callback();
-  };
-
   this.originalEntries = entries;
   // When moving directories, FileEntry.moveTo() is used if both source
   // and target are on Drive. There is no need to recurse into directories.
   var recurse = !this.move;
-  util.recurseAndResolveEntries(entries, recurse, onEntriesRecursed);
+  util.recurseAndResolveEntries(entries, recurse, function(result) {
+    if (self.move) {
+      // When moving, deeper directory is moved earier.
+      self.pendingDirectories = result.dirEntries.sort(
+          function(a, b) { return a.fullPath < b.fullPath; });
+    } else {
+      // When copying, upper directory is copied earier.
+      self.pendingDirectories = result.dirEntries.sort(
+          function(a, b) { return a.fullPath > b.fullPath; });
+    }
+    self.pendingFiles = result.fileEntries;
+    self.pendingBytes = result.fileBytes;
+    callback();
+  });
 };
 
 /**
@@ -221,7 +224,7 @@ FileCopyManager.prototype.initialize = function(callback) {
     callback();
     return;
   }
-  chrome.fileBrowserPrivate.requestLocalFileSystem(function(filesystem) {
+  chrome.fileBrowserPrivate.requestFileSystem(function(filesystem) {
     this.root_ = filesystem.root;
     callback();
   }.bind(this));
@@ -467,58 +470,66 @@ FileCopyManager.prototype.paste = function(files, directories, isCut, isOnDrive,
                                            targetPath, targetOnDrive) {
   var self = this;
   var entries = [];
-
-  var onPathError = function(err) {
-    self.sendProgressEvent_('ERROR',
-                            new FileCopyManager.Error('FILESYSTEM_ERROR', err));
-  };
-
-  var onTargetEntryFound = function(targetEntry) {
-    self.queueCopy_(targetEntry,
-                    entries,
-                    isCut,
-                    isOnDrive,
-                    targetOnDrive);
-  };
-
-  var onComplete = function() {
-    self.root_.getDirectory(targetPath, {},
-                            onTargetEntryFound, onPathError);
-  };
-
   var added = 0;
-  var onEntryFound = function(entry) {
-    // When getDirectories/getFiles finish, they call addEntry with null.
-    // We don't want to add null to our entries.
-    if (entry != null) {
+  var total;
+
+  var steps = {
+    start: function() {
+      // Filter entries.
+      var entryFilterFunc = function(entry) {
+        if (entry == '')
+          return false;
+        if (isCut && entry.replace(/\/[^\/]+$/, '') == targetPath)
+          // Moving to the same directory is a redundant operation.
+          return false;
+        return true;
+      };
+      directories = directories ? directories.filter(entryFilterFunc) : [];
+      files = files ? files.filter(entryFilterFunc) : [];
+
+      // Check the number of filtered entries.
+      total = directories.length + files.length;
+      if (total == 0)
+        return;
+
+      // Retrieve entries.
+      util.getDirectories(self.root_, {create: false}, directories,
+                          steps.onEntryFound, steps.onPathError);
+      util.getFiles(self.root_, {create: false}, files,
+                    steps.onEntryFound, steps.onPathError);
+    },
+
+    onEntryFound: function(entry) {
+      // When getDirectories/getFiles finish, they call addEntry with null.
+      // We don't want to add null to our entries.
+      if (entry == null)
+        return;
       entries.push(entry);
       added++;
       if (added == total)
-        onComplete();
+        steps.onSourceEntriesFound();
+    },
+
+    onSourceEntriesFound: function() {
+      self.root_.getDirectory(targetPath, {},
+                              steps.onTargetEntryFound, steps.onPathError);
+    },
+
+    onTargetEntryFound: function(targetEntry) {
+      self.queueCopy_(targetEntry,
+                      entries,
+                      isCut,
+                      isOnDrive,
+                      targetOnDrive);
+    },
+
+    onPathError: function(err) {
+      var myError = new FileCopyManager.Error('FILESYSTEM_ERROR', err);
+      self.sendProgressEvent_('ERROR', myError);
     }
   };
 
-  var entryFilterFunc = function(entry) {
-    if (entry == '') {
-      return false;
-    } else if (isCut && entry.replace(/\/[^\/]+$/, '') == targetPath) {
-      // Moving to the same directory is a redundant operation
-      return false;
-    } else {
-      return true;
-    }
-  };
-  directories = directories ? directories.filter(entryFilterFunc) : [];
-  files = files ? files.filter(entryFilterFunc) : [];
-
-  var total = directories.length + files.length;
-  if (total == 0)
-    return;
-
-  util.getDirectories(self.root_, {create: false}, directories, onEntryFound,
-                      onPathError);
-  util.getFiles(self.root_, {create: false}, files, onEntryFound,
-                onPathError);
+  steps.start();
 };
 
 /**
@@ -1200,13 +1211,19 @@ FileCopyManager.prototype.serviceAllDeleteTasks_ = function() {
     // big task logically, so there is only one BEGIN/SUCCESS event pair for
     // these continuous tasks.
     self.sendDeleteEvent_(self.deleteTasks_[0], 'PROGRESS');
-    self.serviceDeleteTask_(self.deleteTasks_[0], onTaskSuccess);
+    self.serviceDeleteTask_(self.deleteTasks_[0], onTaskSuccess, onTaskFailure);
+  };
+
+  var onTaskFailure = function(task) {
+    self.deleteTasks_ = [];
+    self.sendDeleteEvent_(task, 'ERROR');
+    self.maybeScheduleCloseBackgroundPage_();
   };
 
   // If the queue size is 1 after pushing our task, it was empty before,
   // so we need to kick off queue processing and dispatch BEGIN event.
   this.sendDeleteEvent_(this.deleteTasks_[0], 'BEGIN');
-  this.serviceDeleteTask_(this.deleteTasks_[0], onTaskSuccess);
+  this.serviceDeleteTask_(this.deleteTasks_[0], onTaskSuccess, onTaskFailure);
 };
 
 /**
@@ -1215,15 +1232,22 @@ FileCopyManager.prototype.serviceAllDeleteTasks_ = function() {
  * @param {Object} task The delete task (see deleteEntries function).
  * @param {function(Object)} onComplete Completion callback with the task
  *     as an argument.
+ * @param {function(Object)} onFailure Failure callback with the task as an
+ *     argument.
  * @private
  */
 FileCopyManager.prototype.serviceDeleteTask_ = function(
-    task, onComplete) {
+    task, onComplete, onFailure) {
   var downcount = task.entries.length;
 
   var onEntryComplete = function() {
     if (--downcount == 0)
       onComplete(task);
+  }.bind(this);
+
+  var onEntryFailure = function() {
+    if (--downcount == 0)
+      onFailure(task);
   }.bind(this);
 
   if (downcount == 0)
@@ -1234,7 +1258,7 @@ FileCopyManager.prototype.serviceDeleteTask_ = function(
     util.removeFileOrDirectory(
         entry,
         onEntryComplete,
-        onEntryComplete); // We ignore error, because we can't do anything here.
+        onEntryFailure);
   }
 };
 

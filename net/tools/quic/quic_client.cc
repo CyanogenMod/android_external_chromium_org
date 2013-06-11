@@ -58,7 +58,7 @@ QuicClient::QuicClient(IPEndPoint server_address,
 QuicClient::~QuicClient() {
   if (connected()) {
     session()->connection()->SendConnectionClosePacket(
-        QUIC_PEER_GOING_AWAY, string());
+        QUIC_PEER_GOING_AWAY, "");
   }
 }
 
@@ -172,10 +172,11 @@ void QuicClient::Disconnect() {
   initialized_ = false;
 }
 
-void QuicClient::SendRequestsAndWaitForResponse(int argc, char *argv[]) {
-  for (int i = 1; i < argc; ++i) {
+void QuicClient::SendRequestsAndWaitForResponse(
+    const CommandLine::StringVector& args) {
+  for (uint32_t i = 0; i < args.size(); i++) {
     BalsaHeaders headers;
-    headers.SetRequestFirstlineFromStringPieces("GET", argv[i], "HTTP/1.1");
+    headers.SetRequestFirstlineFromStringPieces("GET", args[i], "HTTP/1.1");
     CreateReliableClientStream()->SendRequest(headers, "", true);
   }
 
@@ -183,7 +184,9 @@ void QuicClient::SendRequestsAndWaitForResponse(int argc, char *argv[]) {
 }
 
 QuicReliableClientStream* QuicClient::CreateReliableClientStream() {
-  DCHECK(connected());
+  if (!connected()) {
+    return NULL;
+  }
 
   return session_->CreateOutgoingReliableStream();
 }

@@ -7,7 +7,7 @@
 #include <iomanip>
 
 #include "base/json/string_escape.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "sync/syncable/blob.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/syncable_base_transaction.h"
@@ -106,6 +106,10 @@ Id Entry::GetFirstChildId() const {
 
 void Entry::GetChildHandles(std::vector<int64>* result) const {
   dir()->GetChildHandlesById(basetrans_, Get(ID), result);
+}
+
+int Entry::GetTotalNodeCount() const {
+  return dir()->GetTotalNodeCount(basetrans_, kernel_);
 }
 
 bool Entry::ShouldMaintainPosition() const {

@@ -4,8 +4,7 @@
 
 #include "chrome/test/chromedriver/chrome/navigation_tracker.h"
 
-#include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/devtools_client.h"
 #include "chrome/test/chromedriver/chrome/status.h"
@@ -78,9 +77,9 @@ Status NavigationTracker::OnConnected(DevToolsClient* client) {
   return client_->SendCommand("Page.enable", empty_params);
 }
 
-void NavigationTracker::OnEvent(DevToolsClient* client,
-                                const std::string& method,
-                                const base::DictionaryValue& params) {
+Status NavigationTracker::OnEvent(DevToolsClient* client,
+                                  const std::string& method,
+                                  const base::DictionaryValue& params) {
   // Chrome does not send Page.frameStoppedLoading until all frames have
   // run their onLoad handlers (including frames created during the handlers).
   // When it does, it only sends one stopped event for all frames.
@@ -90,25 +89,22 @@ void NavigationTracker::OnEvent(DevToolsClient* client,
     loading_state_ = kNotLoading;
   } else if (method == "Page.frameScheduledNavigation") {
     double delay;
-    if (!params.GetDouble("delay", &delay)) {
-      LOG(ERROR) << "missing or invalid 'delay'";
-      return;
-    }
+    if (!params.GetDouble("delay", &delay))
+      return Status(kUnknownError, "missing or invalid 'delay'");
+
     std::string frame_id;
-    if (!params.GetString("frameId", &frame_id)) {
-      LOG(ERROR) << "missing or invalid 'frameId'";
-      return;
-    }
+    if (!params.GetString("frameId", &frame_id))
+      return Status(kUnknownError, "missing or invalid 'frameId'");
+
     // WebDriver spec says to ignore redirects over 1s.
     if (delay > 1)
-      return;
+      return Status(kOk);
     scheduled_frame_set_.insert(frame_id);
   } else if (method == "Page.frameClearedScheduledNavigation") {
     std::string frame_id;
-    if (!params.GetString("frameId", &frame_id)) {
-      LOG(ERROR) << "missing or invalid 'frameId'";
-      return;
-    }
+    if (!params.GetString("frameId", &frame_id))
+      return Status(kUnknownError, "missing or invalid 'frameId'");
+
     scheduled_frame_set_.erase(frame_id);
   } else if (method == "Page.frameNavigated") {
     // Note: in some cases Page.frameNavigated may be received for subframes
@@ -125,11 +121,45 @@ void NavigationTracker::OnEvent(DevToolsClient* client,
     loading_state_ = kNotLoading;
     scheduled_frame_set_.clear();
   }
+  return Status(kOk);
 }
 
 Status NavigationTracker::OnCommandSuccess(DevToolsClient* client,
                                            const std::string& method) {
-  if (method == "Page.navigate")
-    loading_state_ = kLoading;
+  if (method == "Page.navigate" && loading_state_ != kLoading) {
+    // At this point the browser has initiated the navigation, but besides that,
+    // it is unknown what will happen.
+    //
+    // There are a few cases (perhaps more):
+    // 1 The RenderViewHost has already queued ViewMsg_Navigate and loading
+    //   will start shortly.
+    // 2 The RenderViewHost has already queued ViewMsg_Navigate and loading
+    //   will never start because it is just an in-page fragment navigation.
+    // 3 The RenderViewHost is suspended and hasn't queued ViewMsg_Navigate
+    //   yet. This happens for cross-site navigations. The RenderViewHost
+    //   will not queue ViewMsg_Navigate until it is ready to unload the
+    //   previous page (after running unload handlers and such).
+    //
+    // To determine whether a load is expected, do a round trip to the
+    // renderer to ask what the URL is.
+    // If case #1, by the time the command returns, the frame started to load
+    // event will also have been received, since the DevTools command will
+    // be queued behind ViewMsg_Navigate.
+    // If case #2, by the time the command returns, the navigation will
+    // have already happened, although no frame start/stop events will have
+    // been received.
+    // If case #3, the URL will be blank if the navigation hasn't been started
+    // yet. In that case, expect a load to happen in the future.
+    base::DictionaryValue params;
+    params.SetString("expression", "document.URL");
+    scoped_ptr<base::DictionaryValue> result;
+    Status status = client_->SendCommandAndGetResult(
+        "Runtime.evaluate", params, &result);
+    std::string url;
+    if (status.IsError() || !result->GetString("result.value", &url))
+      return Status(kUnknownError, "cannot determine loading status", status);
+    if (url.empty())
+      loading_state_ = kLoading;
+  }
   return Status(kOk);
 }

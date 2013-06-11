@@ -11,13 +11,14 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/web_application_info.h"
@@ -130,7 +131,7 @@ TEST(ExtensionFromWebApp, Basic) {
   EXPECT_EQ("1978.12.11.0", extension->version()->GetString());
   EXPECT_EQ(UTF16ToUTF8(web_app.title), extension->name());
   EXPECT_EQ(UTF16ToUTF8(web_app.description), extension->description());
-  EXPECT_EQ(web_app.app_url, extension->GetFullLaunchURL());
+  EXPECT_EQ(web_app.app_url, AppLaunchInfo::GetFullLaunchURL(extension));
   EXPECT_EQ(2u, extension->GetActivePermissions()->apis().size());
   EXPECT_TRUE(extension->HasAPIPermission("geolocation"));
   EXPECT_TRUE(extension->HasAPIPermission("notifications"));
@@ -138,13 +139,16 @@ TEST(ExtensionFromWebApp, Basic) {
   EXPECT_EQ("http://aaronboodman.com/gearpad/*",
             extension->web_extent().patterns().begin()->GetAsString());
 
-  EXPECT_EQ(web_app.icons.size(), IconsInfo::GetIcons(extension).map().size());
+  EXPECT_EQ(web_app.icons.size(),
+            IconsInfo::GetIcons(extension.get()).map().size());
   for (size_t i = 0; i < web_app.icons.size(); ++i) {
     EXPECT_EQ(base::StringPrintf("icons/%i.png", web_app.icons[i].width),
-              IconsInfo::GetIcons(extension).Get(
+              IconsInfo::GetIcons(extension.get()).Get(
                   web_app.icons[i].width, ExtensionIconSet::MATCH_EXACTLY));
-    ExtensionResource resource = IconsInfo::GetIconResource(
-        extension, web_app.icons[i].width, ExtensionIconSet::MATCH_EXACTLY);
+    ExtensionResource resource =
+        IconsInfo::GetIconResource(extension.get(),
+                                   web_app.icons[i].width,
+                                   ExtensionIconSet::MATCH_EXACTLY);
     ASSERT_TRUE(!resource.empty());
     EXPECT_TRUE(file_util::PathExists(resource.GetFilePath()));
   }
@@ -177,8 +181,8 @@ TEST(ExtensionFromWebApp, Minimal) {
   EXPECT_EQ("1978.12.11.0", extension->version()->GetString());
   EXPECT_EQ(UTF16ToUTF8(web_app.title), extension->name());
   EXPECT_EQ("", extension->description());
-  EXPECT_EQ(web_app.app_url, extension->GetFullLaunchURL());
-  EXPECT_EQ(0u, IconsInfo::GetIcons(extension).map().size());
+  EXPECT_EQ(web_app.app_url, AppLaunchInfo::GetFullLaunchURL(extension));
+  EXPECT_EQ(0u, IconsInfo::GetIcons(extension.get()).map().size());
   EXPECT_EQ(0u, extension->GetActivePermissions()->apis().size());
   ASSERT_EQ(1u, extension->web_extent().patterns().size());
   EXPECT_EQ("*://aaronboodman.com/*",

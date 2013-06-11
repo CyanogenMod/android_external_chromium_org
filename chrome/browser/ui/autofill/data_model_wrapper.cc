@@ -5,7 +5,7 @@
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
 
 #include "base/callback.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_models.h"
 #include "components/autofill/browser/autofill_data_model.h"
@@ -14,9 +14,9 @@
 #include "components/autofill/browser/credit_card.h"
 #include "components/autofill/browser/form_structure.h"
 #include "components/autofill/browser/validation.h"
-#include "components/autofill/browser/wallet/full_wallet.h"
-#include "components/autofill/browser/wallet/wallet_address.h"
-#include "components/autofill/browser/wallet/wallet_items.h"
+#include "components/autofill/content/browser/wallet/full_wallet.h"
+#include "components/autofill/content/browser/wallet/wallet_address.h"
+#include "components/autofill/content/browser/wallet/wallet_items.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 
@@ -37,19 +37,22 @@ string16 DataModelWrapper::GetDisplayText() {
   return label;
 }
 
-void DataModelWrapper::FillFormStructure(
+bool DataModelWrapper::FillFormStructure(
     const DetailInputs& inputs,
     const InputFieldComparator& compare,
-    FormStructure* form_structure) {
+    FormStructure* form_structure) const {
+  bool filled_something = false;
   for (size_t i = 0; i < form_structure->field_count(); ++i) {
     AutofillField* field = form_structure->field(i);
     for (size_t j = 0; j < inputs.size(); ++j) {
       if (compare.Run(inputs[j], *field)) {
         FillFormField(field);
+        filled_something = true;
         break;
       }
     }
   }
+  return filled_something;
 }
 
 void DataModelWrapper::FillInputs(DetailInputs* inputs) {
@@ -58,7 +61,7 @@ void DataModelWrapper::FillInputs(DetailInputs* inputs) {
   }
 }
 
-void DataModelWrapper::FillFormField(AutofillField* field) {
+void DataModelWrapper::FillFormField(AutofillField* field) const {
   field->value = GetInfo(field->type());
 }
 
@@ -67,6 +70,17 @@ DataModelWrapper::DataModelWrapper() {}
 gfx::Image DataModelWrapper::GetIcon() {
   return gfx::Image();
 }
+
+// EmptyDataModelWrapper
+
+EmptyDataModelWrapper::EmptyDataModelWrapper() {}
+EmptyDataModelWrapper::~EmptyDataModelWrapper() {}
+
+string16 EmptyDataModelWrapper::GetInfo(AutofillFieldType type) const {
+  return string16();
+}
+
+void EmptyDataModelWrapper::FillFormField(AutofillField* field) const {}
 
 // AutofillDataModelWrapper
 
@@ -78,11 +92,11 @@ AutofillDataModelWrapper::AutofillDataModelWrapper(
 
 AutofillDataModelWrapper::~AutofillDataModelWrapper() {}
 
-string16 AutofillDataModelWrapper::GetInfo(AutofillFieldType type) {
+string16 AutofillDataModelWrapper::GetInfo(AutofillFieldType type) const {
   return data_model_->GetInfo(type, g_browser_process->GetApplicationLocale());
 }
 
-void AutofillDataModelWrapper::FillFormField(AutofillField* field) {
+void AutofillDataModelWrapper::FillFormField(AutofillField* field) const {
   data_model_->FillFormField(
       *field, variant_, g_browser_process->GetApplicationLocale(), field);
 }
@@ -113,7 +127,7 @@ AutofillCreditCardWrapper::AutofillCreditCardWrapper(const CreditCard* card)
 
 AutofillCreditCardWrapper::~AutofillCreditCardWrapper() {}
 
-string16 AutofillCreditCardWrapper::GetInfo(AutofillFieldType type) {
+string16 AutofillCreditCardWrapper::GetInfo(AutofillFieldType type) const {
   if (type == CREDIT_CARD_EXP_MONTH)
     return MonthComboboxModel::FormatMonth(card_->expiration_month());
 
@@ -136,7 +150,7 @@ string16 AutofillCreditCardWrapper::GetDisplayText() {
   return card_->TypeAndLastFourDigits();
 }
 
-void AutofillCreditCardWrapper::FillFormField(AutofillField* field) {
+void AutofillCreditCardWrapper::FillFormField(AutofillField* field) const {
   AutofillFieldType field_type = field->type();
 
   if (field_type == NAME_FULL) {
@@ -158,13 +172,15 @@ WalletAddressWrapper::WalletAddressWrapper(
 
 WalletAddressWrapper::~WalletAddressWrapper() {}
 
-string16 WalletAddressWrapper::GetInfo(AutofillFieldType type) {
+string16 WalletAddressWrapper::GetInfo(AutofillFieldType type) const {
   return address_->GetInfo(type, g_browser_process->GetApplicationLocale());
 }
 
 string16 WalletAddressWrapper::GetDisplayText() {
-  if (!address_->is_complete_address())
+  if (!address_->is_complete_address() ||
+      GetInfo(PHONE_HOME_WHOLE_NUMBER).empty()) {
     return string16();
+  }
 
   return DataModelWrapper::GetDisplayText();
 }
@@ -177,7 +193,7 @@ WalletInstrumentWrapper::WalletInstrumentWrapper(
 
 WalletInstrumentWrapper::~WalletInstrumentWrapper() {}
 
-string16 WalletInstrumentWrapper::GetInfo(AutofillFieldType type) {
+string16 WalletInstrumentWrapper::GetInfo(AutofillFieldType type) const {
   if (type == CREDIT_CARD_EXP_MONTH)
     return MonthComboboxModel::FormatMonth(instrument_->expiration_month());
 
@@ -191,7 +207,8 @@ gfx::Image WalletInstrumentWrapper::GetIcon() {
 string16 WalletInstrumentWrapper::GetDisplayText() {
   // TODO(dbeam): handle other instrument statuses? http://crbug.com/233048
   if (instrument_->status() == wallet::WalletItems::MaskedInstrument::EXPIRED ||
-      !instrument_->address().is_complete_address()) {
+      !instrument_->address().is_complete_address() ||
+      GetInfo(PHONE_HOME_WHOLE_NUMBER).empty()) {
     return string16();
   }
 
@@ -211,7 +228,7 @@ FullWalletBillingWrapper::FullWalletBillingWrapper(
 
 FullWalletBillingWrapper::~FullWalletBillingWrapper() {}
 
-string16 FullWalletBillingWrapper::GetInfo(AutofillFieldType type) {
+string16 FullWalletBillingWrapper::GetInfo(AutofillFieldType type) const {
   if (AutofillType(type).group() == AutofillType::CREDIT_CARD)
     return full_wallet_->GetInfo(type);
 
@@ -237,7 +254,7 @@ FullWalletShippingWrapper::FullWalletShippingWrapper(
 
 FullWalletShippingWrapper::~FullWalletShippingWrapper() {}
 
-string16 FullWalletShippingWrapper::GetInfo(AutofillFieldType type) {
+string16 FullWalletShippingWrapper::GetInfo(AutofillFieldType type) const {
   return full_wallet_->shipping_address()->GetInfo(
       type, g_browser_process->GetApplicationLocale());
 }

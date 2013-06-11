@@ -19,6 +19,7 @@ class DictionaryValue;
 class Value;
 }
 
+class DeviceManager;
 class Log;
 class Status;
 class URLRequestContextGetter;
@@ -34,18 +35,29 @@ struct NewSessionParams {
   NewSessionParams(Log* log,
                    SessionMap* session_map,
                    scoped_refptr<URLRequestContextGetter> context_getter,
-                   const SyncWebSocketFactory& socket_factory);
+                   const SyncWebSocketFactory& socket_factory,
+                   DeviceManager* device_manager);
   ~NewSessionParams();
 
   Log* log;
   SessionMap* session_map;
   scoped_refptr<URLRequestContextGetter> context_getter;
   SyncWebSocketFactory socket_factory;
+  DeviceManager* device_manager;
 };
 
 // Creates a new session.
 Status ExecuteNewSession(
     const NewSessionParams& bound_params,
+    const base::DictionaryValue& params,
+    const std::string& session_id,
+    scoped_ptr<base::Value>* out_value,
+    std::string* out_session_id);
+
+// Quits a particular session.
+Status ExecuteQuit(
+    bool allow_detach,
+    SessionMap* session_map,
     const base::DictionaryValue& params,
     const std::string& session_id,
     scoped_ptr<base::Value>* out_value,

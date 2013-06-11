@@ -10,11 +10,11 @@
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/background_printing_manager.h"
@@ -139,12 +139,12 @@ bool HandleRequestCallback(
         preview_ui_id, page_index, &data);
   }
   if (data.get()) {
-    callback.Run(data);
+    callback.Run(data.get());
     return true;
   }
   // Invalid request.
   scoped_refptr<base::RefCountedBytes> empty_bytes(new base::RefCountedBytes);
-  callback.Run(empty_bytes);
+  callback.Run(empty_bytes.get());
   return true;
 }
 

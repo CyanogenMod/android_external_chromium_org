@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
-#include "content/browser/browser_thread_impl.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/navigation_controller_impl.h"
@@ -21,7 +20,6 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/test/mock_render_process_host.h"
-#include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_notification_tracker.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
@@ -130,7 +128,6 @@ class RenderViewHostManagerTest
 // a regression test for bug 9364.
 TEST_F(RenderViewHostManagerTest, NewTabPageProcesses) {
   set_should_create_webui(true);
-  BrowserThreadImpl ui_thread(BrowserThread::UI, base::MessageLoop::current());
   const GURL kChromeUrl("chrome://foo");
   const GURL kDestUrl("http://www.google.com/");
 
@@ -195,7 +192,6 @@ TEST_F(RenderViewHostManagerTest, NewTabPageProcesses) {
 // for synchronous messages, which cannot be ignored without leaving the
 // renderer in a stuck state.  See http://crbug.com/93427.
 TEST_F(RenderViewHostManagerTest, FilterMessagesWhileSwappedOut) {
-  BrowserThreadImpl ui_thread(BrowserThread::UI, base::MessageLoop::current());
   const GURL kChromeURL("chrome://foo");
   const GURL kDestUrl("http://www.google.com/");
 
@@ -272,7 +268,6 @@ TEST_F(RenderViewHostManagerTest, FilterMessagesWhileSwappedOut) {
 // EnableViewSourceMode message is sent on every navigation regardless
 // RenderView is being newly created or reused.
 TEST_F(RenderViewHostManagerTest, AlwaysSendEnableViewSourceMode) {
-  BrowserThreadImpl ui_thread(BrowserThread::UI, base::MessageLoop::current());
   const GURL kChromeUrl("chrome://foo");
   const GURL kUrl("view-source:http://foo");
 
@@ -332,7 +327,7 @@ TEST_F(RenderViewHostManagerTest, Init) {
   RenderViewHostManager manager(web_contents.get(), web_contents.get(),
                                 web_contents.get());
 
-  manager.Init(browser_context(), instance, MSG_ROUTING_NONE);
+  manager.Init(browser_context(), instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
 
   RenderViewHost* host = manager.current_host();
   ASSERT_TRUE(host);
@@ -359,7 +354,7 @@ TEST_F(RenderViewHostManagerTest, Navigate) {
   RenderViewHostManager manager(web_contents.get(), web_contents.get(),
                                 web_contents.get());
 
-  manager.Init(browser_context(), instance, MSG_ROUTING_NONE);
+  manager.Init(browser_context(), instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
 
   RenderViewHost* host;
 
@@ -452,7 +447,7 @@ TEST_F(RenderViewHostManagerTest, NavigateWithEarlyReNavigation) {
   RenderViewHostManager manager(web_contents.get(), web_contents.get(),
                                 web_contents.get());
 
-  manager.Init(browser_context(), instance, MSG_ROUTING_NONE);
+  manager.Init(browser_context(), instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
 
   // 1) The first navigation. --------------------------
   const GURL kUrl1("http://www.google.com/");
@@ -591,7 +586,6 @@ TEST_F(RenderViewHostManagerTest, NavigateWithEarlyReNavigation) {
 // Tests WebUI creation.
 TEST_F(RenderViewHostManagerTest, WebUI) {
   set_should_create_webui(true);
-  BrowserThreadImpl ui_thread(BrowserThread::UI, base::MessageLoop::current());
   SiteInstance* instance = SiteInstance::Create(browser_context());
 
   scoped_ptr<TestWebContents> web_contents(
@@ -599,7 +593,7 @@ TEST_F(RenderViewHostManagerTest, WebUI) {
   RenderViewHostManager manager(web_contents.get(), web_contents.get(),
                                 web_contents.get());
 
-  manager.Init(browser_context(), instance, MSG_ROUTING_NONE);
+  manager.Init(browser_context(), instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
   EXPECT_FALSE(manager.current_host()->IsRenderViewLive());
 
   const GURL kUrl("chrome://foo");
@@ -645,7 +639,8 @@ TEST_F(RenderViewHostManagerTest, WebUIInNewTab) {
       TestWebContents::Create(browser_context(), blank_instance));
   RenderViewHostManager manager1(web_contents1.get(), web_contents1.get(),
                                  web_contents1.get());
-  manager1.Init(browser_context(), blank_instance, MSG_ROUTING_NONE);
+  manager1.Init(
+      browser_context(), blank_instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
   // Test the case that new RVH is considered live.
   manager1.current_host()->CreateRenderView(string16(), -1, -1);
 
@@ -674,7 +669,8 @@ TEST_F(RenderViewHostManagerTest, WebUIInNewTab) {
       TestWebContents::Create(browser_context(), webui_instance));
   RenderViewHostManager manager2(web_contents2.get(), web_contents2.get(),
                                  web_contents2.get());
-  manager2.Init(browser_context(), webui_instance, MSG_ROUTING_NONE);
+  manager2.Init(
+      browser_context(), webui_instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
   // Make sure the new RVH is considered live.  This is usually done in
   // RenderWidgetHost::Init when opening a new tab from a link.
   manager2.current_host()->CreateRenderView(string16(), -1, -1);
@@ -901,7 +897,7 @@ TEST_F(RenderViewHostManagerTest, NoSwapOnGuestNavigations) {
   RenderViewHostManager manager(web_contents.get(), web_contents.get(),
                                 web_contents.get());
 
-  manager.Init(browser_context(), instance, MSG_ROUTING_NONE);
+  manager.Init(browser_context(), instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
 
   RenderViewHost* host;
 

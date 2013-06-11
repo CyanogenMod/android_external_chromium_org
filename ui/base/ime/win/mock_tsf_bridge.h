@@ -20,9 +20,9 @@ class MockTSFBridge : public TSFBridge {
   virtual ~MockTSFBridge();
 
   // TSFBridge:
-  virtual void Shutdown() OVERRIDE;
   virtual bool CancelComposition() OVERRIDE;
   virtual void OnTextInputTypeChanged(TextInputClient* client) OVERRIDE;
+  virtual void OnTextLayoutChanged() OVERRIDE;
   virtual void SetFocusedClient(HWND focused_window,
                                 TextInputClient* client) OVERRIDE;
   virtual void RemoveFocusedClient(TextInputClient* client) OVERRIDE;
@@ -31,9 +31,6 @@ class MockTSFBridge : public TSFBridge {
 
   // Resets MockTSFBridge state including function call counter.
   void Reset();
-
-  // Call count of Shutdown().
-  int shutdown_call_count() const { return shutdown_call_count_; }
 
   // Call count of EnableIME().
   int enable_ime_call_count() const { return enable_ime_call_count_; }
@@ -46,6 +43,11 @@ class MockTSFBridge : public TSFBridge {
     return cancel_composition_call_count_;
   }
 
+  // Call count of OnTextLayoutChanged().
+  int on_text_layout_changed() const {
+    return on_text_layout_changed_;
+  }
+
   // Call count of AssociateFocus().
   int associate_focus_call_count() const { return associate_focus_call_count_; }
 
@@ -54,7 +56,7 @@ class MockTSFBridge : public TSFBridge {
     return set_focused_client_call_count_;
   }
 
-  // Call count of Shutdown().
+  // Call count of RemoveFocusedClient().
   int remove_focused_client_call_count() const {
     return remove_focused_client_call_count_;
   }
@@ -71,10 +73,10 @@ class MockTSFBridge : public TSFBridge {
   }
 
  private:
-  int shutdown_call_count_;
   int enable_ime_call_count_;
   int disalbe_ime_call_count_;
   int cancel_composition_call_count_;
+  int on_text_layout_changed_;
   int associate_focus_call_count_;
   int set_focused_client_call_count_;
   int remove_focused_client_call_count_;

@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/browser/streams/stream_handle_impl.h"
 #include "content/browser/streams/stream_read_observer.h"
 #include "content/browser/streams/stream_registry.h"
@@ -87,7 +87,7 @@ Stream::StreamState Stream::ReadRawData(net::IOBuffer* buf,
                                         int buf_size,
                                         int* bytes_read) {
   *bytes_read = 0;
-  if (!data_) {
+  if (!data_.get()) {
     data_length_ = 0;
     data_bytes_read_ = 0;
     ByteStreamReader::StreamState state = reader_->Read(&data_, &data_length_);

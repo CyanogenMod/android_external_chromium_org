@@ -11,7 +11,7 @@
 #include "content/renderer/media/media_stream_source_observer.h"
 #include "media/base/audio_capturer_source.h"
 #include "third_party/libjingle/source/talk/app/webrtc/videosourceinterface.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 
 namespace content {
 
@@ -46,10 +46,10 @@ class CONTENT_EXPORT MediaStreamSourceExtraData
     // See |source_observer_|.
   }
 
-  webrtc::VideoSourceInterface* video_source() { return video_source_; }
-  media::AudioCapturerSource* audio_source() { return audio_source_; }
+  webrtc::VideoSourceInterface* video_source() { return video_source_.get(); }
+  media::AudioCapturerSource* audio_source() { return audio_source_.get(); }
   webrtc::AudioSourceInterface* local_audio_source() {
-    return local_audio_source_;
+    return local_audio_source_.get();
   }
 
  private:

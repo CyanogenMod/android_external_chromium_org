@@ -11,6 +11,8 @@
 
 #include "ash/ash_switches.h"
 #include "ash/desktop_background/desktop_background_controller.h"
+#include "ash/session_state_delegate.h"
+#include "ash/session_state_observer.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
@@ -31,7 +33,7 @@
 #include "ash/system/user/update_observer.h"
 #include "ash/system/user/user_observer.h"
 #include "ash/volume_control_delegate.h"
-#include "ash/wm/session_state_controller.h"
+#include "ash/wm/lock_state_controller.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/chromeos/chromeos_version.h"
@@ -40,10 +42,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/audio/audio_handler.h"
 #include "chrome/browser/chromeos/bluetooth/bluetooth_pairing_dialog.h"
@@ -51,6 +53,7 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
+#include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
@@ -59,6 +62,7 @@
 #include "chrome/browser/chromeos/login/login_wizard.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
@@ -234,7 +238,8 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
                            public device::BluetoothAdapter::Observer,
                            public SystemKeyEventListener::CapsLockObserver,
                            public ash::NetworkTrayDelegate,
-                           public policy::CloudPolicyStore::Observer {
+                           public policy::CloudPolicyStore::Observer,
+                           public ash::SessionStateObserver {
  public:
   SystemTrayDelegate()
       : ui_weak_ptr_factory_(
@@ -298,6 +303,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     OnNetworkManagerChanged(crosnet);
 
     input_method::InputMethodManager::Get()->AddObserver(this);
+    UpdateClockType();
 
     system::TimezoneSettings::GetInstance()->AddObserver(this);
     DBusThreadManager::Get()->GetSystemClockClient()->AddObserver(this);
@@ -308,6 +314,9 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     device::BluetoothAdapterFactory::GetAdapter(
         base::Bind(&SystemTrayDelegate::InitializeOnAdapterReady,
                    ui_weak_ptr_factory_->GetWeakPtr()));
+
+    ash::Shell::GetInstance()->session_state_delegate()->
+        AddSessionStateObserver(this);
   }
 
   virtual void Shutdown() OVERRIDE {
@@ -367,6 +376,8 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     if (SystemKeyEventListener::GetInstance())
       SystemKeyEventListener::GetInstance()->RemoveCapsLockObserver(this);
     bluetooth_adapter_->RemoveObserver(this);
+    ash::Shell::GetInstance()->session_state_delegate()->
+        RemoveSessionStateObserver(this);
 
     // Stop observing gdata operations.
     DriveIntegrationService* integration_service =
@@ -449,8 +460,8 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   virtual const std::string GetLocallyManagedUserManager() const OVERRIDE {
     if (GetUserLoginStatus() != ash::user::LOGGED_IN_LOCALLY_MANAGED)
       return std::string();
-    return UserManager::Get()->GetManagerForManagedUser(
-        chromeos::UserManager::Get()->GetActiveUser()->display_email());
+    return UserManager::Get()->GetManagerUserIdForManagedUser(
+        chromeos::UserManager::Get()->GetActiveUser()->email());
   }
 
   virtual const string16 GetLocallyManagedUserMessage() const OVERRIDE {
@@ -585,29 +596,13 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     if (UserManager::Get()->GetLoggedInUsers().size() >= 3)
       return;
 
-    // Check whether there're regular users on the list that are not
-    // currently logged in.
-    const UserList& users = UserManager::Get()->GetUsers();
-    bool has_regular_not_logged_in_users = false;
-    for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-      const User* user = (*it);
-      if (user->GetType() == User::USER_TYPE_REGULAR &&
-          !user->is_logged_in()) {
-        has_regular_not_logged_in_users = true;
-        break;
-      }
-    }
-
     // Launch sign in screen to add another user to current session.
-    if (has_regular_not_logged_in_users) {
-      ash::Shell::GetInstance()->
-          desktop_background_controller()->MoveDesktopToLockedContainer();
-      ShowLoginWizard(std::string());
-    }
+    if (UserManager::Get()->GetUsersAdmittedForMultiProfile().size())
+      UserAddingScreen::Get()->Start();
   }
 
   virtual void ShutDown() OVERRIDE {
-    ash::Shell::GetInstance()->session_state_controller()->RequestShutdown();
+    ash::Shell::GetInstance()->lock_state_controller()->RequestShutdown();
   }
 
   virtual void SignOut() OVERRIDE {
@@ -776,7 +771,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
 
   virtual void ConnectToNetwork(const std::string& network_id) OVERRIDE {
     DCHECK(!CommandLine::ForCurrentProcess()->HasSwitch(
-        chromeos::switches::kUseNewNetworkConfigurationHandlers));
+        chromeos::switches::kUseNewNetworkConnectionHandler));
     network_connect::ConnectResult result =
         network_connect::ConnectToNetwork(network_id, GetNativeWindow());
     if (result == network_connect::NETWORK_NOT_FOUND)
@@ -897,7 +892,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   virtual void MaybeSpeak(const std::string& utterance) const OVERRIDE {
-    accessibility::MaybeSpeak(utterance);
+    AccessibilityManager::Get()->MaybeSpeak(utterance);
   }
 
  private:
@@ -935,6 +930,11 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
         base::Bind(&SystemTrayDelegate::UpdateShowLogoutButtonInTray,
                    base::Unretained(this)));
     user_pref_registrar_->Add(
+        prefs::kLargeCursorEnabled,
+        base::Bind(&SystemTrayDelegate::OnAccessibilityModeChanged,
+                   base::Unretained(this),
+                   ash::A11Y_NOTIFICATION_NONE));
+    user_pref_registrar_->Add(
         prefs::kShouldAlwaysShowAccessibilityMenu,
         base::Bind(&SystemTrayDelegate::OnAccessibilityModeChanged,
                    base::Unretained(this),
@@ -961,9 +961,11 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   void UpdateClockType() {
+    if (!user_pref_registrar_)
+      return;
     clock_type_ =
         user_pref_registrar_->prefs()->GetBoolean(prefs::kUse24HourClock) ?
-            base::k24HourClock : base::k12HourClock;
+        base::k24HourClock : base::k12HourClock;
     GetSystemTrayNotifier()->NotifyDateFormatChanged();
   }
 
@@ -1118,9 +1120,8 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
       case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK:
       case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE:
       case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER: {
-        accessibility::AccessibilityStatusEventDetails* accessibility_status =
-            content::Details<accessibility::AccessibilityStatusEventDetails>(
-                details).ptr();
+        AccessibilityStatusEventDetails* accessibility_status =
+            content::Details<AccessibilityStatusEventDetails>(details).ptr();
         OnAccessibilityModeChanged(accessibility_status->notify);
         break;
       }
@@ -1287,6 +1288,11 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
 
   virtual void OnStoreError(policy::CloudPolicyStore* store) OVERRIDE {
     UpdateEnterpriseDomain();
+  }
+
+  // Overridden from ash::SessionStateObserver
+  virtual void ActiveUserChanged(const std::string& user_id) OVERRIDE {
+    GetSystemTrayNotifier()->NotifyUserUpdate();
   }
 
   void UpdateCellular() {

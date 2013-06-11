@@ -153,7 +153,7 @@ class GeolocationLocationArbitratorTest : public testing::Test {
 };
 
 TEST_F(GeolocationLocationArbitratorTest, CreateDestroy) {
-  EXPECT_TRUE(access_token_store_);
+  EXPECT_TRUE(access_token_store_.get());
   EXPECT_TRUE(arbitrator_ != NULL);
   arbitrator_.reset();
   SUCCEED();
@@ -170,7 +170,7 @@ TEST_F(GeolocationLocationArbitratorTest, OnPermissionGranted) {
 }
 
 TEST_F(GeolocationLocationArbitratorTest, NormalUsage) {
-  ASSERT_TRUE(access_token_store_);
+  ASSERT_TRUE(access_token_store_.get());
   ASSERT_TRUE(arbitrator_ != NULL);
 
   EXPECT_FALSE(cell());
@@ -294,6 +294,39 @@ TEST_F(GeolocationLocationArbitratorTest, Arbitration) {
   // Arrive in station. Cell moves but GPS is stale. Switch to fresher cell.
   SetPositionFix(cell(), 3.5658700, 139.069979, 1000);
   CheckLastPositionInfo(3.5658700, 139.069979, 1000);
+}
+
+TEST_F(GeolocationLocationArbitratorTest, TwoOneShotsIsNewPositionBetter) {
+  arbitrator_->StartProviders(false);
+  access_token_store_->NotifyDelegateTokensLoaded();
+  ASSERT_TRUE(cell());
+  ASSERT_TRUE(gps());
+
+  // Set the initial position.
+  SetPositionFix(cell(), 3, 139, 100);
+  CheckLastPositionInfo(3, 139, 100);
+
+  // Restart providers to simulate a one-shot request.
+  arbitrator_->StopProviders();
+
+  // To test 240956, perform a throwaway alloc.
+  // This convinces the allocator to put the providers in a new memory location.
+  MockLocationProvider* fakeMockProvider = NULL;
+  LocationProviderBase* fakeProvider =
+      new MockLocationProvider(&fakeMockProvider);
+
+  arbitrator_->StartProviders(false);
+  access_token_store_->NotifyDelegateTokensLoaded();
+
+  // Advance the time a short while to simulate successive calls.
+  AdvanceTimeNow(base::TimeDelta::FromMilliseconds(5));
+
+  // Update with a less accurate position to verify 240956.
+  SetPositionFix(cell(), 3, 139, 150);
+  CheckLastPositionInfo(3, 139, 150);
+
+  // No delete required for fakeMockProvider. It points to fakeProvider.
+  delete fakeProvider;
 }
 
 }  // namespace content

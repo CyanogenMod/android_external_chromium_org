@@ -7,11 +7,12 @@
 #include "apps/app_launcher.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/theme_installed_infobar_delegate.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -55,6 +56,10 @@ namespace {
 bool disable_failure_ui_for_tests = false;
 
 Browser* FindOrCreateVisibleBrowser(Profile* profile) {
+  // TODO(mpcomplete): remove this workaround for http://crbug.com/244246
+  // after fixing http://crbug.com/38676.
+  if (!IncognitoModePrefs::CanOpenBrowser(profile))
+    return NULL;
   Browser* browser =
       chrome::FindOrCreateTabbedBrowser(profile, chrome::GetActiveDesktop());
   if (browser->tab_strip_model()->count() == 0)
@@ -67,32 +72,9 @@ void ShowExtensionInstalledBubble(const extensions::Extension* extension,
                                   Profile* profile,
                                   const SkBitmap& icon) {
   Browser* browser = FindOrCreateVisibleBrowser(profile);
-  chrome::ShowExtensionInstalledBubble(extension, browser, icon);
+  if (browser)
+    chrome::ShowExtensionInstalledBubble(extension, browser, icon);
 }
-
-void OnAppLauncherEnabledCompleted(const extensions::Extension* extension,
-                                   Profile* profile,
-                                   SkBitmap* icon,
-                                   bool use_bubble,
-                                   bool use_launcher) {
-  if (use_launcher) {
-    AppListService::Get()->ShowAppList(profile);
-
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,
-        content::Source<Profile>(profile),
-        content::Details<const std::string>(&extension->id()));
-    return;
-  }
-
-  if (use_bubble) {
-    ShowExtensionInstalledBubble(extension, profile, *icon);
-    return;
-  }
-
-  ExtensionInstallUI::OpenAppInstalledUI(profile, extension->id());
-}
-
 
 // ErrorInfobarDelegate -------------------------------------------------------
 
@@ -176,16 +158,18 @@ void ExtensionInstallUI::OpenAppInstalledUI(Profile* profile,
       content::Details<const std::string>(&app_id));
 #else
   Browser* browser = FindOrCreateVisibleBrowser(profile);
-  GURL url(chrome::IsInstantExtendedAPIEnabled() ?
-           chrome::kChromeUIAppsURL : chrome::kChromeUINewTabURL);
-  chrome::NavigateParams params(
-      chrome::GetSingletonTabNavigateParams(browser, url));
-  chrome::Navigate(&params);
+  if (browser) {
+    GURL url(chrome::IsInstantExtendedAPIEnabled() ?
+             chrome::kChromeUIAppsURL : chrome::kChromeUINewTabURL);
+    chrome::NavigateParams params(
+        chrome::GetSingletonTabNavigateParams(browser, url));
+    chrome::Navigate(&params);
 
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_APP_INSTALLED_TO_NTP,
-      content::Source<WebContents>(params.target_contents),
-      content::Details<const std::string>(&app_id));
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_APP_INSTALLED_TO_NTP,
+        content::Source<WebContents>(params.target_contents),
+        content::Details<const std::string>(&app_id));
+  }
 #endif
 }
 
@@ -265,9 +249,22 @@ void ExtensionInstallUIDefault::OnInstallSuccess(const Extension* extension,
                   cmdline->HasSwitch(switches::kAppsNewInstallBubble));
 #endif
 
-    apps::GetIsAppLauncherEnabled(
-        base::Bind(&OnAppLauncherEnabledCompleted, extension, current_profile,
-                   icon, use_bubble));
+    if (apps::IsAppLauncherEnabled()) {
+      AppListService::Get()->ShowAppList(current_profile);
+
+      content::NotificationService::current()->Notify(
+          chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,
+          content::Source<Profile>(current_profile),
+          content::Details<const std::string>(&extension->id()));
+      return;
+    }
+
+    if (use_bubble) {
+      ShowExtensionInstalledBubble(extension, current_profile, *icon);
+      return;
+    }
+
+    ExtensionInstallUI::OpenAppInstalledUI(current_profile, extension->id());
     return;
   }
 

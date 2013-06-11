@@ -10,9 +10,9 @@
 #include "base/command_line.h"
 #include "base/i18n/number_formatting.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/defaults.h"
@@ -415,7 +415,9 @@ bool WrenchMenuModel::IsCommandIdVisible(int command_id) const {
         EnumerateModulesModel::GetInstance();
     if (loaded_modules->confirmed_bad_modules_detected() <= 0)
       return false;
-    loaded_modules->AcknowledgeConflictNotification();
+    // We'll leave the wrench adornment on until the user clicks the link.
+    if (loaded_modules->modules_to_notify_about() <= 0)
+      loaded_modules->AcknowledgeConflictNotification();
     return true;
   } else if (command_id == IDC_PIN_TO_START_SCREEN) {
     return base::win::IsMetroProcess();
@@ -477,6 +479,16 @@ WrenchMenuModel::WrenchMenuModel()
 }
 
 void WrenchMenuModel::Build(bool is_new_menu) {
+#if defined(OS_WIN)
+  AddItem(IDC_VIEW_INCOMPATIBILITIES,
+      l10n_util::GetStringUTF16(IDS_VIEW_INCOMPATIBILITIES));
+  EnumerateModulesModel* model =
+      EnumerateModulesModel::GetInstance();
+  if (model->modules_to_notify_about() > 0 ||
+      model->confirmed_bad_modules_detected() > 0)
+    AddSeparator(ui::NORMAL_SEPARATOR);
+#endif
+
   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
 #if defined(OS_WIN)
   if (win8::IsSingleWindowMetroMode()) {
@@ -606,9 +618,6 @@ void WrenchMenuModel::Build(bool is_new_menu) {
 
   if (browser_defaults::kShowUpgradeMenuItem)
     AddItem(IDC_UPGRADE_DIALOG, GetUpgradeDialogMenuItemName());
-
-  AddItem(IDC_VIEW_INCOMPATIBILITIES, l10n_util::GetStringUTF16(
-      IDS_VIEW_INCOMPATIBILITIES));
 
 #if defined(OS_WIN)
   SetIcon(GetIndexOfCommandId(IDC_VIEW_INCOMPATIBILITIES),

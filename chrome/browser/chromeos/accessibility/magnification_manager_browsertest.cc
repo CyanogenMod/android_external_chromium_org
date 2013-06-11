@@ -7,7 +7,7 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/cros/cros_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/helper.h"
@@ -81,6 +81,10 @@ void SetScreenManagnifierTypeToPref(ash::MagnifierType type) {
   prefs()->SetInteger(prefs::kScreenMagnifierType, type);
 }
 
+void SetFullScreenMagnifierScaleToPref(double scale) {
+  prefs()->SetDouble(prefs::kScreenMagnifierScale, scale);
+}
+
 }  // anonymouse namespace
 
 class MagnificationManagerTest : public CrosInProcessBrowserTest,
@@ -102,6 +106,10 @@ class MagnificationManagerTest : public CrosInProcessBrowserTest,
         this,
         chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
         content::NotificationService::AllSources());
+
+    // Set the login-screen profile.
+    MagnificationManager::Get()->SetProfileForTest(
+        ProfileManager::GetDefaultProfile());
   }
 
   // content::NotificationObserver implementation.
@@ -110,9 +118,8 @@ class MagnificationManagerTest : public CrosInProcessBrowserTest,
                        const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
       case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER: {
-        accessibility::AccessibilityStatusEventDetails* accessibility_status =
-            content::Details<accessibility::AccessibilityStatusEventDetails>(
-                details).ptr();
+        AccessibilityStatusEventDetails* accessibility_status =
+            content::Details<AccessibilityStatusEventDetails>(details).ptr();
 
         observed_ = true;
         observed_enabled_ = accessibility_status->enabled;
@@ -186,7 +193,7 @@ IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, LoginOffToFull) {
   // Enable magnifier on the pref.
   EnableScreenManagnifierToPref(true);
   SetScreenManagnifierTypeToPref(ash::MAGNIFIER_FULL);
-  SetSavedFullScreenMagnifierScale(2.5);
+  SetFullScreenMagnifierScaleToPref(2.5);
 
   UserManager::Get()->SessionStarted();
 
@@ -213,7 +220,7 @@ IN_PROC_BROWSER_TEST_F(MagnificationManagerTest, LoginFullToFull) {
   // Enable magnifier on the pref.
   EnableScreenManagnifierToPref(true);
   SetScreenManagnifierTypeToPref(ash::MAGNIFIER_FULL);
-  SetSavedFullScreenMagnifierScale(2.5);
+  SetFullScreenMagnifierScaleToPref(2.5);
 
   UserManager::Get()->SessionStarted();
 

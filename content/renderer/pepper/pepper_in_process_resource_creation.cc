@@ -71,10 +71,12 @@ PP_Resource PepperInProcessResourceCreation::CreateFileChooser(
     const PP_Var& accept_types) {
   scoped_refptr<ppapi::StringVar> string_var =
       ppapi::StringVar::FromPPVar(accept_types);
-  std::string str = string_var ? string_var->value() : std::string();
+  std::string str = string_var.get() ? string_var->value() : std::string();
   return (new ppapi::proxy::FileChooserResource(
       host_impl_->in_process_router()->GetPluginConnection(),
-      instance, mode, str.c_str()))->GetReference();
+      instance,
+      mode,
+      str.c_str()))->GetReference();
 }
 
 PP_Resource PepperInProcessResourceCreation::CreateFileIO(
@@ -127,15 +129,6 @@ PP_Resource PepperInProcessResourceCreation::CreateURLRequestInfo(
   return (new ppapi::proxy::URLRequestInfoResource(
       host_impl_->in_process_router()->GetPluginConnection(),
       instance, ::ppapi::URLRequestInfoData()))->GetReference();
-}
-
-PP_Resource PepperInProcessResourceCreation::CreateURLResponseInfo(
-    PP_Instance instance,
-    const ::ppapi::URLResponseInfoData& data,
-    PP_Resource file_ref_resource) {
-  return (new ppapi::proxy::URLResponseInfoResource(
-      host_impl_->in_process_router()->GetPluginConnection(),
-      instance, data, file_ref_resource))->GetReference();
 }
 
 PP_Resource PepperInProcessResourceCreation::CreateWebSocket(

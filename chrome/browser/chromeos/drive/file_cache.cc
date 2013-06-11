@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
@@ -26,6 +27,10 @@ namespace drive {
 namespace internal {
 namespace {
 
+typedef std::map<std::string, FileCacheEntry> CacheMap;
+
+typedef std::map<std::string, base::FilePath> ResourceIdToFilePathMap;
+
 const base::FilePath::CharType kFileCacheMetaDir[] = FILE_PATH_LITERAL("meta");
 const base::FilePath::CharType kFileCachePersistentDir[] =
     FILE_PATH_LITERAL("persistent");
@@ -34,6 +39,109 @@ const base::FilePath::CharType kFileCacheTmpDownloadsDir[] =
     FILE_PATH_LITERAL("tmp/downloads");
 const base::FilePath::CharType kFileCacheTmpDocumentsDir[] =
     FILE_PATH_LITERAL("tmp/documents");
+
+// Scans cache subdirectory and build or update |cache_map| with found files.
+//
+// The resource IDs and file paths of discovered files are collected as a
+// ResourceIdToFilePathMap, if these are processed properly.
+void ScanCacheDirectory(const std::vector<base::FilePath>& cache_paths,
+                        FileCache::CacheSubDirectoryType sub_dir_type,
+                        CacheMap* cache_map,
+                        ResourceIdToFilePathMap* processed_file_map) {
+  DCHECK(cache_map);
+  DCHECK(processed_file_map);
+
+  base::FileEnumerator enumerator(cache_paths[sub_dir_type],
+                                  false,  // not recursive
+                                  base::FileEnumerator::FILES,
+                                  util::kWildCard);
+  for (base::FilePath current = enumerator.Next(); !current.empty();
+       current = enumerator.Next()) {
+    // Extract resource_id and md5 from filename.
+    std::string resource_id;
+    std::string md5;
+    std::string extra_extension;
+    util::ParseCacheFilePath(current, &resource_id, &md5, &extra_extension);
+
+    // Determine cache state.
+    FileCacheEntry cache_entry;
+    cache_entry.set_md5(md5);
+    if (sub_dir_type == FileCache::CACHE_TYPE_PERSISTENT)
+      cache_entry.set_is_persistent(true);
+
+    if (extra_extension == util::kMountedArchiveFileExtension) {
+      // Mounted archives in cache should be unmounted upon logout/shutdown.
+      // But if we encounter a mounted file at start, delete it and create an
+      // entry with not PRESENT state.
+      DCHECK(sub_dir_type == FileCache::CACHE_TYPE_PERSISTENT);
+      file_util::Delete(current, false);
+    } else {
+      // The cache file is present.
+      cache_entry.set_is_present(true);
+
+      // Adds the dirty bit if |md5| indicates that the file is dirty, and
+      // the file is in the persistent directory.
+      if (md5 == util::kLocallyModifiedFileExtension) {
+        if (sub_dir_type == FileCache::CACHE_TYPE_PERSISTENT) {
+          cache_entry.set_is_dirty(true);
+        } else {
+          LOG(WARNING) << "Removing a dirty file in tmp directory: "
+                       << current.value();
+          file_util::Delete(current, false);
+          continue;
+        }
+      }
+    }
+
+    // Create and insert new entry into cache map.
+    cache_map->insert(std::make_pair(resource_id, cache_entry));
+    processed_file_map->insert(std::make_pair(resource_id, current));
+  }
+}
+
+void ScanCachePaths(const std::vector<base::FilePath>& cache_paths,
+                    CacheMap* cache_map) {
+  DVLOG(1) << "Scanning directories";
+
+  // Scan cache persistent and tmp directories to enumerate all files and create
+  // corresponding entries for cache map.
+  ResourceIdToFilePathMap persistent_file_map;
+  ScanCacheDirectory(cache_paths,
+                     FileCache::CACHE_TYPE_PERSISTENT,
+                     cache_map,
+                     &persistent_file_map);
+  ResourceIdToFilePathMap tmp_file_map;
+  ScanCacheDirectory(cache_paths,
+                     FileCache::CACHE_TYPE_TMP,
+                     cache_map,
+                     &tmp_file_map);
+
+  // On DB corruption, keep only dirty-and-committed files in persistent
+  // directory. Other files are deleted or moved to temporary directory.
+  for (ResourceIdToFilePathMap::const_iterator iter =
+           persistent_file_map.begin();
+       iter != persistent_file_map.end(); ++iter) {
+    const std::string& resource_id = iter->first;
+    const base::FilePath& file_path = iter->second;
+
+    CacheMap::iterator cache_map_iter = cache_map->find(resource_id);
+    if (cache_map_iter != cache_map->end()) {
+      FileCacheEntry* cache_entry = &cache_map_iter->second;
+      const bool is_dirty = cache_entry->is_dirty();
+      if (!is_dirty) {
+        // If the file is not dirty, move to temporary directory.
+        base::FilePath new_file_path =
+            cache_paths[FileCache::CACHE_TYPE_TMP].Append(
+                file_path.BaseName());
+        DLOG(WARNING) << "Moving: " << file_path.value()
+                      << " to: " << new_file_path.value();
+        file_util::Move(file_path, new_file_path);
+        cache_entry->set_is_persistent(false);
+      }
+    }
+  }
+  DVLOG(1) << "Directory scan finished";
+}
 
 // Create cache directory paths and set permissions.
 bool InitCachePaths(const std::vector<base::FilePath>& cache_paths) {
@@ -61,10 +169,8 @@ bool InitCachePaths(const std::vector<base::FilePath>& cache_paths) {
 // Do not remove recursively as we don't want to touch <gcache>/tmp/downloads,
 // which is used for user initiated downloads like "Save As"
 void RemoveAllFiles(const base::FilePath& directory) {
-  using file_util::FileEnumerator;
-
-  FileEnumerator enumerator(directory, false /* recursive */,
-                            FileEnumerator::FILES);
+  base::FileEnumerator enumerator(directory, false /* recursive */,
+                                  base::FileEnumerator::FILES);
   for (base::FilePath file_path = enumerator.Next(); !file_path.empty();
        file_path = enumerator.Next()) {
     DVLOG(1) << "Removing " << file_path.value();
@@ -107,10 +213,10 @@ void DeleteFilesSelectively(const base::FilePath& path_to_delete_pattern,
   // base name of |path_to_delete_pattern|.
   // If a file is not |path_to_keep|, delete it.
   bool success = true;
-  file_util::FileEnumerator enumerator(
+  base::FileEnumerator enumerator(
       path_to_delete_pattern.DirName(),
       false,  // not recursive
-      file_util::FileEnumerator::FILES,
+      base::FileEnumerator::FILES,
       path_to_delete_pattern.BaseName().value());
   for (base::FilePath current = enumerator.Next(); !current.empty();
        current = enumerator.Next()) {
@@ -268,7 +374,10 @@ void FileCache::Iterate(const CacheIterateCallback& iteration_callback) {
   AssertOnSequencedWorkerPool();
   DCHECK(!iteration_callback.is_null());
 
-  metadata_->Iterate(iteration_callback);
+  scoped_ptr<FileCacheMetadata::Iterator> it = metadata_->GetIterator();
+  for (; !it->IsAtEnd(); it->Advance())
+    iteration_callback.Run(it->GetKey(), it->GetValue());
+  DCHECK(!it->HasError());
 }
 
 void FileCache::FreeDiskSpaceIfNeededForOnUIThread(
@@ -295,8 +404,15 @@ bool FileCache::FreeDiskSpaceIfNeededFor(int64 num_bytes) {
 
   // Otherwise, try to free up the disk space.
   DVLOG(1) << "Freeing up disk space for " << num_bytes;
+
   // First remove temporary files from the metadata.
-  metadata_->RemoveTemporaryFiles();
+  scoped_ptr<FileCacheMetadata::Iterator> it = metadata_->GetIterator();
+  for (; !it->IsAtEnd(); it->Advance()) {
+    if (!it->GetValue().is_persistent())
+      metadata_->RemoveCacheEntry(it->GetKey());
+  }
+  DCHECK(!it->HasError());
+
   // Then remove all files under "tmp" directory.
   RemoveAllFiles(GetCacheDirectoryPath(CACHE_TYPE_TMP));
 
@@ -341,7 +457,7 @@ FileError FileCache::GetFile(const std::string& resource_id,
   }
 
   *cache_file_path = GetCacheFilePath(resource_id,
-                                      md5,
+                                      cache_entry.md5(),
                                       GetSubDirectoryType(cache_entry),
                                       file_origin);
   return FILE_ERROR_OK;
@@ -406,6 +522,50 @@ void FileCache::PinOnUIThread(const std::string& resource_id,
                  base::Unretained(this), resource_id, md5),
       base::Bind(&FileCache::OnPinned,
                  weak_ptr_factory_.GetWeakPtr(), resource_id, md5, callback));
+}
+
+FileError FileCache::Pin(const std::string& resource_id,
+                         const std::string& md5) {
+  AssertOnSequencedWorkerPool();
+
+  bool is_persistent = true;
+  FileCacheEntry cache_entry;
+  if (!GetCacheEntry(resource_id, md5, &cache_entry)) {
+    // The file will be first downloaded in 'tmp', then moved to 'persistent'.
+    is_persistent = false;
+  } else {  // File exists in cache, determines destination path.
+    // Determine source and destination paths.
+
+    // If file is dirty or mounted, don't move it.
+    if (!cache_entry.is_dirty() && !cache_entry.is_mounted()) {
+      // If file was pinned before but actual file blob doesn't exist in cache:
+      // - don't need to move the file.
+      if (!cache_entry.is_present()) {
+        DCHECK(cache_entry.is_pinned());
+        return FILE_ERROR_OK;
+      }
+      // File exists, move it to persistent dir.
+      // Gets the current path of the file in cache.
+      base::FilePath source_path = GetCacheFilePath(
+          resource_id,
+          md5,
+          GetSubDirectoryType(cache_entry),
+          CACHED_FILE_FROM_SERVER);
+      base::FilePath dest_path = GetCacheFilePath(resource_id,
+                                                  md5,
+                                                  CACHE_TYPE_PERSISTENT,
+                                                  CACHED_FILE_FROM_SERVER);
+      if (!MoveFile(source_path, dest_path))
+        return FILE_ERROR_FAILED;
+    }
+  }
+
+  // Now that file operations have completed, update metadata.
+  cache_entry.set_md5(md5);
+  cache_entry.set_is_pinned(true);
+  cache_entry.set_is_persistent(is_persistent);
+  metadata_->AddOrUpdateCacheEntry(resource_id, cache_entry);
+  return FILE_ERROR_OK;
 }
 
 void FileCache::UnpinOnUIThread(const std::string& resource_id,
@@ -478,7 +638,6 @@ FileError FileCache::Unpin(const std::string& resource_id,
 
 void FileCache::MarkAsMountedOnUIThread(
     const std::string& resource_id,
-    const std::string& md5,
     const GetFileFromCacheCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -488,7 +647,7 @@ void FileCache::MarkAsMountedOnUIThread(
       blocking_task_runner_,
       FROM_HERE,
       base::Bind(&FileCache::MarkAsMounted,
-                 base::Unretained(this), resource_id, md5, cache_file_path),
+                 base::Unretained(this), resource_id, cache_file_path),
       base::Bind(RunGetFileFromCacheCallback,
                  callback, base::Owned(cache_file_path)));
 }
@@ -519,6 +678,59 @@ void FileCache::MarkDirtyOnUIThread(const std::string& resource_id,
       base::Bind(&FileCache::MarkDirty,
                  base::Unretained(this), resource_id, md5),
       callback);
+}
+
+FileError FileCache::MarkDirty(const std::string& resource_id,
+                               const std::string& md5) {
+  AssertOnSequencedWorkerPool();
+
+  // If file has already been marked dirty in previous instance of chrome, we
+  // would have lost the md5 info during cache initialization, because the file
+  // would have been renamed to .local extension.
+  // So, search for entry in cache without comparing md5.
+
+  // Marking a file dirty means its entry and actual file blob must exist in
+  // cache.
+  FileCacheEntry cache_entry;
+  if (!GetCacheEntry(resource_id, std::string(), &cache_entry) ||
+      !cache_entry.is_present()) {
+    LOG(WARNING) << "Can't mark dirty a file that wasn't cached: res_id="
+                 << resource_id
+                 << ", md5=" << md5;
+    return FILE_ERROR_NOT_FOUND;
+  }
+
+  if (cache_entry.is_dirty()) {
+    // The file must be in persistent dir.
+    DCHECK(cache_entry.is_persistent());
+    return FILE_ERROR_OK;
+  }
+
+  // Move file to persistent dir with new .local extension.
+
+  // Get the current path of the file in cache.
+  base::FilePath source_path = GetCacheFilePath(
+      resource_id,
+      md5,
+      GetSubDirectoryType(cache_entry),
+      CACHED_FILE_FROM_SERVER);
+  // Determine destination path.
+  const CacheSubDirectoryType sub_dir_type = CACHE_TYPE_PERSISTENT;
+  base::FilePath cache_file_path = GetCacheFilePath(
+      resource_id,
+      md5,
+      sub_dir_type,
+      CACHED_FILE_LOCALLY_MODIFIED);
+
+  if (!MoveFile(source_path, cache_file_path))
+    return FILE_ERROR_FAILED;
+
+  // Now that file operations have completed, update metadata.
+  cache_entry.set_md5(md5);
+  cache_entry.set_is_dirty(true);
+  cache_entry.set_is_persistent(sub_dir_type == CACHE_TYPE_PERSISTENT);
+  metadata_->AddOrUpdateCacheEntry(resource_id, cache_entry);
+  return FILE_ERROR_OK;
 }
 
 void FileCache::CommitDirtyOnUIThread(const std::string& resource_id,
@@ -680,15 +892,6 @@ void FileCache::RequestInitialize(const InitializeCacheCallback& callback) {
       callback);
 }
 
-void FileCache::RequestInitializeForTesting() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  blocking_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&FileCache::InitializeOnBlockingPoolForTesting,
-                 base::Unretained(this)));
-}
-
 void FileCache::Destroy() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -709,18 +912,26 @@ bool FileCache::InitializeOnBlockingPool() {
   if (!InitCachePaths(cache_paths_))
     return false;
 
-  metadata_ = FileCacheMetadata::CreateCacheMetadata(
-      blocking_task_runner_);
-  return metadata_->Initialize(cache_paths_);
-}
+  metadata_.reset(new FileCacheMetadata(blocking_task_runner_));
 
-void FileCache::InitializeOnBlockingPoolForTesting() {
-  AssertOnSequencedWorkerPool();
+  switch (metadata_->Initialize(cache_paths_[CACHE_TYPE_META])) {
+    case FileCacheMetadata::INITIALIZE_FAILED:
+      return false;
 
-  InitCachePaths(cache_paths_);
-  metadata_ = FileCacheMetadata::CreateCacheMetadataForTesting(
-      blocking_task_runner_);
-  metadata_->Initialize(cache_paths_);
+    case FileCacheMetadata::INITIALIZE_OPENED:  // Do nothing.
+      break;
+
+    case FileCacheMetadata::INITIALIZE_CREATED: {
+      CacheMap cache_map;
+      ScanCachePaths(cache_paths_, &cache_map);
+      for (CacheMap::const_iterator it = cache_map.begin();
+           it != cache_map.end(); ++it) {
+        metadata_->AddOrUpdateCacheEntry(it->first, it->second);
+      }
+      break;
+    }
+  }
+  return true;
 }
 
 void FileCache::DestroyOnBlockingPool() {
@@ -814,60 +1025,14 @@ FileError FileCache::StoreInternal(const std::string& resource_id,
   return success ? FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
-FileError FileCache::Pin(const std::string& resource_id,
-                         const std::string& md5) {
-  AssertOnSequencedWorkerPool();
-
-  bool is_persistent = true;
-  FileCacheEntry cache_entry;
-  if (!GetCacheEntry(resource_id, md5, &cache_entry)) {
-    // The file will be first downloaded in 'tmp', then moved to 'persistent'.
-    is_persistent = false;
-  } else {  // File exists in cache, determines destination path.
-    // Determine source and destination paths.
-
-    // If file is dirty or mounted, don't move it.
-    if (!cache_entry.is_dirty() && !cache_entry.is_mounted()) {
-      // If file was pinned before but actual file blob doesn't exist in cache:
-      // - don't need to move the file.
-      if (!cache_entry.is_present()) {
-        DCHECK(cache_entry.is_pinned());
-        return FILE_ERROR_OK;
-      }
-      // File exists, move it to persistent dir.
-      // Gets the current path of the file in cache.
-      base::FilePath source_path = GetCacheFilePath(
-          resource_id,
-          md5,
-          GetSubDirectoryType(cache_entry),
-          CACHED_FILE_FROM_SERVER);
-      base::FilePath dest_path = GetCacheFilePath(resource_id,
-                                                  md5,
-                                                  CACHE_TYPE_PERSISTENT,
-                                                  CACHED_FILE_FROM_SERVER);
-      if (!MoveFile(source_path, dest_path))
-        return FILE_ERROR_FAILED;
-    }
-  }
-
-  // Now that file operations have completed, update metadata.
-  cache_entry.set_md5(md5);
-  cache_entry.set_is_pinned(true);
-  cache_entry.set_is_persistent(is_persistent);
-  metadata_->AddOrUpdateCacheEntry(resource_id, cache_entry);
-  return FILE_ERROR_OK;
-}
-
-
 FileError FileCache::MarkAsMounted(const std::string& resource_id,
-                                   const std::string& md5,
                                    base::FilePath* cache_file_path) {
   AssertOnSequencedWorkerPool();
   DCHECK(cache_file_path);
 
   // Get cache entry associated with the resource_id and md5
   FileCacheEntry cache_entry;
-  if (!GetCacheEntry(resource_id, md5, &cache_entry))
+  if (!GetCacheEntry(resource_id, std::string(), &cache_entry))
     return FILE_ERROR_NOT_FOUND;
 
   if (cache_entry.is_mounted())
@@ -877,12 +1042,13 @@ FileError FileCache::MarkAsMounted(const std::string& resource_id,
   CacheSubDirectoryType unmounted_subdir =
       cache_entry.is_pinned() ? CACHE_TYPE_PERSISTENT : CACHE_TYPE_TMP;
   base::FilePath unmounted_path = GetCacheFilePath(
-      resource_id, md5, unmounted_subdir, CACHED_FILE_FROM_SERVER);
+      resource_id, cache_entry.md5(), unmounted_subdir,
+      CACHED_FILE_FROM_SERVER);
 
   // Get the subdir type and path for the mounted state.
   CacheSubDirectoryType mounted_subdir = CACHE_TYPE_PERSISTENT;
   base::FilePath mounted_path = GetCacheFilePath(
-      resource_id, md5, mounted_subdir, CACHED_FILE_MOUNTED);
+      resource_id, cache_entry.md5(), mounted_subdir, CACHED_FILE_MOUNTED);
 
   // Move cache file.
   if (!MoveFile(unmounted_path, mounted_path))
@@ -897,7 +1063,6 @@ FileError FileCache::MarkAsMounted(const std::string& resource_id,
       file_util::FILE_PERMISSION_READ_BY_OTHERS);
 
   // Now that cache operation is complete, update metadata.
-  cache_entry.set_md5(md5);
   cache_entry.set_is_mounted(true);
   cache_entry.set_is_persistent(true);
   metadata_->AddOrUpdateCacheEntry(resource_id, cache_entry);
@@ -945,59 +1110,6 @@ FileError FileCache::MarkAsUnmounted(const base::FilePath& file_path) {
   cache_entry.set_md5(md5);
   cache_entry.set_is_mounted(false);
   cache_entry.set_is_persistent(unmounted_subdir == CACHE_TYPE_PERSISTENT);
-  metadata_->AddOrUpdateCacheEntry(resource_id, cache_entry);
-  return FILE_ERROR_OK;
-}
-
-FileError FileCache::MarkDirty(const std::string& resource_id,
-                               const std::string& md5) {
-  AssertOnSequencedWorkerPool();
-
-  // If file has already been marked dirty in previous instance of chrome, we
-  // would have lost the md5 info during cache initialization, because the file
-  // would have been renamed to .local extension.
-  // So, search for entry in cache without comparing md5.
-
-  // Marking a file dirty means its entry and actual file blob must exist in
-  // cache.
-  FileCacheEntry cache_entry;
-  if (!GetCacheEntry(resource_id, std::string(), &cache_entry) ||
-      !cache_entry.is_present()) {
-    LOG(WARNING) << "Can't mark dirty a file that wasn't cached: res_id="
-                 << resource_id
-                 << ", md5=" << md5;
-    return FILE_ERROR_NOT_FOUND;
-  }
-
-  if (cache_entry.is_dirty()) {
-    // The file must be in persistent dir.
-    DCHECK(cache_entry.is_persistent());
-    return FILE_ERROR_OK;
-  }
-
-  // Move file to persistent dir with new .local extension.
-
-  // Get the current path of the file in cache.
-  base::FilePath source_path = GetCacheFilePath(
-      resource_id,
-      md5,
-      GetSubDirectoryType(cache_entry),
-      CACHED_FILE_FROM_SERVER);
-  // Determine destination path.
-  const CacheSubDirectoryType sub_dir_type = CACHE_TYPE_PERSISTENT;
-  base::FilePath cache_file_path = GetCacheFilePath(
-      resource_id,
-      md5,
-      sub_dir_type,
-      CACHED_FILE_LOCALLY_MODIFIED);
-
-  if (!MoveFile(source_path, cache_file_path))
-    return FILE_ERROR_FAILED;
-
-  // Now that file operations have completed, update metadata.
-  cache_entry.set_md5(md5);
-  cache_entry.set_is_dirty(true);
-  cache_entry.set_is_persistent(sub_dir_type == CACHE_TYPE_PERSISTENT);
   metadata_->AddOrUpdateCacheEntry(resource_id, cache_entry);
   return FILE_ERROR_OK;
 }

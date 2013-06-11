@@ -8,9 +8,9 @@
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/threading/platform_thread.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/threading/platform_thread.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
@@ -87,7 +87,7 @@ class MockProxyResolver : public ProxyResolver {
   int request_count() const { return request_count_; }
 
   const ProxyResolverScriptData* last_script_data() const {
-    return last_script_data_;
+    return last_script_data_.get();
   }
 
   void SetResolveLatency(base::TimeDelta latency) {

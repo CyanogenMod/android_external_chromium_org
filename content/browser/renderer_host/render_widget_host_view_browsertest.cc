@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -170,7 +170,7 @@ class RenderWidgetHostViewBrowserTest : public ContentBrowserTest {
   // call stack.
   static void GiveItSomeTime() {
     base::RunLoop run_loop;
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         run_loop.QuitClosure(),
         base::TimeDelta::FromMilliseconds(10));
@@ -392,12 +392,13 @@ IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest, CopyTwice) {
   base::RunLoop run_loop;
   scoped_refptr<media::VideoFrame> first_output =
       media::VideoFrame::CreateBlackFrame(frame_size());
-  ASSERT_TRUE(first_output);
+  ASSERT_TRUE(first_output.get());
   scoped_refptr<media::VideoFrame> second_output =
       media::VideoFrame::CreateBlackFrame(frame_size());
-  ASSERT_TRUE(second_output);
+  ASSERT_TRUE(second_output.get());
   view->CopyFromCompositingSurfaceToVideoFrame(
-      gfx::Rect(view->GetViewBounds().size()), first_output,
+      gfx::Rect(view->GetViewBounds().size()),
+      first_output,
       base::Bind(&RenderWidgetHostViewBrowserTest::FrameDelivered,
                  base::Unretained(this),
                  base::MessageLoopProxy::current(),

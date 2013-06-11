@@ -10,9 +10,9 @@
 #include "base/bind_helpers.h"
 #include "base/json/json_writer.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -266,10 +266,10 @@ void InspectMessageHandler::HandleInspectCommand(const ListValue* args) {
     return;
   scoped_refptr<DevToolsAgentHost> agent_host(
       DevToolsAgentHost::GetForWorker(process_id, route_id));
-  if (!agent_host)
+  if (!agent_host.get())
     return;
 
-  DevToolsWindow::OpenDevToolsWindowForWorker(profile, agent_host);
+  DevToolsWindow::OpenDevToolsWindowForWorker(profile, agent_host.get());
 }
 
 static void TerminateWorker(int process_id, int route_id) {
@@ -407,7 +407,7 @@ void InspectUI::Observe(int type,
 
 void InspectUI::StopListeningNotifications()
 {
-  if (!observer_)
+  if (!observer_.get())
     return;
   adb_bridge_.reset();
   observer_->InspectUIDestroyed();

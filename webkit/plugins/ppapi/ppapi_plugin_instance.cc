@@ -13,8 +13,8 @@
 #include "base/stl_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/utf_offset_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "cc/layers/texture_layer.h"
 #include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
@@ -48,11 +48,11 @@
 #include "printing/metafile_skia_wrapper.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
@@ -481,7 +481,7 @@ PluginInstance::~PluginInstance() {
   delegate_->InstanceDeleted(this);
   module_->InstanceDeleted(this);
   // If we switched from the NaCl plugin module, notify it too.
-  if (original_module_)
+  if (original_module_.get())
     original_module_->InstanceDeleted(this);
 
   // This should be last since some of the above "instance deleted" calls will
@@ -573,15 +573,8 @@ void PluginInstance::ScrollRect(int dx, int dy, const gfx::Rect& rect) {
   }
 }
 
-unsigned PluginInstance::GetBackingTextureId() {
-  if (bound_graphics_3d_)
-    return bound_graphics_3d_->GetBackingTextureId();
-
-  return 0;
-}
-
 void PluginInstance::CommitBackingTexture() {
-  if (texture_layer_)
+  if (texture_layer_.get())
     texture_layer_->SetNeedsDisplay();
 }
 
@@ -995,14 +988,14 @@ void PluginInstance::PageVisibilityChanged(bool is_visible) {
 void PluginInstance::ViewWillInitiatePaint() {
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewWillInitiatePaint();
-  else if (bound_graphics_3d_)
+  else if (bound_graphics_3d_.get())
     bound_graphics_3d_->ViewWillInitiatePaint();
 }
 
 void PluginInstance::ViewInitiatedPaint() {
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewInitiatedPaint();
-  else if (bound_graphics_3d_)
+  else if (bound_graphics_3d_.get())
     bound_graphics_3d_->ViewInitiatedPaint();
 }
 
@@ -1011,7 +1004,7 @@ void PluginInstance::ViewFlushedPaint() {
   scoped_refptr<PluginInstance> ref(this);
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewFlushedPaint();
-  else if (bound_graphics_3d_)
+  else if (bound_graphics_3d_.get())
     bound_graphics_3d_->ViewFlushedPaint();
 }
 
@@ -1583,14 +1576,8 @@ void PluginInstance::UpdateFlashFullscreenState(bool flash_fullscreen) {
   }
 
   PPB_Graphics3D_Impl* graphics_3d  = bound_graphics_3d_.get();
-  if (graphics_3d) {
-    if (flash_fullscreen) {
-      fullscreen_container_->ReparentContext(graphics_3d->platform_context());
-    } else {
-      delegate_->ReparentContext(graphics_3d->platform_context());
-    }
+  if (graphics_3d)
     UpdateLayer();
-  }
 
   bool old_plugin_focus = PluginHasFocus();
   flash_fullscreen_ = flash_fullscreen;
@@ -1679,10 +1666,7 @@ bool PluginInstance::IsViewAccelerated() {
 }
 
 PluginDelegate::PlatformContext3D* PluginInstance::CreateContext3D() {
-  if (fullscreen_container_)
-    return fullscreen_container_->CreateContext3D();
-  else
-    return delegate_->CreateContext3D();
+  return delegate_->CreateContext3D();
 }
 
 bool PluginInstance::PrintPDFOutput(PP_Resource print_output,
@@ -1781,18 +1765,25 @@ PluginDelegate::PlatformGraphics2D* PluginInstance::GetBoundGraphics2D() const {
   return bound_graphics_2d_platform_;
 }
 
+static void IgnoreCallback(unsigned, bool) {}
+
 void PluginInstance::UpdateLayer() {
   if (!container_)
     return;
 
-  bool want_layer = GetBackingTextureId();
+  gpu::Mailbox mailbox;
+  if (bound_graphics_3d_) {
+    PluginDelegate::PlatformContext3D* context =
+        bound_graphics_3d_->platform_context();
+    context->GetBackingMailbox(&mailbox);
+  }
+  bool want_layer = !mailbox.IsZero();
 
   if (want_layer == !!texture_layer_.get() &&
       layer_bound_to_fullscreen_ == !!fullscreen_container_)
     return;
 
-  if (texture_layer_) {
-    texture_layer_->ClearClient();
+  if (texture_layer_.get()) {
     if (!layer_bound_to_fullscreen_)
       container_->setWebLayer(NULL);
     else if (fullscreen_container_)
@@ -1802,7 +1793,7 @@ void PluginInstance::UpdateLayer() {
   }
   if (want_layer) {
     DCHECK(bound_graphics_3d_.get());
-    texture_layer_ = cc::TextureLayer::Create(this);
+    texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
     web_layer_.reset(new webkit::WebLayerImpl(texture_layer_));
     if (fullscreen_container_) {
       fullscreen_container_->SetLayer(web_layer_.get());
@@ -1814,6 +1805,8 @@ void PluginInstance::UpdateLayer() {
       container_->setWebLayer(web_layer_.get());
       texture_layer_->SetContentsOpaque(bound_graphics_3d_->IsOpaque());
     }
+    texture_layer_->SetTextureMailbox(
+        cc::TextureMailbox(mailbox, base::Bind(&IgnoreCallback), 0));
   }
   layer_bound_to_fullscreen_ = !!fullscreen_container_;
 }
@@ -1957,7 +1950,7 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
   // The Graphics3D instance can't be destroyed until we call
   // UpdateLayer().
   scoped_refptr< ::ppapi::Resource> old_graphics = bound_graphics_3d_.get();
-  if (bound_graphics_3d_) {
+  if (bound_graphics_3d_.get()) {
     bound_graphics_3d_->BindToInstance(false);
     bound_graphics_3d_ = NULL;
   }
@@ -2178,20 +2171,6 @@ void PluginInstance::DeliverSamples(PP_Instance instance,
   content_decryptor_delegate_->DeliverSamples(audio_frames, block_info);
 }
 
-unsigned PluginInstance::PrepareTexture(cc::ResourceUpdateQueue* queue) {
-  return GetBackingTextureId();
-}
-
-WebKit::WebGraphicsContext3D* PluginInstance::Context3d() {
-  DCHECK(bound_graphics_3d_.get());
-  DCHECK(bound_graphics_3d_->platform_context());
-  return bound_graphics_3d_->platform_context()->GetParentContext();
-}
-
-bool PluginInstance::PrepareTextureMailbox(cc::TextureMailbox* mailbox) {
-  return false;
-}
-
 void PluginInstance::NumberOfFindResultsChanged(PP_Instance instance,
                                                 int32_t total,
                                                 PP_Bool final_result) {
@@ -2239,7 +2218,7 @@ PP_Bool PluginInstance::GetScreenSize(PP_Instance instance, PP_Size* size) {
       NOTIMPLEMENTED();
       return NULL;
     case ::ppapi::GAMEPAD_SINGLETON_ID:
-      return gamepad_impl_;
+      return gamepad_impl_.get();
   }
 
   NOTREACHED();

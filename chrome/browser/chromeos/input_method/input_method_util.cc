@@ -14,7 +14,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/input_method_delegate.h"
@@ -269,7 +269,7 @@ const struct EnglishToResouceId {
   { "xkb:il::heb", IDS_STATUSBAR_LAYOUT_ISRAEL },
   { "xkb:kr:kr104:kor", IDS_STATUSBAR_LAYOUT_KOREA_104 },
   { "xkb:is::ice", IDS_STATUSBAR_LAYOUT_ICELANDIC },
-  { "xkb:ca:multi:fra", IDS_STATUSBAR_LAYOUT_CANADIAN_MULTILINGUAL },
+  { "xkb:ca:multix:fra", IDS_STATUSBAR_LAYOUT_CANADIAN_MULTILINGUAL },
 
   { "english-m", IDS_STATUSBAR_LAYOUT_USA_MYSTERY },
 };

@@ -11,9 +11,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
@@ -319,10 +319,11 @@ IN_PROC_BROWSER_TEST_F(RecordApiTest, MAYBE_CheckPlayback) {
   scoped_refptr<RecordReplayURLsFunction> playback_function(
       new RecordReplayURLsFunction(
       new TestProcessStrategy(&temp_files_)));
-  scoped_ptr<base::DictionaryValue> result(utils::ToDictionary(
-      utils::RunFunctionAndReturnSingleResult(playback_function,
-      base::StringPrintf(kPlaybackArgs1, escaped_user_data_dir.c_str()),
-      browser())));
+  scoped_ptr<base::DictionaryValue> result(
+      utils::ToDictionary(utils::RunFunctionAndReturnSingleResult(
+          playback_function.get(),
+          base::StringPrintf(kPlaybackArgs1, escaped_user_data_dir.c_str()),
+          browser())));
 
   // Check that command line user-data-dir was overridden.  (That
   // it was *consistently* overridden in both capture and replay

@@ -43,7 +43,6 @@
 //<include src="../../../../../ui/webui/resources/js/cr/ui/list_selection_controller.js"/>
 //<include src="../../../../../ui/webui/resources/js/cr/ui/list.js"/>
 //<include src="../../../../../ui/webui/resources/js/cr/ui/tree.js"/>
-//<include src="../../../../../ui/webui/resources/css/tree.css.js"/>
 //<include src="../../../../../ui/webui/resources/js/cr/ui/autocomplete_list.js"/>
 //
 //<include src="../../../../../ui/webui/resources/js/cr/ui/splitter.js"/>
@@ -78,8 +77,10 @@
 //<include src="butter_bar.js"/>
 //<include src="directory_contents.js"/>
 //<include src="directory_model.js"/>
-//<include src="file_copy_manager_wrapper.js"/>
+//<include src="drag_selector.js"/>
 //<include src="drive_banners.js" />
+//<include src="error_dialog.js"/>
+//<include src="file_copy_manager_wrapper.js"/>
 //<include src="file_grid.js"/>
 //<include src="file_manager.js"/>
 //<include src="file_manager_pyauto.js"/>
@@ -90,6 +91,7 @@
 //<include src="file_type.js"/>
 //<include src="scrollbar.js"/>
 //<include src="sidebar.js"/>
+//<include src="tree.css.js"/>
 //<include src="volume_list.js"/>
 //<include src="volume_manager.js"/>
 //<include src="media/media_util.js"/>

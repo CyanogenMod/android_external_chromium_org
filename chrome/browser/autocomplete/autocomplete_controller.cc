@@ -11,14 +11,13 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller_delegate.h"
 #include "chrome/browser/autocomplete/bookmark_provider.h"
 #include "chrome/browser/autocomplete/builtin_provider.h"
 #include "chrome/browser/autocomplete/extension_app_provider.h"
-#include "chrome/browser/autocomplete/history_contents_provider.h"
 #include "chrome/browser/autocomplete/history_quick_provider.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
@@ -159,8 +158,6 @@ AutocompleteController::AutocompleteController(
 #endif
   if (provider_types & AutocompleteProvider::TYPE_EXTENSION_APP)
     providers_.push_back(new ExtensionAppProvider(this, profile));
-  if (provider_types & AutocompleteProvider::TYPE_HISTORY_CONTENTS)
-    providers_.push_back(new HistoryContentsProvider(this, profile, use_hqp));
   if (use_hqp)
     providers_.push_back(new HistoryQuickProvider(this, profile));
   if (provider_types & AutocompleteProvider::TYPE_HISTORY_URL) {
@@ -561,9 +558,14 @@ void AutocompleteController::UpdateKeywordDescriptions(
       if (i->keyword != last_keyword) {
         const TemplateURL* template_url = i->GetTemplateURL(profile_, false);
         if (template_url) {
-          i->description = l10n_util::GetStringFUTF16(
-              IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION,
-              template_url->AdjustedShortNameForLocaleDirection());
+          // For extension keywords, just make the description the extension
+          // name -- don't assume that the normal search keyword description is
+          // applicable.
+          i->description = template_url->AdjustedShortNameForLocaleDirection();
+          if (!template_url->IsExtensionKeyword()) {
+            i->description = l10n_util::GetStringFUTF16(
+                IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION, i->description);
+          }
           i->description_class.push_back(
               ACMatchClassification(0, ACMatchClassification::DIM));
         }
@@ -626,8 +628,11 @@ void AutocompleteController::StartStopTimer() {
   // dropdown.  Furthermore, both Instant and InstantExtended expect
   // all results they inject (regardless of how long they took) to make
   // it to the edit model / dropdown display code.
+#if defined(HTML_INSTANT_EXTENDED_POPUP)
   if (!chrome::IsInstantExtendedAPIEnabled() &&
-      !chrome::IsInstantEnabled(profile_)) {
+      !chrome::IsInstantEnabled(profile_))
+#endif
+  {
     stop_timer_.Start(FROM_HERE,
                       base::TimeDelta::FromMilliseconds(kStopTimeMS),
                       base::Bind(&AutocompleteController::Stop,

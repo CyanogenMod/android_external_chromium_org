@@ -7,7 +7,7 @@
 
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/shell_integration.h"
 
 #ifdef __OBJC__
@@ -24,6 +24,9 @@ namespace web_app {
 // web_app::CreateShortcuts().
 base::FilePath GetAppInstallPath(
     const ShellIntegration::ShortcutInfo& shortcut_info);
+
+// If necessary, launch the shortcut for an app.
+void MaybeLaunchShortcut(const ShellIntegration::ShortcutInfo& shortcut_info);
 
 // Creates a shortcut for a web application. The shortcut is a stub app
 // that simply loads the browser framework and runs the given app.
@@ -61,6 +64,10 @@ class WebAppShortcutCreator {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(WebAppShortcutCreatorTest, UpdateIcon);
+
+  // Updates the InfoPlist.string inside |app_path| with the display name for
+  // the app.
+  bool UpdateDisplayName(const base::FilePath& app_path) const;
 
   // Path to the app's user data directory. For example:
   // ~/Library/Application Support/Chromium/Default/Web Applications/_crx_abc/

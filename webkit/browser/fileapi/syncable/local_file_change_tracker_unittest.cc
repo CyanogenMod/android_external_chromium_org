@@ -11,7 +11,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/blob/mock_blob_url_request_context.h"
@@ -21,7 +21,7 @@
 #include "webkit/browser/fileapi/syncable/local_file_sync_context.h"
 #include "webkit/browser/fileapi/syncable/sync_status_code.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 using fileapi::FileSystemContext;
 using fileapi::FileSystemURL;
@@ -36,7 +36,6 @@ class LocalFileChangeTrackerTest : public testing::Test {
   LocalFileChangeTrackerTest()
       : message_loop_(base::MessageLoop::TYPE_IO),
         file_system_(GURL("http://example.com"),
-                     "test",
                      base::MessageLoopProxy::current(),
                      base::MessageLoopProxy::current()) {}
 
@@ -45,12 +44,13 @@ class LocalFileChangeTrackerTest : public testing::Test {
 
     sync_context_ = new LocalFileSyncContext(base::MessageLoopProxy::current(),
                                              base::MessageLoopProxy::current());
-    ASSERT_EQ(sync_file_system::SYNC_STATUS_OK,
-              file_system_.MaybeInitializeFileSystemContext(sync_context_));
+    ASSERT_EQ(
+        sync_file_system::SYNC_STATUS_OK,
+        file_system_.MaybeInitializeFileSystemContext(sync_context_.get()));
   }
 
   virtual void TearDown() OVERRIDE {
-    if (sync_context_)
+    if (sync_context_.get())
       sync_context_->ShutdownOnUIThread();
     sync_context_ = NULL;
 
@@ -59,7 +59,7 @@ class LocalFileChangeTrackerTest : public testing::Test {
     // Make sure we don't leave the external filesystem.
     // (CannedSyncableFileSystem::TearDown does not do this as there may be
     // multiple syncable file systems registered for the name)
-    RevokeSyncableFileSystem("test");
+    RevokeSyncableFileSystem();
   }
 
  protected:

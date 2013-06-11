@@ -20,7 +20,7 @@
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 
 namespace {
@@ -231,7 +231,7 @@ bool FindProcessHoldingSocket(pid_t* pid_out, ino_t socket_inode) {
         continue;
       }
 
-      ino_t fd_inode;
+      ino_t fd_inode = static_cast<ino_t>(-1);
       if (ProcPathGetInode(&fd_inode, buf)) {
         if (fd_inode == socket_inode) {
           if (already_found) {

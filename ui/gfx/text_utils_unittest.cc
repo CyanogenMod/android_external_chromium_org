@@ -4,7 +4,7 @@
 
 #include "ui/gfx/text_utils.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace gfx {
@@ -48,10 +48,10 @@ TEST(TextUtilsTest, RemoveAcceleratorChar) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
     int accelerated_char_pos;
     int accelerated_char_span;
-    string16 result = RemoveAcceleratorChar(UTF8ToUTF16(cases[i].input),
-                                            kAcceleratorChar,
-                                            &accelerated_char_pos,
-                                            &accelerated_char_span);
+    base::string16 result = RemoveAcceleratorChar(UTF8ToUTF16(cases[i].input),
+                                                  kAcceleratorChar,
+                                                  &accelerated_char_pos,
+                                                  &accelerated_char_span);
     EXPECT_EQ(result, UTF8ToUTF16(cases[i].output));
     EXPECT_EQ(accelerated_char_pos, cases[i].accelerated_char_pos);
     EXPECT_EQ(accelerated_char_span, cases[i].accelerated_char_span);

@@ -9,7 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_quota_client.h"
@@ -21,8 +21,6 @@
 // Declared to shorten the line lengths.
 static const quota::StorageType kTemp = quota::kStorageTypeTemporary;
 static const quota::StorageType kPerm = quota::kStorageTypePersistent;
-
-using namespace webkit_database;
 
 namespace content {
 
@@ -48,15 +46,15 @@ class IndexedDBQuotaClientTest : public testing::Test {
         io_thread_(BrowserThread::IO, &message_loop_) {
     browser_context_.reset(new TestBrowserContext());
     idb_context_ = static_cast<IndexedDBContextImpl*>(
-        BrowserContext::GetDefaultStoragePartition(browser_context_.get())->
-            GetIndexedDBContext());
+        BrowserContext::GetDefaultStoragePartition(browser_context_.get())
+            ->GetIndexedDBContext());
     message_loop_.RunUntilIdle();
     setup_temp_dir();
   }
   void setup_temp_dir() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    base::FilePath indexeddb_dir = temp_dir_.path().Append(
-        IndexedDBContextImpl::kIndexedDBDirectory);
+    base::FilePath indexeddb_dir =
+        temp_dir_.path().Append(IndexedDBContextImpl::kIndexedDBDirectory);
     ASSERT_TRUE(file_util::CreateDirectory(indexeddb_dir));
     idb_context()->set_data_path_for_testing(indexeddb_dir);
   }
@@ -71,13 +69,13 @@ class IndexedDBQuotaClientTest : public testing::Test {
     base::MessageLoop::current()->RunUntilIdle();
   }
 
-  int64 GetOriginUsage(
-      quota::QuotaClient* client,
-      const GURL& origin,
-      quota::StorageType type) {
+  int64 GetOriginUsage(quota::QuotaClient* client,
+                       const GURL& origin,
+                       quota::StorageType type) {
     usage_ = -1;
     client->GetOriginUsage(
-        origin, type,
+        origin,
+        type,
         base::Bind(&IndexedDBQuotaClientTest::OnGetOriginUsageComplete,
                    weak_factory_.GetWeakPtr()));
     base::MessageLoop::current()->RunUntilIdle();
@@ -85,9 +83,8 @@ class IndexedDBQuotaClientTest : public testing::Test {
     return usage_;
   }
 
-  const std::set<GURL>& GetOriginsForType(
-      quota::QuotaClient* client,
-      quota::StorageType type) {
+  const std::set<GURL>& GetOriginsForType(quota::QuotaClient* client,
+                                          quota::StorageType type) {
     origins_.clear();
     client->GetOriginsForType(
         type,
@@ -97,13 +94,13 @@ class IndexedDBQuotaClientTest : public testing::Test {
     return origins_;
   }
 
-  const std::set<GURL>& GetOriginsForHost(
-      quota::QuotaClient* client,
-      quota::StorageType type,
-      const std::string& host) {
+  const std::set<GURL>& GetOriginsForHost(quota::QuotaClient* client,
+                                          quota::StorageType type,
+                                          const std::string& host) {
     origins_.clear();
     client->GetOriginsForHost(
-        type, host,
+        type,
+        host,
         base::Bind(&IndexedDBQuotaClientTest::OnGetOriginsComplete,
                    weak_factory_.GetWeakPtr()));
     base::MessageLoop::current()->RunUntilIdle();
@@ -114,7 +111,8 @@ class IndexedDBQuotaClientTest : public testing::Test {
                                       const GURL& origin_url) {
     delete_status_ = quota::kQuotaStatusUnknown;
     client->DeleteOriginData(
-        origin_url, kTemp,
+        origin_url,
+        kTemp,
         base::Bind(&IndexedDBQuotaClientTest::OnDeleteOriginComplete,
                    weak_factory_.GetWeakPtr()));
     base::MessageLoop::current()->RunUntilIdle();
@@ -141,9 +139,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
   }
 
  private:
-  void OnGetOriginUsageComplete(int64 usage) {
-    usage_ = usage;
-  }
+  void OnGetOriginUsageComplete(int64 usage) { usage_ = usage; }
 
   void OnGetOriginsComplete(const std::set<GURL>& origins) {
     origins_ = origins;
@@ -169,9 +165,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
 };
 
 TEST_F(IndexedDBQuotaClientTest, GetOriginUsage) {
-  IndexedDBQuotaClient client(
-      base::MessageLoopProxy::current(),
-      idb_context());
+  IndexedDBQuotaClient client(base::MessageLoopProxy::current(), idb_context());
 
   AddFakeIndexedDB(kOriginA, 6);
   AddFakeIndexedDB(kOriginB, 3);
@@ -188,9 +182,7 @@ TEST_F(IndexedDBQuotaClientTest, GetOriginUsage) {
 }
 
 TEST_F(IndexedDBQuotaClientTest, GetOriginsForHost) {
-  IndexedDBQuotaClient client(
-      base::MessageLoopProxy::current(),
-      idb_context());
+  IndexedDBQuotaClient client(base::MessageLoopProxy::current(), idb_context());
 
   EXPECT_EQ(kOriginA.host(), kOriginB.host());
   EXPECT_NE(kOriginA.host(), kOriginOther.host());
@@ -214,9 +206,7 @@ TEST_F(IndexedDBQuotaClientTest, GetOriginsForHost) {
 }
 
 TEST_F(IndexedDBQuotaClientTest, GetOriginsForType) {
-  IndexedDBQuotaClient client(
-      base::MessageLoopProxy::current(),
-      idb_context());
+  IndexedDBQuotaClient client(base::MessageLoopProxy::current(), idb_context());
 
   EXPECT_TRUE(GetOriginsForType(&client, kTemp).empty());
   EXPECT_TRUE(GetOriginsForType(&client, kPerm).empty());
@@ -230,9 +220,7 @@ TEST_F(IndexedDBQuotaClientTest, GetOriginsForType) {
 }
 
 TEST_F(IndexedDBQuotaClientTest, DeleteOrigin) {
-  IndexedDBQuotaClient client(
-      base::MessageLoopProxy::current(),
-      idb_context());
+  IndexedDBQuotaClient client(base::MessageLoopProxy::current(), idb_context());
 
   AddFakeIndexedDB(kOriginA, 1000);
   AddFakeIndexedDB(kOriginB, 50);

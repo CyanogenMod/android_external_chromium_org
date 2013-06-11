@@ -9,7 +9,7 @@
 
 #include "base/strings/string_piece.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMActivityLogger.h"
 #include "v8/include/v8.h"
 
@@ -33,7 +33,7 @@ class DOMActivityLogger: public WebKit::WebDOMActivityLogger {
   virtual void log(const WebString& api_name,
                    int argc,
                    const v8::Handle<v8::Value> argv[],
-                   const WebString& extra_info);
+                   const WebString& call_type);
 
   // If extension activity logging is enabled then check (using the
   // WebKit API) if there is no logger attached to the world corresponding

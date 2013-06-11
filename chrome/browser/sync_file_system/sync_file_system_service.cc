@@ -122,7 +122,6 @@ SyncFileSystemService::~SyncFileSystemService() {
 
 void SyncFileSystemService::InitializeForApp(
     fileapi::FileSystemContext* file_system_context,
-    const std::string& service_name,
     const GURL& app_origin,
     const SyncStatusCallback& callback) {
   DCHECK(local_file_service_);
@@ -132,13 +131,19 @@ void SyncFileSystemService::InitializeForApp(
   DVLOG(1) << "InitializeForApp: " << app_origin.spec();
 
   local_file_service_->MaybeInitializeFileSystemContext(
-      app_origin, service_name, file_system_context,
+      app_origin, file_system_context,
       base::Bind(&SyncFileSystemService::DidInitializeFileSystem,
                  AsWeakPtr(), app_origin, callback));
 }
 
 SyncServiceState SyncFileSystemService::GetSyncServiceState() {
   return RemoteStateToSyncServiceState(remote_file_service_->GetCurrentState());
+}
+
+void SyncFileSystemService::GetExtensionStatusMap(
+    std::map<GURL, std::string>* status_map) {
+  DCHECK(status_map);
+  remote_file_service_->GetOriginStatusMap(status_map);
 }
 
 void SyncFileSystemService::GetFileSyncStatus(
@@ -463,7 +468,7 @@ void SyncFileSystemService::Observe(
   // Update:          INSTALLED.
   // Uninstall:       UNLOADED(UNINSTALL).
   // Launch, Close:   No notification.
-  // Enable:          EABLED.
+  // Enable:          ENABLED.
   // Disable:         UNLOADED(DISABLE).
   // Reload, Restart: UNLOADED(DISABLE) -> INSTALLED -> ENABLED.
   //
@@ -564,7 +569,7 @@ void SyncFileSystemService::UpdateSyncEnabledStatus(
     ProfileSyncServiceBase* profile_sync_service) {
   if (!profile_sync_service->HasSyncSetupCompleted())
     return;
-  sync_enabled_ = profile_sync_service->GetPreferredDataTypes().Has(
+  sync_enabled_ = profile_sync_service->GetActiveDataTypes().Has(
       syncer::APPS);
   remote_file_service_->SetSyncEnabled(sync_enabled_);
   if (sync_enabled_) {

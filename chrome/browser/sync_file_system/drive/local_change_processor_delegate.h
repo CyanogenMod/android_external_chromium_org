@@ -31,7 +31,7 @@ class LocalChangeProcessorDelegate {
   typedef RemoteChangeHandler::RemoteChange RemoteChange;
 
   LocalChangeProcessorDelegate(
-      base::WeakPtr<DriveFileSyncService> sync_service,
+      DriveFileSyncService* sync_service,
       const FileChange& change,
       const base::FilePath& local_file_path,
       const SyncFileMetadata& local_file_metadata,
@@ -60,15 +60,15 @@ class LocalChangeProcessorDelegate {
       google_apis::GDataErrorCode error,
       const std::string& resource_id,
       const std::string& md5);
-  void DeleteFile(const SyncStatusCallback& callback);
-  void DeleteDirectory(const SyncStatusCallback& callback);
-  void DidDeleteFile(const SyncStatusCallback& callback,
-                     google_apis::GDataErrorCode error);
+  void Delete(const SyncStatusCallback& callback);
+  void DidDelete(const SyncStatusCallback& callback,
+                 google_apis::GDataErrorCode error);
   void ResolveToLocal(const SyncStatusCallback& callback);
   void DidDeleteFileToResolveToLocal(
       const SyncStatusCallback& callback,
       google_apis::GDataErrorCode error);
-  void ResolveToRemote(const SyncStatusCallback& callback);
+  void ResolveToRemote(const SyncStatusCallback& callback,
+                       SyncFileType remote_file_type);
   void DidResolveToRemote(const SyncStatusCallback& callback,
                           SyncStatusCode status);
   void DidApplyLocalChange(
@@ -100,7 +100,8 @@ class LocalChangeProcessorDelegate {
 
   void HandleManualResolutionCase(const SyncStatusCallback& callback);
   void HandleLocalWinCase(const SyncStatusCallback& callback);
-  void HandleRemoteWinCase(const SyncStatusCallback& callback);
+  void HandleRemoteWinCase(const SyncStatusCallback& callback,
+                           SyncFileType remote_file_type);
   void StartOver(const SyncStatusCallback& callback, SyncStatusCode status);
 
   SyncStatusCode GDataErrorCodeToSyncStatusCodeWrapper(
@@ -110,7 +111,7 @@ class LocalChangeProcessorDelegate {
   drive::APIUtilInterface* api_util();
   RemoteChangeHandler* remote_change_handler();
 
-  base::WeakPtr<DriveFileSyncService> sync_service_;
+  DriveFileSyncService* sync_service_;  // Not owned.
 
   fileapi::FileSystemURL url_;
   FileChange local_change_;

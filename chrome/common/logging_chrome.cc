@@ -38,12 +38,12 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -401,13 +401,8 @@ void CleanupChromeLogging() {
 base::FilePath GetLogFileName() {
   std::string filename;
   scoped_ptr<base::Environment> env(base::Environment::Create());
-  if (env->GetVar(env_vars::kLogFileName, &filename) && !filename.empty()) {
-#if defined(OS_WIN)
-    return base::FilePath(UTF8ToWide(filename));
-#elif defined(OS_POSIX)
-    return base::FilePath(filename);
-#endif
-  }
+  if (env->GetVar(env_vars::kLogFileName, &filename) && !filename.empty())
+    return base::FilePath::FromUTF8Unsafe(filename);
 
   const base::FilePath log_filename(FILE_PATH_LITERAL("chrome_debug.log"));
   base::FilePath log_path;

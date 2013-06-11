@@ -4,10 +4,10 @@
 
 #include "chrome/browser/ui/webui/extensions/pack_extension_handler.h"
 
+#include "base/bind.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
-#include "base/bind.h"
-#include "base/utf_string_conversions.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
@@ -21,7 +21,7 @@ PackExtensionHandler::PackExtensionHandler() {
 PackExtensionHandler::~PackExtensionHandler() {
   // There may be pending file dialogs, we need to tell them that we've gone
   // away so they don't try and call back to us.
-  if (load_extension_dialog_)
+  if (load_extension_dialog_.get())
     load_extension_dialog_->ListenerDestroyed();
 
   if (pack_job_.get())

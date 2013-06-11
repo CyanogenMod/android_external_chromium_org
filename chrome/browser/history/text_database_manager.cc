@@ -10,11 +10,12 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
-#include "base/metrics/histogram.h"
+#include "base/files/file_enumerator.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/metrics/histogram.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/history_publisher.h"
 #include "chrome/browser/history/visit_database.h"
 
@@ -160,8 +161,8 @@ void TextDatabaseManager::InitDBList() {
   // Find files on disk matching our pattern so we can quickly test for them.
   base::FilePath::StringType filepattern(TextDatabase::file_base());
   filepattern.append(FILE_PATH_LITERAL("*"));
-  file_util::FileEnumerator enumerator(
-      dir_, false, file_util::FileEnumerator::FILES, filepattern);
+  base::FileEnumerator enumerator(
+      dir_, false, base::FileEnumerator::FILES, filepattern);
   base::FilePath cur_file;
   while (!(cur_file = enumerator.Next()).empty()) {
     // Convert to the number representing this file.

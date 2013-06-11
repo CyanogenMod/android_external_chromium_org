@@ -7,7 +7,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "cc/layers/content_layer_client.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebContentLayer.h"
+#include "third_party/WebKit/public/platform/WebContentLayer.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/webkit_compositor_bindings_export.h"
 
@@ -29,7 +29,6 @@ class WebContentLayerImpl : public WebKit::WebContentLayer,
   // WebContentLayer implementation.
   virtual WebKit::WebLayer* layer();
   virtual void setDoubleSided(bool double_sided);
-  virtual void setUseLCDText(bool use_lcd_text);
   virtual void setDrawCheckerboardForMissingTiles(bool checkerboard);
 
  protected:

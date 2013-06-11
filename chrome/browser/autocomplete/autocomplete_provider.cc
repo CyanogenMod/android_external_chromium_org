@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -42,8 +42,6 @@ const char* AutocompleteProvider::TypeToString(Type type) {
       return "Contact";
     case TYPE_EXTENSION_APP:
       return "ExtensionApp";
-    case TYPE_HISTORY_CONTENTS:
-      return "HistoryContents";
     case TYPE_HISTORY_QUICK:
       return "HistoryQuick";
     case TYPE_HISTORY_URL:
@@ -81,8 +79,6 @@ metrics::OmniboxEventProto_ProviderType AutocompleteProvider::
       return metrics::OmniboxEventProto::CONTACT;
     case TYPE_EXTENSION_APP:
       return metrics::OmniboxEventProto::EXTENSION_APPS;
-    case TYPE_HISTORY_CONTENTS:
-      return metrics::OmniboxEventProto::HISTORY_CONTENTS;
     case TYPE_HISTORY_QUICK:
       return metrics::OmniboxEventProto::HISTORY_QUICK;
     case TYPE_HISTORY_URL:
@@ -130,7 +126,7 @@ AutocompleteProvider::~AutocompleteProvider() {
 bool AutocompleteProvider::HasHTTPScheme(const string16& input) {
   std::string utf8_input(UTF16ToUTF8(input));
   url_parse::Component scheme;
-  if (url_util::FindAndCompareScheme(utf8_input, chrome::kViewSourceScheme,
+  if (url_util::FindAndCompareScheme(utf8_input, content::kViewSourceScheme,
                                      &scheme))
     utf8_input.erase(0, scheme.end() + 1);
   return url_util::FindAndCompareScheme(utf8_input, chrome::kHttpScheme, NULL);

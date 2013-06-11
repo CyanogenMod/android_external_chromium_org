@@ -20,9 +20,9 @@
 #include "base/process_util.h"
 #include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 
@@ -403,7 +403,8 @@ bool CreateNewTempDirectory(const FilePath::StringType& prefix,
   return CreateTemporaryDirInDir(system_temp_dir, prefix, new_temp_path);
 }
 
-bool CreateDirectory(const FilePath& full_path) {
+bool CreateDirectoryAndGetError(const FilePath& full_path,
+                                base::PlatformFileError* error) {
   base::ThreadRestrictions::AssertIOAllowed();
 
   // If the path exists, we've succeeded if it's a directory, failed otherwise.
@@ -429,7 +430,7 @@ bool CreateDirectory(const FilePath& full_path) {
   if (parent_path.value() == full_path.value()) {
     return false;
   }
-  if (!CreateDirectory(parent_path)) {
+  if (!CreateDirectoryAndGetError(parent_path, error)) {
     DLOG(WARNING) << "Failed to create one of the parent directories.";
     return false;
   }
@@ -443,6 +444,8 @@ bool CreateDirectory(const FilePath& full_path) {
       // race to create the same directory.
       return true;
     } else {
+      if (error)
+        *error = base::LastErrorToPlatformFileError(error_code);
       DLOG(WARNING) << "Failed to create directory " << full_path_str
                     << ", last error is " << error_code << ".";
       return false;
@@ -597,139 +600,6 @@ bool SetCurrentDirectory(const FilePath& directory) {
   base::ThreadRestrictions::AssertIOAllowed();
   BOOL ret = ::SetCurrentDirectory(directory.value().c_str());
   return ret != 0;
-}
-
-///////////////////////////////////////////////
-// FileEnumerator
-
-FileEnumerator::FileEnumerator(const FilePath& root_path,
-                               bool recursive,
-                               int file_type)
-    : recursive_(recursive),
-      file_type_(file_type),
-      has_find_data_(false),
-      find_handle_(INVALID_HANDLE_VALUE) {
-  // INCLUDE_DOT_DOT must not be specified if recursive.
-  DCHECK(!(recursive && (INCLUDE_DOT_DOT & file_type_)));
-  memset(&find_data_, 0, sizeof(find_data_));
-  pending_paths_.push(root_path);
-}
-
-FileEnumerator::FileEnumerator(const FilePath& root_path,
-                               bool recursive,
-                               int file_type,
-                               const FilePath::StringType& pattern)
-    : recursive_(recursive),
-      file_type_(file_type),
-      has_find_data_(false),
-      pattern_(pattern),
-      find_handle_(INVALID_HANDLE_VALUE) {
-  // INCLUDE_DOT_DOT must not be specified if recursive.
-  DCHECK(!(recursive && (INCLUDE_DOT_DOT & file_type_)));
-  memset(&find_data_, 0, sizeof(find_data_));
-  pending_paths_.push(root_path);
-}
-
-FileEnumerator::~FileEnumerator() {
-  if (find_handle_ != INVALID_HANDLE_VALUE)
-    FindClose(find_handle_);
-}
-
-void FileEnumerator::GetFindInfo(FindInfo* info) {
-  DCHECK(info);
-
-  if (!has_find_data_)
-    return;
-
-  memcpy(info, &find_data_, sizeof(*info));
-}
-
-// static
-bool FileEnumerator::IsDirectory(const FindInfo& info) {
-  return (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-}
-
-// static
-FilePath FileEnumerator::GetFilename(const FindInfo& find_info) {
-  return FilePath(find_info.cFileName);
-}
-
-// static
-int64 FileEnumerator::GetFilesize(const FindInfo& find_info) {
-  ULARGE_INTEGER size;
-  size.HighPart = find_info.nFileSizeHigh;
-  size.LowPart = find_info.nFileSizeLow;
-  DCHECK_LE(size.QuadPart, std::numeric_limits<int64>::max());
-  return static_cast<int64>(size.QuadPart);
-}
-
-// static
-base::Time FileEnumerator::GetLastModifiedTime(const FindInfo& find_info) {
-  return base::Time::FromFileTime(find_info.ftLastWriteTime);
-}
-
-FilePath FileEnumerator::Next() {
-  base::ThreadRestrictions::AssertIOAllowed();
-
-  while (has_find_data_ || !pending_paths_.empty()) {
-    if (!has_find_data_) {
-      // The last find FindFirstFile operation is done, prepare a new one.
-      root_path_ = pending_paths_.top();
-      pending_paths_.pop();
-
-      // Start a new find operation.
-      FilePath src = root_path_;
-
-      if (pattern_.empty())
-        src = src.Append(L"*");  // No pattern = match everything.
-      else
-        src = src.Append(pattern_);
-
-      find_handle_ = FindFirstFile(src.value().c_str(), &find_data_);
-      has_find_data_ = true;
-    } else {
-      // Search for the next file/directory.
-      if (!FindNextFile(find_handle_, &find_data_)) {
-        FindClose(find_handle_);
-        find_handle_ = INVALID_HANDLE_VALUE;
-      }
-    }
-
-    if (INVALID_HANDLE_VALUE == find_handle_) {
-      has_find_data_ = false;
-
-      // This is reached when we have finished a directory and are advancing to
-      // the next one in the queue. We applied the pattern (if any) to the files
-      // in the root search directory, but for those directories which were
-      // matched, we want to enumerate all files inside them. This will happen
-      // when the handle is empty.
-      pattern_ = FilePath::StringType();
-
-      continue;
-    }
-
-    FilePath cur_file(find_data_.cFileName);
-    if (ShouldSkip(cur_file))
-      continue;
-
-    // Construct the absolute filename.
-    cur_file = root_path_.Append(find_data_.cFileName);
-
-    if (find_data_.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-      if (recursive_) {
-        // If |cur_file| is a directory, and we are doing recursive searching,
-        // add it to pending_paths_ so we scan it after we finish scanning this
-        // directory.
-        pending_paths_.push(cur_file);
-      }
-      if (file_type_ & FileEnumerator::DIRECTORIES)
-        return cur_file;
-    } else if (file_type_ & FileEnumerator::FILES) {
-      return cur_file;
-    }
-  }
-
-  return FilePath();
 }
 
 bool NormalizeFilePath(const FilePath& path, FilePath* real_path) {

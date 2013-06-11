@@ -10,12 +10,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/prefs/pref_service.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
 #include "base/tuple.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate_impl.h"
@@ -35,6 +35,7 @@
 #include "components/autofill/browser/credit_card.h"
 #include "components/autofill/browser/personal_data_manager.h"
 #include "components/autofill/browser/test_autofill_external_delegate.h"
+#include "components/autofill/browser/test_autofill_manager_delegate.h"
 #include "components/autofill/common/autofill_messages.h"
 #include "components/autofill/common/form_data.h"
 #include "components/autofill/common/form_field_data.h"
@@ -42,7 +43,6 @@
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
 #include "googleurl/src/gurl.h"
 #include "grit/component_resources.h"
@@ -54,7 +54,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
 
-using content::BrowserThread;
 using content::WebContents;
 using testing::_;
 using WebKit::WebFormElement;
@@ -550,6 +549,14 @@ class TestAutofillManager : public AutofillManager {
                                                  submission_time);
   }
 
+  virtual void OnMaybeShowAutocheckoutBubble(
+      const FormData& form,
+      const gfx::RectF& bounding_box) OVERRIDE {
+    AutofillManager::OnMaybeShowAutocheckoutBubble(form, bounding_box);
+    // Needed for AutocheckoutManager to post task on IO thread.
+    content::RunAllPendingInMessageLoop(content::BrowserThread::IO);
+  }
+
   // Resets the MessageLoopRunner so that it can wait for an asynchronous form
   // submission to complete.
   void ResetMessageLoopRunner() {
@@ -606,6 +613,20 @@ class TestAutofillManager : public AutofillManager {
     request_autocomplete_results_.push_back(std::make_pair(result, form_data));
   }
 
+  // Set autocheckout manager's page meta data to first page on Autocheckout
+  // flow.
+  void MarkAsFirstPageInAutocheckoutFlow() {
+    scoped_ptr<AutocheckoutPageMetaData> start_of_flow(
+        new AutocheckoutPageMetaData());
+    start_of_flow->current_page_number = 0;
+    start_of_flow->total_pages = 3;
+    WebElementDescriptor* proceed_element =
+        &start_of_flow->proceed_element_descriptor;
+    proceed_element->descriptor = "#foo";
+    proceed_element->retrieval_method = WebElementDescriptor::ID;
+    autocheckout_manager()->OnLoadedPageMetaData(start_of_flow.Pass());
+  }
+
  private:
   // Weak reference.
   TestPersonalDataManager* personal_data_;
@@ -627,16 +648,6 @@ class TestAutofillManager : public AutofillManager {
 
 class AutofillManagerTest : public ChromeRenderViewHostTestHarness {
  public:
-  AutofillManagerTest()
-      : ChromeRenderViewHostTestHarness(),
-        ui_thread_(BrowserThread::UI, &message_loop_),
-        file_thread_(BrowserThread::FILE),
-        io_thread_(BrowserThread::IO) {
-  }
-
-  virtual ~AutofillManagerTest() {
-  }
-
   virtual void SetUp() OVERRIDE {
     TestingProfile* profile = CreateProfile();
     profile->CreateRequestContext();
@@ -645,7 +656,6 @@ class AutofillManagerTest : public ChromeRenderViewHostTestHarness {
         profile, TestPersonalDataManager::Build);
 
     ChromeRenderViewHostTestHarness::SetUp();
-    io_thread_.StartIOThread();
 
     autofill::TabAutofillManagerDelegate::CreateForWebContents(web_contents());
 
@@ -654,8 +664,6 @@ class AutofillManagerTest : public ChromeRenderViewHostTestHarness {
         web_contents(),
         autofill::TabAutofillManagerDelegate::FromWebContents(web_contents()),
         &personal_data_));
-
-    file_thread_.Start();
   }
 
   virtual void TearDown() OVERRIDE {
@@ -664,9 +672,7 @@ class AutofillManagerTest : public ChromeRenderViewHostTestHarness {
     // AutofillManager is tied to the lifetime of the WebContents, so it must
     // be destroyed at the destruction of the WebContents.
     autofill_manager_.reset();
-    file_thread_.Stop();
     ChromeRenderViewHostTestHarness::TearDown();
-    io_thread_.Stop();
 
     // Remove the BrowserContext so TestPersonalDataManager does not need to
     // care about removing self as an observer in destruction.
@@ -783,19 +789,12 @@ class AutofillManagerTest : public ChromeRenderViewHostTestHarness {
   }
 
  protected:
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
-  content::TestBrowserThread io_thread_;
-
   scoped_ptr<TestAutofillManager> autofill_manager_;
   TestPersonalDataManager personal_data_;
 
   // Used when we want an off the record profile. This will store the original
   // profile from which the off the record profile is derived.
   scoped_ptr<Profile> other_browser_context_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AutofillManagerTest);
 };
 
 class TestFormStructure : public FormStructure {
@@ -3180,6 +3179,20 @@ TEST_F(AutofillManagerTest, DisabledAutofillDispatchesError) {
 
 namespace {
 
+class MockAutofillManagerDelegate
+    : public autofill::TestAutofillManagerDelegate {
+ public:
+  MockAutofillManagerDelegate() {}
+  virtual ~MockAutofillManagerDelegate() {}
+
+  MOCK_METHOD3(ShowAutocheckoutBubble,
+               void(const gfx::RectF& bounds,
+                    bool is_google_user,
+                    const base::Callback<void(bool)>& callback));
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockAutofillManagerDelegate);
+};
+
 class MockAutofillExternalDelegate : public AutofillExternalDelegate {
  public:
   explicit MockAutofillExternalDelegate(content::WebContents* web_contents,
@@ -3198,6 +3211,63 @@ class MockAutofillExternalDelegate : public AutofillExternalDelegate {
 };
 
 }  // namespace
+
+// Test that Autocheckout bubble is offered when server specifies field types.
+TEST_F(AutofillManagerTest, TestBubbleShown) {
+  MockAutofillManagerDelegate delegate;
+  autofill_manager_.reset(new TestAutofillManager(
+      web_contents(), &delegate, &personal_data_));
+  autofill_manager_->set_autofill_enabled(true);
+  autofill_manager_->MarkAsFirstPageInAutocheckoutFlow();
+
+  EXPECT_CALL(delegate, ShowAutocheckoutBubble(_, _, _));
+
+  FormData form;
+  CreateTestAddressFormData(&form);
+
+  TestFormStructure* form_structure = new TestFormStructure(form);
+  AutofillMetrics metrics_logger;  // ignored
+  form_structure->DetermineHeuristicTypes(metrics_logger);
+
+  // Build and add form structure with server data.
+  std::vector<AutofillFieldType> heuristic_types, server_types;
+  for (size_t i = 0; i < form.fields.size(); ++i) {
+    heuristic_types.push_back(UNKNOWN_TYPE);
+    server_types.push_back(form_structure->field(i)->type());
+  }
+  form_structure->SetFieldTypes(heuristic_types, server_types);
+  autofill_manager_->AddSeenForm(form_structure);
+
+  autofill_manager_->OnMaybeShowAutocheckoutBubble(form, gfx::RectF());
+}
+
+// Test that Autocheckout bubble is not offered when server doesn't have data
+// for the form.
+TEST_F(AutofillManagerTest, TestAutocheckoutBubbleNotShown) {
+  MockAutofillManagerDelegate delegate;
+  autofill_manager_.reset(new TestAutofillManager(
+      web_contents(), &delegate, &personal_data_));
+  autofill_manager_->set_autofill_enabled(true);
+  autofill_manager_->MarkAsFirstPageInAutocheckoutFlow();
+
+  FormData form;
+  CreateTestAddressFormData(&form);
+
+  TestFormStructure* form_structure = new TestFormStructure(form);
+  AutofillMetrics metrics_logger;  // ignored
+  form_structure->DetermineHeuristicTypes(metrics_logger);
+
+  // Build form structure without server data.
+  std::vector<AutofillFieldType> heuristic_types, server_types;
+  for (size_t i = 0; i < form.fields.size(); ++i) {
+    heuristic_types.push_back(form_structure->field(i)->type());
+    server_types.push_back(NO_SERVER_DATA);
+  }
+  form_structure->SetFieldTypes(heuristic_types, server_types);
+  autofill_manager_->AddSeenForm(form_structure);
+
+  autofill_manager_->OnMaybeShowAutocheckoutBubble(form, gfx::RectF());
+}
 
 // Test our external delegate is called at the right time.
 TEST_F(AutofillManagerTest, TestExternalDelegate) {

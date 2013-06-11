@@ -13,9 +13,10 @@
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_error_details.h"
+#include "chrome/browser/translate/translate_event_details.h"
 #include "chrome/browser/translate/translate_prefs.h"
-#include "chrome/common/language_detection_details.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/translate/language_detection_details.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 
@@ -47,7 +48,11 @@ void TranslateInternalsHandler::OnLanguageDetection(
            new base::StringValue(details.cld_language));
   dict.Set("is_cld_reliable",
            new base::FundamentalValue(details.is_cld_reliable));
-  dict.Set("language", new base::StringValue(details.adopted_language));
+  dict.Set("html_root_language",
+           new base::StringValue(details.html_root_language));
+  dict.Set("adopted_language",
+           new base::StringValue(details.adopted_language));
+  dict.Set("content", new base::StringValue(details.contents));
   SendMessageToJs("languageDetectionInfoAdded", dict);
 }
 
@@ -61,6 +66,16 @@ void TranslateInternalsHandler::OnTranslateError(
   dict.Set("error",
            new base::FundamentalValue(details.error));
   SendMessageToJs("translateErrorDetailsAdded", dict);
+}
+
+void TranslateInternalsHandler::OnTranslateEvent(
+    const TranslateEventDetails& details) {
+  base::DictionaryValue dict;
+  dict.Set("time", new base::FundamentalValue(details.time.ToJsTime()));
+  dict.Set("filename", new base::StringValue(details.filename));
+  dict.Set("line", new base::FundamentalValue(details.line));
+  dict.Set("message", new base::StringValue(details.message));
+  SendMessageToJs("translateEventDetailsAdded", dict);
 }
 
 void TranslateInternalsHandler::OnRemovePrefItem(const base::ListValue* args) {

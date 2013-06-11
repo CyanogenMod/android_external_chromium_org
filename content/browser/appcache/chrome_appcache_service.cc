@@ -10,8 +10,8 @@
 #include "content/public/browser/resource_context.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/appcache/appcache_storage_impl.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/appcache/appcache_storage_impl.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 namespace content {
 
@@ -46,7 +46,7 @@ void ChromeAppCacheService::InitializeOnIOThread(
           BrowserThread::FILE_USER_BLOCKING),
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE));
   set_appcache_policy(this);
-  set_special_storage_policy(special_storage_policy);
+  set_special_storage_policy(special_storage_policy.get());
 }
 
 bool ChromeAppCacheService::CanLoadAppCache(const GURL& manifest_url,

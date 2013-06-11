@@ -9,9 +9,13 @@
 
 class BookmarkBarView;
 class FullscreenController;
-class TopContainerView;
+
+namespace gfx {
+class Size;
+}
 
 namespace views {
+class View;
 class Widget;
 }
 
@@ -43,9 +47,6 @@ class ImmersiveModeController {
     // Returns the browser's FullscreenController.
     virtual FullscreenController* GetFullscreenController() = 0;
 
-    // Puts focus in the location bar.
-    virtual void FocusLocationBar() = 0;
-
     // Notifies the delegate that fullscreen has been entered or exited.
     virtual void FullscreenStateChanged() = 0;
 
@@ -61,7 +62,7 @@ class ImmersiveModeController {
   // Must initialize after browser view has a Widget and native window.
   virtual void Init(Delegate* delegate,
                     views::Widget* widget,
-                    TopContainerView* top_container) = 0;
+                    views::View* top_container) = 0;
 
   // Enables or disables immersive mode.
   virtual void SetEnabled(bool enabled) = 0;
@@ -77,9 +78,14 @@ class ImmersiveModeController {
   // True when the top views are fully or partially visible.
   virtual bool IsRevealed() const = 0;
 
-  // If the controller is temporarily revealing the top views ensures that
-  // the reveal view's layer is on top and hence visible over web contents.
-  virtual void MaybeStackViewAtTop() = 0;
+  // Returns the top container's vertical offset relative to its parent. When
+  // revealing or closing the top-of-window views, part of the top container is
+  // offscreen.
+  // This method takes in the top container's size because it is called as part
+  // of computing the new bounds for the top container in
+  // BrowserViewLayout::UpdateTopContainerBounds().
+  virtual int GetTopContainerVerticalOffset(
+      const gfx::Size& top_container_size) const = 0;
 
   // Returns a lock which will keep the top-of-window views revealed for its
   // lifetime. Several locks can be obtained. When all of the locks are

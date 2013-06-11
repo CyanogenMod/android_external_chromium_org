@@ -8,10 +8,10 @@
 #include "base/bind_helpers.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -21,6 +21,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/extension_resource.h"
@@ -218,7 +219,8 @@ void ExtensionIconSource::LoadFaviconImage(int request_id) {
     return;
   }
 
-  GURL favicon_url = GetData(request_id)->extension->GetFullLaunchURL();
+  GURL favicon_url = extensions::AppLaunchInfo::GetFullLaunchURL(
+      GetData(request_id)->extension);
   favicon_service->GetRawFaviconForURL(
       FaviconService::FaviconForURLParams(
           profile_, favicon_url, chrome::FAVICON, gfx::kFaviconSize),
@@ -242,7 +244,7 @@ void ExtensionIconSource::OnFaviconDataAvailable(
   if (!request->grayscale) {
     // If we don't need a grayscale image, then we can bypass FinalizeImage
     // to avoid unnecessary conversions.
-    request->callback.Run(bitmap_result.bitmap_data);
+    request->callback.Run(bitmap_result.bitmap_data.get());
     ClearData(request_id);
   } else {
     FinalizeImage(ToBitmap(bitmap_result.bitmap_data->front(),

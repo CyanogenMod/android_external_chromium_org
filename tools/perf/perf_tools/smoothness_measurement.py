@@ -9,6 +9,11 @@ class DidNotScrollException(page_measurement.MeasurementFailure):
   def __init__(self):
     super(DidNotScrollException, self).__init__('Page did not scroll')
 
+class MissingDisplayFrameRate(page_measurement.MeasurementFailure):
+  def __init__(self):
+    super(MissingDisplayFrameRate, self).__init__(
+        'Missing display frame rate metrics')
+
 def DivideIfPossibleOrZero(numerator, denominator):
   if denominator == 0:
     return 0
@@ -137,6 +142,19 @@ def CalcAnalysisResults(rendering_stats_deltas, results):
               averageAnalysisTimeMS,
               data_type='unimportant')
 
+def CalcLatencyResults(rendering_stats_deltas, results):
+  inputEventCount = rendering_stats_deltas.get(
+      'inputEventCount', 0)
+  totalInputLatencyInSeconds = rendering_stats_deltas.get(
+      'totalInputLatency', 0)
+
+  averageLatency = DivideIfPossibleOrZero(
+      (totalInputLatencyInSeconds * 1000), inputEventCount)
+
+  results.Add('average_latency', 'ms', averageLatency,
+              data_type='unimportant')
+
+
 class SmoothnessMeasurement(page_measurement.PageMeasurement):
   def __init__(self):
     super(SmoothnessMeasurement, self).__init__('smoothness')
@@ -195,6 +213,7 @@ class SmoothnessMeasurement(page_measurement.PageMeasurement):
     CalcTextureUploadResults(rendering_stats_deltas, results)
     CalcImageDecodingResults(rendering_stats_deltas, results)
     CalcAnalysisResults(rendering_stats_deltas, results)
+    CalcLatencyResults(rendering_stats_deltas, results)
 
     if self.options.report_all_results:
       for k, v in rendering_stats_deltas.iteritems():
@@ -202,4 +221,6 @@ class SmoothnessMeasurement(page_measurement.PageMeasurement):
 
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       for r in tab.browser.platform.GetRawDisplayFrameRateMeasurements():
+        if not r.value:
+          raise MissingDisplayFrameRate()
         results.Add(r.name, r.unit, r.value)

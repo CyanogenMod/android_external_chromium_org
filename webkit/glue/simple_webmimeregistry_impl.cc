@@ -6,12 +6,12 @@
 
 #include "base/string_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/media/crypto/key_systems.h"
+#include "webkit/renderer/media/crypto/key_systems.h"
 
 using WebKit::WebString;
 using WebKit::WebMimeRegistry;

@@ -14,8 +14,8 @@
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -161,10 +161,9 @@ bool ServiceProcess::Initialize(base::MessageLoopForUI* message_loop,
   PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
   base::FilePath pref_path =
       user_data_dir.Append(chrome::kServiceStateFileName);
-  service_prefs_.reset(
-      new ServiceProcessPrefs(
-          pref_path,
-          JsonPrefStore::GetTaskRunnerForFile(pref_path, blocking_pool_)));
+  service_prefs_.reset(new ServiceProcessPrefs(
+      pref_path,
+      JsonPrefStore::GetTaskRunnerForFile(pref_path, blocking_pool_.get())));
   service_prefs_->ReadPrefs();
 
   // This switch it required to run connector with test gaia.

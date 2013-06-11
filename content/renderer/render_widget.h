@@ -16,12 +16,13 @@
 #include "base/time.h"
 #include "base/timer.h"
 #include "cc/debug/rendering_stats.h"
+#include "content/common/browser_rendering_stats.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/renderer/paint_aggregator.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
@@ -35,7 +36,7 @@
 #include "ui/gfx/vector2d.h"
 #include "ui/gfx/vector2d_f.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 
 struct ViewHostMsg_UpdateRect_Params;
 struct ViewMsg_Resize_Params;
@@ -173,6 +174,8 @@ class CONTENT_EXPORT RenderWidget
   // uploading.
   // This call is relatively expensive as it blocks on the GPU process
   bool GetGpuRenderingStats(GpuRenderingStats*) const;
+
+  void GetBrowserRenderingStats(BrowserRenderingStats* stats);
 
   RenderWidgetCompositor* compositor() const;
 
@@ -331,6 +334,7 @@ class CONTENT_EXPORT RenderWidget
   void OnShowImeIfNeeded();
 #endif
   void OnSnapshot(const gfx::Rect& src_subrect);
+  void OnSetBrowserRenderingStats(const BrowserRenderingStats& stats);
 
   // Notify the compositor about a change in viewport size. This should be
   // used only with auto resize mode WebWidgets, as normal WebWidgets should
@@ -530,12 +534,6 @@ class CONTENT_EXPORT RenderWidget
   // The size of the RenderWidget.
   gfx::Size size_;
 
-  // When short-circuiting size updates, the browser might not know about the
-  // current size of the RenderWidget. To be able to correctly predict when the
-  // browser expects a resize ack, keep track of the size the browser thinks
-  // this RenderWidget should have.
-  gfx::Size size_browser_expects_;
-
   // The TransportDIB that is being used to transfer an image to the browser.
   TransportDIB* current_paint_buf_;
 
@@ -707,6 +705,14 @@ class CONTENT_EXPORT RenderWidget
 
   // Specifies whether overscroll notifications are forwarded to the host.
   bool overscroll_notifications_enabled_;
+
+  // The last set of rendering stats received from the browser. This is only
+  // received when using the --enable-gpu-benchmarking flag.
+  BrowserRenderingStats browser_rendering_stats_;
+
+  // The latency information for any current non-accelerated-compositing
+  // frame.
+  ui::LatencyInfo latency_info_;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

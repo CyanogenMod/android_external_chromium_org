@@ -110,8 +110,9 @@ TEST(SolidColorLayerImplTest, VerifyOpaqueRect) {
   root->AddChild(layer);
 
   LayerList render_surface_layer_list;
-  LayerTreeHostCommon::CalculateDrawProperties(root,
+  LayerTreeHostCommon::CalculateDrawProperties(root.get(),
                                                gfx::Size(500, 500),
+                                               gfx::Transform(),
                                                1.f,
                                                1.f,
                                                NULL,

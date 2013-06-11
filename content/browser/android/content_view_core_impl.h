@@ -33,7 +33,6 @@ class WindowAndroid;
 
 namespace content {
 class RenderWidgetHostViewAndroid;
-class SyncInputEventFilter;
 
 // TODO(jrg): this is a shell.  Upstream the rest.
 class ContentViewCoreImpl : public ContentViewCore,
@@ -281,6 +280,12 @@ class ContentViewCoreImpl : public ContentViewCore,
   void NotifyExternalSurface(
       int player_id, bool is_request, const gfx::RectF& rect);
 
+  base::android::ScopedJavaLocalRef<jobject> GetContentVideoViewClient();
+
+  // Returns the context that the ContentViewCore was created with, it would
+  // typically be an Activity context for an on screen view.
+  base::android::ScopedJavaLocalRef<jobject> GetContext();
+
   // --------------------------------------------------------------------------
   // Methods called from native code
   // --------------------------------------------------------------------------
@@ -290,19 +295,12 @@ class ContentViewCoreImpl : public ContentViewCore,
   gfx::Size GetViewportSizeOffsetDip() const;
   float GetOverdrawBottomHeightDip() const;
 
-  InputEventAckState FilterInputEvent(const WebKit::WebInputEvent& input_event);
-
   void AttachLayer(scoped_refptr<cc::Layer> layer);
   void RemoveLayer(scoped_refptr<cc::Layer> layer);
   void SetVSyncNotificationEnabled(bool enabled);
   void SetNeedsAnimate();
 
  private:
-  enum InputEventVSyncStatus {
-      NOT_LAST_INPUT_EVENT_FOR_VSYNC,
-      LAST_INPUT_EVENT_FOR_VSYNC
-  };
-
   class ContentViewUserData;
 
   friend class ContentViewUserData;
@@ -324,8 +322,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   float GetTouchPaddingDip();
 
   WebKit::WebGestureEvent MakeGestureEvent(
-      WebKit::WebInputEvent::Type type, long time_ms,
-      float x, float y, InputEventVSyncStatus vsync_status) const;
+      WebKit::WebInputEvent::Type type, long time_ms, float x, float y) const;
 
   gfx::Size GetViewportSizePix() const;
   gfx::Size GetViewportSizeOffsetPix() const;
@@ -360,9 +357,6 @@ class ContentViewCoreImpl : public ContentViewCore,
   ui::WindowAndroid* window_android_;
 
   std::vector<UpdateFrameInfoCallback> update_frame_info_callbacks_;
-
-  // Optional browser-side input event filtering.
-  scoped_ptr<SyncInputEventFilter> input_event_filter_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

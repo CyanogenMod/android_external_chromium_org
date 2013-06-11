@@ -8,12 +8,15 @@
 #include "base/callback.h"
 #include "base/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/alert_commands.h"
+#include "chrome/test/chromedriver/chrome/adb_impl.h"
+#include "chrome/test/chromedriver/chrome/device_manager.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/version.h"
+#include "chrome/test/chromedriver/chrome_launcher.h"
 #include "chrome/test/chromedriver/command_names.h"
 #include "chrome/test/chromedriver/commands.h"
 #include "chrome/test/chromedriver/element_commands.h"
@@ -47,7 +50,9 @@ void CommandExecutorImpl::Init() {
   CHECK(io_thread_.StartWithOptions(options));
   context_getter_ = new URLRequestContextGetter(
       io_thread_.message_loop_proxy());
-  socket_factory_ = CreateSyncWebSocketFactory(context_getter_);
+  socket_factory_ = CreateSyncWebSocketFactory(context_getter_.get());
+  adb_.reset(new AdbImpl(io_thread_.message_loop_proxy(), log_));
+  device_manager_.reset(new DeviceManager(adb_.get()));
 
   // Commands which require an element id.
   typedef std::map<std::string, ElementCommand> ElementCommandMap;
@@ -191,8 +196,6 @@ void CommandExecutorImpl::Init() {
   }
   session_command_map[CommandNames::kGetSessionCapabilities] =
       base::Bind(&ExecuteGetSessionCapabilities, &session_map_);
-  session_command_map[CommandNames::kQuit] =
-      base::Bind(&ExecuteQuit, false, &session_map_);
   session_command_map[CommandNames::kGetCurrentWindowHandle] =
       base::Bind(&ExecuteGetCurrentWindowHandle);
   session_command_map[CommandNames::kClose] =
@@ -257,12 +260,14 @@ void CommandExecutorImpl::Init() {
       CommandNames::kNewSession,
       base::Bind(&ExecuteNewSession,
                  NewSessionParams(
-                     log_, &session_map_, context_getter_, socket_factory_)));
+                     log_, &session_map_, context_getter_, socket_factory_,
+                     device_manager_.get())));
+  command_map_.Set(CommandNames::kQuit,
+      base::Bind(&ExecuteQuit, false, &session_map_));
   command_map_.Set(
       CommandNames::kQuitAll,
       base::Bind(&ExecuteQuitAll,
-                 base::Bind(execute_session_command,
-                            base::Bind(&ExecuteQuit, true, &session_map_)),
+                 base::Bind(&ExecuteQuit, true, &session_map_),
                  &session_map_));
 }
 

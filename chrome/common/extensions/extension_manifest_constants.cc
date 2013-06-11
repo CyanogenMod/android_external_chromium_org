@@ -62,10 +62,6 @@ const char kLaunchContainer[] = "app.launch.container";
 const char kLaunchHeight[] = "app.launch.height";
 const char kLaunchLocalPath[] = "app.launch.local_path";
 const char kLaunchWebURL[] = "app.launch.web_url";
-const char kLaunchMaxHeight[] = "app.launch.max_height";
-const char kLaunchMaxWidth[] = "app.launch.max_width";
-const char kLaunchMinHeight[] = "app.launch.min_height";
-const char kLaunchMinWidth[] = "app.launch.min_width";
 const char kLaunchWidth[] = "app.launch.width";
 const char kLayouts[] = "layouts";
 const char kManifestVersion[] = "manifest_version";
@@ -79,6 +75,7 @@ const char kNaClModules[] = "nacl_modules";
 const char kNaClModulesMIMEType[] = "mime_type";
 const char kNaClModulesPath[] = "path";
 const char kOAuth2[] = "oauth2";
+const char kOAuth2AutoApprove[] = "oauth2.auto_approve";
 const char kOAuth2ClientId[] = "oauth2.client_id";
 const char kOAuth2Scopes[] = "oauth2.scopes";
 const char kOfflineEnabled[] = "offline_enabled";
@@ -338,9 +335,6 @@ const char kInvalidImportVersion[] =
     "Invalid value for 'import[*].minimum_version'.";
 const char kInvalidIncognitoBehavior[] =
     "Invalid value for 'incognito'.";
-const char kInvalidIncognitoModeForPlatformApp[] =
-    "Invalid value for 'incognito'. Packaged apps must use split incognito "
-    "mode.";
 const char kInvalidInputComponents[] =
     "Invalid value for 'input_components'";
 const char kInvalidInputComponentDescription[] =

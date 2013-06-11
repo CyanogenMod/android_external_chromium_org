@@ -18,6 +18,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -25,11 +26,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/path_service.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_co_mem.h"
@@ -1231,8 +1232,8 @@ bool BatchShortcutAction(const FileOperationCallback& shortcut_operation,
 
   bool success = true;
   InstallUtil::ProgramCompare target_compare(target_exe);
-  file_util::FileEnumerator enumerator(
-      shortcut_folder, false, file_util::FileEnumerator::FILES,
+  base::FileEnumerator enumerator(
+      shortcut_folder, false, base::FileEnumerator::FILES,
       string16(L"*") + installer::kLnkExt);
   base::FilePath target_path;
   for (base::FilePath shortcut_path = enumerator.Next();

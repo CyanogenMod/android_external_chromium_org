@@ -39,28 +39,31 @@ FileError RefreshEntriesOnBlockingPool(
   result->reserve(entries.size());
   for (size_t i = 0; i < entries.size(); ++i) {
     ResourceEntry entry = ConvertToResourceEntry(*entries[i]);
-    base::FilePath drive_file_path;
-    FileError error = resource_metadata->RefreshEntry(
-        entry, &drive_file_path, &entry);
-    if (error == FILE_ERROR_OK) {
-      result->push_back(SearchResultInfo(drive_file_path, entry));
-    } else if (error == FILE_ERROR_NOT_FOUND) {
-      // The result is absent in local resource metadata. There are two cases:
+    const std::string id = entry.resource_id();
+    FileError error = resource_metadata->RefreshEntry(entry);
+    if (error == FILE_ERROR_NOT_FOUND) {
+      // The result is absent in local resource metadata. This can happen if
+      // the metadata is not synced to the latest server state yet. In that
+      // case, we temporarily add the file to the special "drive/other"
+      // directory in order to assign a path, which is needed to access the
+      // file through FileSystem API.
       //
-      // 1) Resource metadata is not up-to-date, and the entry has recently
-      //    been added to the drive. This is not a fatal error, so just skip to
-      //    add the result. We should soon receive XMPP update notification
-      //    and refresh both the metadata and search result UI in Files.app.
-      //
-      // 2) Resource metadata is not fully loaded.
-      // TODO(kinaba) crbug.com/181075:
-      //    In this case, we are doing "fast fetch" fetching directory lists on
-      //    the fly to quickly deliver results to the user. However, we have no
-      //    such equivalent for Search.
-    } else {
-      // Otherwise, it is a fatal error. Give up to return the search result.
-      return error;
+      // It will be moved to the right place when the metadata gets synced
+      // in normal loading process in ChangeListProcessor.
+      entry.set_parent_resource_id(util::kDriveOtherDirSpecialResourceId);
+      error = resource_metadata->AddEntry(entry);
+
+      // FILE_ERROR_EXISTS may happen if we have already added the entry to
+      // "drive/other" once before. That's not an error.
+      if (error == FILE_ERROR_EXISTS)
+        error = FILE_ERROR_OK;
     }
+    if (error == FILE_ERROR_OK)
+      error = resource_metadata->GetResourceEntryById(id, &entry);
+    if (error != FILE_ERROR_OK)
+      return error;
+    result->push_back(SearchResultInfo(resource_metadata->GetFilePath(id),
+                                       entry));
   }
 
   return FILE_ERROR_OK;
@@ -82,12 +85,12 @@ SearchOperation::~SearchOperation() {
 }
 
 void SearchOperation::Search(const std::string& search_query,
-                             const GURL& next_feed,
-                             const SearchOperationCallback& callback) {
+                             const GURL& next_url,
+                             const SearchCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (next_feed.is_empty()) {
+  if (next_url.is_empty()) {
     // This is first request for the |search_query|.
     scheduler_->Search(
         search_query,
@@ -96,14 +99,14 @@ void SearchOperation::Search(const std::string& search_query,
   } else {
     // There is the remaining result so fetch it.
     scheduler_->ContinueGetResourceList(
-        next_feed,
+        next_url,
         base::Bind(&SearchOperation::SearchAfterGetResourceList,
                    weak_ptr_factory_.GetWeakPtr(), callback));
   }
 }
 
 void SearchOperation::SearchAfterGetResourceList(
-    const SearchOperationCallback& callback,
+    const SearchCallback& callback,
     google_apis::GDataErrorCode gdata_error,
     scoped_ptr<google_apis::ResourceList> resource_list) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -117,8 +120,8 @@ void SearchOperation::SearchAfterGetResourceList(
 
   DCHECK(resource_list);
 
-  GURL next_feed;
-  resource_list->GetNextFeedURL(&next_feed);
+  GURL next_url;
+  resource_list->GetNextFeedURL(&next_url);
 
   // The search results will be returned using virtual directory.
   // The directory is not really part of the file system, so it has no parent or
@@ -128,7 +131,7 @@ void SearchOperation::SearchAfterGetResourceList(
   if (resource_list->entries().empty()) {
     // Short cut. If the resource entry is empty, we don't need to refresh
     // the resource metadata.
-    callback.Run(FILE_ERROR_OK, next_feed, result.Pass());
+    callback.Run(FILE_ERROR_OK, next_url, result.Pass());
     return;
   }
 
@@ -143,13 +146,13 @@ void SearchOperation::SearchAfterGetResourceList(
       base::Bind(&SearchOperation::SearchAfterRefreshEntry,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback,
-                 next_feed,
+                 next_url,
                  base::Passed(&result)));
 }
 
 void SearchOperation::SearchAfterRefreshEntry(
-    const SearchOperationCallback& callback,
-    const GURL& next_feed,
+    const SearchCallback& callback,
+    const GURL& next_url,
     scoped_ptr<std::vector<SearchResultInfo> > result,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -161,7 +164,7 @@ void SearchOperation::SearchAfterRefreshEntry(
     return;
   }
 
-  callback.Run(error, next_feed, result.Pass());
+  callback.Run(error, next_url, result.Pass());
 }
 
 }  // namespace file_system

@@ -11,7 +11,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/common/time_format.h"
 #include "googleurl/src/gurl.h"
@@ -48,15 +48,8 @@ void GetFilePathAndQuery(const std::string& url,
       gurl.path().substr(1), (net::UnescapeRule::URL_SPECIAL_CHARS |
                               net::UnescapeRule::SPACES));
 
-#if defined(OS_WIN)
-  // The path we receive has the wrong slashes and escaping for what we need;
-  // this only appears to matter for getting icons from .exe files.
-  std::replace(path.begin(), path.end(), '/', '\\');
-  *file_path = base::FilePath(UTF8ToWide(path));
-#elif defined(OS_POSIX)
-  // The correct encoding on Linux may not actually be UTF8.
-  *file_path = base::FilePath(path);
-#endif
+  *file_path = base::FilePath::FromUTF8Unsafe(path);
+  *file_path = file_path->NormalizePathSeparators();
   query->assign(gurl.query());
 }
 
@@ -114,7 +107,7 @@ void FileIconSource::FetchFileIcon(
         icon->ToImageSkia()->GetRepresentation(scale_factor).sk_bitmap(),
         false, &icon_data->data());
 
-    callback.Run(icon_data);
+    callback.Run(icon_data.get());
   } else {
     // Attach the ChromeURLDataManager request ID to the history request.
     IconRequestDetails details;
@@ -163,7 +156,7 @@ void FileIconSource::OnFileIconDataAvailable(const IconRequestDetails& details,
         false,
         &icon_data->data());
 
-    details.callback.Run(icon_data);
+    details.callback.Run(icon_data.get());
   } else {
     // TODO(glen): send a dummy icon.
     details.callback.Run(NULL);

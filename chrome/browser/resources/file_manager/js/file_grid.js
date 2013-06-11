@@ -32,14 +32,19 @@ FileGrid.decorate = function(self, metadataCache) {
   self.__proto__ = FileGrid.prototype;
   self.metadataCache_ = metadataCache;
 
-  if (util.platform.newUI())
-    ScrollBar.createVertical(self.parentNode, self);
+  if (util.platform.newUI()) {
+    self.scrollBar_ = new MainPanelScrollBar();
+    self.scrollBar_.initialize(self.parentNode, self);
+  }
 
   self.itemConstructor = function(entry) {
     var item = self.ownerDocument.createElement('LI');
     FileGrid.Item.decorate(item, entry, self);
     return item;
   };
+
+  self.relayoutAggregation_ =
+      new AsyncUtil.Aggregation(self.relayoutImmediately_.bind(self));
 };
 
 /**
@@ -58,6 +63,25 @@ FileGrid.prototype.updateListItemsMetadata = function(type, props) {
     FileGrid.decorateThumbnailBox(box, entry, this.metadataCache_,
                                   ThumbnailLoader.FillMode.FIT);
   }
+};
+
+/**
+ * Redraws the UI. Skips multiple consecutive calls.
+ */
+FileGrid.prototype.relayout = function() {
+  this.relayoutAggregation_.run();
+};
+
+/**
+ * Redraws the UI immediately.
+ * @private
+ */
+FileGrid.prototype.relayoutImmediately_ = function() {
+  this.startBatchUpdates();
+  this.columns = 0;
+  this.redraw();
+  this.endBatchUpdates();
+  cr.dispatchSimpleEvent(this, 'relayout');
 };
 
 /**
@@ -185,4 +209,16 @@ FileGrid.Item.decorate = function(li, entry, grid) {
   // Override the default role 'listitem' to 'option' to match the parent's
   // role (listbox).
   li.setAttribute('role', 'option');
+};
+
+/**
+ * Sets the margin height for the transparent preview panel at the bottom.
+ * @param {number} margin Margin to be set in px.
+ */
+FileGrid.prototype.setBottomMarginForPanel = function(margin) {
+  if (!util.platform.newUI())
+    return;
+
+  this.style.paddingBottom = margin + 'px';
+  this.scrollBar_.setBottomMarginForPanel(margin);
 };

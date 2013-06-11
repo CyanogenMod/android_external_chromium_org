@@ -15,6 +15,9 @@ class MockAsyncPixelTransferState : public AsyncPixelTransferState {
  public:
   MockAsyncPixelTransferState();
 
+  // Called in ~MockAsyncPixelTransferState.
+  MOCK_METHOD0(Destroy, void());
+
   // Implement AsyncPixelTransferState.
   MOCK_METHOD0(TransferIsInProgress, bool());
   MOCK_METHOD1(BindTransfer, void(AsyncTexImage2DParams* level_params));
@@ -33,10 +36,6 @@ class MockAsyncPixelTransferDelegate : public AsyncPixelTransferDelegate {
   MOCK_METHOD2(CreatePixelTransferState,
       AsyncPixelTransferState*(
           GLuint service_id, const AsyncTexImage2DParams& define_params));
-  MOCK_METHOD0(BindCompletedAsyncTransfers, void());
-  MOCK_METHOD2(AsyncNotifyCompletion,
-      void(const AsyncMemoryParams& mem_params,
-           const CompletionCallback& callback));
   MOCK_METHOD4(AsyncTexImage2D,
       void(AsyncPixelTransferState*,
           const AsyncTexImage2DParams& tex_params,
@@ -47,10 +46,6 @@ class MockAsyncPixelTransferDelegate : public AsyncPixelTransferDelegate {
           const AsyncTexSubImage2DParams& tex_params,
           const AsyncMemoryParams& mem_params));
   MOCK_METHOD1(WaitForTransferCompletion, void(AsyncPixelTransferState*));
-  MOCK_METHOD0(GetTextureUploadCount, uint32());
-  MOCK_METHOD0(GetTotalTextureUploadTime, base::TimeDelta());
-  MOCK_METHOD0(ProcessMorePendingTransfers, void());
-  MOCK_METHOD0(NeedsProcessMorePendingTransfers, bool());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAsyncPixelTransferDelegate);

@@ -100,6 +100,8 @@ class RemoteFileSyncService {
       const GURL& origin,
       const SyncStatusCallback& callback) = 0;
 
+  // Re-enables |origin| that was previously disabled. If |origin| is not a
+  // SyncFS app, then the origin is effectively ignored.
   virtual void EnableOriginForTrackingChanges(
       const GURL& origin,
       const SyncStatusCallback& callback) = 0;
@@ -136,8 +138,10 @@ class RemoteFileSyncService {
   // returned by the last OnRemoteServiceStateUpdated notification.
   virtual RemoteServiceState GetCurrentState() const = 0;
 
-  // Returns the service name that backs this remote_file_sync_service.
-  virtual const char* GetServiceName() const = 0;
+  // Returns all origins along with an arbitrary string description of their
+  // corresponding sync statuses.
+  typedef std::map<GURL, std::string> OriginStatusMap;
+  virtual void GetOriginStatusMap(OriginStatusMap* status_map) = 0;
 
   // Enables or disables the background sync.
   // Setting this to false should disable the synchronization (and make

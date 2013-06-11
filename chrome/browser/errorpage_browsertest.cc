@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/ui/browser.h"
@@ -96,9 +96,7 @@ class ErrorPageTest : public InProcessBrowserTest {
         ASCIIToUTF16(expected_title));
 
     content::TestNavigationObserver test_navigation_observer(
-        content::Source<NavigationController>(
-              &browser()->tab_strip_model()->GetActiveWebContents()->
-                  GetController()),
+        browser()->tab_strip_model()->GetActiveWebContents(),
         num_navigations);
     if (direction == HISTORY_NAVIGATE_BACK) {
       chrome::GoBack(browser(), CURRENT_TAB);

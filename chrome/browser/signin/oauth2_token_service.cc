@@ -171,7 +171,7 @@ OAuth2TokenService::Fetcher::Fetcher(
       retry_number_(0),
       error_(GoogleServiceAuthError::SERVICE_UNAVAILABLE) {
   DCHECK(oauth2_token_service_);
-  DCHECK(getter_);
+  DCHECK(getter_.get());
   DCHECK(refresh_token_.length());
   waiting_requests_.push_back(waiting_request);
 }
@@ -183,7 +183,7 @@ OAuth2TokenService::Fetcher::~Fetcher() {
 }
 
 void OAuth2TokenService::Fetcher::Start() {
-  fetcher_.reset(new OAuth2AccessTokenFetcher(this, getter_));
+  fetcher_.reset(new OAuth2AccessTokenFetcher(this, getter_.get()));
   fetcher_->Start(GaiaUrls::GetInstance()->oauth2_chrome_client_id(),
                   GaiaUrls::GetInstance()->oauth2_chrome_client_secret(),
                   refresh_token_,
@@ -255,7 +255,7 @@ void OAuth2TokenService::Fetcher::InformWaitingRequests() {
       waiting_requests_.begin();
   for (; iter != waiting_requests_.end(); ++iter) {
     base::WeakPtr<RequestImpl> waiting_request = *iter;
-    if (waiting_request)
+    if (waiting_request.get())
       waiting_request->InformConsumer(error_, access_token_, expiration_date_);
   }
   waiting_requests_.clear();
@@ -303,18 +303,6 @@ bool OAuth2TokenService::RefreshTokenIsAvailable() {
   return !GetRefreshToken().empty();
 }
 
-// static
-void OAuth2TokenService::InformConsumer(
-    base::WeakPtr<OAuth2TokenService::RequestImpl> request,
-    const GoogleServiceAuthError& error,
-    const std::string& access_token,
-    const base::Time& expiration_date) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  if (request)
-    request->InformConsumer(error, access_token, expiration_date);
-}
-
 scoped_ptr<OAuth2TokenService::Request> OAuth2TokenService::StartRequest(
     const OAuth2TokenService::ScopeSet& scopes,
     OAuth2TokenService::Consumer* consumer) {
@@ -325,7 +313,7 @@ scoped_ptr<OAuth2TokenService::Request> OAuth2TokenService::StartRequest(
   std::string refresh_token = GetRefreshToken();
   if (refresh_token.empty()) {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &OAuth2TokenService::InformConsumer,
+        &RequestImpl::InformConsumer,
         request->AsWeakPtr(),
         GoogleServiceAuthError(
             GoogleServiceAuthError::USER_NOT_SIGNED_UP),
@@ -347,9 +335,12 @@ scoped_ptr<OAuth2TokenService::Request> OAuth2TokenService::StartRequest(
     iter->second->AddWaitingRequest(request->AsWeakPtr());
     return request.PassAs<Request>();
   }
-  pending_fetchers_[fetch_parameters] = Fetcher::CreateAndStart(
-      this, request_context_getter_, refresh_token, scopes,
-      request->AsWeakPtr());
+  pending_fetchers_[fetch_parameters] =
+      Fetcher::CreateAndStart(this,
+                              request_context_getter_.get(),
+                              refresh_token,
+                              scopes,
+                              request->AsWeakPtr());
   return request.PassAs<Request>();
 }
 
@@ -361,7 +352,7 @@ scoped_ptr<OAuth2TokenService::Request>
   const CacheEntry* cache_entry = GetCacheEntry(scopes);
   scoped_ptr<RequestImpl> request(new RequestImpl(consumer));
   base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &OAuth2TokenService::InformConsumer,
+      &RequestImpl::InformConsumer,
       request->AsWeakPtr(),
       GoogleServiceAuthError(GoogleServiceAuthError::NONE),
       cache_entry->access_token,
@@ -440,7 +431,7 @@ bool OAuth2TokenService::RemoveCacheEntry(
     const std::string& token_to_remove) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   TokenCache::iterator token_iterator = token_cache_.find(scopes);
-  if (token_iterator == token_cache_.end() &&
+  if (token_iterator != token_cache_.end() &&
       token_iterator->second.access_token == token_to_remove) {
     token_cache_.erase(token_iterator);
     return true;

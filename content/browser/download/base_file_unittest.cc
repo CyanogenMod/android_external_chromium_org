@@ -8,7 +8,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/test_file_util.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/download_interrupt_reasons.h"
@@ -610,46 +610,6 @@ TEST_F(BaseFileTest, IsEmptyHash) {
   std::string not_empty(BaseFile::kSha256HashLen, '\x01');
   EXPECT_FALSE(BaseFile::IsEmptyHash(not_empty));
   EXPECT_FALSE(BaseFile::IsEmptyHash(std::string()));
-}
-
-// Test that calculating speed after no writes.
-TEST_F(BaseFileTest, SpeedWithoutWrite) {
-  ASSERT_TRUE(InitializeFile());
-  base::TimeTicks current = StartTick() + kElapsedTimeDelta;
-  ASSERT_EQ(0, CurrentSpeedAtTime(current));
-  base_file_->Finish();
-}
-
-// Test that calculating speed after a single write.
-TEST_F(BaseFileTest, SpeedAfterSingleWrite) {
-  ASSERT_TRUE(InitializeFile());
-  ASSERT_TRUE(AppendDataToFile(kTestData1));
-  base::TimeTicks current = StartTick() + kElapsedTimeDelta;
-  int64 expected_speed = kTestDataLength1 / kElapsedTimeSeconds;
-  ASSERT_EQ(expected_speed, CurrentSpeedAtTime(current));
-  base_file_->Finish();
-}
-
-// Test that calculating speed after a multiple writes.
-TEST_F(BaseFileTest, SpeedAfterMultipleWrite) {
-  ASSERT_TRUE(InitializeFile());
-  ASSERT_TRUE(AppendDataToFile(kTestData1));
-  ASSERT_TRUE(AppendDataToFile(kTestData2));
-  ASSERT_TRUE(AppendDataToFile(kTestData3));
-  ASSERT_TRUE(AppendDataToFile(kTestData4));
-  base::TimeTicks current = StartTick() + kElapsedTimeDelta;
-  int64 expected_speed = (kTestDataLength1 + kTestDataLength2 +
-      kTestDataLength3 + kTestDataLength4) / kElapsedTimeSeconds;
-  ASSERT_EQ(expected_speed, CurrentSpeedAtTime(current));
-  base_file_->Finish();
-}
-
-// Test that calculating speed after no delay - should not divide by 0.
-TEST_F(BaseFileTest, SpeedAfterNoElapsedTime) {
-  ASSERT_TRUE(InitializeFile());
-  ASSERT_TRUE(AppendDataToFile(kTestData1));
-  ASSERT_EQ(0, CurrentSpeedAtTime(StartTick()));
-  base_file_->Finish();
 }
 
 // Test that a temporary file is created in the default download directory.

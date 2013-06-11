@@ -12,7 +12,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -400,6 +400,18 @@ TEST_F(OutputConfiguratorTest, ConnectSecondOutput) {
             delegate_->GetActionsAndClear());
   EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
 
+  EXPECT_TRUE(configurator_.SetDisplayMode(STATE_DUAL_MIRROR));
+  EXPECT_EQ(JoinActions(kGrab, kUngrab, NULL),
+            delegate_->GetActionsAndClear());
+  EXPECT_EQ(STATE_DUAL_EXTENDED, configurator_.output_state());
+  EXPECT_TRUE(mirroring_controller_.software_mirroring_enabled());
+
+  // Setting STATE_DUAL_MIRROR should try to reconfigure
+  EXPECT_TRUE(configurator_.SetDisplayMode(STATE_DUAL_EXTENDED));
+  EXPECT_EQ(JoinActions(NULL), delegate_->GetActionsAndClear());
+  EXPECT_FALSE(mirroring_controller_.software_mirroring_enabled());
+
+  // Set back to software mirror mode.
   EXPECT_TRUE(configurator_.SetDisplayMode(STATE_DUAL_MIRROR));
   EXPECT_EQ(JoinActions(kGrab, kUngrab, NULL),
             delegate_->GetActionsAndClear());

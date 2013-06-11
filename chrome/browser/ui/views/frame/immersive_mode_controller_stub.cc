@@ -15,7 +15,7 @@ ImmersiveModeControllerStub::~ImmersiveModeControllerStub() {
 void ImmersiveModeControllerStub::Init(
     Delegate* delegate,
     views::Widget* widget,
-    TopContainerView* top_container) {
+    views::View* top_container) {
 }
 
 void ImmersiveModeControllerStub::SetEnabled(bool enabled) {
@@ -38,7 +38,9 @@ bool ImmersiveModeControllerStub::IsRevealed() const {
   return false;
 }
 
-void ImmersiveModeControllerStub::MaybeStackViewAtTop() {
+int ImmersiveModeControllerStub::GetTopContainerVerticalOffset(
+    const gfx::Size& top_container_size) const {
+  return 0;
 }
 
 ImmersiveRevealedLock* ImmersiveModeControllerStub::GetRevealedLock(

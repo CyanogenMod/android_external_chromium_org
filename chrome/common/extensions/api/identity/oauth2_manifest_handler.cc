@@ -6,7 +6,7 @@
 
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "extensions/common/error_utils.h"
@@ -19,12 +19,13 @@ namespace {
 // Manifest keys.
 const char kClientId[] = "client_id";
 const char kScopes[] = "scopes";
+const char kAutoApprove[] = "auto_approve";
 
 }  // namespace
 
 namespace extensions {
 
-OAuth2Info::OAuth2Info() {}
+OAuth2Info::OAuth2Info() : auto_approve(false) {}
 OAuth2Info::~OAuth2Info() {}
 
 static base::LazyInstance<OAuth2Info> g_empty_oauth2_info =
@@ -68,6 +69,8 @@ bool OAuth2ManifestHandler::Parse(Extension* extension,
     }
     info->scopes.push_back(scope);
   }
+
+  dict->GetBoolean(kAutoApprove, &info->auto_approve);
 
   extension->SetManifestData(keys::kOAuth2, info.release());
   return true;

@@ -284,9 +284,12 @@ void ChromeResourceDispatcherHostDelegate::DownloadStarting(
 
   // If it's from the web, we don't trust it, so we push the throttle on.
   if (is_content_initiated) {
-    throttles->push_back(new DownloadResourceThrottle(
-        download_request_limiter_, child_id, route_id, request_id,
-        request->method()));
+    throttles->push_back(
+        new DownloadResourceThrottle(download_request_limiter_.get(),
+                                     child_id,
+                                     route_id,
+                                     request_id,
+                                     request->method()));
 #if defined(OS_ANDROID)
     throttles->push_back(
         new chrome::InterceptDownloadResourceThrottle(
@@ -390,8 +393,11 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
   if (io_data->safe_browsing_enabled()->GetValue()) {
     bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
     content::ResourceThrottle* throttle =
-        SafeBrowsingResourceThrottleFactory::Create(request, child_id, route_id,
-            is_subresource_request, safe_browsing_);
+        SafeBrowsingResourceThrottleFactory::Create(request,
+                                                    child_id,
+                                                    route_id,
+                                                    is_subresource_request,
+                                                    safe_browsing_.get());
     if (throttle)
       throttles->push_back(throttle);
   }
@@ -497,10 +503,6 @@ void ChromeResourceDispatcherHostDelegate::OnResponseStarted(
     content::ResourceContext* resource_context,
     content::ResourceResponse* response,
     IPC::Sender* sender) {
-  // TODO(mmenke):  Figure out if LOAD_ENABLE_LOAD_TIMING is safe to remove.
-  if (request->load_flags() & net::LOAD_ENABLE_LOAD_TIMING)
-    request->GetLoadTimingInfo(&response->head.load_timing);
-
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
 
   if (request->url().SchemeIsSecure()) {
@@ -558,10 +560,6 @@ void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
     content::ResourceResponse* response) {
-  // TODO(mmenke):  Figure out if LOAD_ENABLE_LOAD_TIMING is safe to remove.
-  if (request->load_flags() & net::LOAD_ENABLE_LOAD_TIMING)
-    request->GetLoadTimingInfo(&response->head.load_timing);
-
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)

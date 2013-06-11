@@ -9,21 +9,47 @@
 #include "base/memory/ref_counted.h"
 #include "content/browser/in_process_webkit/indexed_db_dispatcher_host.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBCallbacks.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBCursor.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabase.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabaseError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebIDBDatabase.h"
+#include "third_party/WebKit/public/platform/WebIDBDatabaseError.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 
 namespace content {
+class WebIDBCursorImpl;
+class WebIDBDatabaseImpl;
 
-class IndexedDBCallbacksBase : public WebKit::WebIDBCallbacks {
+class IndexedDBCallbacksBase {
  public:
   virtual ~IndexedDBCallbacksBase();
 
   virtual void onError(const WebKit::WebIDBDatabaseError& error);
   virtual void onBlocked(long long old_version);
+
+  // implemented by subclasses, but need to be called later
+  virtual void onSuccess(const WebKit::WebVector<WebKit::WebString>& value);
+  virtual void onSuccess(WebIDBDatabaseImpl* idb_object,
+                         const WebKit::WebIDBMetadata& metadata);
+  virtual void onUpgradeNeeded(long long old_version,
+                               WebIDBDatabaseImpl* database,
+                               const WebKit::WebIDBMetadata&);
+  virtual void onSuccess(WebIDBCursorImpl* idb_object,
+                         const IndexedDBKey& key,
+                         const IndexedDBKey& primaryKey,
+                         const WebKit::WebData& value);
+  virtual void onSuccess(const IndexedDBKey& key,
+                         const IndexedDBKey& primaryKey,
+                         const WebKit::WebData& value);
+  virtual void onSuccess(const WebKit::WebData& value);
+  virtual void onSuccessWithPrefetch(
+      const std::vector<IndexedDBKey>& keys,
+      const std::vector<IndexedDBKey>& primaryKeys,
+      const std::vector<std::vector<char> >& values);
+  virtual void onSuccess(const IndexedDBKey& value);
+  virtual void onSuccess(const WebKit::WebData& value,
+                         const IndexedDBKey& key,
+                         const IndexedDBKeyPath& keyPath);
+  virtual void onSuccess(long long value);
+  virtual void onSuccess();
 
  protected:
   IndexedDBCallbacksBase(IndexedDBDispatcherHost* dispatcher_host,
@@ -52,21 +78,18 @@ class IndexedDBCallbacks : public IndexedDBCallbacksBase {
 
 class IndexedDBCallbacksDatabase : public IndexedDBCallbacksBase {
  public:
-  IndexedDBCallbacksDatabase(
-      IndexedDBDispatcherHost* dispatcher_host,
-      int32 ipc_thread_id,
-      int32 ipc_callbacks_id,
-      int32 ipc_database_callbacks_id,
-      int64 host_transaction_id,
-      const GURL& origin_url);
+  IndexedDBCallbacksDatabase(IndexedDBDispatcherHost* dispatcher_host,
+                             int32 ipc_thread_id,
+                             int32 ipc_callbacks_id,
+                             int32 ipc_database_callbacks_id,
+                             int64 host_transaction_id,
+                             const GURL& origin_url);
 
-  virtual void onSuccess(
-      WebKit::WebIDBDatabase* idb_object,
-      const WebKit::WebIDBMetadata& metadata);
-  virtual void onUpgradeNeeded(
-      long long old_version,
-      WebKit::WebIDBDatabase* database,
-      const WebKit::WebIDBMetadata&);
+  virtual void onSuccess(WebIDBDatabaseImpl* idb_object,
+                         const WebKit::WebIDBMetadata& metadata) OVERRIDE;
+  virtual void onUpgradeNeeded(long long old_version,
+                               WebIDBDatabaseImpl* database,
+                               const WebKit::WebIDBMetadata&) OVERRIDE;
 
  private:
   int64 host_transaction_id_;
@@ -76,8 +99,8 @@ class IndexedDBCallbacksDatabase : public IndexedDBCallbacksBase {
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBCallbacksDatabase);
 };
 
-// WebIDBCursor uses:
-// * onSuccess(WebIDBCursor*, WebIDBKey, WebIDBKey, WebData)
+// WebIDBCursorImpl uses:
+// * onSuccess(WebIDBCursorImpl*, WebIDBKey, WebIDBKey, WebData)
 //   when an openCursor()/openKeyCursor() call has succeeded,
 // * onSuccess(WebIDBKey, WebIDBKey, WebData)
 //   when an advance()/continue() call has succeeded, or
@@ -85,30 +108,29 @@ class IndexedDBCallbacksDatabase : public IndexedDBCallbacksBase {
 //   to indicate it does not contain any data, i.e., there is no key within
 //   the key range, or it has reached the end.
 template <>
-class IndexedDBCallbacks<WebKit::WebIDBCursor>
-    : public IndexedDBCallbacksBase {
+class IndexedDBCallbacks<WebIDBCursorImpl> : public IndexedDBCallbacksBase {
  public:
-  IndexedDBCallbacks(
-      IndexedDBDispatcherHost* dispatcher_host,
-      int32 ipc_thread_id,
-      int32 ipc_callbacks_id,
-      int32 ipc_cursor_id)
-      : IndexedDBCallbacksBase(dispatcher_host, ipc_thread_id,
+  IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
+                     int32 ipc_thread_id,
+                     int32 ipc_callbacks_id,
+                     int32 ipc_cursor_id)
+      : IndexedDBCallbacksBase(dispatcher_host,
+                               ipc_thread_id,
                                ipc_callbacks_id),
-        ipc_cursor_id_(ipc_cursor_id) { }
+        ipc_cursor_id_(ipc_cursor_id) {}
 
-  virtual void onSuccess(WebKit::WebIDBCursor* idb_object,
-                         const WebKit::WebIDBKey& key,
-                         const WebKit::WebIDBKey& primaryKey,
+  virtual void onSuccess(WebIDBCursorImpl* idb_object,
+                         const IndexedDBKey& key,
+                         const IndexedDBKey& primaryKey,
                          const WebKit::WebData& value);
-  virtual void onSuccess(const WebKit::WebIDBKey& key,
-                         const WebKit::WebIDBKey& primaryKey,
+  virtual void onSuccess(const IndexedDBKey& key,
+                         const IndexedDBKey& primaryKey,
                          const WebKit::WebData& value);
   virtual void onSuccess(const WebKit::WebData& value);
   virtual void onSuccessWithPrefetch(
-      const WebKit::WebVector<WebKit::WebIDBKey>& keys,
-      const WebKit::WebVector<WebKit::WebIDBKey>& primaryKeys,
-      const WebKit::WebVector<WebKit::WebData>& values);
+      const std::vector<IndexedDBKey>& keys,
+      const std::vector<IndexedDBKey>& primaryKeys,
+      const std::vector<std::vector<char> >& values);
 
  private:
   // The id of the cursor this callback concerns, or -1 if the cursor
@@ -122,16 +144,16 @@ class IndexedDBCallbacks<WebKit::WebIDBCursor>
 // implements.  Thus we pass a const ___& version and thus we need this
 // specialization.
 template <>
-class IndexedDBCallbacks<WebKit::WebIDBKey>
-    : public IndexedDBCallbacksBase {
+class IndexedDBCallbacks<IndexedDBKey> : public IndexedDBCallbacksBase {
  public:
   IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
                      int32 ipc_thread_id,
                      int32 ipc_callbacks_id)
-      : IndexedDBCallbacksBase(dispatcher_host, ipc_thread_id,
-                               ipc_callbacks_id) { }
+      : IndexedDBCallbacksBase(dispatcher_host,
+                               ipc_thread_id,
+                               ipc_callbacks_id) {}
 
-  virtual void onSuccess(const WebKit::WebIDBKey& value);
+  virtual void onSuccess(const IndexedDBKey& value);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBCallbacks);
@@ -141,17 +163,17 @@ class IndexedDBCallbacks<WebKit::WebIDBKey>
 // interface Chromium implements.  Thus we pass a const ___& version and thus
 // we need this specialization.
 template <>
-class IndexedDBCallbacks<WebKit::WebVector<WebKit::WebString> >
-    : public IndexedDBCallbacksBase {
+class IndexedDBCallbacks<
+    WebKit::WebVector<WebKit::WebString> > : public IndexedDBCallbacksBase {
  public:
-  IndexedDBCallbacks(
-      IndexedDBDispatcherHost* dispatcher_host,
-      int32 ipc_thread_id,
-      int32 ipc_callbacks_id)
-      : IndexedDBCallbacksBase(dispatcher_host, ipc_thread_id,
-                               ipc_callbacks_id) { }
+  IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
+                     int32 ipc_thread_id,
+                     int32 ipc_callbacks_id)
+      : IndexedDBCallbacksBase(dispatcher_host,
+                               ipc_thread_id,
+                               ipc_callbacks_id) {}
 
-    virtual void onSuccess(const WebKit::WebVector<WebKit::WebString>& value);
+  virtual void onSuccess(const WebKit::WebVector<WebKit::WebString>& value);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBCallbacks);
@@ -161,22 +183,22 @@ class IndexedDBCallbacks<WebKit::WebVector<WebKit::WebString> >
 // Chromium implements.  Thus we pass a const ___& version and thus we
 // need this specialization.
 template <>
-class IndexedDBCallbacks<WebKit::WebData>
-    : public IndexedDBCallbacksBase {
+class IndexedDBCallbacks<WebKit::WebData> : public IndexedDBCallbacksBase {
  public:
   IndexedDBCallbacks(IndexedDBDispatcherHost* dispatcher_host,
                      int32 ipc_thread_id,
                      int32 ipc_callbacks_id)
-      : IndexedDBCallbacksBase(dispatcher_host, ipc_thread_id,
-                               ipc_callbacks_id) { }
+      : IndexedDBCallbacksBase(dispatcher_host,
+                               ipc_thread_id,
+                               ipc_callbacks_id) {}
 
   virtual void onSuccess(const WebKit::WebData& value);
   virtual void onSuccess(const WebKit::WebData& value,
-                         const WebKit::WebIDBKey& key,
-                         const WebKit::WebIDBKeyPath& keyPath);
+                         const IndexedDBKey& key,
+                         const IndexedDBKeyPath& keyPath);
   virtual void onSuccess(long long value);
   virtual void onSuccess();
-  virtual void onSuccess(const WebKit::WebIDBKey& value);
+  virtual void onSuccess(const IndexedDBKey& value);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBCallbacks);

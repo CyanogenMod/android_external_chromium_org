@@ -10,9 +10,9 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -74,7 +74,7 @@ void BookmarkProviderTest::SetUp() {
   profile_.reset(new TestingProfile());
   DCHECK(profile_.get());
   provider_ = new BookmarkProvider(this, profile_.get());
-  DCHECK(provider_);
+  DCHECK(provider_.get());
   provider_->set_bookmark_model_for_testing(model_.get());
 
   const BookmarkNode* other_node = model_->other_node();

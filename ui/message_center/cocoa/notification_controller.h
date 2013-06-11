@@ -46,6 +46,9 @@ MESSAGE_CENTER_EXPORT
   // Body text of the message.
   scoped_nsobject<NSTextField> message_;
 
+  // Container for optional list item views.
+  scoped_nsobject<NSView> listItemView_;
+
   // Container for optional items at the bottom of the notification.
   scoped_nsobject<NSView> bottomView_;
 }
@@ -68,6 +71,9 @@ MESSAGE_CENTER_EXPORT
 // rather than the model object, so it's safe to use after the Notification has
 // been deleted.
 - (const std::string&)notificationID;
+
+// Called when the user clicks within the notification view.
+- (void)notificationClicked;
 
 @end
 

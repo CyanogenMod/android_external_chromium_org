@@ -62,10 +62,10 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
@@ -438,12 +438,14 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
        "paint"));
 
   // Consider the various reasons not to initiate a capture.
-  if (should_capture && !output_buffer) {
-    TRACE_EVENT_INSTANT1("mirroring", "EncodeLimited",
+  if (should_capture && !output_buffer.get()) {
+    TRACE_EVENT_INSTANT1("mirroring",
+                         "EncodeLimited",
                          TRACE_EVENT_SCOPE_THREAD,
-                         "trigger", event_name);
+                         "trigger",
+                         event_name);
     return false;
-  } else if (!should_capture && output_buffer) {
+  } else if (!should_capture && output_buffer.get()) {
     if (content_is_dirty) {
       // This is a normal and acceptable way to drop a frame. We've hit our
       // capture rate limit: for example, the content is animating at 60fps but
@@ -453,7 +455,7 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
                            "trigger", event_name);
     }
     return false;
-  } else if (!should_capture && !output_buffer) {
+  } else if (!should_capture && !output_buffer.get()) {
     // We decided not to capture, but we wouldn't have been able to if we wanted
     // to because no output buffer was available.
     TRACE_EVENT_INSTANT1("mirroring", "NearlyEncodeLimited",
@@ -686,7 +688,7 @@ void RenderVideoFrame(const SkBitmap& input,
         reinterpret_cast<uint8*>(scaled_bitmap.getPixels()),
         scaled_bitmap.rowBytes(),
         region_in_frame,
-        output);
+        output.get());
   }
 
   // The result is now ready.
@@ -740,8 +742,8 @@ scoped_ptr<CaptureMachine> CaptureMachine::Create(
     const scoped_refptr<base::SequencedTaskRunner>& render_task_runner,
     const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(render_task_runner);
-  DCHECK(oracle_proxy);
+  DCHECK(render_task_runner.get());
+  DCHECK(oracle_proxy.get());
   scoped_ptr<CaptureMachine> machine(
       new CaptureMachine(render_task_runner, oracle_proxy));
 
@@ -1121,9 +1123,9 @@ void WebContentsVideoCaptureDevice::Impl::Start() {
 void WebContentsVideoCaptureDevice::Impl::AssignCaptureMachine(
     base::WeakPtr<WebContentsVideoCaptureDevice::Impl> impl,
     scoped_ptr<CaptureMachine> capture_machine) {
-  DCHECK(!impl || impl->thread_checker_.CalledOnValidThread());
+  DCHECK(!impl.get() || impl->thread_checker_.CalledOnValidThread());
 
-  if (!impl) {
+  if (!impl.get()) {
     // If WCVD::Impl was destroyed before we got back on it's thread and
     // capture_machine is not NULL, then we need to return to the UI thread to
     // safely cleanup the CaptureMachine.

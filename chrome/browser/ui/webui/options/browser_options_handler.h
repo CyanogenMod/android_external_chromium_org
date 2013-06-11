@@ -5,12 +5,16 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_OPTIONS_BROWSER_OPTIONS_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_OPTIONS_BROWSER_OPTIONS_HANDLER_H_
 
+#include <vector>
+
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
+#include "base/time.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_handler.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
@@ -141,7 +145,10 @@ class BrowserOptionsHandler
   // Sends an array of Profile objects to javascript.
   void SendProfilesInfo();
 
-  // Asynchronously opens a new browser window to create a new profile.
+  // Returns the current desktop type.
+  chrome::HostDesktopType GetDesktopType();
+
+  // Asynchronously creates and initializes a new profile.
   // The arguments are as follows:
   //   0: name (string)
   //   1: icon (string)
@@ -149,6 +156,46 @@ class BrowserOptionsHandler
   //      (optional, boolean)
   //   3: a flag stating whether the user should be managed (optional, boolean)
   void CreateProfile(const base::ListValue* args);
+
+  // After a new managed-user profile has been created, registers the user with
+  // the management server. This is a class method to ensure that the
+  // registration service (on the custodian's profile, along with this WebUI
+  // class) still exists after the new managed profile has been created
+  // asynchronously.
+  void RegisterNewManagedUser(const ProfileManager::CreateCallback& callback,
+                              Profile* new_profile,
+                              Profile::CreateStatus status);
+
+  // Records UMA histograms relevant to profile creation.
+  void RecordProfileCreationMetrics(Profile::CreateStatus status);
+
+  // Updates the UI as the final task after a new profile has been created.
+  void ShowProfileCreationFeedback(
+      chrome::HostDesktopType desktop_type,
+      bool is_managed,
+      Profile* profile,
+      Profile::CreateStatus status);
+
+  // Deletes the given profile. Expects one argument:
+  //   0: profile file path (string)
+  void DeleteProfile(const base::ListValue* args);
+
+  // Deletes the profile at the given |file_path|.
+  void DeleteProfileAtPath(base::FilePath file_path);
+
+  // Cancels creation of a managed-user profile currently in progress, as
+  // indicated by profile_path_being_created_, removing the object and files
+  // and canceling managed-user registration. This is the handler for the
+  // "cancelCreateProfile" message. |args| is not used.
+  // TODO(pamg): Move all the profile-handling methods into a more appropriate
+  // class.
+  void HandleCancelProfileCreation(const base::ListValue* args);
+
+  // Internal implementation. This may safely be called whether profile creation
+  // or registration is in progress or not. |user_initiated| should be true if
+  // the cancellation was deliberately requested by the user, and false if it
+  // was caused implicitly, e.g. by shutting down the browser.
+  void CancelProfileRegistration(bool user_initiated);
 
   void ObserveThemeChanged();
   void ThemesReset(const base::ListValue* args);
@@ -236,8 +283,6 @@ class BrowserOptionsHandler
   // Called when the accessibility checkbox values are changed.
   // |args| will contain the checkbox checked state as a string
   // ("true" or "false").
-  void SpokenFeedbackChangeCallback(const base::ListValue* args);
-  void HighContrastChangeCallback(const base::ListValue* args);
   void VirtualKeyboardChangeCallback(const base::ListValue* args);
 
   // Called when the user confirmed factory reset. Chrome will
@@ -280,6 +325,14 @@ class BrowserOptionsHandler
   BooleanPrefMember default_browser_policy_;
 
   TemplateURLService* template_url_service_;  // Weak.
+
+  // Used to allow cancelling a profile creation (particularly a managed-user
+  // registration) in progress. Set when profile creation is begun, and
+  // cleared when all the callbacks have been run and creation is complete.
+  base::FilePath profile_path_being_created_;
+
+  // Used to track how long profile creation takes.
+  base::TimeTicks profile_creation_start_time_;
 
   // Used to get WeakPtr to self for use on the UI thread.
   base::WeakPtrFactory<BrowserOptionsHandler> weak_ptr_factory_;

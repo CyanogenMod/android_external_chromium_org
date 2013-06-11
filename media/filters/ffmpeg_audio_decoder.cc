@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/base/audio_bus.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/audio_timestamp_helper.h"
@@ -144,16 +144,16 @@ void FFmpegAudioDecoder::BufferReady(
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(!read_cb_.is_null());
   DCHECK(queued_audio_.empty());
-  DCHECK_EQ(status != DemuxerStream::kOk, !input) << status;
+  DCHECK_EQ(status != DemuxerStream::kOk, !input.get()) << status;
 
   if (status == DemuxerStream::kAborted) {
-    DCHECK(!input);
+    DCHECK(!input.get());
     base::ResetAndReturn(&read_cb_).Run(kAborted, NULL);
     return;
   }
 
   if (status == DemuxerStream::kConfigChanged) {
-    DCHECK(!input);
+    DCHECK(!input.get());
 
     // Send a "end of stream" buffer to the decode loop
     // to output any remaining data still in the decoder.
@@ -180,7 +180,7 @@ void FFmpegAudioDecoder::BufferReady(
   }
 
   DCHECK_EQ(status, DemuxerStream::kOk);
-  DCHECK(input);
+  DCHECK(input.get());
 
   // Make sure we are notified if http://crbug.com/49709 returns.  Issue also
   // occurs with some damaged files.
@@ -455,10 +455,12 @@ void FFmpegAudioDecoder::RunDecodeLoop(
         // AudioBus::ToInterleaved() to convert the data as necessary.
         int skip_frames = start_sample;
         int total_frames = av_frame_->nb_samples;
+        int frames_to_interleave = decoded_audio_size / bytes_per_frame_;
         if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT) {
           DCHECK_EQ(converter_bus_->channels(), 1);
           total_frames *= codec_context_->channels;
           skip_frames *= codec_context_->channels;
+          frames_to_interleave *= codec_context_->channels;
         }
 
         converter_bus_->set_frames(total_frames);
@@ -467,11 +469,10 @@ void FFmpegAudioDecoder::RunDecodeLoop(
               av_frame_->extended_data[i]));
         }
 
-        const int frames_to_interleave = decoded_audio_size / bytes_per_frame_;
-        DCHECK_EQ(frames_to_interleave, converter_bus_->frames() - skip_frames);
-
         output = new DataBuffer(decoded_audio_size);
         output->SetDataSize(decoded_audio_size);
+
+        DCHECK_EQ(frames_to_interleave, converter_bus_->frames() - skip_frames);
         converter_bus_->ToInterleavedPartial(
             skip_frames, frames_to_interleave, bits_per_channel_ / 8,
             output->GetWritableData());
@@ -490,7 +491,7 @@ void FFmpegAudioDecoder::RunDecodeLoop(
       output = DataBuffer::CreateEOSBuffer();
     }
 
-    if (output) {
+    if (output.get()) {
       QueuedAudioBuffer queue_entry = { kOk, output };
       queued_audio_.push_back(queue_entry);
     }

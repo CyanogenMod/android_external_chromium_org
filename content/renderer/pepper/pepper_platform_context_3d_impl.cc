@@ -21,15 +21,12 @@
 namespace content {
 
 PlatformContext3DImpl::PlatformContext3DImpl()
-    : parent_texture_id_(0),
-      has_alpha_(false),
+    : has_alpha_(false),
       command_buffer_(NULL),
       weak_ptr_factory_(this) {
 }
 
 PlatformContext3DImpl::~PlatformContext3DImpl() {
-  DestroyParentContextProviderAndBackingTexture();
-
   if (command_buffer_) {
     DCHECK(channel_.get());
     channel_->DestroyCommandBuffer(command_buffer_);
@@ -53,7 +50,7 @@ bool PlatformContext3DImpl::Init(const int32* attrib_list,
 
   channel_ = render_thread->EstablishGpuChannelSync(
       CAUSE_FOR_GPU_LAUNCH_PEPPERPLATFORMCONTEXT3DIMPL_INITIALIZE);
-  if (!channel_)
+  if (!channel_.get())
     return false;
   DCHECK(channel_->state() == GpuChannelHost::kConnected);
 
@@ -106,6 +103,15 @@ bool PlatformContext3DImpl::Init(const int32* attrib_list,
       gpu_preference);
   if (!command_buffer_)
     return false;
+  if (!command_buffer_->Initialize())
+    return false;
+  std::vector<gpu::Mailbox> names;
+  if (!command_buffer_->GenerateMailboxNames(1, &names))
+    return false;
+  DCHECK_EQ(names.size(), 1u);
+  if (!command_buffer_->ProduceFrontBuffer(names[0]))
+    return false;
+  mailbox_ = names[0];
 
   command_buffer_->SetChannelErrorCallback(
       base::Bind(&PlatformContext3DImpl::OnContextLost,
@@ -114,62 +120,11 @@ bool PlatformContext3DImpl::Init(const int32* attrib_list,
       base::Bind(&PlatformContext3DImpl::OnConsoleMessage,
                  weak_ptr_factory_.GetWeakPtr()));
 
-  return SetParentAndCreateBackingTextureIfNeeded();
-}
-
-bool PlatformContext3DImpl::SetParentAndCreateBackingTextureIfNeeded() {
-  if (parent_context_provider_ &&
-      !parent_context_provider_->DestroyedOnMainThread() &&
-      parent_texture_id_)
-    return true;
-
-  parent_context_provider_ =
-      RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
-  parent_texture_id_ = 0;
-  if (!parent_context_provider_)
-    return false;
-
-  // Flush any remaining commands in the parent context to make sure the
-  // texture id accounting stays consistent.
-  gpu::gles2::GLES2Implementation* parent_gles2 =
-      parent_context_provider_->Context3d()->GetImplementation();
-  parent_gles2->helper()->CommandBufferHelper::Finish();
-  parent_texture_id_ = parent_gles2->MakeTextureId();
-
-  CommandBufferProxyImpl* parent_command_buffer =
-      parent_context_provider_->Context3d()->GetCommandBufferProxy();
-  if (!command_buffer_->SetParent(parent_command_buffer, parent_texture_id_))
-    return false;
-
   return true;
 }
 
-void PlatformContext3DImpl::DestroyParentContextProviderAndBackingTexture() {
-  if (!parent_context_provider_)
-    return;
-
-  if (parent_texture_id_) {
-    // Flush any remaining commands in the parent context to make sure the
-    // texture id accounting stays consistent.
-    gpu::gles2::GLES2Implementation* parent_gles2 =
-        parent_context_provider_->Context3d()->GetImplementation();
-    parent_gles2->helper()->CommandBufferHelper::Finish();
-    parent_gles2->FreeTextureId(parent_texture_id_);
-    parent_texture_id_ = 0;
-  }
-
-  parent_context_provider_ = NULL;
-}
-
-unsigned PlatformContext3DImpl::GetBackingTextureId() {
-  DCHECK(command_buffer_);
-  return parent_texture_id_;
-}
-
-WebKit::WebGraphicsContext3D* PlatformContext3DImpl::GetParentContext() {
-  if (!parent_context_provider_)
-    return NULL;
-  return parent_context_provider_->Context3d();
+void PlatformContext3DImpl::GetBackingMailbox(gpu::Mailbox* mailbox) {
+  *mailbox = mailbox_;
 }
 
 bool PlatformContext3DImpl::IsOpaque() {

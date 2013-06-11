@@ -14,7 +14,7 @@
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/webkit_test_runner.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamCenter.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestInterfaces.h"
@@ -22,8 +22,8 @@
 #include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestRunner.h"
 #include "v8/include/v8.h"
 #include "webkit/mocks/mock_webhyphenator.h"
-#include "webkit/tools/test_shell/mock_webclipboard_impl.h"
-#include "webkit/tools/test_shell/test_shell_webmimeregistry_impl.h"
+#include "webkit/support/mock_webclipboard_impl.h"
+#include "webkit/support/test_shell_webmimeregistry_impl.h"
 
 using WebKit::WebClipboard;
 using WebKit::WebFrame;

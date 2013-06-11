@@ -13,6 +13,7 @@
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/test/mock_download_item.h"
@@ -113,7 +114,7 @@ class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
     base::FilePath return_path = MockPromptUserForDownloadPath(download,
                                                                suggested_path,
                                                                callback);
-    OnDownloadPathSelected(callback, return_path);
+    callback.Run(return_path);
   }
 
   MOCK_METHOD3(
@@ -167,18 +168,13 @@ class ChromeDownloadManagerDelegateTest :
 
   TestingPrefServiceSyncable* pref_service_;
   base::ScopedTempDir test_download_dir_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
   scoped_ptr<content::MockDownloadManager> download_manager_;
   scoped_refptr<TestChromeDownloadManagerDelegate> delegate_;
   MockWebContentsDelegate web_contents_delegate_;
 };
 
 ChromeDownloadManagerDelegateTest::ChromeDownloadManagerDelegateTest()
-    : ChromeRenderViewHostTestHarness(),
-      ui_thread_(content::BrowserThread::UI, &message_loop_),
-      file_thread_(content::BrowserThread::FILE, &message_loop_),
-      download_manager_(new ::testing::NiceMock<content::MockDownloadManager>) {
+    : download_manager_(new ::testing::NiceMock<content::MockDownloadManager>) {
 }
 
 void ChromeDownloadManagerDelegateTest::SetUp() {
@@ -195,13 +191,13 @@ void ChromeDownloadManagerDelegateTest::SetUp() {
 }
 
 void ChromeDownloadManagerDelegateTest::TearDown() {
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   delegate_->Shutdown();
   ChromeRenderViewHostTestHarness::TearDown();
 }
 
 void ChromeDownloadManagerDelegateTest::VerifyAndClearExpectations() {
-  ::testing::Mock::VerifyAndClearExpectations(delegate_);
+  ::testing::Mock::VerifyAndClearExpectations(delegate_.get());
 }
 
 content::MockDownloadItem*
@@ -220,10 +216,14 @@ content::MockDownloadItem*
       .WillByDefault(ReturnRefOfCopy(std::string()));
   ON_CALL(*item, GetId())
       .WillByDefault(Return(id));
+  ON_CALL(*item, GetLastReason())
+      .WillByDefault(Return(content::DOWNLOAD_INTERRUPT_REASON_NONE));
   ON_CALL(*item, GetReferrerUrl())
       .WillByDefault(ReturnRefOfCopy(GURL()));
   ON_CALL(*item, GetState())
       .WillByDefault(Return(DownloadItem::IN_PROGRESS));
+  ON_CALL(*item, GetTargetFilePath())
+      .WillByDefault(ReturnRefOfCopy(base::FilePath()));
   ON_CALL(*item, GetTransitionType())
       .WillByDefault(Return(content::PAGE_TRANSITION_LINK));
   ON_CALL(*item, GetWebContents())
@@ -249,6 +249,7 @@ base::FilePath ChromeDownloadManagerDelegateTest::GetPathInDownloadDir(
 void ChromeDownloadManagerDelegateTest::SetDefaultDownloadPath(
     const base::FilePath& path) {
   pref_service_->SetFilePath(prefs::kDownloadDefaultDirectory, path);
+  pref_service_->SetFilePath(prefs::kSaveFileDefaultDirectory, path);
 }
 
 void ChromeDownloadManagerDelegateTest::DetermineDownloadTarget(
@@ -298,7 +299,6 @@ DownloadPrefs* ChromeDownloadManagerDelegateTest::download_prefs() {
 
 TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_LastSavePath) {
   GURL download_url("http://example.com/foo.txt");
-  delegate()->ClearLastDownloadPath();
 
   scoped_ptr<content::MockDownloadItem> save_as_download(
       CreateActiveDownloadItem(0));
@@ -356,11 +356,9 @@ TEST_F(ChromeDownloadManagerDelegateTest, StartDownload_LastSavePath) {
     VerifyAndClearExpectations();
   }
 
-  // Clear the last download path.
-  delegate()->ClearLastDownloadPath();
-
   {
     // The prompt path for the next download should be the default.
+    download_prefs()->SetSaveFilePath(download_prefs()->DownloadPath());
     DownloadTarget result;
     base::FilePath expected_prompt_path(GetPathInDownloadDir("foo.txt"));
     EXPECT_CALL(*delegate(),

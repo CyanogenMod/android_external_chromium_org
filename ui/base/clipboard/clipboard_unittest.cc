@@ -11,7 +11,7 @@
 #include "base/message_loop.h"
 #include "base/pickle.h"
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -361,8 +361,7 @@ TEST_F(ClipboardTest, SharedBitmapTest) {
   Clipboard::ReplaceSharedMemHandle(&objects, handle_to_share, current_process);
 
   clipboard().WriteObjects(Clipboard::BUFFER_STANDARD,
-                           objects,
-                           SourceTag());
+                           objects);
 
   EXPECT_TRUE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
                                             Clipboard::BUFFER_STANDARD));

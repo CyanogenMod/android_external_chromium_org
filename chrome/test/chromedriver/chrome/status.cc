@@ -4,7 +4,7 @@
 
 #include "chrome/test/chromedriver/chrome/status.h"
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 
 namespace {
 
@@ -33,6 +33,8 @@ const char* DefaultMessageForStatusCode(StatusCode code) {
       return "javascript error";
     case kXPathLookupError:
       return "xpath lookup error";
+    case kTimeout:
+      return "timeout";
     case kNoSuchWindow:
       return "no such window";
     case kInvalidCookieDomain:

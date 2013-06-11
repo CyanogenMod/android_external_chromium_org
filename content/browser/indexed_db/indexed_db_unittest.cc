@@ -6,15 +6,16 @@
 #include "base/files/scoped_temp_dir.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
+#include "content/browser/indexed_db/webidbdatabase_impl.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/test_browser_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebIDBDatabase.h"
+#include "third_party/WebKit/public/platform/WebIDBDatabase.h"
 #include "webkit/base/origin_url_conversions.h"
-#include "webkit/quota/mock_special_storage_policy.h"
-#include "webkit/quota/quota_manager.h"
-#include "webkit/quota/special_storage_policy.h"
+#include "webkit/browser/quota/mock_special_storage_policy.h"
+#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 
 namespace content {
 
@@ -55,10 +56,9 @@ TEST_F(IndexedDBTest, ClearSessionOnlyDatabases) {
 
     // Create some indexedDB paths.
     // With the levelDB backend, these are directories.
-    IndexedDBContextImpl* idb_context =
-        static_cast<IndexedDBContextImpl*>(
-            BrowserContext::GetDefaultStoragePartition(&browser_context)->
-                GetIndexedDBContext());
+    IndexedDBContextImpl* idb_context = static_cast<IndexedDBContextImpl*>(
+        BrowserContext::GetDefaultStoragePartition(&browser_context)
+            ->GetIndexedDBContext());
 
     // Override the storage policy with our own.
     idb_context->special_storage_policy_ = special_storage_policy;
@@ -99,10 +99,9 @@ TEST_F(IndexedDBTest, SetForceKeepSessionState) {
 
     // Create some indexedDB paths.
     // With the levelDB backend, these are directories.
-    IndexedDBContextImpl* idb_context =
-        static_cast<IndexedDBContextImpl*>(
-            BrowserContext::GetDefaultStoragePartition(&browser_context)->
-                GetIndexedDBContext());
+    IndexedDBContextImpl* idb_context = static_cast<IndexedDBContextImpl*>(
+        BrowserContext::GetDefaultStoragePartition(&browser_context)
+            ->GetIndexedDBContext());
 
     // Override the storage policy with our own.
     idb_context->special_storage_policy_ = special_storage_policy;
@@ -128,20 +127,18 @@ TEST_F(IndexedDBTest, SetForceKeepSessionState) {
   EXPECT_TRUE(file_util::DirectoryExists(session_only_path));
 }
 
-class MockWebIDBDatabase : public WebKit::WebIDBDatabase
-{
+class MockWebIDBDatabase : public WebIDBDatabaseImpl {
  public:
-  MockWebIDBDatabase(bool expect_force_close)
-      : expect_force_close_(expect_force_close),
+  explicit MockWebIDBDatabase(bool expect_force_close)
+      : WebIDBDatabaseImpl(NULL, NULL),
+        expect_force_close_(expect_force_close),
         force_close_called_(false) {}
 
-  virtual ~MockWebIDBDatabase()
-  {
+  virtual ~MockWebIDBDatabase() {
     EXPECT_TRUE(force_close_called_ == expect_force_close_);
   }
 
-  virtual void forceClose()
-  {
+  virtual void forceClose() OVERRIDE {
     ASSERT_TRUE(expect_force_close_);
     force_close_called_ = true;
   }
@@ -150,7 +147,6 @@ class MockWebIDBDatabase : public WebKit::WebIDBDatabase
   bool expect_force_close_;
   bool force_close_called_;
 };
-
 
 TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnDelete) {
   base::ScopedTempDir temp_dir;
@@ -165,10 +161,9 @@ TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnDelete) {
 
     const GURL kTestOrigin("http://test/");
 
-    IndexedDBContextImpl* idb_context =
-        static_cast<IndexedDBContextImpl*>(
-            BrowserContext::GetDefaultStoragePartition(&browser_context)->
-                GetIndexedDBContext());
+    IndexedDBContextImpl* idb_context = static_cast<IndexedDBContextImpl*>(
+        BrowserContext::GetDefaultStoragePartition(&browser_context)
+            ->GetIndexedDBContext());
 
     idb_context->quota_manager_proxy_ = NULL;
     idb_context->set_data_path_for_testing(temp_dir.path());

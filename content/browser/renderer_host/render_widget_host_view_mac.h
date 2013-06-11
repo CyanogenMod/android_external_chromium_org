@@ -23,7 +23,7 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
 #include "ui/base/cocoa/base_view.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 
 namespace content {
 class CompositingIOSurfaceMac;
@@ -31,6 +31,7 @@ class RenderWidgetHostViewMac;
 class RenderWidgetHostViewMacEditCommandHelper;
 }
 
+@class CompositingIOSurfaceLayer;
 @class FullscreenWindowManager;
 @protocol RenderWidgetHostViewMacDelegate;
 @class ToolTip;
@@ -252,7 +253,8 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects) OVERRIDE;
+      const std::vector<gfx::Rect>& copy_rects,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -325,8 +327,10 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // Call setNeedsDisplay on the cocoa_view_. The IOSurface will be drawn during
   // the next drawRect. Return true if the Ack should be sent, false if it
   // should be deferred until drawRect.
-  bool CompositorSwapBuffers(
-      uint64 surface_handle, const gfx::Size& size, float scale_factor);
+  bool CompositorSwapBuffers(uint64 surface_handle,
+                             const gfx::Size& size,
+                             float scale_factor,
+                             const ui::LatencyInfo& latency_info);
   // Ack pending SwapBuffers requests, if any, to unblock the GPU process. Has
   // no effect if there are no pending requests.
   void AckPendingSwapBuffers();
@@ -391,10 +395,17 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   ui::TextInputType text_input_type_;
   bool can_compose_inline_;
 
+  scoped_nsobject<CALayer> software_layer_;
+  scoped_nsobject<CompositingIOSurfaceLayer> compositing_iosurface_layer_;
   scoped_ptr<CompositingIOSurfaceMac> compositing_iosurface_;
 
   // Whether to allow overlapping views.
   bool allow_overlapping_views_;
+
+  // Whether to use the CoreAnimation path to draw content.
+  bool use_core_animation_;
+
+  ui::LatencyInfo software_latency_info_;
 
   NSWindow* pepper_fullscreen_window() const {
     return pepper_fullscreen_window_;
@@ -412,6 +423,12 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
 
   int window_number() const;
 
+  float scale_factor() const;
+
+  bool is_hidden() const { return is_hidden_; }
+
+  void FrameSwapped();
+
  private:
   friend class RenderWidgetHostView;
   friend class RenderWidgetHostViewMacTest;
@@ -427,6 +444,9 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // Shuts down the render_widget_host_.  This is a separate function so we can
   // invoke it from the message loop.
   void ShutdownHost();
+
+  // Change this view to use CoreAnimation to draw.
+  void EnableCoreAnimation();
 
   // Called when a GPU SwapBuffers is received.
   void GotAcceleratedFrame();

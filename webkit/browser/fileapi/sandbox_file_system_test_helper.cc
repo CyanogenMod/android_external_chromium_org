@@ -6,19 +6,19 @@
 
 #include "base/file_util.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
-#include "webkit/browser/fileapi/local_file_system_operation.h"
 #include "webkit/browser/fileapi/mock_file_system_context.h"
 #include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/quota/mock_special_storage_policy.h"
 
 namespace fileapi {
 
@@ -91,8 +91,8 @@ FileSystemURL SandboxFileSystemTestHelper::CreateURL(
 }
 
 int64 SandboxFileSystemTestHelper::GetCachedOriginUsage() const {
-  return file_system_context_->GetQuotaUtil(type_)->GetOriginUsageOnFileThread(
-      file_system_context_, origin_, type_);
+  return file_system_context_->GetQuotaUtil(type_)
+      ->GetOriginUsageOnFileThread(file_system_context_.get(), origin_, type_);
 }
 
 int64 SandboxFileSystemTestHelper::ComputeCurrentOriginUsage() {
@@ -109,13 +109,8 @@ SandboxFileSystemTestHelper::ComputeCurrentDirectoryDatabaseUsage() {
       GetOriginRootPath().AppendASCII("Paths"));
 }
 
-LocalFileSystemOperation* SandboxFileSystemTestHelper::NewOperation() {
-  DCHECK(file_system_context_.get());
-  DCHECK(file_util_);
-  LocalFileSystemOperation* operation = static_cast<LocalFileSystemOperation*>(
-      file_system_context_->CreateFileSystemOperation(
-          CreateURL(base::FilePath()), NULL));
-  return operation;
+FileSystemOperationRunner* SandboxFileSystemTestHelper::operation_runner() {
+  return file_system_context_->operation_runner();
 }
 
 FileSystemOperationContext*
@@ -133,7 +128,7 @@ FileSystemUsageCache* SandboxFileSystemTestHelper::usage_cache() {
 }
 
 void SandboxFileSystemTestHelper::SetUpFileSystem() {
-  DCHECK(file_system_context_);
+  DCHECK(file_system_context_.get());
   DCHECK(file_system_context_->sandbox_provider()->CanHandleType(type_));
 
   file_util_ = file_system_context_->GetFileUtil(type_);

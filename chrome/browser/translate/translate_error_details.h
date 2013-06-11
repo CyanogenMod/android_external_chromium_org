@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_TRANSLATE_TRANSLATE_ERROR_DETAILS_H_
 
 #include "base/time.h"
-#include "chrome/common/translate_errors.h"
+#include "chrome/common/translate/translate_errors.h"
 #include "googleurl/src/gurl.h"
 
 struct TranslateErrorDetails {
@@ -20,4 +20,4 @@ struct TranslateErrorDetails {
   TranslateErrors::Type error;
 };
 
-#endif
+#endif  // CHROME_BROWSER_TRANSLATE_TRANSLATE_ERROR_DETAILS_H_

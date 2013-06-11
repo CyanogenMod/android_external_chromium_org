@@ -91,14 +91,14 @@ void TranslateInfoBarDelegate::Translate() {
                                                  original_language_code(),
                                                  target_language_code());
 
-  UMA_HISTOGRAM_COUNTS(kPerformTranslate, 1);
+  UMA_HISTOGRAM_BOOLEAN(kPerformTranslate, true);
 }
 
 void TranslateInfoBarDelegate::RevertTranslation() {
   TranslateManager::GetInstance()->RevertTranslation(web_contents());
   RemoveSelf();
 
-  UMA_HISTOGRAM_COUNTS(kRevertTranslation, 1);
+  UMA_HISTOGRAM_BOOLEAN(kRevertTranslation, true);
 }
 
 void TranslateInfoBarDelegate::ReportLanguageDetectionError() {
@@ -121,7 +121,7 @@ void TranslateInfoBarDelegate::TranslationDeclined() {
       TranslateTabHelper::FromWebContents(web_contents());
   translate_tab_helper->language_state().set_translation_declined(true);
 
-  UMA_HISTOGRAM_COUNTS(kDeclineTranslate, 1);
+  UMA_HISTOGRAM_BOOLEAN(kDeclineTranslate, true);
 }
 
 bool TranslateInfoBarDelegate::InTranslateNavigation() {
@@ -280,8 +280,12 @@ void TranslateInfoBarDelegate::UpdateBackgroundAnimation(
 // static
 string16 TranslateInfoBarDelegate::GetLanguageDisplayableName(
     const std::string& language_code) {
-  return l10n_util::GetDisplayNameForLocale(
+  string16 name = l10n_util::GetDisplayNameForLocale(
       language_code, g_browser_process->GetApplicationLocale(), true);
+  if (!TranslateManager::IsAlphaLanguage(language_code))
+    return name;
+  return l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_ALPHA_LANGUAGE,
+                                    name);
 }
 
 // static
@@ -393,7 +397,7 @@ void TranslateInfoBarDelegate::InfoBarDismissed() {
 
   // The user closed the infobar without clicking the translate button.
   TranslationDeclined();
-  UMA_HISTOGRAM_COUNTS(kCloseInfobar, 1);
+  UMA_HISTOGRAM_BOOLEAN(kCloseInfobar, true);
 }
 
 int TranslateInfoBarDelegate::GetIconID() const {

@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller_delegate.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
@@ -33,21 +33,6 @@ namespace gfx {
 class Image;
 class Rect;
 }
-
-// Reasons why the Omnibox focus state could change.
-enum OmniboxFocusChangeReason {
-  // Includes any explicit changes to focus. (e.g. user clicking to change
-  // focus, user tabbing to change focus, any explicit calls to SetFocus,
-  // etc.)
-  OMNIBOX_FOCUS_CHANGE_EXPLICIT,
-
-  // Focus changed to restore state from a tab the user switched to.
-  OMNIBOX_FOCUS_CHANGE_TAB_SWITCH,
-
-  // Focus changed because user started typing. This only happens when focus
-  // state is INVISIBLE (and this results in a change to VISIBLE).
-  OMNIBOX_FOCUS_CHANGE_TYPING,
-};
 
 // Reasons why the Omnibox could change into keyword mode.
 // These numeric values are used in UMA logs; do not change them.
@@ -90,7 +75,7 @@ class OmniboxEditModel {
 
   void set_popup_model(OmniboxPopupModel* popup_model) {
     omnibox_controller_->set_popup_model(popup_model);
-   }
+  }
 
   // TODO: The edit and popup should be siblings owned by the LocationBarView,
   // making this accessor unnecessary.
@@ -116,11 +101,6 @@ class OmniboxEditModel {
   // Called when the user wants to export the entire current text as a URL.
   // Sets the url, and if known, the title and favicon.
   void GetDataForURLExport(GURL* url, string16* title, gfx::Image* favicon);
-
-  // Returns true if a verbatim query should be used for Instant. A verbatim
-  // query is forced in certain situations, such as pressing delete at the end
-  // of the edit.
-  bool UseVerbatimInstant();
 
   // Returns true if the current edit contents will be treated as a
   // URL/navigation, as opposed to a search.
@@ -159,21 +139,16 @@ class OmniboxEditModel {
   void SetUserText(const string16& text);
 
   // Calls through to SearchProvider::FinalizeInstantQuery.
-  // If |skip_inline_autocomplete| is true then the |suggestion| text will be
-  // turned into final text instead of inline autocomplete suggest.
   void FinalizeInstantQuery(const string16& input_text,
-                            const InstantSuggestion& suggestion,
-                            bool skip_inline_autocomplete);
+                            const InstantSuggestion& suggestion);
 
   // Sets the suggestion text.
   void SetInstantSuggestion(const InstantSuggestion& suggestion);
 
-  // Commits the suggested text. If |skip_inline_autocomplete| is true then the
-  // suggested text will be committed as final text as if it's inputted by the
-  // user, rather than as inline autocomplete suggest.
+  // Commits the gray suggested text as if it's been input by the user.
   // Returns true if the text was committed.
   // TODO: can the return type be void?
-  bool CommitSuggestedText(bool skip_inline_autocomplete);
+  bool CommitSuggestedText();
 
   // Invoked any time the text may have changed in the edit. Updates Instant and
   // notifies the controller.
@@ -335,6 +310,12 @@ class OmniboxEditModel {
   // Called when the results have changed in the OmniboxController.
   void OnResultChanged(bool default_match_changed);
 
+  // TODO(beaudoin): We need this to allow OmniboxController access the
+  // InstantController via OmniboxEditController, because the only valid pointer
+  // to InstantController is kept in Browser. We should try to get rid of this,
+  // maybe by ensuring InstantController lives as long as Browser.
+  InstantController* GetInstantController() const;
+
  private:
   friend class InstantTestBase;
   friend class OmniboxControllerTest;
@@ -376,6 +357,9 @@ class OmniboxEditModel {
   // Returns true if a keyword is selected.
   bool KeywordIsSelected() const;
 
+  // Turns off keyword mode for the current match.
+  void ClearPopupKeywordMode() const;
+
   // Conversion between user text and display text. User text is the text the
   // user has input. Display text is the text being shown in the edit. The
   // two are different if a keyword is selected.
@@ -406,13 +390,6 @@ class OmniboxEditModel {
       const string16& old_text,
       const string16& new_text,
       size_t caret_position) const;
-
-  // Tries to start an Instant preview for |match|. Returns true if Instant
-  // processed the match.
-  bool DoInstant(const AutocompleteMatch& match);
-
-  // Starts a DNS prefetch for the given |match|.
-  void DoPreconnect(const AutocompleteMatch& match);
 
   // Checks if a given character is a valid space character for accepting
   // keyword.
@@ -555,6 +532,18 @@ class OmniboxEditModel {
   // This is needed as prior to accepting the current text the model is
   // reverted, which triggers resetting Instant. We don't want to update Instant
   // in this case, so we use the flag to determine if this is happening.
+  //
+  // For example: The permanent text is "foo". The user has typed "bar" and
+  // Instant is showing a search results preview for "bar". The user hits Enter.
+  // in_revert_ is used to tell Instant, "The omnibox text is about to change to
+  // 'foo', thus TextChanged() will be called, leading to DoInstant(), but
+  // please don't change what you are showing. I'll commit the real match
+  // ("bar") immediately after the revert."
+  //
+  // Without in_revert_, Instant would erroneously change its search results to
+  // "foo". Because of the way the code is structured (specifically, DoInstant()
+  // is NOT called for "bar" again), this leaves Instant showing results for
+  // "foo", which is wrong.
   bool in_revert_;
 
   // InstantController needs this in extended mode to distinguish the case in

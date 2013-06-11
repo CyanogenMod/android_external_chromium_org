@@ -14,7 +14,7 @@
 #include "base/message_loop.h"
 #include "base/platform_file.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/threading/worker_pool.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
@@ -575,45 +575,46 @@ class DebugDaemonClientStubImpl : public DebugDaemonClient {
   virtual void GetRoutes(bool numeric, bool ipv6,
                          const GetRoutesCallback& callback) OVERRIDE {
     std::vector<std::string> empty;
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(FROM_HERE,
                                      base::Bind(callback, false, empty));
   }
   virtual void GetNetworkStatus(const GetNetworkStatusCallback& callback)
       OVERRIDE {
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(FROM_HERE,
                                      base::Bind(callback, false, ""));
   }
   virtual void GetModemStatus(const GetModemStatusCallback& callback)
       OVERRIDE {
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(FROM_HERE,
                                      base::Bind(callback, false, ""));
   }
   virtual void GetNetworkInterfaces(
       const GetNetworkInterfacesCallback& callback) OVERRIDE {
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(FROM_HERE,
                                      base::Bind(callback, false, ""));
   }
   virtual void GetPerfData(uint32_t duration,
                            const GetPerfDataCallback& callback) OVERRIDE {
     std::vector<uint8> data;
-    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(callback, data));
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::Bind(callback, data));
   }
   virtual void GetAllLogs(const GetLogsCallback& callback) OVERRIDE {
     std::map<std::string, std::string> empty;
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(FROM_HERE,
                                      base::Bind(callback, false, empty));
   }
   virtual void GetUserLogFiles(const GetLogsCallback& callback) OVERRIDE {
     std::map<std::string, std::string> user_logs;
     user_logs["preferences"] = "Preferences";
     user_logs["invalid_file"] = "Invalid File";
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(FROM_HERE,
                                      base::Bind(callback, true, user_logs));
   }
 
   virtual void TestICMP(const std::string& ip_address,
                         const TestICMPCallback& callback) OVERRIDE {
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(FROM_HERE,
                                      base::Bind(callback, false, ""));
   }
 };

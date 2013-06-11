@@ -465,6 +465,7 @@ ShelfWidget::ShelfWidget(
       new internal::StatusAreaLayoutManager(this));
 
   views::Widget::AddObserver(this);
+  GetNativeView()->SetProperty(internal::kStayInSameRootWindowKey, true);
 }
 
 ShelfWidget::~ShelfWidget() {
@@ -497,25 +498,28 @@ bool ShelfWidget::GetDimsShelf() const {
 }
 
 void ShelfWidget::CreateLauncher() {
-  if (!launcher_) {
-    Shell* shell = Shell::GetInstance();
-    // This needs to be called before launcher_model().
-    shell->GetLauncherDelegate();
-    launcher_.reset(new Launcher(shell->launcher_model(),
-                                 shell->GetLauncherDelegate(),
-                                 this));
+  if (launcher_)
+    return;
 
-    SetFocusCycler(shell->focus_cycler());
+  Shell* shell = Shell::GetInstance();
+  // This needs to be called before launcher_model().
+  LauncherDelegate* launcher_delegate = shell->GetLauncherDelegate();
+  if (!launcher_delegate)
+    return;  // Not ready to create Launcher
 
-    // Inform the root window controller.
-    internal::RootWindowController::ForWindow(window_container_)->
-        OnLauncherCreated();
+  launcher_.reset(new Launcher(shell->launcher_model(),
+                               shell->GetLauncherDelegate(),
+                               this));
+  SetFocusCycler(shell->focus_cycler());
 
-    launcher_->SetVisible(
-        shell->session_state_delegate()->IsActiveUserSessionStarted());
+  // Inform the root window controller.
+  internal::RootWindowController::ForWindow(window_container_)->
+      OnLauncherCreated();
 
-    Show();
-  }
+  launcher_->SetVisible(
+      shell->session_state_delegate()->IsActiveUserSessionStarted());
+
+  Show();
 }
 
 bool ShelfWidget::IsLauncherVisible() const {
@@ -579,4 +583,3 @@ void ShelfWidget::DisableDimmingAnimationsForTest() {
 }
 
 }  // namespace ash
-

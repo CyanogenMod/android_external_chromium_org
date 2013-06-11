@@ -15,9 +15,9 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
@@ -849,8 +849,11 @@ void Predictor::PreconnectUrlOnIOThread(
   GURL canonical_url(CanonicalizeUrl(url));
   recent_preconnects_.SetRecentlySeen(canonical_url);
 
-  PreconnectOnIOThread(url, first_party_for_cookies, motivation, count,
-                       url_request_context_getter_);
+  PreconnectOnIOThread(url,
+                       first_party_for_cookies,
+                       motivation,
+                       count,
+                       url_request_context_getter_.get());
 }
 
 void Predictor::RecordPreconnectNavigationStats(const GURL& url) {

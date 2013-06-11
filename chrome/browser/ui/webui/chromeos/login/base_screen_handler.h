@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler_utils.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -28,6 +28,14 @@ namespace chromeos {
 class LocalizedValuesBuilder {
  public:
   explicit LocalizedValuesBuilder(base::DictionaryValue* dict);
+  // Method to declare localized value. |key| is the i18n key used in html.
+  // |message| is text of the message.
+  void Add(const std::string& key, const std::string& message);
+
+  // Method to declare localized value. |key| is the i18n key used in html.
+  // |message| is text of the message.
+  void Add(const std::string& key, const string16& message);
+
   // Method to declare localized value. |key| is the i18n key used in html.
   // |message_id| is a resource id of message.
   void Add(const std::string& key, int message_id);

@@ -258,7 +258,6 @@ class FullDuplexAudioSinkSource
   }
 
   virtual void OnError(AudioOutputStream* stream) OVERRIDE {}
-  virtual void WaitTillDataReady() OVERRIDE {}
 
  protected:
   // Converts from bytes to milliseconds taking the sample rate and size
@@ -309,7 +308,7 @@ class AudioOutputStreamTraits {
 
   static StreamType* CreateStream(AudioManager* audio_manager,
       const AudioParameters& params) {
-    return audio_manager->MakeAudioOutputStream(params);
+    return audio_manager->MakeAudioOutputStream(params, std::string());
   }
 };
 

@@ -26,6 +26,7 @@ class SequencedTaskRunner;
 
 namespace leveldb {
 class DB;
+class WriteBatch;
 }
 
 class GURL;
@@ -33,8 +34,7 @@ class GURL;
 namespace sync_file_system {
 
 class DriveMetadata;
-class DriveMetadataDB;
-struct DriveMetadataDBContents;
+struct DBContents;
 
 // This class holds a snapshot of the server side metadata.
 class DriveMetadataStore
@@ -149,29 +149,22 @@ class DriveMetadataStore
  private:
   friend class DriveMetadataStoreTest;
 
+  void WriteToDB(scoped_ptr<leveldb::WriteBatch> batch,
+                 const SyncStatusCallback& callback);
+
   void UpdateDBStatus(SyncStatusCode status);
   void UpdateDBStatusAndInvokeCallback(const SyncStatusCallback& callback,
-                                       SyncStatusCode status);
+                                       const leveldb::Status& status);
   void DidInitialize(const InitializationCallback& callback,
-                     DriveMetadataDBContents* contents,
-                     SyncStatusCode error);
+                     scoped_ptr<DBContents> contents);
   void DidUpdateOrigin(const SyncStatusCallback& callback,
                        SyncStatusCode status);
 
-  // These are only for testing.
-  void RestoreSyncRootDirectory(const SyncStatusCallback& callback);
-  void DidRestoreSyncRootDirectory(const SyncStatusCallback& callback,
-                                   std::string* sync_root_directory_resource_id,
-                                   SyncStatusCode status);
-  void RestoreOrigins(const SyncStatusCallback& callback);
-  void DidRestoreOrigins(const SyncStatusCallback& callback,
-                         ResourceIdByOrigin* incremental_sync_origins,
-                         ResourceIdByOrigin* disabled_origins,
-                         SyncStatusCode status);
   leveldb::DB* GetDBInstanceForTesting();
 
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
-  scoped_ptr<DriveMetadataDB> db_;
+  base::FilePath base_dir_;
+  scoped_ptr<leveldb::DB> db_;
   SyncStatusCode db_status_;
 
   int64 largest_changestamp_;

@@ -11,13 +11,15 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/threading/worker_pool.h"
 #include "cc/layers/delegated_renderer_layer.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/texture_layer.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "content/browser/android/content_view_core_impl.h"
+#include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/android/overscroll_glow.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
@@ -81,7 +83,8 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       ime_adapter_android_(this),
       cached_background_color_(SK_ColorWHITE),
       texture_id_in_layer_(0),
-      weak_ptr_factory_(this) {
+      weak_ptr_factory_(this),
+      overscroll_effect_enabled_(true) {
   if (CompositorImpl::UsesDirectGL()) {
     surface_texture_transport_.reset(new SurfaceTextureTransportClient());
     layer_ = surface_texture_transport_->Initialize();
@@ -99,9 +102,14 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
 
   layer_->SetContentsOpaque(true);
 
-  if (!CommandLine::ForCurrentProcess()->
-          HasSwitch(switches::kDisableOverscrollEdgeEffect)) {
-    overscroll_effect_ = OverscrollGlow::Create();
+  overscroll_effect_enabled_ = !CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kDisableOverscrollEdgeEffect);
+  // Don't block the main thread with effect resource loading.
+  // Actual effect creation is deferred until an overscroll event is received.
+  if (overscroll_effect_enabled_) {
+    base::WorkerPool::PostTask(FROM_HERE,
+                               base::Bind(&OverscrollGlow::EnsureResources),
+                               true);
   }
 
   host_->SetView(this);
@@ -111,18 +119,9 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
 RenderWidgetHostViewAndroid::~RenderWidgetHostViewAndroid() {
   SetContentViewCore(NULL);
   DCHECK(ack_callbacks_.empty());
-  if (texture_id_in_layer_ || !last_mailbox_.IsZero()) {
-    ImageTransportFactoryAndroid* factory =
-        ImageTransportFactoryAndroid::GetInstance();
-    // TODO: crbug.com/230137 - make workaround obsolete with refcounting.
-    // Don't let the last frame we sent leak in the mailbox.
-    if (!last_mailbox_.IsZero()) {
-      if (!texture_id_in_layer_)
-        texture_id_in_layer_ = factory->CreateTexture();
-      factory->AcquireTexture(texture_id_in_layer_, last_mailbox_.name);
-      factory->GetContext3D()->getError();  // Clear error if mailbox was empty.
-    }
-    factory->DeleteTexture(texture_id_in_layer_);
+  if (texture_id_in_layer_) {
+    ImageTransportFactoryAndroid::GetInstance()->DeleteTexture(
+        texture_id_in_layer_);
   }
 
   if (texture_layer_)
@@ -438,7 +437,8 @@ void RenderWidgetHostViewAndroid::ImeCompositionRangeChanged(
 void RenderWidgetHostViewAndroid::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects) {
+    const std::vector<gfx::Rect>& copy_rects,
+    const ui::LatencyInfo& latency_info) {
   NOTIMPLEMENTED();
 }
 
@@ -630,8 +630,6 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
   ImageTransportFactoryAndroid::GetInstance()->WaitSyncPoint(
       frame->gl_frame_data->sync_point);
 
-  last_mailbox_ = current_mailbox_;
-
   texture_size_in_layer_ = frame->gl_frame_data->size;
   ComputeContentsSize(frame.get());
 
@@ -727,6 +725,20 @@ bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
   return overscroll_effect_->Animate(frame_time);
 }
 
+void RenderWidgetHostViewAndroid::CreateOverscrollEffectIfNecessary() {
+  if (!overscroll_effect_enabled_ || overscroll_effect_)
+    return;
+
+  overscroll_effect_ = OverscrollGlow::Create();
+
+  // Prevent future creation attempts on failure.
+  if (!overscroll_effect_)
+    overscroll_effect_enabled_ = false;
+
+  if (overscroll_effect_ && content_view_core_ && are_layers_attached_)
+    content_view_core_->AttachLayer(overscroll_effect_->root_layer());
+}
+
 void RenderWidgetHostViewAndroid::UpdateAnimationSize(
     const cc::CompositorFrame* frame) {
   if (!overscroll_effect_)
@@ -819,10 +831,14 @@ void RenderWidgetHostViewAndroid::UnhandledWheelEvent(
 
 InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
     const WebKit::WebInputEvent& input_event) {
-  if (!content_view_core_)
-    return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
-
-  return content_view_core_->FilterInputEvent(input_event);
+  if (host_) {
+    SynchronousCompositorImpl* compositor =
+        SynchronousCompositorImpl::FromID(host_->GetProcess()->GetID(),
+                                          host_->GetRoutingID());
+    if (compositor)
+      return compositor->HandleInputEvent(input_event);
+  }
+  return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 }
 
 void RenderWidgetHostViewAndroid::OnAccessibilityNotifications(
@@ -903,7 +919,7 @@ void RenderWidgetHostViewAndroid::ClipContents(const gfx::Rect& clipping,
     return;
 
   gfx::Size clipped_content(content_size_in_layer_);
-  clipped_content.ClampToMax(clipping.size());
+  clipped_content.SetToMin(clipping.size());
   texture_layer_->SetBounds(clipped_content);
   texture_layer_->SetNeedsDisplay();
 
@@ -915,7 +931,7 @@ void RenderWidgetHostViewAndroid::ClipContents(const gfx::Rect& clipping,
   gfx::PointF offset(
       clipping.x() + content_size_in_layer_.width() - content_size.width(),
       clipping.y() + content_size_in_layer_.height() - content_size.height());
-  offset.ClampToMin(gfx::PointF());
+  offset.SetToMax(gfx::PointF());
 
   gfx::Vector2dF uv_scale(1.f / texture_size_in_layer_.width(),
                           1.f / texture_size_in_layer_.height());
@@ -933,8 +949,10 @@ SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
 void RenderWidgetHostViewAndroid::OnOverscrolled(
     gfx::Vector2dF accumulated_overscroll,
     gfx::Vector2dF current_fling_velocity) {
+  CreateOverscrollEffectIfNecessary();
   if (!overscroll_effect_ || !HasFocus())
     return;
+
   overscroll_effect_->OnOverscrolled(base::TimeTicks::Now(),
                                      accumulated_overscroll,
                                      current_fling_velocity);

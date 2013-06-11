@@ -7,7 +7,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/sync/glue/data_type_error_handler_mock.h"
 #include "sync/api/fake_syncable_service.h"
 #include "sync/api/sync_merge_result.h"
@@ -70,7 +70,7 @@ class GenericChangeProcessorTest : public testing::Test {
   }
 
  private:
-  MessageLoop loop;
+  base::MessageLoop loop;
 
   syncer::SyncMergeResult sync_merge_result_;
   base::WeakPtrFactory<syncer::SyncMergeResult> merge_result_ptr_factory_;

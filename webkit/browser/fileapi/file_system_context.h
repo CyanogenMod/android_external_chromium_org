@@ -54,6 +54,7 @@ class FileStreamWriter;
 class FileSystemFileUtil;
 class FileSystemMountPointProvider;
 class FileSystemOperation;
+class FileSystemOperationRunner;
 class FileSystemOptions;
 class FileSystemQuotaUtil;
 class FileSystemTaskRunners;
@@ -128,8 +129,9 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   FileSystemMountPointProvider* GetMountPointProvider(
       FileSystemType type) const;
 
-  // Returns update observers for the given filesystem type.
+  // Returns observers for the given filesystem type.
   const UpdateObserverList* GetUpdateObservers(FileSystemType type) const;
+  const AccessObserverList* GetAccessObservers(FileSystemType type) const;
 
   // Returns a FileSystemMountPointProvider instance for sandboxed filesystem
   // types (e.g. TEMPORARY or PERSISTENT).  This is equivalent to calling
@@ -167,7 +169,6 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // Currently only kFileSystemTypeSyncable type is supported.
   // TODO(kinuko): Deprecate this method. (http://crbug.com/177137)
   void OpenSyncableFileSystem(
-      const std::string& mount_name,
       const GURL& origin_url,
       FileSystemType type,
       OpenFileSystemMode mode,
@@ -179,15 +180,6 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
       const GURL& origin_url,
       FileSystemType type,
       const DeleteFileSystemCallback& callback);
-
-  // Creates a new FileSystemOperation instance by getting an appropriate
-  // MountPointProvider for |url| and calling the provider's corresponding
-  // CreateFileSystemOperation method.
-  // The resolved MountPointProvider could perform further specialization
-  // depending on the filesystem type pointed by the |url|.
-  FileSystemOperation* CreateFileSystemOperation(
-      const FileSystemURL& url,
-      base::PlatformFileError* error_code);
 
   // Creates new FileStreamReader instance to read a file pointed by the given
   // filesystem URL |url| starting from |offset|. |expected_modification_time|
@@ -211,6 +203,10 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
       int64 offset);
 
   FileSystemTaskRunners* task_runners() { return task_runners_.get(); }
+
+  FileSystemOperationRunner* operation_runner() {
+    return operation_runner_.get();
+  }
 
   sync_file_system::LocalFileChangeTracker* change_tracker() {
     return change_tracker_.get();
@@ -237,11 +233,8 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   typedef std::map<FileSystemType, FileSystemMountPointProvider*>
       MountPointProviderMap;
 
-  // These classes know the target filesystem (i.e. sandbox filesystem)
-  // supports synchronous FileUtil.
-  friend class LocalFileSystemOperation;
-  friend class sync_file_system::LocalFileChangeTracker;
-  friend class sync_file_system::LocalFileSyncContext;
+  // For CreateFileSystemOperation.
+  friend class FileSystemOperationRunner;
 
   // Deleters.
   friend struct DefaultContextDeleter;
@@ -251,6 +244,17 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   ~FileSystemContext();
 
   void DeleteOnCorrectThread() const;
+
+  // Creates a new FileSystemOperation instance by getting an appropriate
+  // MountPointProvider for |url| and calling the provider's corresponding
+  // CreateFileSystemOperation method.
+  // The resolved MountPointProvider could perform further specialization
+  // depending on the filesystem type pointed by the |url|.
+  //
+  // Called by FileSystemOperationRunner.
+  FileSystemOperation* CreateFileSystemOperation(
+      const FileSystemURL& url,
+      base::PlatformFileError* error_code);
 
   // For non-cracked isolated and external mount points, returns a FileSystemURL
   // created by cracking |url|. The url is cracked using MountPoints registered
@@ -296,6 +300,8 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // For syncable file systems.
   scoped_ptr<sync_file_system::LocalFileChangeTracker> change_tracker_;
   scoped_refptr<sync_file_system::LocalFileSyncContext> sync_context_;
+
+  scoped_ptr<FileSystemOperationRunner> operation_runner_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(FileSystemContext);
 };

@@ -8,7 +8,7 @@
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/autocomplete_match_type.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/instant_types.h"
@@ -17,7 +17,7 @@
 #include "content/public/renderer/render_view.h"
 #include "googleurl/src/gurl.h"
 #include "grit/renderer_resources.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
@@ -85,16 +85,20 @@ void Dispatch(WebKit::WebFrame* frame, const WebKit::WebString& script) {
   frame->executeScript(WebKit::WebScriptSource(script));
 }
 
-v8::Handle<v8::String> GenerateThumbnailURL(uint64 most_visited_item_id) {
-  return UTF8ToV8String(
-      base::StringPrintf("chrome-search://thumb/%s",
-                         base::Uint64ToString(most_visited_item_id).c_str()));
+v8::Handle<v8::String> GenerateThumbnailURL(
+    int render_view_id,
+    InstantRestrictedID most_visited_item_id) {
+  return UTF8ToV8String(base::StringPrintf("chrome-search://thumb/%d/%d",
+                                           render_view_id,
+                                           most_visited_item_id));
 }
 
-v8::Handle<v8::String> GenerateFaviconURL(uint64 most_visited_item_id) {
-  return UTF8ToV8String(
-      base::StringPrintf("chrome-search://favicon/%s",
-                         base::Uint64ToString(most_visited_item_id).c_str()));
+v8::Handle<v8::String> GenerateFaviconURL(
+    int render_view_id,
+    InstantRestrictedID most_visited_item_id) {
+  return UTF8ToV8String(base::StringPrintf("chrome-search://favicon/%d/%d",
+                                           render_view_id,
+                                           most_visited_item_id));
 }
 
 // If |url| starts with |prefix|, removes |prefix|.
@@ -171,6 +175,7 @@ v8::Handle<v8::Object> GenerateNativeSuggestion(
 // not be returned to the Instant page. These should be erased before returning
 // the object. See GetMostVisitedItemsWrapper() in searchbox_api.js.
 v8::Handle<v8::Object> GenerateMostVisitedItem(
+    int render_view_id,
     InstantRestrictedID restricted_id,
     const InstantMostVisitedItem &mv_item) {
   // We set the "dir" attribute of the title, so that in RTL locales, a LTR
@@ -197,9 +202,9 @@ v8::Handle<v8::Object> GenerateMostVisitedItem(
   v8::Handle<v8::Object> obj = v8::Object::New();
   obj->Set(v8::String::New("rid"), v8::Int32::New(restricted_id));
   obj->Set(v8::String::New("thumbnailUrl"),
-           GenerateThumbnailURL(restricted_id));
+           GenerateThumbnailURL(render_view_id, restricted_id));
   obj->Set(v8::String::New("faviconUrl"),
-           GenerateFaviconURL(restricted_id));
+           GenerateFaviconURL(render_view_id, restricted_id));
   obj->Set(v8::String::New("title"), UTF16ToV8String(title));
   obj->Set(v8::String::New("domain"), UTF8ToV8String(mv_item.url.host()));
   obj->Set(v8::String::New("direction"), UTF8ToV8String(direction));
@@ -351,14 +356,6 @@ static const char kSupportsInstantScript[] =
 
 // Extended API.
 
-// Per-context initialization.
-static const char kDispatchOnWindowReady[] =
-    "if (window.chrome &&"
-    "    window.chrome.embeddedSearchOnWindowReady &&"
-    "    typeof window.chrome.embeddedSearchOnWindowReady == 'function') {"
-    "  window.chrome.embeddedSearchOnWindowReady();"
-    "}";
-
 static const char kDispatchAutocompleteResultsEventScript[] =
     "if (window.chrome &&"
     "    window.chrome.embeddedSearch &&"
@@ -441,10 +438,34 @@ static const char kDispatchMostVisitedChangedScript[] =
 
 static const char kDispatchBarsHiddenEventScript[] =
     "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onbarshidden &&"
-    "    typeof window.chrome.searchBox.onbarshidden == 'function') {"
-    "  window.chrome.searchBox.onbarshidden();"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onbarshidden &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onbarshidden =="
+    "         'function') {"
+    "  window.chrome.embeddedSearch.searchBox.onbarshidden();"
+    "  true;"
+    "}";
+
+static const char kDispatchFocusChangedScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onfocuschange &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onfocuschange =="
+    "         'function') {"
+    "  window.chrome.embeddedSearch.searchBox.onfocuschange();"
+    "  true;"
+    "}";
+
+static const char kDispatchToggleVoiceSearchScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.ontogglevoicesearch &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.ontogglevoicesearch =="
+    "         'function') {"
+    "  window.chrome.embeddedSearch.searchBox.ontogglevoicesearch();"
     "  true;"
     "}";
 
@@ -592,6 +613,9 @@ class SearchBoxExtensionWrapper : public v8::Extension {
   static v8::Handle<v8::Value> GetMostVisitedItemData(
     const v8::Arguments& args);
 
+  // Gets whether the omnibox has focus or not.
+  static v8::Handle<v8::Value> IsFocused(const v8::Arguments& args);
+
  private:
   DISALLOW_COPY_AND_ASSIGN(SearchBoxExtensionWrapper);
 };
@@ -675,6 +699,8 @@ v8::Handle<v8::FunctionTemplate> SearchBoxExtensionWrapper::GetNativeFunction(
     return v8::FunctionTemplate::New(GetSuggestionData);
   if (name->Equals(v8::String::New("GetMostVisitedItemData")))
     return v8::FunctionTemplate::New(GetMostVisitedItemData);
+  if (name->Equals(v8::String::New("IsFocused")))
+    return v8::FunctionTemplate::New(IsFocused);
   return v8::Handle<v8::FunctionTemplate>();
 }
 
@@ -1238,7 +1264,8 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetMostVisitedItems(
   search_box->GetMostVisitedItems(&instant_mv_items);
   v8::Handle<v8::Array> v8_mv_items = v8::Array::New(instant_mv_items.size());
   for (size_t i = 0; i < instant_mv_items.size(); ++i) {
-    v8_mv_items->Set(i, GenerateMostVisitedItem(instant_mv_items[i].first,
+    v8_mv_items->Set(i, GenerateMostVisitedItem(render_view->GetRoutingID(),
+                                                instant_mv_items[i].first,
                                                 instant_mv_items[i].second));
   }
   return v8_mv_items;
@@ -1387,7 +1414,19 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetMostVisitedItemData(
           restricted_id, &mv_item)) {
     return v8::Undefined();
   }
-  return GenerateMostVisitedItem(restricted_id, mv_item);
+  return GenerateMostVisitedItem(render_view->GetRoutingID(), restricted_id,
+                                 mv_item);
+}
+
+// static
+v8::Handle<v8::Value> SearchBoxExtensionWrapper::IsFocused(
+    const v8::Arguments& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return v8::Undefined();
+
+  bool is_focused = SearchBox::Get(render_view)->is_focused();
+  DVLOG(1) << render_view << " IsFocused: " << is_focused;
+  return v8::Boolean::New(is_focused);
 }
 
 // static
@@ -1408,11 +1447,6 @@ void SearchBoxExtension::DispatchCancel(WebKit::WebFrame* frame) {
 // static
 void SearchBoxExtension::DispatchResize(WebKit::WebFrame* frame) {
   Dispatch(frame, kDispatchResizeEventScript);
-}
-
-// static
-void SearchBoxExtension::DispatchOnWindowReady(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchOnWindowReady);
 }
 
 // static
@@ -1458,6 +1492,17 @@ void SearchBoxExtension::DispatchMostVisitedChanged(
 // static
 void SearchBoxExtension::DispatchBarsHidden(WebKit::WebFrame* frame) {
   Dispatch(frame, kDispatchBarsHiddenEventScript);
+}
+
+// static
+void SearchBoxExtension::DispatchFocusChange(WebKit::WebFrame* frame) {
+  Dispatch(frame, kDispatchFocusChangedScript);
+}
+
+// static
+void SearchBoxExtension::DispatchToggleVoiceSearch(
+    WebKit::WebFrame* frame) {
+  Dispatch(frame, kDispatchToggleVoiceSearchScript);
 }
 
 }  // namespace extensions_v8

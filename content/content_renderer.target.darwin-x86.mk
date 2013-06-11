@@ -14,6 +14,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,jingle_jingle_glue_gyp)/jingle_glue.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icui18n_gyp)/icui18n.stamp \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
@@ -49,7 +50,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/content_detector.cc \
 	content/renderer/android/email_detector.cc \
 	content/renderer/android/phone_number_detector.cc \
-	content/renderer/android/synchronous_compositor_output_surface.cc \
+	content/renderer/android/synchronous_compositor_factory.cc \
 	content/renderer/device_orientation_dispatcher.cc \
 	content/renderer/devtools/devtools_agent.cc \
 	content/renderer/devtools/devtools_agent_filter.cc \
@@ -93,8 +94,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/video_capture_impl_manager.cc \
 	content/renderer/media/video_capture_message_filter.cc \
 	content/renderer/media/webmediaplayer_proxy_impl_android.cc \
-	content/renderer/media/webrtc_logging_handler_impl.cc \
-	content/renderer/media/webrtc_logging_message_filter.cc \
 	content/renderer/memory_benchmarking_extension.cc \
 	content/renderer/mhtml_generator.cc \
 	content/renderer/mouse_lock_dispatcher.cc \
@@ -114,6 +113,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/fetchers/multi_resolution_image_resource_fetcher.cc \
 	content/renderer/fetchers/resource_fetcher.cc \
 	content/renderer/ime_event_guard.cc \
+	content/renderer/render_frame_impl.cc \
 	content/renderer/render_process_impl.cc \
 	content/renderer/render_thread_impl.cc \
 	content/renderer/render_view_impl.cc \
@@ -135,6 +135,9 @@ LOCAL_SRC_FILES := \
 	content/renderer/rendering_benchmark.cc \
 	content/renderer/savable_resources.cc \
 	content/renderer/skia_benchmarking_extension.cc \
+	content/renderer/speech_recognition_dispatcher.cc \
+	content/renderer/stats_collection_controller.cc \
+	content/renderer/stats_collection_observer.cc \
 	content/renderer/text_input_client_observer.cc \
 	content/renderer/v8_value_converter_impl.cc \
 	content/renderer/web_ui_extension.cc \
@@ -188,7 +191,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -250,8 +252,7 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/hyphen \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \

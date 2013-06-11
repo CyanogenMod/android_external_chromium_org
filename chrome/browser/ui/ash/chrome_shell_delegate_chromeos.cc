@@ -8,7 +8,7 @@
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/background/ash_user_wallpaper_delegate.h"
 #include "chrome/browser/chromeos/display/display_preferences.h"
@@ -24,6 +24,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/speech/tts_controller.h"
 #include "chrome/browser/ui/ash/caps_lock_delegate_chromeos.h"
+#include "chrome/browser/ui/ash/session_state_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/window_positioner.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -112,16 +113,19 @@ void ChromeShellDelegate::OpenCrosh() {
 }
 
 void ChromeShellDelegate::ToggleHighContrast() {
-  bool enabled = chromeos::accessibility::IsHighContrastEnabled();
-  chromeos::accessibility::EnableHighContrast(!enabled);
+  DCHECK(chromeos::AccessibilityManager::Get());
+  bool enabled = chromeos::AccessibilityManager::Get()->IsHighContrastEnabled();
+  chromeos::AccessibilityManager::Get()->EnableHighContrast(!enabled);
 }
 
 bool ChromeShellDelegate::IsSpokenFeedbackEnabled() const {
-  return chromeos::accessibility::IsSpokenFeedbackEnabled();
+  DCHECK(chromeos::AccessibilityManager::Get());
+  return chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled();
 }
 
 void ChromeShellDelegate::ToggleSpokenFeedback(
     ash::AccessibilityNotificationVisibility notify) {
+  DCHECK(chromeos::AccessibilityManager::Get());
   content::WebUI* web_ui = NULL;
 
   chromeos::LoginDisplayHostImpl* host =
@@ -136,11 +140,12 @@ void ChromeShellDelegate::ToggleSpokenFeedback(
     web_ui = chromeos::ScreenLocker::default_screen_locker()->
         GetAssociatedWebUI();
   }
-  chromeos::accessibility::ToggleSpokenFeedback(web_ui, notify);
+  chromeos::AccessibilityManager::Get()->ToggleSpokenFeedback(web_ui, notify);
 }
 
 bool ChromeShellDelegate::IsHighContrastEnabled() const {
-  return chromeos::accessibility::IsHighContrastEnabled();
+  DCHECK(chromeos::AccessibilityManager::Get());
+  return chromeos::AccessibilityManager::Get()->IsHighContrastEnabled();
 }
 
 bool ChromeShellDelegate::IsMagnifierEnabled() const {
@@ -176,10 +181,24 @@ double ChromeShellDelegate::GetSavedScreenMagnifierScale() {
   return std::numeric_limits<double>::min();
 }
 
+void ChromeShellDelegate::SetLargeCursorEnabled(bool enabled) {
+  DCHECK(chromeos::AccessibilityManager::Get());
+  return chromeos::AccessibilityManager::Get()->EnableLargeCursor(enabled);
+}
+
+bool ChromeShellDelegate::IsLargeCursorEnabled() const {
+  DCHECK(chromeos::AccessibilityManager::Get());
+  return chromeos::AccessibilityManager::Get()->IsLargeCursorEnabled();
+}
+
 ash::CapsLockDelegate* ChromeShellDelegate::CreateCapsLockDelegate() {
   chromeos::input_method::XKeyboard* xkeyboard =
       chromeos::input_method::InputMethodManager::Get()->GetXKeyboard();
   return new CapsLockDelegate(xkeyboard);
+}
+
+ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
+  return new SessionStateDelegateChromeos;
 }
 
 void ChromeShellDelegate::ShowKeyboardOverlay() {

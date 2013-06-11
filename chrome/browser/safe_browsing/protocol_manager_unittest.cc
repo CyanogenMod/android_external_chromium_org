@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 //
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/time.h"
@@ -298,7 +298,7 @@ void HandleAddChunks(
   delete chunks;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner(
       base::ThreadTaskRunnerHandle::Get());
-  if (!task_runner)
+  if (!task_runner.get())
     return;
   task_runner->PostTask(FROM_HERE, callback);
 }

@@ -4,7 +4,7 @@
 
 #include "cc/layers/nine_patch_layer_impl.h"
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/quads/texture_draw_quad.h"
@@ -55,10 +55,16 @@ void NinePatchLayerImpl::SetLayout(gfx::Size image_bounds, gfx::Rect aperture) {
   image_aperture_ = aperture;
 }
 
+bool NinePatchLayerImpl::WillDraw(DrawMode draw_mode,
+                                  ResourceProvider* resource_provider) {
+  if (!resource_id_ || draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
+    return false;
+  return LayerImpl::WillDraw(draw_mode, resource_provider);
+}
+
 void NinePatchLayerImpl::AppendQuads(QuadSink* quad_sink,
                                      AppendQuadsData* append_quads_data) {
-  if (!resource_id_)
-    return;
+  DCHECK(resource_id_);
 
   SharedQuadState* shared_quad_state =
       quad_sink->UseSharedQuadState(CreateSharedQuadState());

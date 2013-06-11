@@ -20,8 +20,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/timer.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -175,8 +175,6 @@ void MobileActivator::TerminateActivation() {
   NetworkLibrary* lib = GetNetworkLibrary();
   lib->RemoveNetworkManagerObserver(this);
   lib->RemoveObserverForAllNetworks(this);
-  if (lib->IsLocked())
-    lib->Unlock();
   ReEnableCertRevocationChecking();
   meid_.clear();
   iccid_.clear();
@@ -268,14 +266,9 @@ void MobileActivator::ContinueActivation() {
   if (!network || !network->SupportsActivation())
     return;
 
-  NetworkLibrary* lib = GetNetworkLibrary();
-
   DisableCertRevocationChecking();
   // We want shill to connect us after activations.
   network->SetAutoConnect(true);
-
-  DCHECK(!lib->IsLocked());
-  lib->Lock();
 
   StartActivation();
 }
@@ -779,8 +772,6 @@ void MobileActivator::CompleteActivation(
   NetworkLibrary* lib = GetNetworkLibrary();
   lib->RemoveNetworkManagerObserver(this);
   lib->RemoveObserverForAllNetworks(this);
-  if (lib->IsLocked())
-    lib->Unlock();
   // Reactivate other types of connections if we have
   // shut them down previously.
   ReEnableCertRevocationChecking();

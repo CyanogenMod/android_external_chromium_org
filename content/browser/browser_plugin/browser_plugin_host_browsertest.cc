@@ -5,10 +5,10 @@
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "base/run_loop.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/browser_plugin/test_browser_plugin_embedder.h"
@@ -30,11 +30,11 @@
 #include "content/test/content_browser_test_utils.h"
 #include "net/base/net_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "net/test/embedded_test_server/http_response.h"
 #include "net/test/embedded_test_server/http_request.h"
+#include "net/test/embedded_test_server/http_response.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
 
 using WebKit::WebInputEvent;
 using WebKit::WebMouseEvent;
@@ -113,7 +113,7 @@ class TestBrowserPluginHostFactory : public BrowserPluginHostFactory {
   virtual BrowserPluginGuestManager*
       CreateBrowserPluginGuestManager() OVERRIDE {
     guest_manager_instance_count_++;
-    if (message_loop_runner_)
+    if (message_loop_runner_.get())
       message_loop_runner_->Quit();
     return new TestBrowserPluginGuestManager();
   }
@@ -217,7 +217,7 @@ class RenderViewHostMessageObserver : public RenderViewHostObserver {
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     if (message.type() == message_id_) {
       message_received_ = true;
-      if (message_loop_runner_)
+      if (message_loop_runner_.get())
         message_loop_runner_->Quit();
     }
     return false;

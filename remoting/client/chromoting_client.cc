@@ -55,23 +55,28 @@ void ChromotingClient::Start(
     scoped_ptr<protocol::TransportFactory> transport_factory) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  // TODO(jamiewalch): Add the plumbing required to get the client id and
-  // shared secret from the web-app.
-  std::string client_id, shared_secret;
   scoped_ptr<protocol::Authenticator> authenticator(
       new protocol::NegotiatingClientAuthenticator(
-          client_id, shared_secret,
-          config_.authentication_tag, config_.fetch_secret_callback,
+          config_.client_pairing_id,
+          config_.client_paired_secret,
+          config_.authentication_tag,
+          config_.fetch_secret_callback,
           user_interface_->GetTokenFetcher(config_.host_public_key),
           config_.authentication_methods));
 
   // Create a WeakPtr to ourself for to use for all posted tasks.
   weak_ptr_ = weak_factory_.GetWeakPtr();
 
-  connection_->Connect(xmpp_proxy, config_.local_jid, config_.host_jid,
-                       config_.host_public_key, transport_factory.Pass(),
-                       authenticator.Pass(), this, this, this,
-                       rectangle_decoder_,
+  connection_->Connect(xmpp_proxy,
+                       config_.local_jid,
+                       config_.host_jid,
+                       config_.host_public_key,
+                       transport_factory.Pass(),
+                       authenticator.Pass(),
+                       this,
+                       this,
+                       this,
+                       rectangle_decoder_.get(),
                        audio_decode_scheduler_.get());
 }
 
@@ -83,7 +88,7 @@ void ChromotingClient::Stop(const base::Closure& shutdown_task) {
 }
 
 FrameProducer* ChromotingClient::GetFrameProducer() {
-  return rectangle_decoder_;
+  return rectangle_decoder_.get();
 }
 
 void ChromotingClient::OnDisconnected(const base::Closure& shutdown_task) {
@@ -115,6 +120,13 @@ void ChromotingClient::SetCapabilities(
   // it to the webapp.
   user_interface_->SetCapabilities(
       IntersectCapabilities(config_.capabilities, host_capabilities_));
+}
+
+void ChromotingClient::SetPairingResponse(
+    const protocol::PairingResponse& pairing_response) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  user_interface_->SetPairingResponse(pairing_response);
 }
 
 void ChromotingClient::InjectClipboardEvent(

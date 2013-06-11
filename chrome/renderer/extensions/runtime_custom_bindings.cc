@@ -24,8 +24,7 @@ namespace extensions {
 
 RuntimeCustomBindings::RuntimeCustomBindings(Dispatcher* dispatcher,
                                              ChromeV8Context* context)
-    : ChromeV8Extension(dispatcher, context->v8_context()),
-      context_(context) {
+    : ChromeV8Extension(dispatcher, context) {
   RouteFunction("GetManifest",
                 base::Bind(&RuntimeCustomBindings::GetManifest,
                            base::Unretained(this)));
@@ -48,16 +47,14 @@ v8::Handle<v8::Value> RuntimeCustomBindings::OpenChannelToExtension(
     return v8::Undefined();
 
   // The Javascript code should validate/fill the arguments.
-  CHECK(args.Length() >= 3 &&
-        args[0]->IsString() &&
-        args[1]->IsString() &&
-        args[2]->IsString());
+  CHECK_EQ(2, args.Length());
+  CHECK(args[0]->IsString() && args[1]->IsString());
 
   ExtensionMsg_ExternalConnectionInfo info;
-  info.source_id = *v8::String::Utf8Value(args[0]->ToString());
-  info.target_id = *v8::String::Utf8Value(args[1]->ToString());
+  info.source_id = context()->extension() ? context()->extension()->id() : "";
+  info.target_id = *v8::String::Utf8Value(args[0]->ToString());
   info.source_url = renderview->GetWebView()->mainFrame()->document().url();
-  std::string channel_name = *v8::String::Utf8Value(args[2]->ToString());
+  std::string channel_name = *v8::String::Utf8Value(args[1]->ToString());
   int port_id = -1;
   renderview->Send(new ExtensionHostMsg_OpenChannelToExtension(
       renderview->GetRoutingID(), info, channel_name, &port_id));
@@ -68,7 +65,7 @@ v8::Handle<v8::Value> RuntimeCustomBindings::OpenChannelToNativeApp(
     const v8::Arguments& args) {
   // Verify that the extension has permission to use native messaging.
   if (!dispatcher()->CheckContextAccessToExtensionAPI(
-          "nativeMessaging", context_)) {
+          "nativeMessaging", context())) {
     return v8::Undefined();
   }
 
@@ -97,11 +94,11 @@ v8::Handle<v8::Value> RuntimeCustomBindings::OpenChannelToNativeApp(
 
 v8::Handle<v8::Value> RuntimeCustomBindings::GetManifest(
     const v8::Arguments& args) {
-  CHECK(context_->extension());
+  CHECK(context()->extension());
 
   scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
-  return converter->ToV8Value(context_->extension()->manifest()->value(),
-                              context_->v8_context());
+  return converter->ToV8Value(context()->extension()->manifest()->value(),
+                              context()->v8_context());
 }
 
-}  // extensions
+}  // namespace extensions

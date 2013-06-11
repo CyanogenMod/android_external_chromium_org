@@ -12,7 +12,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/peer_connection_tracker.h"
@@ -21,18 +21,18 @@
 #include "content/renderer/media/rtc_dtmf_sender_handler.h"
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaConstraints.h"
+#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 // TODO(hta): Move the following include to WebRTCStatsRequest.h file.
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamSource.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamTrack.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCConfiguration.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCICECandidate.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCPeerConnectionHandlerClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCSessionDescription.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCSessionDescriptionRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCStatsRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCVoidRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebRTCConfiguration.h"
+#include "third_party/WebKit/public/platform/WebRTCICECandidate.h"
+#include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandlerClient.h"
+#include "third_party/WebKit/public/platform/WebRTCSessionDescription.h"
+#include "third_party/WebKit/public/platform/WebRTCSessionDescriptionRequest.h"
+#include "third_party/WebKit/public/platform/WebRTCStatsRequest.h"
+#include "third_party/WebKit/public/platform/WebRTCVoidRequest.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 
 namespace content {
@@ -229,8 +229,7 @@ class SetSessionDescriptionRequest
 class StatsResponse : public webrtc::StatsObserver {
  public:
   explicit StatsResponse(const scoped_refptr<LocalRTCStatsRequest>& request)
-      : request_(request),
-        response_(request_->createResponse()) {}
+      : request_(request.get()), response_(request_->createResponse()) {}
 
   virtual void OnComplete(
       const std::vector<webrtc::StatsReport>& reports) OVERRIDE {
@@ -360,7 +359,7 @@ bool RTCPeerConnectionHandler::initialize(
   native_peer_connection_ =
       dependency_factory_->CreatePeerConnection(
           servers, &constraints, frame_, this);
-  if (!native_peer_connection_) {
+  if (!native_peer_connection_.get()) {
     LOG(ERROR) << "Failed to initialize native PeerConnection.";
     return false;
   }
@@ -382,7 +381,7 @@ bool RTCPeerConnectionHandler::InitializeForTest(
   native_peer_connection_ =
       dependency_factory_->CreatePeerConnection(
           servers, &constraints, NULL, this);
-  if (!native_peer_connection_) {
+  if (!native_peer_connection_.get()) {
     LOG(ERROR) << "Failed to initialize native PeerConnection.";
     return false;
   }
@@ -397,7 +396,7 @@ void RTCPeerConnectionHandler::createOffer(
       new talk_base::RefCountedObject<CreateSessionDescriptionRequest>(
           request, this, PeerConnectionTracker::ACTION_CREATE_OFFER));
   RTCMediaConstraints constraints(options);
-  native_peer_connection_->CreateOffer(description_request, &constraints);
+  native_peer_connection_->CreateOffer(description_request.get(), &constraints);
 
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackCreateOffer(this, constraints);
@@ -410,7 +409,8 @@ void RTCPeerConnectionHandler::createAnswer(
       new talk_base::RefCountedObject<CreateSessionDescriptionRequest>(
           request, this, PeerConnectionTracker::ACTION_CREATE_ANSWER));
   RTCMediaConstraints constraints(options);
-  native_peer_connection_->CreateAnswer(description_request, &constraints);
+  native_peer_connection_->CreateAnswer(description_request.get(),
+                                        &constraints);
 
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackCreateAnswer(this, constraints);
@@ -438,7 +438,7 @@ void RTCPeerConnectionHandler::setLocalDescription(
   scoped_refptr<SetSessionDescriptionRequest> set_request(
       new talk_base::RefCountedObject<SetSessionDescriptionRequest>(
           request, this, PeerConnectionTracker::ACTION_SET_LOCAL_DESCRIPTION));
-  native_peer_connection_->SetLocalDescription(set_request, native_desc);
+  native_peer_connection_->SetLocalDescription(set_request.get(), native_desc);
 }
 
 void RTCPeerConnectionHandler::setRemoteDescription(
@@ -463,7 +463,7 @@ void RTCPeerConnectionHandler::setRemoteDescription(
   scoped_refptr<SetSessionDescriptionRequest> set_request(
       new talk_base::RefCountedObject<SetSessionDescriptionRequest>(
           request, this, PeerConnectionTracker::ACTION_SET_REMOTE_DESCRIPTION));
-  native_peer_connection_->SetRemoteDescription(set_request, native_desc);
+  native_peer_connection_->SetRemoteDescription(set_request.get(), native_desc);
 }
 
 WebKit::WebRTCSessionDescription
@@ -544,7 +544,7 @@ void RTCPeerConnectionHandler::getStats(
     const WebKit::WebRTCStatsRequest& request) {
   scoped_refptr<LocalRTCStatsRequest> inner_request(
       new talk_base::RefCountedObject<LocalRTCStatsRequest>(request));
-  getStats(inner_request);
+  getStats(inner_request.get());
 }
 
 void RTCPeerConnectionHandler::getStats(LocalRTCStatsRequest* request) {
@@ -575,6 +575,15 @@ void RTCPeerConnectionHandler::GetStats(
     observer->OnComplete(no_reports);
     return;
   }
+}
+
+WebKit::WebRTCDataChannelHandler* RTCPeerConnectionHandler::createDataChannel(
+    const WebKit::WebString& label, const WebKit::WebRTCDataChannelInit& init) {
+  // TODO(jiayl): update reliable to
+  // (init.ordered && init.maxRetransmitTime == -1 && init.maxRetransmits == -1)
+  // once Libjingle is updated to ignore this field for RTP data channels.
+  bool reliable = false;
+  return createDataChannel(label, reliable);
 }
 
 WebKit::WebRTCDataChannelHandler* RTCPeerConnectionHandler::createDataChannel(

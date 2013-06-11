@@ -8,12 +8,12 @@
 
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/test_util.h"
@@ -159,10 +159,8 @@ bool FakeDriveService::LoadAccountMetadataForWapi(
   // Add the largest changestamp to the existing entries.
   // This will be used to generate change lists in GetResourceList().
   if (resource_list_value_) {
-    base::DictionaryValue* resource_list_dict = NULL;
     base::ListValue* entries = NULL;
-    if (resource_list_value_->GetAsDictionary(&resource_list_dict) &&
-        resource_list_dict->GetList("entry", &entries)) {
+    if (resource_list_value_->GetList("entry", &entries)) {
       for (size_t i = 0; i < entries->GetSize(); ++i) {
         base::DictionaryValue* entry = NULL;
         if (entries->GetDictionary(i, &entry)) {
@@ -184,7 +182,7 @@ bool FakeDriveService::LoadAppListForDriveApi(
 }
 
 GURL FakeDriveService::GetFakeLinkUrl(const std::string& resource_id) {
-  return GURL("https://fake_server/" + resource_id);
+  return GURL("https://fake_server/" + net::EscapePath(resource_id));
 }
 
 void FakeDriveService::Initialize(Profile* profile) {
@@ -199,7 +197,7 @@ void FakeDriveService::RemoveObserver(DriveServiceObserver* observer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-bool FakeDriveService::CanStartOperation() const {
+bool FakeDriveService::CanSendRequest() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return true;
 }
@@ -346,9 +344,13 @@ void FakeDriveService::ContinueGetResourceList(
       if (parameters[i].first == "changestamp") {
         base::StringToInt64(parameters[i].second, &start_changestamp);
       } else if (parameters[i].first == "q") {
-        search_query = parameters[i].second;
+        search_query =
+            net::UnescapeURLComponent(parameters[i].second,
+                                      net::UnescapeRule::URL_SPECIAL_CHARS);
       } else if (parameters[i].first == "parent") {
-        directory_resource_id = parameters[i].second;
+        directory_resource_id =
+            net::UnescapeURLComponent(parameters[i].second,
+                                      net::UnescapeRule::URL_SPECIAL_CHARS);
       } else if (parameters[i].first == "start-offset") {
         base::StringToInt(parameters[i].second, &start_offset);
       } else if (parameters[i].first == "max-results") {
@@ -458,11 +460,9 @@ void FakeDriveService::DeleteResource(
     return;
   }
 
-  base::DictionaryValue* resource_list_dict = NULL;
   base::ListValue* entries = NULL;
   // Go through entries and remove the one that matches |resource_id|.
-  if (resource_list_value_->GetAsDictionary(&resource_list_dict) &&
-      resource_list_dict->GetList("entry", &entries)) {
+  if (resource_list_value_->GetList("entry", &entries)) {
     for (size_t i = 0; i < entries->GetSize(); ++i) {
       base::DictionaryValue* entry = NULL;
       std::string current_resource_id;
@@ -586,11 +586,9 @@ void FakeDriveService::CopyResource(
   const std::string& parent_resource_id = in_parent_resource_id.empty() ?
       GetRootResourceId() : in_parent_resource_id;
 
-  base::DictionaryValue* resource_list_dict = NULL;
   base::ListValue* entries = NULL;
   // Go through entries and copy the one that matches |resource_id|.
-  if (resource_list_value_->GetAsDictionary(&resource_list_dict) &&
-      resource_list_dict->GetList("entry", &entries)) {
+  if (resource_list_value_->GetList("entry", &entries)) {
     for (size_t i = 0; i < entries->GetSize(); ++i) {
       base::DictionaryValue* entry = NULL;
       std::string current_resource_id;
@@ -1132,11 +1130,9 @@ base::DictionaryValue* FakeDriveService::FindEntryByResourceId(
     const std::string& resource_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  base::DictionaryValue* resource_list_dict = NULL;
   base::ListValue* entries = NULL;
   // Go through entries and return the one that matches |resource_id|.
-  if (resource_list_value_->GetAsDictionary(&resource_list_dict) &&
-      resource_list_dict->GetList("entry", &entries)) {
+  if (resource_list_value_->GetList("entry", &entries)) {
     for (size_t i = 0; i < entries->GetSize(); ++i) {
       base::DictionaryValue* entry = NULL;
       std::string current_resource_id;
@@ -1155,11 +1151,9 @@ base::DictionaryValue* FakeDriveService::FindEntryByContentUrl(
     const GURL& content_url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  base::DictionaryValue* resource_list_dict = NULL;
   base::ListValue* entries = NULL;
   // Go through entries and return the one that matches |content_url|.
-  if (resource_list_value_->GetAsDictionary(&resource_list_dict) &&
-      resource_list_dict->GetList("entry", &entries)) {
+  if (resource_list_value_->GetList("entry", &entries)) {
     for (size_t i = 0; i < entries->GetSize(); ++i) {
       base::DictionaryValue* entry = NULL;
       std::string current_content_url;
@@ -1178,11 +1172,9 @@ base::DictionaryValue* FakeDriveService::FindEntryByUploadUrl(
     const GURL& upload_url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  base::DictionaryValue* resource_list_dict = NULL;
   base::ListValue* entries = NULL;
   // Go through entries and return the one that matches |upload_url|.
-  if (resource_list_value_->GetAsDictionary(&resource_list_dict) &&
-      resource_list_dict->GetList("entry", &entries)) {
+  if (resource_list_value_->GetList("entry", &entries)) {
     for (size_t i = 0; i < entries->GetSize(); ++i) {
       base::DictionaryValue* entry = NULL;
       base::ListValue* links = NULL;
@@ -1237,10 +1229,6 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
     return NULL;
   }
 
-  base::DictionaryValue* resource_list_dict = NULL;
-  if (!resource_list_value_->GetAsDictionary(&resource_list_dict))
-    return NULL;
-
   std::string resource_id = GetNewResourceId();
   GURL upload_url = GURL("https://xxx/upload/" + resource_id);
 
@@ -1279,9 +1267,11 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
     categories->Append(shared_with_me_label);
   }
 
+  std::string escaped_resource_id = net::EscapePath(resource_id);
+
   // Add "content" which sets the content URL.
   base::DictionaryValue* content = new base::DictionaryValue;
-  content->SetString("src", "https://xxx/content/" + resource_id);
+  content->SetString("src", "https://xxx/content/" + escaped_resource_id);
   content->SetString("type", content_type);
   new_entry->Set("content", content);
 
@@ -1295,7 +1285,7 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
   links->Append(parent_link);
 
   base::DictionaryValue* edit_link = new base::DictionaryValue;
-  edit_link->SetString("href", "https://xxx/edit/" + resource_id);
+  edit_link->SetString("href", "https://xxx/edit/" + escaped_resource_id);
   edit_link->SetString("rel", "edit");
   links->Append(edit_link);
 
@@ -1308,12 +1298,12 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
   AddNewChangestamp(new_entry.get());
 
   // If there are no entries, prepare an empty entry to add.
-  if (!resource_list_dict->HasKey("entry"))
-    resource_list_dict->Set("entry", new ListValue);
+  if (!resource_list_value_->HasKey("entry"))
+    resource_list_value_->Set("entry", new ListValue);
 
   base::DictionaryValue* raw_new_entry = new_entry.release();
   base::ListValue* entries = NULL;
-  if (resource_list_dict->GetList("entry", &entries))
+  if (resource_list_value_->GetList("entry", &entries))
     entries->Append(raw_new_entry);
 
   return raw_new_entry;
@@ -1401,7 +1391,7 @@ void FakeDriveService::GetResourceListInternal(
     entries->erase(entries->begin() + max_results, entries->end());
     // Adds the next URL.
     // Here, we embed information which is needed for continuing the
-    // GetResourceList operation in the next invocation into url query
+    // GetResourceList request in the next invocation into url query
     // parameters.
     GURL next_url(base::StringPrintf(
         "http://localhost/?start-offset=%d&max-results=%d",

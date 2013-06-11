@@ -9,13 +9,14 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
-#include "webkit/glue/webkit_glue_export.h"
+#include "net/http/http_response_info.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "webkit/common/webkit_common_export.h"
 
 namespace webkit_glue {
 
 // Base class for Chrome's implementation of the "extra data".
-class WEBKIT_GLUE_EXPORT WebURLResponseExtraDataImpl :
+class WEBKIT_COMMON_EXPORT WebURLResponseExtraDataImpl :
     public NON_EXPORTED_BASE(WebKit::WebURLResponse::ExtraData) {
  public:
   explicit WebURLResponseExtraDataImpl(
@@ -42,6 +43,15 @@ class WEBKIT_GLUE_EXPORT WebURLResponseExtraDataImpl :
   }
   void set_was_fetched_via_spdy(bool was_fetched_via_spdy) {
     was_fetched_via_spdy_ = was_fetched_via_spdy;
+  }
+
+  // Information about the type of connection used to fetch this response.
+  net::HttpResponseInfo::ConnectionInfo connection_info() const {
+    return connection_info_;
+  }
+  void set_connection_info(
+      net::HttpResponseInfo::ConnectionInfo connection_info) {
+    connection_info_ = connection_info;
   }
 
   // Flag whether this request was loaded after the
@@ -75,6 +85,7 @@ class WEBKIT_GLUE_EXPORT WebURLResponseExtraDataImpl :
   bool was_fetched_via_proxy_;
   bool was_fetched_via_spdy_;
   bool was_npn_negotiated_;
+  net::HttpResponseInfo::ConnectionInfo connection_info_;
   bool was_alternate_protocol_available_;
 
   DISALLOW_COPY_AND_ASSIGN(WebURLResponseExtraDataImpl);

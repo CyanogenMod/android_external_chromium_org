@@ -8,8 +8,8 @@
 #include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "base/values.h"
@@ -107,8 +107,8 @@ Status WebViewImpl::ConnectIfNecessary() {
   return client_->ConnectIfNecessary();
 }
 
-DevToolsClient* WebViewImpl::GetDevToolsClient() {
-  return client_.get();
+Status WebViewImpl::HandleReceivedEvents() {
+  return client_->HandleReceivedEvents();
 }
 
 Status WebViewImpl::Load(const std::string& url) {
@@ -258,11 +258,24 @@ Status WebViewImpl::DeleteCookie(const std::string& name,
   return client_->SendCommand("Page.deleteCookie", params);
 }
 
-Status WebViewImpl::WaitForPendingNavigations(const std::string& frame_id) {
-  log_->AddEntry(Log::kLog, "waiting for pending navigations");
+Status WebViewImpl::WaitForPendingNavigations(const std::string& frame_id,
+                                              int timeout) {
+  log_->AddEntry(Log::kLog, "waiting for pending navigations...");
   Status status = client_->HandleEventsUntil(
       base::Bind(&WebViewImpl::IsNotPendingNavigation, base::Unretained(this),
-                 frame_id));
+                 frame_id),
+      base::TimeDelta::FromMilliseconds(timeout));
+  if (status.code() == kTimeout) {
+    log_->AddEntry(Log::kLog, "timed out. stopping navigations...");
+    scoped_ptr<base::Value> unused_value;
+    EvaluateScript(std::string(), "window.stop();", &unused_value);
+    Status new_status = client_->HandleEventsUntil(
+        base::Bind(&WebViewImpl::IsNotPendingNavigation, base::Unretained(this),
+                   frame_id),
+        base::TimeDelta::FromSeconds(10));
+    if (new_status.IsError())
+      status = new_status;
+  }
   log_->AddEntry(Log::kLog, "done waiting for pending navigations");
   return status;
 }

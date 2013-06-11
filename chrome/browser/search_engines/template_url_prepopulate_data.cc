@@ -13,10 +13,10 @@
 #include "base/memory/scoped_vector.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/prepopulated_engines.h"
@@ -1195,6 +1195,16 @@ void GetPrepopulatedTemplateFromPrefs(Profile* profile,
           *alternate_urls, search_terms_replacement_key, id));
     }
   }
+}
+
+void ClearPrepopulatedEnginesInPrefs(Profile* profile) {
+  if (!profile)
+    return;
+
+  PrefService* prefs = profile->GetPrefs();
+  DCHECK(prefs);
+  prefs->ClearPref(prefs::kSearchProviderOverrides);
+  prefs->ClearPref(prefs::kSearchProviderOverridesVersion);
 }
 
 // The caller owns the returned TemplateURL.

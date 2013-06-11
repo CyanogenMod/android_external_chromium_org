@@ -47,10 +47,10 @@
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_offset_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_byteorder.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_canon.h"
@@ -267,7 +267,7 @@ bool IsComponentCoveredByLang(const icu::UnicodeSet& component_characters,
                               const std::string& lang) {
   CR_DEFINE_STATIC_LOCAL(
       const icu::UnicodeSet, kASCIILetters, ('a', 'z'));
-  icu::UnicodeSet* lang_set;
+  icu::UnicodeSet* lang_set = NULL;
   // We're called from both the UI thread and the history thread.
   {
     base::AutoLock lock(g_lang_set_lock.Get());
@@ -1545,7 +1545,7 @@ base::string16 FormatUrlWithOffsets(
   if (offsets_for_adjustment)
     original_offsets = *offsets_for_adjustment;
 
-  // Special handling for view-source:.  Don't use chrome::kViewSourceScheme
+  // Special handling for view-source:.  Don't use content::kViewSourceScheme
   // because this library shouldn't depend on chrome.
   const char* const kViewSource = "view-source";
   // Reject "view-source:view-source:..." to avoid deep recursion.

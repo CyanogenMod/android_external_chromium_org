@@ -11,9 +11,9 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_creator.h"
@@ -411,6 +411,7 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     installer->set_expected_id(id);
     installer->set_is_gallery_install(from_webstore);
     installer->set_install_source(install_source);
+    installer->set_install_wait_for_idle(false);
     if (!from_webstore) {
       installer->set_off_store_install_allow_reason(
           extensions::CrxInstaller::OffStoreInstallAllowedInTest);

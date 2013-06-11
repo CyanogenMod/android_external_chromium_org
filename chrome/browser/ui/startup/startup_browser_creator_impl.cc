@@ -22,8 +22,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
@@ -276,11 +276,8 @@ void AddSyncPromoTab(Profile* profile, StartupTabs* tabs) {
   SyncPromoUI::DidShowSyncPromoAtStartup(profile);
 
   StartupTab sync_promo_tab;
-  GURL continue_url;
-  if (!SyncPromoUI::UseWebBasedSigninFlow())
-    continue_url = GURL(chrome::kChromeUINewTabURL);
   sync_promo_tab.url = SyncPromoUI::GetSyncPromoURL(
-      continue_url, SyncPromoUI::SOURCE_START_PAGE, false);
+      SyncPromoUI::SOURCE_START_PAGE, false);
   sync_promo_tab.is_pinned = false;
 
   // No need to add if the sync promo is already in the startup list.

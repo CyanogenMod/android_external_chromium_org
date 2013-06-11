@@ -5,7 +5,7 @@
 #include "chrome/browser/extensions/platform_app_browsertest_util.h"
 
 #include "base/command_line.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
@@ -21,6 +21,10 @@ using content::WebContents;
 namespace utils = extension_function_test_utils;
 
 namespace extensions {
+
+PlatformAppBrowserTest::PlatformAppBrowserTest() {
+  ShellWindow::DisableExternalOpenForTesting();
+}
 
 void PlatformAppBrowserTest::SetUpCommandLine(CommandLine* command_line) {
   // Skips ExtensionApiTest::SetUpCommandLine.

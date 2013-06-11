@@ -14,6 +14,7 @@
 #include <string>
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/format_macros.h"
 #include "base/message_loop.h"
 #include "net/base/file_stream.h"
@@ -236,7 +237,7 @@ bool CacheDumper::LoadEntry(disk_cache::CacheAddr addr,
   if (!file)
     return false;
 
-  disk_cache::CacheEntryBlock entry_block(file, address);
+  disk_cache::StorageBlock<disk_cache::EntryStore> entry_block(file, address);
   if (!entry_block.Load())
     return false;
 
@@ -261,7 +262,7 @@ bool CacheDumper::LoadRankings(disk_cache::CacheAddr addr,
   if (!file)
     return false;
 
-  disk_cache::CacheRankingsBlock rank_block(file, address);
+  disk_cache::StorageBlock<disk_cache::RankingsNode> rank_block(file, address);
   if (!rank_block.Load())
     return false;
 
@@ -339,9 +340,9 @@ int DumpHeaders(const base::FilePath& input_path) {
   disk_cache::CacheAddr stats_addr = 0;
   DumpIndexHeader(index_name, &stats_addr);
 
-  file_util::FileEnumerator iter(input_path, false,
-                                 file_util::FileEnumerator::FILES,
-                                 FILE_PATH_LITERAL("data_*"));
+  base::FileEnumerator iter(input_path, false,
+                            base::FileEnumerator::FILES,
+                            FILE_PATH_LITERAL("data_*"));
   for (base::FilePath file = iter.Next(); !file.empty(); file = iter.Next())
     DumpBlockHeader(file);
 

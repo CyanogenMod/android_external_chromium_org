@@ -31,7 +31,6 @@ extern const char kChromeUICreditsURL[];
 extern const char kChromeUIDevToolsURL[];
 extern const char kChromeUIDownloadsURL[];
 extern const char kChromeUIEditSearchEngineDialogURL[];
-extern const char kChromeUIExtensionActivityURL[];
 extern const char kChromeUIExtensionIconURL[];
 extern const char kChromeUIExtensionInfoURL[];
 extern const char kChromeUIExtensionsFrameURL[];
@@ -43,6 +42,7 @@ extern const char kChromeUIFlashURL[];
 extern const char kChromeUIHelpFrameURL[];
 extern const char kChromeUIHistoryURL[];
 extern const char kChromeUIHistoryFrameURL[];
+extern const char kChromeUIIdentityInternalsURL[];
 extern const char kChromeUIInlineLoginURL[];
 extern const char kChromeUIInspectURL[];
 extern const char kChromeUIInstantURL[];
@@ -137,13 +137,13 @@ extern const char kChromeUICrashesHost[];
 extern const char kChromeUICrashHost[];
 extern const char kChromeUICreditsHost[];
 extern const char kChromeUIDefaultHost[];
-extern const char kChromeUIDevToolsBundledHost[];
-extern const char kChromeUIDevToolsRemoteHost[];
+extern const char kChromeUIDevToolsHost[];
+extern const char kChromeUIDevToolsBundledPath[];
+extern const char kChromeUIDevToolsRemotePath[];
 extern const char kChromeUIDNSHost[];
 extern const char kChromeUIDownloadsHost[];
 extern const char kChromeUIDriveInternalsHost[];
 extern const char kChromeUIEditSearchEngineDialogHost[];
-extern const char kChromeUIExtensionActivityHost[];
 extern const char kChromeUIExtensionIconHost[];
 extern const char kChromeUIExtensionInfoHost[];
 extern const char kChromeUIExtensionsFrameHost[];
@@ -157,6 +157,7 @@ extern const char kChromeUIHelpHost[];
 extern const char kChromeUIHangHost[];
 extern const char kChromeUIHistoryHost[];
 extern const char kChromeUIHistoryFrameHost[];
+extern const char kChromeUIIdentityInternalsHost[];
 extern const char kChromeUIInlineLoginHost[];
 extern const char kChromeUIInspectHost[];
 extern const char kChromeUIInstantHost[];
@@ -314,6 +315,9 @@ extern const char kChromeAccessibilityHelpURL[];
 
 // "Learn more" URL for the one click signin infobar.
 extern const char kChromeSyncLearnMoreURL[];
+
+// "Learn more" URL for the enterprise sign-in confirmation dialog.
+extern const char kChromeEnterpriseSignInLearnMoreURL[];
 
 // Help URL for the settings page's search feature.
 extern const char kSettingsSearchHelpURL[];

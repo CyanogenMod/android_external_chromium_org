@@ -17,13 +17,13 @@
 #include "base/logging.h"
 #include "base/process.h"
 #include "base/process_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
@@ -280,27 +280,19 @@ Status LaunchAndroidChrome(
     Log* log,
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
+    DeviceManager* device_manager,
     scoped_ptr<Chrome>* chrome) {
-  DeviceManager device_mgr;
-  std::vector<std::string> devices;
-  Status status = device_mgr.GetDevices(&devices);
-  if (devices.empty())
-    return Status(kUnknownError, "No devices attached");
-  std::string device_serial;
-  if (!capabilities.device_serial.empty()) {
-    if (std::find(devices.begin(), devices.end(), capabilities.device_serial) ==
-        devices.end())
-      return Status(kUnknownError,
-          "Invalid device serial: " + capabilities.device_serial);
-    device_serial = capabilities.device_serial;
-  } else if (devices.size() == 1) {
-    device_serial = devices[0];
+  Status status(kOk);
+  scoped_ptr<Device> device;
+  if (capabilities.device_serial.empty()) {
+    status = device_manager->AcquireDevice(&device);
   } else {
-    return Status(kUnknownError,
-        "No device serial supplied with multiple devices connected");
+    status = device_manager->AcquireSpecificDevice(
+        capabilities.device_serial, &device);
   }
-  status = device_mgr.StartChrome(
-      device_serial, capabilities.android_package, port);
+  if (!status.IsOk())
+    return status;
+  status = device->StartChrome(capabilities.android_package, port);
   if (!status.IsOk())
     return status;
 
@@ -317,11 +309,9 @@ Status LaunchAndroidChrome(
   if (status.IsError())
     return status;
 
-  chrome->reset(new ChromeAndroidImpl(devtools_client.Pass(),
-                                      version,
-                                      build_no,
-                                      devtools_event_listeners,
-                                      log));
+  chrome->reset(new ChromeAndroidImpl(
+      devtools_client.Pass(), version, build_no, devtools_event_listeners,
+      device.Pass(), log));
   return Status(kOk);
 }
 
@@ -332,13 +322,14 @@ Status LaunchChrome(
     int port,
     const SyncWebSocketFactory& socket_factory,
     Log* log,
+    DeviceManager* device_manager,
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
     scoped_ptr<Chrome>* chrome) {
   if (capabilities.IsAndroid()) {
     return LaunchAndroidChrome(
         context_getter, port, socket_factory, log, capabilities,
-        devtools_event_listeners, chrome);
+        devtools_event_listeners, device_manager, chrome);
   } else {
     return LaunchDesktopChrome(
         context_getter, port, socket_factory, log, capabilities,

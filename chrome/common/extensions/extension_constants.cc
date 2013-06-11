@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "net/base/escape.h"
 #include "net/base/url_util.h"
@@ -105,22 +105,6 @@ const char kGeneratedBackgroundPageFilename[] =
     "_generated_background_page.html";
 
 const char kModulesDir[] = "_modules";
-
-}  // namespace extension_filenames
-
-// These must match the values expected by the chrome.management extension API.
-namespace extension_info_keys {
-  const char kDescriptionKey[] = "description";
-  const char kEnabledKey[] = "enabled";
-  const char kHomepageUrlKey[] = "homepageUrl";
-  const char kIdKey[] = "id";
-  const char kNameKey[] = "name";
-  const char kKioskEnabledKey[] = "kioskEnabled";
-  const char kOfflineEnabledKey[] = "offlineEnabled";
-  const char kOptionsUrlKey[] = "optionsUrl";
-  const char kDetailsUrlKey[] = "detailsUrl";
-  const char kVersionKey[] = "version";
-  const char kPackagedAppKey[] = "packagedApp";
 
 }  // namespace extension_filenames
 

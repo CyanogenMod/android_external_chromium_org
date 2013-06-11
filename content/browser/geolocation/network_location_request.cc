@@ -10,8 +10,8 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/geolocation/location_arbitrator_impl.h"
 #include "content/public/common/geoposition.h"
@@ -92,7 +92,7 @@ bool NetworkLocationRequest::MakeRequest(const string16& access_token,
   GURL request_url = FormRequestURL(url_);
   url_fetcher_.reset(net::URLFetcher::Create(
       url_fetcher_id_for_tests, request_url, net::URLFetcher::POST, this));
-  url_fetcher_->SetRequestContext(url_context_);
+  url_fetcher_->SetRequestContext(url_context_.get());
   std::string upload_data;
   FormUploadData(wifi_data, timestamp, access_token, &upload_data);
   url_fetcher_->SetUploadData("application/json", upload_data);

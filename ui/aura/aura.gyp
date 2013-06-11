@@ -14,6 +14,8 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../../cc/cc.gyp:cc',
+        '../../gpu/gpu.gyp:gpu',
         '../../skia/skia.gyp:skia',
         '../compositor/compositor.gyp:compositor',
         '../ui.gyp:ui',
@@ -83,6 +85,8 @@
         'root_window_host_delegate.h',
         'root_window_host_mac.h',
         'root_window_host_mac.mm',
+        'root_window_host_ozone.cc',
+        'root_window_host_ozone.h',
         'root_window_host_win.cc',
         'root_window_host_win.h',
         'root_window_host_x11.cc',
@@ -153,6 +157,8 @@
         'test/test_activation_client.h',
         'test/test_aura_initializer.cc',
         'test/test_aura_initializer.h',
+        'test/test_cursor_client.cc',
+        'test/test_cursor_client.h',
         'test/test_event_handler.cc',
         'test/test_event_handler.h',
         'test/test_screen.cc',
@@ -163,6 +169,9 @@
         'test/test_windows.h',
         'test/test_window_delegate.cc',
         'test/test_window_delegate.h',
+        'test/ui_controls_factory_aura.h',
+        'test/ui_controls_factory_aurawin.cc',
+        'test/ui_controls_factory_aurax11.cc',
         'test/window_test_api.cc',
         'test/window_test_api.h',
       ],
@@ -279,6 +288,12 @@
         ['OS=="linux"', {
           'dependencies': [
             '<(DEPTH)/third_party/mesa/mesa.gyp:osmesa',
+          ],
+        }],
+        ['OS=="linux" and linux_use_tcmalloc==1', {
+          'dependencies': [
+           # See http://crbug.com/162998#c4 for why this is needed.
+            '../../base/allocator/allocator.gyp:allocator',
           ],
         }],
       ],

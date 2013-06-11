@@ -11,9 +11,9 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -22,7 +22,9 @@
 #include "chrome/browser/tab_contents/language_state.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/translate/page_translated_details.h"
+#include "chrome/browser/translate/translate_accept_languages.h"
 #include "chrome/browser/translate/translate_error_details.h"
+#include "chrome/browser/translate/translate_event_details.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/translate/translate_language_list.h"
 #include "chrome/browser/translate/translate_manager_metrics.h"
@@ -36,10 +38,9 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/language_detection_details.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/common/translate_errors.h"
+#include "chrome/common/translate/language_detection_details.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
@@ -158,6 +159,14 @@ bool TranslateManager::IsSupportedLanguage(const std::string& language) {
   return false;
 }
 
+// static
+bool TranslateManager::IsAlphaLanguage(const std::string& language) {
+  if (GetInstance()->language_list_.get())
+    return GetInstance()->language_list_->IsAlphaLanguage(language);
+  NOTREACHED();
+  return false;
+}
+
 void TranslateManager::Observe(int type,
                                const content::NotificationSource& source,
                                const content::NotificationDetails& details) {
@@ -218,9 +227,11 @@ void TranslateManager::Observe(int type,
     case chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED: {
       const LanguageDetectionDetails* lang_det_details =
           content::Details<const LanguageDetectionDetails>(details).ptr();
-      NotifyLanguageDetection(*lang_det_details);
 
       WebContents* tab = content::Source<WebContents>(source).ptr();
+      if (!tab->GetBrowserContext()->IsOffTheRecord())
+        NotifyLanguageDetection(*lang_det_details);
+
       // We may get this notifications multiple times.  Make sure to translate
       // only once.
       TranslateTabHelper* translate_tab_helper =
@@ -246,23 +257,6 @@ void TranslateManager::Observe(int type,
       PageTranslatedDetails* page_translated_details =
           content::Details<PageTranslatedDetails>(details).ptr();
       PageTranslated(tab, page_translated_details);
-      break;
-    }
-    case chrome::NOTIFICATION_PROFILE_DESTROYED: {
-      PrefService* pref_service =
-          content::Source<Profile>(source).ptr()->GetPrefs();
-      notification_registrar_.Remove(this,
-                                     chrome::NOTIFICATION_PROFILE_DESTROYED,
-                                     source);
-      size_t count = accept_languages_.erase(pref_service);
-      // We should know about this profile since we are listening for
-      // notifications on it.
-      DCHECK(count == 1u);
-      PrefChangeRegistrar* pref_change_registrar =
-          pref_change_registrars_[pref_service];
-      count = pref_change_registrars_.erase(pref_service);
-      DCHECK(count == 1u);
-      delete pref_change_registrar;
       break;
     }
     default:
@@ -336,11 +330,13 @@ void TranslateManager::OnURLFetchComplete(const net::URLFetcher* source) {
             request.source_lang,
             request.target_lang);
 
-        TranslateErrorDetails error_details;
-        error_details.time = base::Time::Now();
-        error_details.url = entry->GetURL();
-        error_details.error = TranslateErrors::NETWORK;
-        NotifyTranslateError(error_details);
+        if (!web_contents->GetBrowserContext()->IsOffTheRecord()) {
+          TranslateErrorDetails error_details;
+          error_details.time = base::Time::Now();
+          error_details.url = entry->GetURL();
+          error_details.error = TranslateErrors::NETWORK;
+          NotifyTranslateError(error_details);
+        }
       } else {
         // Translate the page.
         DoTranslatePage(web_contents, translate_script_,
@@ -357,6 +353,11 @@ void TranslateManager::AddObserver(Observer* obs) {
 
 void TranslateManager::RemoveObserver(Observer* obs) {
   observer_list_.RemoveObserver(obs);
+}
+
+void TranslateManager::NotifyTranslateEvent(
+    const TranslateEventDetails& details) {
+  FOR_EACH_OBSERVER(Observer, observer_list_, OnTranslateEvent(details));
 }
 
 void TranslateManager::NotifyLanguageDetection(
@@ -382,16 +383,20 @@ TranslateManager::TranslateManager()
   notification_registrar_.Add(this, chrome::NOTIFICATION_PAGE_TRANSLATED,
                               content::NotificationService::AllSources());
   language_list_.reset(new TranslateLanguageList);
+  accept_languages_.reset(new TranslateAcceptLanguages);
 }
 
 void TranslateManager::InitiateTranslation(WebContents* web_contents,
                                            const std::string& page_lang) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  PrefService* prefs = profile->GetOriginalProfile()->GetPrefs();
+  Profile* original_profile = profile->GetOriginalProfile();
+  PrefService* prefs = original_profile->GetPrefs();
   if (!prefs->GetBoolean(prefs::kEnableTranslate)) {
     TranslateManagerMetrics::ReportInitiationStatus(
         TranslateManagerMetrics::INITIATION_STATUS_DISABLED_BY_PREFS);
+    const std::string& locale = g_browser_process->GetApplicationLocale();
+    TranslateManagerMetrics::ReportLocalesOnDisabledByPrefs(locale);
     return;
   }
 
@@ -423,7 +428,7 @@ void TranslateManager::InitiateTranslation(WebContents* web_contents,
   }
 
   // Don't translate any language the user configured as accepted languages.
-  if (IsAcceptLanguage(web_contents, language_code)) {
+  if (accept_languages_->IsAcceptLanguage(original_profile, language_code)) {
     TranslateManagerMetrics::ReportInitiationStatus(
         TranslateManagerMetrics::INITIATION_STATUS_ACCEPT_LANGUAGES);
     return;
@@ -656,7 +661,8 @@ void TranslateManager::PageTranslated(WebContents* web_contents,
       details->error_type, prefs, ShortcutConfig(), details->source_language,
       details->target_language);
 
-  if (details->error_type != TranslateErrors::NONE) {
+  if (details->error_type != TranslateErrors::NONE &&
+      !web_contents->GetBrowserContext()->IsOffTheRecord()) {
     TranslateErrorDetails error_details;
     error_details.time = base::Time::Now();
     error_details.url = web_contents->GetActiveURL();
@@ -665,73 +671,8 @@ void TranslateManager::PageTranslated(WebContents* web_contents,
   }
 }
 
-bool TranslateManager::IsAcceptLanguage(WebContents* web_contents,
-                                        const std::string& language) {
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  profile = profile->GetOriginalProfile();
-  PrefService* pref_service = profile->GetPrefs();
-  PrefServiceLanguagesMap::const_iterator iter =
-      accept_languages_.find(pref_service);
-  if (iter == accept_languages_.end()) {
-    InitAcceptLanguages(pref_service);
-    // Listen for this profile going away, in which case we would need to clear
-    // the accepted languages for the profile.
-    notification_registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
-                                content::Source<Profile>(profile));
-    // Also start listening for changes in the accept languages.
-    DCHECK(pref_change_registrars_.find(pref_service) ==
-           pref_change_registrars_.end());
-    PrefChangeRegistrar* pref_change_registrar = new PrefChangeRegistrar;
-    pref_change_registrar->Init(pref_service);
-    pref_change_registrar->Add(
-        prefs::kAcceptLanguages,
-        base::Bind(&TranslateManager::InitAcceptLanguages,
-                   base::Unretained(this),
-                   pref_service));
-    pref_change_registrars_[pref_service] = pref_change_registrar;
-
-    iter = accept_languages_.find(pref_service);
-  }
-
-  return iter->second.count(language) != 0;
-}
-
-void TranslateManager::InitAcceptLanguages(PrefService* prefs) {
-  // We have been asked for this profile, build the languages.
-  std::string accept_langs_str = prefs->GetString(prefs::kAcceptLanguages);
-  std::vector<std::string> accept_langs_list;
-  LanguageSet accept_langs_set;
-  base::SplitString(accept_langs_str, ',', &accept_langs_list);
-  std::vector<std::string>::const_iterator iter;
-  std::string ui_lang =
-      GetLanguageCode(g_browser_process->GetApplicationLocale());
-  bool is_ui_english = StartsWithASCII(ui_lang, "en-", false);
-  for (iter = accept_langs_list.begin();
-       iter != accept_langs_list.end(); ++iter) {
-    // Get rid of the locale extension if any (ex: en-US -> en), but for Chinese
-    // for which the CLD reports zh-CN and zh-TW.
-    std::string accept_lang(*iter);
-    size_t index = iter->find("-");
-    if (index != std::string::npos && *iter != "zh-CN" && *iter != "zh-TW")
-      accept_lang = iter->substr(0, index);
-    // Special-case English until we resolve bug 36182 properly.
-    // Add English only if the UI language is not English. This will annoy
-    // users of non-English Chrome who can comprehend English until English is
-    // black-listed.
-    // TODO(jungshik): Once we determine that it's safe to remove English from
-    // the default Accept-Language values for most locales, remove this
-    // special-casing.
-    if (accept_lang != "en" || is_ui_english)
-      accept_langs_set.insert(accept_lang);
-  }
-  accept_languages_[prefs] = accept_langs_set;
-}
-
 void TranslateManager::FetchLanguageListFromTranslateServer(
     PrefService* prefs) {
-  DCHECK(language_list_.get());
-
   // We don't want to do this when translate is disabled.
   DCHECK(prefs != NULL);
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -742,6 +683,8 @@ void TranslateManager::FetchLanguageListFromTranslateServer(
 
   if (language_list_.get())
     language_list_->RequestLanguageList();
+  else
+    NOTREACHED();
 }
 
 void TranslateManager::CleanupPendingUlrFetcher() {

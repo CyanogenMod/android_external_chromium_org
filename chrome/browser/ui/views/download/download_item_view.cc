@@ -13,10 +13,10 @@
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/rtl.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_item_model.h"
@@ -524,9 +524,7 @@ void DownloadItemView::ButtonPressed(
   if (sender == discard_button_) {
     UMA_HISTOGRAM_LONG_TIMES("clickjacking.discard_download",
                              base::Time::Now() - creation_time_);
-    if (download()->IsPartialDownload())
-      download()->Cancel(true);
-    download()->Delete(DownloadItem::DELETE_DUE_TO_USER_DISCARD);
+    download()->Remove();
     // WARNING: we are deleted at this point.  Don't access 'this'.
   } else if (save_button_ && sender == save_button_) {
     // The user has confirmed a dangerous download.  We'd record how quickly the
@@ -534,7 +532,7 @@ void DownloadItemView::ButtonPressed(
     UMA_HISTOGRAM_LONG_TIMES("clickjacking.save_download",
                              base::Time::Now() - creation_time_);
     // This will change the state and notify us.
-    download()->DangerousDownloadValidated();
+    download()->ValidateDangerousDownload();
   }
 }
 

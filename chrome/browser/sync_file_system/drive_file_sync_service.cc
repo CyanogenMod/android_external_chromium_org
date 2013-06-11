@@ -13,7 +13,7 @@
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -48,6 +48,7 @@ using fileapi::FileSystemURL;
 namespace sync_file_system {
 
 typedef DriveFileSyncService::ConflictResolutionResult ConflictResolutionResult;
+typedef RemoteFileSyncService::OriginStatusMap OriginStatusMap;
 
 namespace {
 
@@ -89,7 +90,6 @@ void SyncFileCallbackAdapter(
 
 }  // namespace
 
-const char DriveFileSyncService::kServiceName[] = "syncfs";
 ConflictResolutionPolicy DriveFileSyncService::kDefaultPolicy =
     CONFLICT_RESOLUTION_LAST_WRITE_WIN;
 
@@ -249,8 +249,26 @@ RemoteServiceState DriveFileSyncService::GetCurrentState() const {
   return state_;
 }
 
-const char* DriveFileSyncService::GetServiceName() const {
-  return kServiceName;
+void DriveFileSyncService::GetOriginStatusMap(OriginStatusMap* status_map) {
+  DCHECK(status_map);
+
+  // Add batch sync origins held by DriveFileSyncService.
+  typedef std::map<GURL, std::string>::const_iterator iterator;
+  for (iterator itr = pending_batch_sync_origins_.begin();
+       itr != pending_batch_sync_origins_.end();
+       ++itr)
+    (*status_map)[itr->first] = "Pending";
+
+  // Add incremental and disabled origins held by DriveMetadataStore.
+  for (iterator itr = metadata_store_->incremental_sync_origins().begin();
+       itr != metadata_store_->incremental_sync_origins().end();
+       ++itr)
+    (*status_map)[itr->first] = "Enabled";
+
+  for (iterator itr = metadata_store_->disabled_origins().begin();
+       itr != metadata_store_->disabled_origins().end();
+       ++itr)
+    (*status_map)[itr->first] = "Disabled";
 }
 
 void DriveFileSyncService::SetSyncEnabled(bool enabled) {
@@ -500,14 +518,16 @@ void DriveFileSyncService::DoUnregisterOriginForTrackingChanges(
 void DriveFileSyncService::DoEnableOriginForTrackingChanges(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  // If origin cannot be found in disabled list, then it's not a SyncFS app
+  // and should be ignored.
   if (!metadata_store_->IsOriginDisabled(origin)) {
     callback.Run(SYNC_STATUS_OK);
     return;
   }
 
-  metadata_store_->EnableOrigin(origin, callback);
   pending_batch_sync_origins_.insert(
       *metadata_store_->disabled_origins().find(origin));
+  metadata_store_->EnableOrigin(origin, callback);
 }
 
 void DriveFileSyncService::DoDisableOriginForTrackingChanges(
@@ -586,7 +606,6 @@ void DriveFileSyncService::DoProcessRemoteChange(
       remote_change, callback));
   remote_change_processor_->PrepareForProcessRemoteChange(
       remote_change.url,
-      kServiceName,
       base::Bind(&DriveFileSyncService::DidPrepareForProcessRemoteChange,
                  AsWeakPtr(), base::Passed(&param)));
 }
@@ -612,8 +631,7 @@ void DriveFileSyncService::DoApplyLocalChange(
 
   DCHECK(!running_local_sync_task_);
   running_local_sync_task_.reset(new drive::LocalChangeProcessorDelegate(
-      AsWeakPtr(), local_file_change, local_file_path,
-      local_file_metadata, url));
+      this, local_file_change, local_file_path, local_file_metadata, url));
   running_local_sync_task_->Run(base::Bind(
       &DriveFileSyncService::DidApplyLocalChange, AsWeakPtr(), callback));
 }
@@ -770,13 +788,13 @@ void DriveFileSyncService::DidGetDirectoryContentForBatchSync(
     // Save to be fetched file to DB for restore in case of crash.
     DriveMetadata metadata;
     metadata.set_resource_id(entry.resource_id());
-    metadata.set_md5_checksum(entry.file_md5());
+    metadata.set_md5_checksum(std::string());
     metadata.set_conflicted(false);
     metadata.set_to_be_fetched(true);
 
     base::FilePath path = TitleToPath(entry.title());
     fileapi::FileSystemURL url(CreateSyncableFileSystemURL(
-        origin, kServiceName, path));
+        origin, path));
     // TODO(calvinlo): Write metadata and origin data as single batch command
     // so it's not possible for the DB to contain a DriveMetadata with an
     // unknown origin.
@@ -1291,8 +1309,7 @@ bool DriveFileSyncService::AppendRemoteChangeInternal(
     const base::Time& updated_time,
     SyncFileType file_type,
     RemoteChangeHandler::RemoteSyncType sync_type) {
-  fileapi::FileSystemURL url(
-      CreateSyncableFileSystemURL(origin, kServiceName, path));
+  fileapi::FileSystemURL url(CreateSyncableFileSystemURL(origin, path));
   DCHECK(url.is_valid());
 
   // Note that we create a normalized path from url.path() rather than
@@ -1526,6 +1543,19 @@ DriveFileSyncService::SyncFileTypeToDriveMetadataResourceType(
   }
   NOTREACHED();
   return DriveMetadata_ResourceType_RESOURCE_TYPE_FILE;
+}
+
+// static
+SyncFileType DriveFileSyncService::DriveMetadataResourceTypeToSyncFileType(
+    DriveMetadata::ResourceType resource_type) {
+  switch (resource_type) {
+    case DriveMetadata_ResourceType_RESOURCE_TYPE_FILE:
+      return SYNC_FILE_TYPE_FILE;
+    case DriveMetadata_ResourceType_RESOURCE_TYPE_FOLDER:
+      return SYNC_FILE_TYPE_DIRECTORY;
+  }
+  NOTREACHED();
+  return SYNC_FILE_TYPE_UNKNOWN;
 }
 
 void DriveFileSyncService::FetchChangesForIncrementalSync(

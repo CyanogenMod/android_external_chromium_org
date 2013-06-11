@@ -29,20 +29,11 @@ class FakeMessageCenter : public MessageCenter {
   virtual bool HasClickedListener(const std::string& id) OVERRIDE;
   virtual const NotificationList::Notifications& GetNotifications() OVERRIDE;
   virtual NotificationList::PopupNotifications GetPopupNotifications() OVERRIDE;
-  virtual void AddNotification(NotificationType type,
-                               const std::string& id,
-                               const string16& title,
-                               const string16& message,
-                               const string16& display_source,
-                               const std::string& extension_id,
-                               const base::DictionaryValue* optional_fields,
-                               NotificationDelegate* delegate) OVERRIDE;
+  virtual void AddNotification(scoped_ptr<Notification> notification) OVERRIDE;
   virtual void UpdateNotification(const std::string& old_id,
-                                  const std::string& new_id,
-                                  const string16& title,
-                                  const string16& message,
-                                  const base::DictionaryValue* optional_fields,
-                                  NotificationDelegate* delegate) OVERRIDE;
+                                  scoped_ptr<Notification> new_notification)
+      OVERRIDE;
+
   virtual void RemoveNotification(const std::string& id, bool by_user) OVERRIDE;
   virtual void RemoveAllNotifications(bool by_user) OVERRIDE;
   virtual void SetNotificationIcon(const std::string& notification_id,
@@ -57,7 +48,8 @@ class FakeMessageCenter : public MessageCenter {
   virtual void DisableNotificationsByExtension(const std::string& id) OVERRIDE;
   virtual void DisableNotificationsByUrl(const std::string& id) OVERRIDE;
   virtual void ShowNotificationSettings(const std::string& id) OVERRIDE;
-  virtual void ShowNotificationSettingsDialog(gfx::NativeView context) OVERRIDE;
+  virtual NotifierSettingsDelegate* ShowNotificationSettingsDialog(
+      gfx::NativeView context) OVERRIDE;
   virtual void ExpandNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotificationButton(const std::string& id,
@@ -69,6 +61,12 @@ class FakeMessageCenter : public MessageCenter {
   virtual void EnterQuietModeWithExpire(
       const base::TimeDelta& expires_in) OVERRIDE;
   virtual void SetMessageCenterVisible(bool visible) OVERRIDE;
+  virtual bool IsMessageCenterVisible() OVERRIDE;
+  virtual void RestartPopupTimers() OVERRIDE;
+  virtual void PausePopupTimers() OVERRIDE;
+
+ protected:
+  virtual void DisableTimersForTest() OVERRIDE;
 
  private:
   const NotificationList::Notifications empty_notifications_;

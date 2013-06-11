@@ -7,7 +7,7 @@
 #include <set>
 
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/values.h"
@@ -226,6 +226,10 @@ QuicStreamFactory::QuicStreamFactory(
       random_generator_(random_generator),
       clock_(clock),
       weak_factory_(this) {
+  config_.SetDefaults();
+  config_.set_idle_connection_state_lifetime(
+      QuicTime::Delta::FromSeconds(30),
+      QuicTime::Delta::FromSeconds(30));
 }
 
 QuicStreamFactory::~QuicStreamFactory() {
@@ -249,8 +253,7 @@ int QuicStreamFactory::Create(const HostPortProxyPair& host_port_proxy_pair,
     return ERR_IO_PENDING;
   }
 
-  Job* job = new Job(weak_factory_.GetWeakPtr(), host_resolver_,
-                     host_port_proxy_pair, net_log);
+  Job* job = new Job(this, host_resolver_, host_port_proxy_pair, net_log);
   int rv = job->Run(base::Bind(&QuicStreamFactory::OnJobComplete,
                                base::Unretained(this), job));
 
@@ -386,12 +389,8 @@ QuicClientSession* QuicStreamFactory::CreateSession(
   QuicClientSession* session =
       new QuicClientSession(connection, socket, this,
                             quic_crypto_client_stream_factory_,
-                            host_port_proxy_pair.first.host(), QuicConfig(),
+                            host_port_proxy_pair.first.host(), config_,
                             crypto_config, net_log.net_log());
-  session->config()->SetDefaults();
-  session->config()->set_idle_connection_state_lifetime(
-      QuicTime::Delta::FromSeconds(30),
-      QuicTime::Delta::FromSeconds(30));
   all_sessions_.insert(session);  // owning pointer
   return session;
 }

@@ -25,7 +25,12 @@ class Task;
 class TestProfileSyncService;
 
 ACTION(ReturnNewDataTypeManager) {
-  return new browser_sync::DataTypeManagerImpl(arg0, arg1, arg2, arg3, arg4);
+  return new browser_sync::DataTypeManagerImpl(arg0,
+                                               arg1,
+                                               arg2,
+                                               arg3,
+                                               arg4,
+                                               arg5);
 }
 
 namespace browser_sync {
@@ -55,8 +60,10 @@ class SyncBackendHostForProfileSyncTest : public SyncBackendHost {
 
   virtual void RequestConfigureSyncer(
       syncer::ConfigureReason reason,
-      syncer::ModelTypeSet types_to_config,
-      syncer::ModelTypeSet failed_types,
+      syncer::ModelTypeSet to_download,
+      syncer::ModelTypeSet to_journal,
+      syncer::ModelTypeSet to_unapply,
+      syncer::ModelTypeSet to_ignore,
       const syncer::ModelSafeRoutingInfo& routing_info,
       const base::Callback<void(syncer::ModelTypeSet,
                                 syncer::ModelTypeSet)>& ready_task,

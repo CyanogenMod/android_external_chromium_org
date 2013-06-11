@@ -19,10 +19,6 @@
 namespace drive {
 namespace file_system {
 
-namespace {
-const int64 kLotsOfSpace = internal::kMinFreeSpace * 10;
-}
-
 OperationTestBase::LoggingObserver::LoggingObserver() {
 }
 
@@ -69,12 +65,14 @@ void OperationTestBase::SetUp() {
   ASSERT_EQ(FILE_ERROR_OK, error);
 
   fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
-  fake_free_disk_space_getter_->set_fake_free_disk_space(kLotsOfSpace);
   cache_.reset(new internal::FileCache(temp_dir_.path(),
                                        blocking_task_runner_,
                                        fake_free_disk_space_getter_.get()));
-  cache_->RequestInitializeForTesting();
+  bool success = false;
+  cache_->RequestInitialize(
+      google_apis::test_util::CreateCopyResultCallback(&success));
   google_apis::test_util::RunBlockingPoolTask();
+  ASSERT_TRUE(success);
 
   // Makes sure the FakeDriveService's content is loaded to the metadata_.
   internal::ChangeListLoader change_list_loader(

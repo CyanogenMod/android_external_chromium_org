@@ -10,8 +10,8 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
@@ -156,6 +156,12 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
                                              gpu_info.gl_version_string));
   basic_info->Append(NewDescriptionValuePair("GL_EXTENSIONS",
                                              gpu_info.gl_extensions));
+  basic_info->Append(NewDescriptionValuePair("Window system binding vendor",
+                                             gpu_info.gl_ws_vendor));
+  basic_info->Append(NewDescriptionValuePair("Window system binding version",
+                                             gpu_info.gl_ws_version));
+  basic_info->Append(NewDescriptionValuePair("Window system binding extensions",
+                                             gpu_info.gl_ws_extensions));
 
   base::DictionaryValue* info = new base::DictionaryValue();
   info->Set("basic_info", basic_info);
@@ -428,8 +434,8 @@ base::Value* GetFeatureStatus() {
 
   // Build the problems list.
   {
-    base::ListValue* problem_list =
-        GpuDataManagerImpl::GetInstance()->GetBlacklistReasons();
+    base::ListValue* problem_list = new base::ListValue();
+    GpuDataManagerImpl::GetInstance()->GetBlacklistReasons(problem_list);
 
     if (gpu_access_blocked) {
       base::DictionaryValue* problem = new base::DictionaryValue();
@@ -452,6 +458,13 @@ base::Value* GetFeatureStatus() {
     }
 
     status->Set("problems", problem_list);
+  }
+
+  // Build driver bug workaround list.
+  {
+    base::ListValue* workaround_list = new base::ListValue();
+    GpuDataManagerImpl::GetInstance()->GetDriverBugWorkarounds(workaround_list);
+    status->Set("workarounds", workaround_list);
   }
 
   return status;
@@ -598,6 +611,8 @@ base::Value* GpuMessageHandler::OnRequestClientInfo(
   dict->SetString("graphics_backend", "Skia");
   dict->SetString("blacklist_version",
       GpuDataManagerImpl::GetInstance()->GetBlacklistVersion());
+  dict->SetString("driver_bug_list_version",
+      GpuDataManagerImpl::GetInstance()->GetDriverBugListVersion());
 
   return dict;
 }

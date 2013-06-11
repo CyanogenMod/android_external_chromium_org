@@ -14,11 +14,11 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
@@ -306,7 +306,7 @@ TemplateURLService::TemplateURLService(const Initializer* initializers,
 }
 
 TemplateURLService::~TemplateURLService() {
-  if (service_)
+  if (service_.get())
     Shutdown();
   STLDeleteElements(&template_urls_);
 }
@@ -369,7 +369,6 @@ GURL TemplateURLService::GenerateSearchURLUsingTermsData(
     const TemplateURL* t_url,
     const SearchTermsData& search_terms_data) {
   DCHECK(t_url);
-  DCHECK(!t_url->IsExtensionKeyword());
 
   const TemplateURLRef& search_ref = t_url->url_ref();
   if (!search_ref.IsValidUsingTermsData(search_terms_data))
@@ -584,10 +583,7 @@ void TemplateURLService::IncrementUsageCount(TemplateURL* url) {
       template_urls_.end())
     return;
   ++url->data_.usage_count;
-  // Extension keywords are not persisted.
-  // TODO(mpcomplete): If we allow editing extension keywords, then those should
-  // be persisted to disk and synced.
-  if (service_.get() && !url->IsExtensionKeyword())
+  if (service_.get())
     service_.get()->UpdateKeyword(url->data());
 }
 
@@ -671,6 +667,67 @@ TemplateURL* TemplateURLService::FindNewDefaultSearchProvider() {
   return FirstPotentialDefaultEngine(template_urls_);
 }
 
+void TemplateURLService::ResetNonExtensionURLs() {
+  // Can't clean DB if it hasn't been loaded.
+  DCHECK(loaded());
+  ClearDefaultProviderFromPrefs();
+
+  // Preserve all extension URLs, as they should not be reset.
+  TemplateURLVector entries_to_process;
+  for (TemplateURLVector::const_iterator i = template_urls_.begin();
+       i != template_urls_.end(); ++i) {
+    if (!(*i)->IsExtensionKeyword())
+      entries_to_process.push_back(*i);
+  }
+  // Clear default provider to be able to delete it.
+  default_search_provider_ = NULL;
+  for (TemplateURLVector::const_iterator i = entries_to_process.begin();
+       i != entries_to_process.end(); ++i)
+    RemoveNoNotify(*i);
+
+  // Store the remaining engines in entries_to_process and merge them with
+  // prepopulated ones. NOTE: Because this class owns the pointers stored in
+  // |template_urls_|, the swap() call below means this function is taking
+  // ownership of all these pointers; see comments below.
+  entries_to_process.clear();
+  entries_to_process.swap(template_urls_);
+  provider_map_.reset(new SearchHostToURLsMap);
+  UIThreadSearchTermsData search_terms_data(profile_);
+  provider_map_->Init(TemplateURLVector(), search_terms_data);
+
+  TemplateURL* default_search_provider = NULL;
+  // Force GetSearchProvidersUsingLoadedEngines() to include the prepopulated
+  // engines in the list by claiming we are currently on version 0, ensuring
+  // that the prepopulate data version will be newer.
+  int new_resource_keyword_version = 0;
+  GetSearchProvidersUsingLoadedEngines(service_.get(), profile_,
+                                       &entries_to_process,
+                                       &default_search_provider,
+                                       &new_resource_keyword_version,
+                                       &pre_sync_deletes_);
+  // We don't want to pass any extension URLs to
+  // AddTemplateURLsAndSetupDefaultEngine(), since they were never removed
+  // from the model to begin with.
+  TemplateURLVector::iterator extensions(std::partition(
+      entries_to_process.begin(), entries_to_process.end(),
+      std::not1(std::mem_fun(&TemplateURL::IsExtensionKeyword))));
+  // Right now we own all pointers in |entries_to_process| (see above).
+  // AddTemplateURLsAndSetupDefaultEngine() will take ownership of all
+  // passed-in TemplateURLs (generally by passing them to AddNoNotify()). Any
+  // URLs we aren't going to pass to it have to be freed here.
+  STLDeleteContainerPointers(extensions, entries_to_process.end());
+  entries_to_process.erase(extensions, entries_to_process.end());
+  // Setup search engines and a default one.
+  AddTemplateURLsAndSetupDefaultEngine(&entries_to_process,
+                                       default_search_provider);
+
+  if (new_resource_keyword_version)
+    service_->SetBuiltinKeywordVersion(new_resource_keyword_version);
+
+  EnsureDefaultSearchProviderExists();
+  NotifyObservers();
+}
+
 void TemplateURLService::AddObserver(TemplateURLServiceObserver* observer) {
   model_observers_.AddObserver(observer);
 }
@@ -714,7 +771,6 @@ void TemplateURLService::OnWebDataServiceRequestDone(
   // initial_default_search_provider_ is only needed before we've finished
   // loading. Now that we've loaded we can nuke it.
   initial_default_search_provider_.reset();
-  is_default_search_managed_ = false;
 
   TemplateURLVector template_urls;
   TemplateURL* default_search_provider = NULL;
@@ -723,81 +779,7 @@ void TemplateURLService::OnWebDataServiceRequestDone(
       &template_urls, &default_search_provider, &new_resource_keyword_version,
       &pre_sync_deletes_);
 
-  bool database_specified_a_default = (default_search_provider != NULL);
-
-  // Check if default search provider is now managed.
-  scoped_ptr<TemplateURL> default_from_prefs;
-  LoadDefaultSearchProviderFromPrefs(&default_from_prefs,
-                                     &is_default_search_managed_);
-
-  // Remove entries that were created because of policy as they may have
-  // changed since the database was saved.
-  RemoveProvidersCreatedByPolicy(&template_urls,
-                                 &default_search_provider,
-                                 default_from_prefs.get());
-
-  PatchMissingSyncGUIDs(&template_urls);
-
-  if (is_default_search_managed_) {
-    SetTemplateURLs(template_urls);
-
-    if (TemplateURLsHaveSamePrefs(default_search_provider,
-                                  default_from_prefs.get())) {
-      // The value from the preferences was previously stored in the database.
-      // Reuse it.
-    } else {
-      // The value from the preferences takes over.
-      default_search_provider = NULL;
-      if (default_from_prefs.get()) {
-        TemplateURLData data(default_from_prefs->data());
-        data.created_by_policy = true;
-        data.id = kInvalidTemplateURLID;
-        default_search_provider = new TemplateURL(profile_, data);
-        if (!AddNoNotify(default_search_provider, true))
-          default_search_provider = NULL;
-      }
-    }
-    // Note that this saves the default search provider to prefs.
-    if (!default_search_provider ||
-        (!default_search_provider->IsExtensionKeyword() &&
-         default_search_provider->SupportsReplacement())) {
-      bool success = SetDefaultSearchProviderNoNotify(default_search_provider);
-      DCHECK(success);
-    }
-  } else {
-    // If we had a managed default, replace it with the synced default if
-    // applicable, or the first provider of the list.
-    TemplateURL* synced_default = GetPendingSyncedDefaultSearchProvider();
-    if (synced_default) {
-      default_search_provider = synced_default;
-      pending_synced_default_search_ = false;
-    } else if (database_specified_a_default &&
-               default_search_provider == NULL) {
-      UMA_HISTOGRAM_ENUMERATION(kFirstPotentialEngineHistogramName,
-          FIRST_POTENTIAL_CALLSITE_ON_LOAD, FIRST_POTENTIAL_CALLSITE_MAX);
-      default_search_provider = FirstPotentialDefaultEngine(template_urls);
-    }
-
-    // If the default search provider existed previously, then just
-    // set the member variable. Otherwise, we'll set it using the method
-    // to ensure that it is saved properly after its id is set.
-    if (default_search_provider &&
-        (default_search_provider->id() != kInvalidTemplateURLID)) {
-      default_search_provider_ = default_search_provider;
-      default_search_provider = NULL;
-    }
-    SetTemplateURLs(template_urls);
-
-    if (default_search_provider) {
-      // Note that this saves the default search provider to prefs.
-      SetDefaultSearchProvider(default_search_provider);
-    } else {
-      // Always save the default search provider to prefs. That way we don't
-      // have to worry about it being out of sync.
-      if (default_search_provider_)
-        SaveDefaultSearchProviderToPrefs(default_search_provider_);
-    }
-  }
+  AddTemplateURLsAndSetupDefaultEngine(&template_urls, default_search_provider);
 
   // This initializes provider_map_ which should be done before
   // calling UpdateKeywordSearchTermsForURL.
@@ -811,26 +793,7 @@ void TemplateURLService::OnWebDataServiceRequestDone(
   if (new_resource_keyword_version)
     service_->SetBuiltinKeywordVersion(new_resource_keyword_version);
 
-  if (!is_default_search_managed_) {
-    bool has_default_search_provider = default_search_provider_ != NULL &&
-        default_search_provider_->SupportsReplacement();
-    UMA_HISTOGRAM_BOOLEAN(kHasDSPHistogramName,
-                          has_default_search_provider);
-    // Ensure that default search provider exists. See http://crbug.com/116952.
-    if (!has_default_search_provider) {
-      bool success =
-          SetDefaultSearchProviderNoNotify(FindNewDefaultSearchProvider());
-      DCHECK(success);
-    }
-    // Don't log anything if the user has a NULL default search provider. A
-    // logged value of 0 indicates a custom default search provider.
-    if (default_search_provider_) {
-      UMA_HISTOGRAM_ENUMERATION(
-          kDSPHistogramName,
-          default_search_provider_->prepopulate_id(),
-          TemplateURLPrepopulateData::kMaxPrepopulatedEngineID);
-    }
-  }
+  EnsureDefaultSearchProviderExists();
 
   NotifyObservers();
   NotifyLoaded();
@@ -914,11 +877,6 @@ syncer::SyncDataList TemplateURLService::GetAllSyncData(
   syncer::SyncDataList current_data;
   for (TemplateURLVector::const_iterator iter = template_urls_.begin();
       iter != template_urls_.end(); ++iter) {
-    // We don't sync extension keywords.
-    // TODO(mpcomplete): If we allow editing extension keywords, then those
-    // should be persisted to disk and synced.
-    if ((*iter)->IsExtensionKeyword())
-      continue;
     // We don't sync keywords managed by policy.
     if ((*iter)->created_by_policy())
       continue;
@@ -1229,12 +1187,6 @@ void TemplateURLService::ProcessTemplateURLChange(
   if (processing_syncer_changes_)
     return;  // These are changes originating from us. Ignore.
 
-  // Avoid syncing Extension keywords.
-  // TODO(mpcomplete): If we allow editing extension keywords, then those should
-  // be persisted to disk and synced.
-  if (turl->IsExtensionKeyword())
-    return;
-
   // Avoid syncing keywords managed by policy.
   if (turl->created_by_policy())
     return;
@@ -1343,7 +1295,6 @@ TemplateURL* TemplateURLService::CreateTemplateURLFromTemplateURLAndSyncData(
   // possible that sync is trying to modify fields that should not be touched.
   // Revert these fields to the built-in values.
   UpdateTemplateURLIfPrepopulated(turl, profile);
-  DCHECK(!turl->IsExtensionKeyword());
   if (reset_keyword || deduped) {
     if (reset_keyword)
       turl->ResetKeywordIfNecessary(true);
@@ -1485,13 +1436,6 @@ void TemplateURLService::RemoveFromMaps(TemplateURL* template_url) {
       keyword_to_template_map_.erase(keyword);
   }
 
-  // If the keyword we're removing is from an extension, we're now done, since
-  // it won't be synced or stored in the provider map.
-  // TODO(mpcomplete): If we allow editing extension keywords, then those should
-  // be synced.
-  if (template_url->IsExtensionKeyword())
-    return;
-
   if (!template_url->sync_guid().empty())
     guid_to_template_map_.erase(template_url->sync_guid());
   if (loaded_) {
@@ -1533,14 +1477,6 @@ void TemplateURLService::AddToMaps(TemplateURL* template_url) {
         !CanReplace(template_url) : CanReplace(existing_url))
       keyword_to_template_map_[keyword] = template_url;
   }
-
-  // Extension keywords are not synced, so they don't go into the GUID map,
-  // and do not use host-based search URLs, so they don't go into the provider
-  // map, so at this point we're done.
-  // TODO(mpcomplete): If we allow editing extension keywords, then those should
-  // be persisted to disk and synced.
-  if (template_extension)
-    return;
 
   if (!template_url->sync_guid().empty())
     guid_to_template_map_[template_url->sync_guid()] = template_url;
@@ -1721,6 +1657,16 @@ bool TemplateURLService::LoadDefaultSearchProviderFromPrefs(
   return true;
 }
 
+void TemplateURLService::ClearDefaultProviderFromPrefs() {
+  // We overwrite user preferences. If the default search engine is managed,
+  // there is no effect.
+  SaveDefaultSearchProviderToPrefs(NULL);
+  // Default value for kDefaultSearchProviderEnabled is true.
+  PrefService* prefs = GetPrefs();
+  if (prefs)
+    prefs->SetBoolean(prefs::kDefaultSearchProviderEnabled, true);
+}
+
 bool TemplateURLService::CanReplaceKeywordForHost(
     const std::string& host,
     TemplateURL** to_replace) {
@@ -1768,11 +1714,6 @@ bool TemplateURLService::UpdateNoNotify(
       template_urls_.end())
     return false;
 
-  // TODO(mpcomplete): If we allow editing extension keywords, then those should
-  // be persisted to disk and synced.  In this case this DCHECK should be
-  // removed.
-  DCHECK(!existing_turl->IsExtensionKeyword());
-
   string16 old_keyword(existing_turl->keyword());
   keyword_to_template_map_.erase(old_keyword);
   if (!existing_turl->sync_guid().empty())
@@ -1799,7 +1740,6 @@ bool TemplateURLService::UpdateNoNotify(
     //     at load time causes it to conflict with an existing keyword.  In this
     //     case we delete the existing keyword if it's replaceable, or else undo
     //     the change in keyword for |existing_turl|.
-    DCHECK(!existing_turl->IsExtensionKeyword());
     TemplateURL* existing_keyword_turl = i->second;
     if (existing_keyword_turl->IsExtensionKeyword()) {
       if (!CanReplace(existing_turl))
@@ -2135,35 +2075,33 @@ bool TemplateURLService::AddNoNotify(TemplateURL* template_url,
   }
 
   template_url->ResetKeywordIfNecessary(false);
-  if (!template_url->IsExtensionKeyword()) {
-    // Check whether |template_url|'s keyword conflicts with any already in the
-    // model.
-    TemplateURL* existing_keyword_turl =
-        FindNonExtensionTemplateURLForKeyword(template_url->keyword());
-    if (existing_keyword_turl != NULL) {
-      DCHECK_NE(existing_keyword_turl, template_url);
-      if (CanReplace(existing_keyword_turl)) {
-        RemoveNoNotify(existing_keyword_turl);
-      } else if (CanReplace(template_url)) {
-        delete template_url;
-        return false;
-      } else {
-        string16 new_keyword = UniquifyKeyword(*existing_keyword_turl, false);
-        ResetTemplateURL(existing_keyword_turl,
-                         existing_keyword_turl->short_name(), new_keyword,
-                         existing_keyword_turl->url());
-      }
+  // Check whether |template_url|'s keyword conflicts with any already in the
+  // model.
+  TemplateURL* existing_keyword_turl =
+      GetTemplateURLForKeyword(template_url->keyword());
+  if (existing_keyword_turl != NULL) {
+    DCHECK_NE(existing_keyword_turl, template_url);
+    // Only replace one of the TemplateURLs if they are either both extensions,
+    // or both not extensions.
+    bool are_same_type = existing_keyword_turl->IsExtensionKeyword() ==
+        template_url->IsExtensionKeyword();
+    if (CanReplace(existing_keyword_turl) && are_same_type) {
+      RemoveNoNotify(existing_keyword_turl);
+    } else if (CanReplace(template_url) && are_same_type) {
+      delete template_url;
+      return false;
+    } else {
+      string16 new_keyword = UniquifyKeyword(*existing_keyword_turl, false);
+      ResetTemplateURL(existing_keyword_turl,
+                       existing_keyword_turl->short_name(), new_keyword,
+                       existing_keyword_turl->url());
     }
   }
   template_urls_.push_back(template_url);
   AddToMaps(template_url);
 
   if (newly_adding) {
-    // Don't persist extension keywords to disk.  They'll get re-added on each
-    // launch as the extensions are loaded.
-    // TODO(mpcomplete): If we allow editing extension keywords, then those
-    // should be persisted to disk and synced.
-    if (service_.get() && !template_url->IsExtensionKeyword())
+    if (service_.get())
       service_->AddKeyword(template_url->data());
 
     // Inform sync of the addition. Note that this will assign a GUID to
@@ -2193,10 +2131,7 @@ void TemplateURLService::RemoveNoNotify(TemplateURL* template_url) {
   // Remove it from the vector containing all TemplateURLs.
   template_urls_.erase(i);
 
-  // Extension keywords are not persisted.
-  // TODO(mpcomplete): If we allow editing extension keywords, then those should
-  // be persisted to disk and synced.
-  if (service_.get() && !template_url->IsExtensionKeyword())
+  if (service_.get())
     service_->RemoveKeyword(template_url->id());
 
   // Inform sync of the deletion.
@@ -2265,10 +2200,7 @@ void TemplateURLService::RemoveProvidersCreatedByPolicy(
         *default_search_provider = NULL;
 
       i = template_urls->erase(i);
-      // Extension keywords are not persisted.
-      // TODO(mpcomplete): If we allow editing extension keywords, then those
-      // should be persisted to disk and synced.
-      if (service_.get() && !template_url->IsExtensionKeyword())
+      if (service_.get())
         service_->RemoveKeyword(template_url->id());
       delete template_url;
     } else {
@@ -2296,9 +2228,10 @@ string16 TemplateURLService::UniquifyKeyword(const TemplateURL& turl,
     if (!GetTemplateURLForKeyword(turl.keyword()))
       return turl.keyword();
 
-    // First, try to return the generated keyword for the TemplateURL.
+    // First, try to return the generated keyword for the TemplateURL (except
+    // for extensions, as their keywords are not associated with their URLs).
     GURL gurl(turl.url());
-    if (gurl.is_valid()) {
+    if (gurl.is_valid() && !turl.IsExtensionKeyword()) {
       string16 keyword_candidate = GenerateKeyword(gurl);
       if (!GetTemplateURLForKeyword(keyword_candidate))
         return keyword_candidate;
@@ -2334,7 +2267,6 @@ void TemplateURLService::ResolveSyncKeywordConflict(
   DCHECK(applied_sync_turl);
   DCHECK(change_list);
   DCHECK_EQ(applied_sync_turl->keyword(), unapplied_sync_turl->keyword());
-  DCHECK(!applied_sync_turl->IsExtensionKeyword());
 
   // Both |unapplied_sync_turl| and |applied_sync_turl| are known to Sync, so
   // don't delete either of them. Instead, determine which is "better" and
@@ -2486,14 +2418,116 @@ void TemplateURLService::PatchMissingSyncGUIDs(
        i != template_urls->end(); ++i) {
     TemplateURL* template_url = *i;
     DCHECK(template_url);
-    // Extension keywords are never synced.
-    // TODO(mpcomplete): If we allow editing extension keywords, then those
-    // should be persisted to disk and synced.
-    if (template_url->sync_guid().empty() &&
-        !template_url->IsExtensionKeyword()) {
+    if (template_url->sync_guid().empty()) {
       template_url->data_.sync_guid = base::GenerateGUID();
       if (service_.get())
         service_->UpdateKeyword(template_url->data());
+    }
+  }
+}
+
+void TemplateURLService::AddTemplateURLsAndSetupDefaultEngine(
+    TemplateURLVector* template_urls,
+    TemplateURL* default_search_provider) {
+  DCHECK(template_urls);
+  is_default_search_managed_ = false;
+  bool database_specified_a_default = (default_search_provider != NULL);
+
+  // Check if default search provider is now managed.
+  scoped_ptr<TemplateURL> default_from_prefs;
+  LoadDefaultSearchProviderFromPrefs(&default_from_prefs,
+                                     &is_default_search_managed_);
+
+  // Remove entries that were created because of policy as they may have
+  // changed since the database was saved.
+  RemoveProvidersCreatedByPolicy(template_urls,
+                                 &default_search_provider,
+                                 default_from_prefs.get());
+
+  PatchMissingSyncGUIDs(template_urls);
+
+  if (is_default_search_managed_) {
+    SetTemplateURLs(*template_urls);
+
+    if (TemplateURLsHaveSamePrefs(default_search_provider,
+                                  default_from_prefs.get())) {
+      // The value from the preferences was previously stored in the database.
+      // Reuse it.
+    } else {
+      // The value from the preferences takes over.
+      default_search_provider = NULL;
+      if (default_from_prefs.get()) {
+        TemplateURLData data(default_from_prefs->data());
+        data.created_by_policy = true;
+        data.id = kInvalidTemplateURLID;
+        default_search_provider = new TemplateURL(profile_, data);
+        if (!AddNoNotify(default_search_provider, true))
+          default_search_provider = NULL;
+      }
+    }
+    // Note that this saves the default search provider to prefs.
+    if (!default_search_provider ||
+        (!default_search_provider->IsExtensionKeyword() &&
+            default_search_provider->SupportsReplacement())) {
+      bool success = SetDefaultSearchProviderNoNotify(default_search_provider);
+      DCHECK(success);
+    }
+  } else {
+    // If we had a managed default, replace it with the synced default if
+    // applicable, or the first provider of the list.
+    TemplateURL* synced_default = GetPendingSyncedDefaultSearchProvider();
+    if (synced_default) {
+      default_search_provider = synced_default;
+      pending_synced_default_search_ = false;
+    } else if (database_specified_a_default &&
+        default_search_provider == NULL) {
+      UMA_HISTOGRAM_ENUMERATION(kFirstPotentialEngineHistogramName,
+                                FIRST_POTENTIAL_CALLSITE_ON_LOAD,
+                                FIRST_POTENTIAL_CALLSITE_MAX);
+      default_search_provider = FirstPotentialDefaultEngine(*template_urls);
+    }
+
+    // If the default search provider existed previously, then just
+    // set the member variable. Otherwise, we'll set it using the method
+    // to ensure that it is saved properly after its id is set.
+    if (default_search_provider &&
+        (default_search_provider->id() != kInvalidTemplateURLID)) {
+      default_search_provider_ = default_search_provider;
+      default_search_provider = NULL;
+    }
+    SetTemplateURLs(*template_urls);
+
+    if (default_search_provider) {
+      // Note that this saves the default search provider to prefs.
+      SetDefaultSearchProvider(default_search_provider);
+    } else {
+      // Always save the default search provider to prefs. That way we don't
+      // have to worry about it being out of sync.
+      if (default_search_provider_)
+        SaveDefaultSearchProviderToPrefs(default_search_provider_);
+    }
+  }
+}
+
+void TemplateURLService::EnsureDefaultSearchProviderExists() {
+  if (!is_default_search_managed_) {
+    bool has_default_search_provider = default_search_provider_ &&
+        default_search_provider_->SupportsReplacement();
+    UMA_HISTOGRAM_BOOLEAN(kHasDSPHistogramName,
+                          has_default_search_provider);
+    // Ensure that default search provider exists. See http://crbug.com/116952.
+    if (!has_default_search_provider) {
+      bool success =
+          SetDefaultSearchProviderNoNotify(FindNewDefaultSearchProvider());
+      DCHECK(success);
+    }
+    // Don't log anything if the user has a NULL default search provider. A
+    // logged value of 0 indicates a custom default search provider.
+    if (default_search_provider_) {
+      UMA_HISTOGRAM_ENUMERATION(
+          kDSPHistogramName,
+          default_search_provider_->prepopulate_id(),
+          TemplateURLPrepopulateData::kMaxPrepopulatedEngineID);
     }
   }
 }

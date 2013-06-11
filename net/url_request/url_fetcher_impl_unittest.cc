@@ -10,8 +10,8 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop_proxy.h"
-#include "base/stringprintf.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
@@ -461,7 +461,7 @@ class CancelTestURLRequestContextGetter
                                        0.0,
                                        4000));
       context_->throttler_manager()
-          ->OverrideEntryForTests(throttle_for_url_, entry);
+          ->OverrideEntryForTests(throttle_for_url_, entry.get());
 
       context_created_.Signal();
     }
@@ -1202,7 +1202,8 @@ TEST_F(URLFetcherProtectTest, Overload) {
                                    2.0,
                                    0.0,
                                    256));
-  request_context()->throttler_manager()->OverrideEntryForTests(url, entry);
+  request_context()->throttler_manager()
+      ->OverrideEntryForTests(url, entry.get());
 
   CreateFetcher(url);
 
@@ -1230,7 +1231,8 @@ TEST_F(URLFetcherProtectTest, ServerUnavailable) {
                                    2.0,
                                    0.0,
                                    256));
-  request_context()->throttler_manager()->OverrideEntryForTests(url, entry);
+  request_context()->throttler_manager()
+      ->OverrideEntryForTests(url, entry.get());
 
   CreateFetcher(url);
 
@@ -1260,7 +1262,8 @@ TEST_F(URLFetcherProtectTestPassedThrough, ServerUnavailablePropagateResponse) {
                                    150000));
   // Total time if *not* for not doing automatic backoff would be 150s.
   // In reality it should be "as soon as server responds".
-  request_context()->throttler_manager()->OverrideEntryForTests(url, entry);
+  request_context()->throttler_manager()
+      ->OverrideEntryForTests(url, entry.get());
 
   CreateFetcher(url);
 
@@ -1322,7 +1325,8 @@ TEST_F(URLFetcherCancelTest, CancelWhileDelayedStartTaskPending) {
                                    2.0,
                                    0.0,
                                    4000));
-  request_context()->throttler_manager()->OverrideEntryForTests(url, entry);
+  request_context()->throttler_manager()
+      ->OverrideEntryForTests(url, entry.get());
   // Fake that a request has just started.
   entry->ReserveSendingTimeForNextRequest(base::TimeTicks());
 

@@ -8,7 +8,7 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
@@ -133,7 +133,7 @@ void ImporterHost::StartImportSettings(
   writer_ = writer;
   importer_ = importer::CreateImporterByType(source_profile.importer_type);
   // If we fail to create the Importer, exit, as we cannot do anything.
-  if (!importer_) {
+  if (!importer_.get()) {
     NotifyImportEnded();
     return;
   }

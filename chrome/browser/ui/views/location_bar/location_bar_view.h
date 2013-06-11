@@ -192,6 +192,11 @@ class LocationBarView : public LocationBar,
   // appears, not where the icons are shown).
   gfx::Point GetLocationEntryOrigin() const;
 
+  // Shows |text| as an inline autocompletion.  This is useful for IMEs, where
+  // we can't show the autocompletion inside the actual OmniboxView.  See
+  // comments on |ime_inline_autocomplete_view_|.
+  void SetImeInlineAutocompletion(const string16& text);
+
   // Invoked from OmniboxViewWin to show the instant suggestion.
   void SetInstantSuggestion(const string16& text);
 
@@ -315,18 +320,23 @@ class LocationBarView : public LocationBar,
   // otherwise it will be the current height.
   int GetInternalHeight(bool use_preferred_size);
 
-  // Space between items in the location bar.
+  // Returns the position and width that the popup should be, and also the left
+  // edge that the results should align themselves to (which will leave some
+  // border on the left of the popup).
+  void GetOmniboxPopupPositioningInfo(
+      gfx::Point* top_left_screen_coord,
+      int* popup_width,
+      int* left_margin,
+      int* right_margin);
+
+  // Space between items in the location bar, as well as between items and the
+  // edges.
   static int GetItemPadding();
 
-  // Space between the edges and the items next to them.
-  static int GetEdgeItemPadding();
-
-  // Thickness of the left and right edges of the omnibox, in normal mode.
-  static const int kNormalHorizontalEdgeThickness;
+  // Thickness of the edges of the omnibox background images, in normal mode.
+  static const int kNormalEdgeThickness;
   // The same, but for popup mode.
   static const int kPopupEdgeThickness;
-  // Thickness of the top and bottom edges of the omnibox.
-  static const int kNormalVerticalEdgeThickness;
   // Amount of padding built into the standard omnibox icons.
   static const int kIconInternalPadding;
   // Space between the edge and a bubble.
@@ -347,7 +357,7 @@ class LocationBarView : public LocationBar,
 
   // The same, but for the top and bottom edges.
   int vertical_edge_thickness() const {
-    return is_popup_mode_ ? kPopupEdgeThickness : kNormalVerticalEdgeThickness;
+    return is_popup_mode_ ? kPopupEdgeThickness : kNormalEdgeThickness;
   }
 
   // Update the visibility state of the Content Blocked icons to reflect what is
@@ -420,7 +430,8 @@ class LocationBarView : public LocationBar,
   content::PageTransition transition_;
 
   // An object used to paint the normal-mode background.
-  scoped_ptr<views::Painter> background_painter_;
+  scoped_ptr<views::Painter> background_border_painter_;
+  scoped_ptr<views::Painter> background_filling_painter_;
 
   // An icon to the left of the edit field.
   LocationIconView* location_icon_view_;
@@ -430,6 +441,12 @@ class LocationBarView : public LocationBar,
 
   // Location_entry view
   views::View* location_entry_view_;
+
+  // A view to show inline autocompletion when an IME is active.  In this case,
+  // we shouldn't change the text or selection inside the OmniboxView itself,
+  // since this will conflict with the IME's control over the text.  So instead
+  // we show any autocompletion in a separate field after the OmniboxView.
+  views::Label* ime_inline_autocomplete_view_;
 
   // The following views are used to provide hints and remind the user as to
   // what is going in the edit. They are all added a children of the

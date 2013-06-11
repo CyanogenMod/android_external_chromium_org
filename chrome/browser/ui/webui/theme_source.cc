@@ -70,7 +70,7 @@ void ThemeSource::StartDataRequest(
       uncached_path == kNewIncognitoTabCSSPath) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-    callback.Run(css_bytes_);
+    callback.Run(css_bytes_.get());
     return;
   }
 
@@ -97,7 +97,7 @@ std::string ThemeSource::GetMimeType(const std::string& path) const {
   return "image/png";
 }
 
-MessageLoop* ThemeSource::MessageLoopForRequestPath(
+base::MessageLoop* ThemeSource::MessageLoopForRequestPath(
     const std::string& path) const {
   std::string uncached_path;
   webui::ParsePathAndScale(GURL(GetThemePath() + path), &uncached_path, NULL);
@@ -143,7 +143,7 @@ void ThemeSource::SendThemeBitmap(
 
     scoped_refptr<base::RefCountedMemory> image_data(tp->GetRawData(
         resource_id, scale_factor));
-    callback.Run(image_data);
+    callback.Run(image_data.get());
   } else {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     const ResourceBundle& rb = ResourceBundle::GetSharedInstance();

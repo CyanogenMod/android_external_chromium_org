@@ -12,7 +12,7 @@
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/app_locale_settings.h"
 #include "grit/ui_strings.h"
 #include "third_party/icu/public/common/unicode/uchar.h"
@@ -952,6 +952,20 @@ void NativeTextfieldViews::InsertChar(char16 ch, int flags) {
 
   UpdateAfterChange(true, true);
   OnAfterUserAction();
+
+  if (textfield_->IsObscured()) {
+    const base::TimeDelta& reveal_duration =
+        textfield_->obscured_reveal_duration();
+    if (reveal_duration != base::TimeDelta()) {
+      const size_t change_offset = model_->GetCursorPosition();
+      DCHECK_GT(change_offset, 0u);
+      RevealObscuredChar(change_offset - 1, reveal_duration);
+    }
+  }
+}
+
+gfx::NativeWindow NativeTextfieldViews::GetAttachedWindow() const {
+  return GetWidget()->GetNativeWindow();
 }
 
 ui::TextInputType NativeTextfieldViews::GetTextInputType() const {
@@ -1397,13 +1411,9 @@ bool NativeTextfieldViews::Paste() {
     string16 new_text = GetTextForDisplay(GetText());
     model_->SetText(new_text);
 
-    // Calls TextfieldController::ContentsChanged() explicitly if the paste
-    // action did not change the content at all. See http://crbug.com/79002
-    if (new_text == original_text) {
-      TextfieldController* controller = textfield_->GetController();
-      if (controller)
-        controller->ContentsChanged(textfield_, textfield_->text());
-    }
+    TextfieldController* controller = textfield_->GetController();
+    if (controller)
+      controller->OnAfterPaste();
   }
   return success;
 }
@@ -1483,9 +1493,23 @@ void NativeTextfieldViews::CreateTouchSelectionControllerAndNotifyIt() {
 void NativeTextfieldViews::PlatformGestureEventHandling(
     const ui::GestureEvent* event) {
 #if defined(OS_WIN) && defined(USE_AURA)
-  if (event->type() == ui::ET_GESTURE_TAP_DOWN && !textfield_->read_only())
+  if (event->type() == ui::ET_GESTURE_TAP && !textfield_->read_only())
     base::win::DisplayVirtualKeyboard();
 #endif
+}
+
+void NativeTextfieldViews::RevealObscuredChar(int index,
+                                              const base::TimeDelta& duration) {
+  GetRenderText()->SetObscuredRevealIndex(index);
+  SchedulePaint();
+
+  if (index != -1) {
+    obscured_reveal_timer_.Start(
+        FROM_HERE,
+        duration,
+        base::Bind(&NativeTextfieldViews::RevealObscuredChar,
+                   base::Unretained(this), -1, base::TimeDelta()));
+  }
 }
 
 }  // namespace views

@@ -7,16 +7,17 @@
 #include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/third_party/icu/icu_utf.h"
 #include "chrome/common/automation_id.h"
 #include "chrome/test/automation/automation_json_requests.h"
@@ -372,9 +373,8 @@ bool UnzipSoleFile(const base::FilePath& unzip_dir,
     return false;
   }
 
-  file_util::FileEnumerator enumerator(unzip_dir, false /* recursive */,
-      file_util::FileEnumerator::FILES |
-      file_util::FileEnumerator::DIRECTORIES);
+  base::FileEnumerator enumerator(unzip_dir, false /* recursive */,
+      base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
   base::FilePath first_file = enumerator.Next();
   if (first_file.empty()) {
     *error_msg = "Zip contained 0 files";

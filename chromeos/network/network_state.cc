@@ -6,12 +6,13 @@
 
 #include "base/i18n/icu_encoding_detection.h"
 #include "base/i18n/icu_string_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversion_utils.h"
-#include "base/values.h"
 #include "chromeos/network/network_event_log.h"
+#include "chromeos/network/network_ui_data.h"
+#include "chromeos/network/onc/onc_utils.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace {
@@ -56,6 +57,7 @@ NetworkState::NetworkState(const std::string& path)
       auto_connect_(false),
       favorite_(false),
       priority_(0),
+      onc_source_(onc::ONC_SOURCE_NONE),
       signal_strength_(0),
       connectable_(false),
       passphrase_required_(false),
@@ -88,9 +90,9 @@ bool NetworkState::PropertyChanged(const std::string& key,
   } else if (key == IPConfigProperty(flimflam::kNameServersProperty)) {
     dns_servers_.clear();
     const base::ListValue* dns_servers;
-    if (value.GetAsList(&dns_servers) &&
-        ConvertListValueToStringVector(*dns_servers, &dns_servers_))
-      return true;
+    if (value.GetAsList(&dns_servers))
+      ConvertListValueToStringVector(*dns_servers, &dns_servers_);
+    return true;
   } else if (key == flimflam::kActivationStateProperty) {
     return GetStringValue(key, value, &activation_state_);
   } else if (key == flimflam::kRoamingStateProperty) {
@@ -103,6 +105,47 @@ bool NetworkState::PropertyChanged(const std::string& key,
     return GetBooleanValue(key, value, &favorite_);
   } else if (key == flimflam::kPriorityProperty) {
     return GetIntegerValue(key, value, &priority_);
+  } else if (key == flimflam::kProxyConfigProperty) {
+    std::string proxy_config_str;
+    if (!value.GetAsString(&proxy_config_str)) {
+      LOG(WARNING) << "Failed to parse string value for:" << key;
+      return false;
+    }
+
+    proxy_config_.Clear();
+    if (proxy_config_str.empty())
+      return true;
+
+    scoped_ptr<base::DictionaryValue> proxy_config_dict(
+        onc::ReadDictionaryFromJson(proxy_config_str));
+    if (proxy_config_dict) {
+      // Warning: The DictionaryValue returned from
+      // ReadDictionaryFromJson/JSONParser is an optimized derived class that
+      // doesn't allow releasing ownership of nested values. A Swap in the wrong
+      // order leads to memory access errors.
+      proxy_config_.MergeDictionary(proxy_config_dict.get());
+    } else {
+      LOG(WARNING) << "Failed to parse dictionary value for: " << key;
+    }
+    return true;
+  } else if (key == flimflam::kUIDataProperty) {
+    std::string ui_data_str;
+    if (!value.GetAsString(&ui_data_str)) {
+      LOG(WARNING) << "Failed to parse string value for:" << key;
+      return false;
+    }
+
+    onc_source_ = onc::ONC_SOURCE_NONE;
+    if (ui_data_str.empty())
+      return true;
+
+    scoped_ptr<base::DictionaryValue> ui_data_dict(
+        onc::ReadDictionaryFromJson(ui_data_str));
+    if (ui_data_dict)
+      onc_source_ = NetworkUIData(*ui_data_dict).onc_source();
+    else
+      LOG(WARNING) << "Failed to parse dictionary value for: " << key;
+    return true;
   } else if (key == flimflam::kNetworkTechnologyProperty) {
     return GetStringValue(key, value, &technology_);
   } else if (key == flimflam::kDeviceProperty) {
@@ -111,8 +154,6 @@ bool NetworkState::PropertyChanged(const std::string& key,
     return GetStringValue(key, value, &guid_);
   } else if (key == flimflam::kProfileProperty) {
     return GetStringValue(key, value, &profile_path_);
-  } else if (key == flimflam::kProxyConfigProperty) {
-    return GetStringValue(key, value, &proxy_config_);
   } else if (key == shill::kActivateOverNonCellularNetworkProperty) {
     return GetBooleanValue(key, value, &activate_over_non_cellular_networks_);
   } else if (key == shill::kOutOfCreditsProperty) {
@@ -171,6 +212,11 @@ void NetworkState::GetProperties(base::DictionaryValue* dictionary) const {
                                              favorite_);
   dictionary->SetIntegerWithoutPathExpansion(flimflam::kPriorityProperty,
                                              priority_);
+  // Proxy config and ONC source are intentionally omitted: These properties are
+  // placed in NetworkState to transition ProxyConfigServiceImpl from
+  // NetworkLibrary to the new network stack. The networking extension API
+  // shouldn't depend on this member. Once ManagedNetworkConfigurationHandler
+  // is used instead of NetworkLibrary, we can remove them again.
   dictionary->SetStringWithoutPathExpansion(
       flimflam::kNetworkTechnologyProperty,
       technology_);
@@ -179,8 +225,6 @@ void NetworkState::GetProperties(base::DictionaryValue* dictionary) const {
   dictionary->SetStringWithoutPathExpansion(flimflam::kGuidProperty, guid_);
   dictionary->SetStringWithoutPathExpansion(flimflam::kProfileProperty,
                                             profile_path_);
-  dictionary->SetStringWithoutPathExpansion(flimflam::kProxyConfigProperty,
-                                            proxy_config_);
   dictionary->SetBooleanWithoutPathExpansion(
       shill::kActivateOverNonCellularNetworkProperty,
       activate_over_non_cellular_networks_);

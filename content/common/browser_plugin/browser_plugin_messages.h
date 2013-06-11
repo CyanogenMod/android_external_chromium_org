@@ -15,6 +15,7 @@
 #include "content/common/browser_plugin/browser_plugin_message_enums.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
+#include "content/common/edit_command.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
@@ -24,8 +25,8 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "webkit/glue/webcursor.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
+#include "webkit/common/cursors/webcursor.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -61,6 +62,7 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
+  IPC_STRUCT_MEMBER(int, browser_plugin_instance_id)
   IPC_STRUCT_MEMBER(std::string, storage_partition_id)
   IPC_STRUCT_MEMBER(bool, persist_storage)
   IPC_STRUCT_MEMBER(bool, focused)
@@ -83,10 +85,6 @@ IPC_STRUCT_BEGIN(BrowserPluginMsg_LoadCommit_Params)
   IPC_STRUCT_MEMBER(GURL, url)
   // Indicates whether the navigation was on the top-level frame.
   IPC_STRUCT_MEMBER(bool, is_top_level)
-  // The browser's process ID for the guest.
-  IPC_STRUCT_MEMBER(int, process_id)
-  // The browser's routing ID for the guest's RenderView.
-  IPC_STRUCT_MEMBER(int, route_id)
   // The index of the current navigation entry after this navigation was
   // committed.
   IPC_STRUCT_MEMBER(int, current_entry_index)
@@ -151,6 +149,11 @@ IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_AllocateInstanceID,
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ExecuteEditCommand,
                      int /* instance_id */,
                      std::string /* command */)
+
+// This message must be sent just before sending a key event.
+IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent,
+                    int /* instance_id */,
+                    std::vector<content::EditCommand> /* edit_commands */)
 
 // This message is sent to the browser process to enable or disable autosize
 // mode.

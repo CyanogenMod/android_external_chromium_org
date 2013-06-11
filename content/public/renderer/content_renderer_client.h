@@ -186,6 +186,7 @@ class CONTENT_EXPORT ContentRendererClient {
                           const GURL& url,
                           const std::string& http_method,
                           bool is_initial_navigation,
+                          bool is_server_redirect,
                           bool* send_referrer);
 
   // Notifies the embedder that the given frame is requesting the resource at
@@ -239,21 +240,6 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns whether BrowserPlugin should be allowed within the |container|.
   virtual bool AllowBrowserPlugin(WebKit::WebPluginContainer* container) const;
 
-  // Allow the embedder to specify a different renderer compositor MessageLoop.
-  // If not NULL, the returned MessageLoop must be valid for the lifetime of
-  // RenderThreadImpl. If NULL, then a new thread will be created.
-  virtual base::MessageLoop* OverrideCompositorMessageLoop() const;
-
-  // Called when a render view's compositor instance is created, when the
-  // kEnableSynchronousRendererCompositor flag is used.
-  // NOTE this is called on the Compositor thread: the embedder must
-  // implement OverrideCompositorMessageLoop() when using this interface.
-  virtual void DidCreateSynchronousCompositor(
-      int render_view_id,
-      SynchronousCompositor* compositor) {}
-
-  // Allow the embedder to disable input event filtering by the compositor.
-  virtual bool ShouldCreateCompositorInputHandler() const;
 };
 
 }  // namespace content

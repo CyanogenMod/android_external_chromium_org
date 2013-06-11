@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
@@ -162,35 +162,16 @@ ManagedModeNavigationObserver::~ManagedModeNavigationObserver() {
 ManagedModeNavigationObserver::ManagedModeNavigationObserver(
     content::WebContents* web_contents)
     : WebContentsObserver(web_contents),
-      warn_infobar_delegate_(NULL),
-      is_elevated_(false) {
+      warn_infobar_delegate_(NULL) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   managed_user_service_ = ManagedUserServiceFactory::GetForProfile(profile);
-  if (!managed_user_service_->ProfileIsManaged())
-    is_elevated_ = true;
   url_filter_ = managed_user_service_->GetURLFilterForUIThread();
 }
 
 void ManagedModeNavigationObserver::WarnInfobarDismissed() {
   DCHECK(warn_infobar_delegate_);
   warn_infobar_delegate_ = NULL;
-}
-
-bool ManagedModeNavigationObserver::is_elevated() const {
-#if defined(OS_CHROMEOS)
-  return false;
-#else
-  return is_elevated_;
-#endif
-}
-
-void ManagedModeNavigationObserver::set_elevated(bool is_elevated) {
-#if defined(OS_CHROMEOS)
-  NOTREACHED();
-#else
-  is_elevated_ = is_elevated;
-#endif
 }
 
 void ManagedModeNavigationObserver::ProvisionalChangeToMainFrameUrl(

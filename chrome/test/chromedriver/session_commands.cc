@@ -97,18 +97,6 @@ Status ExecuteGetSessionCapabilities(
   return Status(kOk);
 }
 
-Status ExecuteQuit(
-    bool allow_detach,
-    SessionMap* session_map,
-    Session* session,
-    const base::DictionaryValue& params,
-    scoped_ptr<base::Value>* value) {
-  CHECK(session_map->Remove(session->id));
-  if (allow_detach && session->detach)
-    return Status(kOk);
-  return session->chrome->Quit();
-}
-
 Status ExecuteGetCurrentWindowHandle(
     Session* session,
     const base::DictionaryValue& params,
@@ -146,9 +134,11 @@ Status ExecuteClose(
   status = session->chrome->GetWebViewIds(&web_view_ids);
   if ((status.code() == kChromeNotReachable && is_last_web_view) ||
       (status.IsOk() && web_view_ids.empty())) {
+    // If no window is open, close is the equivalent of calling "quit".
     CHECK(session_map->Remove(session->id));
-    return Status(kOk);
+    return session->chrome->Quit();
   }
+
   return status;
 }
 
@@ -249,19 +239,22 @@ Status ExecuteSetTimeout(
     const base::DictionaryValue& params,
     scoped_ptr<base::Value>* value) {
   double ms_double;
-  if (!params.GetDouble("ms", &ms_double) || ms_double < 0)
-    return Status(kUnknownError, "'ms' must be a non-negative number");
+  if (!params.GetDouble("ms", &ms_double))
+    return Status(kUnknownError, "'ms' must be a double");
   std::string type;
   if (!params.GetString("type", &type))
     return Status(kUnknownError, "'type' must be a string");
 
   int ms = static_cast<int>(ms_double);
+  // TODO(frankf): implicit and script timeout should be cleared
+  // if negative timeout is specified.
   if (type == "implicit")
     session->implicit_wait = ms;
   else if (type == "script")
     session->script_timeout = ms;
   else if (type == "page load")
-    session->page_load_timeout = ms;
+    session->page_load_timeout =
+        ((ms < 0) ? Session::kDefaultPageLoadTimeoutMs : ms);
   else
     return Status(kUnknownError, "unknown type of timeout:" + type);
   return Status(kOk);

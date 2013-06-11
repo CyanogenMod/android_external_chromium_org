@@ -53,11 +53,10 @@ scoped_ptr<SoftwareRenderer> SoftwareRenderer::Create(
 SoftwareRenderer::SoftwareRenderer(RendererClient* client,
                                    OutputSurface* output_surface,
                                    ResourceProvider* resource_provider)
-  : DirectRenderer(client, resource_provider),
+  : DirectRenderer(client, output_surface, resource_provider),
     visible_(true),
     is_scissor_enabled_(false),
     is_viewport_changed_(true),
-    output_surface_(output_surface),
     output_device_(output_surface->software_device()),
     current_canvas_(NULL) {
   if (resource_provider_) {
@@ -88,7 +87,7 @@ void SoftwareRenderer::BeginDrawingFrame(DrawingFrame* frame) {
   TRACE_EVENT0("cc", "SoftwareRenderer::BeginDrawingFrame");
   if (is_viewport_changed_) {
     is_viewport_changed_ = false;
-    output_device_->Resize(ViewportSize());
+    output_device_->Resize(client_->DeviceViewport().size());
   }
   root_canvas_ = output_device_->BeginPaint(
       gfx::ToEnclosingRect(frame->root_damage_rect));
@@ -114,7 +113,7 @@ void SoftwareRenderer::SwapBuffers(const ui::LatencyInfo& latency_info) {
 
 void SoftwareRenderer::ReceiveCompositorFrameAck(
     const CompositorFrameAck& ack) {
-  output_device_->ReclaimDIB(ack.last_dib_id);
+  output_device_->ReclaimSoftwareFrame(ack.last_software_frame_id);
 }
 
 bool SoftwareRenderer::FlippedFramebuffer() const {
@@ -146,15 +145,17 @@ void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
 bool SoftwareRenderer::BindFramebufferToTexture(
     DrawingFrame* frame,
     const ScopedResource* texture,
-    gfx::Rect framebuffer_rect) {
+    gfx::Rect target_rect) {
   current_framebuffer_lock_.reset();
   current_framebuffer_lock_ = make_scoped_ptr(
       new ResourceProvider::ScopedWriteLockSoftware(
           resource_provider_, texture->id()));
   current_canvas_ = current_framebuffer_lock_->sk_canvas();
-  InitializeMatrices(frame, framebuffer_rect, false);
-  SetDrawViewportSize(framebuffer_rect.size());
-
+  InitializeViewport(frame,
+                     target_rect,
+                     gfx::Rect(target_rect.size()),
+                     target_rect.size(),
+                     false);
   return true;
 }
 
@@ -193,7 +194,7 @@ void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame) {
   }
 }
 
-void SoftwareRenderer::SetDrawViewportSize(gfx::Size viewport_size) {}
+void SoftwareRenderer::SetDrawViewport(gfx::Rect window_space_viewport) {}
 
 bool SoftwareRenderer::IsSoftwareResource(
     ResourceProvider::ResourceId resource_id) const {
@@ -222,7 +223,14 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
 
   current_paint_.reset();
   if (!IsScaleAndTranslate(sk_device_matrix)) {
-    current_paint_.setAntiAlias(true);
+    // TODO(danakj): Until we can enable AA only on exterior edges of the
+    // layer, disable AA if any interior edges are present. crbug.com/248175
+    bool all_four_edges_are_exterior = quad->IsTopEdge() &&
+                                       quad->IsLeftEdge() &&
+                                       quad->IsBottomEdge() &&
+                                       quad->IsRightEdge();
+    if (all_four_edges_are_exterior)
+      current_paint_.setAntiAlias(true);
     current_paint_.setFilterBitmap(true);
   }
 
@@ -437,13 +445,12 @@ void SoftwareRenderer::DrawUnsupportedQuad(const DrawingFrame* frame,
 void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
     scoped_ptr<CopyOutputRequest> request) {
-  gfx::Size render_pass_size = frame->current_render_pass->output_rect.size();
-
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
   bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    render_pass_size.width(),
-                    render_pass_size.height());
-  current_canvas_->readPixels(bitmap.get(), 0, 0);
+                    current_viewport_rect_.width(),
+                    current_viewport_rect_.height());
+  current_canvas_->readPixels(
+      bitmap.get(), current_viewport_rect_.x(), current_viewport_rect_.y());
 
   request->SendBitmapResult(bitmap.Pass());
 }
@@ -451,6 +458,7 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
 void SoftwareRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
   TRACE_EVENT0("cc", "SoftwareRenderer::GetFramebufferPixels");
   SkBitmap subset_bitmap;
+  rect += current_viewport_rect_.OffsetFromOrigin();
   output_device_->CopyToBitmap(rect, &subset_bitmap);
   subset_bitmap.copyPixelsTo(pixels,
                              4 * rect.width() * rect.height(),

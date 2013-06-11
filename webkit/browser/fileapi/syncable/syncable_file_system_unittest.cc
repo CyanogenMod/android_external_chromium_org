@@ -15,9 +15,9 @@
 #include "webkit/browser/fileapi/syncable/local_file_change_tracker.h"
 #include "webkit/browser/fileapi/syncable/local_file_sync_context.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
+#include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/quota/quota_manager.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 
 using base::PlatformFileError;
 using fileapi::FileSystemContext;
@@ -33,7 +33,7 @@ namespace sync_file_system {
 class SyncableFileSystemTest : public testing::Test {
  public:
   SyncableFileSystemTest()
-      : file_system_(GURL("http://example.com/"), "test",
+      : file_system_(GURL("http://example.com/"),
                      base::MessageLoopProxy::current(),
                      base::MessageLoopProxy::current()),
         weak_factory_(this) {}
@@ -43,12 +43,13 @@ class SyncableFileSystemTest : public testing::Test {
 
     sync_context_ = new LocalFileSyncContext(base::MessageLoopProxy::current(),
                                              base::MessageLoopProxy::current());
-    ASSERT_EQ(sync_file_system::SYNC_STATUS_OK,
-              file_system_.MaybeInitializeFileSystemContext(sync_context_));
+    ASSERT_EQ(
+        sync_file_system::SYNC_STATUS_OK,
+        file_system_.MaybeInitializeFileSystemContext(sync_context_.get()));
   }
 
   virtual void TearDown() {
-    if (sync_context_)
+    if (sync_context_.get())
       sync_context_->ShutdownOnUIThread();
     sync_context_ = NULL;
 
@@ -57,7 +58,7 @@ class SyncableFileSystemTest : public testing::Test {
     // Make sure we don't leave the external filesystem.
     // (CannedSyncableFileSystem::TearDown does not do this as there may be
     // multiple syncable file systems registered for the name)
-    RevokeSyncableFileSystem("test");
+    RevokeSyncableFileSystem();
   }
 
  protected:

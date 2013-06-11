@@ -21,12 +21,12 @@
 #include "base/platform_file.h"
 #include "base/prefs/pref_member.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/worker_pool.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
@@ -42,6 +42,7 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
@@ -669,7 +670,7 @@ class NetInternalsMessageHandler::IOThreadImpl
 NetInternalsMessageHandler::NetInternalsMessageHandler() {}
 
 NetInternalsMessageHandler::~NetInternalsMessageHandler() {
-  if (proxy_) {
+  if (proxy_.get()) {
     proxy_.get()->OnWebUIDeleted();
     // Notify the handler on the IO thread that the renderer is gone.
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
@@ -908,7 +909,7 @@ void NetInternalsMessageHandler::OnGetExtensionInfo(const ListValue* list) {
            it != extensions->end(); ++it) {
         DictionaryValue* extension_info = new DictionaryValue();
         bool enabled = extension_service->IsExtensionEnabled((*it)->id());
-        (*it)->GetBasicInfo(enabled, extension_info);
+        extensions::GetExtensionBasicInfo(*it, enabled, extension_info);
         extension_list->Append(extension_info);
       }
     }
@@ -1751,7 +1752,7 @@ void NetInternalsMessageHandler::IOThreadImpl::SendJavascriptCommand(
     const std::string& command,
     Value* arg) {
   if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    if (handler_ && !was_webui_deleted_) {
+    if (handler_.get() && !was_webui_deleted_) {
       // We check |handler_| in case it was deleted on the UI thread earlier
       // while we were running on the IO thread.
       handler_->SendJavascriptCommand(command, arg);

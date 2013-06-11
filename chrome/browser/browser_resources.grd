@@ -62,7 +62,6 @@
       <structure name="IDR_SSL_FIREFOX_HTML" file="resources\ssl\firefox.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_SSL_FANCY_FIREFOX_HTML" file="resources\ssl\fancy_firefox.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_SAFE_BROWSING_MALWARE_BLOCK_V2" file="resources\safe_browsing\malware_block_v2.html" flattenhtml="true" type="chrome_html" />
-      <structure name="IDR_MANAGED_USER_PASSPHRASE_DIALOG_HTML" file="resources\managed_user_passphrase_dialog.html" flattenhtml="true" type="chrome_html" />
     </structures>
     <includes>
       <if expr="is_win">
@@ -114,8 +113,6 @@
       </if>
       <if expr="not is_android">
         <include name="IDR_EXTENSION_LIST_JS" file="resources\extensions\extension_list.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_EXTENSION_ACTIVITY_HTML" file="resources\extensions\extension_activity.html" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_EXTENSION_ACTIVITY_JS" file="resources\extensions\extension_activity.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_EXTENSION_INFO_CSS" file="resources\extensions\extension_info.css" flattenhtml="true" type="BINDATA" />
         <include name="IDR_EXTENSION_INFO_HTML" file="resources\extensions\extension_info.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_EXTENSION_INFO_JS" file="resources\extensions\extension_info.js" flattenhtml="true" type="BINDATA" />
@@ -278,10 +275,6 @@
       <include name="IDR_GAIA_AUTH_MANIFEST" file="resources\gaia_auth\manifest.json" type="BINDATA" />
       <include name="IDR_GAIA_AUTH_KEYBOARD_MANIFEST" file="resources\gaia_auth\manifest_keyboard.json" type="BINDATA" />
       <include name="IDR_GAIA_TEST_AUTH_MANIFEST" file="resources\gaia_auth\manifest_test.json" type="BINDATA" />
-      <if expr="not pp_ifdef('chromeos')">
-        <include name="IDR_SYNC_PROMO_JS" file="resources\sync_promo\sync_promo.js" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_SYNC_PROMO_HTML" file="resources\sync_promo\sync_promo.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
-      </if>
       <if expr="pp_ifdef('chromeos')">
         <include name="IDR_ABOUT_SYS_HTML" file="resources\chromeos\about_sys.html" flattenhtml="true" type="BINDATA" />
         <include name="IDR_BACKLOADER_MANIFEST" file="resources\backloader\manifest.json" type="BINDATA" />
@@ -347,6 +340,8 @@
       <if expr="pp_ifdef('chromeos') and pp_ifdef('_google_chrome')">
         <include name="IDR_HELP_MANIFEST" file="resources\help_app\manifest.json" type="BINDATA" />
         <include name="IDR_QUICK_OFFICE_MANIFEST" file="resources\quick_office\manifest.json" type="BINDATA" />
+        <include name="IDR_QUICKOFFICE_EDITOR_MANIFEST"
+        file="resources\quick_office\manifest_editor.json" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('use_ash')">
         <include name="IDR_GESTURE_CONFIG_CSS" file="resources\gesture_config.css" type="BINDATA" />
@@ -358,12 +353,16 @@
         <include name="IDR_SET_AS_DEFAULT_BROWSER_HTML" file="resources\set_as_default_browser.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       </if>
       <include name="IDR_MANAGED_MODE_BLOCK_INTERSTITIAL_HTML" file="resources\managed_mode_block_interstitial.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_MANAGED_USER_PASSPHRASE_DIALOG_JS" file="resources\managed_user_passphrase_dialog.js" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_HTML" file="resources\profile_signin_confirmation.html" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_JS" file="resources\profile_signin_confirmation.js" type="BINDATA" />
       <include name="IDR_PROFILE_SIGNIN_CONFIRMATION_CSS" file="resources\profile_signin_confirmation.css" type="BINDATA" />
 
       <include name="IDR_RECENTLY_CLOSED_WINDOW" file="resources\ntp4\images\closed_window.png" type="BINDATA" />
+      <if expr="not is_android">
+        <include name="IDR_IDENTITY_INTERNALS_HTML" file="resources\identity_internals.html" type="BINDATA" />
+        <include name="IDR_IDENTITY_INTERNALS_CSS" file="resources\identity_internals.css" type="BINDATA" />
+        <include name="IDR_IDENTITY_INTERNALS_JS" file="resources\identity_internals.js" type="BINDATA" />
+      </if>
     </includes>
   </release>
 </grit>

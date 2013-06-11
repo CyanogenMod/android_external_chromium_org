@@ -167,6 +167,15 @@ class SpdyHttpStreamSpdy3Test : public testing::Test {
   MockECSignatureCreatorFactory ec_signature_creator_factory_;
 };
 
+// SpdyHttpStream::GetUploadProgress() should still work even before the
+// stream is initialized.
+TEST_F(SpdyHttpStreamSpdy3Test, GetUploadProgressBeforeInitialization) {
+  SpdyHttpStream stream(NULL, false);
+  UploadProgress progress = stream.GetUploadProgress();
+  EXPECT_EQ(0u, progress.size());
+  EXPECT_EQ(0u, progress.position());
+}
+
 TEST_F(SpdyHttpStreamSpdy3Test, SendRequest) {
   scoped_ptr<SpdyFrame> req(
       spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
@@ -316,7 +325,8 @@ TEST_F(SpdyHttpStreamSpdy3Test, LoadTimingTwoRequests) {
   // Read stream 1 to completion, before making sure we can still read load
   // timing from both streams.
   scoped_refptr<IOBuffer> buf1(new IOBuffer(1));
-  ASSERT_EQ(0, http_stream1->ReadResponseBody(buf1, 1, callback1.callback()));
+  ASSERT_EQ(
+      0, http_stream1->ReadResponseBody(buf1.get(), 1, callback1.callback()));
 
   // Stream 1 has been read to completion.
   TestLoadTimingNotReused(*http_stream1);
@@ -488,27 +498,24 @@ TEST_F(SpdyHttpStreamSpdy3Test, DelayedSendChunkedPost) {
   deterministic_data()->RunFor(1);
   scoped_refptr<IOBuffer> buf1(new IOBuffer(kUploadDataSize));
   ASSERT_EQ(kUploadDataSize,
-            http_stream->ReadResponseBody(buf1,
-                                          kUploadDataSize,
-                                          callback.callback()));
+            http_stream->ReadResponseBody(
+                buf1.get(), kUploadDataSize, callback.callback()));
   EXPECT_EQ(kUploadData, std::string(buf1->data(), kUploadDataSize));
 
   // Read and check |chunk2| response.
   deterministic_data()->RunFor(1);
   scoped_refptr<IOBuffer> buf2(new IOBuffer(kUploadData1Size));
   ASSERT_EQ(kUploadData1Size,
-            http_stream->ReadResponseBody(buf2,
-                                          kUploadData1Size,
-                                          callback.callback()));
+            http_stream->ReadResponseBody(
+                buf2.get(), kUploadData1Size, callback.callback()));
   EXPECT_EQ(kUploadData1, std::string(buf2->data(), kUploadData1Size));
 
   // Read and check |chunk3| response.
   deterministic_data()->RunFor(1);
   scoped_refptr<IOBuffer> buf3(new IOBuffer(kUploadDataSize));
   ASSERT_EQ(kUploadDataSize,
-            http_stream->ReadResponseBody(buf3,
-                                          kUploadDataSize,
-                                          callback.callback()));
+            http_stream->ReadResponseBody(
+                buf3.get(), kUploadDataSize, callback.callback()));
   EXPECT_EQ(kUploadData, std::string(buf3->data(), kUploadDataSize));
 
   // Finish reading the |EOF|.
@@ -622,9 +629,8 @@ TEST_F(SpdyHttpStreamSpdy3Test, DelayedSendChunkedPostWithWindowUpdate) {
   data.RunFor(1);
   scoped_refptr<IOBuffer> buf1(new IOBuffer(kUploadDataSize));
   ASSERT_EQ(kUploadDataSize,
-            http_stream->ReadResponseBody(buf1,
-                                          kUploadDataSize,
-                                          callback.callback()));
+            http_stream->ReadResponseBody(
+                buf1.get(), kUploadDataSize, callback.callback()));
   EXPECT_EQ(kUploadData, std::string(buf1->data(), kUploadDataSize));
 
   // Finish reading the |EOF|.
@@ -663,11 +669,11 @@ TEST_F(SpdyHttpStreamSpdy3Test, SpdyURLTest) {
   HttpResponseInfo response;
   HttpRequestHeaders headers;
   BoundNetLog net_log;
-  scoped_ptr<SpdyHttpStream> http_stream(new SpdyHttpStream(session_, true));
-  ASSERT_EQ(
-      OK,
-      http_stream->InitializeStream(&request, DEFAULT_PRIORITY,
-                                    net_log, CompletionCallback()));
+  scoped_ptr<SpdyHttpStream> http_stream(
+      new SpdyHttpStream(session_.get(), true));
+  ASSERT_EQ(OK,
+            http_stream->InitializeStream(
+                &request, DEFAULT_PRIORITY, net_log, CompletionCallback()));
 
   EXPECT_EQ(ERR_IO_PENDING, http_stream->SendRequest(headers, &response,
                                                      callback.callback()));

@@ -13,9 +13,9 @@
 
 #include <string>
 
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
@@ -208,6 +208,10 @@ class OmniboxView {
 
   // Returns true if the user is composing something in an IME.
   virtual bool IsImeComposing() const = 0;
+
+  // Returns true if an IME is showing a popup window, which may overlap
+  // the omnibox's popup window.
+  virtual bool IsImeShowingPopup() const;
 
 #if defined(TOOLKIT_VIEWS)
   virtual int GetMaxEditWidth(int entry_width) const = 0;

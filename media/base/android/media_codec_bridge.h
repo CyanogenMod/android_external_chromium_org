@@ -28,6 +28,7 @@ class MEDIA_EXPORT MediaCodecBridge {
     INFO_OUTPUT_BUFFERS_CHANGED = -3,
     INFO_OUTPUT_FORMAT_CHANGED = -2,
     INFO_TRY_AGAIN_LATER = -1,
+    INFO_MEDIA_CODEC_ERROR = -1000,
   };
 
   static const base::TimeDelta kTimeOutInfinity;
@@ -120,6 +121,10 @@ class AudioCodecBridge : public MediaCodecBridge {
 
  private:
   explicit AudioCodecBridge(const char* mime);
+
+  // Configure the java MediaFormat object with the extra codec data passed in.
+  bool ConfigureMediaFormat(jobject j_format, const AudioCodec codec,
+                            const uint8* extra_data, size_t extra_data_size);
 };
 
 class VideoCodecBridge : public MediaCodecBridge {

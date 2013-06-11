@@ -5,14 +5,15 @@
 #include "content/test/image_decoder_test.h"
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebImage.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "base/strings/string_util.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebImage.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebImageDecoder.h"
 
 using base::Time;
@@ -121,9 +122,9 @@ void ImageDecoderTest::SetUp() {
 std::vector<base::FilePath> ImageDecoderTest::GetImageFiles() const {
   std::string pattern = "*." + format_;
 
-  file_util::FileEnumerator enumerator(data_dir_,
-                                       false,
-                                       file_util::FileEnumerator::FILES);
+  base::FileEnumerator enumerator(data_dir_,
+                                  false,
+                                  base::FileEnumerator::FILES);
 
   std::vector<base::FilePath> image_files;
   base::FilePath next_file_name;

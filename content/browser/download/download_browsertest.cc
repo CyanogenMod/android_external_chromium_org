@@ -120,7 +120,7 @@ class DownloadFileWithDelay : public DownloadFileImpl {
 
  private:
   static void RenameCallbackWrapper(
-      DownloadFileWithDelayFactory* factory,
+      const base::WeakPtr<DownloadFileWithDelayFactory>& factory,
       const RenameCompletionCallback& original_callback,
       DownloadInterruptReason reason,
       const base::FilePath& path);
@@ -204,11 +204,13 @@ void DownloadFileWithDelay::RenameAndAnnotate(
 
 // static
 void DownloadFileWithDelay::RenameCallbackWrapper(
-    DownloadFileWithDelayFactory* factory,
+    const base::WeakPtr<DownloadFileWithDelayFactory>& factory,
     const RenameCompletionCallback& original_callback,
     DownloadInterruptReason reason,
     const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (!factory)
+    return;
   factory->AddRenameCallback(base::Bind(original_callback, reason, path));
 }
 
@@ -701,7 +703,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadCancelled) {
   ASSERT_EQ(DownloadItem::IN_PROGRESS, downloads[0]->GetState());
 
   // Cancel the download and wait for download system quiesce.
-  downloads[0]->Delete(DownloadItem::DELETE_DUE_TO_USER_DISCARD);
+  downloads[0]->Cancel(true);
   scoped_refptr<DownloadTestFlushObserver> flush_observer(
       new DownloadTestFlushObserver(DownloadManagerForShell(shell())));
   flush_observer->WaitForFlush();
@@ -1542,7 +1544,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelResumingDownload) {
   // call, and that's for the second download created below.
   EXPECT_CALL(dm_observer, OnDownloadCreated(_,_)).Times(1);
   download->Resume();
-  download->Cancel(DownloadItem::DELETE_DUE_TO_USER_DISCARD);
+  download->Cancel(true);
 
   // The intermediate file should now be gone.
   RunAllPendingInMessageLoop(BrowserThread::FILE);

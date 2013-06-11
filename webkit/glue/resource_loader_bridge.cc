@@ -4,8 +4,8 @@
 
 #include "webkit/glue/resource_loader_bridge.h"
 
-#include "webkit/appcache/appcache_interfaces.h"
 #include "net/http/http_response_headers.h"
+#include "webkit/common/appcache/appcache_interfaces.h"
 
 namespace webkit_glue {
 
@@ -22,6 +22,7 @@ ResourceResponseInfo::ResourceResponseInfo()
       was_fetched_via_spdy(false),
       was_npn_negotiated(false),
       was_alternate_protocol_available(false),
+      connection_info(net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN),
       was_fetched_via_proxy(false) {
 }
 

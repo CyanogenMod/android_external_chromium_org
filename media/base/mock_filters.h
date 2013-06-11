@@ -50,8 +50,8 @@ class MockDemuxerStream : public DemuxerStream {
   // DemuxerStream implementation.
   virtual Type type() OVERRIDE;
   MOCK_METHOD1(Read, void(const ReadCB& read_cb));
-  virtual const AudioDecoderConfig& audio_decoder_config() OVERRIDE;
-  virtual const VideoDecoderConfig& video_decoder_config() OVERRIDE;
+  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
+  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
   MOCK_METHOD0(EnableBitstreamConverter, void());
 
   void set_audio_decoder_config(const AudioDecoderConfig& config);
@@ -149,7 +149,7 @@ class MockAudioRenderer : public AudioRenderer {
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
   MOCK_METHOD2(Preroll, void(base::TimeDelta time, const PipelineStatusCB& cb));
   MOCK_METHOD1(SetVolume, void(float volume));
-  MOCK_METHOD1(ResumeAfterUnderflow, void(bool buffer_more_audio));
+  MOCK_METHOD0(ResumeAfterUnderflow, void());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAudioRenderer);
@@ -160,18 +160,8 @@ class MockDecryptor : public Decryptor {
   MockDecryptor();
   virtual ~MockDecryptor();
 
-  MOCK_METHOD4(GenerateKeyRequest, bool(const std::string& key_system,
-                                        const std::string& type,
-                                        const uint8* init_data,
-                                        int init_data_length));
-  MOCK_METHOD6(AddKey, void(const std::string& key_system,
-                            const uint8* key,
-                            int key_length,
-                            const uint8* init_data,
-                            int init_data_length,
-                            const std::string& session_id));
-  MOCK_METHOD2(CancelKeyRequest, void(const std::string& key_system,
-                                      const std::string& session_id));
+  MOCK_METHOD0(GetMediaKeys, MediaKeys*(void));
+
   MOCK_METHOD2(RegisterNewKeyCB, void(StreamType stream_type,
                                       const NewKeyCB& new_key_cb));
   MOCK_METHOD3(Decrypt, void(StreamType stream_type,

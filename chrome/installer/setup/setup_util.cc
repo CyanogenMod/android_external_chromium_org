@@ -10,11 +10,13 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/process_util.h"
 #include "base/string_util.h"
 #include "base/version.h"
+#include "base/win/windows_version.h"
 #include "chrome/installer/util/copy_tree_work_item.h"
 #include "chrome/installer/util/installation_state.h"
 #include "chrome/installer/util/installer_state.h"
@@ -124,8 +126,8 @@ int ApplyDiffPatch(const base::FilePath& src,
 Version* GetMaxVersionFromArchiveDir(const base::FilePath& chrome_path) {
   VLOG(1) << "Looking for Chrome version folder under " << chrome_path.value();
   Version* version = NULL;
-  file_util::FileEnumerator version_enum(chrome_path, false,
-      file_util::FileEnumerator::DIRECTORIES);
+  base::FileEnumerator version_enum(chrome_path, false,
+      base::FileEnumerator::DIRECTORIES);
   // TODO(tommi): The version directory really should match the version of
   // setup.exe.  To begin with, we should at least DCHECK that that's true.
 
@@ -133,12 +135,11 @@ Version* GetMaxVersionFromArchiveDir(const base::FilePath& chrome_path) {
   bool version_found = false;
 
   while (!version_enum.Next().empty()) {
-    file_util::FileEnumerator::FindInfo find_data = {0};
-    version_enum.GetFindInfo(&find_data);
-    VLOG(1) << "directory found: " << find_data.cFileName;
+    base::FileEnumerator::FileInfo find_data = version_enum.GetInfo();
+    VLOG(1) << "directory found: " << find_data.GetName().value();
 
     scoped_ptr<Version> found_version(
-        new Version(WideToASCII(find_data.cFileName)));
+        new Version(WideToASCII(find_data.GetName().value())));
     if (found_version->IsValid() &&
         found_version->CompareTo(*max_version.get()) > 0) {
       max_version.reset(found_version.release());
@@ -311,6 +312,22 @@ bool WillProductBePresentAfterSetup(
 
   // Decide among {(1),(2),(3),(4)}.
   return is_affected ? !is_uninstall : is_present;
+}
+
+bool AdjustProcessPriority() {
+  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
+    DWORD priority_class = ::GetPriorityClass(::GetCurrentProcess());
+    if (priority_class == 0) {
+      PLOG(WARNING) << "Failed to get the process's priority class.";
+    } else if (priority_class == BELOW_NORMAL_PRIORITY_CLASS ||
+               priority_class == IDLE_PRIORITY_CLASS) {
+      BOOL result = ::SetPriorityClass(::GetCurrentProcess(),
+                                       PROCESS_MODE_BACKGROUND_BEGIN);
+      PLOG_IF(WARNING, !result) << "Failed to enter background mode.";
+      return !!result;
+    }
+  }
+  return false;
 }
 
 ScopedTokenPrivilege::ScopedTokenPrivilege(const wchar_t* privilege_name)

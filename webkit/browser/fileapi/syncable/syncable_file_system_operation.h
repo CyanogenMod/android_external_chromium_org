@@ -28,6 +28,7 @@ class SyncableFileOperationRunner;
 // A wrapper class of LocalFileSystemOperation for syncable file system.
 class WEBKIT_STORAGE_EXPORT SyncableFileSystemOperation
     : public fileapi::LocalFileSystemOperation,
+      public base::SupportsWeakPtr<SyncableFileSystemOperation>,
       public base::NonThreadSafe {
  public:
   virtual ~SyncableFileSystemOperation();
@@ -81,6 +82,8 @@ class WEBKIT_STORAGE_EXPORT SyncableFileSystemOperation
                                  const fileapi::FileSystemURL& dest_url,
                                  const StatusCallback& callback) OVERRIDE;
 
+  using base::SupportsWeakPtr<SyncableFileSystemOperation>::AsWeakPtr;
+
  private:
   typedef SyncableFileSystemOperation self;
   class QueueableTask;
@@ -89,6 +92,7 @@ class WEBKIT_STORAGE_EXPORT SyncableFileSystemOperation
   friend class fileapi::SandboxMountPointProvider;
   friend class SandboxMountPointProvider;
   SyncableFileSystemOperation(
+      const fileapi::FileSystemURL& url,
       fileapi::FileSystemContext* file_system_context,
       scoped_ptr<fileapi::FileSystemOperationContext> operation_context);
   fileapi::LocalFileSystemOperation* NewOperation();
@@ -100,11 +104,11 @@ class WEBKIT_STORAGE_EXPORT SyncableFileSystemOperation
                 bool complete);
 
   void OnCancelled();
-  void AbortOperation(const StatusCallback& callback,
-                      base::PlatformFileError error);
+
+  const fileapi::FileSystemURL url_;
 
   base::WeakPtr<SyncableFileOperationRunner> operation_runner_;
-  fileapi::LocalFileSystemOperation* inflight_operation_;
+  scoped_ptr<fileapi::LocalFileSystemOperation> inflight_operation_;
   std::vector<fileapi::FileSystemURL> target_paths_;
 
   StatusCallback completion_callback_;

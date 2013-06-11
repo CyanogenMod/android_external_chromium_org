@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/logging.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -34,7 +34,8 @@ PermissionMessages UsbDevicePermission::GetMessages() const {
   PermissionMessages result;
 
 #if defined(ENABLE_EXTENSIONS)
-  // device.gyp:device_usb is not available when extensions are disabled.
+  // //device/usb/usb.gyp:device_usb is not available when extensions are
+  // disabled.
   for (std::set<UsbDevicePermissionData>::const_iterator i =
       data_set_.begin(); i != data_set_.end(); ++i) {
     const char* vendor = device::UsbIds::GetVendorName(i->vendor_id());

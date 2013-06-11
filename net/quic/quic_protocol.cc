@@ -13,24 +13,43 @@ using std::string;
 
 namespace net {
 
-size_t GetPacketHeaderSize(bool include_version) {
-  return kPublicFlagsSize + kQuicGuidSize +
-      (include_version ? kQuicVersionSize : 0) + kSequenceNumberSize +
-      kPrivateFlagsSize + kFecGroupSize;
+size_t GetPacketHeaderSize(QuicPacketHeader header) {
+  return GetPacketHeaderSize(header.public_header.guid_length,
+                             header.public_header.version_flag,
+                             header.public_header.sequence_number_length,
+                             header.is_in_fec_group);
+}
+
+size_t GetPacketHeaderSize(QuicGuidLength guid_length,
+                           bool include_version,
+                           QuicSequenceNumberLength sequence_number_length,
+                           InFecGroup is_in_fec_group) {
+  return kPublicFlagsSize + guid_length +
+      (include_version ? kQuicVersionSize : 0) + sequence_number_length +
+      kPrivateFlagsSize + (is_in_fec_group == IN_FEC_GROUP ? kFecGroupSize : 0);
 }
 
 size_t GetPublicResetPacketSize() {
-  return kPublicFlagsSize + kQuicGuidSize + kPublicResetNonceSize +
-      kSequenceNumberSize;
+  return kPublicFlagsSize + PACKET_8BYTE_GUID + kPublicResetNonceSize +
+      PACKET_6BYTE_SEQUENCE_NUMBER;
 }
 
-size_t GetStartOfFecProtectedData(bool include_version) {
-  return GetPacketHeaderSize(include_version);
+size_t GetStartOfFecProtectedData(
+    QuicGuidLength guid_length,
+    bool include_version,
+    QuicSequenceNumberLength sequence_number_length) {
+  return GetPacketHeaderSize(
+      guid_length, include_version, sequence_number_length, IN_FEC_GROUP);
 }
 
-size_t GetStartOfEncryptedData(bool include_version) {
-  return GetPacketHeaderSize(include_version) - kPrivateFlagsSize -
-      kFecGroupSize;
+size_t GetStartOfEncryptedData(
+    QuicGuidLength guid_length,
+    bool include_version,
+    QuicSequenceNumberLength sequence_number_length) {
+  // Don't include the fec size, since encryption starts before private flags.
+  return GetPacketHeaderSize(
+      guid_length, include_version, sequence_number_length, NOT_IN_FEC_GROUP) -
+      kPrivateFlagsSize;
 }
 
 uint32 MakeQuicTag(char a, char b, char c, char d) {
@@ -42,15 +61,19 @@ uint32 MakeQuicTag(char a, char b, char c, char d) {
 
 QuicPacketPublicHeader::QuicPacketPublicHeader()
     : guid(0),
+      guid_length(PACKET_8BYTE_GUID),
       reset_flag(false),
-      version_flag(false) {
+      version_flag(false),
+      sequence_number_length(PACKET_6BYTE_SEQUENCE_NUMBER) {
 }
 
 QuicPacketPublicHeader::QuicPacketPublicHeader(
     const QuicPacketPublicHeader& other)
     : guid(other.guid),
+      guid_length(other.guid_length),
       reset_flag(other.reset_flag),
       version_flag(other.version_flag),
+      sequence_number_length(other.sequence_number_length),
       versions(other.versions) {
 }
 
@@ -67,20 +90,20 @@ QuicPacketPublicHeader& QuicPacketPublicHeader::operator=(
 
 QuicPacketHeader::QuicPacketHeader()
     : fec_flag(false),
-      fec_entropy_flag(false),
       entropy_flag(false),
       entropy_hash(0),
       packet_sequence_number(0),
+      is_in_fec_group(NOT_IN_FEC_GROUP),
       fec_group(0) {
 }
 
 QuicPacketHeader::QuicPacketHeader(const QuicPacketPublicHeader& header)
     : public_header(header),
       fec_flag(false),
-      fec_entropy_flag(false),
       entropy_flag(false),
       entropy_hash(0),
       packet_sequence_number(0),
+      is_in_fec_group(NOT_IN_FEC_GROUP),
       fec_group(0) {
 }
 
@@ -98,6 +121,7 @@ QuicStreamFrame::QuicStreamFrame(QuicStreamId stream_id,
 
 ostream& operator<<(ostream& os, const QuicPacketHeader& header) {
   os << "{ guid: " << header.public_header.guid
+     << ", guid_length:" << header.public_header.guid_length
      << ", reset_flag: " << header.public_header.reset_flag
      << ", version_flag: " << header.public_header.version_flag;
   if (header.public_header.version_flag) {
@@ -110,6 +134,7 @@ ostream& operator<<(ostream& os, const QuicPacketHeader& header) {
      << ", entropy_flag: " << header.entropy_flag
      << ", entropy hash: " << static_cast<int>(header.entropy_hash)
      << ", sequence_number: " << header.packet_sequence_number
+     << ", is_in_fec_group:" << header.is_in_fec_group
      << ", fec_group: " << header.fec_group<< "}\n";
   return os;
 }
@@ -236,16 +261,6 @@ QuicGoAwayFrame::QuicGoAwayFrame(QuicErrorCode error_code,
 
 QuicFecData::QuicFecData() {}
 
-bool QuicFecData::operator==(const QuicFecData& other) const {
-  if (fec_group != other.fec_group) {
-    return false;
-  }
-  if (redundancy != other.redundancy) {
-    return false;
-  }
-  return true;
-}
-
 QuicData::~QuicData() {
   if (owns_buffer_) {
     delete [] const_cast<char*>(buffer_);
@@ -253,23 +268,29 @@ QuicData::~QuicData() {
 }
 
 StringPiece QuicPacket::FecProtectedData() const {
-  const size_t start_of_fec = GetStartOfFecProtectedData(includes_version_);
+  const size_t start_of_fec = GetStartOfFecProtectedData(
+      guid_length_, includes_version_, sequence_number_length_);
   return StringPiece(data() + start_of_fec, length() - start_of_fec);
 }
 
 StringPiece QuicPacket::AssociatedData() const {
-  return StringPiece(data() + kStartOfHashData,
-                     GetStartOfEncryptedData(includes_version_) -
-                     kStartOfHashData);
+  return StringPiece(
+      data() + kStartOfHashData,
+      GetStartOfEncryptedData(
+          guid_length_, includes_version_, sequence_number_length_) -
+      kStartOfHashData);
 }
 
 StringPiece QuicPacket::BeforePlaintext() const {
-  return StringPiece(data(), GetStartOfEncryptedData(includes_version_));
+  return StringPiece(data(), GetStartOfEncryptedData(guid_length_,
+                                                     includes_version_,
+                                                     sequence_number_length_));
 }
 
 StringPiece QuicPacket::Plaintext() const {
   const size_t start_of_encrypted_data =
-      GetStartOfEncryptedData(includes_version_);
+      GetStartOfEncryptedData(
+          guid_length_, includes_version_, sequence_number_length_);
   return StringPiece(data() + start_of_encrypted_data,
                      length() - start_of_encrypted_data);
 }

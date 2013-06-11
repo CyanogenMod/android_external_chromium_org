@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/search_engines/search_engine_type.h"
 
 class GURL;
@@ -53,6 +53,9 @@ int GetDataVersion(PrefService* prefs);
 void GetPrepopulatedEngines(Profile* profile,
                             std::vector<TemplateURL*>* t_urls,
                             size_t* default_search_provider_index);
+
+// Removes prepopulated engines and their version stored in user prefs.
+void ClearPrepopulatedEnginesInPrefs(Profile* profile);
 
 // Returns the default search provider specified by the prepopulate data.
 // The caller owns the returned value, which may be NULL.

@@ -8,7 +8,7 @@
 #include "base/command_line.h"
 #include "base/i18n/case_conversion.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
@@ -252,16 +252,21 @@ void SpellingMenuObserver::ExecuteCommand(int command_id) {
 
   if (command_id >= IDC_SPELLCHECK_SUGGESTION_0 &&
       command_id <= IDC_SPELLCHECK_SUGGESTION_LAST) {
+    int suggestion_index = command_id - IDC_SPELLCHECK_SUGGESTION_0;
     proxy_->GetRenderViewHost()->ReplaceMisspelling(
-        suggestions_[command_id - IDC_SPELLCHECK_SUGGESTION_0]);
-    // GetSpellCheckHost() can return null when the suggested word is
-    // provided by Web SpellCheck API.
+        suggestions_[suggestion_index]);
+    // GetSpellCheckHost() can return null when the suggested word is provided
+    // by Web SpellCheck API.
     Profile* profile = proxy_->GetProfile();
     if (profile) {
-      SpellcheckService* spellcheck_service =
+      SpellcheckService* spellcheck =
           SpellcheckServiceFactory::GetForProfile(profile);
-      if (spellcheck_service && spellcheck_service->GetMetrics())
-        spellcheck_service->GetMetrics()->RecordReplacedWordStats(1);
+      if (spellcheck) {
+        if (spellcheck->GetMetrics())
+          spellcheck->GetMetrics()->RecordReplacedWordStats(1);
+        spellcheck->GetFeedbackSender()->SelectedSuggestion(
+            misspelling_hash_, suggestion_index);
+      }
     }
     return;
   }
@@ -276,15 +281,17 @@ void SpellingMenuObserver::ExecuteCommand(int command_id) {
 
   if (command_id == IDC_CONTENT_CONTEXT_SPELLING_SUGGESTION ||
       command_id == IDC_SPELLCHECK_ADD_TO_DICTIONARY) {
-    // GetHostForProfile() can return null when the suggested word is
-    // provided by Web SpellCheck API.
+    // GetHostForProfile() can return null when the suggested word is provided
+    // by Web SpellCheck API.
     Profile* profile = proxy_->GetProfile();
     if (profile) {
-      SpellcheckService* spellcheck_service =
-            SpellcheckServiceFactory::GetForProfile(profile);
-      if (spellcheck_service)
-        spellcheck_service->GetCustomDictionary()->AddWord(
-            UTF16ToUTF8(misspelled_word_));
+      SpellcheckService* spellcheck =
+          SpellcheckServiceFactory::GetForProfile(profile);
+      if (spellcheck) {
+        spellcheck->GetCustomDictionary()->AddWord(UTF16ToUTF8(
+            misspelled_word_));
+        spellcheck->GetFeedbackSender()->AddedToDictionary(misspelling_hash_);
+      }
     }
 #if defined(OS_MACOSX)
     spellcheck_mac::AddWord(misspelled_word_);

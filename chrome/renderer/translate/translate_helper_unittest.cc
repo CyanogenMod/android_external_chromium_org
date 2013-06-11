@@ -4,7 +4,7 @@
 
 #include "chrome/renderer/translate/translate_helper.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -28,27 +28,6 @@ TEST_F(TranslateHelperTest, LanguageCodeTypoCorrection) {
   language = std::string("JA-jp");
   TranslateHelper::CorrectLanguageCodeTypo(&language);
   EXPECT_EQ("ja-JP", language);
-}
-
-// Tests that synonym language code is converted to one used in supporting list.
-TEST_F(TranslateHelperTest, LanguageCodeSynonyms) {
-  std::string language;
-
-  language = std::string("nb");
-  TranslateHelper::ConvertLanguageCodeSynonym(&language);
-  EXPECT_EQ("no", language);
-
-  language = std::string("he");
-  TranslateHelper::ConvertLanguageCodeSynonym(&language);
-  EXPECT_EQ("iw", language);
-
-  language = std::string("jv");
-  TranslateHelper::ConvertLanguageCodeSynonym(&language);
-  EXPECT_EQ("jw", language);
-
-  language = std::string("fil");
-  TranslateHelper::ConvertLanguageCodeSynonym(&language);
-  EXPECT_EQ("tl", language);
 }
 
 // Tests that invalid language code is reset to empty string.
@@ -77,6 +56,14 @@ TEST_F(TranslateHelperTest, ResetInvalidLanguageCode) {
   language = std::string("YMO");
   TranslateHelper::ResetInvalidLanguageCode(&language);
   EXPECT_TRUE(language.empty());
+}
+
+// Tests that similar language table works.
+TEST_F(TranslateHelperTest, SimilarLanguageCode) {
+  EXPECT_TRUE(TranslateHelper::IsSameOrSimilarLanguages("en", "en"));
+  EXPECT_FALSE(TranslateHelper::IsSameOrSimilarLanguages("en", "ja"));
+  EXPECT_TRUE(TranslateHelper::IsSameOrSimilarLanguages("bs", "hr"));
+  EXPECT_TRUE(TranslateHelper::IsSameOrSimilarLanguages("sr-ME", "sr"));
 }
 
 // Tests that the language meta tag providing wrong information is ignored by

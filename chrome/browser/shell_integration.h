@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image_family.h"
 
@@ -103,6 +103,7 @@ class ShellIntegration {
     base::FilePath extension_path;
     gfx::ImageFamily favicon;
     base::FilePath profile_path;
+    std::string profile_name;
   };
 
   // Info about which locations to create app shortcuts in.

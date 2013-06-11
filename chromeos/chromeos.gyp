@@ -20,10 +20,10 @@
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../build/linux/system.gyp:dbus',
         '../build/linux/system.gyp:ssl',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../dbus/dbus.gyp:dbus',
         '../net/net.gyp:net',
         '../third_party/libxml/libxml.gyp:libxml',
+        '../url/url.gyp:url_lib',
         'ime/input_method.gyp:gencode',
         'power_manager_proto',
         'video_activity_update_proto',
@@ -301,17 +301,26 @@
       ],
       'conditions': [
         ['use_x11 == 1', {
+          'dependencies': [
+            '../build/linux/system.gyp:glib',
+          ],
           'link_settings': {
             'libraries': [
+              '-lX11',
               '-lXext',
+              '-lXi',
               '-lXrandr',
             ],
           },
         }, {
           # use_x11 == 0
           'sources!': [
+            'ime/xkeyboard.cc',
+            'ime/xkeyboard.h',
             'display/output_configurator.cc',
             'display/output_configurator.h',
+            'display/output_util.cc',
+            'display/output_util.h',
             'display/real_output_configurator_delegate.cc',
             'display/real_output_configurator_delegate.h',
             'ime/xkeyboard.cc',
@@ -434,12 +443,12 @@
         '../base/base.gyp:test_support_base',
         '../build/linux/system.gyp:dbus',
         '../build/linux/system.gyp:ssl',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../crypto/crypto.gyp:crypto',
         '../dbus/dbus.gyp:dbus_test_support',
         '../net/net.gyp:net',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../url/url.gyp:url_lib',
         'chromeos_test_support',
         'power_manager_proto',
       ],

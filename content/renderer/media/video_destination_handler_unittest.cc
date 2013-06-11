@@ -4,15 +4,15 @@
 
 #include <string>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/renderer/media/media_stream_extra_data.h"
 #include "content/renderer/media/mock_media_stream_dependency_factory.h"
 #include "content/renderer/media/mock_media_stream_registry.h"
 #include "content/renderer/media/video_destination_handler.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamTrack.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 
 using cricket::CapturedFrame;
 using cricket::CaptureState;
@@ -115,7 +115,7 @@ TEST_F(VideoDestinationHandlerTest, Open) {
   MediaStreamExtraData* extra_data =
       static_cast<MediaStreamExtraData*>(test_stream.extraData());
   DCHECK(extra_data);
-  webrtc::MediaStreamInterface* native_stream = extra_data->stream();
+  webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
   DCHECK(native_stream);
   webrtc::VideoTrackVector native_video_tracks =
       native_stream->GetVideoTracks();

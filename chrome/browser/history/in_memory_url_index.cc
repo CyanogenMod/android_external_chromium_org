@@ -6,7 +6,7 @@
 
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
@@ -73,7 +73,7 @@ bool InMemoryURLIndex::RebuildPrivateDataFromHistoryDBTask::RunOnDBThread(
   data_ = URLIndexPrivateData::RebuildFromHistory(db, languages_,
                                                   scheme_whitelist_);
   succeeded_ = data_.get() && !data_->Empty();
-  if (!succeeded_ && data_)
+  if (!succeeded_ && data_.get())
     data_->Clear();
   return true;
 }

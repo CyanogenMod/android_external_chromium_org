@@ -17,8 +17,8 @@
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/iat_patch_function.h"
 #include "base/win/metro.h"
 #include "base/win/scoped_hdc.h"
@@ -131,19 +131,17 @@ bool IsDrag(const POINT& origin, const POINT& current) {
 }
 
 // Copies |selected_text| as text to the primary clipboard.
-void DoCopyText(const string16& selected_text, Profile* profile) {
+void DoCopyText(const string16& selected_text) {
   ui::ScopedClipboardWriter scw(ui::Clipboard::GetForCurrentThread(),
-                                ui::Clipboard::BUFFER_STANDARD,
-                                content::BrowserContext::
-                                    GetMarkerForOffTheRecordContext(profile));
+                                ui::Clipboard::BUFFER_STANDARD);
   scw.WriteText(selected_text);
 }
 
 // Writes |url| and |text| to the clipboard as a well-formed URL.
-void DoCopyURL(const GURL& url, const string16& text, Profile* profile) {
+void DoCopyURL(const GURL& url, const string16& text) {
   BookmarkNodeData data;
   data.ReadFromTuple(url, text);
-  data.WriteToClipboard(profile);
+  data.WriteToClipboard();
 }
 
 }  // namespace
@@ -462,17 +460,16 @@ HMODULE OmniboxViewWin::loaded_library_module_ = NULL;
 
 OmniboxViewWin::OmniboxViewWin(OmniboxEditController* controller,
                                ToolbarModel* toolbar_model,
-                               LocationBarView* parent_view,
+                               LocationBarView* location_bar,
                                CommandUpdater* command_updater,
                                bool popup_window_mode,
-                               views::View* location_bar,
                                const gfx::Font& font,
                                int font_y_offset)
-    : OmniboxView(parent_view->profile(), controller, toolbar_model,
+    : OmniboxView(location_bar->profile(), controller, toolbar_model,
                   command_updater),
       popup_view_(
           OmniboxPopupContentsView::Create(font, this, model(), location_bar)),
-      parent_view_(parent_view),
+      location_bar_(location_bar),
       popup_window_mode_(popup_window_mode),
       force_hidden_(false),
       tracking_click_(),
@@ -488,7 +485,7 @@ OmniboxViewWin::OmniboxViewWin(OmniboxEditController* controller,
       initiated_drag_(false),
       drop_highlight_position_(-1),
       ime_candidate_window_open_(false),
-      background_color_(skia::SkColorToCOLORREF(parent_view->GetColor(
+      background_color_(skia::SkColorToCOLORREF(location_bar->GetColor(
           ToolbarModel::NONE, LocationBarView::BACKGROUND))),
       security_level_(ToolbarModel::NONE),
       text_object_model_(NULL),
@@ -583,7 +580,7 @@ OmniboxViewWin::~OmniboxViewWin() {
 }
 
 views::View* OmniboxViewWin::parent_view() const {
-  return parent_view_;
+  return location_bar_;
 }
 
 void OmniboxViewWin::SaveStateToTab(WebContents* tab) {
@@ -1031,7 +1028,7 @@ gfx::NativeView OmniboxViewWin::GetRelativeWindowForPopup() const {
 }
 
 void OmniboxViewWin::SetInstantSuggestion(const string16& suggestion) {
-  parent_view_->SetInstantSuggestion(suggestion);
+  location_bar_->SetInstantSuggestion(suggestion);
 }
 
 int OmniboxViewWin::TextWidth() const {
@@ -1039,7 +1036,7 @@ int OmniboxViewWin::TextWidth() const {
 }
 
 string16 OmniboxViewWin::GetInstantSuggestion() const {
-  return parent_view_->GetInstantSuggestion();
+  return location_bar_->GetInstantSuggestion();
 }
 
 bool OmniboxViewWin::IsImeComposing() const {
@@ -1113,9 +1110,7 @@ int OmniboxViewWin::OnPerformDropImpl(const ui::DropTargetEvent& event,
 }
 
 void OmniboxViewWin::CopyURL() {
-  DoCopyURL(toolbar_model()->GetURL(),
-            toolbar_model()->GetText(false),
-            model()->profile());
+  DoCopyURL(toolbar_model()->GetURL(), toolbar_model()->GetText(false));
 }
 
 bool OmniboxViewWin::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
@@ -1207,7 +1202,7 @@ bool OmniboxViewWin::IsCommandIdEnabled(int command_id) const {
 bool OmniboxViewWin::GetAcceleratorForCommandId(
     int command_id,
     ui::Accelerator* accelerator) {
-  return parent_view_->GetWidget()->GetAccelerator(command_id, accelerator);
+  return location_bar_->GetWidget()->GetAccelerator(command_id, accelerator);
 }
 
 bool OmniboxViewWin::IsItemForCommandIdDynamic(int command_id) const {
@@ -1443,9 +1438,9 @@ void OmniboxViewWin::OnCopy() {
   // the smaller value.
   model()->AdjustTextForCopy(sel.cpMin, IsSelectAll(), &text, &url, &write_url);
   if (write_url)
-    DoCopyURL(url, text, model()->profile());
+    DoCopyURL(url, text);
   else
-    DoCopyText(text, model()->profile());
+    DoCopyText(text);
 }
 
 LRESULT OmniboxViewWin::OnCreate(const CREATESTRUCTW* /*create_struct*/) {
@@ -2023,11 +2018,11 @@ void OmniboxViewWin::OnRButtonUp(UINT /*keys*/, const CPoint& point) {
 }
 
 void OmniboxViewWin::OnSetFocus(HWND focus_wnd) {
-  views::FocusManager* focus_manager = parent_view_->GetFocusManager();
+  views::FocusManager* focus_manager = location_bar_->GetFocusManager();
   if (focus_manager) {
     // Notify the FocusManager that the focused view is now the location bar
     // (our parent view).
-    focus_manager->SetFocusedView(parent_view_);
+    focus_manager->SetFocusedView(location_bar_);
   } else {
     NOTREACHED();
   }
@@ -2154,7 +2149,7 @@ bool OmniboxViewWin::OnKeyDownOnlyWritable(TCHAR key,
         GetSel(selection);
         return (selection.cpMin == selection.cpMax) &&
             (selection.cpMin == GetTextLength()) &&
-            model()->CommitSuggestedText(true);
+            model()->CommitSuggestedText();
       }
 
     case VK_RETURN:
@@ -2463,7 +2458,7 @@ void OmniboxViewWin::EmphasizeURLComponents() {
       UTF8ToUTF16(extensions::kExtensionScheme);
   bool grey_base = model()->CurrentTextIsURL() &&
       (host.is_nonempty() || grey_out_url);
-  cf.crTextColor = skia::SkColorToCOLORREF(parent_view_->GetColor(
+  cf.crTextColor = skia::SkColorToCOLORREF(location_bar_->GetColor(
       security_level_,
       grey_base ? LocationBarView::DEEMPHASIZED_TEXT : LocationBarView::TEXT));
   // NOTE: Don't use SetDefaultCharFormat() instead of the below; that sets
@@ -2474,7 +2469,7 @@ void OmniboxViewWin::EmphasizeURLComponents() {
   if (host.is_nonempty() && !grey_out_url) {
     // We've found a host name and we should provide emphasis to host names,
     // so emphasize it.
-    cf.crTextColor = skia::SkColorToCOLORREF(parent_view_->GetColor(
+    cf.crTextColor = skia::SkColorToCOLORREF(location_bar_->GetColor(
         security_level_, LocationBarView::TEXT));
     SetSelection(host.begin, host.end());
     SetSelectionCharFormat(cf);
@@ -2488,7 +2483,7 @@ void OmniboxViewWin::EmphasizeURLComponents() {
       insecure_scheme_component_.begin = scheme.begin;
       insecure_scheme_component_.len = scheme.len;
     }
-    cf.crTextColor = skia::SkColorToCOLORREF(parent_view_->GetColor(
+    cf.crTextColor = skia::SkColorToCOLORREF(location_bar_->GetColor(
         security_level_, LocationBarView::SECURITY_TEXT));
     SetSelection(scheme.begin, scheme.end());
     SetSelectionCharFormat(cf);
@@ -2585,8 +2580,8 @@ void OmniboxViewWin::DrawSlashForInsecureScheme(HDC hdc,
   sk_canvas->save();
   if (selection_rect.isEmpty() ||
       sk_canvas->clipRect(selection_rect, SkRegion::kDifference_Op)) {
-    paint.setColor(parent_view_->GetColor(security_level_,
-                                          LocationBarView::SECURITY_TEXT));
+    paint.setColor(location_bar_->GetColor(security_level_,
+                                           LocationBarView::SECURITY_TEXT));
     sk_canvas->drawLine(start_point.fX, start_point.fY,
                         end_point.fX, end_point.fY, paint);
   }
@@ -2594,8 +2589,8 @@ void OmniboxViewWin::DrawSlashForInsecureScheme(HDC hdc,
 
   // Draw the selected portion of the stroke.
   if (!selection_rect.isEmpty() && sk_canvas->clipRect(selection_rect)) {
-    paint.setColor(parent_view_->GetColor(security_level_,
-                                          LocationBarView::SELECTED_TEXT));
+    paint.setColor(location_bar_->GetColor(security_level_,
+                                           LocationBarView::SELECTED_TEXT));
     sk_canvas->drawLine(start_point.fX, start_point.fY,
                         end_point.fX, end_point.fY, paint);
   }

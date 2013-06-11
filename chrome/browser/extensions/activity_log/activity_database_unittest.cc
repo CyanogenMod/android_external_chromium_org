@@ -18,6 +18,7 @@
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/dom_action_types.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
@@ -37,44 +38,30 @@
 namespace extensions {
 
 class ActivityDatabaseTest : public ChromeRenderViewHostTestHarness {
- public:
-  ActivityDatabaseTest()
-      : ui_thread_(BrowserThread::UI, base::MessageLoop::current()),
-        db_thread_(BrowserThread::DB, base::MessageLoop::current()),
-        file_thread_(BrowserThread::FILE, base::MessageLoop::current()) {}
-
+ protected:
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
+#if defined OS_CHROMEOS
+    test_user_manager_.reset(new chromeos::ScopedTestUserManager());
+#endif
     CommandLine command_line(CommandLine::NO_PROGRAM);
-    profile_ =
-        Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-    extension_service_ = static_cast<TestExtensionSystem*>(
-        ExtensionSystem::Get(profile_))->CreateExtensionService(
-            &command_line, base::FilePath(), false);
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableExtensionActivityLogTesting);
   }
 
-  virtual ~ActivityDatabaseTest() {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::MessageLoop::QuitClosure());
-    base::MessageLoop::current()->Run();
+  virtual void TearDown() OVERRIDE {
+#if defined OS_CHROMEOS
+    test_user_manager_.reset();
+#endif
+    ChromeRenderViewHostTestHarness::TearDown();
   }
 
- protected:
-  ExtensionService* extension_service_;
-  Profile* profile_;
-
  private:
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread db_thread_;
-  content::TestBrowserThread file_thread_;
-
 #if defined OS_CHROMEOS
   chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
   chromeos::ScopedTestCrosSettings test_cros_settings_;
-  chromeos::ScopedTestUserManager test_user_manager_;
+  scoped_ptr<chromeos::ScopedTestUserManager> test_user_manager_;
 #endif
 
 };
@@ -90,7 +77,7 @@ TEST_F(ActivityDatabaseTest, Init) {
 
   ActivityDatabase* activity_db = new ActivityDatabase();
   activity_db->Init(db_file);
-  ASSERT_TRUE(activity_db->initialized());
+  ASSERT_TRUE(activity_db->is_db_valid());
   activity_db->Close();
 
   sql::Connection db;
@@ -112,7 +99,7 @@ TEST_F(ActivityDatabaseTest, RecordAPIAction) {
   ActivityDatabase* activity_db = new ActivityDatabase();
   activity_db->Init(db_file);
   activity_db->SetBatchModeForTesting(false);
-  ASSERT_TRUE(activity_db->initialized());
+  ASSERT_TRUE(activity_db->is_db_valid());
   scoped_refptr<APIAction> action = new APIAction(
       "punky",
       base::Time::Now(),
@@ -147,7 +134,7 @@ TEST_F(ActivityDatabaseTest, RecordBlockedAction) {
 
   ActivityDatabase* activity_db = new ActivityDatabase();
   activity_db->Init(db_file);
-  ASSERT_TRUE(activity_db->initialized());
+  ASSERT_TRUE(activity_db->is_db_valid());
   scoped_refptr<BlockedAction> action = new BlockedAction(
       "punky",
       base::Time::Now(),
@@ -190,7 +177,7 @@ TEST_F(ActivityDatabaseTest, GetTodaysActions) {
   // Record some actions
   ActivityDatabase* activity_db = new ActivityDatabase();
   activity_db->Init(db_file);
-  ASSERT_TRUE(activity_db->initialized());
+  ASSERT_TRUE(activity_db->is_db_valid());
   scoped_refptr<APIAction> api_action = new APIAction(
       "punky",
       mock_clock.Now() - base::TimeDelta::FromMinutes(40),
@@ -201,7 +188,7 @@ TEST_F(ActivityDatabaseTest, GetTodaysActions) {
   scoped_refptr<DOMAction> dom_action = new DOMAction(
       "punky",
       mock_clock.Now(),
-      DOMAction::MODIFIED,
+      DomActionType::MODIFIED,
       GURL("http://www.google.com"),
       string16(),
       "lets",
@@ -210,7 +197,7 @@ TEST_F(ActivityDatabaseTest, GetTodaysActions) {
   scoped_refptr<DOMAction> extra_dom_action = new DOMAction(
       "scoobydoo",
       mock_clock.Now(),
-      DOMAction::MODIFIED,
+      DomActionType::MODIFIED,
       GURL("http://www.google.com"),
       string16(),
       "lets",
@@ -221,9 +208,9 @@ TEST_F(ActivityDatabaseTest, GetTodaysActions) {
   activity_db->RecordAction(extra_dom_action);
 
   // Read them back
-  std::string api_print = "ID: punky, CATEGORY: CALL, "
+  std::string api_print = "ID: punky, CATEGORY: call, "
       "API: brewster, ARGS: woof";
-  std::string dom_print = "DOM API CALL: lets, ARGS: vamoose, VERB: MODIFIED";
+  std::string dom_print = "DOM API CALL: lets, ARGS: vamoose, VERB: modified";
   scoped_ptr<std::vector<scoped_refptr<Action> > > actions =
       activity_db->GetActions("punky", 0);
   ASSERT_EQ(2, static_cast<int>(actions->size()));
@@ -250,7 +237,7 @@ TEST_F(ActivityDatabaseTest, GetOlderActions) {
   // Record some actions
   ActivityDatabase* activity_db = new ActivityDatabase();
   activity_db->Init(db_file);
-  ASSERT_TRUE(activity_db->initialized());
+  ASSERT_TRUE(activity_db->is_db_valid());
   scoped_refptr<APIAction> api_action = new APIAction(
       "punky",
       mock_clock.Now() - base::TimeDelta::FromDays(3)
@@ -262,7 +249,7 @@ TEST_F(ActivityDatabaseTest, GetOlderActions) {
   scoped_refptr<DOMAction> dom_action = new DOMAction(
       "punky",
       mock_clock.Now() - base::TimeDelta::FromDays(3),
-      DOMAction::MODIFIED,
+      DomActionType::MODIFIED,
       GURL("http://www.google.com"),
       string16(),
       "lets",
@@ -271,7 +258,7 @@ TEST_F(ActivityDatabaseTest, GetOlderActions) {
   scoped_refptr<DOMAction> toonew_dom_action = new DOMAction(
       "punky",
       mock_clock.Now(),
-      DOMAction::MODIFIED,
+      DomActionType::MODIFIED,
       GURL("http://www.google.com"),
       string16(),
       "too new",
@@ -280,7 +267,7 @@ TEST_F(ActivityDatabaseTest, GetOlderActions) {
   scoped_refptr<DOMAction> tooold_dom_action = new DOMAction(
       "punky",
       mock_clock.Now() - base::TimeDelta::FromDays(7),
-      DOMAction::MODIFIED,
+      DomActionType::MODIFIED,
       GURL("http://www.google.com"),
       string16(),
       "too old",
@@ -292,9 +279,9 @@ TEST_F(ActivityDatabaseTest, GetOlderActions) {
   activity_db->RecordAction(tooold_dom_action);
 
   // Read them back
-  std::string api_print = "ID: punky, CATEGORY: CALL, "
+  std::string api_print = "ID: punky, CATEGORY: call, "
       "API: brewster, ARGS: woof";
-  std::string dom_print = "DOM API CALL: lets, ARGS: vamoose, VERB: MODIFIED";
+  std::string dom_print = "DOM API CALL: lets, ARGS: vamoose, VERB: modified";
   scoped_ptr<std::vector<scoped_refptr<Action> > > actions =
       activity_db->GetActions("punky", 3);
   ASSERT_EQ(2, static_cast<int>(actions->size()));
@@ -322,7 +309,7 @@ TEST_F(ActivityDatabaseTest, BatchModeOff) {
   activity_db->Init(db_file);
   activity_db->SetBatchModeForTesting(false);
   activity_db->SetClockForTesting(&mock_clock);
-  ASSERT_TRUE(activity_db->initialized());
+  ASSERT_TRUE(activity_db->is_db_valid());
   scoped_refptr<APIAction> api_action = new APIAction(
       "punky",
       mock_clock.Now() - base::TimeDelta::FromMinutes(40),
@@ -356,7 +343,7 @@ TEST_F(ActivityDatabaseTest, BatchModeOn) {
   activity_db->Init(db_file);
   activity_db->SetBatchModeForTesting(true);
   activity_db->SetClockForTesting(&mock_clock);
-  ASSERT_TRUE(activity_db->initialized());
+  ASSERT_TRUE(activity_db->is_db_valid());
   scoped_refptr<APIAction> api_action = new APIAction(
       "punky",
       mock_clock.Now() - base::TimeDelta::FromMinutes(40),
@@ -401,5 +388,5 @@ TEST_F(ActivityDatabaseTest, InitFailure) {
   activity_db->Close();
 }
 
-}  // namespace
+}  // namespace extensions
 

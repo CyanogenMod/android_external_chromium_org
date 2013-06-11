@@ -18,16 +18,16 @@
 #include "base/strings/string_split.h"
 #include "base/sync_socket.h"
 #include "base/time.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
+#include "content/child/child_thread.h"
+#include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/child/quota_dispatcher.h"
 #include "content/common/child_process_messages.h"
-#include "content/common/child_thread.h"
-#include "content/common/fileapi/file_system_dispatcher.h"
 #include "content/common/fileapi/file_system_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/pepper_messages.h"
 #include "content/common/pepper_plugin_registry.h"
-#include "content/common/quota_dispatcher.h"
 #include "content/common/sandbox_util.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
@@ -42,8 +42,10 @@
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/pepper/content_renderer_pepper_host_factory.h"
 #include "content/renderer/pepper/pepper_broker_impl.h"
+#include "content/renderer/pepper/pepper_browser_connection.h"
 #include "content/renderer/pepper/pepper_device_enumeration_event_handler.h"
 #include "content/renderer/pepper/pepper_file_system_host.h"
+#include "content/renderer/pepper/pepper_graphics_2d_host.h"
 #include "content/renderer/pepper/pepper_hung_plugin_filter.h"
 #include "content/renderer/pepper/pepper_in_process_resource_creation.h"
 #include "content/renderer/pepper/pepper_in_process_router.h"
@@ -203,6 +205,10 @@ class HostDispatcherWrapper
     return peer_pid_;
   }
 
+  virtual int GetPluginChildId() OVERRIDE {
+    return plugin_child_id_;
+  }
+
   ppapi::proxy::HostDispatcher* dispatcher() { return dispatcher_.get(); }
 
  private:
@@ -313,14 +319,13 @@ void CreateHostForInProcessModule(RenderViewImpl* render_view,
   render_view->PpapiPluginCreated(host_impl);
 }
 
-template <typename HostType>
-const HostType* GetRendererResourceHost(
+ppapi::host::ResourceHost* GetRendererResourceHost(
     PP_Instance instance, PP_Resource resource) {
   const ppapi::host::PpapiHost* ppapi_host =
       RendererPpapiHost::GetForPPInstance(instance)->GetPpapiHost();
   if (!resource || !ppapi_host)
     return NULL;
-  return static_cast<HostType*>(ppapi_host->GetResourceHost(resource));
+  return ppapi_host->GetResourceHost(resource);
 }
 
 }  // namespace
@@ -328,6 +333,7 @@ const HostType* GetRendererResourceHost(
 PepperPluginDelegateImpl::PepperPluginDelegateImpl(RenderViewImpl* render_view)
     : RenderViewObserver(render_view),
       render_view_(render_view),
+      pepper_browser_connection_(this),
       focused_plugin_(NULL),
       last_mouse_event_target_(NULL),
       device_enumeration_event_handler_(
@@ -346,7 +352,7 @@ WebKit::WebPlugin* PepperPluginDelegateImpl::CreatePepperWebPlugin(
       CreatePepperPluginModule(webplugin_info, &pepper_plugin_was_registered));
 
   if (pepper_plugin_was_registered) {
-    if (!pepper_module)
+    if (!pepper_module.get())
       return NULL;
     return new webkit::ppapi::WebPluginImpl(
         pepper_module.get(), params, AsWeakPtr());
@@ -365,12 +371,12 @@ PepperPluginDelegateImpl::CreatePepperPluginModule(
   base::FilePath path(webplugin_info.path);
   scoped_refptr<webkit::ppapi::PluginModule> module =
       PepperPluginRegistry::GetInstance()->GetLiveModule(path);
-  if (module) {
+  if (module.get()) {
     if (!module->GetEmbedderState()) {
       // If the module exists and no embedder state was associated with it,
       // then the module was one of the ones preloaded and is an in-process
       // plugin. We need to associate our host state with it.
-      CreateHostForInProcessModule(render_view_, module, webplugin_info);
+      CreateHostForInProcessModule(render_view_, module.get(), webplugin_info);
     }
     return module;
   }
@@ -408,9 +414,9 @@ PepperPluginDelegateImpl::CreatePepperPluginModule(
       info->name, path,
       PepperPluginRegistry::GetInstance(),
       permissions);
-  PepperPluginRegistry::GetInstance()->AddLiveModule(path, module);
+  PepperPluginRegistry::GetInstance()->AddLiveModule(path, module.get());
 
-  if (!CreateOutOfProcessModule(module,
+  if (!CreateOutOfProcessModule(module.get(),
                                 path,
                                 permissions,
                                 channel_handle,
@@ -431,7 +437,7 @@ RendererPpapiHost* PepperPluginDelegateImpl::CreateExternalPluginModule(
     int plugin_child_id) {
   // We don't call PepperPluginRegistry::AddLiveModule, as this module is
   // managed externally.
-  return CreateOutOfProcessModule(module,
+  return CreateOutOfProcessModule(module.get(),
                                   path,
                                   permissions,
                                   channel_handle,
@@ -802,14 +808,17 @@ webkit::ppapi::PluginDelegate::PlatformGraphics2D*
 PepperPluginDelegateImpl::GetGraphics2D(
     webkit::ppapi::PluginInstance* instance,
     PP_Resource resource) {
-  RendererPpapiHostImpl* host_impl = static_cast<RendererPpapiHostImpl*>(
-      instance->module()->GetEmbedderState());
-  return host_impl->GetPlatformGraphics2D(resource);
+  ppapi::host::ResourceHost* host =
+      GetRendererResourceHost(instance->pp_instance(), resource);
+  if (!host)
+    return NULL;
+  PepperGraphics2DHost* result = host->AsPepperGraphics2DHost();
+  DLOG_IF(ERROR, !result) << "Resource is not PepperGraphics2DHost.";
+  return result;
 }
 
 webkit::ppapi::PluginDelegate::PlatformContext3D*
     PepperPluginDelegateImpl::CreateContext3D() {
-#ifdef ENABLE_GPU
   // If accelerated compositing of plugins is disabled, fail to create a 3D
   // context, because it won't be visible. This allows graceful fallback in the
   // modules.
@@ -817,15 +826,6 @@ webkit::ppapi::PluginDelegate::PlatformContext3D*
   if (!prefs.accelerated_compositing_for_plugins_enabled)
     return NULL;
   return new PlatformContext3DImpl;
-#else
-  return NULL;
-#endif
-}
-
-void PepperPluginDelegateImpl::ReparentContext(
-    webkit::ppapi::PluginDelegate::PlatformContext3D* context) {
-  static_cast<PlatformContext3DImpl*>(context)->
-      SetParentAndCreateBackingTextureIfNeeded();
 }
 
 webkit::ppapi::PluginDelegate::PlatformVideoCapture*
@@ -898,9 +898,9 @@ PepperPluginDelegateImpl::ConnectToBroker(
 
   scoped_refptr<PepperBrokerImpl> broker =
       static_cast<PepperBrokerImpl*>(plugin_module->GetBroker());
-  if (!broker) {
+  if (!broker.get()) {
     broker = CreateBroker(plugin_module);
-    if (!broker)
+    if (!broker.get())
       return NULL;
   }
 
@@ -919,7 +919,7 @@ PepperPluginDelegateImpl::ConnectToBroker(
   // |broker| goes out of scope.
   broker->AddPendingConnect(client);
 
-  return broker;
+  return broker.get();
 }
 
 void PepperPluginDelegateImpl::OnPpapiBrokerPermissionResult(
@@ -930,17 +930,17 @@ void PepperPluginDelegateImpl::OnPpapiBrokerPermissionResult(
   DCHECK(client_ptr.get());
   pending_permission_requests_.Remove(request_id);
   base::WeakPtr<webkit::ppapi::PPB_Broker_Impl> client = *client_ptr;
-  if (!client)
+  if (!client.get())
     return;
 
   webkit::ppapi::PluginModule* plugin_module =
-      webkit::ppapi::ResourceHelper::GetPluginModule(client);
+      webkit::ppapi::ResourceHelper::GetPluginModule(client.get());
   if (!plugin_module)
     return;
 
   PepperBrokerImpl* broker =
       static_cast<PepperBrokerImpl*>(plugin_module->GetBroker());
-  broker->OnBrokerPermissionResult(client, result);
+  broker->OnBrokerPermissionResult(client.get(), result);
 }
 
 bool PepperPluginDelegateImpl::AsyncOpenFile(
@@ -1001,23 +1001,29 @@ void PepperPluginDelegateImpl::WillHandleMouseEvent() {
 
 bool PepperPluginDelegateImpl::IsFileSystemOpened(PP_Instance instance,
                                                   PP_Resource resource) const {
-  const PepperFileSystemHost* host =
-      GetRendererResourceHost<PepperFileSystemHost>(instance, resource);
-  return host && host->IsOpened();
+  ppapi::host::ResourceHost* host = GetRendererResourceHost(instance, resource);
+  if (!host)
+    return false;
+  PepperFileSystemHost* fs_host = host->AsPepperFileSystemHost();
+  return fs_host && fs_host->IsOpened();
 }
 
 PP_FileSystemType PepperPluginDelegateImpl::GetFileSystemType(
     PP_Instance instance, PP_Resource resource) const {
-  const PepperFileSystemHost* host =
-      GetRendererResourceHost<PepperFileSystemHost>(instance, resource);
-  return host ? host->GetType() : PP_FILESYSTEMTYPE_INVALID;
+  ppapi::host::ResourceHost* host = GetRendererResourceHost(instance, resource);
+  if (!host)
+    return PP_FILESYSTEMTYPE_INVALID;
+  PepperFileSystemHost* fs_host = host->AsPepperFileSystemHost();
+  return fs_host ? fs_host->GetType() : PP_FILESYSTEMTYPE_INVALID;
 }
 
 GURL PepperPluginDelegateImpl::GetFileSystemRootUrl(
     PP_Instance instance, PP_Resource resource) const {
-  const PepperFileSystemHost* host =
-      GetRendererResourceHost<PepperFileSystemHost>(instance, resource);
-  return host ? host->GetRootUrl() : GURL();
+  ppapi::host::ResourceHost* host = GetRendererResourceHost(instance, resource);
+  if (!host)
+    return GURL();
+  PepperFileSystemHost* fs_host = host->AsPepperFileSystemHost();
+  return fs_host ? fs_host->GetRootUrl() : GURL();
 }
 
 bool PepperPluginDelegateImpl::MakeDirectory(
@@ -1469,6 +1475,9 @@ void PepperPluginDelegateImpl::StopEnumerateDevices(int request_id) {
 }
 
 bool PepperPluginDelegateImpl::OnMessageReceived(const IPC::Message& message) {
+  if (pepper_browser_connection_.OnMessageReceived(message))
+    return true;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PepperPluginDelegateImpl, message)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ConnectACK,

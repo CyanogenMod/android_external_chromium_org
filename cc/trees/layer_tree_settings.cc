@@ -8,7 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 
 namespace cc {
 
@@ -16,12 +16,11 @@ LayerTreeSettings::LayerTreeSettings()
     : compositor_frame_message(false),
       impl_side_painting(false),
       throttle_frame_production(true),
-      render_parent_drives_begin_frame_(false),
+      begin_frame_scheduling_enabled(false),
       using_synchronous_renderer_compositor(false),
       per_tile_painting_enabled(false),
       partial_swap_enabled(false),
       cache_render_pass_contents(true),
-      right_aligned_scheduling_enabled(false),
       accelerated_animation_enabled(true),
       background_color_instead_of_checkerboard(false),
       show_overdraw_in_tracing(false),

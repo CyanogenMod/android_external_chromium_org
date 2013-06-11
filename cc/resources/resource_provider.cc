@@ -10,14 +10,14 @@
 #include "base/debug/alias.h"
 #include "base/hash_tables.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "cc/output/gl_renderer.h"  // For the GLC() macro.
 #include "cc/resources/platform_color.h"
 #include "cc/resources/transferable_resource.h"
 #include "cc/scheduler/texture_uploader.h"
 #include "gpu/GLES2/gl2extchromium.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/rect.h"
@@ -86,12 +86,19 @@ ResourceProvider::Resource::Resource()
       format(0),
       filter(0),
       image_id(0),
+      texture_pool(0),
+      hint(TextureUsageAny),
       type(static_cast<ResourceType>(0)) {}
 
 ResourceProvider::Resource::~Resource() {}
 
 ResourceProvider::Resource::Resource(
-    unsigned texture_id, gfx::Size size, GLenum format, GLenum filter)
+    unsigned texture_id,
+    gfx::Size size,
+    GLenum format,
+    GLenum filter,
+    GLenum texture_pool,
+    TextureUsageHint hint)
     : gl_id(texture_id),
       gl_pixel_buffer_id(0),
       gl_upload_query_id(0),
@@ -111,6 +118,8 @@ ResourceProvider::Resource::Resource(
       format(format),
       filter(filter),
       image_id(0),
+      texture_pool(texture_pool),
+      hint(hint),
       type(GLTexture) {}
 
 ResourceProvider::Resource::Resource(
@@ -134,6 +143,8 @@ ResourceProvider::Resource::Resource(
       format(format),
       filter(filter),
       image_id(0),
+      texture_pool(0),
+      hint(TextureUsageAny),
       type(Bitmap) {}
 
 ResourceProvider::Child::Child() {}
@@ -210,24 +221,10 @@ ResourceProvider::ResourceId ResourceProvider::CreateGLTexture(
     gfx::Size size, GLenum format, GLenum texture_pool, TextureUsageHint hint) {
   DCHECK_LE(size.width(), max_texture_size_);
   DCHECK_LE(size.height(), max_texture_size_);
-
   DCHECK(thread_checker_.CalledOnValidThread());
-  WebGraphicsContext3D* context3d = output_surface_->context3d();
-  DCHECK(context3d);
-
-  // Create and set texture properties. Allocation is delayed until needed.
-  unsigned texture_id = CreateTextureId(context3d);
-  GLC(context3d, context3d->texParameteri(GL_TEXTURE_2D,
-                                          GL_TEXTURE_POOL_CHROMIUM,
-                                          texture_pool));
-  if (use_texture_usage_hint_ && hint == TextureUsageFramebuffer) {
-    GLC(context3d, context3d->texParameteri(GL_TEXTURE_2D,
-                                            GL_TEXTURE_USAGE_ANGLE,
-                                            GL_FRAMEBUFFER_ATTACHMENT_ANGLE));
-  }
 
   ResourceId id = next_id_++;
-  Resource resource(texture_id, size, format, GL_LINEAR);
+  Resource resource(0, size, format, GL_LINEAR, texture_pool, hint);
   resource.allocated = false;
   resources_[id] = resource;
   return id;
@@ -236,7 +233,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateGLTexture(
 ResourceProvider::ResourceId ResourceProvider::CreateBitmap(gfx::Size size) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  uint8_t* pixels = new uint8_t[size.width() * size.height() * 4];
+  uint8_t* pixels = new uint8_t[4 * size.GetArea()];
 
   ResourceId id = next_id_++;
   Resource resource(pixels, size, GL_RGBA, GL_LINEAR);
@@ -264,7 +261,7 @@ ResourceProvider::CreateResourceFromExternalTexture(
       texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
 
   ResourceId id = next_id_++;
-  Resource resource(texture_id, gfx::Size(), 0, GL_LINEAR);
+  Resource resource(texture_id, gfx::Size(), 0, GL_LINEAR, 0, TextureUsageAny);
   resource.external = true;
   resource.allocated = true;
   resources_[id] = resource;
@@ -276,12 +273,21 @@ ResourceProvider::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
   DCHECK(thread_checker_.CalledOnValidThread());
   // Just store the information. Mailbox will be consumed in LockForRead().
   ResourceId id = next_id_++;
-  unsigned texture_id = 0;
-  Resource resource(texture_id, gfx::Size(), 0, GL_LINEAR);
+  DCHECK(mailbox.IsValid());
+  Resource& resource = resources_[id];
+  if (mailbox.IsTexture()) {
+    resource = Resource(0, gfx::Size(), 0, GL_LINEAR, 0, TextureUsageAny);
+  } else {
+    DCHECK(mailbox.IsSharedMemory());
+    base::SharedMemory* shared_memory = mailbox.shared_memory();
+    DCHECK(shared_memory->memory());
+    uint8_t* pixels = reinterpret_cast<uint8_t*>(shared_memory->memory());
+    resource = Resource(pixels, mailbox.shared_memory_size(),
+                        GL_RGBA, GL_LINEAR);
+  }
   resource.external = true;
   resource.allocated = true;
   resource.mailbox = mailbox;
-  resources_[id] = resource;
   return id;
 }
 
@@ -332,20 +338,29 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
     DCHECK(context3d);
     GLC(context3d, context3d->deleteBuffer(resource->gl_pixel_buffer_id));
   }
-  if (!resource->mailbox.IsEmpty() && resource->external) {
-    WebGraphicsContext3D* context3d = output_surface_->context3d();
-    DCHECK(context3d);
+  if (resource->mailbox.IsValid() && resource->external) {
     unsigned sync_point = resource->mailbox.sync_point();
-    if (!lost_resource && resource->gl_id) {
-      GLC(context3d, context3d->bindTexture(
-          resource->mailbox.target(), resource->gl_id));
-      GLC(context3d, context3d->produceTextureCHROMIUM(
-          resource->mailbox.target(), resource->mailbox.data()));
+    if (resource->mailbox.IsTexture()) {
+      WebGraphicsContext3D* context3d = output_surface_->context3d();
+      DCHECK(context3d);
+      if (!lost_resource && resource->gl_id) {
+        GLC(context3d, context3d->bindTexture(
+            resource->mailbox.target(), resource->gl_id));
+        GLC(context3d, context3d->produceTextureCHROMIUM(
+            resource->mailbox.target(), resource->mailbox.data()));
+      }
+      if (resource->gl_id)
+        GLC(context3d, context3d->deleteTexture(resource->gl_id));
+      if (!lost_resource && resource->gl_id)
+        sync_point = context3d->insertSyncPoint();
+    } else {
+      DCHECK(resource->mailbox.IsSharedMemory());
+      base::SharedMemory* shared_memory = resource->mailbox.shared_memory();
+      if (resource->pixels && shared_memory) {
+        DCHECK(shared_memory->memory() == resource->pixels);
+        resource->pixels = NULL;
+      }
     }
-    if (resource->gl_id)
-      GLC(context3d, context3d->deleteTexture(resource->gl_id));
-    if (!lost_resource && resource->gl_id)
-      sync_point = context3d->insertSyncPoint();
     resource->mailbox.RunReleaseCallback(sync_point, lost_resource);
   }
   if (resource->pixels)
@@ -487,18 +502,21 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
   // Uninitialized! Call SetPixels or LockForWrite first.
   DCHECK(resource->allocated);
 
-  if (!resource->gl_id && resource->external && !resource->mailbox.IsEmpty()) {
-    WebGraphicsContext3D* context3d = output_surface_->context3d();
-    DCHECK(context3d);
-    if (resource->mailbox.sync_point()) {
-      GLC(context3d, context3d->waitSyncPoint(resource->mailbox.sync_point()));
-      resource->mailbox.ResetSyncPoint();
+  if (resource->external) {
+    if (!resource->gl_id && resource->mailbox.IsTexture()) {
+      WebGraphicsContext3D* context3d = output_surface_->context3d();
+      DCHECK(context3d);
+      if (resource->mailbox.sync_point()) {
+        GLC(context3d,
+            context3d->waitSyncPoint(resource->mailbox.sync_point()));
+        resource->mailbox.ResetSyncPoint();
+      }
+      resource->gl_id = context3d->createTexture();
+      GLC(context3d, context3d->bindTexture(
+          resource->mailbox.target(), resource->gl_id));
+      GLC(context3d, context3d->consumeTextureCHROMIUM(
+          resource->mailbox.target(), resource->mailbox.data()));
     }
-    resource->gl_id = context3d->createTexture();
-    GLC(context3d, context3d->bindTexture(
-        resource->mailbox.target(), resource->gl_id));
-    GLC(context3d, context3d->consumeTextureCHROMIUM(
-        resource->mailbox.target(), resource->mailbox.data()));
   }
 
   resource->lock_for_read_count++;
@@ -813,7 +831,8 @@ void ResourceProvider::ReceiveFromChild(
     GLC(context3d, context3d->consumeTextureCHROMIUM(GL_TEXTURE_2D,
                                                      it->mailbox.name));
     ResourceId id = next_id_++;
-    Resource resource(texture_id, it->size, it->format, it->filter);
+    Resource resource(
+        texture_id, it->size, it->format, it->filter, 0, TextureUsageAny);
     resource.mailbox.SetName(it->mailbox);
     // Don't allocate a texture for a child.
     resource.allocated = true;
@@ -840,7 +859,7 @@ void ResourceProvider::ReceiveFromParent(
     DCHECK(resource->exported);
     resource->exported = false;
     resource->filter = it->filter;
-    DCHECK(resource->mailbox.Equals(it->mailbox));
+    DCHECK(resource->mailbox.ContainsMailbox(it->mailbox));
     if (resource->gl_id) {
       if (it->sync_point)
         GLC(context3d, context3d->waitSyncPoint(it->sync_point));
@@ -867,7 +886,7 @@ bool ResourceProvider::TransferResource(WebGraphicsContext3D* context,
   Resource* source = &it->second;
   DCHECK(!source->locked_for_write);
   DCHECK(!source->lock_for_read_count);
-  DCHECK(!source->external || (source->external && !source->mailbox.IsEmpty()));
+  DCHECK(!source->external || (source->external && source->mailbox.IsValid()));
   DCHECK(source->allocated);
   if (source->exported)
     return false;
@@ -876,7 +895,10 @@ bool ResourceProvider::TransferResource(WebGraphicsContext3D* context,
   resource->filter = source->filter;
   resource->size = source->size;
 
-  if (source->mailbox.IsEmpty()) {
+  // TODO(skaslev) Implement this path for shared memory resources.
+  DCHECK(!source->mailbox.IsSharedMemory());
+
+  if (!source->mailbox.IsTexture()) {
     GLC(context3d, context3d->genMailboxCHROMIUM(resource->mailbox.name));
     source->mailbox.SetName(resource->mailbox);
   } else {
@@ -903,7 +925,7 @@ void ResourceProvider::AcquirePixelBuffer(ResourceId id) {
   DCHECK(!resource->exported);
   DCHECK(!resource->image_id);
 
-  if (resource->gl_id) {
+  if (resource->type == GLTexture) {
     WebGraphicsContext3D* context3d = output_surface_->context3d();
     DCHECK(context3d);
     if (!resource->gl_pixel_buffer_id)
@@ -913,7 +935,7 @@ void ResourceProvider::AcquirePixelBuffer(ResourceId id) {
         resource->gl_pixel_buffer_id);
     context3d->bufferData(
         GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-        resource->size.width() * resource->size.height() * 4,
+        4 * resource->size.GetArea(),
         NULL,
         GL_DYNAMIC_DRAW);
     context3d->bindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
@@ -923,8 +945,7 @@ void ResourceProvider::AcquirePixelBuffer(ResourceId id) {
     if (resource->pixel_buffer)
       return;
 
-    resource->pixel_buffer = new uint8_t[
-        resource->size.width() * resource->size.height() * 4];
+    resource->pixel_buffer = new uint8_t[4 * resource->size.GetArea()];
   }
 }
 
@@ -937,7 +958,7 @@ void ResourceProvider::ReleasePixelBuffer(ResourceId id) {
   DCHECK(!resource->exported);
   DCHECK(!resource->image_id);
 
-  if (resource->gl_id) {
+  if (resource->type == GLTexture) {
     if (!resource->gl_pixel_buffer_id)
       return;
     WebGraphicsContext3D* context3d = output_surface_->context3d();
@@ -970,7 +991,7 @@ uint8_t* ResourceProvider::MapPixelBuffer(ResourceId id) {
   DCHECK(!resource->exported);
   DCHECK(!resource->image_id);
 
-  if (resource->gl_id) {
+  if (resource->type == GLTexture) {
     WebGraphicsContext3D* context3d = output_surface_->context3d();
     DCHECK(context3d);
     DCHECK(resource->gl_pixel_buffer_id);
@@ -981,6 +1002,8 @@ uint8_t* ResourceProvider::MapPixelBuffer(ResourceId id) {
         context3d->mapBufferCHROMIUM(
             GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, GL_WRITE_ONLY));
     context3d->bindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
+    // Buffer is required to be 4-byte aligned.
+    CHECK(!(reinterpret_cast<intptr_t>(image) & 3));
     return image;
   }
 
@@ -999,7 +1022,7 @@ void ResourceProvider::UnmapPixelBuffer(ResourceId id) {
   DCHECK(!resource->exported);
   DCHECK(!resource->image_id);
 
-  if (resource->gl_id) {
+  if (resource->type == GLTexture) {
     WebGraphicsContext3D* context3d = output_surface_->context3d();
     DCHECK(context3d);
     DCHECK(resource->gl_pixel_buffer_id);
@@ -1047,6 +1070,7 @@ void ResourceProvider::SetPixelsFromBuffer(ResourceId id) {
   }
 
   if (resource->pixels) {
+    DCHECK(!resource->mailbox.IsValid());
     DCHECK(resource->pixel_buffer);
     DCHECK(resource->format == GL_RGBA);
 
@@ -1085,6 +1109,8 @@ void ResourceProvider::BeginSetPixels(ResourceId id) {
   CHECK(it != resources_.end());
   Resource* resource = &it->second;
   DCHECK(!resource->pending_set_pixels);
+
+  LazyCreate(resource);
   DCHECK(resource->gl_id || resource->allocated);
   DCHECK(ReadLockFenceHasPassed(resource));
   DCHECK(!resource->image_id);
@@ -1210,6 +1236,35 @@ void ResourceProvider::AbortSetPixels(ResourceId id) {
   UnlockForWrite(id);
 }
 
+void ResourceProvider::CreateForTesting(ResourceId id) {
+  ResourceMap::iterator it = resources_.find(id);
+  CHECK(it != resources_.end());
+  Resource* resource = &it->second;
+  LazyCreate(resource);
+}
+
+void ResourceProvider::LazyCreate(Resource* resource) {
+  if (resource->type != GLTexture || resource->gl_id != 0)
+    return;
+
+  // Early out for resources that don't require texture creation.
+  if (resource->texture_pool == 0)
+    return;
+
+  WebGraphicsContext3D* context3d = output_surface_->context3d();
+  DCHECK(context3d);
+  // Create and set texture properties. Allocation is delayed until needed.
+  resource->gl_id = CreateTextureId(context3d);
+  GLC(context3d, context3d->texParameteri(GL_TEXTURE_2D,
+                                          GL_TEXTURE_POOL_CHROMIUM,
+                                          resource->texture_pool));
+  if (use_texture_usage_hint_ && resource->hint == TextureUsageFramebuffer) {
+    GLC(context3d, context3d->texParameteri(GL_TEXTURE_2D,
+                                            GL_TEXTURE_USAGE_ANGLE,
+                                            GL_FRAMEBUFFER_ATTACHMENT_ANGLE));
+  }
+}
+
 void ResourceProvider::AllocateForTesting(ResourceId id) {
   ResourceMap::iterator it = resources_.find(id);
   CHECK(it != resources_.end());
@@ -1219,8 +1274,9 @@ void ResourceProvider::AllocateForTesting(ResourceId id) {
 
 void ResourceProvider::LazyAllocate(Resource* resource) {
   DCHECK(resource);
-  DCHECK(resource->gl_id || resource->allocated);
+  LazyCreate(resource);
 
+  DCHECK(resource->gl_id || resource->allocated);
   if (resource->allocated || !resource->gl_id)
     return;
   resource->allocated = true;
@@ -1263,7 +1319,6 @@ void ResourceProvider::AcquireImage(ResourceId id) {
   CHECK(it != resources_.end());
   Resource* resource = &it->second;
 
-  DCHECK(resource->gl_id);
   DCHECK(!resource->pixels);
   DCHECK(!resource->external);
   DCHECK(!resource->exported);
@@ -1343,7 +1398,9 @@ void ResourceProvider::BindImage(ResourceId id) {
   DCHECK(!resource->exported);
   DCHECK(!resource->pixels);
   DCHECK(resource->image_id);
-  DCHECK(resource->gl_id);
+
+  LazyCreate(resource);
+  resource->allocated = true;
 
   WebGraphicsContext3D* context3d = output_surface_->context3d();
   DCHECK(context3d);
@@ -1369,6 +1426,5 @@ int ResourceProvider::GetImageStride(ResourceId id) {
       resource->image_id, GL_IMAGE_ROWBYTES_CHROMIUM, &stride);
   return stride;
 }
-
 
 }  // namespace cc

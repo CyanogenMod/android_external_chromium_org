@@ -5,7 +5,7 @@
 #include "chrome/renderer/extensions/page_capture_custom_bindings.h"
 
 #include "base/bind.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/public/renderer/render_view.h"
 #include "grit/renderer_resources.h"
@@ -16,7 +16,7 @@ namespace extensions {
 
 PageCaptureCustomBindings::PageCaptureCustomBindings(
     Dispatcher* dispatcher,
-    v8::Handle<v8::Context> context)
+    ChromeV8Context* context)
     : ChromeV8Extension(dispatcher, context) {
   RouteFunction("CreateBlob",
       base::Bind(&PageCaptureCustomBindings::CreateBlob,

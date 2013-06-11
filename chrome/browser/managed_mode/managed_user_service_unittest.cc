@@ -4,7 +4,7 @@
 
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
@@ -239,7 +239,7 @@ TEST_F(ManagedUserServiceExtensionTest, InstallContentPacks) {
       extension_load_observer.details();
   scoped_refptr<extensions::Extension> extension =
       make_scoped_refptr(details.ptr());
-  ASSERT_TRUE(extension);
+  ASSERT_TRUE(extension.get());
 
   ScopedVector<ManagedModeSiteList> site_lists =
       GetActiveSiteLists(managed_user_service);

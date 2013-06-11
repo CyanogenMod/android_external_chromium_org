@@ -13,6 +13,7 @@
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_util.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window_state.h"
@@ -341,7 +342,7 @@ willPositionSheet:(NSWindow*)sheet
     NSView* avatarButton = [avatarButtonController_ view];
     CGFloat buttonHeight = std::min(
         static_cast<CGFloat>(profiles::kAvatarIconHeight), tabStripHeight);
-    [avatarButton setFrameSize:NSMakeSize(profiles::kAvatarIconWidth,
+    [avatarButton setFrameSize:NSMakeSize(NSWidth([avatarButton frame]),
                                           buttonHeight)];
 
     // Actually place the badge *above* |maxY|, by +2 to miss the divider.
@@ -366,6 +367,10 @@ willPositionSheet:(NSWindow*)sheet
     rightIndent += -[window fullScreenButtonOriginAdjustment].x;
   } else if ([self shouldShowAvatar]) {
     rightIndent += kAvatarTabStripShrink;
+    if ([avatarButtonController_ labelView]) {
+      rightIndent += NSWidth([[avatarButtonController_ labelView] frame]) +
+                     kAvatarRightOffset;
+    }
   }
   [tabStripController_ setRightIndentForControls:rightIndent];
 
@@ -738,6 +743,7 @@ willPositionSheet:(NSWindow*)sheet
   // Force the bookmark bar z-order to update.
   [[bookmarkBarController_ view] removeFromSuperview];
   [self updateSubviewZOrder:fullscreen];
+  [self updateAllowOverlappingViews:fullscreen];
 }
 
 - (void)showFullscreenExitBubbleIfNecessary {
@@ -1011,6 +1017,37 @@ willPositionSheet:(NSWindow*)sheet
                          relativeTo:[bookmarkBarController_ view]];
     }
   }
+}
+
+- (BOOL)shouldAllowOverlappingViews:(BOOL)inPresentationMode {
+  if (chrome::IsInstantExtendedAPIEnabled())
+    return YES;
+
+  if (inPresentationMode)
+    return YES;
+
+  if (findBarCocoaController_ &&
+      ![[findBarCocoaController_ findBarView] isHidden])
+    return YES;
+
+  return NO;
+}
+
+- (void)updateAllowOverlappingViews:(BOOL)inPresentationMode {
+  WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
+  if (!contents)
+    return;
+  contents->GetView()->SetAllowOverlappingViews(
+      [self shouldAllowOverlappingViews:inPresentationMode]);
+}
+
+- (void)updateInfoBarTipVisibility {
+  // If the overlay is open or if there's no toolbar then hide the infobar tip.
+  BOOL suppressInfoBarTip =
+      [self currentInstantUIState] !=
+      browser_window_controller::kInstantUINone || ![self hasToolbar];
+  [infoBarContainerController_
+      setShouldSuppressTopInfoBarTip:suppressInfoBarTip];
 }
 
 @end  // @implementation BrowserWindowController(Private)

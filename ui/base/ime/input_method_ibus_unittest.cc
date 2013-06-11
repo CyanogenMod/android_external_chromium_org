@@ -12,7 +12,7 @@
 
 #include "base/i18n/char_iterator.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/ibus/ibus_text.h"
 #include "chromeos/dbus/ibus/mock_ibus_client.h"
@@ -74,11 +74,10 @@ class TestableInputMethodIBus : public InputMethodIBus {
   }
 
   struct ProcessKeyEventPostIMEArgs {
-    ProcessKeyEventPostIMEArgs() : ibus_keyval(0), handled(false) {
+    ProcessKeyEventPostIMEArgs() : handled(false) {
       std::memset(&event, 0, sizeof(XEvent));
     }
     XEvent event;
-    uint32 ibus_keyval;
     bool handled;
   };
 
@@ -91,12 +90,9 @@ class TestableInputMethodIBus : public InputMethodIBus {
 
   // InputMethodIBus override.
   virtual void ProcessKeyEventPostIME(const base::NativeEvent& native_key_event,
-                                      uint32 ibus_keyval,
-                                      uint32 ibus_keycode,
                                       uint32 ibus_state,
                                       bool handled) OVERRIDE {
     process_key_event_post_ime_args_.event = *native_key_event;
-    process_key_event_post_ime_args_.ibus_keyval = ibus_keyval;
     process_key_event_post_ime_args_.handled = handled;
     ++process_key_event_post_ime_call_count_;
   }
@@ -399,6 +395,9 @@ class InputMethodIBusTest : public internal::InputMethodDelegate,
   virtual void InsertChar(char16 ch, int flags) OVERRIDE {
     inserted_char_ = ch;
     inserted_char_flags_ = flags;
+  }
+  virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE {
+    return static_cast<gfx::NativeWindow>(NULL);
   }
   virtual TextInputType GetTextInputType() const OVERRIDE {
     return input_type_;
@@ -1284,8 +1283,6 @@ TEST_F(InputMethodIBusKeyEventTest, KeyEventConsumeTest) {
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal1,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
 }
 
@@ -1320,8 +1317,6 @@ TEST_F(InputMethodIBusKeyEventTest, KeyEventNotConsumeTest) {
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal1,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 }
 
@@ -1355,8 +1350,6 @@ TEST_F(InputMethodIBusKeyEventTest, KeyEventFailTest) {
   EXPECT_EQ(1,
             mock_ibus_input_context_client_->process_key_event_call_count());
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
-  EXPECT_EQ(kTestIBusKeyVal1,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   // If some error is happend, key should not be consumed.
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 }
@@ -1398,8 +1391,6 @@ TEST_F(InputMethodIBusKeyEventTest, KeyEventDelayResponseSuccessTest) {
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal1,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
 }
 
@@ -1439,8 +1430,6 @@ TEST_F(InputMethodIBusKeyEventTest, KeyEventDelayResponseFailTest) {
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal1,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 }
 
@@ -1500,8 +1489,6 @@ TEST_F(InputMethodIBusKeyEventTest, MultiKeyEventDelayResponseSuccessTest) {
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal1,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
 
   // Do callback for second key event.
@@ -1511,8 +1498,6 @@ TEST_F(InputMethodIBusKeyEventTest, MultiKeyEventDelayResponseSuccessTest) {
   EXPECT_EQ(2, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal2,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 }
 
@@ -1572,8 +1557,6 @@ TEST_F(InputMethodIBusKeyEventTest, MultiKeyEventDelayResponseFailTest) {
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal1,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 
   // Do callback for second key event.
@@ -1583,8 +1566,6 @@ TEST_F(InputMethodIBusKeyEventTest, MultiKeyEventDelayResponseFailTest) {
   EXPECT_EQ(2, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal2,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 }
 
@@ -1663,8 +1644,6 @@ TEST_F(InputMethodIBusKeyEventTest,
   EXPECT_EQ(1, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal1,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
 
   // Do callback for second key event.
@@ -1674,8 +1653,6 @@ TEST_F(InputMethodIBusKeyEventTest,
   EXPECT_EQ(2, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal2,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_FALSE(ime_->process_key_event_post_ime_args().handled);
 
   // Do callback for first key event.
@@ -1685,8 +1662,6 @@ TEST_F(InputMethodIBusKeyEventTest,
   EXPECT_EQ(3, ime_->process_key_event_post_ime_call_count());
   EXPECT_TRUE(IsEqualXKeyEvent(event,
                                ime_->process_key_event_post_ime_args().event));
-  EXPECT_EQ(kTestIBusKeyVal3,
-            ime_->process_key_event_post_ime_args().ibus_keyval);
   EXPECT_TRUE(ime_->process_key_event_post_ime_args().handled);
 }
 

@@ -73,7 +73,7 @@ def _GetDataFilesForTestSuite(test_suite_basename):
     # The following are spell check data. Now only list the data under
     # third_party/hunspell_dictionaries which are used by unit tests.
     old_cwd = os.getcwd()
-    os.chdir(constants.CHROME_DIR)
+    os.chdir(constants.DIR_SOURCE_ROOT)
     test_files += glob.glob('third_party/hunspell_dictionaries/*.bdic')
     os.chdir(old_cwd)
     return test_files
@@ -246,6 +246,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     tool_name: Name of the Valgrind tool.
     build_type: 'Release' or 'Debug'.
     in_webkit_checkout: Whether the suite is being run from a WebKit checkout.
+    push_deps: If True, push all dependencies to the device.
     test_apk_package_name: Apk package name for tests running in APKs.
     test_activity_name: Test activity to invoke for APK tests.
     command_line_file: Filename to use to pass arguments to tests.
@@ -253,9 +254,9 @@ class TestRunner(base_test_runner.BaseTestRunner):
 
   def __init__(self, device, test_suite, test_arguments, timeout,
                cleanup_test_files, tool_name, build_type,
-               in_webkit_checkout, test_apk_package_name=None,
+               in_webkit_checkout, push_deps, test_apk_package_name=None,
                test_activity_name=None, command_line_file=None):
-    super(TestRunner, self).__init__(device, tool_name, build_type)
+    super(TestRunner, self).__init__(device, tool_name, build_type, push_deps)
     self._running_on_emulator = self.device.startswith('emulator')
     self._test_arguments = test_arguments
     self.in_webkit_checkout = in_webkit_checkout
@@ -276,7 +277,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     else:
       # Put a copy into the android out/target directory, to allow stack trace
       # generation.
-      symbols_dir = os.path.join(constants.CHROME_DIR, 'out', build_type,
+      symbols_dir = os.path.join(constants.DIR_SOURCE_ROOT, 'out', build_type,
                                  'lib.target')
       self.test_package = test_package_executable.TestPackageExecutable(
           self.adb,
@@ -314,9 +315,10 @@ class TestRunner(base_test_runner.BaseTestRunner):
     The path of this directory is different when the suite is being run as
     part of a WebKit check-out.
     """
-    webkit_src = os.path.join(constants.CHROME_DIR, 'third_party', 'WebKit')
+    webkit_src = os.path.join(constants.DIR_SOURCE_ROOT, 'third_party',
+                              'WebKit')
     if self.in_webkit_checkout:
-      webkit_src = os.path.join(constants.CHROME_DIR, '..', '..', '..')
+      webkit_src = os.path.join(constants.DIR_SOURCE_ROOT, '..', '..', '..')
 
     self.adb.PushIfNeeded(
         os.path.join(webkit_src, 'Source/WebKit/chromium/tests/data'),

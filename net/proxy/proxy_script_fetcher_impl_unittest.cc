@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
@@ -65,8 +65,7 @@ class RequestContext : public URLRequestContext {
     scoped_refptr<HttpNetworkSession> network_session(
         new HttpNetworkSession(params));
     storage_.set_http_transaction_factory(new HttpCache(
-        network_session,
-        HttpCache::DefaultBackend::InMemory(0)));
+        network_session.get(), HttpCache::DefaultBackend::InMemory(0)));
     URLRequestJobFactoryImpl* job_factory = new URLRequestJobFactoryImpl();
     job_factory->SetProtocolHandler("file", new FileProtocolHandler());
     storage_.set_job_factory(job_factory);

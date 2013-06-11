@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_types.h"
 #include "content/public/browser/notification_types.h"
@@ -158,8 +158,8 @@ class TypedUrlSyncableServiceTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     fake_history_backend_ = new TestHistoryBackend();
-    typed_url_sync_service_.reset(new TypedUrlSyncableService(
-        fake_history_backend_));
+    typed_url_sync_service_.reset(
+        new TypedUrlSyncableService(fake_history_backend_.get()));
     fake_change_processor_.reset(new TestChangeProcessor);
   }
 

@@ -93,8 +93,8 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   const std::string& name() const { return name_; }
   void SetName(const std::string& name);
 
-  const string16 title() const { return title_; }
-  void set_title(const string16& title) { title_ = title; }
+  const base::string16 title() const { return title_; }
+  void set_title(const base::string16& title) { title_ = title; }
 
   bool transparent() const { return transparent_; }
   void SetTransparent(bool transparent);
@@ -157,9 +157,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Marks the a portion of window as needing to be painted.
   void SchedulePaintInRect(const gfx::Rect& rect);
 
-  // Assigns a new external texture to the window's layer.
-  void SetExternalTexture(ui::Texture* texture);
-
   // Places this window per |root_window|'s stacking client. The final location
   // may be a RootWindow other than the one passed in. |root_window| may not be
   // NULL. |bounds_in_screen| may be empty; it is more optional context that
@@ -174,6 +171,9 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // |target|.  Does not stack on top of windows with NULL layer delegates,
   // see WindowTest.StackingMadrigal for details.
   void StackChildAbove(Window* child, Window* target);
+
+  // Stacks the specified child of this window at the bottom of the z-order.
+  void StackChildAtBottom(Window* child);
 
   // Stacks |child| below |target|. Does nothing if |child| is already below
   // |target|.
@@ -486,7 +486,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   int id_;
   std::string name_;
 
-  string16 title_;
+  base::string16 title_;
 
   // Whether layer is initialized as non-opaque.
   bool transparent_;

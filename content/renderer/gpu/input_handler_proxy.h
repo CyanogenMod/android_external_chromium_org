@@ -10,8 +10,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/input/input_handler.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurve.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurveTarget.h"
+#include "third_party/WebKit/public/platform/WebGestureCurve.h"
+#include "third_party/WebKit/public/platform/WebGestureCurveTarget.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebActiveWheelFlingParameters.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 
@@ -31,7 +31,16 @@ class CONTENT_EXPORT InputHandlerProxy
   virtual ~InputHandlerProxy();
 
   void SetClient(InputHandlerProxyClient* client);
-  void HandleInputEvent(const WebKit::WebInputEvent& event);
+
+  enum EventDisposition {
+    DID_HANDLE,
+    DID_NOT_HANDLE,
+    DROP_EVENT
+  };
+  EventDisposition HandleInputEventWithLatencyInfo(
+      const WebKit::WebInputEvent& event,
+      const ui::LatencyInfo& latency_info);
+  EventDisposition HandleInputEvent(const WebKit::WebInputEvent& event);
 
   // cc::InputHandlerClient implementation.
   virtual void WillShutdown() OVERRIDE;
@@ -49,16 +58,6 @@ class CONTENT_EXPORT InputHandlerProxy
   }
 
  private:
-  enum EventDisposition {
-    DidHandle,
-    DidNotHandle,
-    DropEvent
-  };
-  // This function processes the input event and determines the disposition, but
-  // does not make any calls out to the InputHandlerProxyClient. Some input
-  // types defer to helpers.
-  EventDisposition HandleInputEventInternal(const WebKit::WebInputEvent& event);
-
   EventDisposition HandleGestureFling(const WebKit::WebGestureEvent& event);
 
   // Returns true if we scrolled by the increment.
@@ -85,6 +84,9 @@ class CONTENT_EXPORT InputHandlerProxy
   // conservative in the sense that we might not be actually flinging when it is
   // true.
   bool fling_may_be_active_on_main_thread_;
+  // The axes on which the current fling has overshot the bounds of the content.
+  bool fling_overscrolled_horizontally_;
+  bool fling_overscrolled_vertically_;
 
   DISALLOW_COPY_AND_ASSIGN(InputHandlerProxy);
 };

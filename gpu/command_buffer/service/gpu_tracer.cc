@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "ui/gl/gl_bindings.h"
@@ -237,7 +237,7 @@ void GLARBTimerTrace::Process() {
 
 bool GPUTracerImpl::Begin(const std::string& name) {
   // Make sure we are not nesting trace commands.
-  if (current_trace_)
+  if (current_trace_.get())
     return false;
 
   current_trace_ = CreateTrace(name);
@@ -246,7 +246,7 @@ bool GPUTracerImpl::Begin(const std::string& name) {
 }
 
 bool GPUTracerImpl::End() {
-  if (!current_trace_)
+  if (!current_trace_.get())
     return false;
 
   current_trace_->End();
@@ -270,7 +270,7 @@ void GPUTracerImpl::Process() {
 }
 
 const std::string& GPUTracerImpl::CurrentName() const {
-  if (!current_trace_)
+  if (!current_trace_.get())
     return EmptyString();
   return current_trace_->name();
 }

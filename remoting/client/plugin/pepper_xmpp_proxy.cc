@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 
 namespace remoting {
 
@@ -51,7 +51,7 @@ void PepperXmppProxy::OnIq(const std::string& response_xml) {
     return;
   }
 
-  if (callback_)
+  if (callback_.get())
     callback_->OnIq(response_xml);
 }
 

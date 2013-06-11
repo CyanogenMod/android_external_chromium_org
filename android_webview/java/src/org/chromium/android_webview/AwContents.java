@@ -388,9 +388,6 @@ public class AwContents {
         mDefaultVideoPosterRequestHandler = new DefaultVideoPosterRequestHandler(mContentsClient);
         mSettings.setDefaultVideoPosterURL(
                 mDefaultVideoPosterRequestHandler.getDefaultVideoPosterURL());
-
-        ContentVideoView.registerContentVideoViewContextDelegate(
-                new AwContentVideoViewDelegate(contentsClient, containerView.getContext()));
         mGlobalVisibleBounds = new Rect();
     }
 
@@ -501,14 +498,6 @@ public class AwContents {
     public void enableOnNewPicture(boolean enabled, boolean invalidationOnly) {
         mNewPictureInvalidationOnly = invalidationOnly;
         nativeEnableOnNewPicture(mNativeAwContents, enabled);
-    }
-
-    // This is no longer synchronous and just calls the Async version and return 0.
-    // TODO(boliu): Remove this method.
-    @Deprecated
-    public int findAllSync(String searchString) {
-        findAllAsync(searchString);
-        return 0;
     }
 
     public void findAllAsync(String searchString) {

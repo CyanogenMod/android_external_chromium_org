@@ -7,9 +7,9 @@
 #include <cmath>
 
 #include "base/bind.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -1263,9 +1263,9 @@ void NotifyWebRequestAPIUsed(
   if (!g_browser_process->profile_manager()->IsValidProfile(profile))
     return;
 
-  if (profile->GetExtensionService()->HasUsedWebRequest(extension))
+  if (profile->GetExtensionService()->HasUsedWebRequest(extension.get()))
     return;
-  profile->GetExtensionService()->SetHasUsedWebRequest(extension, true);
+  profile->GetExtensionService()->SetHasUsedWebRequest(extension.get(), true);
 
   content::BrowserContext* browser_context = profile;
   for (content::RenderProcessHost::iterator it =

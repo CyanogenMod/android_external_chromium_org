@@ -10,7 +10,7 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "components/webdata/common/webdata_constants.h"
@@ -18,8 +18,8 @@
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "webkit/appcache/appcache_interfaces.h"
 #include "webkit/browser/database/database_tracker.h"
+#include "webkit/common/appcache/appcache_interfaces.h"
 
 namespace {
 

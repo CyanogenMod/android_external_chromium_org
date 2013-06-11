@@ -573,13 +573,13 @@
         'sequence_checker_impl_unittest.cc',
         'sha1_unittest.cc',
         'stl_util_unittest.cc',
-        'string16_unittest.cc',
-        'string_util_unittest.cc',
-        'stringprintf_unittest.cc',
+        'strings/string16_unittest.cc',
+        'strings/stringprintf_unittest.cc',
         'strings/string_number_conversions_unittest.cc',
         'strings/string_piece_unittest.cc',
         'strings/string_split_unittest.cc',
         'strings/string_tokenizer_unittest.cc',
+        'strings/string_util_unittest.cc',
         'strings/stringize_macros_unittest.cc',
         'strings/sys_string_conversions_mac_unittest.mm',
         'strings/sys_string_conversions_unittest.cc',
@@ -754,9 +754,9 @@
             'message_pump_glib_unittest.cc',
           ]
         }],
-        # This is needed to trigger the dll copy step on windows.
-        # TODO(mark): This should not be necessary.
         ['OS == "win"', {
+          # This is needed to trigger the dll copy step on windows.
+          # TODO(mark): This should not be necessary.
           'dependencies': [
             '../third_party/icu/icu.gyp:icudata',
           ],
@@ -769,6 +769,18 @@
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [
             4267,
+          ],
+          # This is needed so base_unittests uses the allocator shim, as
+          # SecurityTest.MemoryAllocationRestriction* tests are dependent
+          # on tcmalloc.
+          # TODO(wfh): crbug.com/246278 Move tcmalloc specific tests into
+          # their own test suite.
+          'conditions': [
+            ['win_use_allocator_shim==1', {
+              'dependencies': [
+                'allocator/allocator.gyp:allocator',
+              ],
+            }],
           ],
         }, {  # OS != "win"
           'dependencies': [

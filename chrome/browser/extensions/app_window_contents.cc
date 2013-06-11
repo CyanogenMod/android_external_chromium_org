@@ -95,11 +95,10 @@ void AppWindowContents::NativeWindowChanged(
   content::RenderViewHost* rvh = web_contents_->GetRenderViewHost();
   rvh->Send(new ExtensionMsg_MessageInvoke(rvh->GetRoutingID(),
                                            host_->extension()->id(),
+                                           "app.window",
                                            "updateAppWindowProperties",
                                            args,
-                                           GURL(),
                                            false));
-
 }
 
 void AppWindowContents::NativeWindowClosed() {

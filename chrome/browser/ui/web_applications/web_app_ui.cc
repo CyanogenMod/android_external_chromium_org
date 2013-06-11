@@ -8,8 +8,9 @@
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -18,7 +19,9 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
@@ -417,11 +420,13 @@ void UpdateShortcutInfoForApp(const extensions::Extension& app,
                               ShellIntegration::ShortcutInfo* shortcut_info) {
   shortcut_info->extension_id = app.id();
   shortcut_info->is_platform_app = app.is_platform_app();
-  shortcut_info->url = GURL(app.launch_web_url());
+  shortcut_info->url = extensions::AppLaunchInfo::GetLaunchWebURL(&app);
   shortcut_info->title = UTF8ToUTF16(app.name());
   shortcut_info->description = UTF8ToUTF16(app.description());
   shortcut_info->extension_path = app.path();
   shortcut_info->profile_path = profile->GetPath();
+  shortcut_info->profile_name =
+      profile->GetPrefs()->GetString(prefs::kProfileName);
 }
 
 void UpdateShortcutInfoAndIconForApp(

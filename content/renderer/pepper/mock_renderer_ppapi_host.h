@@ -45,8 +45,6 @@ class MockRendererPpapiHost : public RendererPpapiHost {
       PP_Instance instance) const OVERRIDE;
   virtual WebKit::WebPluginContainer* GetContainerForInstance(
       PP_Instance instance) const OVERRIDE;
-  virtual webkit::ppapi::PluginDelegate::PlatformGraphics2D*
-      GetPlatformGraphics2D(PP_Resource resource) OVERRIDE;
   virtual base::ProcessId GetPluginPID() const OVERRIDE;
   virtual bool HasUserGesture(PP_Instance instance) const OVERRIDE;
   virtual int GetRoutingIDForWidget(PP_Instance instance) const OVERRIDE;
@@ -57,6 +55,10 @@ class MockRendererPpapiHost : public RendererPpapiHost {
       base::PlatformFile handle,
       bool should_close_source) OVERRIDE;
   virtual bool IsRunningInProcess() const OVERRIDE;
+  virtual void CreateBrowserResourceHost(
+      PP_Instance instance,
+      const IPC::Message& nested_msg,
+      const base::Callback<void(int)>& callback) const OVERRIDE;
 
  private:
   ppapi::proxy::ResourceMessageTestSink sink_;

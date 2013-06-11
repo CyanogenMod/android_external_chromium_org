@@ -17,7 +17,7 @@
 #include "base/path_service.h"
 #include "base/scoped_native_library.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/metro.h"
 #include "base/win/windows_version.h"
 #include "base/win/wrapped_window_proc.h"
@@ -205,12 +205,6 @@ void ChromeBrowserMainPartsWin::PreProfileInit() {
   ChromeBrowserMainParts::PreProfileInit();
 }
 
-void ChromeBrowserMainPartsWin::PostProfileInit() {
-  storage_monitor_->Init();
-
-  ChromeBrowserMainParts::PostProfileInit();
-}
-
 void ChromeBrowserMainPartsWin::ShowMissingLocaleMessageBox() {
   ui::MessageBox(NULL, ASCIIToUTF16(chrome_browser::kMissingLocaleDataMessage),
                  ASCIIToUTF16(chrome_browser::kMissingLocaleDataTitle),
@@ -258,7 +252,7 @@ void ChromeBrowserMainPartsWin::RegisterApplicationRestart(
   base::ScopedNativeLibrary library(base::FilePath(L"kernel32.dll"));
   // Get the function pointer for RegisterApplicationRestart.
   RegisterApplicationRestartProc register_application_restart =
-      static_cast<RegisterApplicationRestartProc>(
+      reinterpret_cast<RegisterApplicationRestartProc>(
           library.GetFunctionPointer("RegisterApplicationRestart"));
   if (!register_application_restart) {
     LOG(WARNING) << "Cannot find RegisterApplicationRestart in kernel32.dll";

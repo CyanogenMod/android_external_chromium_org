@@ -17,11 +17,11 @@
 #include "base/json/json_writer.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_messages.h"
@@ -792,12 +792,12 @@ void Automation::NavigateToURLAsync(const WebViewId& view_id,
   } else {
     scoped_refptr<BrowserProxy> browser =
         automation()->GetBrowserWindow(view_locator.browser_index());
-    if (!browser) {
+    if (!browser.get()) {
       *error = new Error(kUnknownError, "Couldn't obtain browser proxy");
       return;
     }
     scoped_refptr<TabProxy> tab = browser->GetTab(view_locator.tab_index());
-    if (!tab) {
+    if (!tab.get()) {
       *error = new Error(kUnknownError, "Couldn't obtain tab proxy");
       return;
     }

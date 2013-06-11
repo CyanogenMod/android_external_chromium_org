@@ -12,7 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
@@ -352,9 +352,9 @@ void AddExtensionDisabledErrorWithIcon(base::WeakPtr<ExtensionService> service,
     return;
   const Extension* extension = service->GetInstalledExtension(extension_id);
   if (extension) {
-    GlobalErrorServiceFactory::GetForProfile(service->profile())->
-        AddGlobalError(new ExtensionDisabledGlobalError(
-            service, extension, icon));
+    GlobalErrorServiceFactory::GetForProfile(service->profile())
+        ->AddGlobalError(
+              new ExtensionDisabledGlobalError(service.get(), extension, icon));
   }
 }
 

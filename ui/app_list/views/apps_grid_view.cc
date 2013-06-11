@@ -15,6 +15,7 @@
 #include "ui/app_list/views/pulsing_block_view.h"
 #include "ui/base/animation/animation.h"
 #include "ui/base/events/event.h"
+#include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/views/border.h"
 #include "ui/views/view_model_utils.h"
 #include "ui/views/widget/widget.h"
@@ -191,6 +192,7 @@ void AppsGridView::EnsureViewVisible(const views::View* view) {
 void AppsGridView::InitiateDrag(AppListItemView* view,
                                 Pointer pointer,
                                 const ui::LocatedEvent& event) {
+  DCHECK(view);
   if (drag_view_ || pulsing_blocks_model_.view_size())
     return;
 
@@ -201,14 +203,19 @@ void AppsGridView::InitiateDrag(AppListItemView* view,
   // Note: This code has very likely to be changed for Windows (non metro mode)
   // when a |drag_and_drop_host_| gets implemented.
   if (drag_and_drop_host_) {
+    // Determine the mouse offset to the center of the icon so that the drag and
+    // drop host follows this layer.
+    gfx::Vector2d delta = event.root_location() -
+                          drag_view_->GetBoundsInScreen().CenterPoint();
+    delta.set_y(delta.y() + drag_view_->title()->size().height() / 2);
     // We have to hide the original item since the drag and drop host will do
     // the OS dependent code to "lift off the dragged item".
-    // Note that we cannot use SetVisible since it would remove the mouse input.
-    drag_view_->SetSize(gfx::Size());
     drag_and_drop_host_->CreateDragIconProxy(event.root_location(),
                                              view->model()->icon(),
                                              drag_view_,
+                                             delta,
                                              kDragAndDropProxyScale);
+    HideView(drag_view_, true);
   }
   drag_start_ = event.location();
 }
@@ -216,8 +223,11 @@ void AppsGridView::InitiateDrag(AppListItemView* view,
 void AppsGridView::UpdateDrag(AppListItemView* view,
                               Pointer pointer,
                               const ui::LocatedEvent& event) {
-  if (!dragging() && drag_view_ &&
-      ExceededDragThreshold(event.location() - drag_start_)) {
+  // EndDrag was called before if |drag_view_| is NULL.
+  if (!drag_view_)
+    return;
+
+  if (!dragging() && ExceededDragThreshold(event.location() - drag_start_)) {
     drag_pointer_ = pointer;
     // Move the view to the front so that it appears on top of other views.
     ReorderChildView(drag_view_, -1);
@@ -244,41 +254,38 @@ void AppsGridView::UpdateDrag(AppListItemView* view,
   if (last_drop_target != drop_target_)
     AnimateToIdealBounds();
 
-  if (drag_and_drop_host_) {
+  if (drag_and_drop_host_)
     drag_and_drop_host_->UpdateDragIconProxy(event.root_location());
-    return;
-  }
 
   drag_view_->SetPosition(
       gfx::PointAtOffsetFromOrigin(last_drag_point_ - drag_start_));
 }
 
 void AppsGridView::EndDrag(bool cancel) {
+  // EndDrag was called before if |drag_view_| is NULL.
+  if (!drag_view_)
+    return;
+
   if (forward_events_to_drag_and_drop_host_) {
     forward_events_to_drag_and_drop_host_ = false;
     drag_and_drop_host_->EndDrag(cancel);
-  } else if (!cancel && dragging() && drag_view_) {
+  } else if (!cancel && dragging()) {
     CalculateDropTarget(last_drag_point_, true);
     if (IsValidIndex(drop_target_))
       MoveItemInModel(drag_view_, drop_target_);
   }
 
-  // In case we had a drag and drop proxy icon, we delete it and make the real
-  // item visible again.
   if (drag_and_drop_host_) {
+    // If we had a drag and drop proxy icon, we delete it and make the real
+    // item visible again.
     drag_and_drop_host_->DestroyDragIconProxy();
-    // To avoid an incorrect animation on re-group, |drag_view_| gets positioned
-    // at its last known drag location.
-    drag_view_->SetPosition(
-        gfx::PointAtOffsetFromOrigin(last_drag_point_ - drag_start_));
+    HideView(drag_view_, false);
   }
 
   drag_pointer_ = NONE;
   drop_target_ = Index();
-  if (drag_view_) {
-    drag_view_ = NULL;
-    AnimateToIdealBounds();
-  }
+  drag_view_ = NULL;
+  AnimateToIdealBounds();
 
   page_flip_timer_.Stop();
   page_flip_target_ = -1;
@@ -917,6 +924,14 @@ void AppsGridView::OnAppListModelStatusChanged() {
   UpdatePulsingBlockViews();
   Layout();
   SchedulePaint();
+}
+
+void AppsGridView::HideView(views::View* view, bool hide) {
+#if defined(USE_AURA)
+  ui::ScopedLayerAnimationSettings animator(view->layer()->GetAnimator());
+  animator.SetPreemptionStrategy(ui::LayerAnimator::IMMEDIATELY_SET_NEW_TARGET);
+  view->layer()->SetOpacity(hide ? 0 : 1);
+#endif
 }
 
 }  // namespace app_list

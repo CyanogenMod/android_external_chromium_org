@@ -21,10 +21,9 @@ extern const char kDefaultAppsInstalled[];
 extern const char kDisableScreenshots[];
 extern const char kHomePageIsNewTabPage[];
 extern const char kHomePage[];
-extern const char kManagedModeLocalPassphrase[];
-extern const char kManagedModeLocalSalt[];
 extern const char kManagedModeManualHosts[];
 extern const char kManagedModeManualURLs[];
+extern const char kManagedUserCustodian[];
 extern const char kSessionExitedCleanly[];
 extern const char kSessionExitType[];
 extern const char kRestoreOnStartup[];
@@ -147,6 +146,7 @@ extern const char kWebKitAllowRunningInsecureContent[];
 #if defined(OS_ANDROID)
 extern const char kWebKitFontScaleFactor[];
 extern const char kWebKitForceEnableZoom[];
+extern const char kWebKitPasswordEchoEnabled[];
 #endif
 extern const char kPasswordGenerationEnabled[];
 extern const char kPasswordManagerEnabled[];
@@ -273,6 +273,7 @@ extern const char kLanguageRemapDiamondKeyTo[];
 extern const char kLanguageXkbAutoRepeatEnabled[];
 extern const char kLanguageXkbAutoRepeatDelay[];
 extern const char kLanguageXkbAutoRepeatInterval[];
+extern const char kLargeCursorEnabled[];
 extern const char kSpokenFeedbackEnabled[];
 extern const char kHighContrastEnabled[];
 extern const char kScreenMagnifierEnabled[];
@@ -376,7 +377,6 @@ extern const char kDefaultBrowserSettingEnabled[];
 extern const char kShowUpdatePromotionInfoBar[];
 #endif
 extern const char kUseCustomChromeFrame[];
-extern const char kShowOmniboxSearchHint[];
 extern const char kDesktopNotificationPosition[];
 extern const char kDefaultContentSettings[];
 extern const char kContentSettingsClearOnExitMigrated[];
@@ -389,6 +389,7 @@ extern const char kClearSiteDataOnExit[];
 extern const char kDefaultZoomLevel[];
 extern const char kPerHostZoomLevels[];
 extern const char kAutofillDialogAutofillDefault[];
+extern const char kAutofillDialogHasPaidWithWallet[];
 extern const char kAutofillDialogPayWithoutWallet[];
 extern const char kEditBookmarksEnabled[];
 
@@ -668,7 +669,6 @@ extern const char kInvalidatorInvalidationState[];
 extern const char kInvalidatorMaxInvalidationVersions[];
 
 extern const char kSyncPromoStartupCount[];
-extern const char kSyncPromoViewCount[];
 extern const char kSyncPromoUserSkipped[];
 extern const char kSyncPromoShowOnFirstRunAllowed[];
 extern const char kSyncPromoShowNTPBubble[];
@@ -772,6 +772,9 @@ extern const char kOwnerTapToClickEnabled[];
 extern const char kUptimeLimit[];
 extern const char kRebootAfterUpdate[];
 extern const char kDeviceRobotAnyApiRefreshToken[];
+extern const char kDeviceEnrollmentRequisition[];
+extern const char kDeviceEnrollmentAutoStart[];
+extern const char kDeviceEnrollmentCanExit[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
@@ -922,6 +925,8 @@ extern const char kLastAppListLaunchPing[];
 extern const char kAppListLaunchCount[];
 extern const char kLastAppListAppLaunchPing[];
 extern const char kAppListAppLaunchCount[];
+
+extern const char kModuleConflictBubbleShown[];
 
 extern const char kDRMSalt[];
 extern const char kEnableDRM[];

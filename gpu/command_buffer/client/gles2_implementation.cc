@@ -279,17 +279,6 @@ GLES2CmdHelper* GLES2Implementation::helper() const {
   return helper_;
 }
 
-GLuint GLES2Implementation::MakeTextureId() {
-  GLuint id;
-  GetIdHandler(id_namespaces::kTextures)->MakeIds(this, 0, 1, &id);
-  return id;
-}
-
-void GLES2Implementation::FreeTextureId(GLuint id) {
-  GetIdHandler(id_namespaces::kTextures)->FreeIds(
-      this, 1, &id, &GLES2Implementation::DeleteTexturesStub);
-}
-
 IdHandlerInterface* GLES2Implementation::GetIdHandler(int namespace_id) const {
   return share_group_->GetIdHandler(namespace_id);
 }
@@ -3851,11 +3840,11 @@ void GLES2Implementation::GetImageParameterivCHROMIUM(
     GLuint image_id, GLenum pname, GLint* params) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION(GLint, params);
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glMapImageCHROMIUM("
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glImageParameterivCHROMIUM("
       << image_id << ", "
       << GLES2Util::GetStringBufferParameter(pname) << ", "
       << static_cast<const void*>(params) << ")");
-  GetImageParameterivCHROMIUM(image_id, pname, params);
+  GetImageParameterivCHROMIUMHelper(image_id, pname, params);
   CheckGLError();
 }
 

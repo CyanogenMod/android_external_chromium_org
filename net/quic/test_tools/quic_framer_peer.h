@@ -17,7 +17,9 @@ class QuicFramerPeer {
  public:
   static QuicPacketSequenceNumber CalculatePacketSequenceNumberFromWire(
       QuicFramer* framer,
+      QuicSequenceNumberLength sequence_number_length,
       QuicPacketSequenceNumber packet_sequence_number);
+  static void SetLastSerializedGuid(QuicFramer* framer, QuicGuid guid);
   static void SetLastSequenceNumber(
       QuicFramer* framer,
       QuicPacketSequenceNumber packet_sequence_number);

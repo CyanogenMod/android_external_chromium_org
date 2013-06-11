@@ -337,7 +337,8 @@ class ExtensionGalleriesHost
         DCHECK(mtp_device_host.get());
         media_device_map_references_[pref_id] = mtp_device_host;
       }
-      DCHECK(!fsid.empty());
+      if (fsid.empty())
+        continue;
 
       MediaFileSystemInfo new_entry(
           MediaGalleriesDialogController::GetGalleryDisplayNameNoAttachment(
@@ -367,12 +368,7 @@ class ExtensionGalleriesHost
     if (!StorageInfo::IsRemovableDevice(device_id))
       return std::string();
 
-    // StorageMonitor may be NULL in unit tests.
-    StorageMonitor* monitor = StorageMonitor::GetInstance();
-    if (!monitor)
-      return std::string();
-
-    return monitor->GetTransientIdForDeviceId(device_id);
+    return StorageMonitor::GetInstance()->GetTransientIdForDeviceId(device_id);
   }
 
   void CleanUp() {
@@ -469,10 +465,8 @@ MediaGalleriesPreferences* MediaFileSystemRegistry::GetPreferences(
   extension_hosts_map_[profile] = ExtensionHostMap();
 
   // TODO(gbillock): Move this stanza to MediaGalleriesPreferences init code.
-  // StorageMonitor may be NULL in unit tests.
   StorageMonitor* monitor = StorageMonitor::GetInstance();
-  if (!monitor)
-    return preferences;
+  DCHECK(monitor->IsInitialized());
   std::vector<StorageInfo> existing_devices = monitor->GetAttachedStorage();
   for (size_t i = 0; i < existing_devices.size(); i++) {
     if (!StorageInfo::IsMediaDevice(existing_devices[i].device_id()))
@@ -542,17 +536,6 @@ void MediaFileSystemRegistry::OnRemovableStorageDetached(
   }
 }
 
-size_t MediaFileSystemRegistry::GetExtensionGalleriesHostCountForTests() const {
-  size_t extension_galleries_host_count = 0;
-  for (ExtensionGalleriesHostMap::const_iterator it =
-           extension_hosts_map_.begin();
-       it != extension_hosts_map_.end();
-       ++it) {
-    extension_galleries_host_count += it->second.size();
-  }
-  return extension_galleries_host_count;
-}
-
 /******************
  * Private methods
  ******************/
@@ -576,20 +559,22 @@ class MediaFileSystemRegistry::MediaFileSystemContextImpl
     // Sanity checks for |path|.
     CHECK(path.IsAbsolute());
     CHECK(!path.ReferencesParent());
-    std::string fs_name(extension_misc::kMediaFileSystemPathPart);
 
     std::string fsid;
     if (StorageInfo::IsITunesDevice(device_id)) {
-      NOTIMPLEMENTED();
+      ImportedMediaGalleryRegistry* imported_registry =
+          ImportedMediaGalleryRegistry::GetInstance();
+      fsid = imported_registry->RegisterITunesFilesystemOnUIThread(path);
     } else if (StorageInfo::IsPicasaDevice(device_id)) {
-      fsid = ImportedMediaGalleryRegistry::RegisterPicasaFilesystemOnUIThread(
+      ImportedMediaGalleryRegistry* imported_registry =
+          ImportedMediaGalleryRegistry::GetInstance();
+      fsid = imported_registry->RegisterPicasaFilesystemOnUIThread(
           path);
     } else {
+      std::string fs_name(extension_misc::kMediaFileSystemPathPart);
       fsid = IsolatedContext::GetInstance()->RegisterFileSystemForPath(
           fileapi::kFileSystemTypeNativeMedia, path, &fs_name);
     }
-
-    CHECK(!fsid.empty());
     return fsid;
   }
 
@@ -612,11 +597,12 @@ class MediaFileSystemRegistry::MediaFileSystemContextImpl
   }
 
   virtual void RevokeFileSystem(const std::string& fsid) OVERRIDE {
-    IsolatedContext::GetInstance()->RevokeFileSystem(fsid);
-  }
+    ImportedMediaGalleryRegistry* imported_registry =
+        ImportedMediaGalleryRegistry::GetInstance();
+    if (imported_registry->RevokeImportedFilesystemOnUIThread(fsid))
+      return;
 
-  virtual MediaFileSystemRegistry* GetMediaFileSystemRegistry() OVERRIDE {
-    return registry_;
+    IsolatedContext::GetInstance()->RevokeFileSystem(fsid);
   }
 
  private:
@@ -627,17 +613,15 @@ class MediaFileSystemRegistry::MediaFileSystemContextImpl
 
 MediaFileSystemRegistry::MediaFileSystemRegistry()
     : file_system_context_(new MediaFileSystemContextImpl(this)) {
-  // StorageMonitor may be NULL in unit tests.
-  StorageMonitor* monitor = StorageMonitor::GetInstance();
-  if (monitor)
-    monitor->AddObserver(this);
+  StorageMonitor::GetInstance()->AddObserver(this);
 }
 
 MediaFileSystemRegistry::~MediaFileSystemRegistry() {
-  // StorageMonitor may be NULL in unit tests.
-  StorageMonitor* monitor = StorageMonitor::GetInstance();
-  if (monitor)
-    monitor->RemoveObserver(this);
+  // TODO(gbillock): This is needed because the unit test uses the
+  // g_browser_process registry. We should create one in the unit test,
+  // and then can remove this.
+  if (StorageMonitor::GetInstance())
+    StorageMonitor::GetInstance()->RemoveObserver(this);
   DCHECK(mtp_device_delegate_map_.empty());
 }
 
@@ -701,7 +685,7 @@ MediaFileSystemRegistry::GetOrCreateScopedMTPDeviceMapEntry(
                      base::Unretained(this),
                      device_location));
   mtp_device_host->Init();
-  mtp_device_delegate_map_[device_location] = mtp_device_host;
+  mtp_device_delegate_map_[device_location] = mtp_device_host.get();
   return mtp_device_host;
 }
 

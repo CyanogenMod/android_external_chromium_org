@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/auth.h"
 #include "net/base/net_log.h"
 #include "net/base/net_log_unittest.h"
@@ -414,6 +414,41 @@ TEST_F(SocketStreamTest, CloseFlushPendingWrite) {
   EXPECT_EQ(SocketStreamEvent::EVENT_SENT_DATA, events[4].event_type);
   EXPECT_EQ(SocketStreamEvent::EVENT_SENT_DATA, events[5].event_type);
   EXPECT_EQ(SocketStreamEvent::EVENT_CLOSE, events[6].event_type);
+}
+
+TEST_F(SocketStreamTest, ResolveFailure) {
+  TestCompletionCallback test_callback;
+
+  scoped_ptr<SocketStreamEventRecorder> delegate(
+      new SocketStreamEventRecorder(test_callback.callback()));
+
+  scoped_refptr<SocketStream> socket_stream(
+      new SocketStream(GURL("ws://example.com/demo"), delegate.get()));
+
+  // Make resolver fail.
+  TestURLRequestContext context;
+  scoped_ptr<MockHostResolver> mock_host_resolver(
+      new MockHostResolver());
+  mock_host_resolver->rules()->AddSimulatedFailure("example.com");
+  context.set_host_resolver(mock_host_resolver.get());
+  socket_stream->set_context(&context);
+
+  // No read/write on socket is expected.
+  StaticSocketDataProvider data_provider(NULL, 0, NULL, 0);
+  MockClientSocketFactory* mock_socket_factory =
+      GetMockClientSocketFactory();
+  mock_socket_factory->AddSocketDataProvider(&data_provider);
+  socket_stream->SetClientSocketFactory(mock_socket_factory);
+
+  socket_stream->Connect();
+
+  test_callback.WaitForResult();
+
+  const std::vector<SocketStreamEvent>& events = delegate->GetSeenEvents();
+  ASSERT_EQ(2U, events.size());
+
+  EXPECT_EQ(SocketStreamEvent::EVENT_ERROR, events[0].event_type);
+  EXPECT_EQ(SocketStreamEvent::EVENT_CLOSE, events[1].event_type);
 }
 
 TEST_F(SocketStreamTest, ExceedMaxPendingSendAllowed) {
@@ -922,6 +957,68 @@ TEST_F(SocketStreamTest, OnErrorDetachDelegate) {
   socket_stream->Connect();
 
   EXPECT_EQ(OK, test_callback.WaitForResult());
+}
+
+// A test for the WeakPtr workaround patch which should be deleted
+// in the future.
+TEST_F(SocketStreamTest, ContextDestroyedBeforeDoBeforeConnect) {
+  TestCompletionCallback test_callback;
+
+  scoped_ptr<SocketStreamEventRecorder> delegate(
+      new SocketStreamEventRecorder(test_callback.callback()));
+
+  scoped_ptr<TestURLRequestContext> context(new TestURLRequestContext);
+  TestSocketStreamNetworkDelegate network_delegate;
+  network_delegate.SetBeforeConnectResult(OK);
+  context->set_network_delegate(&network_delegate);
+
+  scoped_refptr<SocketStream> socket_stream(
+      new SocketStream(GURL("ws://example.com/demo"), delegate.get()));
+
+  socket_stream->set_context(context.get());
+
+  socket_stream->Connect();
+  context.reset();
+
+  ASSERT_EQ(0U, delegate->GetSeenEvents().size());
+
+  test_callback.WaitForResult();
+
+  const std::vector<SocketStreamEvent>& events = delegate->GetSeenEvents();
+  ASSERT_EQ(1U, events.size());
+
+  EXPECT_EQ(SocketStreamEvent::EVENT_CLOSE, events[0].event_type);
+}
+
+// A test for the WeakPtr workaround patch which should be deleted
+// in the future.
+TEST_F(SocketStreamTest, SocketStreamResetBeforeDoBeforeConnect) {
+  TestCompletionCallback test_callback;
+
+  scoped_ptr<SocketStreamEventRecorder> delegate(
+      new SocketStreamEventRecorder(test_callback.callback()));
+
+  scoped_ptr<TestURLRequestContext> context(new TestURLRequestContext);
+  TestSocketStreamNetworkDelegate network_delegate;
+  network_delegate.SetBeforeConnectResult(OK);
+  context->set_network_delegate(&network_delegate);
+
+  scoped_refptr<SocketStream> socket_stream(
+      new SocketStream(GURL("ws://example.com/demo"), delegate.get()));
+
+  socket_stream->set_context(context.get());
+
+  socket_stream->Connect();
+  socket_stream = NULL;
+  context.reset();
+
+  ASSERT_EQ(0U, delegate->GetSeenEvents().size());
+  test_callback.WaitForResult();
+
+  const std::vector<SocketStreamEvent>& events = delegate->GetSeenEvents();
+  ASSERT_EQ(1U, events.size());
+
+  EXPECT_EQ(SocketStreamEvent::EVENT_CLOSE, events[0].event_type);
 }
 
 }  // namespace net

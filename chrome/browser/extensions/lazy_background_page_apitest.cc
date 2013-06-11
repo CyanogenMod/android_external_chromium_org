@@ -4,7 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
@@ -299,9 +299,16 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, MAYBE_WaitForNTP) {
   EXPECT_FALSE(pm->GetBackgroundHostForExtension(last_loaded_extension_id_));
 }
 
+// See crbug.com/248437
+#if defined(OS_WIN)
+#define MAYBE_IncognitoSplitMode DISABLED_IncognitoSplitMode
+#else
+#define MAYBE_IncognitoSplitMode IncognitoSplitMode
+#endif
+
 // Tests that an incognito split mode extension gets 2 lazy background pages,
 // and they each load and unload at the proper times.
-IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, IncognitoSplitMode) {
+IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, MAYBE_IncognitoSplitMode) {
   // Open incognito window.
   Browser* incognito_browser = ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(), GURL("about:blank"));

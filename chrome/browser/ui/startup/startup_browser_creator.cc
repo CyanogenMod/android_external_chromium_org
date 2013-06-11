@@ -7,6 +7,8 @@
 #include <algorithm>   // For max().
 #include <set>
 
+#include "apps/app_load_service.h"
+#include "apps/switches.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -21,8 +23,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/automation/automation_provider.h"
@@ -615,14 +617,22 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     return true;
 
   // Check for --load-and-launch-app.
-  if (command_line.HasSwitch(switches::kLoadAndLaunchApp) &&
+  if (command_line.HasSwitch(apps::kLoadAndLaunchApp) &&
       !IncognitoModePrefs::ShouldLaunchIncognito(
           command_line, last_used_profile->GetPrefs())) {
     CommandLine::StringType path = command_line.GetSwitchValueNative(
-        switches::kLoadAndLaunchApp);
-    extensions::UnpackedInstaller::Create(
-        last_used_profile->GetExtensionService())->
-            LoadFromCommandLine(base::FilePath(path), true);
+        apps::kLoadAndLaunchApp);
+    std::string extension_id;
+    if (!extensions::UnpackedInstaller::Create(
+            last_used_profile->GetExtensionService())->
+                LoadFromCommandLine(base::FilePath(path), &extension_id)) {
+      return false;
+    }
+
+    // Schedule the app to be launched once loaded.
+    apps::AppLoadService::Get(last_used_profile)->ScheduleLaunchOnLoad(
+        extension_id);
+
     // Return early here since we don't want to open a browser window.
     // The exception is when there are no browser windows, since we don't want
     // chrome to shut down.
@@ -701,7 +711,7 @@ bool StartupBrowserCreator::CreateAutomationProvider(
 
   AutomationProviderList* list = g_browser_process->GetAutomationProviderList();
   DCHECK(list);
-  list->AddProvider(automation);
+  list->AddProvider(automation.get());
 #endif  // defined(ENABLE_AUTOMATION)
 
   return true;

@@ -115,11 +115,10 @@ void LocalFileSyncService::Shutdown() {
 
 void LocalFileSyncService::MaybeInitializeFileSystemContext(
     const GURL& app_origin,
-    const std::string& service_name,
     fileapi::FileSystemContext* file_system_context,
     const SyncStatusCallback& callback) {
   sync_context_->MaybeInitializeFileSystemContext(
-      app_origin, service_name, file_system_context,
+      app_origin, file_system_context,
       base::Bind(&LocalFileSyncService::DidInitializeFileSystemContext,
                  AsWeakPtr(), app_origin,
                  make_scoped_refptr(file_system_context), callback));
@@ -147,6 +146,8 @@ void LocalFileSyncService::ProcessLocalChange(
   DCHECK(local_sync_callback_.is_null());
   DCHECK(!origin.is_empty());
   DCHECK(ContainsKey(origin_to_contexts_, origin));
+
+  DVLOG(1) << "Starting ProcessLocalChange";
 
   local_sync_callback_ = callback;
 
@@ -189,8 +190,9 @@ void LocalFileSyncService::GetLocalFileMetadata(
 
 void LocalFileSyncService::PrepareForProcessRemoteChange(
     const FileSystemURL& url,
-    const std::string& service_name,
     const PrepareChangeCallback& callback) {
+  DVLOG(1) << "PrepareForProcessRemoteChange: " << url.DebugString();
+
   if (!ContainsKey(origin_to_contexts_, url.origin())) {
     // This could happen if a remote sync is triggered for the app that hasn't
     // been initialized in this service.
@@ -220,11 +222,12 @@ void LocalFileSyncService::PrepareForProcessRemoteChange(
             profile_, site_url)->GetFileSystemContext();
     MaybeInitializeFileSystemContext(
         url.origin(),
-        service_name,
-        file_system_context,
+        file_system_context.get(),
         base::Bind(&LocalFileSyncService::DidInitializeForRemoteSync,
-                   AsWeakPtr(), url, service_name,
-                   file_system_context, callback));
+                   AsWeakPtr(),
+                   url,
+                   file_system_context,
+                   callback));
     return;
   }
 
@@ -324,7 +327,6 @@ void LocalFileSyncService::DidInitializeFileSystemContext(
 
 void LocalFileSyncService::DidInitializeForRemoteSync(
     const FileSystemURL& url,
-    const std::string& service_name,
     fileapi::FileSystemContext* file_system_context,
     const PrepareChangeCallback& callback,
     SyncStatusCode status) {
@@ -336,12 +338,14 @@ void LocalFileSyncService::DidInitializeForRemoteSync(
     return;
   }
   origin_to_contexts_[url.origin()] = file_system_context;
-  PrepareForProcessRemoteChange(url, service_name, callback);
+  PrepareForProcessRemoteChange(url, callback);
 }
 
 void LocalFileSyncService::RunLocalSyncCallback(
     SyncStatusCode status,
     const FileSystemURL& url) {
+  DVLOG(1) << "Local sync is finished with: " << status
+           << " on " << url.DebugString();
   DCHECK(!local_sync_callback_.is_null());
   SyncFileCallback callback = local_sync_callback_;
   local_sync_callback_.Reset();

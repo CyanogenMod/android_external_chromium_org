@@ -36,6 +36,7 @@ class APIPermission {
 
     // Real permissions.
     kActiveTab,
+    kActivityLogPrivate,
     kAdView,
     kAlarms,
     kAppCurrentWindowInternal,
@@ -92,6 +93,7 @@ class APIPermission {
     kMediaGalleriesPrivate,
     kMediaPlayerPrivate,
     kMetricsPrivate,
+    kMusicManagerPrivate,
     kNativeMessaging,
     kNetworkingPrivate,
     kNotification,
@@ -124,6 +126,7 @@ class APIPermission {
     kUsbDevice,
     kVideoCapture,
     kWallpaperPrivate,
+    kWebConnectable,  // for externally_connectable manifest key
     kWebNavigation,
     kWebRequest,
     kWebRequestBlocking,
@@ -131,6 +134,8 @@ class APIPermission {
     kWebSocketProxyPrivate,
     kWebstorePrivate,
     kWebView,
+    kSystemInfoCpu,
+    kSystemInfoMemory,
     kEnumBoundary
   };
 

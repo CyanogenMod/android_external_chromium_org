@@ -144,7 +144,7 @@ class LayerTest : public testing::Test {
 
 TEST_F(LayerTest, BasicCreateAndDestroy) {
   scoped_refptr<Layer> test_layer = Layer::Create();
-  ASSERT_TRUE(test_layer);
+  ASSERT_TRUE(test_layer.get());
 
   EXPECT_CALL(*layer_tree_host_, SetNeedsCommit()).Times(0);
   test_layer->SetLayerTreeHost(layer_tree_host_.get());
@@ -974,6 +974,37 @@ TEST(LayerLayerTreeHostTest, ShouldNotAddAnimationWithoutAnimationRegistrar) {
   // Case 3: with a LayerTreeHost where accelerated animation is disabled, the
   // animation should be rejected.
   EXPECT_FALSE(AddTestAnimation(layer.get()));
+}
+
+TEST_F(LayerTest, SafeOpaqueBackgroundColor) {
+  LayerTreeHostFactory factory;
+  scoped_ptr<LayerTreeHost> layer_tree_host = factory.Create();
+
+  scoped_refptr<Layer> layer = Layer::Create();
+  layer_tree_host->SetRootLayer(layer);
+
+  for (int contents_opaque = 0; contents_opaque < 2; ++contents_opaque) {
+    for (int layer_opaque = 0; layer_opaque < 2; ++layer_opaque) {
+      for (int host_opaque = 0; host_opaque < 2; ++host_opaque) {
+        layer->SetContentsOpaque(!!contents_opaque);
+        layer->SetBackgroundColor(layer_opaque ? SK_ColorRED
+                                               : SK_ColorTRANSPARENT);
+        layer_tree_host->set_background_color(
+            host_opaque ? SK_ColorRED : SK_ColorTRANSPARENT);
+
+        SkColor safe_color = layer->SafeOpaqueBackgroundColor();
+        if (contents_opaque) {
+          EXPECT_EQ(SkColorGetA(safe_color), 255u)
+              << "Flags: " << contents_opaque << ", " << layer_opaque << ", "
+              << host_opaque << "\n";
+        } else {
+          EXPECT_NE(SkColorGetA(safe_color), 255u)
+              << "Flags: " << contents_opaque << ", " << layer_opaque << ", "
+              << host_opaque << "\n";
+        }
+      }
+    }
+  }
 }
 
 }  // namespace

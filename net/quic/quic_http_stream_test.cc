@@ -179,9 +179,8 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     crypto_config_.SetDefaults();
     session_.reset(new QuicClientSession(connection_, socket, NULL,
                                          &crypto_client_stream_factory_,
-                                         "www.google.com", QuicConfig(),
+                                         "www.google.com", DefaultQuicConfig(),
                                          &crypto_config_, NULL));
-    session_->config()->SetDefaults();
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     QuicReliableClientStream* stream =
@@ -280,7 +279,6 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     header_.public_header.version_flag = should_include_version;
     header_.packet_sequence_number = sequence_number;
     header_.fec_group = 0;
-    header_.fec_entropy_flag = false;
     header_.entropy_flag = false;
     header_.fec_flag = false;
   }
@@ -353,7 +351,7 @@ TEST_F(QuicHttpStreamTest, GetRequest) {
 
   // Now that the headers have been processed, the callback will return.
   EXPECT_EQ(OK, callback_.WaitForResult());
-  ASSERT_TRUE(response_.headers != NULL);
+  ASSERT_TRUE(response_.headers);
   EXPECT_EQ(404, response_.headers->response_code());
   EXPECT_TRUE(response_.headers->HasHeaderValue("Content-Type", "text/plain"));
 
@@ -395,7 +393,7 @@ TEST_F(QuicHttpStreamTest, GetRequestFullResponseInSinglePacket) {
 
   // Now that the headers have been processed, the callback will return.
   EXPECT_EQ(OK, callback_.WaitForResult());
-  ASSERT_TRUE(response_.headers != NULL);
+  ASSERT_TRUE(response_.headers);
   EXPECT_EQ(200, response_.headers->response_code());
   EXPECT_TRUE(response_.headers->HasHeaderValue("Content-Type", "text/plain"));
 
@@ -445,7 +443,7 @@ TEST_F(QuicHttpStreamTest, SendPostRequest) {
 
   // Since the headers have already arrived, this should return immediately.
   EXPECT_EQ(OK, stream_->ReadResponseHeaders(callback_.callback()));
-  ASSERT_TRUE(response_.headers != NULL);
+  ASSERT_TRUE(response_.headers);
   EXPECT_EQ(200, response_.headers->response_code());
   EXPECT_TRUE(response_.headers->HasHeaderValue("Content-Type", "text/plain"));
 
@@ -507,7 +505,7 @@ TEST_F(QuicHttpStreamTest, SendChunkedPostRequest) {
 
   // Since the headers have already arrived, this should return immediately.
   ASSERT_EQ(OK, stream_->ReadResponseHeaders(callback_.callback()));
-  ASSERT_TRUE(response_.headers != NULL);
+  ASSERT_TRUE(response_.headers);
   EXPECT_EQ(200, response_.headers->response_code());
   EXPECT_TRUE(response_.headers->HasHeaderValue("Content-Type", "text/plain"));
 
@@ -530,8 +528,7 @@ TEST_F(QuicHttpStreamTest, SendChunkedPostRequest) {
 TEST_F(QuicHttpStreamTest, DestroyedEarly) {
   SetRequestString("GET", "/");
   AddWrite(SYNCHRONOUS, ConstructDataPacket(1, true, kFin, 0, request_data_));
-  AddWrite(SYNCHRONOUS, ConstructRstPacket(2, 3));
-  AddWrite(SYNCHRONOUS, ConstructAckPacket(3, 2, 1));
+  AddWrite(SYNCHRONOUS, ConstructAckPacket(2, 2, 1));
   use_closing_stream_ = true;
   Initialize();
 

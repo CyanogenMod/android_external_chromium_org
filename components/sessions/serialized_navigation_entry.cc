@@ -5,13 +5,13 @@
 #include "components/sessions/serialized_navigation_entry.h"
 
 #include "base/pickle.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "sync/protocol/session_specifics.pb.h"
 #include "sync/util/time.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
+#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 
 using content::NavigationEntry;
 

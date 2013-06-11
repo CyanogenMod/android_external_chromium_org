@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/views/accessible_pane_view.h"
@@ -525,7 +525,8 @@ class FocusManagerDtorTest : public FocusManagerTest {
         : dtor_tracker_(dtor_tracker) {
     }
 
-    virtual FocusManager* CreateFocusManager(Widget* widget) OVERRIDE {
+    virtual FocusManager* CreateFocusManager(Widget* widget,
+                                             bool desktop_widget) OVERRIDE {
       return new FocusManagerDtorTracked(widget, dtor_tracker_);
     }
 

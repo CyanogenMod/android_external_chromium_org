@@ -16,8 +16,8 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -145,6 +145,7 @@ DictionaryValue* CreateDownloadItemValue(
   file_value->SetBoolean("file_externally_removed",
                          download_item->GetFileExternallyRemoved());
   file_value->SetBoolean("retry", false); // Overridden below if needed.
+  file_value->SetBoolean("resume", download_item->CanResume());
 
   if (download_item->IsInProgress()) {
     if (download_item->IsDangerous()) {
@@ -189,7 +190,7 @@ DictionaryValue* CreateDownloadItemValue(
     file_value->SetString("last_reason_text",
                           download_model.GetInterruptReasonText());
     if (content::DOWNLOAD_INTERRUPT_REASON_CRASH ==
-        download_item->GetLastReason())
+        download_item->GetLastReason() && !download_item->CanResume())
       file_value->SetBoolean("retry", true);
   } else if (download_item->IsCancelled()) {
     file_value->SetString("state", "CANCELLED");
@@ -372,7 +373,7 @@ void DownloadsDOMHandler::HandleDiscardDangerous(const base::ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_DISCARD_DANGEROUS);
   content::DownloadItem* file = GetDownloadByValue(args);
   if (file)
-    file->Delete(content::DownloadItem::DELETE_DUE_TO_USER_DISCARD);
+    file->Remove();
 }
 
 void DownloadsDOMHandler::HandleShow(const base::ListValue* args) {
@@ -510,10 +511,10 @@ void DownloadsDOMHandler::DangerPromptAccepted(int download_id) {
     item = main_notifier_.GetManager()->GetDownload(download_id);
   if (!item && original_notifier_.get() && original_notifier_->GetManager())
     item = original_notifier_->GetManager()->GetDownload(download_id);
-  if (!item || (item->GetState() != content::DownloadItem::IN_PROGRESS))
+  if (!item || item->IsDone())
     return;
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_SAVE_DANGEROUS);
-  item->DangerousDownloadValidated();
+  item->ValidateDangerousDownload();
 }
 
 bool DownloadsDOMHandler::IsDeletingHistoryAllowed() {

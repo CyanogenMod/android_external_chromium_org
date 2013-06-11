@@ -100,7 +100,7 @@ void PictureLayerTiling::CreateTile(int i,
 
   // Create a new tile because our twin didn't have a valid one.
   scoped_refptr<Tile> tile = client_->CreateTile(this, tile_rect);
-  if (tile)
+  if (tile.get())
     tiles_[key] = tile;
 }
 
@@ -114,7 +114,7 @@ Region PictureLayerTiling::OpaqueRegionInContentRect(
 void PictureLayerTiling::DestroyAndRecreateTilesWithText() {
   std::vector<TileMapKey> new_tiles;
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
-    if (client_->TileHasText(it->second))
+    if (client_->TileHasText(it->second.get()))
       new_tiles.push_back(it->first);
   }
 
@@ -480,7 +480,7 @@ void PictureLayerTiling::DidBecomeActive() {
     // will cause PicturePileImpls and their clones to get deleted once the
     // corresponding PictureLayerImpl and any in flight raster jobs go out of
     // scope.
-    client_->UpdatePile(it->second);
+    client_->UpdatePile(it->second.get());
   }
 }
 
@@ -496,8 +496,11 @@ scoped_ptr<base::Value> PictureLayerTiling::AsValue() const {
 size_t PictureLayerTiling::GPUMemoryUsageInBytes() const {
   size_t amount = 0;
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
-    const Tile* tile = it->second;
-    amount += tile->tile_version().GPUMemoryUsageInBytes();
+    const Tile* tile = it->second.get();
+    for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
+      amount += tile->tile_version(
+          static_cast<TileRasterMode>(mode)).GPUMemoryUsageInBytes();
+    }
   }
   return amount;
 }

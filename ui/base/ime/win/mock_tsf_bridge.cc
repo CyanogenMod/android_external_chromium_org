@@ -10,10 +10,10 @@
 namespace ui {
 
 MockTSFBridge::MockTSFBridge()
-  : shutdown_call_count_(0),
-    enable_ime_call_count_(0),
+  : enable_ime_call_count_(0),
     disalbe_ime_call_count_(0),
     cancel_composition_call_count_(0),
+    on_text_layout_changed_(0),
     associate_focus_call_count_(0),
     set_focused_client_call_count_(0),
     remove_focused_client_call_count_(0),
@@ -25,10 +25,6 @@ MockTSFBridge::MockTSFBridge()
 MockTSFBridge::~MockTSFBridge() {
 }
 
-void MockTSFBridge::Shutdown() {
-  shutdown_call_count_++;
-}
-
 bool MockTSFBridge::CancelComposition() {
   ++cancel_composition_call_count_;
   return true;
@@ -36,6 +32,10 @@ bool MockTSFBridge::CancelComposition() {
 
 void MockTSFBridge::OnTextInputTypeChanged(TextInputClient* client) {
   latest_text_input_type_ = client->GetTextInputType();
+}
+
+void MockTSFBridge::OnTextLayoutChanged() {
+  ++on_text_layout_changed_;
 }
 
 void MockTSFBridge::SetFocusedClient(HWND focused_window,
@@ -61,10 +61,10 @@ TextInputClient* MockTSFBridge::GetFocusedTextInputClient() const {
 }
 
 void MockTSFBridge::Reset() {
-  shutdown_call_count_ = 0;
   enable_ime_call_count_ = 0;
   disalbe_ime_call_count_ = 0;
   cancel_composition_call_count_ = 0;
+  on_text_layout_changed_ = 0;
   associate_focus_call_count_ = 0;
   set_focused_client_call_count_ = 0;
   remove_focused_client_call_count_ = 0;

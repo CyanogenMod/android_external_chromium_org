@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "media/audio/virtual_audio_output_stream.h"
 
 namespace media {
@@ -60,7 +60,7 @@ VirtualAudioInputStream::VirtualAudioInputStream(
       num_attached_output_streams_(0),
       fake_consumer_(message_loop_, params_) {
   DCHECK(params_.IsValid());
-  DCHECK(message_loop_);
+  DCHECK(message_loop_.get());
 }
 
 VirtualAudioInputStream::~VirtualAudioInputStream() {

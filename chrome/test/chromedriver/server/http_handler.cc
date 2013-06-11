@@ -7,9 +7,9 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/chrome/status.h"
@@ -245,6 +245,8 @@ scoped_ptr<HttpHandler::CommandMap> HttpHandler::CreateCommandMap() {
       // Allow quit all to be called with GET or POST.
       CommandMapping(kGet, kShutdownPath, CommandNames::kQuitAll),
       CommandMapping(kPost, kShutdownPath, CommandNames::kQuitAll),
+      CommandMapping(kGet, "session/:sessionId/is_loading",
+                     CommandNames::kIsLoading),
   };
   return scoped_ptr<CommandMap>(
       new CommandMap(commands, commands + arraysize(commands)));

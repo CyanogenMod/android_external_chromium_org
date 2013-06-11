@@ -5,8 +5,8 @@
 #ifndef WEBKIT_COMMON_FILEAPI_FILE_SYSTEM_TYPES_H_
 #define WEBKIT_COMMON_FILEAPI_FILE_SYSTEM_TYPES_H_
 
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystemType.h"
+#include "third_party/WebKit/public/platform/WebFileSystem.h"
+#include "third_party/WebKit/public/platform/WebFileSystemType.h"
 
 namespace fileapi {
 
@@ -31,9 +31,12 @@ enum FileSystemType {
   // Indicates non-sandboxed isolated filesystem.
   kFileSystemTypeIsolated = WebKit::WebFileSystemTypeIsolated,
 
-  // Indicates non-sandboxed filesystem where files are placed outside the
-  // profile directory (thus called 'external' filesystem).
-  // This filesystem is used only by Chrome OS as of writing.
+  // Indicates filesystems that are mounted externally via
+  // ExternalMountPoints with a well-known mount name.  The mounted
+  // filesystems can be sandboxed or non-sandboxed.  (E.g. Chrome OS mounts
+  // non-sandboxed removable media folder with a name 'removable', while
+  // chrome.syncFileSystem mounts a sandboxed filesystem with a name
+  // 'syncfs'.)
   kFileSystemTypeExternal = WebKit::WebFileSystemTypeExternal,
 
   // ------------------------------------------------------------------------
@@ -85,6 +88,13 @@ enum FileSystemType {
   // Indicates a Syncable sandboxed filesystem which can be backed by a
   // cloud storage service.
   kFileSystemTypeSyncable,
+
+  // Indicates a special filesystem type for internal file sync operation
+  // for Syncable sandboxed filesystems. The file system is overlayed, i.e.
+  // points to the same sandboxed filesystem as that of kFileSystemTypeSyncable,
+  // but the changes made with this filesystem type are not recorded for
+  // further sync.
+  kFileSystemTypeSyncableForInternalSync,
 
   // Indicates an external filesystem accessible by file paths from platform
   // Apps. As of writing, on non Chrome OS platform, this is merely a

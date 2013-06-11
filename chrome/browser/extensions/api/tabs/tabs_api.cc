@@ -16,11 +16,11 @@
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_function_util.h"
@@ -62,8 +62,8 @@
 #include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/extensions/user_script.h"
-#include "chrome/common/language_detection_details.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/translate/language_detection_details.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
@@ -1967,9 +1967,8 @@ ExecuteCodeInTabFunction::ExecuteCodeInTabFunction()
 ExecuteCodeInTabFunction::~ExecuteCodeInTabFunction() {}
 
 bool ExecuteCodeInTabFunction::HasPermission() {
-  if (Init() &&
-      PermissionsData::HasAPIPermissionForTab(
-          extension_, execute_tab_id_, APIPermission::kTab)) {
+  if (Init() && PermissionsData::HasAPIPermissionForTab(
+                    extension_.get(), execute_tab_id_, APIPermission::kTab)) {
     return true;
   }
   return ExtensionFunction::HasPermission();

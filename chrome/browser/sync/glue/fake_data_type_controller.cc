@@ -28,8 +28,8 @@ void FakeDataTypeController::LoadModels(
   }
 
   if (model_load_delayed_ == false) {
-    model_load_callback.Run(type(), syncer::SyncError());
     state_ = MODEL_LOADED;
+    model_load_callback.Run(type(), syncer::SyncError());
   } else {
     model_load_callback_ = model_load_callback;
     state_ = MODEL_STARTING;
@@ -70,10 +70,11 @@ void FakeDataTypeController::FinishStart(StartResult result) {
     local_merge_result.set_error(
         syncer::SyncError(FROM_HERE, "Fake error", type()));
   }
-  last_start_callback_.Run(result,
-                           local_merge_result,
-                           syncer_merge_result);
+  StartCallback start_callback = last_start_callback_;
   last_start_callback_.Reset();
+  start_callback.Run(result,
+                     local_merge_result,
+                     syncer_merge_result);
 }
 
 // * -> NOT_RUNNING

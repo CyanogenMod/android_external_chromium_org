@@ -17,7 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_member.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/devtools/devtools_toggle_action.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
@@ -293,6 +293,13 @@ class Browser : public TabStripModelObserver,
   // Gives beforeunload handlers the chance to cancel the close.
   bool ShouldCloseWindow();
 
+  // Figure out if there are tabs that have beforeunload handlers.
+  // It starts beforeunload/unload processing as a side-effect.
+  bool TabsNeedBeforeUnloadFired();
+
+  // Returns true if all tabs' beforeunload/unload events have fired.
+  bool HasCompletedUnloadProcessing() const;
+
   bool IsAttemptingToCloseBrowser() const;
 
   // Invoked when the window containing us is closing. Performs the necessary
@@ -429,9 +436,6 @@ class Browser : public TabStripModelObserver,
   virtual void HandleKeyboardEvent(
       content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
-
-  // Figure out if there are tabs that have beforeunload handlers.
-  bool TabsNeedBeforeUnloadFired();
 
   bool is_type_tabbed() const { return type_ == TYPE_TABBED; }
   bool is_type_popup() const { return type_ == TYPE_POPUP; }

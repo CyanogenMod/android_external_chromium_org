@@ -242,20 +242,8 @@ void CloseProcessHandle(ProcessHandle process) {
 }
 
 ProcessId GetProcId(ProcessHandle process) {
-  // Get a handle to |process| that has PROCESS_QUERY_INFORMATION rights.
-  HANDLE current_process = GetCurrentProcess();
-  HANDLE process_with_query_rights;
-  if (DuplicateHandle(current_process, process, current_process,
-                      &process_with_query_rights, PROCESS_QUERY_INFORMATION,
-                      false, 0)) {
-    DWORD id = GetProcessId(process_with_query_rights);
-    CloseHandle(process_with_query_rights);
-    return id;
-  }
-
-  // We're screwed.
-  NOTREACHED();
-  return 0;
+  // This returns 0 if we have insufficient rights to query the process handle.
+  return GetProcessId(process);
 }
 
 bool GetProcessIntegrityLevel(ProcessHandle process, IntegrityLevel *level) {
@@ -587,38 +575,6 @@ bool WaitForExitCodeWithTimeout(ProcessHandle handle, int* exit_code,
 
   *exit_code = temp_code;
   return true;
-}
-
-ProcessIterator::ProcessIterator(const ProcessFilter* filter)
-    : started_iteration_(false),
-      filter_(filter) {
-  snapshot_ = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-}
-
-ProcessIterator::~ProcessIterator() {
-  CloseHandle(snapshot_);
-}
-
-bool ProcessIterator::CheckForNextProcess() {
-  InitProcessEntry(&entry_);
-
-  if (!started_iteration_) {
-    started_iteration_ = true;
-    return !!Process32First(snapshot_, &entry_);
-  }
-
-  return !!Process32Next(snapshot_, &entry_);
-}
-
-void ProcessIterator::InitProcessEntry(ProcessEntry* entry) {
-  memset(entry, 0, sizeof(*entry));
-  entry->dwSize = sizeof(*entry);
-}
-
-bool NamedProcessIterator::IncludeEntry() {
-  // Case insensitive.
-  return _wcsicmp(executable_name_.c_str(), entry().exe_file()) == 0 &&
-         ProcessIterator::IncludeEntry();
 }
 
 bool WaitForProcessesToExit(const FilePath::StringType& executable_name,

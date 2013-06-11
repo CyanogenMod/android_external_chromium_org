@@ -101,13 +101,14 @@ class MockImmersiveModeController : public ImmersiveModeController {
   // ImmersiveModeController overrides:
   virtual void Init(Delegate* delegate,
                     views::Widget* widget,
-                    TopContainerView* top_container) OVERRIDE {}
+                    views::View* top_container) OVERRIDE {}
   virtual void SetEnabled(bool enabled) OVERRIDE {}
   virtual bool IsEnabled() const OVERRIDE { return false; }
   virtual bool ShouldHideTabIndicators() const OVERRIDE { return false; }
   virtual bool ShouldHideTopViews() const OVERRIDE { return false; }
   virtual bool IsRevealed() const OVERRIDE { return false; }
-  virtual void MaybeStackViewAtTop() OVERRIDE {}
+  virtual int GetTopContainerVerticalOffset(
+      const gfx::Size& top_container_size) const OVERRIDE { return 0; }
   virtual ImmersiveRevealedLock* GetRevealedLock(
       AnimateReveal animate_reveal) OVERRIDE WARN_UNUSED_RESULT { return NULL; }
   virtual void AnchorWidgetToTopContainer(views::Widget* widget,

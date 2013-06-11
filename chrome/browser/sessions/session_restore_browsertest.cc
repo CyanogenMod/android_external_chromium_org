@@ -4,8 +4,8 @@
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/first_run/first_run.h"
@@ -132,8 +132,9 @@ class SessionRestoreTest : public InProcessBrowserTest {
 
     // Create a new window, which should trigger session restore.
     ui_test_utils::BrowserAddedObserver window_observer;
-    content::TestNavigationObserver navigation_observer(
-        content::NotificationService::AllSources(), expected_tab_count);
+    content::WindowedNotificationObserver restore_observer(
+        chrome::NOTIFICATION_SESSION_RESTORE_DONE,
+        content::NotificationService::AllSources());
     if (url.is_empty()) {
       chrome::NewEmptyWindow(profile, chrome::HOST_DESKTOP_TYPE_NATIVE);
     } else {
@@ -143,24 +144,22 @@ class SessionRestoreTest : public InProcessBrowserTest {
       chrome::Navigate(&params);
     }
     Browser* new_browser = window_observer.WaitForSingleNewBrowser();
-    navigation_observer.Wait();
+    restore_observer.Wait();
     g_browser_process->ReleaseModule();
 
     return new_browser;
   }
 
   void GoBack(Browser* browser) {
-    content::WindowedNotificationObserver observer(
-        content::NOTIFICATION_LOAD_STOP,
-        content::NotificationService::AllSources());
+    content::TestNavigationObserver observer(
+        browser->tab_strip_model()->GetActiveWebContents());
     chrome::GoBack(browser, CURRENT_TAB);
     observer.Wait();
   }
 
   void GoForward(Browser* browser) {
-    content::WindowedNotificationObserver observer(
-        content::NOTIFICATION_LOAD_STOP,
-        content::NotificationService::AllSources());
+    content::TestNavigationObserver observer(
+        browser->tab_strip_model()->GetActiveWebContents());
     chrome::GoForward(browser, CURRENT_TAB);
     observer.Wait();
   }

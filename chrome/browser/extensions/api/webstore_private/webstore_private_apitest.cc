@@ -6,8 +6,8 @@
 
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/webstore_private/webstore_private_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
@@ -106,25 +106,14 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
     host_resolver()->AddRule("www.example.com", "127.0.0.1");
     ASSERT_TRUE(test_server()->Start());
     ExtensionInstallUI::DisableFailureUIForTests();
-
-    ASSERT_TRUE(tmp_.CreateUniqueTempDirUnderPath(test_data_dir_));
-    ASSERT_TRUE(file_util::CreateDirectory(tmp_.path()));
-    ASSERT_TRUE(file_util::CopyDirectory(
-        test_data_dir_.AppendASCII("webstore_private"),
-        tmp_.path(),
-        true));
   }
 
  protected:
   // Returns a test server URL, but with host 'www.example.com' so it matches
   // the web store app's extent that we set up via command line flags.
   virtual GURL GetTestServerURL(const std::string& path) {
-    std::string basename = tmp_.path().BaseName().MaybeAsASCII();
     GURL url = test_server()->GetURL(
-        std::string("files/extensions/api_test/") +
-        basename +
-        "/webstore_private/" +
-        path);
+        std::string("files/extensions/api_test/webstore_private/") + path);
 
     // Replace the host with 'www.example.com' so it matches the web store
     // app's extent.
@@ -138,19 +127,22 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
   // Navigates to |page| and runs the Extension API test there. Any downloads
   // of extensions will return the contents of |crx_file|.
   bool RunInstallTest(const std::string& page, const std::string& crx_file) {
+#if defined(OS_WIN) && !defined(NDEBUG)
+    // See http://crbug.com/177163 for details.
+    return true;
+#else
     GURL crx_url = GetTestServerURL(crx_file);
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kAppsGalleryUpdateURL, crx_url.spec());
 
     GURL page_url = GetTestServerURL(page);
     return RunPageTest(page_url.spec());
+#endif
   }
 
   ExtensionService* service() {
     return browser()->profile()->GetExtensionService();
   }
-
-  base::ScopedTempDir tmp_;
 };
 
 // Test cases for webstore origin frame blocking.
@@ -189,12 +181,16 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
 }
 
 // Test cases where the user accepts the install confirmation dialog.
-IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallAccepted) {
+// Disabled due to flaky crashes, especially on ASAN bots:
+// [ http://crbug.com/245357 ].
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
+                       DISABLED_InstallAccepted) {
   ASSERT_TRUE(RunInstallTest("accepted.html", "extension.crx"));
 }
 
 // Test having the default download directory missing.
-IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MissingDownloadDir) {
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
+                       DISABLED_MissingDownloadDir) {
   // Set a non-existent directory as the download path.
   base::ScopedTempDir temp_dir;
   EXPECT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -230,8 +226,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, IncorrectManifest2) {
   ASSERT_TRUE(RunInstallTest("incorrect_manifest2.html", "extension.crx"));
 }
 
-// Disabled: http://crbug.com/174399
-#if defined(OS_WIN) && defined(USE_AURA)
+// Disabled: http://crbug.com/174399 and http://crbug.com/177163
+#if defined(OS_WIN) && (defined(USE_AURA) || !defined(NDEBUG))
 #define MAYBE_AppInstallBubble DISABLED_AppInstallBubble
 #else
 #define MAYBE_AppInstallBubble AppInstallBubble
@@ -249,19 +245,22 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest,
   ASSERT_EQ("iladmdjkfniedhfhcfoefgojhgaiaccc", listener.id());
 }
 
-// Fails often on Windows dbg bots. http://crbug.com/177163
-#if defined(OS_WIN)
-#define MAYBE_IconUrl DISABLED_IconUrl
-#else
-#define MAYBE_IconUrl IconUrl
-#endif  // defined(OS_WIN)
 // Tests using the iconUrl parameter to the install function.
-IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MAYBE_IconUrl) {
+// Disabled due to flaky crashes, especially on ASAN bots:
+// [ http://crbug.com/245357 ].  Was previously disabled just on Windows because
+// it failed often on Windows dbg bots: [ http://crbug.com/177163 ].
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, DISABLED_IconUrl) {
   ASSERT_TRUE(RunInstallTest("icon_url.html", "extension.crx"));
 }
 
+// http://crbug.com/177163
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_BeginInstall DISABLED_BeginInstall
+#else
+#define MAYBE_BeginInstall BeginInstall
+#endif
 // Tests that the Approvals are properly created in beginInstall.
-IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, BeginInstall) {
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MAYBE_BeginInstall) {
   std::string appId = "iladmdjkfniedhfhcfoefgojhgaiaccc";
   std::string extensionId = "enfkhcelefdadlmkffamgdlgplcionje";
   ASSERT_TRUE(RunInstallTest("begin_install.html", "extension.crx"));
@@ -281,11 +280,17 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, BeginInstall) {
   EXPECT_EQ(browser()->profile(), approval->profile);
 }
 
+// http://crbug.com/177163
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_InstallTheme DISABLED_InstallTheme
+#else
+#define MAYBE_InstallTheme InstallTheme
+#endif
 // Tests that themes are installed without an install prompt.
-IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallTheme) {
+IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MAYBE_InstallTheme) {
   WebstoreInstallListener listener;
   WebstorePrivateApi::SetWebstoreInstallerDelegateForTesting(&listener);
-  ASSERT_TRUE(RunInstallTest("theme.html", "../../../theme.crx"));
+  ASSERT_TRUE(RunInstallTest("theme.html", "../../theme.crx"));
   listener.Wait();
   ASSERT_TRUE(listener.received_success());
   ASSERT_EQ("iamefpfkojoapidjnbafmgkgncegbkad", listener.id());

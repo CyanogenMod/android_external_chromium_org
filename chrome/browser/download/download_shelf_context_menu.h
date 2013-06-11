@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/public/browser/download_item.h"
 #include "ui/base/models/simple_menu_model.h"
 
@@ -29,7 +29,7 @@ class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate,
     OPEN_WHEN_COMPLETE,    // Open the download when it's finished.
     ALWAYS_OPEN_TYPE,      // Default this file extension to always open.
     CANCEL,                // Cancel the download.
-    TOGGLE_PAUSE,          // Temporarily pause a download.
+    TOGGLE_PAUSE,          // Pause or resume a download.
     DISCARD,               // Discard the malicious download.
     KEEP,                  // Keep the malicious download.
     LEARN_MORE_SCANNING,   // Show information about download scanning.

@@ -17,10 +17,10 @@
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayer.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/public/platform/WebCanvas.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebLayer.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
 #include "ui/gfx/size_conversions.h"
@@ -404,26 +404,6 @@ void RenderWidgetFullscreenPepper::Destroy() {
 void RenderWidgetFullscreenPepper::DidChangeCursor(
     const WebKit::WebCursorInfo& cursor) {
   didChangeCursor(cursor);
-}
-
-webkit::ppapi::PluginDelegate::PlatformContext3D*
-RenderWidgetFullscreenPepper::CreateContext3D() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableFlashFullscreen3d))
-    return NULL;
-  return new PlatformContext3DImpl;
-}
-
-void RenderWidgetFullscreenPepper::ReparentContext(
-    webkit::ppapi::PluginDelegate::PlatformContext3D* context) {
-  PlatformContext3DImpl* context_impl =
-      static_cast<PlatformContext3DImpl*>(context);
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableFlashFullscreen3d))
-    context_impl->DestroyParentContextProviderAndBackingTexture();
-  else
-    context_impl->SetParentAndCreateBackingTextureIfNeeded();
 }
 
 void RenderWidgetFullscreenPepper::SetLayer(WebKit::WebLayer* layer) {

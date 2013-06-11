@@ -104,10 +104,6 @@ const char kEnableTouchpadThreeFingerSwipe[]
 // than the kiosk app mode.
 const char kEnableKioskMode[]               = "enable-kiosk-mode";
 
-// Enable kiosk app settings UI.
-// TODO(xiyuan): Remove this flag after http://crbug.com/228860.
-const char kEnableKioskAppSettings[]        = "enable-kiosk-app-settings";
-
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[]       = "enable-request-tablet-site";
 
@@ -178,6 +174,10 @@ const char kNoDiscardTabs[]                 = "no-discard-tabs";
 const char kOobeSkipPostLogin[]             = "oobe-skip-postlogin";
 #endif  // NDEBUG
 
+// Skips the machine hwid check. Useful for running in VMs because they have no
+// hwid.
+const char kSkipHWIDCheck[]                 = "skip-hwid-check";
+
 // Sends test messages on first call to RequestUpdate (stub only).
 const char kSmsTestMessages[] = "sms-test-messages";
 
@@ -190,6 +190,9 @@ const char kStubCrosSettings[]              = "stub-cros-settings";
 // NetworkConfigurationHandler singletons.
 const char kUseNewNetworkConfigurationHandlers[] =
     "use-new-network-configuration-handlers";
+
+const char kUseNewNetworkConnectionHandler[] =
+    "use-new-network-connection-handler";
 
 }  // namespace switches
 }  // namespace chromeos

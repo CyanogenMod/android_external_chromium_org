@@ -323,7 +323,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
 
     private Runnable mDeferredHandleFadeInRunnable;
 
-    // Size of the viewport in physical pixels as set from onSizeChanged or setInitialViewportSize.
+    // Size of the viewport in physical pixels as set from onSizeChanged.
     private int mViewportWidthPix;
     private int mViewportHeightPix;
     private int mPhysicalBackingWidthPix;
@@ -398,6 +398,7 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     /**
      * @return The context used for creating this ContentViewCore.
      */
+    @CalledByNative
     public Context getContext() {
         return mContext;
     }
@@ -407,23 +408,6 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
      */
     public ViewGroup getContainerView() {
         return mContainerView;
-    }
-
-    /**
-     * Set initial viewport size parameters, so that the web page can have a reasonable
-     * size to start before ContentView becomes visible.
-     * This is useful for a background view that loads the web page before it is shown
-     * and gets the first onSizeChanged().
-     */
-    public void setInitialViewportSize(int widthPix, int heightPix,
-            int offsetXPix, int offsetYPix) {
-        assert mViewportWidthPix == 0 && mViewportHeightPix == 0 &&
-                mViewportSizeOffsetWidthPix == 0 && mViewportSizeOffsetHeightPix == 0;
-        mViewportWidthPix = widthPix;
-        mViewportHeightPix = heightPix;
-        mViewportSizeOffsetWidthPix = offsetXPix;
-        mViewportSizeOffsetHeightPix = offsetYPix;
-        if (mNativeContentViewCore != 0) nativeWasResized(mNativeContentViewCore);
     }
 
     /**
@@ -944,15 +928,13 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
     }
 
     /**
-     * @return Viewport width in physical pixels as set from onSizeChanged or
-     * setInitialViewportSize.
+     * @return Viewport width in physical pixels as set from onSizeChanged.
      */
     @CalledByNative
     public int getViewportWidthPix() { return mViewportWidthPix; }
 
     /**
-     * @return Viewport height in physical pixels as set from onSizeChanged or
-     * setInitialViewportSize.
+     * @return Viewport height in physical pixels as set from onSizeChanged.
      */
     @CalledByNative
     public int getViewportHeightPix() { return mViewportHeightPix; }
@@ -1195,7 +1177,10 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
         if (lastInputEventForVSync && isVSyncNotificationEnabled()) {
             assert type == ContentViewGestureHandler.GESTURE_SCROLL_BY ||
                     type == ContentViewGestureHandler.GESTURE_PINCH_BY;
-            mDidSignalVSyncUsingInputEvent = true;
+            // TODO(brianderson): Set this back to true once we've figured out
+            // race conditions and what to do with timestamps when sending
+            // BeginFrame early. crbug.com/247043.
+            mDidSignalVSyncUsingInputEvent = false;
         }
         switch (type) {
             case ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE:
@@ -2134,8 +2119,8 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
             float controlsOffsetYCss, float contentOffsetYCss,
             float overdrawBottomHeightCss) {
         TraceEvent.instant("ContentViewCore:updateFrameInfo");
-        // Adjust contentWidth/Height to be always at least as big as the actual viewport
-        // (as set by onSizeChanged or setInitialViewportSize).
+        // Adjust contentWidth/Height to be always at least as big as
+        // the actual viewport (as set by onSizeChanged).
         contentWidth = Math.max(contentWidth,
                 mRenderCoordinates.fromPixToLocalCss(mViewportWidthPix));
         contentHeight = Math.max(contentHeight,
@@ -2807,6 +2792,11 @@ public class ContentViewCore implements MotionEventDelegate, NavigationClient {
 
     private native int nativeInit(boolean hardwareAccelerated, int webContentsPtr,
             int viewAndroidPtr, int windowAndroidPtr);
+
+    @CalledByNative
+    private ContentVideoViewClient getContentVideoViewClient() {
+        return mContentViewClient.getContentVideoViewClient();
+    }
 
     private native void nativeOnJavaContentViewCoreDestroyed(int nativeContentViewCoreImpl);
 

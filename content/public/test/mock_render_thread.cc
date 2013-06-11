@@ -4,8 +4,8 @@
 
 #include "content/public/test/mock_render_thread.h"
 
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/process_util.h"
-#include "base/message_loop_proxy.h"
 #include "content/common/view_messages.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_sync_message.h"
@@ -14,7 +14,11 @@
 namespace content {
 
 MockRenderThread::MockRenderThread()
-    : routing_id_(0), surface_id_(0), opener_id_(0), new_window_routing_id_(0) {
+    : routing_id_(0),
+      surface_id_(0),
+      opener_id_(0),
+      new_window_routing_id_(0),
+      new_window_main_frame_routing_id_(0) {
 }
 
 MockRenderThread::~MockRenderThread() {
@@ -56,7 +60,7 @@ bool MockRenderThread::Send(IPC::Message* msg) {
   return true;
 }
 
-MessageLoop* MockRenderThread::GetMessageLoop() {
+base::MessageLoop* MockRenderThread::GetMessageLoop() {
   return NULL;
 }
 
@@ -208,9 +212,11 @@ void MockRenderThread::OnCreateWidget(int opener_id,
 void MockRenderThread::OnCreateWindow(
     const ViewHostMsg_CreateWindow_Params& params,
     int* route_id,
+    int* main_frame_route_id,
     int* surface_id,
     int64* cloned_session_storage_namespace_id) {
   *route_id = new_window_routing_id_;
+  *main_frame_route_id = new_window_main_frame_routing_id_;
   *surface_id = surface_id_;
   *cloned_session_storage_namespace_id = 0;
 }

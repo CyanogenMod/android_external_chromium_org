@@ -9,13 +9,13 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -603,7 +603,7 @@ void PluginServiceImpl::GetPlugins(const GetPluginsCallback& callback) {
   } else {
     // If we switch back to loading plugins in process, then we need to make
     // sure g_thread_init() gets called since plugins may call glib at load.
-    if (!plugin_loader_)
+    if (!plugin_loader_.get())
       plugin_loader_ = new PluginLoaderPosix;
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
         base::Bind(&PluginLoaderPosix::LoadPlugins, plugin_loader_,

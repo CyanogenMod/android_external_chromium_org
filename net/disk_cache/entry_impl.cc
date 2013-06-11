@@ -13,6 +13,7 @@
 #include "net/disk_cache/backend_impl.h"
 #include "net/disk_cache/bitmap.h"
 #include "net/disk_cache/cache_util.h"
+#include "net/disk_cache/disk_format.h"
 #include "net/disk_cache/histogram_macros.h"
 #include "net/disk_cache/net_log_parameters.h"
 #include "net/disk_cache/sparse_control.h"
@@ -95,7 +96,7 @@ class EntryImpl::UserBuffer {
     buffer_.reserve(kMaxBlockSize);
   }
   ~UserBuffer() {
-    if (backend_)
+    if (backend_.get())
       backend_->BufferDeleted(capacity() - kMaxBlockSize);
   }
 
@@ -252,7 +253,7 @@ int EntryImpl::UserBuffer::Read(int offset, IOBuffer* buf, int len) {
 
 void EntryImpl::UserBuffer::Reset() {
   if (!grow_allowed_) {
-    if (backend_)
+    if (backend_.get())
       backend_->BufferDeleted(capacity() - kMaxBlockSize);
     grow_allowed_ = true;
     std::vector<char> tmp;
@@ -272,7 +273,7 @@ bool EntryImpl::UserBuffer::GrowBuffer(int required, int limit) {
   if (required > limit)
     return false;
 
-  if (!backend_)
+  if (!backend_.get())
     return false;
 
   int to_add = std::max(required - current_size, kMaxBlockSize * 4);
@@ -302,7 +303,7 @@ EntryImpl::EntryImpl(BackendImpl* backend, Addr address, bool read_only)
 }
 
 void EntryImpl::DoomImpl() {
-  if (doomed_ || !backend_)
+  if (doomed_ || !backend_.get())
     return;
 
   SetPointerForInvalidEntry(backend_->GetCurrentEntryId());
@@ -581,7 +582,7 @@ bool EntryImpl::SanityCheck() {
     return false;
 
   Addr next_addr(stored->next);
-  if (next_addr.is_initialized() && !next_addr.SanityCheckForEntry()) {
+  if (next_addr.is_initialized() && !next_addr.SanityCheckForEntryV2()) {
     STRESS_NOTREACHED();
     return false;
   }
@@ -672,7 +673,7 @@ void EntryImpl::IncrementIoCount() {
 }
 
 void EntryImpl::DecrementIoCount() {
-  if (backend_)
+  if (backend_.get())
     backend_->DecrementIoCount();
 }
 
@@ -688,7 +689,7 @@ void EntryImpl::SetTimes(base::Time last_used, base::Time last_modified) {
 }
 
 void EntryImpl::ReportIOTime(Operation op, const base::TimeTicks& start) {
-  if (!backend_)
+  if (!backend_.get())
     return;
 
   switch (op) {
@@ -746,12 +747,12 @@ int EntryImpl::NumBlocksForEntry(int key_size) {
 // ------------------------------------------------------------------------
 
 void EntryImpl::Doom() {
-  if (background_queue_)
+  if (background_queue_.get())
     background_queue_->DoomEntryImpl(this);
 }
 
 void EntryImpl::Close() {
-  if (background_queue_)
+  if (background_queue_.get())
     background_queue_->CloseEntryImpl(this);
 }
 
@@ -821,7 +822,7 @@ int EntryImpl::ReadData(int index, int offset, IOBuffer* buf, int buf_len,
   if (buf_len < 0)
     return net::ERR_INVALID_ARGUMENT;
 
-  if (!background_queue_)
+  if (!background_queue_.get())
     return net::ERR_UNEXPECTED;
 
   background_queue_->ReadData(this, index, offset, buf, buf_len, callback);
@@ -840,7 +841,7 @@ int EntryImpl::WriteData(int index, int offset, IOBuffer* buf, int buf_len,
   if (offset < 0 || buf_len < 0)
     return net::ERR_INVALID_ARGUMENT;
 
-  if (!background_queue_)
+  if (!background_queue_.get())
     return net::ERR_UNEXPECTED;
 
   background_queue_->WriteData(this, index, offset, buf, buf_len, truncate,
@@ -853,7 +854,7 @@ int EntryImpl::ReadSparseData(int64 offset, IOBuffer* buf, int buf_len,
   if (callback.is_null())
     return ReadSparseDataImpl(offset, buf, buf_len, callback);
 
-  if (!background_queue_)
+  if (!background_queue_.get())
     return net::ERR_UNEXPECTED;
 
   background_queue_->ReadSparseData(this, offset, buf, buf_len, callback);
@@ -865,7 +866,7 @@ int EntryImpl::WriteSparseData(int64 offset, IOBuffer* buf, int buf_len,
   if (callback.is_null())
     return WriteSparseDataImpl(offset, buf, buf_len, callback);
 
-  if (!background_queue_)
+  if (!background_queue_.get())
     return net::ERR_UNEXPECTED;
 
   background_queue_->WriteSparseData(this, offset, buf, buf_len, callback);
@@ -874,7 +875,7 @@ int EntryImpl::WriteSparseData(int64 offset, IOBuffer* buf, int buf_len,
 
 int EntryImpl::GetAvailableRange(int64 offset, int len, int64* start,
                                  const CompletionCallback& callback) {
-  if (!background_queue_)
+  if (!background_queue_.get())
     return net::ERR_UNEXPECTED;
 
   background_queue_->GetAvailableRange(this, offset, len, start, callback);
@@ -891,7 +892,7 @@ bool EntryImpl::CouldBeSparse() const {
 }
 
 void EntryImpl::CancelSparseIO() {
-  if (background_queue_)
+  if (background_queue_.get())
     background_queue_->CancelSparseIO(this);
 }
 
@@ -899,7 +900,7 @@ int EntryImpl::ReadyForSparseIO(const CompletionCallback& callback) {
   if (!sparse_.get())
     return net::OK;
 
-  if (!background_queue_)
+  if (!background_queue_.get())
     return net::ERR_UNEXPECTED;
 
   background_queue_->ReadyForSparseIO(this, callback);
@@ -913,7 +914,7 @@ int EntryImpl::ReadyForSparseIO(const CompletionCallback& callback) {
 // data related to a previous cache entry because the range was not fully
 // written before).
 EntryImpl::~EntryImpl() {
-  if (!backend_) {
+  if (!backend_.get()) {
     entry_.clear_modified();
     node_.clear_modified();
     return;
@@ -981,7 +982,7 @@ int EntryImpl::InternalReadData(int index, int offset,
   if (buf_len < 0)
     return net::ERR_INVALID_ARGUMENT;
 
-  if (!backend_)
+  if (!backend_.get())
     return net::ERR_UNEXPECTED;
 
   TimeTicks start = TimeTicks::Now();
@@ -1063,7 +1064,7 @@ int EntryImpl::InternalWriteData(int index, int offset,
   if (offset < 0 || buf_len < 0)
     return net::ERR_INVALID_ARGUMENT;
 
-  if (!backend_)
+  if (!backend_.get())
     return net::ERR_UNEXPECTED;
 
   int max_file_size = backend_->MaxFileSize();
@@ -1171,7 +1172,7 @@ bool EntryImpl::CreateDataBlock(int index, int size) {
 
 bool EntryImpl::CreateBlock(int size, Addr* address) {
   DCHECK(!address->is_initialized());
-  if (!backend_)
+  if (!backend_.get())
     return false;
 
   FileType file_type = Addr::RequiredFileType(size);
@@ -1196,7 +1197,7 @@ bool EntryImpl::CreateBlock(int size, Addr* address) {
 // important that the entry doesn't keep a reference to this address, or we'll
 // end up deleting the contents of |address| once again.
 void EntryImpl::DeleteData(Addr address, int index) {
-  DCHECK(backend_);
+  DCHECK(backend_.get());
   if (!address.is_initialized())
     return;
   if (address.is_separate_file()) {
@@ -1206,7 +1207,7 @@ void EntryImpl::DeleteData(Addr address, int index) {
       LOG(ERROR) << "Failed to delete " <<
           backend_->GetFileName(address).value() << " from the cache.";
     }
-    if (files_[index])
+    if (files_[index].get())
       files_[index] = NULL;  // Releases the object.
   } else {
     backend_->DeleteBlock(address, true);
@@ -1214,7 +1215,7 @@ void EntryImpl::DeleteData(Addr address, int index) {
 }
 
 void EntryImpl::UpdateRank(bool modified) {
-  if (!backend_)
+  if (!backend_.get())
     return;
 
   if (!doomed_) {
@@ -1231,7 +1232,7 @@ void EntryImpl::UpdateRank(bool modified) {
 }
 
 File* EntryImpl::GetBackingFile(Addr address, int index) {
-  if (!backend_)
+  if (!backend_.get())
     return NULL;
 
   File* file;
@@ -1288,7 +1289,7 @@ bool EntryImpl::PrepareTarget(int index, int offset, int buf_len,
   }
 
   if (!user_buffers_[index].get())
-    user_buffers_[index].reset(new UserBuffer(backend_));
+    user_buffers_[index].reset(new UserBuffer(backend_.get()));
 
   return PrepareBuffer(index, offset, buf_len);
 }
@@ -1359,7 +1360,7 @@ bool EntryImpl::CopyToLocalBuffer(int index) {
   DCHECK(address.is_initialized());
 
   int len = std::min(entry_.Data()->data_size[index], kMaxBlockSize);
-  user_buffers_[index].reset(new UserBuffer(backend_));
+  user_buffers_[index].reset(new UserBuffer(backend_.get()));
   user_buffers_[index]->Write(len, NULL, 0);
 
   File* file = GetBackingFile(address, index);
@@ -1505,7 +1506,7 @@ uint32 EntryImpl::GetEntryFlags() {
 }
 
 void EntryImpl::GetData(int index, char** buffer, Addr* address) {
-  DCHECK(backend_);
+  DCHECK(backend_.get());
   if (user_buffers_[index].get() && user_buffers_[index]->Size() &&
       !user_buffers_[index]->Start()) {
     // The data is already in memory, just copy it and we're done.

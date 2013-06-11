@@ -10,7 +10,9 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
-#include "chrome/browser/chromeos/drive/file_system_interface.h"
+#include "chrome/browser/chromeos/drive/file_system/download_operation.h"
+#include "chrome/browser/chromeos/drive/file_system/update_operation.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -55,23 +57,35 @@ void CollectBacklog(std::vector<std::string>* to_fetch,
 
 }  // namespace
 
-SyncClient::SyncClient(FileSystemInterface* file_system, FileCache* cache)
-    : file_system_(file_system),
+SyncClient::SyncClient(base::SequencedTaskRunner* blocking_task_runner,
+                       file_system::OperationObserver* observer,
+                       JobScheduler* scheduler,
+                       ResourceMetadata* metadata,
+                       FileCache* cache)
+    : metadata_(metadata),
       cache_(cache),
+      download_operation_(new file_system::DownloadOperation(
+          blocking_task_runner,
+          observer,
+          scheduler,
+          metadata,
+          cache)),
+      update_operation_(new file_system::UpdateOperation(blocking_task_runner,
+                                                         observer,
+                                                         scheduler,
+                                                         metadata,
+                                                         cache)),
       delay_(base::TimeDelta::FromSeconds(kDelaySeconds)),
       weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(file_system);
   DCHECK(cache);
 
-  file_system_->AddObserver(this);
   cache_->AddObserver(this);
 }
 
 SyncClient::~SyncClient() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  file_system_->RemoveObserver(this);
   cache_->RemoveObserver(this);
 }
 
@@ -106,18 +120,6 @@ std::vector<std::string> SyncClient::GetResourceIdsForTesting(
   }
   NOTREACHED();
   return std::vector<std::string>();
-}
-
-void SyncClient::OnInitialLoadFinished() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  StartProcessingBacklog();
-}
-
-void SyncClient::OnFeedFromServerLoaded() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  StartCheckingExistingPinnedFiles();
 }
 
 void SyncClient::OnCachePinned(const std::string& resource_id,
@@ -182,13 +184,14 @@ void SyncClient::StartTask(SyncType type, const std::string& resource_id) {
         DVLOG(1) << "Fetching " << resource_id;
         pending_fetch_list_.erase(resource_id);
 
-        file_system_->GetFileByResourceId(
+        download_operation_->EnsureFileDownloadedByResourceId(
             resource_id,
             ClientContext(BACKGROUND),
+            GetFileContentInitializedCallback(),
+            google_apis::GetContentCallback(),
             base::Bind(&SyncClient::OnFetchFileComplete,
                        weak_ptr_factory_.GetWeakPtr(),
-                       resource_id),
-            google_apis::GetContentCallback());
+                       resource_id));
       } else {
         // Cancel the task.
         fetch_list_.erase(resource_id);
@@ -196,7 +199,7 @@ void SyncClient::StartTask(SyncType type, const std::string& resource_id) {
       break;
     case UPLOAD:
       DVLOG(1) << "Uploading " << resource_id;
-      file_system_->UpdateFileByResourceId(
+      update_operation_->UpdateFileByResourceId(
           resource_id,
           ClientContext(BACKGROUND),
           base::Bind(&SyncClient::OnUploadFileComplete,
@@ -232,7 +235,7 @@ void SyncClient::OnGetResourceIdOfExistingPinnedFile(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (cache_entry.is_pinned() && cache_entry.is_present()) {
-    file_system_->GetResourceEntryById(
+    metadata_->GetResourceEntryByIdOnUIThread(
         resource_id,
         base::Bind(&SyncClient::OnGetResourceEntryById,
                    weak_ptr_factory_.GetWeakPtr(),
@@ -245,7 +248,6 @@ void SyncClient::OnGetResourceEntryById(
     const std::string& resource_id,
     const FileCacheEntry& cache_entry,
     FileError error,
-    const base::FilePath& /* drive_file_path */,
     scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -260,7 +262,7 @@ void SyncClient::OnGetResourceEntryById(
   // If MD5s don't match, it indicates the local cache file is stale, unless
   // the file is dirty (the MD5 is "local"). We should never re-fetch the
   // file when we have a locally modified version.
-  if (entry->file_specific_info().file_md5() != cache_entry.md5() &&
+  if (entry->file_specific_info().md5() != cache_entry.md5() &&
       !cache_entry.is_dirty()) {
     cache_->RemoveOnUIThread(resource_id,
                              base::Bind(&SyncClient::OnRemove,
@@ -313,6 +315,13 @@ void SyncClient::OnFetchFileComplete(const std::string& resource_id,
              << local_path.value();
   } else {
     switch (error) {
+      case FILE_ERROR_ABORT:
+        // If user cancels download, unpin the file so that we do not sync the
+        // file again.
+        cache_->UnpinOnUIThread(resource_id,
+                                std::string(),
+                                base::Bind(&util::EmptyFileOperationCallback));
+        break;
       case FILE_ERROR_NO_CONNECTION:
         // Re-queue the task so that we'll retry once the connection is back.
         AddTaskToQueue(FETCH, resource_id);

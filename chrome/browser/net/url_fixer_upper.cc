@@ -11,8 +11,8 @@
 #endif
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/url_file.h"
 #include "googleurl/src/url_parse.h"
@@ -505,11 +505,11 @@ GURL URLFixerUpper::FixupURL(const std::string& text,
 
   // For view-source: URLs, we strip "view-source:", do fixup, and stick it back
   // on.  This allows us to handle things like "view-source:google.com".
-  if (scheme == chrome::kViewSourceScheme) {
+  if (scheme == content::kViewSourceScheme) {
     // Reject "view-source:view-source:..." to avoid deep recursion.
-    std::string view_source(chrome::kViewSourceScheme + std::string(":"));
+    std::string view_source(content::kViewSourceScheme + std::string(":"));
     if (!StartsWithASCII(text, view_source + view_source, false)) {
-      return GURL(chrome::kViewSourceScheme + std::string(":") +
+      return GURL(content::kViewSourceScheme + std::string(":") +
           FixupURL(trimmed.substr(scheme.length() + 1),
                    desired_tld).possibly_invalid_spec());
     }

@@ -11,12 +11,12 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -162,9 +162,7 @@ IN_PROC_BROWSER_TEST_F(RedirectTest, ClientCancelled) {
 
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  content::TestNavigationObserver navigation_observer(
-      content::Source<content::NavigationController>(
-          &web_contents->GetController()));
+  content::TestNavigationObserver navigation_observer(web_contents);
 
   // Simulate a click to force to make a user-initiated location change;
   // otherwise, a non user-initiated in-page location change will be treated
@@ -279,10 +277,7 @@ IN_PROC_BROWSER_TEST_F(RedirectTest,
 
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  content::TestNavigationObserver observer(
-      content::Source<content::NavigationController>(
-          &web_contents->GetController()),
-      2);
+  content::TestNavigationObserver observer(web_contents, 2);
 
   ui_test_utils::NavigateToURLWithDisposition(
       browser(), first_url, CURRENT_TAB, ui_test_utils::BROWSER_TEST_NONE);

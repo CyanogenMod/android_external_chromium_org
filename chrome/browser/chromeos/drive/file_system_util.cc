@@ -11,16 +11,20 @@
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/i18n/icu_string_conversions.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_write_helper.h"
+#include "chrome/browser/chromeos/drive/job_list.h"
+#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
@@ -37,15 +41,13 @@ namespace util {
 
 namespace {
 
-const char kDriveSpecialRootPath[] = "/special";
-
 const char kDriveMountPointPath[] = "/special/drive";
 
-const char kDriveMyDriveMountPointPath[] = "/special/drive/root";
+const base::FilePath::CharType kDriveMyDriveMountPointPath[] =
+    FILE_PATH_LITERAL("/special/drive/root");
 
-const base::FilePath::CharType* kDriveMountPointPathComponents[] = {
-  "/", "special", "drive"
-};
+const base::FilePath::CharType kDriveMyDriveRootPath[] =
+    FILE_PATH_LITERAL("drive/root");
 
 const base::FilePath::CharType kFileCacheVersionDir[] =
     FILE_PATH_LITERAL("v1");
@@ -53,10 +55,11 @@ const base::FilePath::CharType kFileCacheVersionDir[] =
 const char kSlash[] = "/";
 const char kEscapedSlash[] = "\xE2\x88\x95";
 
-const int kReadOnlyFilePermissions = base::PLATFORM_FILE_OPEN |
-                                     base::PLATFORM_FILE_READ |
-                                     base::PLATFORM_FILE_EXCLUSIVE_READ |
-                                     base::PLATFORM_FILE_ASYNC;
+const base::FilePath& GetDriveMyDriveMountPointPath() {
+  CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_mydrive_mount_path,
+      (kDriveMyDriveMountPointPath));
+  return drive_mydrive_mount_path;
+}
 
 FileSystemInterface* GetFileSystem(Profile* profile) {
   DriveIntegrationService* integration_service =
@@ -84,7 +87,7 @@ std::string ReadStringFromGDocFile(const base::FilePath& file_path,
   std::string error_message;
   scoped_ptr<base::Value> root_value(reader.Deserialize(NULL, &error_message));
   if (!root_value) {
-    DLOG(INFO) << "Failed to parse " << file_path.value() << "as JSON."
+    DLOG(INFO) << "Failed to parse " << file_path.value() << " as JSON."
                << " error = " << error_message;
     return std::string();
   }
@@ -103,23 +106,16 @@ std::string ReadStringFromGDocFile(const base::FilePath& file_path,
 
 }  // namespace
 
-
 const base::FilePath& GetDriveGrandRootPath() {
   CR_DEFINE_STATIC_LOCAL(base::FilePath, grand_root_path,
-      (base::FilePath::FromUTF8Unsafe(util::kDriveGrandRootDirName)));
+      (util::kDriveGrandRootDirName));
   return grand_root_path;
 }
 
 const base::FilePath& GetDriveMyDriveRootPath() {
   CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_root_path,
-      (base::FilePath::FromUTF8Unsafe(util::kDriveMyDriveRootPath)));
+      (util::kDriveMyDriveRootPath));
   return drive_root_path;
-}
-
-const base::FilePath& GetDriveOtherDirPath() {
-  CR_DEFINE_STATIC_LOCAL(base::FilePath, other_root_path,
-      (base::FilePath::FromUTF8Unsafe(util::kDriveOtherDirPath)));
-  return other_root_path;
 }
 
 const base::FilePath& GetDriveMountPointPath() {
@@ -155,18 +151,6 @@ const std::string& GetDriveMountPointPathAsString() {
   CR_DEFINE_STATIC_LOCAL(std::string, drive_mount_path_string,
       (kDriveMountPointPath));
   return drive_mount_path_string;
-}
-
-const base::FilePath& GetSpecialRemoteRootPath() {
-  CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_mount_path,
-      (base::FilePath::FromUTF8Unsafe(kDriveSpecialRootPath)));
-  return drive_mount_path;
-}
-
-const base::FilePath& GetDriveMyDriveMountPointPath() {
-  CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_mydrive_mount_path,
-      (base::FilePath::FromUTF8Unsafe(kDriveMyDriveMountPointPath)));
-  return drive_mydrive_mount_path;
 }
 
 GURL FilePathToDriveURL(const base::FilePath& path) {
@@ -233,16 +217,9 @@ base::FilePath ExtractDrivePath(const base::FilePath& path) {
   if (!IsUnderDriveMountPoint(path))
     return base::FilePath();
 
-  std::vector<base::FilePath::StringType> components;
-  path.GetComponents(&components);
-
-  // -1 to include 'drive'.
-  base::FilePath extracted;
-  for (size_t i = arraysize(kDriveMountPointPathComponents) - 1;
-       i < components.size(); ++i) {
-    extracted = extracted.Append(components[i]);
-  }
-  return extracted;
+  base::FilePath drive_path = GetDriveGrandRootPath();
+  GetDriveMountPointPath().AppendRelativePath(path, &drive_path);
+  return drive_path;
 }
 
 base::FilePath ExtractDrivePathFromFileSystemUrl(
@@ -288,12 +265,14 @@ std::string UnescapeCacheFileName(const std::string& filename) {
   return unescaped;
 }
 
-std::string EscapeUtf8FileName(const std::string& input) {
-  std::string output;
-  if (ReplaceChars(input, kSlash, std::string(kEscapedSlash), &output))
-    return output;
+std::string NormalizeFileName(const std::string& input) {
+  DCHECK(IsStringUTF8(input));
 
-  return input;
+  std::string output;
+  if (!base::ConvertToUtf8AndNormalize(input, base::kCodepageUTF8, &output))
+    output = input;
+  ReplaceChars(output, kSlash, std::string(kEscapedSlash), &output);
+  return output;
 }
 
 void ParseCacheFilePath(const base::FilePath& path,
@@ -351,8 +330,7 @@ void PrepareWritableFileAndRun(Profile* profile,
 void EnsureDirectoryExists(Profile* profile,
                            const base::FilePath& directory,
                            const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
   if (IsUnderDriveMountPoint(directory)) {
     FileSystemInterface* file_system = GetFileSystem(profile);
@@ -381,8 +359,7 @@ FileError GDataToFileError(google_apis::GDataErrorCode status) {
       return FILE_ERROR_NOT_FOUND;
     case google_apis::HTTP_NOT_IMPLEMENTED:
       return FILE_ERROR_INVALID_OPERATION;
-    case google_apis::GDATA_PARSE_ERROR:
-    case google_apis::GDATA_FILE_ERROR:
+    case google_apis::GDATA_CANCELLED:
       return FILE_ERROR_ABORT;
     case google_apis::GDATA_NO_CONNECTION:
       return FILE_ERROR_NO_CONNECTION;

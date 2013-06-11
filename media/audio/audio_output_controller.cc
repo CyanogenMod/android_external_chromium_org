@@ -39,10 +39,12 @@ const int AudioOutputController::kPollPauseInMilliseconds = 3;
 AudioOutputController::AudioOutputController(AudioManager* audio_manager,
                                              EventHandler* handler,
                                              const AudioParameters& params,
+                                             const std::string& input_device_id,
                                              SyncReader* sync_reader)
     : audio_manager_(audio_manager),
       params_(params),
       handler_(handler),
+      input_device_id_(input_device_id),
       stream_(NULL),
       diverting_to_stream_(NULL),
       volume_(1.0),
@@ -50,12 +52,11 @@ AudioOutputController::AudioOutputController(AudioManager* audio_manager,
       num_allowed_io_(0),
       sync_reader_(sync_reader),
       message_loop_(audio_manager->GetMessageLoop()),
-      number_polling_attempts_left_(0),
-      weak_this_(this) {
+      number_polling_attempts_left_(0) {
   DCHECK(audio_manager);
   DCHECK(handler_);
   DCHECK(sync_reader_);
-  DCHECK(message_loop_);
+  DCHECK(message_loop_.get());
 }
 
 AudioOutputController::~AudioOutputController() {
@@ -67,6 +68,7 @@ scoped_refptr<AudioOutputController> AudioOutputController::Create(
     AudioManager* audio_manager,
     EventHandler* event_handler,
     const AudioParameters& params,
+    const std::string& input_device_id,
     SyncReader* sync_reader) {
   DCHECK(audio_manager);
   DCHECK(sync_reader);
@@ -75,7 +77,7 @@ scoped_refptr<AudioOutputController> AudioOutputController::Create(
     return NULL;
 
   scoped_refptr<AudioOutputController> controller(new AudioOutputController(
-      audio_manager, event_handler, params, sync_reader));
+      audio_manager, event_handler, params, input_device_id, sync_reader));
   controller->message_loop_->PostTask(FROM_HERE, base::Bind(
       &AudioOutputController::DoCreate, controller, false));
   return controller;
@@ -114,7 +116,7 @@ void AudioOutputController::DoCreate(bool is_for_device_change) {
   DCHECK_EQ(kEmpty, state_);
 
   stream_ = diverting_to_stream_ ? diverting_to_stream_ :
-      audio_manager_->MakeAudioOutputStreamProxy(params_);
+      audio_manager_->MakeAudioOutputStreamProxy(params_, input_device_id_);
   if (!stream_) {
     state_ = kError;
     handler_->OnError();
@@ -146,52 +148,16 @@ void AudioOutputController::DoCreate(bool is_for_device_change) {
 
 void AudioOutputController::DoPlay() {
   DCHECK(message_loop_->BelongsToCurrentThread());
+  SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.PlayTime");
 
   // We can start from created or paused state.
   if (state_ != kCreated && state_ != kPaused)
     return;
 
-  state_ = kStarting;
-
   // Ask for first packet.
   sync_reader_->UpdatePendingBytes(0);
 
-  // Cannot start stream immediately, should give renderer some time
-  // to deliver data.
-  // TODO(vrk): The polling here and in WaitTillDataReady() is pretty clunky.
-  // Refine the API such that polling is no longer needed. (crbug.com/112196)
-  number_polling_attempts_left_ = kPollNumAttempts;
-  DCHECK(!weak_this_.HasWeakPtrs());
-  message_loop_->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&AudioOutputController::PollAndStartIfDataReady,
-      weak_this_.GetWeakPtr()),
-      TimeDelta::FromMilliseconds(kPollPauseInMilliseconds));
-}
-
-void AudioOutputController::PollAndStartIfDataReady() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.PlayTime");
-
-  DCHECK_EQ(kStarting, state_);
-
-  // If we are ready to start the stream, start it.
-  if (--number_polling_attempts_left_ == 0 ||
-      sync_reader_->DataReady()) {
-    StartStream();
-  } else {
-    message_loop_->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&AudioOutputController::PollAndStartIfDataReady,
-        weak_this_.GetWeakPtr()),
-        TimeDelta::FromMilliseconds(kPollPauseInMilliseconds));
-  }
-}
-
-void AudioOutputController::StartStream() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
   state_ = kPlaying;
-
   silence_detector_.reset(new AudioSilenceDetector(
       params_.sample_rate(),
       TimeDelta::FromMilliseconds(kQuestionableSilencePeriodMillis),
@@ -211,11 +177,7 @@ void AudioOutputController::StartStream() {
 void AudioOutputController::StopStream() {
   DCHECK(message_loop_->BelongsToCurrentThread());
 
-  if (state_ == kStarting) {
-    // Cancel in-progress polling start.
-    weak_this_.InvalidateWeakPtrs();
-    state_ = kPaused;
-  } else if (state_ == kPlaying) {
+  if (state_ == kPlaying) {
     stream_->Stop();
     DisallowEntryToOnMoreIOData();
     silence_detector_->Stop(true);
@@ -259,7 +221,6 @@ void AudioOutputController::DoSetVolume(double volume) {
 
   switch (state_) {
     case kCreated:
-    case kStarting:
     case kPlaying:
     case kPaused:
       stream_->SetVolume(volume_);
@@ -288,15 +249,23 @@ int AudioOutputController::OnMoreIOData(AudioBus* source,
 
   // The OS level audio APIs on Linux and Windows all have problems requesting
   // data on a fixed interval.  Sometimes they will issue calls back to back
-  // which can cause glitching, so wait until the renderer is ready for Read().
+  // which can cause glitching, so wait until the renderer is ready.
+  //
+  // We also need to wait when diverting since the virtual stream will call this
+  // multiple times without waiting.
+  //
+  // NEVER wait on OSX unless a virtual stream is connected, otherwise we can
+  // end up hanging the entire OS.
   //
   // See many bugs for context behind this decision: http://crbug.com/170498,
   // http://crbug.com/171651, http://crbug.com/174985, and more.
 #if defined(OS_WIN) || defined(OS_LINUX)
-  WaitTillDataReady();
+    const bool kShouldBlock = true;
+#else
+    const bool kShouldBlock = diverting_to_stream_ != NULL;
 #endif
 
-  const int frames = sync_reader_->Read(source, dest);
+  const int frames = sync_reader_->Read(kShouldBlock, source, dest);
   DCHECK_LE(0, frames);
   sync_reader_->UpdatePendingBytes(
       buffers_state.total_bytes() + frames * params_.GetBytesPerFrame());
@@ -305,39 +274,6 @@ int AudioOutputController::OnMoreIOData(AudioBus* source,
 
   AllowEntryToOnMoreIOData();
   return frames;
-}
-
-void AudioOutputController::WaitTillDataReady() {
-  // Most of the time the data is ready already.
-  if (sync_reader_->DataReady())
-    return;
-
-  base::TimeTicks start = base::TimeTicks::Now();
-#if defined(OS_WIN)
-  // Wait for up to 683ms for DataReady().  683ms was chosen because it's larger
-  // than the playback time of the WaveOut buffer size using the minimum
-  // supported sample rate: 2048 / 3000 = ~683ms.
-  // TODO(davemoore): We think this can be reduced to 20ms based on
-  // http://crrev.com/180102 but will do that in separate cl for mergability.
-  const base::TimeDelta kMaxWait = base::TimeDelta::FromMilliseconds(683);
-  const base::TimeDelta kSleep = base::TimeDelta::FromMilliseconds(0);
-#else
-  const base::TimeDelta kMaxWait = base::TimeDelta::FromMilliseconds(20);
-  // We want to sleep for a bit here, as otherwise a backgrounded renderer won't
-  // get enough cpu to send the data and the high priority thread in the browser
-  // will use up a core causing even more skips.
-  const base::TimeDelta kSleep = base::TimeDelta::FromMilliseconds(2);
-#endif
-  base::TimeDelta time_since_start;
-  do {
-    base::PlatformThread::Sleep(kSleep);
-    time_since_start = base::TimeTicks::Now() - start;
-  } while (!sync_reader_->DataReady() && (time_since_start < kMaxWait));
-  UMA_HISTOGRAM_CUSTOM_TIMES("Media.AudioOutputControllerDataNotReady",
-                             time_since_start,
-                             base::TimeDelta::FromMilliseconds(1),
-                             base::TimeDelta::FromMilliseconds(1000),
-                             50);
 }
 
 void AudioOutputController::OnError(AudioOutputStream* stream) {
@@ -383,7 +319,6 @@ void AudioOutputController::OnDeviceChange() {
 
   // Get us back to the original state or an equivalent state.
   switch (original_state) {
-    case kStarting:
     case kPlaying:
       DoPlay();
       return;

@@ -5,8 +5,8 @@
 #include "sql/statement.h"
 
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "third_party/sqlite/sqlite3.h"
 
 namespace sql {
@@ -308,7 +308,7 @@ bool Statement::CheckOk(int err) const {
 int Statement::CheckError(int err) {
   // Please don't add DCHECKs here, OnSqliteError() already has them.
   succeeded_ = (err == SQLITE_OK || err == SQLITE_ROW || err == SQLITE_DONE);
-  if (!succeeded_ && ref_ && ref_->connection())
+  if (!succeeded_ && ref_.get() && ref_->connection())
     return ref_->connection()->OnSqliteError(err, this);
   return err;
 }

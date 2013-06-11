@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_UI_AUTOFILL_AUTOFILL_DIALOG_CONTROLLER_IMPL_H_
 #define CHROME_BROWSER_UI_AUTOFILL_AUTOFILL_DIALOG_CONTROLLER_IMPL_H_
 
-#include <map>
+#include <set>
 #include <vector>
 
 #include "base/callback.h"
@@ -26,9 +26,10 @@
 #include "components/autofill/browser/form_structure.h"
 #include "components/autofill/browser/personal_data_manager.h"
 #include "components/autofill/browser/personal_data_manager_observer.h"
-#include "components/autofill/browser/wallet/wallet_client.h"
-#include "components/autofill/browser/wallet/wallet_client_delegate.h"
-#include "components/autofill/browser/wallet/wallet_signin_helper_delegate.h"
+#include "components/autofill/content/browser/wallet/wallet_client.h"
+#include "components/autofill/content/browser/wallet/wallet_client_delegate.h"
+#include "components/autofill/content/browser/wallet/wallet_items.h"
+#include "components/autofill/content/browser/wallet/wallet_signin_helper_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/common/ssl_status.h"
@@ -151,7 +152,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual void FocusMoved() OVERRIDE;
   virtual void ViewClosed() OVERRIDE;
-  virtual std::vector<DialogNotification> CurrentNotifications() const OVERRIDE;
+  virtual std::vector<DialogNotification> CurrentNotifications() OVERRIDE;
   virtual void SignInLinkClicked() OVERRIDE;
   virtual void NotificationCheckboxStateChanged(DialogNotification::Type type,
                                                 bool checked) OVERRIDE;
@@ -262,9 +263,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Returns whether Wallet is the current data source. Exposed for testing.
   virtual bool IsPayingWithWallet() const;
 
-  // Exposed and virtual for testing.
-  virtual bool IsFirstRun() const;
-
   // Asks risk module to asynchronously load fingerprint data. Data will be
   // returned via |OnDidLoadRiskFingerprintData()|. Exposed for testing.
   virtual void LoadRiskFingerprintData();
@@ -274,10 +272,12 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Opens the given URL in a new foreground tab.
   virtual void OpenTabWithUrl(const GURL& url);
 
-  // Exposed for testing.
-  const std::map<DialogSection, bool>& section_editing_state() const {
-    return section_editing_state_;
-  }
+  // Whether |section| was sent into edit mode based on existing data. This
+  // happens when a user clicks "Edit" or a suggestion is invalid.
+  virtual bool IsEditingExistingData(DialogSection section) const;
+
+  // Should be called on the Wallet sign-in error.
+  virtual void OnWalletSigninError();
 
  private:
   // Whether or not the current request wants credit info back.
@@ -306,9 +306,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Refreshes the model on Wallet or sign-in state update.
   void OnWalletOrSigninUpdate();
 
-  // Should be called on the Wallet sign-in error.
-  void OnWalletSigninError();
-
   // Calculates |legal_documents_text_| and |legal_document_link_ranges_| if
   // they have not already been calculated.
   void EnsureLegalDocumentsText();
@@ -322,6 +319,12 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // data or Wallet data, depending on whether Wallet is currently enabled.
   scoped_ptr<DataModelWrapper> CreateWrapper(DialogSection section);
 
+  // Helper to return the current Wallet instrument or address. If the dialog
+  // isn't using Wallet or the user is adding a new instrument or address, NULL
+  // will be returned.
+  const wallet::WalletItems::MaskedInstrument* ActiveInstrument() const;
+  const wallet::Address* ActiveShippingAddress() const;
+
   // Fills in |section|-related fields in |output_| according to the state of
   // |view_|.
   void FillOutputForSection(DialogSection section);
@@ -330,12 +333,9 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   void FillOutputForSectionWithComparator(DialogSection section,
                                           const InputFieldComparator& compare);
 
-  // Fills in |form_structure_| using |form_group|. Utility method for
-  // FillOutputForSection.
-  void FillFormStructureForSection(const AutofillDataModel& data_model,
-                                   size_t variant,
-                                   DialogSection section,
-                                   const InputFieldComparator& compare);
+  // Returns whether |form_structure|_| has any fields that match the fieldset
+  // represented by |section|.
+  bool FormStructureCaresAboutSection(DialogSection section) const;
 
   // Sets the CVC result on |form_structure_| to the value in |cvc|.
   void SetCvcResult(const string16& cvc);
@@ -391,6 +391,10 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Hides |popup_controller_|'s popup view, if it exists.
   void HidePopup();
 
+  // Set whether the currently editing |section| was originally based on
+  // existing Wallet or Autofill data.
+  void SetEditingExistingData(DialogSection section, bool editing);
+
   // Whether the user has chosen to enter all new data in |section|. This
   // happens via choosing "Add a new X..." from a section's suggestion menu.
   bool IsManuallyEditingSection(DialogSection section) const;
@@ -409,9 +413,13 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // the dialog have valid contents.
   bool SectionIsValid(DialogSection section) const;
 
+  // Whether the currently active credit card expiration date is valid.
+  bool IsCreditCardExpirationValid(const base::string16& year,
+                                   const base::string16& month) const;
+
   // Returns true if |key| refers to a suggestion, as opposed to some control
   // menu item.
-  bool IsASuggestionItemKey(const std::string& key);
+  bool IsASuggestionItemKey(const std::string& key) const;
 
   // Whether the billing section should be used to fill in the shipping details.
   bool ShouldUseBillingForShipping();
@@ -586,9 +594,12 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   SuggestionsMenuModel suggested_cc_billing_;
   SuggestionsMenuModel suggested_shipping_;
 
-  // A map from DialogSection to editing state (true for editing, false for
-  // not editing). This only tracks if the user has clicked the edit link.
-  std::map<DialogSection, bool> section_editing_state_;
+  // |DialogSection|s that are in edit mode that are based on existing data.
+  std::set<DialogSection> section_editing_state_;
+
+  // Whether |form_structure_| has asked for any details that would indicate
+  // we should show a shipping section.
+  bool cares_about_shipping_;
 
   // The GUIDs for the currently showing unverified profiles popup.
   std::vector<PersonalDataManager::GUIDPair> popup_guids_;
@@ -608,8 +619,10 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
 
   base::WeakPtrFactory<AutofillDialogControllerImpl> weak_ptr_factory_;
 
-  // Whether this is the first time this profile has seen the Autofill dialog.
-  bool is_first_run_;
+  // Whether the wallet promos should be shown in the notification area. Based
+  // on whether the user has paid with Wallet or has signed into this dialog.
+  bool should_show_wallet_promo_;
+  bool has_shown_wallet_usage_confirmation_;
 
   // Whether a user accepted legal documents while this dialog is running.
   bool has_accepted_legal_documents_;
@@ -621,6 +634,12 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Whether or not there was a server side validation error saving or updating
   // Wallet data.
   bool wallet_server_validation_error_;
+
+  // True if the last call to |GetFullWallet()| returned a
+  // CHOOSE_ANOTHER_INSTRUMENT_OR_ADDRESS required action, indicating that the
+  // selected instrument or address had become invalid since it was originally
+  // returned in |GetWalletItems()|.
+  bool choose_another_instrument_or_address_;
 
   // The current state of the Autocheckout flow.
   AutocheckoutState autocheckout_state_;

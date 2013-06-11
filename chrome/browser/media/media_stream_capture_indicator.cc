@@ -9,7 +9,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -186,7 +186,7 @@ class MediaStreamCaptureIndicator::UIDelegate
   }
 
   virtual ~UIDelegate() {
-    if (started_ && device_usage_)
+    if (started_ && device_usage_.get())
       device_usage_->RemoveDevices(devices_);
   }
 
@@ -195,7 +195,7 @@ class MediaStreamCaptureIndicator::UIDelegate
   virtual void OnStarted(const base::Closure& close_callback) OVERRIDE {
     DCHECK(!started_);
     started_ = true;
-    if (device_usage_)
+    if (device_usage_.get())
       device_usage_->AddDevices(devices_, close_callback);
   }
 

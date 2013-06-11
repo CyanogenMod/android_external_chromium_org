@@ -7,13 +7,13 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_sign_in_delegate.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "components/autofill/browser/autofill_type.h"
-#include "components/autofill/browser/wallet/wallet_service_url.h"
+#include "components/autofill/content/browser/wallet/wallet_service_url.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -541,6 +541,13 @@ void AutofillDialogViews::NotificationArea::SetNotifications(
   PreferredSizeChanged();
 }
 
+gfx::Size AutofillDialogViews::NotificationArea::GetPreferredSize() {
+  gfx::Size size = views::View::GetPreferredSize();
+  // Ensure that long notifications wrap and don't enlarge the dialog.
+  size.set_width(1);
+  return size;
+}
+
 const char* AutofillDialogViews::NotificationArea::GetClassName() const {
   return kNotificationAreaClassName;
 }
@@ -1011,6 +1018,11 @@ TestableAutofillDialogView* AutofillDialogViews::GetTestableView() {
   return this;
 }
 
+void AutofillDialogViews::OnSignInResize(const gfx::Size& pref_size) {
+  sign_in_webview_->SetPreferredSize(pref_size);
+  ContentsPreferredSizeChanged();
+}
+
 void AutofillDialogViews::SubmitForTesting() {
   Accept();
 }
@@ -1061,9 +1073,8 @@ void AutofillDialogViews::ActivateInput(const DetailInput& input) {
   TextfieldEditedOrActivated(TextfieldForInput(input), false);
 }
 
-void AutofillDialogViews::OnSignInResize(const gfx::Size& pref_size) {
-  sign_in_webview_->SetPreferredSize(pref_size);
-  ContentsPreferredSizeChanged();
+gfx::Size AutofillDialogViews::GetSize() const {
+  return GetWidget() ? GetWidget()->GetRootView()->size() : gfx::Size();
 }
 
 bool AutofillDialogViews::AcceleratorPressed(
@@ -1249,7 +1260,7 @@ void AutofillDialogViews::OnDidChangeFocus(
   if (focused_before) {
     DetailsGroup* group = GroupForView(focused_before);
     if (group && group->container->visible())
-      ValidateGroup(*group, AutofillDialogController::VALIDATE_EDIT);
+      ValidateGroup(*group, VALIDATE_EDIT);
   }
 
   // Show an error bubble when the user focuses the input.
@@ -1270,7 +1281,7 @@ void AutofillDialogViews::LinkClicked(views::Link* source, int event_flags) {
 
 void AutofillDialogViews::OnSelectedIndexChanged(views::Combobox* combobox) {
   DetailsGroup* group = GroupForView(combobox);
-  ValidateGroup(*group, AutofillDialogController::VALIDATE_EDIT);
+  ValidateGroup(*group, VALIDATE_EDIT);
 }
 
 void AutofillDialogViews::StyledLabelLinkClicked(const ui::Range& range,
@@ -1564,7 +1575,7 @@ void AutofillDialogViews::UpdateDetailsGroupState(const DetailsGroup& group) {
     group.container->SetForwardMouseEvents(has_menu && show_suggestions);
     group.container->SetVisible(controller_->SectionIsActive(group.section));
     if (group.container->visible())
-      ValidateGroup(group, AutofillDialogController::VALIDATE_EDIT);
+      ValidateGroup(group, VALIDATE_EDIT);
   }
 
   ContentsPreferredSizeChanged();
@@ -1607,9 +1618,8 @@ void AutofillDialogViews::ShowErrorBubbleForViewIfNecessary(views::View* view) {
     error_bubble_.reset(new ErrorBubble(input, error_message->second));
 }
 
-bool AutofillDialogViews::ValidateGroup(
-    const DetailsGroup& group,
-    AutofillDialogController::ValidationType validation_type) {
+bool AutofillDialogViews::ValidateGroup(const DetailsGroup& group,
+                                        ValidationType validation_type) {
   DCHECK(group.container->visible());
 
   scoped_ptr<DetailInput> cvc_input;
@@ -1683,7 +1693,7 @@ bool AutofillDialogViews::ValidateForm() {
     if (!group.container->visible())
       continue;
 
-    if (!ValidateGroup(group, AutofillDialogController::VALIDATE_FINAL))
+    if (!ValidateGroup(group, VALIDATE_FINAL))
       all_valid = false;
   }
 
@@ -1737,7 +1747,7 @@ void AutofillDialogViews::TextfieldEditedOrActivated(
     // If the field transitioned from invalid to valid, re-validate the group,
     // since inter-field checks become meaningful with valid fields.
     if (!decorated->invalid())
-      ValidateGroup(*group, AutofillDialogController::VALIDATE_EDIT);
+      ValidateGroup(*group, VALIDATE_EDIT);
   }
 
   gfx::Image icon = controller_->IconForField(type, textfield->text());

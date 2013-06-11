@@ -60,9 +60,6 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kDisableSpdy,
     prefs::kDisableSpdy,
     Value::TYPE_BOOLEAN },
-  { key::kDisabledSchemes,
-    prefs::kDisabledSchemes,
-    Value::TYPE_LIST },
   { key::kSafeBrowsingEnabled,
     prefs::kSafeBrowsingEnabled,
     Value::TYPE_BOOLEAN },
@@ -285,9 +282,6 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kMaxConnectionsPerProxy,
     prefs::kMaxConnectionsPerProxy,
     Value::TYPE_INTEGER },
-  { key::kURLBlacklist,
-    prefs::kUrlBlacklist,
-    Value::TYPE_LIST },
   { key::kURLWhitelist,
     prefs::kUrlWhitelist,
     Value::TYPE_LIST },
@@ -380,6 +374,15 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kShowAccessibilityOptionsInSystemTrayMenu,
     prefs::kShouldAlwaysShowAccessibilityMenu,
     Value::TYPE_BOOLEAN },
+  { key::kLargeCursorEnabled,
+    prefs::kLargeCursorEnabled,
+    Value::TYPE_BOOLEAN },
+  { key::kSpokenFeedbackEnabled,
+    prefs::kSpokenFeedbackEnabled,
+    Value::TYPE_BOOLEAN },
+  { key::kHighContrastEnabled,
+    prefs::kHighContrastEnabled,
+    Value::TYPE_BOOLEAN },
   { key::kRebootAfterUpdate,
     prefs::kRebootAfterUpdate,
     Value::TYPE_BOOLEAN },
@@ -417,13 +420,13 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
 
   handlers_.push_back(new AutofillPolicyHandler());
   handlers_.push_back(new DefaultSearchPolicyHandler());
-  handlers_.push_back(new DiskCacheDirPolicyHandler());
   handlers_.push_back(new FileSelectionDialogsHandler());
   handlers_.push_back(new IncognitoModePolicyHandler());
   handlers_.push_back(new JavascriptPolicyHandler());
   handlers_.push_back(new ProxyPolicyHandler());
   handlers_.push_back(new RestoreOnStartupPolicyHandler());
   handlers_.push_back(new SyncPolicyHandler());
+  handlers_.push_back(new URLBlacklistPolicyHandler());
 
   handlers_.push_back(
       new ExtensionListPolicyHandler(key::kExtensionInstallWhitelist,
@@ -450,15 +453,17 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
                                      false));
 #endif  // defined(OS_CHROMEOS)
 
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
+  handlers_.push_back(new DiskCacheDirPolicyHandler());
   handlers_.push_back(new DownloadDirPolicyHandler());
-#endif  // !defined(OS_CHROMEOS)
+#endif  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 
 #if defined(OS_CHROMEOS)
   handlers_.push_back(
       NetworkConfigurationPolicyHandler::CreateForDevicePolicy());
   handlers_.push_back(NetworkConfigurationPolicyHandler::CreateForUserPolicy());
   handlers_.push_back(new PinnedLauncherAppsPolicyHandler());
+  handlers_.push_back(new ScreenMagnifierPolicyHandler());
 
   handlers_.push_back(
       new IntRangePolicyHandler(
@@ -524,6 +529,11 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
       new IntPercentageToDoublePolicyHandler(
           key::kPresentationIdleDelayScale,
           prefs::kPowerPresentationIdleDelayFactor,
+          100, INT_MAX, true));
+  handlers_.push_back(
+      new IntPercentageToDoublePolicyHandler(
+          key::kUserActivityScreenDimDelayScale,
+          prefs::kPowerUserActivityScreenDimDelayFactor,
           100, INT_MAX, true));
   handlers_.push_back(new IntRangePolicyHandler(key::kUptimeLimit,
                                                 prefs::kUptimeLimit,

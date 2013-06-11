@@ -877,7 +877,7 @@
           ],
         },
       ],
-    },],  # OS=="linux"
+    }],  # OS=="linux"
     ['OS=="win"',
       { 'targets': [
         {
@@ -1049,8 +1049,12 @@
             'tools/safe_browsing/sb_sigutil.cc',
           ],
         },
-      ]},  # 'targets'
-    ],  # OS=="win"
+      ],  # 'targets'
+      'includes': [
+        'chrome_process_finder.gypi',
+        'metro_utils.gypi',
+      ],
+    }],  # OS=="win"
     ['OS=="win" and target_arch=="ia32"',
       { 'targets': [
         {
@@ -1153,5 +1157,8 @@
         'chrome_android.gypi',
       ]}, # 'includes'
     ],  # OS=="android"
+    ['configuration_policy==1 and OS!="android"', {
+      'includes': [ 'policy.gypi', ],
+    }],
   ],  # 'conditions'
 }

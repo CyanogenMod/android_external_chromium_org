@@ -6,7 +6,7 @@
 
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest.h"
@@ -30,7 +30,24 @@ bool LoadImages(const DictionaryValue* theme_value,
     // Validate that the images are all strings.
     for (DictionaryValue::Iterator iter(*images_value); !iter.IsAtEnd();
          iter.Advance()) {
-      if (!iter.value().IsType(Value::TYPE_STRING)) {
+      // The value may be a dictionary of scales and files paths.
+      // Or the value may be a file path, in which case a scale
+      // of 100% is assumed.
+      if (iter.value().IsType(Value::TYPE_DICTIONARY)) {
+        const DictionaryValue* inner_value = NULL;
+        if (iter.value().GetAsDictionary(&inner_value)) {
+          for (DictionaryValue::Iterator inner_iter(*inner_value);
+               !inner_iter.IsAtEnd(); inner_iter.Advance()) {
+            if (!inner_iter.value().IsType(Value::TYPE_STRING)) {
+              *error = ASCIIToUTF16(errors::kInvalidThemeImages);
+              return false;
+            }
+          }
+        } else {
+          *error = ASCIIToUTF16(errors::kInvalidThemeImages);
+          return false;
+        }
+      } else if (!iter.value().IsType(Value::TYPE_STRING)) {
         *error = ASCIIToUTF16(errors::kInvalidThemeImages);
         return false;
       }

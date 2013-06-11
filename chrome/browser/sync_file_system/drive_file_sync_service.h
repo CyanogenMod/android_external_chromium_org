@@ -65,7 +65,6 @@ class DriveFileSyncService : public RemoteFileSyncService,
 
   typedef base::Callback<void(const SyncStatusCallback& callback)> Task;
 
-  static const char kServiceName[];
   static ConflictResolutionPolicy kDefaultPolicy;
 
   virtual ~DriveFileSyncService();
@@ -110,7 +109,7 @@ class DriveFileSyncService : public RemoteFileSyncService,
   virtual LocalChangeProcessor* GetLocalChangeProcessor() OVERRIDE;
   virtual bool IsConflicting(const fileapi::FileSystemURL& url) OVERRIDE;
   virtual RemoteServiceState GetCurrentState() const OVERRIDE;
-  virtual const char* GetServiceName() const OVERRIDE;
+  virtual void GetOriginStatusMap(OriginStatusMap* status_map) OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
   virtual SyncStatusCode SetConflictResolutionPolicy(
       ConflictResolutionPolicy resolution) OVERRIDE;
@@ -143,6 +142,8 @@ class DriveFileSyncService : public RemoteFileSyncService,
   static base::FilePath TitleToPath(const std::string& title);
   static DriveMetadata::ResourceType SyncFileTypeToDriveMetadataResourceType(
       SyncFileType file_type);
+  static SyncFileType DriveMetadataResourceTypeToSyncFileType(
+      DriveMetadata::ResourceType resource_type);
 
  private:
   friend class DriveFileSyncTaskManager;
@@ -150,6 +151,7 @@ class DriveFileSyncService : public RemoteFileSyncService,
 
   friend class DriveFileSyncServiceMockTest;
   friend class DriveFileSyncServiceSyncTest;
+  friend class DriveFileSyncServiceTest;
   struct ApplyLocalChangeParam;
   struct ProcessRemoteChangeParam;
 

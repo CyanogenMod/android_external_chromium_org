@@ -13,9 +13,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/history/download_row.h"
 #include "chrome/browser/history/history_types.h"
@@ -431,7 +431,7 @@ bool DownloadDatabase::UpdateDownload(const DownloadRow& data) {
   statement.BindInt(column++, danger_type);
   statement.BindInt(column++, static_cast<int>(data.interrupt_reason));
   statement.BindInt64(column++, data.end_time.ToInternalValue());
-  statement.BindInt(column++, data.total_bytes);
+  statement.BindInt64(column++, data.total_bytes);
   statement.BindInt(column++, (data.opened ? 1 : 0));
   statement.BindInt64(column++, data.db_handle);
 

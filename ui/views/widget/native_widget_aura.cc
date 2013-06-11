@@ -39,6 +39,7 @@
 #include "ui/views/widget/tooltip_manager_aura.h"
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/widget/window_reorderer.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_gdi_object.h"
@@ -110,7 +111,7 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   if (params.type == Widget::InitParams::TYPE_CONTROL)
     window_->Show();
 
-  delegate_->OnNativeWidgetCreated();
+  delegate_->OnNativeWidgetCreated(false);
 
   gfx::Rect window_bounds = params.bounds;
   gfx::NativeView parent = params.parent;
@@ -152,8 +153,9 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   else
     SetBounds(window_bounds);
   window_->set_ignore_events(!params.accept_events);
-  can_activate_ =
-      params.can_activate && params.type != Widget::InitParams::TYPE_CONTROL;
+  can_activate_ = params.can_activate &&
+      params.type != Widget::InitParams::TYPE_CONTROL &&
+      params.type != Widget::InitParams::TYPE_TOOLTIP;
   DCHECK(GetWidget()->GetRootView());
 #if !defined(OS_MACOSX)
   if (params.type != Widget::InitParams::TYPE_TOOLTIP)
@@ -172,6 +174,9 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
                        GetWidget()->widget_delegate()->CanMaximize());
   window_->SetProperty(aura::client::kCanResizeKey,
                        GetWidget()->widget_delegate()->CanResize());
+
+  window_reorderer_.reset(new WindowReorderer(window_,
+      GetWidget()->GetRootView()));
 }
 
 NonClientFrameView* NativeWidgetAura::CreateNonClientFrameView() {
@@ -221,6 +226,10 @@ ui::Compositor* NativeWidgetAura::GetCompositor() {
 
 ui::Layer* NativeWidgetAura::GetLayer() {
   return window_->layer();
+}
+
+void NativeWidgetAura::ReorderNativeViews() {
+  window_reorderer_->ReorderChildWindows();
 }
 
 void NativeWidgetAura::ViewRemoved(View* view) {

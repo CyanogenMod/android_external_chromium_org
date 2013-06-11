@@ -9,8 +9,8 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/format_macros.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -128,7 +128,7 @@ TEST_F(NetworkEventLogTest, TestStringFormat) {
       OLDEST_FIRST, "desc", kDefaultLevel, 1));
   EXPECT_EQ("event0\n", network_event_log::GetAsString(
       OLDEST_FIRST, "", kDefaultLevel, 1));
-  EXPECT_EQ("<b>event0</b>\n", network_event_log::GetAsString(
+  EXPECT_EQ("<b><i>event0</i></b>\n", network_event_log::GetAsString(
       OLDEST_FIRST, "html", kDefaultLevel, 1));
   EXPECT_EQ("[time] file:0 event0: description\n",
             SkipTime(network_event_log::GetAsString(

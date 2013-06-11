@@ -13,7 +13,7 @@
 #include "base/callback_forward.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/message_pump.h"
 #include "base/observer_list.h"
 #include "base/pending_task.h"
@@ -729,11 +729,5 @@ COMPILE_ASSERT(sizeof(MessageLoop) == sizeof(MessageLoopForIO),
                MessageLoopForIO_should_not_have_extra_member_variables);
 
 }  // namespace base
-
-// TODO(brettw) remove this when all users are updated to explicitly use the
-// namespace
-using base::MessageLoop;
-using base::MessageLoopForIO;
-using base::MessageLoopForUI;
 
 #endif  // BASE_MESSAGE_LOOP_H_

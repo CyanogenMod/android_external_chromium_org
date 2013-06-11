@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_util.h"
@@ -352,14 +352,6 @@ bool CreateApplicationShortcutView::IsDialogButtonEnabled(
             quick_launch_check_box_->checked());
 
   return true;
-}
-
-bool CreateApplicationShortcutView::CanResize() const {
-  return false;
-}
-
-bool CreateApplicationShortcutView::CanMaximize() const {
-  return false;
 }
 
 ui::ModalType CreateApplicationShortcutView::GetModalType() const {

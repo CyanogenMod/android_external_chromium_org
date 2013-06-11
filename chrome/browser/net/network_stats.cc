@@ -10,7 +10,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "base/tuple.h"
@@ -367,9 +367,10 @@ void NetworkStats::ReadData() {
     // We release the read_buffer_ in the destructor if there is an error.
     read_buffer_ = new net::IOBuffer(kMaxMessage);
 
-    rv = socket_->Read(read_buffer_, kMaxMessage,
-                       base::Bind(&NetworkStats::OnReadComplete,
-                                  base::Unretained(this)));
+    rv = socket_->Read(
+        read_buffer_.get(),
+        kMaxMessage,
+        base::Bind(&NetworkStats::OnReadComplete, base::Unretained(this)));
     if (rv == net::ERR_IO_PENDING)
       break;
 
@@ -386,8 +387,8 @@ int NetworkStats::SendData() {
       // Send a new packet.
       scoped_refptr<net::IOBufferWithSize> buffer(
           new net::IOBufferWithSize(bytes_to_send_));
-      GetEchoRequest(buffer);
-      write_buffer_ = new net::DrainableIOBuffer(buffer, bytes_to_send_);
+      GetEchoRequest(buffer.get());
+      write_buffer_ = new net::DrainableIOBuffer(buffer.get(), bytes_to_send_);
 
       // As soon as we write, a read could happen. Thus update all the book
       // keeping data.
@@ -404,10 +405,10 @@ int NetworkStats::SendData() {
 
     if (!socket_.get())
       return net::ERR_UNEXPECTED;
-    int rv = socket_->Write(write_buffer_,
-                            write_buffer_->BytesRemaining(),
-                            base::Bind(&NetworkStats::OnWriteComplete,
-                                       base::Unretained(this)));
+    int rv = socket_->Write(
+        write_buffer_.get(),
+        write_buffer_->BytesRemaining(),
+        base::Bind(&NetworkStats::OnWriteComplete, base::Unretained(this)));
     if (rv < 0)
       return rv;
     DidSendData(rv);
@@ -805,6 +806,9 @@ void NetworkStats::RecordRTTHistograms(const ProtocolValue& protocol,
                                        uint32 index) {
   DCHECK_GE(index, 0u);
   DCHECK_LT(index, packet_status_.size());
+
+  if (packet_status_[index].end_time_ ==  base::TimeTicks())
+    return;  // Echo response packet never arrived.
 
   const char* test_name = TestName();
   std::string rtt_histogram_name = base::StringPrintf(

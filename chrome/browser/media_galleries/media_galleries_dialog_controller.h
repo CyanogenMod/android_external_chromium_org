@@ -10,7 +10,7 @@
 
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/storage_monitor/removable_storage_observer.h"
 #include "ui/gfx/native_widget_types.h"
@@ -124,6 +124,10 @@ class MediaGalleriesDialogController
   // This type keeps track of media galleries already known to the prefs system.
   typedef std::map<MediaGalleryPrefId, GalleryPermission>
       KnownGalleryPermissions;
+
+  // Bottom half of constructor -- called when the storage monitor
+  // is initialized.
+  void OnStorageMonitorInitialized();
 
   // SelectFileDialog::Listener implementation:
   virtual void FileSelected(const base::FilePath& path,

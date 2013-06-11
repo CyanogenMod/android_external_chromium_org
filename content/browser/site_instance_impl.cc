@@ -35,12 +35,13 @@ static bool IsURLSameAsAnySiteInstance(const GURL& url) {
          url == GURL(kChromeUIShorthangURL);
 }
 
+const RenderProcessHostFactory*
+    SiteInstanceImpl::g_render_process_host_factory_ = NULL;
 int32 SiteInstanceImpl::next_site_instance_id_ = 1;
 
 SiteInstanceImpl::SiteInstanceImpl(BrowsingInstance* browsing_instance)
     : id_(next_site_instance_id_++),
       browsing_instance_(browsing_instance),
-      render_process_host_factory_(NULL),
       process_(NULL),
       has_site_(false) {
   DCHECK(browsing_instance);
@@ -111,9 +112,9 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
 
     // Otherwise (or if that fails), create a new one.
     if (!process_) {
-      if (render_process_host_factory_) {
-        process_ = render_process_host_factory_->CreateRenderProcessHost(
-            browser_context);
+      if (g_render_process_host_factory_) {
+        process_ = g_render_process_host_factory_->CreateRenderProcessHost(
+            browser_context, this);
       } else {
         StoragePartitionImpl* partition =
             static_cast<StoragePartitionImpl*>(
@@ -195,8 +196,8 @@ SiteInstance* SiteInstanceImpl::GetRelatedSiteInstance(const GURL& url) {
 }
 
 bool SiteInstanceImpl::IsRelatedSiteInstance(const SiteInstance* instance) {
-  return browsing_instance_ ==
-      static_cast<const SiteInstanceImpl*>(instance)->browsing_instance_;
+  return browsing_instance_.get() == static_cast<const SiteInstanceImpl*>(
+                                         instance)->browsing_instance_.get();
 }
 
 bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {
@@ -218,6 +219,11 @@ bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {
   GURL site_url = GetSiteForURL(browsing_instance_->browser_context(), url);
   return !RenderProcessHostImpl::IsSuitableHost(
       GetProcess(), browsing_instance_->browser_context(), site_url);
+}
+
+void SiteInstanceImpl::set_render_process_host_factory(
+    const RenderProcessHostFactory* rph_factory) {
+  g_render_process_host_factory_ = rph_factory;
 }
 
 BrowserContext* SiteInstanceImpl::GetBrowserContext() const {

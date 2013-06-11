@@ -6,10 +6,10 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "webkit/support/webkit_support.h"
 #include "webkit/support/weburl_loader_mock.h"
@@ -43,8 +43,9 @@ void WebURLLoaderMockFactory::RegisterURL(const WebURL& url,
     response_info.file_path =
         base::FilePath(static_cast<std::string>(file_path.utf8()));
 #elif defined(OS_WIN)
-    response_info.file_path =
-        base::FilePath(std::wstring(file_path.data(), file_path.length()));
+    string16 file_path_16 = file_path;
+    response_info.file_path = base::FilePath(std::wstring(
+        file_path_16.data(), file_path_16.length()));
 #endif
     DCHECK(file_util::PathExists(response_info.file_path))
         << response_info.file_path.MaybeAsASCII() << " does not exist.";

@@ -10,7 +10,7 @@
 
 #include "base/message_pump_aurax11.h"
 #include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/user_action_client.h"
 #include "ui/aura/focus_manager.h"
@@ -74,7 +74,6 @@ const char* kAtomsToCache[] = {
   "_NET_WM_STATE_HIDDEN",
   "_NET_WM_STATE_MAXIMIZED_HORZ",
   "_NET_WM_STATE_MAXIMIZED_VERT",
-  "_NET_WM_WINDOW_OPACITY",
   "XdndActionAsk",
   "XdndActionCopy"
   "XdndActionLink",
@@ -241,7 +240,7 @@ aura::RootWindow* DesktopRootWindowHostX11::InitRootWindow(
   if (!params.child && params.parent)
     parent->AddTransientChild(content_window_);
 
-  native_widget_delegate_->OnNativeWidgetCreated();
+  native_widget_delegate_->OnNativeWidgetCreated(true);
 
   capture_client_.reset(new views::DesktopCaptureClient(root_window_));
   aura::client::SetCaptureClient(root_window_, capture_client_.get());
@@ -638,20 +637,8 @@ bool DesktopRootWindowHostX11::IsFullscreen() const {
 }
 
 void DesktopRootWindowHostX11::SetOpacity(unsigned char opacity) {
-  // X server opacity is in terms of 32 bit unsigned int space, and counts from
-  // the opposite direction.
-  unsigned int cardinality = (255 - opacity) * 0x1010101;
-
-  if (cardinality == 0xffffffff) {
-    XDeleteProperty(xdisplay_, xwindow_,
-                    atom_cache_.GetAtom("_NET_WM_WINDOW_OPACITY"));
-  } else {
-    XChangeProperty(xdisplay_, xwindow_,
-                    atom_cache_.GetAtom("_NET_WM_WINDOW_OPACITY"),
-                    XA_CARDINAL, 32,
-                    PropModeReplace,
-                    reinterpret_cast<unsigned char*>(&cardinality), 1);
-  }
+  // TODO(erg):
+  NOTIMPLEMENTED();
 }
 
 void DesktopRootWindowHostX11::SetWindowIcons(

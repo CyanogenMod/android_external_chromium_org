@@ -11,33 +11,28 @@
 
 #include <map>
 
-#include "base/base64.h"
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/format_macros.h"
-#include "base/i18n/case_conversion.h"
-#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
-#include "base/memory/singleton.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/stl_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_split.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/drive_app_registry.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/chromeos/drive/logging.h"
-#include "chrome/browser/chromeos/drive/search_metadata.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_handler.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api_factory.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_handler_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager/file_manager_event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/zip_file_creator.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -45,19 +40,13 @@
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_function_registry.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/extensions/process_map.h"
-#include "chrome/browser/google_apis/drive_service_interface.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/time_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/views/select_file_dialog_extension.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/extensions/extension.h"
@@ -73,9 +62,7 @@
 #include "googleurl/src/gurl.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
-#include "grit/platform_locale_settings.h"
 #include "net/base/escape.h"
-#include "net/base/mime_util.h"
 #include "net/base/network_change_notifier.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/selected_file_info.h"
@@ -94,7 +81,6 @@ using chromeos::disks::DiskMountManager;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::ChildProcessSecurityPolicy;
-using content::SiteInstance;
 using content::WebContents;
 using extensions::Extension;
 using extensions::ZipFileCreator;
@@ -287,18 +273,6 @@ void GetSizeStatsOnBlockingPool(const std::string& mount_path,
   *remaining_size_kb = static_cast<size_t>(remaining_size_in_bytes / 1024);
 }
 
-// Given a |url|, return the virtual FilePath associated with it. If the file
-// isn't of the type CrosMountPointProvider handles, return an empty FilePath.
-//
-// Virtual paths will look like "Downloads/foo/bar.txt" or "drive/foo/bar.txt".
-base::FilePath GetVirtualPathFromURL(fileapi::FileSystemContext* context,
-                                     const GURL& url) {
-  fileapi::FileSystemURL filesystem_url(context->CrackURL(url));
-  if (!chromeos::CrosMountPointProvider::CanHandleURL(filesystem_url))
-    return base::FilePath();
-  return filesystem_url.virtual_path();
-}
-
 // Make a set of unique filename suffixes out of the list of file URLs.
 std::set<std::string> GetUniqueSuffixes(base::ListValue* file_url_list,
                                         fileapi::FileSystemContext* context) {
@@ -395,23 +369,8 @@ void GetMimeTypesForFileURLs(const std::vector<base::FilePath>& file_paths,
                              PathAndMimeTypeSet* files) {
   for (std::vector<base::FilePath>::const_iterator iter = file_paths.begin();
        iter != file_paths.end(); ++iter) {
-    const base::FilePath::StringType file_extension =
-        StringToLowerASCII(iter->Extension());
-
-    // TODO(thorogood): Rearchitect this call so it can run on the File thread;
-    // GetMimeTypeFromFile requires this on Linux. Right now, we use
-    // Chrome-level knowledge only.
-    std::string mime_type;
-    if (file_extension.empty() ||
-        !net::GetWellKnownMimeTypeFromExtension(file_extension.substr(1),
-                                                &mime_type)) {
-      // If the file doesn't have an extension or its mime-type cannot be
-      // determined, then indicate that it has the empty mime-type. This will
-      // only be matched if the Web Intents accepts "*" or "*/*".
-      files->insert(std::make_pair(*iter, ""));
-    } else {
-      files->insert(std::make_pair(*iter, mime_type));
-    }
+    files->insert(
+        std::make_pair(*iter, file_manager_util::GetMimeTypeForPath(*iter)));
   }
 }
 
@@ -454,105 +413,6 @@ std::string MakeWebAppTaskId(const std::string& app_id) {
 
 }  // namespace
 
-class RequestLocalFileSystemFunction::LocalFileSystemCallbackDispatcher {
- public:
-  static fileapi::FileSystemContext::OpenFileSystemCallback CreateCallback(
-      RequestLocalFileSystemFunction* function,
-      scoped_refptr<fileapi::FileSystemContext> file_system_context,
-      int child_id,
-      scoped_refptr<const Extension> extension) {
-    return base::Bind(
-        &LocalFileSystemCallbackDispatcher::DidOpenFileSystem,
-        base::Owned(new LocalFileSystemCallbackDispatcher(
-            function, file_system_context, child_id, extension)));
-  }
-
-  void DidOpenFileSystem(base::PlatformFileError result,
-                         const std::string& name,
-                         const GURL& root_path) {
-    if (result != base::PLATFORM_FILE_OK) {
-      DidFail(result);
-      return;
-    }
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-    // Set up file permission access.
-    if (!SetupFileSystemAccessPermissions()) {
-      DidFail(base::PLATFORM_FILE_ERROR_SECURITY);
-      return;
-    }
-
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(
-            &RequestLocalFileSystemFunction::RespondSuccessOnUIThread,
-            function_,
-            name,
-            root_path));
-  }
-
-  void DidFail(base::PlatformFileError error_code) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(
-            &RequestLocalFileSystemFunction::RespondFailedOnUIThread,
-            function_,
-            error_code));
-  }
-
- private:
-  LocalFileSystemCallbackDispatcher(
-      RequestLocalFileSystemFunction* function,
-      scoped_refptr<fileapi::FileSystemContext> file_system_context,
-      int child_id,
-      scoped_refptr<const Extension> extension)
-      : function_(function),
-        file_system_context_(file_system_context),
-        child_id_(child_id),
-        extension_(extension)  {
-    DCHECK(function_);
-  }
-
-  // Grants file system access permissions to file browser component.
-  bool SetupFileSystemAccessPermissions() {
-    if (!extension_.get())
-      return false;
-
-    // Make sure that only component extension can access the entire
-    // local file system.
-    if (extension_->location() != extensions::Manifest::COMPONENT) {
-      NOTREACHED() << "Private method access by non-component extension "
-                   << extension_->id();
-      return false;
-    }
-
-    fileapi::ExternalFileSystemMountPointProvider* provider =
-        file_system_context_->external_provider();
-    if (!provider)
-      return false;
-
-    // Grant full access to File API from this component extension.
-    provider->GrantFullAccessToExtension(extension_->id());
-
-    // Grant R/W file permissions to the renderer hosting component
-    // extension for all paths exposed by our local file system provider.
-    std::vector<base::FilePath> root_dirs = provider->GetRootDirectories();
-    for (size_t i = 0; i < root_dirs.size(); ++i) {
-      ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
-          child_id_, root_dirs[i],
-          file_handler_util::GetReadWritePermissions());
-    }
-    return true;
-  }
-
-  RequestLocalFileSystemFunction* function_;
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
-  // Renderer process id.
-  int child_id_;
-  // Extension source URL.
-  scoped_refptr<const Extension> extension_;
-  DISALLOW_COPY_AND_ASSIGN(LocalFileSystemCallbackDispatcher);
-};
-
 FileBrowserPrivateAPI::FileBrowserPrivateAPI(Profile* profile)
     : event_router_(new FileManagerEventRouter(profile)) {
   (new FileBrowserHandlerParser)->Register();
@@ -566,7 +426,7 @@ FileBrowserPrivateAPI::FileBrowserPrivateAPI(Profile* profile)
   registry->RegisterFunction<FileDialogStringsFunction>();
   registry->RegisterFunction<GetFileTasksFileBrowserFunction>();
   registry->RegisterFunction<GetVolumeMetadataFunction>();
-  registry->RegisterFunction<RequestLocalFileSystemFunction>();
+  registry->RegisterFunction<RequestFileSystemFunction>();
   registry->RegisterFunction<AddFileWatchBrowserFunction>();
   registry->RegisterFunction<RemoveFileWatchBrowserFunction>();
   registry->RegisterFunction<SelectFileFunction>();
@@ -610,51 +470,38 @@ FileBrowserPrivateAPI* FileBrowserPrivateAPI::Get(Profile* profile) {
   return FileBrowserPrivateAPIFactory::GetForProfile(profile);
 }
 
-void RequestLocalFileSystemFunction::RequestOnFileThread(
-    scoped_refptr<fileapi::FileSystemContext> file_system_context,
-    const GURL& source_url,
-    int child_id) {
-  GURL origin_url = source_url.GetOrigin();
-  file_system_context->OpenFileSystem(
-      origin_url, fileapi::kFileSystemTypeExternal,
-      fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
-      LocalFileSystemCallbackDispatcher::CreateCallback(
-          this,
-          file_system_context,
-          child_id,
-          GetExtension()));
-}
-
 bool LogoutUserFunction::RunImpl() {
   chrome::AttemptUserExit();
   return true;
 }
 
-bool RequestLocalFileSystemFunction::RunImpl() {
-  if (!dispatcher() || !render_view_host() || !render_view_host()->GetProcess())
-    return false;
-
-  set_log_on_completion(true);
-
-  content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
-  scoped_refptr<fileapi::FileSystemContext> file_system_context =
-      BrowserContext::GetStoragePartition(profile_, site_instance)->
-          GetFileSystemContext();
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(
-          &RequestLocalFileSystemFunction::RequestOnFileThread,
-          this,
-          file_system_context,
-          source_url_,
-          render_view_host()->GetProcess()->GetID()));
-  // Will finish asynchronously.
-  return true;
-}
-
-void RequestLocalFileSystemFunction::RespondSuccessOnUIThread(
-    const std::string& name, const GURL& root_path) {
+void RequestFileSystemFunction::DidOpenFileSystem(
+    scoped_refptr<fileapi::FileSystemContext> file_system_context,
+    base::PlatformFileError result,
+    const std::string& name,
+    const GURL& root_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (result != base::PLATFORM_FILE_OK) {
+    DidFail(result);
+    return;
+  }
+
+  // RenderViewHost may have gone while the task is posted asynchronously.
+  if (!render_view_host()) {
+    DidFail(base::PLATFORM_FILE_ERROR_FAILED);
+    return;
+  }
+
+  // Set up file permission access.
+  const int child_id = render_view_host()->GetProcess()->GetID();
+  if (!SetupFileSystemAccessPermissions(file_system_context,
+                                        child_id,
+                                        GetExtension())) {
+    DidFail(base::PLATFORM_FILE_ERROR_SECURITY);
+    return;
+  }
+
   // Add drive mount point immediately when we kick of first instance of file
   // manager. The actual mount event will be sent to UI only when we perform
   // proper authentication.
@@ -670,11 +517,72 @@ void RequestLocalFileSystemFunction::RespondSuccessOnUIThread(
   SendResponse(true);
 }
 
-void RequestLocalFileSystemFunction::RespondFailedOnUIThread(
+void RequestFileSystemFunction::DidFail(
     base::PlatformFileError error_code) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
   error_ = base::StringPrintf(kFileError, static_cast<int>(error_code));
   SendResponse(false);
+}
+
+bool RequestFileSystemFunction::SetupFileSystemAccessPermissions(
+    scoped_refptr<fileapi::FileSystemContext> file_system_context,
+    int child_id,
+    scoped_refptr<const extensions::Extension> extension) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (!extension.get())
+    return false;
+
+  // Make sure that only component extension can access the entire
+  // local file system.
+  if (extension_->location() != extensions::Manifest::COMPONENT) {
+    NOTREACHED() << "Private method access by non-component extension "
+                 << extension->id();
+    return false;
+  }
+
+  fileapi::ExternalFileSystemMountPointProvider* provider =
+      file_system_context->external_provider();
+  if (!provider)
+    return false;
+
+  // Grant full access to File API from this component extension.
+  provider->GrantFullAccessToExtension(extension_->id());
+
+  // Grant R/W file permissions to the renderer hosting component
+  // extension for all paths exposed by our local file system provider.
+  std::vector<base::FilePath> root_dirs = provider->GetRootDirectories();
+  for (size_t i = 0; i < root_dirs.size(); ++i) {
+    ChildProcessSecurityPolicy::GetInstance()->GrantPermissionsForFile(
+        child_id, root_dirs[i],
+        file_handler_util::GetReadWritePermissions());
+  }
+  return true;
+}
+
+bool RequestFileSystemFunction::RunImpl() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (!dispatcher() || !render_view_host() || !render_view_host()->GetProcess())
+    return false;
+
+  set_log_on_completion(true);
+
+  content::SiteInstance* site_instance = render_view_host()->GetSiteInstance();
+  scoped_refptr<fileapi::FileSystemContext> file_system_context =
+      BrowserContext::GetStoragePartition(profile_, site_instance)->
+          GetFileSystemContext();
+
+  const GURL origin_url = source_url_.GetOrigin();
+  file_system_context->OpenFileSystem(
+      origin_url,
+      fileapi::kFileSystemTypeExternal,
+      fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
+      base::Bind(&RequestFileSystemFunction::DidOpenFileSystem,
+                 this,
+                 file_system_context));
+  return true;
 }
 
 void FileWatchBrowserFunctionBase::Respond(bool success) {
@@ -1084,16 +992,6 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
     }
 
     result_list->Append(task);
-  }
-
-  if (VLOG_IS_ON(1)) {
-    std::string result_json;
-    base::JSONWriter::WriteWithOptions(
-        result_list,
-        base::JSONWriter::OPTIONS_DO_NOT_ESCAPE |
-          base::JSONWriter::OPTIONS_PRETTY_PRINT,
-        &result_json);
-    VLOG(1) << "GetFileTasks result:\n" << result_json;
   }
 
   SendResponse(true);
@@ -2138,6 +2036,7 @@ bool FileDialogStringsFunction::RunImpl() {
 
   SET_STRING("DELETED_MESSAGE_PLURAL", IDS_FILE_BROWSER_DELETED_MESSAGE_PLURAL);
   SET_STRING("DELETED_MESSAGE", IDS_FILE_BROWSER_DELETED_MESSAGE);
+  SET_STRING("DELETE_ERROR", IDS_FILE_BROWSER_DELETE_ERROR);
   SET_STRING("UNDO_DELETE", IDS_FILE_BROWSER_UNDO_DELETE);
 
   SET_STRING("CANCEL_LABEL", IDS_FILE_BROWSER_CANCEL_LABEL);
@@ -2474,7 +2373,7 @@ void GetDriveEntryPropertiesFunction::OnGetFileInfo(
 
   integration_service->file_system()->GetCacheEntryByResourceId(
       entry->resource_id(),
-      file_specific_info.file_md5(),
+      file_specific_info.md5(),
       base::Bind(&GetDriveEntryPropertiesFunction::CacheStateReceived, this));
 }
 
@@ -2672,13 +2571,9 @@ bool CancelFileTransfersFunction::RunImpl() {
         job_list->CancelJob(it->second[i]);
     }
     result->SetBoolean("canceled", it != path_to_id_map.end());
-    GURL file_url;
-    if (file_manager_util::ConvertFileToFileSystemUrl(profile_,
-            drive::util::GetSpecialRemoteRootPath().Append(file_path),
-            extension_->id(),
-            &file_url)) {
-      result->SetString("fileUrl", file_url.spec());
-    }
+    // TODO(kinaba): simplify cancelFileTransfer() to take single URL each time,
+    // and eliminate this field; it is just returning a copy of the argument.
+    result->SetString("fileUrl", url_as_string);
     responses->Append(result.release());
   }
   SetResult(responses.release());
@@ -3010,7 +2905,7 @@ bool GetDriveConnectionStateFunction::RunImpl() {
       drive::DriveIntegrationServiceFactory::GetForProfile(profile_);
 
   bool ready = integration_service &&
-      integration_service->drive_service()->CanStartOperation();
+      integration_service->drive_service()->CanSendRequest();
   bool is_connection_cellular =
       net::NetworkChangeNotifier::IsConnectionCellular(
           net::NetworkChangeNotifier::GetConnectionType());
@@ -3055,12 +2950,15 @@ bool RequestDirectoryRefreshFunction::RunImpl() {
       BrowserContext::GetStoragePartition(profile(), site_instance)->
           GetFileSystemContext();
 
-  base::FilePath directory_path = GetVirtualPathFromURL(file_system_context,
-                                                  GURL(file_url_as_string));
+  base::FilePath directory_path =
+      drive::util::ExtractDrivePathFromFileSystemUrl(
+          file_system_context->CrackURL(GURL(file_url_as_string)));
+  if (directory_path.empty())
+    return false;
+
   integration_service->file_system()->RefreshDirectory(
       directory_path,
       base::Bind(&drive::util::EmptyFileOperationCallback));
-
   return true;
 }
 

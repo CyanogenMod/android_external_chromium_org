@@ -93,6 +93,8 @@ class CONTENT_EXPORT InterstitialPageImpl
 
   // WebContentsObserver implementation:
   virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void NavigationEntryCommitted(
+      const LoadCommittedDetails& load_details) OVERRIDE;
 
   // RenderViewHostDelegate implementation:
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
@@ -113,6 +115,7 @@ class CONTENT_EXPORT InterstitialPageImpl
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void CreateNewWindow(
       int route_id,
+      int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) OVERRIDE;
   virtual void CreateNewWidget(int route_id,

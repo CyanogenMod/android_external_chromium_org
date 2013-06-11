@@ -32,8 +32,12 @@ class SessionStateDelegateStub : public SessionStateDelegate {
       ash::MultiProfileIndex index) const OVERRIDE;
   virtual const gfx::ImageSkia& GetUserImage(
       ash::MultiProfileIndex index) const OVERRIDE;
-  virtual void GetLoggedInUsers(UserEmailList* users) OVERRIDE;
-  virtual void SwitchActiveUser(const std::string& email) OVERRIDE;
+  virtual void GetLoggedInUsers(UserIdList* users) OVERRIDE;
+  virtual void SwitchActiveUser(const std::string& user_id) OVERRIDE;
+  virtual void AddSessionStateObserver(
+      ash::SessionStateObserver* observer) OVERRIDE;
+  virtual void RemoveSessionStateObserver(
+      ash::SessionStateObserver* observer) OVERRIDE;
 
  private:
   bool screen_locked_;

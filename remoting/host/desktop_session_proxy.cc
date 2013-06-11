@@ -34,6 +34,7 @@
 
 const bool kReadOnly = true;
 const char kSendInitialResolution[] = "sendInitialResolution";
+const char kRateLimitResizeRequests[] = "rateLimitResizeRequests";
 
 namespace remoting {
 
@@ -137,15 +138,18 @@ scoped_ptr<ScreenControls> DesktopSessionProxy::CreateScreenControls() {
   return scoped_ptr<ScreenControls>(new IpcScreenControls(this));
 }
 
-scoped_ptr<media::ScreenCapturer> DesktopSessionProxy::CreateVideoCapturer() {
+scoped_ptr<webrtc::ScreenCapturer> DesktopSessionProxy::CreateVideoCapturer() {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
-  return scoped_ptr<media::ScreenCapturer>(new IpcVideoFrameCapturer(this));
+  return scoped_ptr<webrtc::ScreenCapturer>(new IpcVideoFrameCapturer(this));
 }
 
 std::string DesktopSessionProxy::GetCapabilities() const {
-  // Ask the client to send it's resolution unconditionally.
-  return virtual_terminal_ ? kSendInitialResolution : std::string();
+  std::string result = kRateLimitResizeRequests;
+  // Ask the client to send its resolution unconditionally.
+  if (virtual_terminal_)
+    result = result + " " + kSendInitialResolution;
+  return result;
 }
 
 void DesktopSessionProxy::SetCapabilities(const std::string& capabilities) {
@@ -163,9 +167,9 @@ void DesktopSessionProxy::SetCapabilities(const std::string& capabilities) {
   // Connect to the desktop session.
   if (!is_desktop_session_connected_) {
     is_desktop_session_connected_ = true;
-    if (desktop_session_connector_) {
-      desktop_session_connector_->ConnectTerminal(this, screen_resolution_,
-                                                  virtual_terminal_);
+    if (desktop_session_connector_.get()) {
+      desktop_session_connector_->ConnectTerminal(
+          this, screen_resolution_, virtual_terminal_);
     }
   }
 }
@@ -216,7 +220,7 @@ bool DesktopSessionProxy::AttachToDesktop(
 
   // Ignore the attach notification if the client session has been disconnected
   // already.
-  if (!client_session_control_) {
+  if (!client_session_control_.get()) {
     base::CloseProcessHandle(desktop_process);
     return false;
   }
@@ -253,7 +257,7 @@ bool DesktopSessionProxy::AttachToDesktop(
   desktop_channel_.reset(new IPC::ChannelProxy(desktop_channel_handle,
                                                IPC::Channel::MODE_CLIENT,
                                                this,
-                                               io_task_runner_));
+                                               io_task_runner_.get()));
 
   // Pass ID of the client (which is authenticated at this point) to the desktop
   // session agent and start the agent.
@@ -317,7 +321,7 @@ void DesktopSessionProxy::DisconnectSession() {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
   // Disconnect the client session if it hasn't been disconnected yet.
-  if (client_session_control_)
+  if (client_session_control_.get())
     client_session_control_->DisconnectSession();
 }
 
@@ -372,7 +376,7 @@ void DesktopSessionProxy::SetScreenResolution(
     const ScreenResolution& resolution) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
-  if (!resolution.IsEmpty())
+  if (resolution.IsEmpty())
     return;
 
   screen_resolution_ = resolution;
@@ -380,9 +384,9 @@ void DesktopSessionProxy::SetScreenResolution(
   // Connect to the desktop session if it is not done yet.
   if (!is_desktop_session_connected_) {
     is_desktop_session_connected_ = true;
-    if (desktop_session_connector_) {
-      desktop_session_connector_->ConnectTerminal(this, screen_resolution_,
-                                                  virtual_terminal_);
+    if (desktop_session_connector_.get()) {
+      desktop_session_connector_->ConnectTerminal(
+          this, screen_resolution_, virtual_terminal_);
     }
     return;
   }
@@ -391,7 +395,7 @@ void DesktopSessionProxy::SetScreenResolution(
   // Depending on the session kind the screen resolution can be set by either
   // the daemon (for example RDP sessions on Windows) or by the desktop session
   // agent (when sharing the physical console).
-  if (desktop_session_connector_)
+  if (desktop_session_connector_.get())
     desktop_session_connector_->SetScreenResolution(this, screen_resolution_);
   SendToDesktop(
       new ChromotingNetworkDesktopMsg_SetScreenResolution(screen_resolution_));
@@ -400,7 +404,7 @@ void DesktopSessionProxy::SetScreenResolution(
 DesktopSessionProxy::~DesktopSessionProxy() {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
-  if (desktop_session_connector_ && is_desktop_session_connected_)
+  if (desktop_session_connector_.get() && is_desktop_session_connected_)
     desktop_session_connector_->DisconnectTerminal(this);
 
   if (desktop_process_ != base::kNullProcessHandle) {
@@ -469,7 +473,7 @@ void DesktopSessionProxy::OnCaptureCompleted(
   // a more privileged process.
   scoped_refptr<IpcSharedBufferCore> shared_buffer_core =
       GetSharedBufferCore(serialized_frame.shared_buffer_id);
-  CHECK(shared_buffer_core);
+  CHECK(shared_buffer_core.get());
 
   scoped_ptr<webrtc::DesktopFrame> frame(
       new webrtc::SharedMemoryDesktopFrame(
@@ -487,10 +491,10 @@ void DesktopSessionProxy::OnCaptureCompleted(
 }
 
 void DesktopSessionProxy::OnCursorShapeChanged(
-    const media::MouseCursorShape& cursor_shape) {
+    const webrtc::MouseCursorShape& cursor_shape) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
-  PostCursorShape(scoped_ptr<media::MouseCursorShape>(
-      new media::MouseCursorShape(cursor_shape)));
+  PostCursorShape(scoped_ptr<webrtc::MouseCursorShape>(
+      new webrtc::MouseCursorShape(cursor_shape)));
 }
 
 void DesktopSessionProxy::OnInjectClipboardEvent(
@@ -519,7 +523,7 @@ void DesktopSessionProxy::PostCaptureCompleted(
 }
 
 void DesktopSessionProxy::PostCursorShape(
-    scoped_ptr<media::MouseCursorShape> cursor_shape) {
+    scoped_ptr<webrtc::MouseCursorShape> cursor_shape) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
   video_capture_task_runner_->PostTask(

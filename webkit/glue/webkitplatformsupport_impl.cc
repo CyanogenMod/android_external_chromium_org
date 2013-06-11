@@ -21,22 +21,24 @@
 #include "base/rand_util.h"
 #include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_info.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "grit/webkit_chromium_resources.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_strings.h"
+#include "net/base/data_url.h"
+#include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCookie.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebDiscardableMemory.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurve.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPluginListBuilder.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
+#include "third_party/WebKit/public/platform/WebCookie.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebDiscardableMemory.h"
+#include "third_party/WebKit/public/platform/WebGestureCurve.h"
+#include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
@@ -51,9 +53,9 @@
 #include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlloader_impl.h"
 #include "webkit/glue/worker_task_runner.h"
-#include "webkit/media/audio_decoder.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/webplugininfo.h"
+#include "webkit/renderer/media/audio_decoder.h"
 
 #if defined(OS_ANDROID)
 #include "webkit/glue/fling_animator_impl_android.h"
@@ -401,6 +403,20 @@ WebSocketStreamHandle* WebKitPlatformSupportImpl::createSocketStreamHandle() {
 
 WebString WebKitPlatformSupportImpl::userAgent(const WebURL& url) {
   return WebString::fromUTF8(webkit_glue::GetUserAgent(url));
+}
+
+WebData WebKitPlatformSupportImpl::parseDataURL(
+    const WebURL& url,
+    WebString& mimetype_out,
+    WebString& charset_out) {
+  std::string mime_type, char_set, data;
+  if (net::DataURL::Parse(url, &mime_type, &char_set, &data)
+      && net::IsSupportedMimeType(mime_type)) {
+    mimetype_out = WebString::fromUTF8(mime_type);
+    charset_out = WebString::fromUTF8(char_set);
+    return data;
+  }
+  return WebData();
 }
 
 WebURLError WebKitPlatformSupportImpl::cancelledError(
@@ -829,10 +845,10 @@ WebKit::WebThread* WebKitPlatformSupportImpl::currentThread() {
 
   scoped_refptr<base::MessageLoopProxy> message_loop =
       base::MessageLoopProxy::current();
-  if (!message_loop)
+  if (!message_loop.get())
     return NULL;
 
-  thread = new WebThreadImplForMessageLoop(message_loop);
+  thread = new WebThreadImplForMessageLoop(message_loop.get());
   current_thread_slot_.Set(thread);
   return thread;
 }

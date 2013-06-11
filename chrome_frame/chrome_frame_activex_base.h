@@ -18,13 +18,12 @@
 #include <vector>
 
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_variant.h"
-#include "grit/chrome_frame_resources.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/common/url_constants.h"
 #include "chrome_frame/chrome_frame_plugin.h"
@@ -35,6 +34,7 @@
 #include "chrome_frame/urlmon_url_request.h"
 #include "chrome_frame/urlmon_url_request_private.h"
 #include "chrome_frame/utils.h"
+#include "grit/chrome_frame_resources.h"
 #include "grit/generated_resources.h"
 #include "net/cookies/cookie_monster.h"
 
@@ -1076,7 +1076,7 @@ END_MSG_MAP()
     // using chrome frame full tab mode by using 'cf:' protocol handler.
     // Also change the disposition to NEW_WINDOW since IE6 doesn't have tabs.
     if (url_to_open.has_scheme() &&
-        (url_to_open.SchemeIs(chrome::kViewSourceScheme) ||
+        (url_to_open.SchemeIs(content::kViewSourceScheme) ||
         url_to_open.SchemeIs(chrome::kAboutScheme))) {
       std::wstring chrome_url;
       chrome_url.append(kChromeProtocolPrefix);

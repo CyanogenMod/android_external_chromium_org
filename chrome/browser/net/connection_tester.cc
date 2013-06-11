@@ -10,9 +10,9 @@
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
@@ -124,8 +124,7 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     scoped_refptr<net::HttpNetworkSession> network_session(
         new net::HttpNetworkSession(session_params));
     storage_.set_http_transaction_factory(new net::HttpCache(
-        network_session,
-        net::HttpCache::DefaultBackend::InMemory(0)));
+        network_session.get(), net::HttpCache::DefaultBackend::InMemory(0)));
     // In-memory cookie store.
     storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
 
@@ -369,7 +368,7 @@ void ConnectionTester::TestRunner::ReadBody(net::URLRequest* request) {
   scoped_refptr<net::IOBuffer> unused_buffer(
       new net::IOBuffer(kReadBufferSize));
   int num_bytes;
-  if (request->Read(unused_buffer, kReadBufferSize, &num_bytes)) {
+  if (request->Read(unused_buffer.get(), kReadBufferSize, &num_bytes)) {
     OnReadCompleted(request, num_bytes);
   } else if (!request->status().is_io_pending()) {
     // Read failed synchronously.

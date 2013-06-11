@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_H_
 
-#include <list>
 #include <map>
 #include <set>
 #include <string>
@@ -17,7 +16,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/extensions/app_sync_bundle.h"
 #include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/extension_function_histogram_value.h"
@@ -77,11 +76,6 @@ class SyncErrorFactory;
 // various classes have on ExtensionService. This allows easy mocking.
 class ExtensionServiceInterface : public syncer::SyncableService {
  public:
-  // A function that returns true if the given extension should be
-  // included and false if it should be filtered out.  Identical to
-  // PendingExtensionInfo::ShouldAllowInstallPredicate.
-  typedef bool (*ExtensionFilter)(const extensions::Extension&);
-
   virtual ~ExtensionServiceInterface() {}
   virtual const ExtensionSet* extensions() const = 0;
   virtual const ExtensionSet* disabled_extensions() const = 0;
@@ -328,9 +322,6 @@ class ExtensionService
   // currently has any window showing.
   void ReloadExtension(const std::string& extension_id);
 
-  // Reloads an extension and sends it the onRestarted() event.
-  void RestartExtension(const std::string& extension_id);
-
   // Uninstalls the specified extension. Callers should only call this method
   // with extensions that exist. |external_uninstall| is a magical parameter
   // that is only used to send information to ExtensionPrefs, which external
@@ -418,9 +409,6 @@ class ExtensionService
   // checking) before calling AddExtension.
   virtual void AddComponentExtension(const extensions::Extension* extension)
       OVERRIDE;
-
-  // Launch an extension the next time it is loaded.
-  void ScheduleLaunchOnLoad(const std::string& extension_id);
 
   // Informs the service that an extension's files are in place for loading.
   //
@@ -692,15 +680,6 @@ class ExtensionService
   };
   typedef std::map<std::string, ExtensionRuntimeData> ExtensionRuntimeDataMap;
 
-  struct NaClModuleInfo {
-    NaClModuleInfo();
-    ~NaClModuleInfo();
-
-    GURL url;
-    std::string mime_type;
-  };
-  typedef std::list<NaClModuleInfo> NaClModuleInfoList;
-
   // Signals *ready_ and sends a notification to the listeners.
   void SetReadyAndNotifyListeners();
 
@@ -718,13 +697,6 @@ class ExtensionService
   bool ProcessExtensionSyncDataHelper(
       const extensions::ExtensionSyncData& extension_sync_data,
       syncer::ModelType type);
-
-  // Events to be fired after an extension is reloaded.
-  enum PostReloadEvents {
-    EVENT_NONE = 0,
-    EVENT_LAUNCHED = 1 << 0,
-    EVENT_RESTARTED = 1 << 1,
-  };
 
   // Adds the given extension to the list of terminated extensions if
   // it is not already there and unloads it.
@@ -752,11 +724,6 @@ class ExtensionService
   // Common helper to finish installing the given extension.
   void FinishInstallation(const extensions::Extension* extension);
 
-  // Reloads |extension_id| and then dispatches to it the PostReloadEvents
-  // indicated by |events|.
-  void ReloadExtensionWithEvents(const std::string& extension_id,
-                                int events);
-
   // Updates the |extension|'s active permission set to include only permissions
   // currently requested by the extension and all the permissions required by
   // the extension.
@@ -767,36 +734,8 @@ class ExtensionService
   void CheckPermissionsIncrease(const extensions::Extension* extension,
                                 bool is_upgrade);
 
-  // Returns true if the app with id |extension_id| has any shell windows open.
-  bool HasShellWindows(const std::string& extension_id);
-
   // Helper that updates the active extension list used for crash reporting.
   void UpdateActiveExtensionsInCrashReporter();
-
-  // We implement some Pepper plug-ins using NaCl to take advantage of NaCl's
-  // strong sandbox. Typically, these NaCl modules are stored in extensions
-  // and registered here. Not all NaCl modules need to register for a MIME
-  // type, just the ones that are responsible for rendering a particular MIME
-  // type, like application/pdf. Note: We only register NaCl modules in the
-  // browser process.
-  void RegisterNaClModule(const GURL& url, const std::string& mime_type);
-  void UnregisterNaClModule(const GURL& url);
-
-  // Call UpdatePluginListWithNaClModules() after registering or unregistering
-  // a NaCl module to see those changes reflected in the PluginList.
-  void UpdatePluginListWithNaClModules();
-
-  NaClModuleInfoList::iterator FindNaClModule(const GURL& url);
-
-  // Performs tasks requested to occur after |extension| loads.
-  void DoPostLoadTasks(const extensions::Extension* extension);
-
-  // Launches the platform app associated with |extension_host|.
-  static void LaunchApplication(extensions::ExtensionHost* extension_host);
-
-  // Dispatches a restart event to the platform app associated with
-  // |extension_host|.
-  static void RestartApplication(extensions::ExtensionHost* extension_host);
 
   // Helper to inspect an ExtensionHost after it has been loaded.
   void InspectExtensionHost(extensions::ExtensionHost* host);
@@ -916,10 +855,6 @@ class ExtensionService
   typedef std::map<std::string, std::string> OrphanedDevTools;
   OrphanedDevTools orphaned_dev_tools_;
 
-  // Maps extension ids to a bitmask that indicates which events should be
-  // dispatched to the extension when it is loaded.
-  std::map<std::string, int> on_load_events_;
-
   content::NotificationRegistrar registrar_;
   PrefChangeRegistrar pref_change_registrar_;
 
@@ -963,8 +898,6 @@ class ExtensionService
   // Used for specially handling external extensions that are installed the
   // first time.
   bool is_first_run_;
-
-  NaClModuleInfoList nacl_module_list_;
 
   extensions::AppSyncBundle app_sync_bundle_;
   extensions::ExtensionSyncBundle extension_sync_bundle_;

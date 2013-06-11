@@ -7,11 +7,11 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "ppapi/c/ppp_graphics_3d.h"
 #include "ppapi/thunk/enter.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
@@ -53,18 +53,6 @@ PP_Bool ShmToHandle(base::SharedMemory* shm,
   return PP_TRUE;
 }
 
-PP_Graphics3DTrustedState PPStateFromGPUState(
-    const gpu::CommandBuffer::State& s) {
-  PP_Graphics3DTrustedState state = {
-      s.num_entries,
-      s.get_offset,
-      s.put_offset,
-      s.token,
-      static_cast<PPB_Graphics3DTrustedError>(s.error),
-      s.generation
-  };
-  return state;
-}
 }  // namespace.
 
 PPB_Graphics3D_Impl::PPB_Graphics3D_Impl(PP_Instance instance)
@@ -127,17 +115,13 @@ PP_Resource PPB_Graphics3D_Impl::CreateRaw(PP_Instance instance,
   return graphics_3d->GetReference();
 }
 
-PP_Bool PPB_Graphics3D_Impl::InitCommandBuffer() {
-  return PP_FromBool(GetCommandBuffer()->Initialize());
-}
-
 PP_Bool PPB_Graphics3D_Impl::SetGetBuffer(int32_t transfer_buffer_id) {
   GetCommandBuffer()->SetGetBuffer(transfer_buffer_id);
   return PP_TRUE;
 }
 
-PP_Graphics3DTrustedState PPB_Graphics3D_Impl::GetState() {
-  return PPStateFromGPUState(GetCommandBuffer()->GetState());
+gpu::CommandBuffer::State PPB_Graphics3D_Impl::GetState() {
+  return GetCommandBuffer()->GetState();
 }
 
 int32_t PPB_Graphics3D_Impl::CreateTransferBuffer(uint32_t size) {
@@ -163,17 +147,15 @@ PP_Bool PPB_Graphics3D_Impl::Flush(int32_t put_offset) {
   return PP_TRUE;
 }
 
-PP_Graphics3DTrustedState PPB_Graphics3D_Impl::FlushSync(int32_t put_offset) {
+gpu::CommandBuffer::State PPB_Graphics3D_Impl::FlushSync(int32_t put_offset) {
   gpu::CommandBuffer::State state = GetCommandBuffer()->GetState();
-  return PPStateFromGPUState(
-      GetCommandBuffer()->FlushSync(put_offset, state.get_offset));
+  return GetCommandBuffer()->FlushSync(put_offset, state.get_offset);
 }
 
-PP_Graphics3DTrustedState PPB_Graphics3D_Impl::FlushSyncFast(
+gpu::CommandBuffer::State PPB_Graphics3D_Impl::FlushSyncFast(
     int32_t put_offset,
     int32_t last_known_get) {
-  return PPStateFromGPUState(
-      GetCommandBuffer()->FlushSync(put_offset, last_known_get));
+  return GetCommandBuffer()->FlushSync(put_offset, last_known_get);
 }
 
 uint32_t PPB_Graphics3D_Impl::InsertSyncPoint() {
@@ -183,10 +165,6 @@ uint32_t PPB_Graphics3D_Impl::InsertSyncPoint() {
 bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {
   bound_to_instance_ = bind;
   return true;
-}
-
-unsigned int PPB_Graphics3D_Impl::GetBackingTextureId() {
-  return platform_context_->GetBackingTextureId();
 }
 
 bool PPB_Graphics3D_Impl::IsOpaque() {

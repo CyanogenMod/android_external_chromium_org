@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "webkit/media/webmediaplayer_impl.h"
+#include "webkit/renderer/media/webmediaplayer_impl.h"
 
 namespace prerender {
 
@@ -28,7 +28,6 @@ class PrerenderWebMediaPlayer
 
   // WebMediaPlayerImpl methods:
   virtual void load(const WebKit::WebURL& url, CORSMode cors_mode) OVERRIDE;
-  virtual void cancelLoad() OVERRIDE;
 
  private:
   // RenderViewObserver method:

@@ -5,6 +5,7 @@ import logging
 import os
 import subprocess
 
+from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.core.chrome import browser_backend
 from telemetry.core.chrome import cros_util
@@ -101,10 +102,20 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
       self.Close()
       raise
 
+    # chrome_branch_number is set in _PostBrowserStartupInitialization.
+    # Without --skip-hwid-check (introduced in crrev.com/203397), devices/VMs
+    # will be stuck on the bad hwid screen.
+    if self.chrome_branch_number <= 1500 and not self.hwid:
+      raise exceptions.LoginException(
+          'Hardware id not set on device/VM. --skip-hwid-check not supported '
+          'with chrome branches 1500 or earlier.')
+
     if self._is_guest:
+      pid = self.pid
       cros_util.NavigateGuestLogin(self, cri)
       # Guest browsing shuts down the current browser and launches an incognito
-      # browser, which we need to wait for.
+      # browser in a separate process, which we need to wait for.
+      util.WaitFor(lambda: pid != self.pid, 10)
       self._WaitForBrowserToComeUp()
     else:
       cros_util.NavigateLogin(self)
@@ -129,15 +140,51 @@ class CrOSBrowserBackend(browser_backend.BrowserBackend):
     if not self._is_guest:
       args.append('--auth-ext-path=%s' % self._login_ext_dir)
 
+    # Skip hwid check on systems that don't have a hwid set, eg VMs.
+    if not self.hwid:
+      args.append('--skip-hwid-check')
+
     return args
+
+
+  def _GetSessionManagerPid(self, procs):
+    """Returns the pid of the session_manager process, given the list of
+    processes."""
+    for pid, process, _ in procs:
+      if process.startswith('/sbin/session_manager '):
+        return pid
+    return None
 
   @property
   def pid(self):
-    for pid, process in self._cri.ListProcesses():
+    """Locates the pid of the main chrome browser process.
+
+    Chrome on cros is usually in /opt/google/chrome, but could be in
+    /usr/local/ for developer workflows - debug chrome is too large to fit on
+    rootfs.
+
+    Chrome spawns multiple processes for renderers. pids wrap around after they
+    are exhausted so looking for the smallest pid is not always correct. We
+    locate the session_manager's pid, and look for the chrome process that's an
+    immediate child. This is the main browser process.
+    """
+    procs = self._cri.ListProcesses()
+    session_manager_pid = self._GetSessionManagerPid(procs)
+    if not session_manager_pid:
+      return None
+
+    # Find the chrome process that is the child of the session_manager.
+    for pid, process, ppid in procs:
+      if ppid != session_manager_pid:
+        continue
       for path in self.CHROME_PATHS:
         if process.startswith(path):
-          return int(pid)
+          return pid
     return None
+
+  @property
+  def hwid(self):
+    return self._cri.RunCmdOnDevice(['/usr/bin/crossystem', 'hwid'])[0]
 
   def GetRemotePort(self, _):
     return self._cri.GetRemotePort()

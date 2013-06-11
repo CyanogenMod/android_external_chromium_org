@@ -22,6 +22,7 @@ class Profile;
 
 namespace base {
 class DictionaryValue;
+class ListValue;
 }
 
 namespace content {
@@ -82,7 +83,7 @@ class MessageService : public ProfileKeyedAPI,
                                       const std::string& error_message) {}
 
     // Dispatch a message to this end of the communication.
-    virtual void DispatchOnMessage(const std::string& message,
+    virtual void DispatchOnMessage(scoped_ptr<base::ListValue> message,
                                    int target_port_id) = 0;
 
     // MessagPorts that target extensions will need to adjust their keepalive
@@ -144,12 +145,12 @@ class MessageService : public ProfileKeyedAPI,
                             const std::string& error_message) OVERRIDE;
 
   // Sends a message to the given port.
-  void PostMessage(int port_id, const std::string& message);
+  void PostMessage(int port_id, scoped_ptr<base::ListValue> message);
 
   // NativeMessageProcessHost::Client
   virtual void PostMessageFromNativeProcess(
       int port_id,
-      const std::string& message) OVERRIDE;
+      scoped_ptr<base::ListValue> message) OVERRIDE;
 
  private:
   friend class MockMessageService;
@@ -205,17 +206,25 @@ class MessageService : public ProfileKeyedAPI,
       CloseChannel(port_id, error_message);
   }
   void PendingPostMessage(int port_id,
-                          const std::string& message,
+                          scoped_ptr<base::ListValue> message,
                           extensions::ExtensionHost* host) {
     if (host)
-      PostMessage(port_id, message);
+      PostMessage(port_id, message.Pass());
   }
+
+  // Immediate dispatches a disconnect to |source| for |port_id|. Sets source's
+  // runtime.lastMessage to |error_message|, if any.
+  void DispatchOnDisconnect(content::RenderProcessHost* source,
+                            int port_id,
+                            const std::string& error_message);
 
   // ProfileKeyedAPI implementation.
   static const char* service_name() {
     return "MessageService";
   }
   static const bool kServiceRedirectedInIncognito = true;
+  static const bool kServiceIsCreatedWithBrowserContext = false;
+  static const bool kServiceIsNULLWhileTesting = true;
 
   content::NotificationRegistrar registrar_;
   MessageChannelMap channels_;

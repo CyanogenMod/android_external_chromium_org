@@ -16,9 +16,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/run_loop.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -205,23 +205,17 @@ TEST_F(ProfileSigninConfirmationHelperTest, PromptForNewProfile_Extensions) {
   extensions->extension_prefs()->AddGrantedPermissions(
       webstore->id(),
       make_scoped_refptr(new extensions::PermissionSet));
-  extensions->AddExtension(webstore);
-  EXPECT_FALSE(
-      GetCallbackResult(
-          base::Bind(
-              &ui::CheckShouldPromptForNewProfile,
-              profile_.get())));
+  extensions->AddExtension(webstore.get());
+  EXPECT_FALSE(GetCallbackResult(
+      base::Bind(&ui::CheckShouldPromptForNewProfile, profile_.get())));
 
   scoped_refptr<extensions::Extension> extension =
       CreateExtension("foo", std::string());
   extensions->extension_prefs()->AddGrantedPermissions(
       extension->id(), make_scoped_refptr(new extensions::PermissionSet));
-  extensions->AddExtension(extension);
-  EXPECT_TRUE(
-      GetCallbackResult(
-          base::Bind(
-              &ui::CheckShouldPromptForNewProfile,
-              profile_.get())));
+  extensions->AddExtension(extension.get());
+  EXPECT_TRUE(GetCallbackResult(
+      base::Bind(&ui::CheckShouldPromptForNewProfile, profile_.get())));
 }
 
 TEST_F(ProfileSigninConfirmationHelperTest, PromptForNewProfile_History) {

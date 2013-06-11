@@ -38,7 +38,6 @@ tabpanel > div > div {
 
 .dump {
   font-family: monospace;
-  text-wrap: unrestricted;
   white-space: pre-wrap;
 }
 
@@ -62,11 +61,11 @@ tabpanel > div > div {
 }
 
 .detection-logs-time {
-  width: 20%;
+  width: 10%;
 }
 
 .detection-logs-url {
-  width: 40%;
+  width: 20%;
 }
 
 td.detection-logs-url {
@@ -82,11 +81,27 @@ td.detection-logs-url {
 }
 
 .detection-logs-is-cld-reliable {
+  width: 5%;
+}
+
+.detection-logs-html-root-language {
   width: 10%;
 }
 
-.detection-logs-language {
+.detection-logs-adopted-language {
   width: 10%;
+}
+
+.detection-logs-content {
+  width: 25%;
+}
+
+td.detection-logs-content div {
+  font-family: monospace;
+  max-height: 250px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 .error-logs-time {
@@ -99,4 +114,19 @@ td.detection-logs-url {
 
 .error-logs-error {
   width: 40%;
+}
+
+.event-logs-time {
+  width: 15%;
+}
+
+.event-logs-place {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 35%;
+}
+
+.event-logs-message {
+  width: 50%;
 }

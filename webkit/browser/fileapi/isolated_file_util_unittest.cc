@@ -9,10 +9,11 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/async_file_test_helper.h"
@@ -26,8 +27,6 @@
 #include "webkit/browser/fileapi/mock_file_system_context.h"
 #include "webkit/browser/fileapi/native_file_util.h"
 #include "webkit/browser/fileapi/test_file_set.h"
-
-using file_util::FileEnumerator;
 
 namespace fileapi {
 
@@ -339,13 +338,6 @@ TEST_F(IsolatedFileUtilTest, UnregisteredPathsTest) {
 
     // We should not be able to get the valid URL for unregistered files.
     ASSERT_FALSE(url.is_valid());
-
-    // We should not be able to create a new operation for an invalid URL.
-    base::PlatformFileError error_code;
-    FileSystemOperation* operation =
-        file_system_context()->CreateFileSystemOperation(url, &error_code);
-    ASSERT_EQ(NULL, operation);
-    ASSERT_EQ(base::PLATFORM_FILE_ERROR_INVALID_URL, error_code);
   }
 }
 
@@ -363,18 +355,17 @@ TEST_F(IsolatedFileUtilTest, ReadDirectoryTest) {
     EntryMap expected_entry_map;
 
     base::FilePath dir_path = GetTestCasePlatformPath(test_case.path);
-    FileEnumerator file_enum(
+    base::FileEnumerator file_enum(
         dir_path, false /* not recursive */,
-        FileEnumerator::FILES | FileEnumerator::DIRECTORIES);
+        base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
     base::FilePath current;
     while (!(current = file_enum.Next()).empty()) {
-      FileEnumerator::FindInfo file_info;
-      file_enum.GetFindInfo(&file_info);
+      base::FileEnumerator::FileInfo file_info = file_enum.GetInfo();
       DirectoryEntry entry;
-      entry.is_directory = FileEnumerator::IsDirectory(file_info);
+      entry.is_directory = file_info.IsDirectory();
       entry.name = current.BaseName().value();
-      entry.size = FileEnumerator::GetFilesize(file_info);
-      entry.last_modified_time = FileEnumerator::GetLastModifiedTime(file_info);
+      entry.size = file_info.GetSize();
+      entry.last_modified_time = file_info.GetLastModifiedTime();
       expected_entry_map[entry.name] = entry;
 
 #if defined(OS_POSIX)

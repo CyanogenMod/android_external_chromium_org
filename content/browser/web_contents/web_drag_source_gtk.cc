@@ -7,8 +7,8 @@
 #include <string>
 
 #include "base/nix/mime_util_xdg.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
 #include "content/browser/download/drag_download_file.h"
 #include "content/browser/download/drag_download_util.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
@@ -26,7 +26,7 @@
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_screen_util.h"
 #include "ui/gfx/gtk_util.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
 
 using WebKit::WebDragOperation;
 using WebKit::WebDragOperationsMask;
@@ -256,7 +256,7 @@ void WebDragSourceGtk::OnDragDataGet(GtkWidget* sender,
                     web_contents_->GetEncoding(),
                     web_contents_);
             drag_file_downloader->Start(
-                new PromiseFileFinalizer(drag_file_downloader));
+                new PromiseFileFinalizer(drag_file_downloader.get()));
 
             // Set the status code to success.
             status_code = 'S';

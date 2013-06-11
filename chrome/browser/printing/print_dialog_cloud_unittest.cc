@@ -15,8 +15,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/common/chrome_paths.h"
@@ -312,7 +312,7 @@ class CloudPrintWebDialogDelegateTest : public testing::Test {
 
   virtual void TearDown() {
     delegate_.reset();
-    if (mock_flow_handler_)
+    if (mock_flow_handler_.get())
       delete mock_flow_handler_.get();
   }
 

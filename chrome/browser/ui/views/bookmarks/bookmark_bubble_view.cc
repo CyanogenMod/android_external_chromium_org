@@ -4,9 +4,9 @@
 
 #include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view.h"
 
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -172,7 +172,6 @@ void BookmarkBubbleView::Init() {
                               IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARK));
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   title_label->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
-  title_label->SetEnabledColor(SkColorSetRGB(6, 45, 117));
 
   GridLayout* layout = new GridLayout(this);
   SetLayoutManager(layout);

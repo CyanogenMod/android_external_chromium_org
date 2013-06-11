@@ -15,9 +15,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_checker.h"
 #include "base/timer.h"
-#include "base/utf_string_conversions.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
@@ -287,9 +287,7 @@ void RdpSession::SetScreenResolution(const ScreenResolution& resolution) {
 void RdpSession::InjectSas() {
   DCHECK(caller_task_runner()->BelongsToCurrentThread());
 
-  // TODO(alexeypa): implement SAS injection for RDP sessions here.
-  // See http://crbug.com/137696.
-  NOTIMPLEMENTED();
+  rdp_desktop_session_->InjectSas();
 }
 
 RdpSession::EventHandler::EventHandler(

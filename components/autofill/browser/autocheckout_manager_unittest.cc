@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/strings/utf_string_conversions.h"
 #include "base/tuple.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/browser/autocheckout_manager.h"
@@ -21,7 +21,6 @@
 #include "ipc/ipc_test_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
 
 using content::BrowserThread;
 
@@ -334,11 +333,25 @@ class TestAutocheckoutManager: public AutocheckoutManager {
 }  // namespace
 
 class AutocheckoutManagerTest : public ChromeRenderViewHostTestHarness {
- public:
-  AutocheckoutManagerTest()
-      : ChromeRenderViewHostTestHarness(),
-        ui_thread_(BrowserThread::UI, &message_loop_),
-        io_thread_(BrowserThread::IO) {
+ protected:
+  virtual void SetUp() OVERRIDE {
+    SetThreadBundleOptions(content::TestBrowserThreadBundle::REAL_IO_THREAD);
+    ChromeRenderViewHostTestHarness::SetUp();
+    profile()->CreateRequestContext();
+    autofill_manager_delegate_.reset(new MockAutofillManagerDelegate());
+    autofill_manager_.reset(new TestAutofillManager(
+        web_contents(),
+        autofill_manager_delegate_.get()));
+    autocheckout_manager_.reset(
+        new TestAutocheckoutManager(autofill_manager_.get()));
+  }
+
+  virtual void TearDown() OVERRIDE {
+    autocheckout_manager_.reset();
+    autofill_manager_delegate_.reset();
+    autofill_manager_.reset();
+    profile()->ResetRequestContext();
+    ChromeRenderViewHostTestHarness::TearDown();
   }
 
   std::vector<FormData> ReadFilledForms() {
@@ -401,35 +414,9 @@ class AutocheckoutManagerTest : public ChromeRenderViewHostTestHarness {
   }
 
  protected:
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread io_thread_;
   scoped_ptr<TestAutofillManager> autofill_manager_;
   scoped_ptr<TestAutocheckoutManager> autocheckout_manager_;
   scoped_ptr<MockAutofillManagerDelegate> autofill_manager_delegate_;
-
- private:
-  virtual void SetUp() OVERRIDE {
-    ChromeRenderViewHostTestHarness::SetUp();
-    io_thread_.StartIOThread();
-    profile()->CreateRequestContext();
-    autofill_manager_delegate_.reset(new MockAutofillManagerDelegate());
-    autofill_manager_.reset(new TestAutofillManager(
-        web_contents(),
-        autofill_manager_delegate_.get()));
-    autocheckout_manager_.reset(
-        new TestAutocheckoutManager(autofill_manager_.get()));
-  }
-
-  virtual void TearDown() OVERRIDE {
-    autocheckout_manager_.reset();
-    autofill_manager_delegate_.reset();
-    autofill_manager_.reset();
-    profile()->ResetRequestContext();
-    ChromeRenderViewHostTestHarness::TearDown();
-    io_thread_.Stop();
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(AutocheckoutManagerTest);
 };
 
 TEST_F(AutocheckoutManagerTest, TestFillForms) {

@@ -12,7 +12,7 @@
 #include "base/mac/mac_util.h"
 #import "base/memory/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
 #include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -41,7 +41,6 @@
 #import "chrome/browser/ui/cocoa/chrome_to_mobile_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/dev_tools_controller.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
-#import "chrome/browser/ui/cocoa/event_utils.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
@@ -73,9 +72,12 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
+#include "content/public/common/content_switches.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#import "ui/base/cocoa/cocoa_event_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/gfx/mac/scoped_ns_disable_screen_updates.h"
@@ -265,6 +267,10 @@ enum {
     NSWindow* window = [self window];
     windowShim_.reset(new BrowserWindowCocoa(browser, self));
 
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kUseCoreAnimation))
+      [[[self window] contentView] setWantsLayer:YES];
+
     // Set different minimum sizes on tabbed windows vs non-tabbed, e.g. popups.
     // This has to happen before -enforceMinWindowSize: is called further down.
     NSSize minSize = [self isTabbedWindow] ?
@@ -374,6 +380,7 @@ enum {
     // ToolbarController.
     infoBarContainerController_.reset(
         [[InfoBarContainerController alloc] initWithResizeDelegate:self]);
+    [self updateInfoBarTipVisibility];
 
     // We don't want to try and show the bar before it gets placed in its parent
     // view, so this step shoudn't be inside the bookmark bar controller's
@@ -587,11 +594,18 @@ enum {
   [self saveWindowPositionIfNeeded];
 
   if (!browser_->tab_strip_model()->empty()) {
-    // Tab strip isn't empty.  Hide the frame (so it appears to have closed
+    // Tab strip isn't empty.  Hide the window (so it appears to have closed
     // immediately) and close all the tabs, allowing the renderers to shut
     // down. When the tab strip is empty we'll be called back again.
     [[self window] orderOut:self];
     browser_->OnWindowClosing();
+    browser_->tab_strip_model()->CloseAllTabs();
+    return NO;
+  } else if (!browser_->HasCompletedUnloadProcessing()) {
+    // The browser needs to finish running unload handlers.
+    // Hide the window (so it appears to have closed immediately), and
+    // the browser will call us back again when it is ready to close.
+    [[self window] orderOut:self];
     return NO;
   }
 
@@ -1190,7 +1204,7 @@ enum {
     modifierFlags &= ~NSCommandKeyMask;
   }
   WindowOpenDisposition disposition =
-      event_utils::WindowOpenDispositionFromNSEventWithFlags(
+      ui::WindowOpenDispositionFromNSEventWithFlags(
           [NSApp currentEvent], modifierFlags);
   switch (command) {
     case IDC_BACK:
@@ -1590,6 +1604,8 @@ enum {
   [infoBarContainerController_ changeWebContents:contents];
 
   [overlayableContentsController_ onActivateTabWithContents:contents];
+
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 - (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
@@ -1618,6 +1634,8 @@ enum {
   // TODO(dmaclach): Instead of redrawing the whole window, views that care
   // about the active window state should be registering for notifications.
   [[self window] setViewsNeedDisplay:YES];
+  if (avatarButtonController_.get())
+    [avatarButtonController_ updateColors:[self themeProvider]];
 }
 
 - (ui::ThemeProvider*)themeProvider {
@@ -1719,6 +1737,9 @@ enum {
   // image to display based on the browser.
   avatarButtonController_.reset(
       [[AvatarButtonController alloc] initWithBrowser:browser_.get()]);
+  if ([avatarButtonController_ labelView])
+    [avatarButtonController_ updateColors:[self themeProvider]];
+
   NSView* view = [avatarButtonController_ view];
   [view setAutoresizingMask:NSViewMinXMargin | NSViewMinYMargin];
   [view setHidden:![self shouldShowAvatar]];
@@ -1751,7 +1772,7 @@ enum {
     chrome::ExecuteCommandWithDisposition(
         browser_.get(),
         command,
-        event_utils::WindowOpenDispositionFromNSEvent(event));
+        ui::WindowOpenDispositionFromNSEvent(event));
   }
 }
 
@@ -1786,7 +1807,7 @@ enum {
     chrome::ExecuteCommandWithDisposition(
         browser_.get(),
         command,
-        event_utils::WindowOpenDispositionFromNSEvent(event));
+        ui::WindowOpenDispositionFromNSEvent(event));
   }
 }
 
@@ -1874,10 +1895,7 @@ enum {
 - (id)windowWillReturnFieldEditor:(NSWindow*)sender toObject:(id)obj {
   // Ask the toolbar controller if it wants to return a custom field editor
   // for the specific object.
-  id fieldEditor = [toolbarController_ customFieldEditorForObject:obj];
-  if (!fieldEditor && findBarCocoaController_)
-    fieldEditor = [findBarCocoaController_ customFieldEditorForObject:obj];
-  return fieldEditor;
+  return [toolbarController_ customFieldEditorForObject:obj];
 }
 
 // (Needed for |BookmarkBarControllerDelegate| protocol.)
@@ -1967,11 +1985,11 @@ willAnimateFromState:(BookmarkBar::State)oldState
   [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
   [self updateContentOffsets];
   [self updateSubviewZOrder:[self inPresentationMode]];
+  [self updateInfoBarTipVisibility];
+}
 
-  // If the overlay is open then hide the infobar tip.
-  [infoBarContainerController_
-      setShouldSuppressTopInfoBarTip:[self currentInstantUIState] !=
-      browser_window_controller::kInstantUINone];
+- (void)onFindBarVisibilityChanged {
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 @end  // @implementation BrowserWindowController

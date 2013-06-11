@@ -9,7 +9,7 @@
 #include "base/supports_user_data.h"
 #include "base/threading/thread_checker.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
@@ -38,7 +38,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE FileSystemOperationContext
   virtual ~FileSystemOperationContext();
 
   FileSystemContext* file_system_context() const {
-    return file_system_context_;
+    return file_system_context_.get();
   }
 
   // Updates the current remaining quota.
@@ -54,7 +54,6 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE FileSystemOperationContext
   const base::FilePath& root_path() const { return root_path_; }
 
   ChangeObserverList* change_observers() { return &change_observers_; }
-  AccessObserverList* access_observers() { return &access_observers_; }
   UpdateObserverList* update_observers() { return &update_observers_; }
 
   // Following setters should be called only on the same thread as the
@@ -63,10 +62,6 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE FileSystemOperationContext
   void set_change_observers(const ChangeObserverList& list) {
     DCHECK(setter_thread_checker_.CalledOnValidThread());
     change_observers_ = list;
-  }
-  void set_access_observers(const AccessObserverList& list) {
-    DCHECK(setter_thread_checker_.CalledOnValidThread());
-    access_observers_ = list;
   }
   void set_update_observers(const UpdateObserverList& list) {
     DCHECK(setter_thread_checker_.CalledOnValidThread());
@@ -105,7 +100,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE FileSystemOperationContext
     DISALLOW_COPY_AND_ASSIGN(ValueAdapter);
   };
 
-  FileSystemContext* file_system_context_;
+  scoped_refptr<FileSystemContext> file_system_context_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
   // The current remaining quota, used by ObfuscatedFileUtil.
@@ -115,7 +110,6 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE FileSystemOperationContext
   quota::QuotaLimitType quota_limit_type_;
 
   // Observers attached to this context.
-  AccessObserverList access_observers_;
   ChangeObserverList change_observers_;
   UpdateObserverList update_observers_;
 

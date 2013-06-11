@@ -73,7 +73,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
-#include "webkit/glue/webcursor.h"
+#include "webkit/common/cursors/webcursor.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
@@ -749,7 +749,9 @@ void RenderWidgetHostViewWin::Redraw() {
 void RenderWidgetHostViewWin::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects) {
+    const std::vector<gfx::Rect>& copy_rects,
+    const ui::LatencyInfo& latency_info) {
+  software_latency_info_.MergeWith(latency_info);
   if (is_hidden_)
     return;
 
@@ -793,6 +795,8 @@ bool RenderWidgetHostViewWin::CanSubscribeFrame() const {
 
 void RenderWidgetHostViewWin::WillWmDestroy() {
   CleanupCompositorWindow();
+  if (base::win::IsTSFAwareRequired() && GetFocus() == m_hWnd)
+    ui::TSFBridge::GetInstance()->RemoveFocusedClient(this);
 }
 
 void RenderWidgetHostViewWin::Destroy() {
@@ -1035,6 +1039,10 @@ void RenderWidgetHostViewWin::InsertChar(char16 ch, int flags) {
   }
   // TODO(nona): Implement this function.
   NOTIMPLEMENTED();
+}
+
+gfx::NativeWindow RenderWidgetHostViewWin::GetAttachedWindow() const {
+  return m_hWnd;
 }
 
 ui::TextInputType RenderWidgetHostViewWin::GetTextInputType() const {
@@ -1390,6 +1398,10 @@ void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
       // recorded.
       web_contents_switch_paint_time_ = TimeTicks();
     }
+
+    software_latency_info_.swap_timestamp = TimeTicks::HighResNow();
+    render_widget_host_->FrameSwapped(software_latency_info_);
+    software_latency_info_.Clear();
   } else {
     DrawBackground(paint_dc.m_ps.rcPaint, &paint_dc);
     if (whiteout_start_time_.is_null())

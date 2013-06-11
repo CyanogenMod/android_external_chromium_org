@@ -10,11 +10,11 @@
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
@@ -36,6 +36,8 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/task_manager/task_manager.h"
+#include "chrome/browser/task_manager/task_manager_browsertest_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -72,7 +74,12 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "grit/generated_resources.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/l10n/l10n_util.h"
+
+using testing::HasSubstr;
 
 namespace {
 
@@ -118,7 +125,10 @@ class InstantExtendedTest : public InProcessBrowserTest,
         on_native_suggestions_calls_(0),
         on_change_calls_(0),
         submit_count_(0),
-        on_esc_key_press_event_calls_(0) {
+        on_esc_key_press_event_calls_(0),
+        on_focus_changed_calls_(0),
+        is_focused_(false),
+        on_toggle_voice_search_calls_(0) {
   }
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
@@ -182,7 +192,13 @@ class InstantExtendedTest : public InProcessBrowserTest,
            GetStringFromJS(contents, "apiHandle.value",
                            &query_value_) &&
            GetIntFromJS(contents, "onEscKeyPressedCalls",
-                        &on_esc_key_press_event_calls_);
+                        &on_esc_key_press_event_calls_) &&
+           GetIntFromJS(contents, "onFocusChangedCalls",
+                       &on_focus_changed_calls_) &&
+           GetBoolFromJS(contents, "isFocused",
+                         &is_focused_) &&
+           GetIntFromJS(contents, "onToggleVoiceSearchCalls",
+                        &on_toggle_voice_search_calls_);
   }
 
   TemplateURL* GetDefaultSearchProviderTemplateURL() {
@@ -234,6 +250,9 @@ class InstantExtendedTest : public InProcessBrowserTest,
   int submit_count_;
   int on_esc_key_press_event_calls_;
   std::string query_value_;
+  int on_focus_changed_calls_;
+  bool is_focused_;
+  int on_toggle_voice_search_calls_;
 };
 
 // Test class used to verify chrome-search: scheme and access policy from the
@@ -272,6 +291,8 @@ class InstantPolicyTest : public ExtensionBrowserTest, public InstantTestBase {
  private:
   DISALLOW_COPY_AND_ASSIGN(InstantPolicyTest);
 };
+
+#if defined(HTML_INSTANT_EXTENDED_POPUP)
 
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest, ExtendedModeIsOn) {
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
@@ -1148,8 +1169,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_UnrelatedSiteInstance) {
   scoped_refptr<content::SiteInstance> second_site_instance =
       second_active_tab->GetSiteInstance();
   EXPECT_NE(first_site_instance, second_site_instance);
-  EXPECT_FALSE(first_site_instance->IsRelatedSiteInstance(
-      second_site_instance));
+  EXPECT_FALSE(
+      first_site_instance->IsRelatedSiteInstance(second_site_instance.get()));
 }
 
 // Tests that suggestions are sanity checked.
@@ -1258,8 +1279,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
   omnibox()->RevertAll();
 }
 
-// TODO(dhollowa): Fix flakes.  http://crbug.com/179930.
-IN_PROC_BROWSER_TEST_F(InstantExtendedTest, DISABLED_MostVisited) {
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, MostVisited) {
   content::WindowedNotificationObserver observer(
       chrome::NOTIFICATION_INSTANT_SENT_MOST_VISITED_ITEMS,
       content::NotificationService::AllSources());
@@ -1969,6 +1989,63 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, EscapeClearsOmnibox) {
   EXPECT_LT(0, on_esc_key_press_event_calls_);
 }
 
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, FocusApiRespondsToFocusChange) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+  EXPECT_FALSE(is_focused_);
+  EXPECT_EQ(0, on_focus_changed_calls_);
+
+  // Focus the omnibox.
+  FocusOmniboxAndWaitForInstantOverlaySupport();
+  ASSERT_TRUE(UpdateSearchState(instant()->GetOverlayContents()));
+  EXPECT_TRUE(is_focused_);
+  EXPECT_EQ(1, on_focus_changed_calls_);
+
+  // Now unfocus the omnibox.
+  ui_test_utils::ClickOnView(browser(), VIEW_ID_TAB_CONTAINER);
+  ASSERT_TRUE(UpdateSearchState(instant()->GetOverlayContents()));
+  EXPECT_FALSE(is_focused_);
+  EXPECT_EQ(2, on_focus_changed_calls_);
+
+  // Focus the omnibox again.
+  // The first focus may have worked only due to initial-state anomalies.
+  FocusOmnibox();
+  ASSERT_TRUE(UpdateSearchState(instant()->GetOverlayContents()));
+  EXPECT_TRUE(is_focused_);
+  EXPECT_EQ(3, on_focus_changed_calls_);
+}
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, FocusApiIgnoresRedundantFocus) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+  EXPECT_FALSE(is_focused_);
+  EXPECT_EQ(0, on_focus_changed_calls_);
+
+  // Focus the Omnibox.
+  FocusOmniboxAndWaitForInstantOverlaySupport();
+  ASSERT_TRUE(UpdateSearchState(instant()->GetOverlayContents()));
+  EXPECT_TRUE(is_focused_);
+  EXPECT_EQ(1, on_focus_changed_calls_);
+
+  // When we focus the omnibox again, nothing should change.
+  FocusOmnibox();
+  ASSERT_TRUE(UpdateSearchState(instant()->GetOverlayContents()));
+  EXPECT_TRUE(is_focused_);
+  EXPECT_EQ(1, on_focus_changed_calls_);
+
+  // Now unfocus the omnibox.
+  ui_test_utils::ClickOnView(browser(), VIEW_ID_TAB_CONTAINER);
+  ASSERT_TRUE(UpdateSearchState(instant()->GetOverlayContents()));
+  EXPECT_FALSE(is_focused_);
+  EXPECT_EQ(2, on_focus_changed_calls_);
+
+  // When we unfocus again, nothing should change.
+  ui_test_utils::ClickOnView(browser(), VIEW_ID_TAB_CONTAINER);
+  ASSERT_TRUE(UpdateSearchState(instant()->GetOverlayContents()));
+  EXPECT_FALSE(is_focused_);
+  EXPECT_EQ(2, on_focus_changed_calls_);
+}
+
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest, OnDefaultSearchProviderChanged) {
   InstantService* instant_service =
       InstantServiceFactory::GetForProfile(browser()->profile());
@@ -2336,7 +2413,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, OverlaySendsSearchWhatYouTyped) {
 }
 
 IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
-                       OverlayDoesNotEchoSearchProviderNAVSUGGEST) {
+                       OverlayDoesNotEchoSearchProviderNavsuggest) {
   ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
   FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
 
@@ -2592,3 +2669,135 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, LogDropdownShown) {
   EXPECT_EQ(histogramValue + 1,
             GetHistogramCount("Instant.TimeToFirstShowFromWeb"));
 }
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, TaskManagerPrefix) {
+  TaskManagerModel* task_manager = TaskManager::GetInstance()->model();
+  task_manager->StartUpdating();
+
+  // There should be three renderers, the second being the Instant overlay,
+  // and the third being the preloaded NTP.
+  TaskManagerBrowserTestUtil::WaitForWebResourceChange(3);
+
+  string16 prefix = l10n_util::GetStringFUTF16(
+      IDS_TASK_MANAGER_INSTANT_OVERLAY_PREFIX, string16());
+
+  int instant_overlays = 0;
+  for (int i = 0; i < task_manager->ResourceCount(); ++i) {
+    string16 title = task_manager->GetResourceTitle(i);
+    if (StartsWith(title, prefix, true))
+      ++instant_overlays;
+  }
+  EXPECT_EQ(2, instant_overlays);
+}
+
+// Broken on mac: http://crbug.com/247448
+#if defined(OS_MACOSX)
+#define MAYBE_KeyboardTogglesVoiceSearch DISABLED_KeyboardTogglesVoiceSearch
+#else
+#define MAYBE_KeyboardTogglesVoiceSearch KeyboardTogglesVoiceSearch
+#endif
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, MAYBE_KeyboardTogglesVoiceSearch) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+
+  // Test that toggle is not fired when no tab is open.
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(browser(), ui::VKEY_OEM_PERIOD,
+                                              true, true, false, false));
+  EXPECT_TRUE(UpdateSearchState(instant()->GetOverlayContents()));
+  EXPECT_EQ(0, on_toggle_voice_search_calls_);
+
+  // Open new tab and test that toggle is fired.
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(),
+      GURL(chrome::kChromeUINewTabURL),
+      NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(browser(), ui::VKEY_OEM_PERIOD,
+                                              true, true, false, false));
+  EXPECT_TRUE(UpdateSearchState(instant()->instant_tab()->contents()));
+  EXPECT_EQ(1, on_toggle_voice_search_calls_);
+}
+
+#endif  // HTML_INSTANT_EXTENDED_POPUP
+
+#if !defined(HTML_INSTANT_EXTENDED_POPUP)
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, SearchReusesInstantTab) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+
+  // Create an observer to wait for the instant tab to support Instant.
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
+      content::NotificationService::AllSources());
+
+  SetOmniboxText("flowers");
+  browser()->window()->GetLocationBar()->AcceptInput();
+  observer.Wait();
+
+  // Just did a regular search.
+  ASSERT_THAT(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetURL().spec(),
+      HasSubstr("q=flowers"));
+  ASSERT_TRUE(UpdateSearchState(instant()->instant_tab()->contents()));
+  ASSERT_EQ(0, submit_count_);
+
+  SetOmniboxText("puppies");
+  browser()->window()->GetLocationBar()->AcceptInput();
+
+  // Should have reused the tab and sent an onsubmit message.
+  ASSERT_THAT(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetURL().spec(),
+      HasSubstr("q=flowers"));
+  ASSERT_TRUE(UpdateSearchState(instant()->instant_tab()->contents()));
+  EXPECT_EQ(1, submit_count_);
+}
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
+                       SearchDoesntReuseInstantTabWithoutSupport) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+
+  // Don't wait for the navigation to complete.
+  SetOmniboxText("flowers");
+  browser()->window()->GetLocationBar()->AcceptInput();
+
+  SetOmniboxText("puppies");
+  browser()->window()->GetLocationBar()->AcceptInput();
+
+  // Should not have reused the tab.
+  ASSERT_THAT(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetURL().spec(),
+      HasSubstr("q=puppies"));
+}
+
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
+                       TypedSearchURLDoesntReuseInstantTab) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+
+  // Create an observer to wait for the instant tab to support Instant.
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
+      content::NotificationService::AllSources());
+
+  SetOmniboxText("flowers");
+  browser()->window()->GetLocationBar()->AcceptInput();
+  observer.Wait();
+
+  // Just did a regular search.
+  ASSERT_THAT(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetURL().spec(),
+      HasSubstr("q=flowers"));
+  ASSERT_TRUE(UpdateSearchState(instant()->instant_tab()->contents()));
+  ASSERT_EQ(0, submit_count_);
+
+  // Typed in a search URL "by hand".
+  SetOmniboxText(instant_url().spec() + "#q=puppies");
+  browser()->window()->GetLocationBar()->AcceptInput();
+
+  // Should not have reused the tab.
+  ASSERT_THAT(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetURL().spec(),
+      HasSubstr("q=puppies"));
+}
+#endif  // if !defined(HTML_INSTANT_EXTENDED_POPUP)

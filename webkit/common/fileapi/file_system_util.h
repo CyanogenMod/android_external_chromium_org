@@ -10,10 +10,10 @@
 
 #include "base/files/file_path.h"
 #include "base/platform_file.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystemType.h"
+#include "third_party/WebKit/public/platform/WebFileSystemType.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileError.h"
 #include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 class GURL;
@@ -143,6 +143,12 @@ WEBKIT_STORAGE_EXPORT std::string GetIsolatedFileSystemRootURIString(
     const GURL& origin_url,
     const std::string& filesystem_id,
     const std::string& optional_root_name);
+
+// Returns the root URI for an external filesystem for origin |origin_url|
+// and |mount_name|.
+WEBKIT_STORAGE_EXPORT std::string GetExternalFileSystemRootURIString(
+    const GURL& origin_url,
+    const std::string& mount_name);
 
 }  // namespace fileapi
 

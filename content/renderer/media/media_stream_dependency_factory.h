@@ -48,6 +48,10 @@ class WebRtcLoggingHandlerImpl;
 class WebRtcLoggingMessageFilter;
 struct StreamDeviceInfo;
 
+#if defined(GOOGLE_TV)
+class RTCVideoDecoderFactoryTv;
+#endif
+
 // Object factory for RTC MediaStreams and RTC PeerConnections.
 class CONTENT_EXPORT MediaStreamDependencyFactory
     : NON_EXPORTED_BASE(public base::NonThreadSafe) {
@@ -136,6 +140,10 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
   // own source.
   void StopLocalAudioSource(const WebKit::WebMediaStream& description);
 
+#if defined(GOOGLE_TV)
+  RTCVideoDecoderFactoryTv* decoder_factory_tv() { return decoder_factory_tv_; }
+#endif
+
  protected:
   // Asks the PeerConnection factory to create a Local MediaStream object.
   virtual scoped_refptr<webrtc::MediaStreamInterface>
@@ -207,6 +215,12 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
 
   scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory_;
 
+#if defined(GOOGLE_TV)
+  // |pc_factory_| will hold the ownership of this object, and |pc_factory_|
+  // outlives this object. Thus weak pointer is sufficient.
+  RTCVideoDecoderFactoryTv* decoder_factory_tv_;
+#endif
+
   scoped_refptr<VideoCaptureImplManager> vc_manager_;
   scoped_refptr<P2PSocketDispatcher> p2p_socket_dispatcher_;
   scoped_refptr<WebRtcAudioDeviceImpl> audio_device_;
@@ -216,8 +230,6 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
   talk_base::Thread* signaling_thread_;
   talk_base::Thread* worker_thread_;
   base::Thread chrome_worker_thread_;
-
-  bool webrtc_log_open_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaStreamDependencyFactory);
 };

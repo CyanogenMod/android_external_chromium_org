@@ -4,7 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
@@ -76,6 +76,8 @@ class PanelExtensionBrowserTest : public ExtensionBrowserTest {
   }
 };
 
+// TODO(jschuh): Hanging plugin tests. crbug.com/244653
+#if !defined(OS_WIN) && !defined(ARCH_CPU_X86_64)
 IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest, PanelAppIcon) {
   const Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("test_extension"));
@@ -98,6 +100,7 @@ IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest, PanelAppIcon) {
 
   panel->Close();
 }
+#endif
 
 // Tests that icon loading might not be completed when the panel is closed.
 // (crbug.com/151484)

@@ -28,6 +28,21 @@ class CONTENT_EXPORT GLHelperScaling {
     SHADER_BILINEAR2X2,
     SHADER_BICUBIC_UPSCALE,
     SHADER_BICUBIC_HALF_1D,
+    SHADER_PLANAR,
+    SHADER_YUV_MRT_PASS1,
+    SHADER_YUV_MRT_PASS2,
+  };
+
+  // Similar to ScalerInterface, but can generate multiple outputs.
+  // Used for YUV conversion in gl_helper.c
+  class CONTENT_EXPORT ShaderInterface {
+   public:
+    ShaderInterface() {}
+    virtual ~ShaderInterface() {}
+    // Note that the src_texture will have the min/mag filter set to GL_LINEAR
+    // and wrap_s/t set to CLAMP_TO_EDGE in this call.
+    virtual void Execute(WebKit::WebGLId source_texture,
+                         const std::vector<WebKit::WebGLId>& dest_textures) = 0;
   };
 
   typedef std::pair<ShaderType, bool> ShaderProgramKeyType;
@@ -44,6 +59,20 @@ class CONTENT_EXPORT GLHelperScaling {
       const gfx::Size& dst_size,
       bool vertically_flip_texture,
       bool swizzle);
+
+  GLHelper::ScalerInterface* CreatePlanarScaler(
+      const gfx::Size& src_size,
+      const gfx::Rect& src_subrect,
+      const gfx::Size& dst_size,
+      bool vertically_flip_texture,
+      const float color_weights[4]);
+
+  ShaderInterface* CreateYuvMrtShader(
+      const gfx::Size& src_size,
+      const gfx::Rect& src_subrect,
+      const gfx::Size& dst_size,
+      bool vertically_flip_texture,
+      ShaderType shader);
 
  private:
   // A ScaleOp represents a pass in a scaler pipeline, in one dimension.

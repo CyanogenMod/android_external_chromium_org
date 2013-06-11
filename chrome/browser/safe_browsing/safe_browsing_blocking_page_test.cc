@@ -9,7 +9,7 @@
 
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -792,7 +792,14 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageTest, PhishingDontProceed) {
       browser()->tab_strip_model()->GetActiveWebContents()->GetURL());
 }
 
-IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageTest, PhishingProceed) {
+// http://crbug.com/247763
+#if defined(OS_WIN)
+#define MAYBE_PhishingProceed DISABLED_PhishingProceed
+#else
+#define MAYBE_PhishingProceed PhishingProceed
+#endif
+
+IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageTest, MAYBE_PhishingProceed) {
   GURL url = SetupWarningAndNavigate(SB_THREAT_TYPE_URL_PHISHING);
 
   EXPECT_TRUE(ClickAndWaitForDetach("proceed"));
@@ -813,7 +820,14 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageTest, PhishingReportError) {
       browser()->tab_strip_model()->GetActiveWebContents()->GetURL().path());
 }
 
-IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageTest, PhishingLearnMore) {
+// See crbug.com/248447
+#if defined(OS_WIN)
+#define MAYBE_PhishingLearnMore DISABLED_PhishingLearnMore
+#else
+#define MAYBE_PhishingLearnMore PhishingLearnMore
+#endif
+
+IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageTest, MAYBE_PhishingLearnMore) {
   SetupWarningAndNavigate(SB_THREAT_TYPE_URL_PHISHING);
 
   EXPECT_TRUE(ClickAndWaitForDetach("learn-more-link"));

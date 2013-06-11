@@ -9,7 +9,7 @@
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/metro.h"
 #include "base/win/windows_version.h"
 #include "grit/ui_strings.h"
@@ -633,8 +633,9 @@ void NativeTextfieldWin::OnCopy() {
 
   const string16 text(GetSelectedText());
   if (!text.empty()) {
-    ui::ScopedClipboardWriter(ui::Clipboard::GetForCurrentThread(),
-                              ui::Clipboard::BUFFER_STANDARD).WriteText(text);
+    ui::ScopedClipboardWriter(
+        ui::Clipboard::GetForCurrentThread(),
+        ui::Clipboard::BUFFER_STANDARD).WriteText(text);
     if (TextfieldController* controller = textfield_->GetController())
       controller->OnAfterCutOrCopy();
   }
@@ -1062,6 +1063,8 @@ void NativeTextfieldWin::OnPaste() {
     textfield_->SyncText();
     text_before_change_.clear();
     ReplaceSel(collapsed.c_str(), true);
+    if (TextfieldController* controller = textfield_->GetController())
+      controller->OnAfterPaste();
   }
 }
 

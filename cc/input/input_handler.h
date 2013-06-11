@@ -17,6 +17,8 @@ class Vector2d;
 class Vector2dF;
 }
 
+namespace ui { struct LatencyInfo; }
+
 namespace cc {
 
 class LayerScrollOffsetDelegate;
@@ -118,8 +120,8 @@ class CC_EXPORT InputHandler {
 
   virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_point) = 0;
 
-  virtual void DidReceiveLastInputEventForBeginFrame(
-      base::TimeTicks frame_time) = 0;
+  virtual void SetLatencyInfoForInputEvent(
+      const ui::LatencyInfo& latency_info) = 0;
 
  protected:
   InputHandler() {}

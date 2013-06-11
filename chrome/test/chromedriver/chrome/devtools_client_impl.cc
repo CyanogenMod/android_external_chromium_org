@@ -8,6 +8,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/devtools_event_listener.h"
 #include "chrome/test/chromedriver/chrome/log.h"
@@ -152,16 +153,36 @@ Status DevToolsClientImpl::SendCommandAndGetResult(
 }
 
 void DevToolsClientImpl::AddListener(DevToolsEventListener* listener) {
-  DCHECK(listener);
+  CHECK(listener);
   listeners_.push_back(listener);
 }
 
-Status DevToolsClientImpl::HandleEventsUntil(
-    const ConditionalFunc& conditional_func) {
+Status DevToolsClientImpl::HandleReceivedEvents() {
   if (!socket_->IsConnected())
     return Status(kDisconnected, "not connected to DevTools");
 
   while (true) {
+    if (!socket_->HasNextMessage())
+      return Status(kOk);
+
+    Status status = ProcessNextMessage(-1);
+    if (status.IsError())
+      return status;
+  }
+}
+
+Status DevToolsClientImpl::HandleEventsUntil(
+    const ConditionalFunc& conditional_func, const base::TimeDelta& timeout) {
+  if (!socket_->IsConnected())
+    return Status(kDisconnected, "not connected to DevTools");
+
+  base::TimeTicks deadline = base::TimeTicks::Now() + timeout;
+
+  while (true) {
+    if (base::TimeTicks::Now() >= deadline)
+      return Status(kTimeout, base::StringPrintf(
+          "exceeded %dms", static_cast<int>(timeout.InMilliseconds())));
+
     if (!socket_->HasNextMessage()) {
       bool is_condition_met;
       Status status = conditional_func.Run(&is_condition_met);
@@ -171,11 +192,13 @@ Status DevToolsClientImpl::HandleEventsUntil(
         return Status(kOk);
     }
 
+    // To keep this simple, we don't pass the delta time to
+    // ProcessNextMessage. As a result, we may not immediately
+    // return after |timeout|ms.
     Status status = ProcessNextMessage(-1);
-    if (status.IsError())
+    if (status.IsError() && status.code() != kTimeout)
       return status;
   }
-  return Status(kOk);
 }
 
 DevToolsClientImpl::ResponseInfo::ResponseInfo(const std::string& method)
@@ -243,9 +266,23 @@ Status DevToolsClientImpl::ProcessNextMessage(int expected_id) {
     return Status(kOk);
 
   std::string message;
-  if (!socket_->ReceiveNextMessage(&message))
-    return Status(kDisconnected, "unable to receive message from renderer");
-  log_->AddEntry(Log::kDebug, "received Inspector response " + message);
+  switch (socket_->ReceiveNextMessage(&message,
+                                      base::TimeDelta::FromMinutes(1))) {
+    case SyncWebSocket::kOk:
+      log_->AddEntry(Log::kDebug, "received Inspector response " + message);
+      break;
+    case SyncWebSocket::kDisconnected:
+      message = "unable to receive message from renderer";
+      log_->AddEntry(Log::kDebug, message);
+      return Status(kDisconnected, message);
+    case SyncWebSocket::kTimeout:
+      message = "timed out receiving message from renderer";
+      log_->AddEntry(Log::kDebug, message);
+      return Status(kTimeout, message);
+    default:
+      NOTREACHED();
+      break;
+  }
 
   internal::InspectorMessageType type;
   internal::InspectorEvent event;
@@ -342,8 +379,10 @@ Status DevToolsClientImpl::EnsureListenersNotifiedOfEvent() {
   while (unnotified_event_listeners_.size()) {
     DevToolsEventListener* listener = unnotified_event_listeners_.front();
     unnotified_event_listeners_.pop_front();
-    listener->OnEvent(this,
-                      unnotified_event_->method, *unnotified_event_->params);
+    Status status = listener->OnEvent(
+        this, unnotified_event_->method, *unnotified_event_->params);
+    if (status.IsError())
+      return status;
   }
   return Status(kOk);
 }

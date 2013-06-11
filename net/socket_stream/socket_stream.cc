@@ -18,7 +18,7 @@
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/auth.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -90,11 +90,7 @@ SocketStream::SocketStream(const GURL& url, Delegate* delegate)
     : delegate_(delegate),
       url_(url),
       max_pending_send_allowed_(kMaxPendingSendAllowed),
-      context_(NULL),
       next_state_(STATE_NONE),
-      host_resolver_(NULL),
-      cert_verifier_(NULL),
-      server_bound_cert_service_(NULL),
       factory_(ClientSocketFactory::GetDefaultFactory()),
       proxy_mode_(kDirectConnection),
       proxy_url_(url),
@@ -133,10 +129,14 @@ bool SocketStream::is_secure() const {
   return url_.SchemeIs("wss");
 }
 
-void SocketStream::set_context(const URLRequestContext* context) {
-  const URLRequestContext* prev_context = context_;
+void SocketStream::set_context(URLRequestContext* context) {
+  const URLRequestContext* prev_context = context_.get();
 
-  context_ = context;
+  if (context) {
+    context_ = context->AsWeakPtr();
+  } else {
+    context_.reset();
+  }
 
   if (prev_context != context) {
     if (prev_context && pac_request_) {
@@ -155,16 +155,10 @@ void SocketStream::set_context(const URLRequestContext* context) {
       net_log_.BeginEvent(NetLog::TYPE_REQUEST_ALIVE);
     }
   }
-
-  if (context_) {
-    host_resolver_ = context_->host_resolver();
-    cert_verifier_ = context_->cert_verifier();
-    server_bound_cert_service_ = context_->server_bound_cert_service();
-  }
 }
 
 void SocketStream::CheckPrivacyMode() {
-  if (context_ && context_->network_delegate()) {
+  if (context_.get() && context_->network_delegate()) {
     bool enable = context_->network_delegate()->CanEnablePrivacyMode(url_,
                                                                      url_);
     privacy_mode_ = enable ? kPrivacyModeEnabled : kPrivacyModeDisabled;
@@ -179,8 +173,8 @@ void SocketStream::Connect() {
       << "The current base::MessageLoop must exist";
   DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
       << "The current base::MessageLoop must be TYPE_IO";
-  if (context_) {
-    ssl_config_service()->GetSSLConfig(&server_ssl_config_);
+  if (context_.get()) {
+    context_->ssl_config_service()->GetSSLConfig(&server_ssl_config_);
     proxy_ssl_config_ = server_ssl_config_;
   }
   CheckPrivacyMode();
@@ -218,7 +212,7 @@ bool SocketStream::SendData(const char* data, int len) {
     return false;
 
   int total_buffered_bytes = len;
-  if (current_write_buf_) {
+  if (current_write_buf_.get()) {
     // Since
     // - the purpose of this check is to limit the amount of buffer used by
     //   this instance.
@@ -242,7 +236,7 @@ bool SocketStream::SendData(const char* data, int len) {
   // the loop, and therefore we don't need to enqueue DoLoop(). If b), it's ok
   // to do nothing. If current_write_buf_ is NULL, to make sure DoLoop() is
   // ran soon, enequeue it.
-  if (!current_write_buf_) {
+  if (!current_write_buf_.get()) {
     // Send pending data asynchronously, so that delegate won't be called
     // back before returning from SendData().
     base::MessageLoop::current()->PostTask(
@@ -348,7 +342,7 @@ void SocketStream::DoClose() {
   // the SocketStream.
   // If it's writing now, we should defer the closing after the current
   // writing is completed.
-  if (next_state_ == STATE_READ_WRITE && !current_write_buf_)
+  if (next_state_ == STATE_READ_WRITE && !current_write_buf_.get())
     DoLoop(ERR_ABORTED);
 
   // In other next_state_, we'll wait for callback of other APIs, such as
@@ -393,7 +387,7 @@ int SocketStream::DidEstablishConnection() {
 }
 
 int SocketStream::DidReceiveData(int result) {
-  DCHECK(read_buf_);
+  DCHECK(read_buf_.get());
   DCHECK_GT(result, 0);
   net_log_.AddEvent(NetLog::TYPE_SOCKET_STREAM_RECEIVED);
   int len = result;
@@ -408,7 +402,7 @@ int SocketStream::DidReceiveData(int result) {
 
 void SocketStream::DidSendData(int result) {
   DCHECK_GT(result, 0);
-  DCHECK(current_write_buf_);
+  DCHECK(current_write_buf_.get());
   net_log_.AddEvent(NetLog::TYPE_SOCKET_STREAM_SENT);
 
   int bytes_sent = result;
@@ -440,7 +434,7 @@ void SocketStream::OnReadCompleted(int result) {
     // 0 indicates end-of-file, so socket was closed.
     // Don't close the socket if it's still writing.
     server_closed_ = true;
-  } else if (result > 0 && read_buf_) {
+  } else if (result > 0 && read_buf_.get()) {
     result = DidReceiveData(result);
   }
   DoLoop(result);
@@ -457,7 +451,7 @@ void SocketStream::OnWriteCompleted(int result) {
 
 void SocketStream::DoLoop(int result) {
   // If context was not set, close immediately.
-  if (!context_)
+  if (!context_.get())
     next_state_ = STATE_CLOSE;
 
   if (next_state_ == STATE_NONE)
@@ -583,8 +577,10 @@ void SocketStream::DoLoop(int result) {
 
 int SocketStream::DoBeforeConnect() {
   next_state_ = STATE_BEFORE_CONNECT_COMPLETE;
-  if (!context_ || !context_->network_delegate())
+  if (!context_.get() || !context_->network_delegate()) {
+    // TODO(yhirano): This should not be OK.
     return OK;
+  }
 
   int result = context_->network_delegate()->NotifyBeforeSocketStreamConnect(
       this, io_callback_);
@@ -606,6 +602,7 @@ int SocketStream::DoBeforeConnectComplete(int result) {
 }
 
 int SocketStream::DoResolveProxy() {
+  DCHECK(context_);
   DCHECK(!pac_request_);
   next_state_ = STATE_RESOLVE_PROXY_COMPLETE;
 
@@ -622,7 +619,7 @@ int SocketStream::DoResolveProxy() {
   // connection might be the first one. At that time, we should check
   // Alternate-Protocol header here for ws:// or TLS NPN extension for wss:// .
 
-  return proxy_service()->ResolveProxy(
+  return context_->proxy_service()->ResolveProxy(
       proxy_url_, &proxy_info_, io_callback_, &pac_request_, net_log_);
 }
 
@@ -681,15 +678,15 @@ int SocketStream::DoResolveHost() {
 
   HostResolver::RequestInfo resolve_info(host_port_pair);
 
-  DCHECK(host_resolver_);
-  resolver_.reset(new SingleRequestHostResolver(host_resolver_));
+  DCHECK(context_->host_resolver());
+  resolver_.reset(new SingleRequestHostResolver(context_->host_resolver()));
   return resolver_->Resolve(
       resolve_info, &addresses_, base::Bind(&SocketStream::OnIOCompleted, this),
       net_log_);
 }
 
 int SocketStream::DoResolveHostComplete(int result) {
-  if (result == OK && delegate_)
+  if (result == OK)
     next_state_ = STATE_RESOLVE_PROTOCOL;
   else
     next_state_ = STATE_CLOSE;
@@ -699,6 +696,12 @@ int SocketStream::DoResolveHostComplete(int result) {
 
 int SocketStream::DoResolveProtocol(int result) {
   DCHECK_EQ(OK, result);
+
+  if (!delegate_) {
+    next_state_ = STATE_CLOSE;
+    return result;
+  }
+
   next_state_ = STATE_RESOLVE_PROTOCOL_COMPLETE;
   result = delegate_->OnStartOpenConnection(this, io_callback_);
   if (result == ERR_IO_PENDING)
@@ -821,7 +824,7 @@ int SocketStream::DoWriteTunnelHeaders() {
   int buf_len = static_cast<int>(tunnel_request_headers_->headers_.size() -
                                  tunnel_request_headers_bytes_sent_);
   DCHECK_GT(buf_len, 0);
-  return socket_->Write(tunnel_request_headers_, buf_len, io_callback_);
+  return socket_->Write(tunnel_request_headers_.get(), buf_len, io_callback_);
 }
 
 int SocketStream::DoWriteTunnelHeadersComplete(int result) {
@@ -864,7 +867,7 @@ int SocketStream::DoReadTunnelHeaders() {
   tunnel_response_headers_->SetDataOffset(tunnel_response_headers_len_);
   CHECK(tunnel_response_headers_->data());
 
-  return socket_->Read(tunnel_response_headers_, buf_len, io_callback_);
+  return socket_->Read(tunnel_response_headers_.get(), buf_len, io_callback_);
 }
 
 int SocketStream::DoReadTunnelHeadersComplete(int result) {
@@ -962,7 +965,7 @@ int SocketStream::DoSOCKSConnect() {
   if (proxy_info_.proxy_server().scheme() == ProxyServer::SCHEME_SOCKS5)
     s = new SOCKS5ClientSocket(s, req_info);
   else
-    s = new SOCKSClientSocket(s, req_info, host_resolver_);
+    s = new SOCKSClientSocket(s, req_info, context_->host_resolver());
   socket_.reset(s);
   metrics_->OnCountConnectionType(SocketStreamMetrics::SOCKS_CONNECTION);
   return socket_->Connect(io_callback_);
@@ -985,8 +988,8 @@ int SocketStream::DoSOCKSConnectComplete(int result) {
 int SocketStream::DoSecureProxyConnect() {
   DCHECK(factory_);
   SSLClientSocketContext ssl_context;
-  ssl_context.cert_verifier = cert_verifier_;
-  ssl_context.server_bound_cert_service = server_bound_cert_service_;
+  ssl_context.cert_verifier = context_->cert_verifier();
+  ssl_context.server_bound_cert_service = context_->server_bound_cert_service();
   socket_.reset(factory_->CreateSSLClientSocket(
       socket_.release(),
       proxy_info_.proxy_server().host_port_pair(),
@@ -1038,8 +1041,8 @@ int SocketStream::DoSecureProxyHandleCertErrorComplete(int result) {
 int SocketStream::DoSSLConnect() {
   DCHECK(factory_);
   SSLClientSocketContext ssl_context;
-  ssl_context.cert_verifier = cert_verifier_;
-  ssl_context.server_bound_cert_service = server_bound_cert_service_;
+  ssl_context.cert_verifier = context_->cert_verifier();
+  ssl_context.server_bound_cert_service = context_->server_bound_cert_service();
   socket_.reset(factory_->CreateSSLClientSocket(socket_.release(),
                                                 HostPortPair::FromURL(url_),
                                                 server_ssl_config_,
@@ -1104,7 +1107,7 @@ int SocketStream::DoReadWrite(int result) {
   // If client has requested close(), and there's nothing to write, then
   // let's close the socket.
   // We don't care about receiving data after the socket is closed.
-  if (closing_ && !current_write_buf_ && pending_write_bufs_.empty()) {
+  if (closing_ && !current_write_buf_.get() && pending_write_bufs_.empty()) {
     socket_->Disconnect();
     next_state_ = STATE_CLOSE;
     return OK;
@@ -1114,12 +1117,13 @@ int SocketStream::DoReadWrite(int result) {
 
   // If server already closed the socket, we don't try to read.
   if (!server_closed_) {
-    if (!read_buf_) {
+    if (!read_buf_.get()) {
       // No read pending and server didn't close the socket.
       read_buf_ = new IOBuffer(kReadBufferSize);
-      result = socket_->Read(read_buf_, kReadBufferSize,
-                             base::Bind(&SocketStream::OnReadCompleted,
-                                        base::Unretained(this)));
+      result = socket_->Read(
+          read_buf_.get(),
+          kReadBufferSize,
+          base::Bind(&SocketStream::OnReadCompleted, base::Unretained(this)));
       if (result > 0) {
         return DidReceiveData(result);
       } else if (result == 0) {
@@ -1138,28 +1142,27 @@ int SocketStream::DoReadWrite(int result) {
       }
     }
     // Read is pending.
-    DCHECK(read_buf_);
+    DCHECK(read_buf_.get());
   }
 
   if (waiting_for_write_completion_)
     return ERR_IO_PENDING;
 
-  if (!current_write_buf_) {
+  if (!current_write_buf_.get()) {
     if (pending_write_bufs_.empty()) {
       // Nothing buffered for send.
       return ERR_IO_PENDING;
     }
 
-    current_write_buf_ =
-        new DrainableIOBuffer(pending_write_bufs_.front(),
-                              pending_write_bufs_.front()->size());
+    current_write_buf_ = new DrainableIOBuffer(
+        pending_write_bufs_.front().get(), pending_write_bufs_.front()->size());
     pending_write_bufs_.pop_front();
   }
 
-  result = socket_->Write(current_write_buf_,
-                          current_write_buf_->BytesRemaining(),
-                          base::Bind(&SocketStream::OnWriteCompleted,
-                                     base::Unretained(this)));
+  result = socket_->Write(
+      current_write_buf_.get(),
+      current_write_buf_->BytesRemaining(),
+      base::Bind(&SocketStream::OnWriteCompleted, base::Unretained(this)));
 
   if (result == ERR_IO_PENDING) {
     waiting_for_write_completion_ = true;
@@ -1192,7 +1195,7 @@ int SocketStream::HandleCertificateRequest(int result, SSLConfig* ssl_config) {
   scoped_refptr<SSLCertRequestInfo> cert_request_info = new SSLCertRequestInfo;
   SSLClientSocket* ssl_socket =
       static_cast<SSLClientSocket*>(socket_.get());
-  ssl_socket->GetSSLCertRequestInfo(cert_request_info);
+  ssl_socket->GetSSLCertRequestInfo(cert_request_info.get());
 
   HttpTransactionFactory* factory = context_->http_transaction_factory();
   if (!factory)
@@ -1219,7 +1222,7 @@ int SocketStream::HandleCertificateRequest(int result, SSLConfig* ssl_config) {
   // CertificateRequest message.
   const std::vector<std::string>& cert_authorities =
       cert_request_info->cert_authorities;
-  if (client_cert && !cert_authorities.empty() &&
+  if (client_cert.get() && !cert_authorities.empty() &&
       !client_cert->IsIssuedByEncoded(cert_authorities)) {
     return result;
   }
@@ -1240,8 +1243,8 @@ int SocketStream::AllowCertErrorForReconnection(SSLConfig* ssl_config) {
   SSLClientSocket* ssl_socket = static_cast<SSLClientSocket*>(socket_.get());
   SSLInfo ssl_info;
   ssl_socket->GetSSLInfo(&ssl_info);
-  if (ssl_info.cert == NULL ||
-      ssl_config->IsAllowedBadCert(ssl_info.cert, NULL)) {
+  if (ssl_info.cert.get() == NULL ||
+      ssl_config->IsAllowedBadCert(ssl_info.cert.get(), NULL)) {
     // If we already have the certificate in the set of allowed bad
     // certificates, we did try it and failed again, so we should not
     // retry again: the connection should fail at last.
@@ -1289,6 +1292,9 @@ int SocketStream::HandleCertificateError(int result) {
   SSLClientSocket* ssl_socket = static_cast<SSLClientSocket*>(socket_.get());
   DCHECK(ssl_socket);
 
+  if (!context_.get())
+    return result;
+
   if (SSLClientSocket::IgnoreCertError(result, LOAD_IGNORE_ALL_CERT_ERRORS)) {
     const HttpNetworkSession::Params* session_params =
         context_->GetNetworkSessionParams();
@@ -1303,7 +1309,6 @@ int SocketStream::HandleCertificateError(int result) {
   ssl_socket->GetSSLInfo(&ssl_info);
 
   TransportSecurityState::DomainState domain_state;
-  DCHECK(context_);
   const bool fatal = context_->transport_security_state() &&
       context_->transport_security_state()->GetDomainState(url_.host(),
           SSLConfigService::IsSNIAvailable(context_->ssl_config_service()),
@@ -1312,14 +1317,6 @@ int SocketStream::HandleCertificateError(int result) {
 
   delegate_->OnSSLCertificateError(this, ssl_info, fatal);
   return ERR_IO_PENDING;
-}
-
-SSLConfigService* SocketStream::ssl_config_service() const {
-  return context_->ssl_config_service();
-}
-
-ProxyService* SocketStream::proxy_service() const {
-  return context_->proxy_service();
 }
 
 }  // namespace net

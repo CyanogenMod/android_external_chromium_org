@@ -14,7 +14,7 @@
 #include "ash/test/launcher_view_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/wm/window_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/automation/automation_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
@@ -181,13 +181,6 @@ class LauncherPerAppAppBrowserTest : public ExtensionBrowserTest {
   }
 
   virtual ~LauncherPerAppAppBrowserTest() {}
-
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // TODO(skuhne): Remove this function when the drag and drop logic flag gets
-    // removed.
-    ExtensionBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(ash::switches::kAshDragAndDropAppListToLauncher);
-  }
 
   virtual void RunTestOnMainThreadLoop() OVERRIDE {
     launcher_ = ash::Launcher::ForPrimaryDisplay();
@@ -1453,6 +1446,42 @@ IN_PROC_BROWSER_TEST_F(LauncherPerAppAppBrowserTest, DragAndDrop) {
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(grid_view->forward_events_to_drag_and_drop_host_for_test());
   EXPECT_EQ(3, model_->item_count());  // And it remains that way.
+}
+
+// Check that clicking on an app launcher item launches a new browser.
+IN_PROC_BROWSER_TEST_F(LauncherPerAppAppBrowserTest, ClickItem) {
+  // Get a number of interfaces we need.
+  aura::test::EventGenerator generator(
+      ash::Shell::GetPrimaryRootWindow(), gfx::Point());
+  ash::test::LauncherViewTestAPI test(launcher_->GetLauncherViewForTest());
+  AppListService* service = AppListService::Get();
+  // There should be two items in our launcher by this time.
+  EXPECT_EQ(2, model_->item_count());
+  EXPECT_FALSE(service->IsAppListVisible());
+
+  // Open the app list menu and check that the drag and drop host was set.
+  gfx::Rect app_list_bounds =
+      test.launcher_view()->GetAppListButtonView()->GetBoundsInScreen();
+  generator.MoveMouseTo(app_list_bounds.CenterPoint().x(),
+                        app_list_bounds.CenterPoint().y());
+  generator.ClickLeftButton();
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_TRUE(service->IsAppListVisible());
+  app_list::AppsGridView* grid_view =
+      app_list::AppsGridView::GetLastGridViewForTest();
+  ASSERT_TRUE(grid_view);
+  const views::ViewModel* vm_grid = grid_view->view_model_for_test();
+  EXPECT_EQ(2, vm_grid->view_size());
+  gfx::Rect bounds_grid_1 = vm_grid->view_at(1)->GetBoundsInScreen();
+  // Test now that a click does create a new application tab.
+  TabStripModel* tab_strip = browser()->tab_strip_model();
+  int tab_count = tab_strip->count();
+  generator.MoveMouseTo(bounds_grid_1.CenterPoint().x(),
+                        bounds_grid_1.CenterPoint().y());
+  generator.ClickLeftButton();
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(tab_count + 1, tab_strip->count());
 }
 
 // Check LauncherItemController of Browser Shortcut functionality.

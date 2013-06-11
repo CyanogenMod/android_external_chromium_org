@@ -7,7 +7,7 @@
 var GetAvailability = requireNative('v8_context').GetAvailability;
 if (!GetAvailability('app').is_available) {
   exports.chromeApp = {};
-  exports.chromeHiddenApp = {};
+  exports.onInstallStateResponse = function(){};
   return;
 }
 
@@ -33,7 +33,6 @@ var app;
 if (!extensionId) {
   app = {
     getIsInstalled: appNatives.GetIsInstalled,
-    install: appNatives.Install,
     getDetails: appNatives.GetDetails,
     getDetailsForFrame: appNatives.GetDetailsForFrame,
     runningState: appNatives.GetRunningState
@@ -41,7 +40,6 @@ if (!extensionId) {
 } else {
   app = {
     getIsInstalled: wrapForLogging(appNatives.GetIsInstalled),
-    install: wrapForLogging(appNatives.Install),
     getDetails: wrapForLogging(appNatives.GetDetails),
     getDetailsForFrame: wrapForLogging(appNatives.GetDetailsForFrame),
     runningState: wrapForLogging(appNatives.GetRunningState)
@@ -61,15 +59,12 @@ else
                        wrapForLogging(appNatives.GetIsInstalled));
 
 // Called by app_bindings.cc.
-// This becomes chromeHidden.app
-var chromeHiddenApp = {
-  onInstallStateResponse: function(state, callbackId) {
-    if (callbackId) {
-      callbacks[callbackId](state);
-      delete callbacks[callbackId];
-    }
-  }
-};
+function onInstallStateResponse(state, callbackId) {
+  var callback = callbacks[callbackId];
+  delete callbacks[callbackId];
+  if (typeof(callback) == 'function')
+    callback(state);
+}
 
 // TODO(kalman): move this stuff to its own custom bindings.
 var callbacks = {};
@@ -83,7 +78,7 @@ app.installState = function getInstallState(callback) {
 if (extensionId)
   app.installState = wrapForLogging(app.installState);
 
-// These must match the names in InstallAppbinding() in
+// This must match InstallAppBindings() in
 // chrome/renderer/extensions/dispatcher.cc.
 exports.chromeApp = app;
-exports.chromeHiddenApp = chromeHiddenApp;
+exports.onInstallStateResponse = onInstallStateResponse;

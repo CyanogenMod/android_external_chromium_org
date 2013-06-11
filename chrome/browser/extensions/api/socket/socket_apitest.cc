@@ -4,7 +4,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/dns/host_resolver_wrapper.h"
 #include "chrome/browser/extensions/api/dns/mock_host_resolver_creator.h"
 #include "chrome/browser/extensions/api/socket/socket_api.h"
@@ -26,6 +26,13 @@ using extensions::Extension;
 namespace utils = extension_function_test_utils;
 
 namespace {
+
+// TODO(jschuh): Hanging plugin tests. crbug.com/244653
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#define MAYBE(x) DISABLED_##x
+#else
+#define MAYBE(x) x
+#endif
 
 const std::string kHostname = "127.0.0.1";
 const int kPort = 8888;
@@ -116,9 +123,7 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketUDPCreateGood) {
   socket_create_function->set_has_callback(true);
 
   scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-      socket_create_function,
-      "[\"udp\"]",
-      browser(), utils::NONE));
+      socket_create_function.get(), "[\"udp\"]", browser(), utils::NONE));
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, result->GetType());
   DictionaryValue *value = static_cast<DictionaryValue*>(result.get());
   int socketId = -1;
@@ -135,9 +140,7 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPCreateGood) {
   socket_create_function->set_has_callback(true);
 
   scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-      socket_create_function,
-      "[\"tcp\"]",
-      browser(), utils::NONE));
+      socket_create_function.get(), "[\"tcp\"]", browser(), utils::NONE));
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, result->GetType());
   DictionaryValue *value = static_cast<DictionaryValue*>(result.get());
   int socketId = -1;
@@ -154,7 +157,7 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, GetNetworkList) {
   socket_function->set_has_callback(true);
 
   scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-      socket_function, "[]", browser(), utils::NONE));
+      socket_function.get(), "[]", browser(), utils::NONE));
   ASSERT_EQ(base::Value::TYPE_LIST, result->GetType());
 
   // If we're invoking socket tests, all we can confirm is that we have at
@@ -258,7 +261,7 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketMulticast) {
 }
 
 #if !defined(DISABLE_NACL)
-IN_PROC_BROWSER_TEST_F(SocketPpapiTest, UDP) {
+IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(UDP)) {
   scoped_ptr<net::SpawnedTestServer> test_server(
       new net::SpawnedTestServer(
           net::SpawnedTestServer::TYPE_UDP_ECHO,
@@ -287,7 +290,7 @@ IN_PROC_BROWSER_TEST_F(SocketPpapiTest, UDP) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(SocketPpapiTest, TCP) {
+IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(TCP)) {
   scoped_ptr<net::SpawnedTestServer> test_server(
       new net::SpawnedTestServer(
           net::SpawnedTestServer::TYPE_TCP_ECHO,
@@ -316,7 +319,7 @@ IN_PROC_BROWSER_TEST_F(SocketPpapiTest, TCP) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(SocketPpapiTest, TCPServer) {
+IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(TCPServer)) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(browser()->profile());
   ExtensionTestMessageListener listener("info_please", true);
@@ -330,7 +333,7 @@ IN_PROC_BROWSER_TEST_F(SocketPpapiTest, TCPServer) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(SocketPpapiTest, Multicast) {
+IN_PROC_BROWSER_TEST_F(SocketPpapiTest, MAYBE(Multicast)) {
   ResultCatcher catcher;
   catcher.RestrictToProfile(browser()->profile());
   ExtensionTestMessageListener listener("info_please", true);

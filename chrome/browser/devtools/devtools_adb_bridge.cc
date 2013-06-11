@@ -14,9 +14,9 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
 #include "chrome/browser/devtools/adb_client_socket.h"
@@ -369,7 +369,9 @@ class AgentHostDelegate : public base::RefCountedThreadSafe<AgentHostDelegate>,
   void StartListeningOnHandlerThread() {
     scoped_refptr<net::IOBuffer> response_buffer =
         new net::IOBuffer(kBufferSize);
-    int result = socket_->Read(response_buffer, kBufferSize,
+    int result = socket_->Read(
+        response_buffer.get(),
+        kBufferSize,
         base::Bind(&AgentHostDelegate::OnBytesRead, this, response_buffer));
     if (result != net::ERR_IO_PENDING)
       OnBytesRead(response_buffer, result);
@@ -408,7 +410,9 @@ class AgentHostDelegate : public base::RefCountedThreadSafe<AgentHostDelegate>,
       return;
     }
 
-    result = socket_->Read(response_buffer, kBufferSize,
+    result = socket_->Read(
+        response_buffer.get(),
+        kBufferSize,
         base::Bind(&AgentHostDelegate::OnBytesRead, this, response_buffer));
     if (result != net::ERR_IO_PENDING)
       OnBytesRead(response_buffer, result);
@@ -422,8 +426,10 @@ class AgentHostDelegate : public base::RefCountedThreadSafe<AgentHostDelegate>,
         new net::StringIOBuffer(encoded_frame);
     if (!socket_)
       return;
-    int result = socket_->Write(request_buffer, request_buffer->size(),
-        base::Bind(&AgentHostDelegate::CloseIfNecessary, this));
+    int result =
+        socket_->Write(request_buffer.get(),
+                       request_buffer->size(),
+                       base::Bind(&AgentHostDelegate::CloseIfNecessary, this));
     if (result != net::ERR_IO_PENDING)
       CloseIfNecessary(result);
   }
@@ -585,7 +591,7 @@ DevToolsAdbBridge::RefCountedAdbThread::RefCountedAdbThread() {
   }
 }
 
-MessageLoop* DevToolsAdbBridge::RefCountedAdbThread::message_loop() {
+base::MessageLoop* DevToolsAdbBridge::RefCountedAdbThread::message_loop() {
   return thread_ ? thread_->message_loop() : NULL;
 }
 

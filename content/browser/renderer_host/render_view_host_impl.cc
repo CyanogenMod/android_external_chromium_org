@@ -17,9 +17,9 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/cross_site_request_manager.h"
@@ -68,7 +68,7 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/snapshot/snapshot.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
 #include "webkit/glue/webkit_glue.h"
 
 #if defined(OS_WIN)
@@ -159,6 +159,7 @@ RenderViewHostImpl::RenderViewHostImpl(
     RenderViewHostDelegate* delegate,
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
+    int main_frame_routing_id,
     bool swapped_out,
     SessionStorageNamespace* session_storage)
     : RenderWidgetHostImpl(widget_delegate, instance->GetProcess(), routing_id),
@@ -169,6 +170,7 @@ RenderViewHostImpl::RenderViewHostImpl(
       pending_request_id_(-1),
       navigations_suspended_(false),
       suspended_nav_params_(NULL),
+      has_accessed_initial_document_(false),
       is_swapped_out_(swapped_out),
       is_subframe_(false),
       main_frame_id_(-1),
@@ -187,9 +189,15 @@ RenderViewHostImpl::RenderViewHostImpl(
           static_cast<SessionStorageNamespaceImpl*>(session_storage)),
       save_accessibility_tree_for_testing_(false),
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING) {
-  DCHECK(session_storage_namespace_);
-  DCHECK(instance_);
+  DCHECK(session_storage_namespace_.get());
+  DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
+
+  if (main_frame_routing_id == MSG_ROUTING_NONE)
+    main_frame_routing_id = GetProcess()->GetNextRoutingID();
+
+  main_render_frame_host_.reset(
+      new RenderFrameHostImpl(this, main_frame_routing_id, is_swapped_out_));
 
   GetProcess()->EnableSendQueue();
 
@@ -219,7 +227,7 @@ RenderViewHostDelegate* RenderViewHostImpl::GetDelegate() const {
 }
 
 SiteInstance* RenderViewHostImpl::GetSiteInstance() const {
-  return instance_;
+  return instance_.get();
 }
 
 bool RenderViewHostImpl::CreateRenderView(
@@ -253,6 +261,7 @@ bool RenderViewHostImpl::CreateRenderView(
       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
   params.web_preferences = delegate_->GetWebkitPrefs();
   params.view_id = GetRoutingID();
+  params.main_frame_routing_id = main_render_frame_host_->routing_id();
   params.surface_id = surface_id();
   params.session_storage_namespace_id = session_storage_namespace_->id();
   params.frame_name = frame_name;
@@ -991,6 +1000,8 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowPopup, OnShowPopup)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunFileChooser, OnRunFileChooser)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidAccessInitialDocument,
+                        OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DomOperationResponse,
                         OnDomOperationResponse)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Notifications,
@@ -1035,6 +1046,7 @@ bool RenderViewHostImpl::IsRenderView() const {
 
 void RenderViewHostImpl::CreateNewWindow(
     int route_id,
+    int main_frame_route_id,
     const ViewHostMsg_CreateWindow_Params& params,
     SessionStorageNamespace* session_storage_namespace) {
   ViewHostMsg_CreateWindow_Params validated_params(params);
@@ -1045,8 +1057,8 @@ void RenderViewHostImpl::CreateNewWindow(
   FilterURL(policy, GetProcess(), true,
             &validated_params.opener_security_origin);
 
-  delegate_->CreateNewWindow(route_id, validated_params,
-                             session_storage_namespace);
+  delegate_->CreateNewWindow(route_id, main_frame_route_id,
+                             validated_params, session_storage_namespace);
 }
 
 void RenderViewHostImpl::CreateNewWidget(int route_id,
@@ -1212,6 +1224,10 @@ void RenderViewHostImpl::OnNavigate(const IPC::Message& msg) {
     // Kills the process.
     process->ReceivedBadMessage();
   }
+
+  // Now that something has committed, we don't need to track whether the
+  // initial page has been accessed.
+  has_accessed_initial_document_ = false;
 
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
@@ -2007,6 +2023,11 @@ void RenderViewHostImpl::OnCancelDesktopNotification(int notification_id) {
 
 void RenderViewHostImpl::OnRunFileChooser(const FileChooserParams& params) {
   delegate_->RunFileChooser(this, params);
+}
+
+void RenderViewHostImpl::OnDidAccessInitialDocument() {
+  has_accessed_initial_document_ = true;
+  delegate_->DidAccessInitialDocument();
 }
 
 void RenderViewHostImpl::OnDomOperationResponse(

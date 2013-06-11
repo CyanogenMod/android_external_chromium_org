@@ -16,8 +16,7 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
-#include "chrome/browser/download/chrome_download_manager_delegate.h"
-#include "chrome/browser/download/download_service.h"
+#include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
@@ -64,15 +63,14 @@
 #include "net/ssl/server_bound_cert_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/dom_storage/dom_storage_types.h"
-#include "webkit/quota/quota_manager.h"
-#include "webkit/quota/quota_types.h"
-#include "webkit/quota/special_storage_policy.h"
+#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/special_storage_policy.h"
+#include "webkit/common/dom_storage/dom_storage_types.h"
+#include "webkit/common/quota/quota_types.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DOMStorageContext;
-using content::DownloadManager;
 using content::UserMetricsAction;
 
 bool BrowsingDataRemover::is_removing_ = false;
@@ -340,14 +338,12 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
 
   if ((remove_mask & REMOVE_DOWNLOADS) && may_delete_history) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Downloads"));
-    DownloadManager* download_manager =
+    content::DownloadManager* download_manager =
         BrowserContext::GetDownloadManager(profile_);
     download_manager->RemoveDownloadsBetween(delete_begin_, delete_end_);
-    DownloadService* download_service =
-        DownloadServiceFactory::GetForProfile(profile_);
-    ChromeDownloadManagerDelegate* download_manager_delegate =
-        download_service->GetDownloadManagerDelegate();
-    download_manager_delegate->ClearLastDownloadPath();
+    DownloadPrefs* download_prefs = DownloadPrefs::FromDownloadManager(
+        download_manager);
+    download_prefs->SetSaveFilePath(download_prefs->DownloadPath());
   }
 
   // We ignore the REMOVE_COOKIES request if UNPROTECTED_WEB is not set,
@@ -749,8 +745,8 @@ void BrowsingDataRemover::ClearCacheOnIOThread() {
   // This function should be called on the IO thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK_EQ(STATE_NONE, next_cache_state_);
-  DCHECK(main_context_getter_);
-  DCHECK(media_context_getter_);
+  DCHECK(main_context_getter_.get());
+  DCHECK(media_context_getter_.get());
 
   next_cache_state_ = STATE_CREATE_MAIN;
   DoClearCache(net::OK);
@@ -768,8 +764,9 @@ void BrowsingDataRemover::DoClearCache(int rv) {
       case STATE_CREATE_MEDIA: {
         // Get a pointer to the cache.
         net::URLRequestContextGetter* getter =
-            (next_cache_state_ == STATE_CREATE_MAIN) ?
-                main_context_getter_ : media_context_getter_;
+            (next_cache_state_ == STATE_CREATE_MAIN)
+                ? main_context_getter_.get()
+                : media_context_getter_.get();
         net::HttpTransactionFactory* factory =
             getter->GetURLRequestContext()->http_transaction_factory();
 
@@ -881,9 +878,8 @@ void BrowsingDataRemover::OnGotLocalStorageUsageInfo(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   for (size_t i = 0; i < infos.size(); ++i) {
-    if (!BrowsingDataHelper::DoesOriginMatchMask(infos[i].origin,
-                                                 origin_set_mask_,
-                                                 special_storage_policy_))
+    if (!BrowsingDataHelper::DoesOriginMatchMask(
+            infos[i].origin, origin_set_mask_, special_storage_policy_.get()))
       continue;
 
     if (infos[i].last_modified >= delete_begin_ &&
@@ -910,9 +906,8 @@ void BrowsingDataRemover::OnGotSessionStorageUsageInfo(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   for (size_t i = 0; i < infos.size(); ++i) {
-    if (!BrowsingDataHelper::DoesOriginMatchMask(infos[i].origin,
-                                                 origin_set_mask_,
-                                                 special_storage_policy_))
+    if (!BrowsingDataHelper::DoesOriginMatchMask(
+            infos[i].origin, origin_set_mask_, special_storage_policy_.get()))
       continue;
 
     dom_storage_context_->DeleteSessionStorage(infos[i]);
@@ -972,7 +967,7 @@ void BrowsingDataRemover::OnGotQuotaManagedOrigins(
 
     if (!BrowsingDataHelper::DoesOriginMatchMask(origin->GetOrigin(),
                                                  origin_set_mask_,
-                                                 special_storage_policy_))
+                                                 special_storage_policy_.get()))
       continue;
 
     ++quota_managed_origins_to_delete_count_;

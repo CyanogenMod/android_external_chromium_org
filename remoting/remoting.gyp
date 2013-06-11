@@ -21,7 +21,6 @@
 
     'remoting_multi_process%': '<(remoting_multi_process)',
     'remoting_rdp_session%': 1,
-    'remoting_use_apps_v2%': 0,
 
     # The |major|, |build| and |patch| versions are inherited from Chrome.
     # Since Chrome's |minor| version is always '0', we replace it with a
@@ -174,6 +173,7 @@
       'webapp/wcs_sandbox.html',
     ],
     'remoting_webapp_js_files': [
+      'webapp/butter_bar.js',
       'webapp/client_plugin.js',
       'webapp/client_plugin_async.js',
       'webapp/client_screen.js',
@@ -202,14 +202,13 @@
       'webapp/oauth2.js',
       'webapp/oauth2_callback.js',
       'webapp/plugin_settings.js',
-      'webapp/xhr_proxy.js',
       'webapp/remoting.js',
-      'webapp/session_connector.js',
       'webapp/server_log_entry.js',
+      'webapp/session_connector.js',
       'webapp/stats_accumulator.js',
       'webapp/storage.js',
-      'webapp/survey.js',
       'webapp/third_party_host_permissions.js',
+      'webapp/xhr_proxy.js',
       'webapp/third_party_token_fetcher.js',
       'webapp/toolbar.js',
       'webapp/ui_mode.js',
@@ -298,7 +297,6 @@
             'remoting_protocol',
             '../crypto/crypto.gyp:crypto',
             '../google_apis/google_apis.gyp:google_apis',
-            '../media/media.gyp:media',
             '../ipc/ipc.gyp:ipc',
             '../third_party/webrtc/modules/modules.gyp:desktop_capture',
           ],
@@ -502,6 +500,7 @@
                   '-lXfixes',
                   '-lXtst',
                   '-lXi',
+                  '-lXrandr',
                   '-lpam',
                 ],
               },
@@ -554,8 +553,8 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
-            '../media/media.gyp:media',
             '../net/net.gyp:net',
+            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
             'remoting_base',
             'remoting_breakpad',
             'remoting_host',
@@ -613,6 +612,9 @@
             '../google_apis/google_apis.gyp:google_apis',
             'remoting_host',
           ],
+          'defines': [
+            'VERSION=<(version_full)',
+          ],
           'sources': [
             'host/setup/daemon_controller.h',
             'host/setup/daemon_controller_linux.cc',
@@ -622,10 +624,18 @@
             'host/setup/daemon_installer_win.h',
             'host/setup/host_starter.cc',
             'host/setup/host_starter.h',
+            'host/setup/native_messaging_host.cc',
+            'host/setup/native_messaging_host.h',
+            'host/setup/native_messaging_reader.cc',
+            'host/setup/native_messaging_reader.h',
+            'host/setup/native_messaging_writer.cc',
+            'host/setup/native_messaging_writer.h',
             'host/setup/oauth_helper.cc',
             'host/setup/oauth_helper.h',
             'host/setup/pin_validator.cc',
             'host/setup/pin_validator.h',
+            'host/setup/test_util.cc',
+            'host/setup/test_util.h',
             'host/setup/win/auth_code_getter.cc',
             'host/setup/win/auth_code_getter.h',
           ],
@@ -736,13 +746,7 @@
             'VERSION=<(version_full)',
           ],
           'sources': [
-            'host/setup/native_messaging_host.cc',
-            'host/setup/native_messaging_host.h',
             'host/setup/native_messaging_host_main.cc',
-            'host/setup/native_messaging_reader.cc',
-            'host/setup/native_messaging_reader.h',
-            'host/setup/native_messaging_writer.cc',
-            'host/setup/native_messaging_writer.h',
           ],
           'conditions': [
             ['OS=="linux" and linux_use_tcmalloc==1', {
@@ -835,8 +839,8 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
-            '../media/media.gyp:media',
             '../net/net.gyp:net',
+            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
             'remoting_base',
             'remoting_breakpad',
             'remoting_host',
@@ -1422,8 +1426,8 @@
             '../base/base.gyp:base_static',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
             '../ipc/ipc.gyp:ipc',
-            '../media/media.gyp:media',
             '../net/net.gyp:net',
+            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
             'remoting_base',
             'remoting_breakpad',
             'remoting_host',
@@ -1937,10 +1941,10 @@
         'remoting_base',
         'remoting_client',
         'remoting_jingle_glue',
-        '../media/media.gyp:media',
         '../net/net.gyp:net',
         '../ppapi/ppapi.gyp:ppapi_cpp_objects',
         '../skia/skia.gyp:skia',
+        '../third_party/webrtc/modules/modules.gyp:desktop_capture',
       ],
       'sources': [
         'client/plugin/chromoting_instance.cc',
@@ -2026,6 +2030,15 @@
     {
       'target_name': 'remoting_webapp',
       'type': 'none',
+      'variables': {
+        'remoting_webapp_patch_files': [
+          'webapp/appsv2.patch',
+        ],
+        'remoting_webapp_apps_v2_js_files': [
+          'webapp/background.js',
+          'webapp/identity.js',
+        ],
+      },
       'dependencies': [
         'remoting_resources',
         'remoting_host_plugin',
@@ -2034,13 +2047,12 @@
         'webapp/build-webapp.py',
         '<(remoting_version_path)',
         '<(chrome_version_path)',
-        '<@(remoting_webapp_patch_files)',
+        '<@(remoting_webapp_apps_v2_js_files)',
         '<@(remoting_webapp_files)',
         '<@(remoting_webapp_js_files)',
-        '<@(remoting_webapp_apps_v2_js_files)',
         '<@(remoting_webapp_locale_files)',
+        '<@(remoting_webapp_patch_files)',
       ],
-
       'conditions': [
         ['enable_remoting_host==1', {
           'variables': {
@@ -2059,30 +2071,7 @@
             'remoting_host_plugin_manifest',
           ],
         }],
-        ['remoting_use_apps_v2==1', {
-          'variables': {
-            'remoting_webapp_patch_files': [
-              'webapp/appsv2.patch',
-            ],
-            'remoting_webapp_apps_v2_js_files': [
-              'webapp/background.js',
-              'webapp/identity.js',
-            ],
-          },
-        }, {
-          'variables': {
-            'remoting_webapp_patch_files': [],
-            'remoting_webapp_apps_v2_js_files': [],
-          },
-        }],
       ],
-
-      # Can't use a 'copies' because we need to manipulate
-      # the manifest file to get the right plugin name.
-      # Also we need to move the plugin into the me2mom
-      # folder, which means 2 copies, and gyp doesn't
-      # seem to guarantee the ordering of 2 copies statements
-      # when the actual project is generated.
       'actions': [
         {
           'action_name': 'Build Remoting WebApp',
@@ -2090,12 +2079,10 @@
           'zip_path': '<(PRODUCT_DIR)/remoting-webapp.zip',
           'inputs': [
             'webapp/build-webapp.py',
-            '<(remoting_version_path)',
             '<(chrome_version_path)',
-            '<@(remoting_webapp_patch_files)',
+            '<(remoting_version_path)',
             '<@(remoting_webapp_files)',
             '<@(remoting_webapp_js_files)',
-            '<@(remoting_webapp_apps_v2_js_files)',
             '<@(remoting_webapp_locale_files)',
           ],
           'conditions': [
@@ -2119,14 +2106,67 @@
             '<(plugin_path)',
             '<@(remoting_webapp_files)',
             '<@(remoting_webapp_js_files)',
-            '<@(remoting_webapp_apps_v2_js_files)',
             '--locales',
             '<@(remoting_webapp_locale_files)',
-            '--patches',
-            '<@(remoting_webapp_patch_files)',
           ],
           'msvs_cygwin_shell': 1,
         },
+      ],
+      'target_conditions': [
+        # We cannot currently build the appsv2 version of WebApp on Windows as
+        # there isn't a version of the "patch" tool available on windows. We
+        # should remove this condition when we remove the reliance on the 'patch'.
+
+        # We define this in a 'target_conditions' section because 'plugin_path'
+        # is defined in a 'conditions' section so its value is not available
+        # when gyp processes the 'actions' in a 'conditions" section.
+        ['OS != "win"', {
+          'actions': [
+            {
+              'action_name': 'Build Remoting WebApp V2',
+              'output_dir': '<(PRODUCT_DIR)/remoting/remoting.webapp.v2',
+              'zip_path': '<(PRODUCT_DIR)/remoting-webapp.v2.zip',
+              'inputs': [
+                'webapp/build-webapp.py',
+                '<(chrome_version_path)',
+                '<(remoting_version_path)',
+                '<@(remoting_webapp_apps_v2_js_files)',
+                '<@(remoting_webapp_files)',
+                '<@(remoting_webapp_js_files)',
+                '<@(remoting_webapp_locale_files)',
+                '<@(remoting_webapp_patch_files)',
+              ],
+              'conditions': [
+                ['enable_remoting_host==1', {
+                  'inputs': [
+                    '<(plugin_path)',
+                  ],
+                }],
+              ],
+              'outputs': [
+                '<(_output_dir)',
+                '<(_zip_path)',
+              ],
+              'action': [
+                'python', 'webapp/build-webapp.py',
+                '<(buildtype)',
+                '<(version_full)',
+                '<(host_plugin_mime_type)',
+                '<(_output_dir)',
+                '<(_zip_path)',
+                '<(plugin_path)',
+                '<@(remoting_webapp_apps_v2_js_files)',
+                '<@(remoting_webapp_files)',
+                '<@(remoting_webapp_js_files)',
+                '--locales',
+                '<@(remoting_webapp_locale_files)',
+                '--patches',
+                '<@(remoting_webapp_patch_files)',
+              ],
+              'msvs_cygwin_shell': 1,
+            },
+          ],
+        }],
       ],
     }, # end of target 'remoting_webapp'
 
@@ -2139,6 +2179,7 @@
         'sources': [
           'base/resources_unittest.cc',
           'host/plugin/host_script_object.cc',
+          'webapp/butter_bar.js',
           'webapp/client_screen.js',
           'webapp/error.js',
           'webapp/host_list.js',
@@ -2301,8 +2342,6 @@
         'base/running_average.h',
         'base/socket_reader.cc',
         'base/socket_reader.h',
-        'base/stoppable.cc',
-        'base/stoppable.h',
         'base/typed_buffer.h',
         'base/util.cc',
         'base/util.h',
@@ -2549,8 +2588,6 @@
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
         '../ipc/ipc.gyp:ipc',
-        '../media/media.gyp:media',
-        '../media/media.gyp:media_test_support',
         '../net/net.gyp:net_test_support',
         '../ppapi/ppapi.gyp:ppapi_cpp',
         '../testing/gmock.gyp:gmock',
@@ -2635,8 +2672,13 @@
         'host/register_support_host_request_unittest.cc',
         'host/remote_input_filter_unittest.cc',
         'host/resizing_host_observer_unittest.cc',
+        'host/screen_capturer_fake.cc',
+        'host/screen_capturer_fake.h',
         'host/screen_resolution_unittest.cc',
         'host/server_log_entry_unittest.cc',
+        'host/setup/native_messaging_host_unittest.cc',
+        'host/setup/native_messaging_reader_unittest.cc',
+        'host/setup/native_messaging_writer_unittest.cc',
         'host/setup/oauth_helper_unittest.cc',
         'host/setup/pin_validator_unittest.cc',
         'host/token_validator_factory_impl_unittest.cc',

@@ -18,8 +18,8 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "media/audio/audio_parameters.h"
 #include "media/audio/audio_util.h"
 #include "media/audio/win/audio_device_listener_win.h"
@@ -301,7 +301,7 @@ AudioOutputStream* AudioManagerWin::MakeLinearOutputStream(
 // - PCMWaveOutAudioOutputStream: Based on the waveOut API.
 // - WASAPIAudioOutputStream: Based on Core Audio (WASAPI) API.
 AudioOutputStream* AudioManagerWin::MakeLowLatencyOutputStream(
-    const AudioParameters& params) {
+    const AudioParameters& params, const std::string& input_device_id) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
   if (params.channels() > kWinMaxChannels)
     return NULL;
@@ -316,7 +316,7 @@ AudioOutputStream* AudioManagerWin::MakeLowLatencyOutputStream(
   // TODO(crogers): support more than stereo input.
   if (params.input_channels() > 0) {
     DVLOG(1) << "WASAPIUnifiedStream is created.";
-    return new WASAPIUnifiedStream(this, params);
+    return new WASAPIUnifiedStream(this, params, input_device_id);
   }
 
   return new WASAPIAudioOutputStream(this, params, eConsole);

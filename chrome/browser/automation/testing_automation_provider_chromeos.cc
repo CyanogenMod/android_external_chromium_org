@@ -10,13 +10,14 @@
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
 #include "base/prefs/pref_service.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/automation/automation_provider_json.h"
 #include "chrome/browser/automation/automation_provider_observers.h"
 #include "chrome/browser/automation/automation_util.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/audio/audio_handler.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -34,8 +35,7 @@
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/proxy_config_service_impl.h"
-#include "chrome/browser/chromeos/proxy_cros_settings_parser.h"
+#include "chrome/browser/chromeos/net/proxy_config_handler.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/system/timezone_settings.h"
@@ -47,6 +47,8 @@
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/dbus/update_engine_client.h"
+#include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/onc/onc_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/network_change_notifier.h"
 #include "policy/policy_constants.h"
@@ -473,7 +475,7 @@ void TestingAutomationProvider::UnlockScreen(DictionaryValue* args,
   }
 
   new ScreenUnlockObserver(this, reply_message);
-  screen_locker->Authenticate(ASCIIToUTF16(password));
+  screen_locker->AuthenticateByPassword(password);
 }
 
 // Signing out could have undesirable side effects: session_manager is
@@ -689,22 +691,24 @@ void TestingAutomationProvider::SetSharedProxies(
 void TestingAutomationProvider::SetProxySettings(DictionaryValue* args,
                                                  IPC::Message* reply_message) {
   AutomationJSONReply reply(this, reply_message);
-  std::string proxy_config;
-  if (!args->GetString("proxy_config", &proxy_config)) {
+  std::string proxy_config_str;
+  if (!args->GetString("proxy_config", &proxy_config_str)) {
     reply.SendError("Invalid or missing args.");
     return;
   }
 
-  NetworkLibrary* network_library = CrosLibrary::Get()->GetNetworkLibrary();
-  chromeos::Network* network =
-      const_cast<chromeos::Network*>(network_library->active_network());
-
+  const chromeos::NetworkState* network = chromeos::NetworkHandler::Get()->
+      network_state_handler()->DefaultNetwork();
   if (!network) {
     reply.SendError("No network connected.");
     return;
   }
 
-  network->SetProxyConfig(proxy_config);
+  scoped_ptr<base::DictionaryValue> proxy_config_dict(
+      chromeos::onc::ReadDictionaryFromJson(proxy_config_str));
+  ProxyConfigDictionary proxy_config(proxy_config_dict.get());
+  chromeos::proxy_config::SetProxyConfigForNetwork(proxy_config, *network);
+
   reply.SendSuccess(NULL);
 }
 
@@ -1116,7 +1120,7 @@ void TestingAutomationProvider::EnableSpokenFeedback(
   }
 
   if (user_manager->IsUserLoggedIn()) {
-    chromeos::accessibility::EnableSpokenFeedback(
+    chromeos::AccessibilityManager::Get()->EnableSpokenFeedback(
         enabled, NULL, ash::A11Y_NOTIFICATION_NONE);
   } else {
     ExistingUserController* controller =
@@ -1124,7 +1128,7 @@ void TestingAutomationProvider::EnableSpokenFeedback(
     chromeos::LoginDisplayHostImpl* webui_host =
         static_cast<chromeos::LoginDisplayHostImpl*>(
             controller->login_display_host());
-    chromeos::accessibility::EnableSpokenFeedback(
+    chromeos::AccessibilityManager::Get()->EnableSpokenFeedback(
         enabled,
         webui_host->GetOobeUI()->web_ui(),
         ash::A11Y_NOTIFICATION_NONE);
@@ -1137,8 +1141,9 @@ void TestingAutomationProvider::IsSpokenFeedbackEnabled(
     DictionaryValue* args, IPC::Message* reply_message) {
   AutomationJSONReply reply(this, reply_message);
   scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
-  return_value->SetBoolean("spoken_feedback",
-                           chromeos::accessibility::IsSpokenFeedbackEnabled());
+  return_value->SetBoolean(
+      "spoken_feedback",
+      chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled());
   reply.SendSuccess(return_value.get());
 }
 

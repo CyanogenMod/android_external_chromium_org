@@ -9,8 +9,8 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/app_runtime/app_runtime_api.h"
 #include "chrome/browser/extensions/api/file_handlers/app_file_handler_util.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
@@ -280,10 +280,10 @@ class PlatformAppPathLauncher
 
 }  // namespace
 
-void LaunchPlatformApp(Profile* profile,
-                       const Extension* extension,
-                       const CommandLine* command_line,
-                       const base::FilePath& current_directory) {
+void LaunchPlatformAppWithCommandLine(Profile* profile,
+                                      const Extension* extension,
+                                      const CommandLine* command_line,
+                                      const base::FilePath& current_directory) {
 #if defined(OS_WIN)
   // On Windows 8's single window Metro mode we can not launch platform apps.
   // Offer to switch Chrome to desktop mode.
@@ -315,6 +315,10 @@ void LaunchPlatformAppWithPath(Profile* profile,
   scoped_refptr<PlatformAppPathLauncher> launcher =
       new PlatformAppPathLauncher(profile, extension, file_path);
   launcher->Launch();
+}
+
+void LaunchPlatformApp(Profile* profile, const Extension* extension) {
+  LaunchPlatformAppWithCommandLine(profile, extension, NULL, base::FilePath());
 }
 
 void LaunchPlatformAppWithFileHandler(Profile* profile,

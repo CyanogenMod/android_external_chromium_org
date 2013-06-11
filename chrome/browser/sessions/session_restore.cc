@@ -18,7 +18,7 @@
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/performance_monitor/startup_timer.h"
@@ -300,6 +300,15 @@ void TabLoader::LoadNextTab() {
     force_load_timer_.Start(FROM_HERE,
         base::TimeDelta::FromMilliseconds(force_load_delay_),
         this, &TabLoader::ForceLoadTimerFired);
+  }
+
+  // When the session restore is done synchronously, notification is sent from
+  // SessionRestoreImpl::Restore .
+  if (tabs_to_load_.empty() && !SessionRestore::IsRestoringSynchronously()) {
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_SESSION_RESTORE_DONE,
+        content::NotificationService::AllSources(),
+        content::NotificationService::NoDetails());
   }
 }
 

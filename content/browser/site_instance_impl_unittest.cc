@@ -5,7 +5,7 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/browsing_instance.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -103,6 +103,7 @@ class SiteInstanceTest : public testing::Test {
     EXPECT_TRUE(RenderProcessHost::AllHostsIterator().IsAtEnd());
 
     SetBrowserClientForTesting(old_browser_client_);
+    SiteInstanceImpl::set_render_process_host_factory(NULL);
 
     // http://crbug.com/143565 found SiteInstanceTest leaking an
     // AppCacheDatabase. This happens because some part of the test indirectly
@@ -408,7 +409,7 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSite) {
       static_cast<SiteInstanceImpl*>(
           browsing_instance->GetSiteInstanceForURL(url_b1)));
   EXPECT_NE(site_instance_a1.get(), site_instance_b1.get());
-  EXPECT_TRUE(site_instance_a1->IsRelatedSiteInstance(site_instance_b1));
+  EXPECT_TRUE(site_instance_a1->IsRelatedSiteInstance(site_instance_b1.get()));
 
   // Getting the new SiteInstance from the BrowsingInstance and from another
   // SiteInstance in the BrowsingInstance should give the same result.
@@ -431,7 +432,8 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSite) {
       static_cast<SiteInstanceImpl*>(
           browsing_instance2->GetSiteInstanceForURL(url_a2)));
   EXPECT_NE(site_instance_a1.get(), site_instance_a2_2.get());
-  EXPECT_FALSE(site_instance_a1->IsRelatedSiteInstance(site_instance_a2_2));
+  EXPECT_FALSE(
+      site_instance_a1->IsRelatedSiteInstance(site_instance_a2_2.get()));
 
   // The two SiteInstances for http://google.com should not use the same process
   // if process-per-site is not enabled.
@@ -482,7 +484,7 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSiteInBrowserContext) {
       static_cast<SiteInstanceImpl*>(
           browsing_instance->GetSiteInstanceForURL(url_b1)));
   EXPECT_NE(site_instance_a1.get(), site_instance_b1.get());
-  EXPECT_TRUE(site_instance_a1->IsRelatedSiteInstance(site_instance_b1));
+  EXPECT_TRUE(site_instance_a1->IsRelatedSiteInstance(site_instance_b1.get()));
 
   // Getting the new SiteInstance from the BrowsingInstance and from another
   // SiteInstance in the BrowsingInstance should give the same result.
@@ -542,21 +544,17 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSiteInBrowserContext) {
   DrainMessageLoops();
 }
 
-static SiteInstanceImpl* CreateSiteInstance(
-    BrowserContext* browser_context,
-    RenderProcessHostFactory* factory,
-    const GURL& url) {
-  SiteInstanceImpl* instance =
-      reinterpret_cast<SiteInstanceImpl*>(
-          SiteInstance::CreateForURL(browser_context, url));
-  instance->set_render_process_host_factory(factory);
-  return instance;
+static SiteInstanceImpl* CreateSiteInstance(BrowserContext* browser_context,
+                                            const GURL& url) {
+  return static_cast<SiteInstanceImpl*>(
+      SiteInstance::CreateForURL(browser_context, url));
 }
 
 // Test to ensure that pages that require certain privileges are grouped
 // in processes with similar pages.
 TEST_F(SiteInstanceTest, ProcessSharingByType) {
   MockRenderProcessHostFactory rph_factory;
+  SiteInstanceImpl::set_render_process_host_factory(&rph_factory);
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
@@ -568,12 +566,12 @@ TEST_F(SiteInstanceTest, ProcessSharingByType) {
 
   // Create some extension instances and make sure they share a process.
   scoped_refptr<SiteInstanceImpl> extension1_instance(
-      CreateSiteInstance(browser_context.get(), &rph_factory,
+      CreateSiteInstance(browser_context.get(),
           GURL(kPrivilegedScheme + std::string("://foo/bar"))));
   set_privileged_process_id(extension1_instance->GetProcess()->GetID());
 
   scoped_refptr<SiteInstanceImpl> extension2_instance(
-      CreateSiteInstance(browser_context.get(), &rph_factory,
+      CreateSiteInstance(browser_context.get(),
           GURL(kPrivilegedScheme + std::string("://baz/bar"))));
 
   scoped_ptr<RenderProcessHost> extension_host(
@@ -583,12 +581,12 @@ TEST_F(SiteInstanceTest, ProcessSharingByType) {
 
   // Create some WebUI instances and make sure they share a process.
   scoped_refptr<SiteInstanceImpl> webui1_instance(CreateSiteInstance(
-      browser_context.get(), &rph_factory,
+      browser_context.get(),
       GURL(chrome::kChromeUIScheme + std::string("://newtab"))));
   policy->GrantWebUIBindings(webui1_instance->GetProcess()->GetID());
 
   scoped_refptr<SiteInstanceImpl> webui2_instance(CreateSiteInstance(
-      browser_context.get(), &rph_factory,
+      browser_context.get(),
       GURL(chrome::kChromeUIScheme + std::string("://history"))));
 
   scoped_ptr<RenderProcessHost> dom_host(webui1_instance->GetProcess());

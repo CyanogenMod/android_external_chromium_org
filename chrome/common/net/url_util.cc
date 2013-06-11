@@ -4,7 +4,7 @@
 
 #include "chrome/common/net/url_util.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
@@ -15,8 +15,7 @@ namespace chrome_common_net {
 
 void WriteURLToClipboard(const GURL& url,
                          const std::string& languages,
-                         ui::Clipboard *clipboard,
-                         ui::SourceTag source_tag) {
+                         ui::Clipboard *clipboard) {
   if (url.is_empty() || !url.is_valid() || !clipboard)
     return;
 
@@ -27,9 +26,7 @@ void WriteURLToClipboard(const GURL& url,
       net::FormatUrl(url, languages, net::kFormatUrlOmitNothing,
                      net::UnescapeRule::NONE, NULL, NULL, NULL);
 
-  ui::ScopedClipboardWriter scw(clipboard,
-                                ui::Clipboard::BUFFER_STANDARD,
-                                source_tag);
+  ui::ScopedClipboardWriter scw(clipboard, ui::Clipboard::BUFFER_STANDARD);
   scw.WriteURL(text);
 }
 

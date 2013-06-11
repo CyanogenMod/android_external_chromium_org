@@ -10,6 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "base/timer.h"
+#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/message_center/message_center.h"
@@ -56,13 +57,6 @@ ToastContentsView::ToastContentsView(
   // remains. This is hacky but easier to keep the consistency.
   set_background(views::Background::CreateSolidBackground(0, 0, 0, 0));
 
-  // Creates the timer only when it does the timeout (i.e. not never-timeout).
-  if (!notification->never_timeout()) {
-    timer_.reset(new base::OneShotTimer<ToastContentsView>);
-    ResetTimeout(notification->priority());
-    StartTimer();
-  }
-
   fade_animation_.reset(new ui::SlideAnimation(this));
   fade_animation_->SetSlideDuration(kFadeInOutDuration);
 }
@@ -95,37 +89,6 @@ void ToastContentsView::SetContents(MessageView* view) {
   Layout();
 }
 
-void ToastContentsView::ResetTimeout(int priority) {
-  int seconds = kAutocloseDefaultDelaySeconds;
-  if (priority > DEFAULT_PRIORITY)
-    seconds = kAutocloseHighPriorityDelaySeconds;
-  timeout_ = base::TimeDelta::FromSeconds(seconds);
-  // If timer exists and is not suspended, re-start it with new timeout.
-  if (timer_.get() && timer_->IsRunning())
-    StartTimer();
-}
-
-void ToastContentsView::SuspendTimer() {
-  if (!timer_.get() || !timer_->IsRunning())
-    return;
-  timer_->Stop();
-  passed_ += base::Time::Now() - start_time_;
-}
-
-void ToastContentsView::StartTimer() {
-  if (!timer_.get())
-    return;
-
-  base::TimeDelta timeout_to_close =
-      timeout_ <= passed_ ? base::TimeDelta() : timeout_ - passed_;
-  start_time_ = base::Time::Now();
-  timer_->Start(FROM_HERE,
-                timeout_to_close,
-                base::Bind(&ToastContentsView::CloseWithAnimation,
-                           base::Unretained(this),
-                           true));
-}
-
 void ToastContentsView::RevealWithAnimation(gfx::Point origin) {
   // Place/move the toast widgets. Currently it stacks the widgets from the
   // right-bottom of the work area.
@@ -146,7 +109,6 @@ void ToastContentsView::CloseWithAnimation(bool mark_as_shown) {
   if (is_closing_)
     return;
   is_closing_ = true;
-  timer_.reset();
   if (collection_)
     collection_->RemoveToast(this);
   if (mark_as_shown)
@@ -263,7 +225,6 @@ views::View* ToastContentsView::GetContentsView() {
 }
 
 void ToastContentsView::WindowClosing() {
-  SuspendTimer();
   if (!is_closing_ && collection_)
     collection_->RemoveToast(this);
 }
@@ -296,6 +257,12 @@ void ToastContentsView::Layout() {
 
 gfx::Size ToastContentsView::GetPreferredSize() {
   return child_count() ? GetToastSizeForView(child_at(0)) : gfx::Size();
+}
+
+void ToastContentsView::GetAccessibleState(ui::AccessibleViewState* state) {
+  if (child_count() > 0)
+    child_at(0)->GetAccessibleState(state);
+  state->role = ui::AccessibilityTypes::ROLE_WINDOW;
 }
 
 gfx::Rect ToastContentsView::GetClosedToastBounds(gfx::Rect bounds) {

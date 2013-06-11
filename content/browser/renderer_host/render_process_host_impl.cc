@@ -30,7 +30,7 @@
 #include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/supports_user_data.h"
 #include "base/sys_info.h"
 #include "base/threading/thread.h"
@@ -78,6 +78,7 @@
 #include "content/browser/renderer_host/memory_benchmark_message_filter.h"
 #include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
+#include "content/browser/renderer_host/pepper/pepper_renderer_connection.h"
 #include "content/browser/renderer_host/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
@@ -133,10 +134,6 @@
 #include "content/common/font_cache_dispatcher_win.h"
 #include "content/common/sandbox_win.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
-#endif
-
-#if defined(ENABLE_WEBRTC)
-#include "content/browser/renderer_host/media/webrtc_logging_handler_host.h"
 #endif
 
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -221,12 +218,12 @@ class RendererURLRequestContextSelector
 
   virtual net::URLRequestContext* GetRequestContext(
       ResourceType::Type resource_type) OVERRIDE {
-    net::URLRequestContextGetter* request_context = request_context_;
+    net::URLRequestContextGetter* request_context = request_context_.get();
     // If the request has resource type of ResourceType::MEDIA, we use a request
     // context specific to media for handling it because these resources have
     // specific needs for caching.
     if (resource_type == ResourceType::MEDIA)
-      request_context = media_request_context_;
+      request_context = media_request_context_.get();
     return request_context->GetURLRequestContext();
   }
 
@@ -400,7 +397,8 @@ RenderProcessHostImpl::RenderProcessHostImpl(
           dummy_shutdown_event_(false, false),
 #endif
           supports_browser_plugin_(supports_browser_plugin),
-          is_guest_(is_guest) {
+          is_guest_(is_guest),
+          gpu_observer_registered_(false) {
   widget_helper_ = new RenderWidgetHelper();
 
   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
@@ -428,6 +426,11 @@ RenderProcessHostImpl::RenderProcessHostImpl(
 RenderProcessHostImpl::~RenderProcessHostImpl() {
   DCHECK(!run_renderer_in_process());
   ChildProcessSecurityPolicyImpl::GetInstance()->Remove(GetID());
+
+  if (gpu_observer_registered_) {
+    GpuDataManagerImpl::GetInstance()->RemoveObserver(this);
+    gpu_observer_registered_ = false;
+  }
 
   // We may have some unsent messages at this point, but that's OK.
   channel_.reset();
@@ -552,6 +555,11 @@ bool RenderProcessHostImpl::Init() {
     fast_shutdown_started_ = false;
   }
 
+  if (!gpu_observer_registered_) {
+    gpu_observer_registered_ = true;
+    GpuDataManagerImpl::GetInstance()->AddObserver(this);
+  }
+
   is_initialized_ = true;
   return true;
 }
@@ -565,7 +573,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   if (supports_browser_plugin_) {
     scoped_refptr<BrowserPluginMessageFilter> bp_message_filter(
         new BrowserPluginMessageFilter(GetID(), IsGuest()));
-    channel_->AddFilter(bp_message_filter);
+    channel_->AddFilter(bp_message_filter.get());
   }
 
   scoped_refptr<RenderMessageFilter> render_message_filter(
@@ -578,10 +586,10 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #endif
           GetBrowserContext(),
           GetBrowserContext()->GetRequestContextForRenderProcess(GetID()),
-          widget_helper_,
+          widget_helper_.get(),
           media_internals,
           storage_partition_impl_->GetDOMStorageContext()));
-  channel_->AddFilter(render_message_filter);
+  channel_->AddFilter(render_message_filter.get());
   BrowserContext* browser_context = GetBrowserContext();
   ResourceContext* resource_context = browser_context->GetResourceContext();
 
@@ -600,12 +608,12 @@ void RenderProcessHostImpl::CreateMessageFilters() {
                                                  media_stream_manager));
   channel_->AddFilter(new AudioRendererHost(
       GetID(), audio_manager, BrowserMainLoop::GetAudioMirroringManager(),
-      media_internals));
+      media_internals, media_stream_manager));
   channel_->AddFilter(new VideoCaptureHost());
   channel_->AddFilter(new AppCacheDispatcherHost(
       storage_partition_impl_->GetAppCacheService(),
       GetID()));
-  channel_->AddFilter(new ClipboardMessageFilter(browser_context));
+  channel_->AddFilter(new ClipboardMessageFilter);
   channel_->AddFilter(
       new DOMStorageMessageFilter(
           GetID(),
@@ -615,12 +623,12 @@ void RenderProcessHostImpl::CreateMessageFilters() {
           GetID(),
           storage_partition_impl_->GetIndexedDBContext()));
   if (IsGuest()) {
-    if (!g_browser_plugin_geolocation_context.Get()) {
+    if (!g_browser_plugin_geolocation_context.Get().get()) {
       g_browser_plugin_geolocation_context.Get() =
           new BrowserPluginGeolocationPermissionContext();
     }
     channel_->AddFilter(GeolocationDispatcherHost::New(
-        GetID(), g_browser_plugin_geolocation_context.Get()));
+        GetID(), g_browser_plugin_geolocation_context.Get().get()));
   } else {
     channel_->AddFilter(GeolocationDispatcherHost::New(
         GetID(), browser_context->GetGeolocationPermissionContext()));
@@ -629,20 +637,22 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(gpu_message_filter_);
 #if defined(ENABLE_WEBRTC)
   peer_connection_tracker_host_ = new PeerConnectionTrackerHost(GetID());
-  channel_->AddFilter(peer_connection_tracker_host_);
+  channel_->AddFilter(peer_connection_tracker_host_.get());
   channel_->AddFilter(new MediaStreamDispatcherHost(GetID()));
 #endif
 #if defined(ENABLE_PLUGINS)
+  // TODO(raymes): PepperMessageFilter should be removed from here.
   channel_->AddFilter(new PepperMessageFilter(GetID(), browser_context));
+  channel_->AddFilter(new PepperRendererConnection);
 #endif
 #if defined(ENABLE_INPUT_SPEECH)
   channel_->AddFilter(new InputTagSpeechDispatcherHost(
       IsGuest(), GetID(), storage_partition_impl_->GetURLRequestContext(),
       browser_context->GetSpeechRecognitionPreferences()));
+#endif
   channel_->AddFilter(new SpeechRecognitionDispatcherHost(
       GetID(), storage_partition_impl_->GetURLRequestContext(),
       browser_context->GetSpeechRecognitionPreferences()));
-#endif
   channel_->AddFilter(new FileAPIMessageFilter(
       GetID(),
       storage_partition_impl_->GetURLRequestContext(),
@@ -695,9 +705,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
   channel_->AddFilter(new HistogramMessageFilter());
   channel_->AddFilter(new HyphenatorMessageFilter(this));
-#if defined(ENABLE_WEBRTC)
-  channel_->AddFilter(new WebRtcLoggingHandlerHost());
-#endif
 #if defined(USE_TCMALLOC) && (defined(OS_LINUX) || defined(OS_ANDROID))
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableMemoryBenchmarking))
@@ -841,8 +848,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
 #if defined(OS_ANDROID)
-    switches::kEnableWebAudio,
     switches::kDisableWebRTC,
+    switches::kEnableSpeechRecognition,
+    switches::kEnableWebAudio,
 #else
     switches::kDisableWebAudio,
 #endif
@@ -854,10 +862,13 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableExperimentalWebSocket,
     switches::kDomAutomationController,
     switches::kEnableAccessibilityLogging,
+    switches::kEnableBeginFrameScheduling,
+    switches::kEnableBrowserInputController,
     switches::kEnableBrowserPluginForAllViewTypes,
     switches::kEnableDCHECK,
     switches::kEnableDelegatedRenderer,
-    switches::kDisableEncryptedMedia,
+    switches::kEnableEncryptedMedia,
+    switches::kDisableLegacyEncryptedMedia,
     switches::kEnableExperimentalWebKitFeatures,
     switches::kEnableFixedLayout,
     switches::kEnableDeferredImageDecoding,
@@ -871,12 +882,15 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableSpeechSynthesis,
     switches::kEnableTouchDragDrop,
     switches::kEnableTouchEditing,
-    switches::kEnableVsyncNotification,
     switches::kEnableWebPInAcceptHeader,
 #if defined(ENABLE_WEBRTC)
     switches::kEnableWebRtcAecRecordings,
 #endif
+#if defined(ANDROID) && !defined(GOOGLE_TV)
+    switches::kEnableWebKitMediaSource,
+#else
     switches::kDisableWebKitMediaSource,
+#endif
     switches::kEnableOverscrollNotifications,
     switches::kEnableStrictSiteIsolation,
     switches::kDisableFullScreen,
@@ -941,6 +955,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kRendererStartupDialog,
     switches::kShowPaintRects,
     switches::kSitePerProcess,
+    switches::kStatsCollectionController,
     switches::kTestSandbox,
     switches::kTouchEvents,
     switches::kTraceStartup,
@@ -953,6 +968,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kVideoThreads,
     switches::kVModule,
     switches::kWebCoreLogChannels,
+    switches::kEnableWebGLDraftExtensions,
     // Please keep these in alphabetical order. Compositor switches here should
     // also be added to chrome/browser/chromeos/login/chrome_restart_request.cc.
     cc::switches::kBackgroundColorInsteadOfCheckerboard,
@@ -965,7 +981,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kEnablePartialSwap,
     cc::switches::kEnablePerTilePainting,
     cc::switches::kEnablePinchVirtualViewport,
-    cc::switches::kEnableRightAlignedScheduling,
     cc::switches::kEnableTopControlsPositionCalculation,
     cc::switches::kForceDirectLayerDrawing,
     cc::switches::kLowResolutionContentsScaleFactor,
@@ -1771,6 +1786,22 @@ void RenderProcessHostImpl::OnCompositorSurfaceBuffersSwappedNoHost(
   RenderWidgetHostImpl::AcknowledgeBufferPresent(params.route_id,
                                                  params.gpu_process_host_id,
                                                  ack_params);
+}
+
+void RenderProcessHostImpl::OnGpuSwitching() {
+  for (RenderWidgetHostsIterator iter = GetRenderWidgetHostsIterator();
+       !iter.IsAtEnd();
+       iter.Advance()) {
+    const RenderWidgetHost* widget = iter.GetCurrentValue();
+    DCHECK(widget);
+    if (!widget || !widget->IsRenderView())
+      continue;
+
+    RenderViewHost* rvh =
+        RenderViewHost::From(const_cast<RenderWidgetHost*>(widget));
+
+    rvh->UpdateWebkitPreferences(rvh->GetWebkitPreferences());
+  }
 }
 
 }  // namespace content

@@ -10,6 +10,7 @@
 #include "base/string16.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
+#include "content/common/browser_rendering_stats.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/navigation_gesture.h"
@@ -35,8 +36,8 @@
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_log_event.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatRect.h"
+#include "third_party/WebKit/public/platform/WebFloatPoint.h"
+#include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerAction.h"
@@ -295,6 +296,11 @@ IPC_STRUCT_TRAITS_BEGIN(ui::SelectedFileInfo)
   IPC_STRUCT_TRAITS_MEMBER(display_name)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(content::BrowserRenderingStats)
+  IPC_STRUCT_TRAITS_MEMBER(input_event_count)
+  IPC_STRUCT_TRAITS_MEMBER(total_input_latency)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   // Routing ID of the view initiating the open.
   IPC_STRUCT_MEMBER(int, opener_id)
@@ -363,6 +369,8 @@ IPC_STRUCT_BEGIN(ViewHostMsg_DateTimeDialogValue_Params)
   IPC_STRUCT_MEMBER(int, hour)
   IPC_STRUCT_MEMBER(int, minute)
   IPC_STRUCT_MEMBER(int, second)
+  IPC_STRUCT_MEMBER(double, minimum)
+  IPC_STRUCT_MEMBER(double, maximum)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_DidFailProvisionalLoadWithError_Params)
@@ -560,6 +568,10 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   // All the above coordinates are in DIP. This is the scale factor needed
   // to convert them to pixels.
   IPC_STRUCT_MEMBER(float, scale_factor)
+
+  // The latency information for the frame. Only valid when accelerated
+  // compositing is disabled.
+  IPC_STRUCT_MEMBER(ui::LatencyInfo, latency_info)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_Navigate_Params)
@@ -654,6 +666,9 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
 
   // The ID of the view to be created.
   IPC_STRUCT_MEMBER(int32, view_id)
+
+  // The ID of the main frame hosted in the view.
+  IPC_STRUCT_MEMBER(int32, main_frame_routing_id)
 
   // The ID of the rendering surface.
   IPC_STRUCT_MEMBER(int32, surface_id)
@@ -907,6 +922,11 @@ IPC_MESSAGE_ROUTED3(ViewMsg_Find,
 // window (and what action to take regarding the selection).
 IPC_MESSAGE_ROUTED1(ViewMsg_StopFinding,
                     content::StopFindAction /* action */)
+
+// Informs the renderer about various statistics the browser has (e.g.
+// latency) regarding the frames that have been displayed.
+IPC_MESSAGE_ROUTED1(ViewMsg_SetBrowserRenderingStats,
+                    content::BrowserRenderingStats /* stats */)
 
 // Replaces a date time input field.
 IPC_MESSAGE_ROUTED1(ViewMsg_ReplaceDateTime,
@@ -1325,9 +1345,10 @@ IPC_MESSAGE_ROUTED1(ViewMsg_Snapshot,
 // Sent by the renderer when it is creating a new window.  The browser creates
 // a tab for it and responds with a ViewMsg_CreatingNew_ACK.  If route_id is
 // MSG_ROUTING_NONE, the view couldn't be created.
-IPC_SYNC_MESSAGE_CONTROL1_3(ViewHostMsg_CreateWindow,
+IPC_SYNC_MESSAGE_CONTROL1_4(ViewHostMsg_CreateWindow,
                             ViewHostMsg_CreateWindow_Params,
                             int /* route_id */,
+                            int /* main_frame_route_id */,
                             int32 /* surface_id */,
                             int64 /* cloned_session_storage_namespace_id */)
 
@@ -2033,6 +2054,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CompositorSurfaceBuffersSwapped_Params)
   IPC_STRUCT_MEMBER(gfx::Size, size)
   IPC_STRUCT_MEMBER(float, scale_factor)
   IPC_STRUCT_MEMBER(int32, gpu_process_host_id)
+  IPC_STRUCT_MEMBER(ui::LatencyInfo, latency_info)
 IPC_STRUCT_END()
 
 // This message is synthesized by GpuProcessHost to pass through a swap message
@@ -2153,6 +2175,11 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_LockMouse,
 // ViewHostMsg_UnlockMouse).
 IPC_MESSAGE_ROUTED0(ViewHostMsg_UnlockMouse)
 
+// Notifies that the initial empty document of a view has been accessed.
+// After this, it is no longer safe to show a pending navigation's URL without
+// making a URL spoof possible.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_DidAccessInitialDocument)
+
 // Following message is used to communicate the values received by the
 // callback binding the JS to Cpp.
 // An instance of browser that has an automation host listening to it can
@@ -2260,7 +2287,7 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_ImeBatchStateChanged_ACK,
 IPC_MESSAGE_CONTROL3(ViewHostMsg_RunWebAudioMediaCodec,
                      base::SharedMemoryHandle /* encoded_data_handle */,
                      base::FileDescriptor /* pcm_output */,
-                     size_t /* data_size*/)
+                     uint32_t /* data_size*/)
 
 // Sent by renderer to request a ViewMsg_BeginFrame message for upcoming
 // display events. If |enabled| is true, the BeginFrame message will continue
@@ -2303,7 +2330,7 @@ IPC_SYNC_MESSAGE_CONTROL2_0(ViewHostMsg_PreCacheFontCharacters,
 // In all cases, the caller is responsible for deleting the resulting
 // TransportDIB.
 IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_AllocTransportDIB,
-                            size_t, /* bytes requested */
+                            uint32_t, /* bytes requested */
                             bool, /* cache in the browser */
                             TransportDIB::Handle /* DIB */)
 

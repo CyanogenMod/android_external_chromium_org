@@ -9,11 +9,10 @@
 #include "base/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/test/base/interactive_test_utils.h"
-#include "chrome/test/base/ui_controls.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/ime/text_input_test_support.h"
-#include "ui/compositor/test/compositor_test_support.h"
+#include "ui/base/test/ui_controls.h"
 #include "ui/message_center/message_center.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
@@ -101,7 +100,6 @@ void ViewEventTestBase::Done() {
 
 void ViewEventTestBase::SetUp() {
   ui::TextInputTestSupport::Initialize();
-  ui::CompositorTestSupport::Initialize();
   gfx::NativeView context = NULL;
 #if defined(USE_ASH)
 #if defined(OS_WIN)
@@ -160,7 +158,6 @@ void ViewEventTestBase::TearDown() {
 #elif defined(USE_AURA)
   aura_test_helper_->TearDown();
 #endif
-  ui::CompositorTestSupport::Terminate();
   ui::TextInputTestSupport::Shutdown();
 }
 

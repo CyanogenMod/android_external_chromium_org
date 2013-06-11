@@ -13,7 +13,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/time.h"
 #include "chrome/browser/storage_monitor/removable_storage_observer.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
@@ -115,14 +115,14 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
                                   public RemovableStorageObserver {
  public:
   class GalleryChangeObserver {
-    public:
-     // |extension_id| specifies the extension affected by this change.
-     // It is empty if the gallery change affects all extensions.
-     virtual void OnGalleryChanged(MediaGalleriesPreferences* pref,
-                                   const std::string& extension_id) {}
+   public:
+    // |extension_id| specifies the extension affected by this change.
+    // It is empty if the gallery change affects all extensions.
+    virtual void OnGalleryChanged(MediaGalleriesPreferences* pref,
+                                  const std::string& extension_id) {}
 
-    protected:
-     virtual ~GalleryChangeObserver();
+   protected:
+    virtual ~GalleryChangeObserver();
   };
 
   explicit MediaGalleriesPreferences(Profile* profile);
@@ -202,6 +202,7 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
 
  private:
   friend class MediaGalleriesPreferencesTest;
+  friend class MediaGalleriesPermissionsTest;
 
   typedef std::map<std::string /*device id*/, MediaGalleryPrefIdSet>
       DeviceIdPrefIdsMap;
@@ -234,12 +235,43 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
                                         bool volume_metadata_valid,
                                         int prefs_version);
 
+  // Sets permission for the media galleries identified by |gallery_id| for the
+  // extension in the given |prefs|.
+  void SetGalleryPermissionInPrefs(const std::string& extension_id,
+                                   MediaGalleryPrefId gallery_id,
+                                   bool has_access);
+
+  // Removes the entry for the media galleries permissions identified by
+  // |gallery_id| for the extension in the given |prefs|.
+  void UnsetGalleryPermissionInPrefs(const std::string& extension_id,
+                                     MediaGalleryPrefId gallery_id);
+
+  // Return all media gallery permissions for the extension in the given
+  // |prefs|.
+  std::vector<MediaGalleryPermission> GetGalleryPermissionsFromPrefs(
+      const std::string& extension_id) const;
+
+  // Remove all the media gallery permissions in |prefs| for the gallery
+  // specified by |gallery_id|.
+  void RemoveGalleryPermissionsFromPrefs(MediaGalleryPrefId gallery_id);
+
+  // Get the ExtensionPrefs to use; this will be either the ExtensionPrefs
+  // object associated with |profile_|, or extension_prefs_for_testing_, if
+  // SetExtensionPrefsForTesting() has been called.
   extensions::ExtensionPrefs* GetExtensionPrefs() const;
+
+  // Set the ExtensionPrefs object to be returned by GetExtensionPrefs().
+  void SetExtensionPrefsForTesting(extensions::ExtensionPrefs* extension_prefs);
 
   base::WeakPtrFactory<MediaGalleriesPreferences> weak_factory_;
 
   // The profile that owns |this|.
   Profile* profile_;
+
+  // The ExtensionPrefs used in a testing environment, where
+  // BrowserContextKeyedServices aren't used. This will be NULL unless it is
+  // set with SetExtensionPrefsForTesting().
+  extensions::ExtensionPrefs* extension_prefs_for_testing_;
 
   // An in-memory cache of known galleries.
   MediaGalleriesPrefInfoMap known_galleries_;

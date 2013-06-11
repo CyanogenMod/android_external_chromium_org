@@ -12,8 +12,8 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_canon.h"
 #include "net/base/net_errors.h"
@@ -710,7 +710,7 @@ void ProxyResolverV8::PurgeMemory() {
 int ProxyResolverV8::SetPacScript(
     const scoped_refptr<ProxyResolverScriptData>& script_data,
     const CompletionCallback& /*callback*/) {
-  DCHECK(script_data);
+  DCHECK(script_data.get());
   DCHECK(js_bindings_);
 
   context_.reset();

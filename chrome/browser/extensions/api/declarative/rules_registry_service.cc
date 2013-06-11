@@ -5,6 +5,7 @@
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
 
 #include "base/bind.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/api/declarative/initializing_rules_registry.h"
@@ -32,10 +33,12 @@ void RegisterToExtensionWebRequestEventRouterOnIO(
 }  // namespace
 
 RulesRegistryService::RulesRegistryService(Profile* profile)
-    : profile_(profile) {
+    : content_rules_registry_(NULL),
+      profile_(profile) {
   if (profile) {
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                   content::Source<Profile>(profile->GetOriginalProfile()));
+        content::Source<Profile>(profile->GetOriginalProfile()));
+    RegisterDefaultRulesRegistries();
   }
 }
 
@@ -64,10 +67,31 @@ void RulesRegistryService::RegisterDefaultRulesRegistries() {
 }
 
 void RulesRegistryService::Shutdown() {
+  // Release the references to all registries. This would happen soon during
+  // destruction of |*this|, but we need the ExtensionWebRequestEventRouter to
+  // be the last to reference the WebRequestRulesRegistry objects, so that
+  // the posted task below causes their destruction on the IO thread, not on UI
+  // where the destruction of |*this| takes place.
+  // TODO(vabr): Remove once http://crbug.com/218451#c6 gets addressed.
+  rule_registries_.clear();
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
       base::Bind(&RegisterToExtensionWebRequestEventRouterOnIO,
           profile_, scoped_refptr<WebRequestRulesRegistry>(NULL)));
+}
+
+static base::LazyInstance<ProfileKeyedAPIFactory<RulesRegistryService> >
+g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+ProfileKeyedAPIFactory<RulesRegistryService>*
+RulesRegistryService::GetFactoryInstance() {
+  return &g_factory.Get();
+}
+
+// static
+RulesRegistryService* RulesRegistryService::Get(Profile* profile) {
+  return ProfileKeyedAPIFactory<RulesRegistryService>::GetForProfile(profile);
 }
 
 void RulesRegistryService::RegisterRulesRegistry(

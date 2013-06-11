@@ -22,6 +22,7 @@
 #include "base/timer.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/cache_util.h"
+#include "net/disk_cache/disk_format.h"
 #include "net/disk_cache/entry_impl.h"
 #include "net/disk_cache/errors.h"
 #include "net/disk_cache/experiments.h"
@@ -607,7 +608,7 @@ EntryImpl* BackendImpl::CreateEntryImpl(const std::string& key) {
   cache_entry->BeginLogging(net_log_, true);
 
   // We are not failing the operation; let's add this to the map.
-  open_entries_[entry_address.value()] = cache_entry;
+  open_entries_[entry_address.value()] = cache_entry.get();
 
   // Save the entry.
   cache_entry->entry()->Store();
@@ -623,7 +624,7 @@ EntryImpl* BackendImpl::CreateEntryImpl(const std::string& key) {
   }
 
   // Link this entry through the lists.
-  eviction_.OnCreateEntry(cache_entry);
+  eviction_.OnCreateEntry(cache_entry.get());
 
   CACHE_UMA(AGE_MS, "CreateTime", 0, start);
   stats_.OnEvent(Stats::CREATE_HIT);
@@ -1146,7 +1147,7 @@ int BackendImpl::SelfCheck() {
 }
 
 void BackendImpl::FlushIndex() {
-  if (index_ && !disabled_)
+  if (index_.get() && !disabled_)
     index_->Flush();
 }
 
@@ -1157,7 +1158,7 @@ net::CacheType BackendImpl::GetCacheType() const {
 }
 
 int32 BackendImpl::GetEntryCount() const {
-  if (!index_ || disabled_)
+  if (!index_.get() || disabled_)
     return 0;
   // num_entries includes entries already evicted.
   int32 not_deleted = data_->header.num_entries -
@@ -1247,6 +1248,10 @@ void BackendImpl::GetStats(StatsItems* stats) {
   item.second = base::StringPrintf("%d", data_->header.num_bytes);
   stats->push_back(item);
 
+  item.first = "Cache type";
+  item.second = "Blockfile Cache";
+  stats->push_back(item);
+
   stats_.GetItems(stats);
 }
 
@@ -1294,7 +1299,7 @@ bool BackendImpl::InitBackingStore(bool* file_created) {
 
   bool ret = true;
   if (*file_created)
-    ret = CreateBackingStore(file);
+    ret = CreateBackingStore(file.get());
 
   file = NULL;
   if (!ret)
@@ -1466,7 +1471,7 @@ int BackendImpl::NewEntry(Addr address, EntryImpl** entry) {
 
   STRESS_DCHECK(block_files_.IsValid(address));
 
-  if (!address.SanityCheckForEntry()) {
+  if (!address.SanityCheckForEntryV2()) {
     LOG(WARNING) << "Wrong entry address.";
     STRESS_NOTREACHED();
     return ERR_INVALID_ADDRESS;
@@ -1524,7 +1529,7 @@ int BackendImpl::NewEntry(Addr address, EntryImpl** entry) {
           address.value());
   }
 
-  open_entries_[address.value()] = cache_entry;
+  open_entries_[address.value()] = cache_entry.get();
 
   cache_entry->BeginLogging(net_log_, false);
   cache_entry.swap(entry);
@@ -1570,7 +1575,7 @@ EntryImpl* BackendImpl::MatchEntry(const std::string& key, uint32 hash,
       if (!error)
         child.set_value(cache_entry->GetNextAddress());
 
-      if (parent_entry) {
+      if (parent_entry.get()) {
         parent_entry->SetNextAddress(child);
         parent_entry = NULL;
       } else {
@@ -1583,7 +1588,7 @@ EntryImpl* BackendImpl::MatchEntry(const std::string& key, uint32 hash,
       if (!error) {
         // It is important to call DestroyInvalidEntry after removing this
         // entry from the table.
-        DestroyInvalidEntry(cache_entry);
+        DestroyInvalidEntry(cache_entry.get());
         cache_entry = NULL;
       } else {
         Trace("NewEntry failed on MatchEntry 0x%x", address.value());
@@ -1611,21 +1616,21 @@ EntryImpl* BackendImpl::MatchEntry(const std::string& key, uint32 hash,
       cache_entry = NULL;
     parent_entry = cache_entry;
     cache_entry = NULL;
-    if (!parent_entry)
+    if (!parent_entry.get())
       break;
 
     address.set_value(parent_entry->GetNextAddress());
   }
 
-  if (parent_entry && (!find_parent || !found))
+  if (parent_entry.get() && (!find_parent || !found))
     parent_entry = NULL;
 
-  if (find_parent && entry_addr.is_initialized() && !cache_entry) {
+  if (find_parent && entry_addr.is_initialized() && !cache_entry.get()) {
     *match_error = true;
     parent_entry = NULL;
   }
 
-  if (cache_entry && (find_parent || !found))
+  if (cache_entry.get() && (find_parent || !found))
     cache_entry = NULL;
 
   find_parent ? parent_entry.swap(&tmp) : cache_entry.swap(&tmp);

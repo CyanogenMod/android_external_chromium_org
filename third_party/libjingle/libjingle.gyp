@@ -241,9 +241,6 @@
         'overrides/talk/base/basictypes.h',
         'overrides/talk/base/constructormagic.h',
 
-        # This file is in Chromium only.
-        'overrides/logging/log_message_delegate.h',
-
         # Overrides logging.h/.cc because libjingle logging should be done to
         # the same place as the chromium logging.
         'overrides/talk/base/logging.cc',
@@ -876,7 +873,7 @@
           'dependencies': [
             '<(DEPTH)/third_party/webrtc/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(DEPTH)/third_party/webrtc/video_engine/video_engine.gyp:video_engine_core',
-            '<(DEPTH)/third_party/webrtc/voice_engine/voice_engine.gyp:voice_engine_core',
+            '<(DEPTH)/third_party/webrtc/voice_engine/voice_engine.gyp:voice_engine',
             '<@(libjingle_peerconnection_additional_deps)',
             'libjingle_webrtc_common',
           ],

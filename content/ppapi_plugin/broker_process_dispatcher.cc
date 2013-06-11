@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
-#include "content/common/child_process.h"
+#include "base/strings/utf_string_conversions.h"
+#include "content/child/child_process.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/ppp_flash_browser_operations.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -49,7 +49,7 @@ void GetPermissionSettingsCallback(
   scoped_ptr<GetPermissionSettingsContext> context(
       reinterpret_cast<GetPermissionSettingsContext*>(user_data));
 
-  if (!context->dispatcher)
+  if (!context->dispatcher.get())
     return;
 
   ppapi::FlashSiteSettings site_vector;

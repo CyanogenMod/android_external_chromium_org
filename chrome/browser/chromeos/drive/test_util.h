@@ -20,10 +20,6 @@ class IOBuffer;
 
 namespace drive {
 
-namespace internal {
-class ChangeListLoader;
-}  // namespace internal
-
 namespace test_util {
 
 // Disk space size used by FakeFreeDiskSpaceGetter.
@@ -65,14 +61,6 @@ FileCacheEntry ToCacheEntry(int cache_state);
 // Returns true if the cache state of the given two cache entries are equal.
 bool CacheStatesEqual(const FileCacheEntry& a, const FileCacheEntry& b);
 
-// Loads a test json file as root ("/drive") element from a test file stored
-// under chrome/test/data/chromeos. Returns true on success.
-bool LoadChangeFeed(const std::string& relative_path,
-                    internal::ChangeListLoader* change_list_loader,
-                    bool is_delta_feed,
-                    const std::string& root_resource_id,
-                    int64 root_feed_changestamp);
-
 // Helper to destroy objects which needs Destroy() to be called on destruction.
 // Note: When using this helper, you should destruct objects before
 // BrowserThread.
@@ -104,8 +92,8 @@ int ReadAllData(Reader* reader, std::string* content) {
   }
 }
 
-// Adds test cache |resources| to |cache|. Returnes whether the operation
-// succeeeded or not.
+// Adds test cache |resources| to |cache|. Returns whether the operation
+// succeeded or not.
 bool PrepareTestCacheResources(
     internal::FileCache* cache,
     const std::vector<TestCacheResource>& resources);

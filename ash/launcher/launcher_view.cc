@@ -472,7 +472,8 @@ gfx::Rect LauncherView::GetIdealBoundsOfItemIcon(LauncherID id) {
   LauncherButton* button =
       static_cast<LauncherButton*>(view_model_->view_at(index));
   gfx::Rect icon_bounds = button->GetIconBounds();
-  return gfx::Rect(ideal_bounds.x() + icon_bounds.x(),
+  return gfx::Rect(GetMirroredXWithWidthInView(
+                       ideal_bounds.x() + icon_bounds.x(), icon_bounds.width()),
                    ideal_bounds.y() + icon_bounds.y(),
                    icon_bounds.width(),
                    icon_bounds.height());
@@ -485,19 +486,21 @@ void LauncherView::UpdatePanelIconPosition(LauncherID id,
   if (current_index < first_panel_index)
     return;
 
+  gfx::Point midpoint_in_view(GetMirroredXInView(midpoint.x()),
+                              midpoint.y());
   ShelfLayoutManager* shelf = tooltip_->shelf_layout_manager();
   int target_index = current_index;
   while (target_index > first_panel_index &&
          shelf->PrimaryAxisValue(view_model_->ideal_bounds(target_index).x(),
                                  view_model_->ideal_bounds(target_index).y()) >
-         shelf->PrimaryAxisValue(midpoint.x(), midpoint.y())) {
+         shelf->PrimaryAxisValue(midpoint_in_view.x(), midpoint_in_view.y())) {
     --target_index;
   }
   while (target_index < view_model_->view_size() - 1 &&
          shelf->PrimaryAxisValue(
              view_model_->ideal_bounds(target_index).right(),
              view_model_->ideal_bounds(target_index).bottom()) <
-         shelf->PrimaryAxisValue(midpoint.x(), midpoint.y())) {
+         shelf->PrimaryAxisValue(midpoint_in_view.x(), midpoint_in_view.y())) {
     ++target_index;
   }
   if (current_index != target_index)
@@ -545,6 +548,7 @@ void LauncherView::CreateDragIconProxy(
     const gfx::Point& location_in_screen_coordinates,
     const gfx::ImageSkia& icon,
     views::View* replaced_view,
+    const gfx::Vector2d& cursor_offset_from_center,
     float scale_factor) {
   drag_replaced_view_ = replaced_view;
   drag_image_.reset(new ash::internal::DragImageView(
@@ -553,7 +557,8 @@ void LauncherView::CreateDragIconProxy(
   gfx::Size size = drag_image_->GetPreferredSize();
   size.set_width(size.width() * scale_factor);
   size.set_height(size.height() * scale_factor);
-  drag_image_offset_ = gfx::Vector2d(size.width() / 2, size.height() / 2);
+  drag_image_offset_ = gfx::Vector2d(size.width() / 2, size.height() / 2) +
+                       cursor_offset_from_center;
   gfx::Rect drag_image_bounds(
       GetPositionInScreen(location_in_screen_coordinates,
                           drag_replaced_view_) - drag_image_offset_, size);
@@ -1482,8 +1487,8 @@ void LauncherView::ButtonPressed(views::Button* sender,
         Shell::GetInstance()->ToggleAppList(GetWidget()->GetNativeView());
         // By setting us as DnD recipient, the app list knows that we can
         // handle items.
-        if (CommandLine::ForCurrentProcess()->HasSwitch(
-                ash::switches::kAshDragAndDropAppListToLauncher))
+        if (!CommandLine::ForCurrentProcess()->HasSwitch(
+                 ash::switches::kAshDisableDragAndDropAppListToLauncher))
           Shell::GetInstance()->SetDragAndDropHostOfCurrentAppList(this);
         break;
     }

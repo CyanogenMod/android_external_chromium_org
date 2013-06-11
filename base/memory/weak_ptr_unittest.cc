@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/debug/leak_annotations.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/synchronization/waitable_event.h"
@@ -189,7 +190,7 @@ TEST(WeakPtrFactoryTest, Comparison) {
   WeakPtrFactory<int> factory(&data);
   WeakPtr<int> ptr = factory.GetWeakPtr();
   WeakPtr<int> ptr2 = ptr;
-  EXPECT_EQ(ptr, ptr2);
+  EXPECT_EQ(ptr.get(), ptr2.get());
 }
 
 TEST(WeakPtrFactoryTest, OutOfScope) {
@@ -389,7 +390,7 @@ TEST(WeakPtrTest, MainThreadRefOutlivesBackgroundThreadRef) {
 
   Arrow* arrow_copy;
   background.CreateArrowFromArrow(&arrow_copy, &arrow);
-  EXPECT_EQ(arrow_copy->target, &target);
+  EXPECT_EQ(arrow_copy->target.get(), &target);
   background.DeleteArrow(arrow_copy);
 }
 
@@ -408,7 +409,7 @@ TEST(WeakPtrTest, BackgroundThreadRefOutlivesMainThreadRef) {
     arrow.target = target.AsWeakPtr();
     background.CreateArrowFromArrow(&arrow_copy, &arrow);
   }
-  EXPECT_EQ(arrow_copy->target, &target);
+  EXPECT_EQ(arrow_copy->target.get(), &target);
   background.DeleteArrow(arrow_copy);
 }
 
@@ -435,26 +436,28 @@ TEST(WeakPtrTest, NonOwnerThreadCanCopyAndAssignWeakPtr) {
   // Main thread creates a Target object.
   Target target;
   // Main thread creates an arrow referencing the Target.
-  Arrow* arrow = new Arrow();
+  Arrow *arrow = new Arrow();
   arrow->target = target.AsWeakPtr();
 
   // Background can copy and assign arrow (as well as the WeakPtr inside).
   BackgroundThread background;
   background.Start();
   background.CopyAndAssignArrow(arrow);
+  background.DeleteArrow(arrow);
 }
 
 TEST(WeakPtrTest, NonOwnerThreadCanCopyAndAssignWeakPtrBase) {
   // Main thread creates a Target object.
   Target target;
   // Main thread creates an arrow referencing the Target.
-  Arrow* arrow = new Arrow();
+  Arrow *arrow = new Arrow();
   arrow->target = target.AsWeakPtr();
 
   // Background can copy and assign arrow's WeakPtr to a base class WeakPtr.
   BackgroundThread background;
   background.Start();
   background.CopyAndAssignArrowBase(arrow);
+  background.DeleteArrow(arrow);
 }
 
 TEST(WeakPtrTest, NonOwnerThreadCanDeleteWeakPtr) {
@@ -537,8 +540,11 @@ TEST(WeakPtrDeathTest, NonOwnerThreadDeletesWeakPtrAfterReference) {
   background.DeRef(&arrow);
 
   // Main thread deletes Target, violating thread binding.
-  Target* foo = target.release();
-  ASSERT_DEATH(delete foo, "");
+  ASSERT_DEATH(target.reset(), "");
+
+  // |target.reset()| died so |target| still holds the object, so we
+  // must pass it to the background thread to teardown.
+  background.DeleteTarget(target.release());
 }
 
 TEST(WeakPtrDeathTest, NonOwnerThreadDeletesObjectAfterReference) {

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/supports_user_data.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
@@ -245,8 +246,13 @@ void DownloadHandler::OnDownloadUpdated(
       break;
 
     case DownloadItem::CANCELLED:
-    case DownloadItem::INTERRUPTED:
       download->SetUserData(&kDrivePathKey, NULL);
+      break;
+
+    case DownloadItem::INTERRUPTED:
+      // Interrupted downloads can be resumed. Keep the Drive user data around
+      // so that it can be used when the download resumes. The download is truly
+      // done when it's complete, is cancelled or is removed.
       break;
 
     default:

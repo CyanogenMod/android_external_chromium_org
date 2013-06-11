@@ -8,7 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/metrics/stats_table.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/memory_purger.h"
@@ -227,6 +227,7 @@ class TaskManagerView : public views::ButtonListener,
   virtual std::string GetWindowName() const OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
+  virtual bool UseNewStyleForThisDialog() const OVERRIDE;
 
   // views::TableViewObserver:
   virtual void OnSelectionChanged() OVERRIDE;
@@ -493,13 +494,10 @@ void TaskManagerView::ViewHierarchyChanged(
 }
 
 void TaskManagerView::Layout() {
-  bool new_style = views::DialogDelegate::UseNewStyle();
   gfx::Size size = kill_button_->GetPreferredSize();
   gfx::Rect parent_bounds = parent()->GetContentsBounds();
-  const int horizontal_margin =
-      new_style ? views::kButtonHEdgeMarginNew : views::kPanelHorizMargin;
-  const int vertical_margin =
-      new_style ? views::kButtonVEdgeMarginNew : views::kButtonVEdgeMargin;
+  const int horizontal_margin = views::kPanelHorizMargin;
+  const int vertical_margin = views::kButtonVEdgeMargin;
   int x = width() - size.width() - horizontal_margin;
   int y_buttons = parent_bounds.bottom() - size.height() - vertical_margin;
   kill_button_->SetBounds(x, y_buttons, size.width(), size.height());
@@ -649,6 +647,10 @@ void TaskManagerView::WindowClosing() {
   if (instance_ == this)
     instance_ = NULL;
   task_manager_->OnWindowClosed();
+}
+
+bool TaskManagerView::UseNewStyleForThisDialog() const {
+  return false;
 }
 
 // views::TableViewObserver implementation.

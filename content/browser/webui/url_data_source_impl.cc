@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/browser/webui/url_data_manager_backend.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/url_data_source.h"
@@ -53,7 +53,7 @@ void URLDataSourceImpl::SendResponseOnIOThread(
     scoped_refptr<base::RefCountedMemory> bytes) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (backend_)
-    backend_->DataAvailable(request_id, bytes);
+    backend_->DataAvailable(request_id, bytes.get());
 }
 
 }  // namespace content

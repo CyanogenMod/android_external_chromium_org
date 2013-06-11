@@ -81,7 +81,7 @@ SpeechRecognizerImpl::SpeechRecognizerImpl(
       is_dispatching_event_(false),
       is_single_shot_(is_single_shot),
       state_(STATE_IDLE) {
-  DCHECK(listener_ != NULL);
+  DCHECK(this->listener() != NULL);
   DCHECK(recognition_engine_ != NULL);
   if (is_single_shot) {
     // In single shot recognition, the session is automatically ended after:
@@ -132,7 +132,7 @@ bool SpeechRecognizerImpl::IsActive() const {
   // Checking the FSM state from another thread (thus, while the FSM is
   // potentially concurrently evolving) is meaningless.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  return state_ != STATE_IDLE;
+  return state_ != STATE_IDLE && state_ != STATE_ENDED;
 }
 
 bool SpeechRecognizerImpl::IsCapturingAudio() const {
@@ -151,9 +151,9 @@ SpeechRecognizerImpl::recognition_engine() const {
 
 SpeechRecognizerImpl::~SpeechRecognizerImpl() {
   endpointer_.EndSession();
-  if (audio_controller_) {
-    audio_controller_->Close(base::Bind(&KeepAudioControllerRefcountedForDtor,
-                                        audio_controller_));
+  if (audio_controller_.get()) {
+    audio_controller_->Close(
+        base::Bind(&KeepAudioControllerRefcountedForDtor, audio_controller_));
   }
 }
 
@@ -225,7 +225,7 @@ void SpeechRecognizerImpl::DispatchEvent(const FSMEventArgs& event_args) {
 
   if (event_args.event == EVENT_AUDIO_DATA) {
     DCHECK(event_args.audio_data.get() != NULL);
-    ProcessAudioPipeline(*event_args.audio_data);
+    ProcessAudioPipeline(*event_args.audio_data.get());
   }
 
   // The audio pipeline must be processed before the event dispatch, otherwise
@@ -340,6 +340,12 @@ SpeechRecognizerImpl::ExecuteTransitionAndGetNextState(
           return AbortWithError(event_args);
       }
       break;
+
+    // TODO(primiano): remove this state when speech input extensions support
+    // will be removed and STATE_IDLE.EVENT_ABORT,EVENT_STOP_CAPTURE will be
+    // reset to NotFeasible (see TODO above).
+    case STATE_ENDED:
+      return DoNothing(event_args);
   }
   return NotFeasible(event_args);
 }
@@ -390,16 +396,11 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
   DVLOG(1) << "SpeechRecognizerImpl starting audio capture.";
   num_samples_recorded_ = 0;
   audio_level_ = 0;
-  listener_->OnRecognitionStart(session_id_);
+  listener()->OnRecognitionStart(session_id());
 
   if (!audio_manager->HasAudioInputDevices()) {
     return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO,
                                         SPEECH_AUDIO_ERROR_DETAILS_NO_MIC));
-  }
-
-  if (audio_manager->IsRecordingInProcess()) {
-    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO,
-                                        SPEECH_AUDIO_ERROR_DETAILS_IN_USE));
   }
 
   const int samples_per_packet = (kAudioSampleRate *
@@ -428,12 +429,12 @@ SpeechRecognizerImpl::StartRecognitionEngine(const FSMEventArgs& event_args) {
   // started and the delegate notified about the event.
   DCHECK(recognition_engine_.get() != NULL);
   recognition_engine_->StartRecognition();
-  listener_->OnAudioStart(session_id_);
+  listener()->OnAudioStart(session_id());
 
   // This is a little hack, since TakeAudioChunk() is already called by
   // ProcessAudioPipeline(). It is the best tradeoff, unless we allow dropping
   // the first audio chunk captured after opening the audio device.
-  recognition_engine_->TakeAudioChunk(*(event_args.audio_data));
+  recognition_engine_->TakeAudioChunk(*(event_args.audio_data.get()));
   return STATE_ESTIMATING_ENVIRONMENT;
 }
 
@@ -442,7 +443,7 @@ SpeechRecognizerImpl::WaitEnvironmentEstimationCompletion(const FSMEventArgs&) {
   DCHECK(endpointer_.IsEstimatingEnvironment());
   if (GetElapsedTimeMs() >= kEndpointerEstimationTimeMs) {
     endpointer_.SetUserInputMode();
-    listener_->OnEnvironmentEstimationComplete(session_id_);
+    listener()->OnEnvironmentEstimationComplete(session_id());
     return STATE_WAITING_FOR_SPEECH;
   } else {
     return STATE_ESTIMATING_ENVIRONMENT;
@@ -452,7 +453,7 @@ SpeechRecognizerImpl::WaitEnvironmentEstimationCompletion(const FSMEventArgs&) {
 SpeechRecognizerImpl::FSMState
 SpeechRecognizerImpl::DetectUserSpeechOrTimeout(const FSMEventArgs&) {
   if (endpointer_.DidStartReceivingSpeech()) {
-    listener_->OnSoundStart(session_id_);
+    listener()->OnSoundStart(session_id());
     return STATE_RECOGNIZING;
   } else if (GetElapsedTimeMs() >= kNoSpeechTimeoutMs) {
     return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_NO_SPEECH));
@@ -476,9 +477,9 @@ SpeechRecognizerImpl::StopCaptureAndWaitForResult(const FSMEventArgs&) {
   recognition_engine_->AudioChunksEnded();
 
   if (state_ > STATE_WAITING_FOR_SPEECH)
-    listener_->OnSoundEnd(session_id_);
+    listener()->OnSoundEnd(session_id());
 
-  listener_->OnAudioEnd(session_id_);
+  listener()->OnAudioEnd(session_id());
   return STATE_WAITING_FINAL_RESULT;
 }
 
@@ -513,17 +514,17 @@ SpeechRecognizerImpl::FSMState SpeechRecognizerImpl::Abort(
   }
 
   if (state_ > STATE_WAITING_FOR_SPEECH && state_ < STATE_WAITING_FINAL_RESULT)
-    listener_->OnSoundEnd(session_id_);
+    listener()->OnSoundEnd(session_id());
 
   if (state_ > STATE_STARTING && state_ < STATE_WAITING_FINAL_RESULT)
-    listener_->OnAudioEnd(session_id_);
+    listener()->OnAudioEnd(session_id());
 
   if (error.code != SPEECH_RECOGNITION_ERROR_NONE)
-    listener_->OnRecognitionError(session_id_, error);
+    listener()->OnRecognitionError(session_id(), error);
 
-  listener_->OnRecognitionEnd(session_id_);
+  listener()->OnRecognitionEnd(session_id());
 
-  return STATE_IDLE;
+  return STATE_ENDED;
 }
 
 SpeechRecognizerImpl::FSMState SpeechRecognizerImpl::ProcessIntermediateResult(
@@ -541,14 +542,14 @@ SpeechRecognizerImpl::FSMState SpeechRecognizerImpl::ProcessIntermediateResult(
   if (state_ == STATE_ESTIMATING_ENVIRONMENT) {
     DCHECK(endpointer_.IsEstimatingEnvironment());
     endpointer_.SetUserInputMode();
-    listener_->OnEnvironmentEstimationComplete(session_id_);
+    listener()->OnEnvironmentEstimationComplete(session_id());
   } else if (state_ == STATE_WAITING_FOR_SPEECH) {
-    listener_->OnSoundStart(session_id_);
+    listener()->OnSoundStart(session_id());
   } else {
     DCHECK_EQ(STATE_RECOGNIZING, state_);
   }
 
-  listener_->OnRecognitionResults(session_id_, event_args.engine_results);
+  listener()->OnRecognitionResults(session_id(), event_args.engine_results);
   return STATE_RECOGNIZING;
 }
 
@@ -569,7 +570,7 @@ SpeechRecognizerImpl::ProcessFinalResult(const FSMEventArgs& event_args) {
   }
 
   if (provisional_results_pending) {
-    listener_->OnRecognitionResults(session_id_, results);
+    listener()->OnRecognitionResults(session_id(), results);
     // We don't end the recognition if a provisional result is received in
     // STATE_WAITING_FINAL_RESULT. A definitive result will come next and will
     // end the recognition.
@@ -588,11 +589,11 @@ SpeechRecognizerImpl::ProcessFinalResult(const FSMEventArgs& event_args) {
     //  4. The speech recognition engine, therefore, emits an empty result to
     //     notify that the recognition is ended with no error, yet neither any
     //     further result.
-    listener_->OnRecognitionResults(session_id_, results);
+    listener()->OnRecognitionResults(session_id(), results);
   }
 
-  listener_->OnRecognitionEnd(session_id_);
-  return STATE_IDLE;
+  listener()->OnRecognitionEnd(session_id());
+  return STATE_ENDED;
 }
 
 SpeechRecognizerImpl::FSMState
@@ -641,8 +642,8 @@ void SpeechRecognizerImpl::UpdateSignalAndNoiseLevels(const float& rms,
   noise_level = std::min(std::max(0.0f, noise_level),
                          kAudioMeterRangeMaxUnclipped);
 
-  listener_->OnAudioLevelsChange(
-      session_id_, clip_detected ? 1.0f : audio_level_, noise_level);
+  listener()->OnAudioLevelsChange(
+      session_id(), clip_detected ? 1.0f : audio_level_, noise_level);
 }
 
 void SpeechRecognizerImpl::SetAudioManagerForTests(

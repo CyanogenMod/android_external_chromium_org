@@ -6,7 +6,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/browser/speech/google_streaming_remote_engine.h"
 #include "content/browser/speech/proto/google_streaming_api.pb.h"
@@ -380,7 +380,7 @@ void GoogleStreamingRemoteEngineTest::InjectDummyAudioChunk() {
                      sizeof(dummy_audio_buffer_data),
                      2 /* bytes per sample */));
   DCHECK(engine_under_test_.get());
-  engine_under_test_->TakeAudioChunk(*dummy_audio_chunk);
+  engine_under_test_->TakeAudioChunk(*dummy_audio_chunk.get());
 }
 
 size_t GoogleStreamingRemoteEngineTest::UpstreamChunksUploadedFromLastCall() {

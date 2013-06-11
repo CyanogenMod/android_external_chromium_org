@@ -50,7 +50,6 @@ class AppListServiceMac : public AppListServiceImpl,
   }
 
   void CreateAppList(Profile* profile);
-  NSWindow* GetNativeWindow();
   void ShowWindowNearDock();
 
   // AppListService overrides:
@@ -59,11 +58,14 @@ class AppListServiceMac : public AppListServiceImpl,
   virtual void DismissAppList() OVERRIDE;
   virtual bool IsAppListVisible() const OVERRIDE;
   virtual void EnableAppList() OVERRIDE;
+  virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
 
   // AppShimHandler overrides:
-  virtual bool OnShimLaunch(apps::AppShimHandler::Host* host) OVERRIDE;
+  virtual bool OnShimLaunch(apps::AppShimHandler::Host* host,
+                            apps::AppShimLaunchType launch_type) OVERRIDE;
   virtual void OnShimClose(apps::AppShimHandler::Host* host) OVERRIDE;
   virtual void OnShimFocus(apps::AppShimHandler::Host* host) OVERRIDE;
+  virtual void OnShimQuit(apps::AppShimHandler::Host* host) OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<AppListServiceMac>;
@@ -168,7 +170,7 @@ void AppListControllerDelegateCocoa::DismissView() {
 }
 
 gfx::NativeWindow AppListControllerDelegateCocoa::GetAppListWindow() {
-  return AppListServiceMac::GetInstance()->GetNativeWindow();
+  return AppListServiceMac::GetInstance()->GetAppListWindow();
 }
 
 bool AppListControllerDelegateCocoa::CanPin() {
@@ -266,11 +268,12 @@ void AppListServiceMac::EnableAppList() {
   // TODO(tapted): Implement enable logic here for OSX.
 }
 
-NSWindow* AppListServiceMac::GetNativeWindow() {
+NSWindow* AppListServiceMac::GetAppListWindow() {
   return [window_controller_ window];
 }
 
-bool AppListServiceMac::OnShimLaunch(apps::AppShimHandler::Host* host) {
+bool AppListServiceMac::OnShimLaunch(apps::AppShimHandler::Host* host,
+                                     apps::AppShimLaunchType launch_type) {
   ShowForSavedProfile();
   observers_.AddObserver(host);
   return true;
@@ -282,6 +285,10 @@ void AppListServiceMac::OnShimClose(apps::AppShimHandler::Host* host) {
 }
 
 void AppListServiceMac::OnShimFocus(apps::AppShimHandler::Host* host) {
+  DismissAppList();
+}
+
+void AppListServiceMac::OnShimQuit(apps::AppShimHandler::Host* host) {
   DismissAppList();
 }
 
@@ -329,8 +336,8 @@ NSPoint GetAppListWindowOrigin(NSWindow* window) {
   const NSSize window_size = [window frame].size;
   gfx::Rect anchor_area = display.work_area();
   anchor_area.Inset(window_size.width / 2, window_size.height / 2);
-  anchor.ClampToMin(anchor_area.origin());
-  anchor.ClampToMax(anchor_area.bottom_right());
+  anchor.SetToMax(anchor_area.origin());
+  anchor.SetToMin(anchor_area.bottom_right());
 
   // Move anchor to the dock, keeping the other axis aligned with the cursor.
   switch (dock_location) {
@@ -353,7 +360,7 @@ NSPoint GetAppListWindowOrigin(NSWindow* window) {
 }
 
 void AppListServiceMac::ShowWindowNearDock() {
-  NSWindow* window = GetNativeWindow();
+  NSWindow* window = GetAppListWindow();
   DCHECK(window);
   [window setFrameOrigin:GetAppListWindowOrigin(window)];
   [window makeKeyAndOrderFront:nil];

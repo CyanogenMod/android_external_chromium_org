@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/utility_messages.h"
@@ -58,7 +58,7 @@ void PluginLoaderPosix::OnProcessCrashed(int exit_code) {
 }
 
 bool PluginLoaderPosix::Send(IPC::Message* message) {
-  if (process_host_)
+  if (process_host_.get())
     return process_host_->Send(message);
   return false;
 }

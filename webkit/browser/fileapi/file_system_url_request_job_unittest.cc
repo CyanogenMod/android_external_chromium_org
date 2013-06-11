@@ -13,12 +13,12 @@
 #include "base/format_macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/rand_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
@@ -76,7 +76,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
   virtual void TearDown() OVERRIDE {
     net::URLRequest::Deprecated::RegisterProtocolFactory("filesystem", NULL);
     ClearUnusedJob();
-    if (pending_job_) {
+    if (pending_job_.get()) {
       pending_job_->Kill();
       pending_job_ = NULL;
     }
@@ -130,7 +130,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
         kFileSystemTypeTemporary,
         base::FilePath().AppendASCII(dir_name));
 
-    FileSystemOperationContext context(file_system_context_);
+    FileSystemOperationContext context(file_system_context_.get());
     context.set_allowed_bytes_growth(1024);
 
     ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->CreateDirectory(
@@ -149,7 +149,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
         kFileSystemTypeTemporary,
         base::FilePath().AppendASCII(file_name));
 
-    FileSystemOperationContext context(file_system_context_);
+    FileSystemOperationContext context(file_system_context_.get());
     context.set_allowed_bytes_growth(1024);
 
     base::PlatformFile handle = base::kInvalidPlatformFileValue;

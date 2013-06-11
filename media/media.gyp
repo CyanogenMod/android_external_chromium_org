@@ -22,6 +22,8 @@
         'media_use_libvpx%': 1,
       }],
       # Screen capturer works only on Windows, OSX and Linux (with X11).
+      # TODO(sergeyu): Remove this variable once screen_capture_device.cc is
+      # moved to content.
       ['OS=="win" or OS=="mac" or (OS=="linux" and use_x11==1)', {
         'screen_capture_supported%': 1,
       }, {
@@ -46,11 +48,11 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../crypto/crypto.gyp:crypto',
         '../skia/skia.gyp:skia',
         '../third_party/opus/opus.gyp:opus',
         '../ui/ui.gyp:ui',
+        '../url/url.gyp:url_lib',
       ],
       'defines': [
         'MEDIA_IMPLEMENTATION',
@@ -264,6 +266,8 @@
         'base/filter_collection.h',
         'base/media.cc',
         'base/media.h',
+        'base/media_keys.cc',
+        'base/media_keys.h',
         'base/media_log.cc',
         'base/media_log.h',
         'base/media_log_event.h',
@@ -381,36 +385,11 @@
         'video/capture/mac/video_capture_device_mac.mm',
         'video/capture/mac/video_capture_device_qtkit_mac.h',
         'video/capture/mac/video_capture_device_qtkit_mac.mm',
-        'video/capture/screen/differ.cc',
-        'video/capture/screen/differ.h',
-        'video/capture/screen/differ_block.cc',
-        'video/capture/screen/differ_block.h',
-        'video/capture/screen/mac/desktop_configuration.h',
-        'video/capture/screen/mac/desktop_configuration.mm',
-        'video/capture/screen/mac/scoped_pixel_buffer_object.cc',
-        'video/capture/screen/mac/scoped_pixel_buffer_object.h',
-        'video/capture/screen/mouse_cursor_shape.h',
+
+        # TODO(sergeyu): Move screen_capture_device.cc to content and remove it
+        # from here.
         'video/capture/screen/screen_capture_device.cc',
         'video/capture/screen/screen_capture_device.h',
-        'video/capture/screen/screen_capture_frame_queue.cc',
-        'video/capture/screen/screen_capture_frame_queue.h',
-        'video/capture/screen/screen_capturer.h',
-        'video/capture/screen/screen_capturer_fake.cc',
-        'video/capture/screen/screen_capturer_fake.h',
-        'video/capture/screen/screen_capturer_helper.cc',
-        'video/capture/screen/screen_capturer_helper.h',
-        'video/capture/screen/screen_capturer_mac.mm',
-        'video/capture/screen/screen_capturer_null.cc',
-        'video/capture/screen/screen_capturer_win.cc',
-        'video/capture/screen/screen_capturer_x11.cc',
-        'video/capture/screen/shared_desktop_frame.cc',
-        'video/capture/screen/shared_desktop_frame.h',
-        'video/capture/screen/win/desktop.cc',
-        'video/capture/screen/win/desktop.h',
-        'video/capture/screen/win/scoped_thread_desktop.cc',
-        'video/capture/screen/win/scoped_thread_desktop.h',
-        'video/capture/screen/x11/x_server_pixel_buffer.cc',
-        'video/capture/screen/x11/x_server_pixel_buffer.h',
         'video/capture/video_capture.h',
         'video/capture/video_capture_device.h',
         'video/capture/video_capture_device_dummy.cc',
@@ -472,11 +451,6 @@
           'defines': [
             'USE_NEON'
           ],
-        }],
-        ['OS!="linux" or use_x11==1', {
-          'sources!': [
-            'video/capture/screen/screen_capturer_null.cc',
-          ]
         }],
         ['OS!="ios"', {
           'dependencies': [
@@ -587,25 +561,12 @@
           'sources': [
             'base/media.cc',
             'base/media.h',
+            'base/media_stub.cc',
           ],
           'conditions': [
             ['android_webview_build==0', {
               'dependencies': [
                 'media_java',
-              ],
-            }],
-            ['use_openmax_dl_fft==1', {
-              # FFT library requires Neon support, so we enable
-              # WebAudio only if Neon is detected at runtime.
-              'sources': [
-                'base/media_android.cc',
-              ],
-              'includes': [
-                '../build/android/cpufeatures.gypi',
-              ],
-            }, {
-              'sources': [
-                'base/media_stub.cc',
               ],
             }],
           ],
@@ -1010,12 +971,7 @@
         'filters/video_decoder_selector_unittest.cc',
         'filters/video_frame_stream_unittest.cc',
         'filters/video_renderer_base_unittest.cc',
-        'video/capture/screen/differ_block_unittest.cc',
-        'video/capture/screen/differ_unittest.cc',
         'video/capture/screen/screen_capture_device_unittest.cc',
-        'video/capture/screen/screen_capturer_helper_unittest.cc',
-        'video/capture/screen/screen_capturer_mac_unittest.cc',
-        'video/capture/screen/screen_capturer_unittest.cc',
         'video/capture/video_capture_device_unittest.cc',
         'webm/cluster_builder.cc',
         'webm/cluster_builder.h',
@@ -1171,19 +1127,6 @@
         'base/mock_filters.h',
         'base/test_helpers.cc',
         'base/test_helpers.h',
-        'video/capture/screen/screen_capturer_mock_objects.cc',
-        'video/capture/screen/screen_capturer_mock_objects.h',
-      ],
-      'conditions': [
-        ['screen_capture_supported==1', {
-          'dependencies': [
-            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
-          ],
-        }, {
-          'sources/': [
-            ['exclude', '^video/capture/screen/'],
-          ],
-        }],
       ],
     },
   ],
@@ -1328,8 +1271,6 @@
             'base/simd/convert_rgb_to_yuv_sse2.cc',
             'base/simd/convert_rgb_to_yuv_ssse3.cc',
             'base/simd/filter_yuv_sse2.cc',
-            'video/capture/screen/differ_block_sse2.cc',
-            'video/capture/screen/differ_block_sse2.h',
           ],
         },
         {

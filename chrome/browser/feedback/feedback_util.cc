@@ -13,8 +13,8 @@
 #include "base/file_version_info.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
@@ -240,7 +240,7 @@ bool FeedbackUtil::ValidFeedbackSize(const std::string& content) {
 
 // static
 void FeedbackUtil::SendReport(scoped_refptr<FeedbackData> data) {
-  if (!data) {
+  if (!data.get()) {
     LOG(ERROR) << "FeedbackUtil::SendReport called with NULL data!";
     NOTREACHED();
     return;

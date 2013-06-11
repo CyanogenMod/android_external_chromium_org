@@ -17,7 +17,7 @@
 #include "cc/debug/traced_picture.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/content_layer_client.h"
-#include "skia/ext/analysis_canvas.h"
+#include "skia/ext/lazy_pixel_ref_utils.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkDrawFilter.h"
@@ -78,49 +78,6 @@ bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
     return true;
   }
   return false;
-}
-
-class DisableLCDTextFilter : public SkDrawFilter {
- public:
-  // SkDrawFilter interface.
-  virtual bool filter(SkPaint* paint, SkDrawFilter::Type type) OVERRIDE {
-    if (type != SkDrawFilter::kText_Type)
-      return true;
-
-    paint->setLCDRenderText(false);
-    return true;
-  }
-};
-
-// URI label for a lazily decoded SkPixelRef.
-const char kLabelLazyDecoded[] = "lazy";
-
-void GatherPixelRefsForRect(
-    SkPicture* picture,
-    gfx::Rect rect,
-    Picture::PixelRefs* pixel_refs) {
-  DCHECK(picture);
-  SkData* pixel_ref_data = SkPictureUtils::GatherPixelRefs(
-      picture,
-      gfx::RectToSkRect(rect));
-  if (!pixel_ref_data)
-    return;
-
-  void* data = const_cast<void*>(pixel_ref_data->data());
-  if (!data) {
-    pixel_ref_data->unref();
-    return;
-  }
-
-  SkPixelRef** refs = reinterpret_cast<SkPixelRef**>(data);
-  for (size_t i = 0; i < pixel_ref_data->size() / sizeof(*refs); ++i) {
-    if (*refs && (*refs)->getURI() &&
-        !strncmp((*refs)->getURI(), kLabelLazyDecoded, 4)) {
-      pixel_refs->push_back(static_cast<skia::LazyPixelRef*>(*refs));
-    }
-    refs++;
-  }
-  pixel_ref_data->unref();
 }
 
 }  // namespace
@@ -225,8 +182,7 @@ void Picture::CloneForDrawing(int num_threads) {
                     pixel_refs_));
     clones_.push_back(clone);
 
-    TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-      "cc::Picture", clone.get(), TracedPicture::AsTraceablePicture(clone));
+    clone->EmitTraceSnapshot();
   }
 }
 
@@ -273,8 +229,7 @@ void Picture::Record(ContentLayerClient* painter,
 
   opaque_rect_ = gfx::ToEnclosedRect(opaque_layer_rect);
 
-    TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-      "cc::Picture", this, TracedPicture::AsTraceablePicture(this));
+  EmitTraceSnapshot();
 }
 
 void Picture::GatherPixelRefs(
@@ -302,29 +257,33 @@ void Picture::GatherPixelRefs(
   if (stats)
     begin_image_gathering_time = base::TimeTicks::Now();
 
-  gfx::Size layer_size(layer_rect_.size());
+  skia::LazyPixelRefList pixel_refs;
+  skia::LazyPixelRefUtils::GatherPixelRefs(picture_.get(), &pixel_refs);
+  for (skia::LazyPixelRefList::const_iterator it = pixel_refs.begin();
+       it != pixel_refs.end();
+       ++it) {
+    gfx::Point min(
+        RoundDown(static_cast<int>(it->pixel_ref_rect.x()),
+                  cell_size_.width()),
+        RoundDown(static_cast<int>(it->pixel_ref_rect.y()),
+                  cell_size_.height()));
+    gfx::Point max(
+        RoundDown(static_cast<int>(std::ceil(it->pixel_ref_rect.right())),
+                  cell_size_.width()),
+        RoundDown(static_cast<int>(std::ceil(it->pixel_ref_rect.bottom())),
+                  cell_size_.height()));
 
-  // Capture pixel refs for this picture in a grid
-  // with cell_size_ sized cells.
-  pixel_refs_.clear();
-  for (int y = 0; y < layer_rect_.height(); y += cell_size_.height()) {
-    for (int x = 0; x < layer_rect_.width(); x += cell_size_.width()) {
-      gfx::Rect rect(gfx::Point(x, y), cell_size_);
-      rect.Intersect(gfx::Rect(gfx::Point(), layer_rect_.size()));
-
-      PixelRefs pixel_refs;
-      GatherPixelRefsForRect(picture_.get(), rect, &pixel_refs);
-
-      // Only capture non-empty cells.
-      if (!pixel_refs.empty()) {
+    for (int y = min.y(); y <= max.y(); y += cell_size_.height()) {
+      for (int x = min.x(); x <= max.x(); x += cell_size_.width()) {
         PixelRefMapKey key(x, y);
-        pixel_refs_[key].swap(pixel_refs);
-        min_x = std::min(min_x, x);
-        min_y = std::min(min_y, y);
-        max_x = std::max(max_x, x);
-        max_y = std::max(max_y, y);
+        pixel_refs_[key].push_back(it->lazy_pixel_ref);
       }
     }
+
+    min_x = std::min(min_x, min.x());
+    min_y = std::min(min_y, min.y());
+    max_x = std::max(max_x, max.x());
+    max_y = std::max(max_y, max.y());
   }
 
   if (stats) {
@@ -341,24 +300,16 @@ void Picture::Raster(
     SkCanvas* canvas,
     SkDrawPictureCallback* callback,
     gfx::Rect content_rect,
-    float contents_scale,
-    bool enable_lcd_text) {
+    float contents_scale) {
   TRACE_EVENT_BEGIN1("cc", "Picture::Raster",
     "data", AsTraceableRasterData(content_rect, contents_scale));
 
   DCHECK(picture_);
 
-  skia::RefPtr<DisableLCDTextFilter> disable_lcd_text_filter;
-
   canvas->save();
   canvas->clipRect(gfx::RectToSkRect(content_rect));
   canvas->scale(contents_scale, contents_scale);
   canvas->translate(layer_rect_.x(), layer_rect_.y());
-  // Pictures by default have LCD text enabled.
-  if (!enable_lcd_text) {
-    disable_lcd_text_filter = skia::AdoptRef(new DisableLCDTextFilter);
-    canvas->setDrawFilter(disable_lcd_text_filter.get());
-  }
   picture_->draw(canvas, callback);
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
@@ -386,6 +337,11 @@ scoped_ptr<Value> Picture::AsValue() const {
                      &b64_picture);
   res->SetString("skp64", b64_picture);
   return res.PassAs<base::Value>();
+}
+
+void Picture::EmitTraceSnapshot() {
+  TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+      "cc::Picture", this, TracedPicture::AsTraceablePicture(this));
 }
 
 base::LazyInstance<Picture::PixelRefs>

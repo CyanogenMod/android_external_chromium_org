@@ -11,8 +11,8 @@
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperation.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
+#include "third_party/WebKit/public/platform/WebFilterOperation.h"
+#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 
 using WebKit::WebFilterOperation;
@@ -291,6 +291,36 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetSublayerTransform(arbitrary_transform));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetBounds(arbitrary_size));
+}
+
+TEST(LayerImplTest, SafeOpaqueBackgroundColor) {
+  FakeImplProxy proxy;
+  FakeLayerTreeHostImpl host_impl(&proxy);
+  EXPECT_TRUE(host_impl.InitializeRenderer(CreateFakeOutputSurface()));
+  scoped_ptr<LayerImpl> layer = LayerImpl::Create(host_impl.active_tree(), 1);
+
+  for (int contents_opaque = 0; contents_opaque < 2; ++contents_opaque) {
+    for (int layer_opaque = 0; layer_opaque < 2; ++layer_opaque) {
+      for (int host_opaque = 0; host_opaque < 2; ++host_opaque) {
+        layer->SetContentsOpaque(!!contents_opaque);
+        layer->SetBackgroundColor(layer_opaque ? SK_ColorRED
+                                               : SK_ColorTRANSPARENT);
+        host_impl.active_tree()->set_background_color(
+            host_opaque ? SK_ColorRED : SK_ColorTRANSPARENT);
+
+        SkColor safe_color = layer->SafeOpaqueBackgroundColor();
+        if (contents_opaque) {
+          EXPECT_EQ(SkColorGetA(safe_color), 255u)
+              << "Flags: " << contents_opaque << ", " << layer_opaque << ", "
+              << host_opaque << "\n";
+        } else {
+          EXPECT_NE(SkColorGetA(safe_color), 255u)
+              << "Flags: " << contents_opaque << ", " << layer_opaque << ", "
+              << host_opaque << "\n";
+        }
+      }
+    }
+  }
 }
 
 }  // namespace

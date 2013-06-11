@@ -414,6 +414,9 @@ bool BlockFiles::CreateBlockFile(int index, FileType file_type, bool force) {
     return false;
 
   BlockFileHeader header;
+  memset(&header, 0, sizeof(header));
+  header.magic = kBlockMagic;
+  header.version = kBlockVersion2;
   header.entry_size = Addr::BlockSizeForFileType(file_type);
   header.this_file = static_cast<int16>(index);
   DCHECK(index <= kint16max && index >= 0);
@@ -443,14 +446,14 @@ bool BlockFiles::OpenBlockFile(int index) {
   }
 
   BlockFileHeader* header = reinterpret_cast<BlockFileHeader*>(file->buffer());
-  if (kBlockMagic != header->magic || kCurrentVersion != header->version) {
+  if (kBlockMagic != header->magic || kBlockVersion2 != header->version) {
     LOG(ERROR) << "Invalid file version or magic " << name.value();
     return false;
   }
 
   if (header->updating || !ValidateCounters(header)) {
     // Last instance was not properly shutdown, or counters are out of sync.
-    if (!FixBlockFileHeader(file)) {
+    if (!FixBlockFileHeader(file.get())) {
       LOG(ERROR) << "Unable to fix block file " << name.value();
       return false;
     }
@@ -469,7 +472,7 @@ bool BlockFiles::OpenBlockFile(int index) {
       return false;
   }
 
-  ScopedFlush flush(file);
+  ScopedFlush flush(file.get());
   DCHECK(!block_files_[index]);
   file.swap(&block_files_[index]);
   return true;

@@ -28,11 +28,12 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/async_pixel_transfer_delegate.cc \
-	gpu/command_buffer/service/async_pixel_transfer_delegate_android.cc \
-	gpu/command_buffer/service/async_pixel_transfer_delegate_idle.cc \
-	gpu/command_buffer/service/async_pixel_transfer_delegate_share_group.cc \
-	gpu/command_buffer/service/async_pixel_transfer_delegate_stub.cc \
-	gpu/command_buffer/service/async_pixel_transfer_delegate_sync.cc \
+	gpu/command_buffer/service/async_pixel_transfer_manager_android.cc \
+	gpu/command_buffer/service/async_pixel_transfer_manager_idle.cc \
+	gpu/command_buffer/service/async_pixel_transfer_manager_share_group.cc \
+	gpu/command_buffer/service/async_pixel_transfer_manager_stub.cc \
+	gpu/command_buffer/service/async_pixel_transfer_manager_sync.cc \
+	gpu/command_buffer/service/async_pixel_transfer_manager.cc \
 	gpu/command_buffer/service/buffer_manager.cc \
 	gpu/command_buffer/service/cmd_parser.cc \
 	gpu/command_buffer/service/command_buffer_service.cc \
@@ -64,12 +65,11 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/shader_manager.cc \
 	gpu/command_buffer/service/shader_translator.cc \
 	gpu/command_buffer/service/shader_translator_cache.cc \
-	gpu/command_buffer/service/texture_definition.cc \
 	gpu/command_buffer/service/texture_manager.cc \
 	gpu/command_buffer/service/transfer_buffer_manager.cc \
 	gpu/command_buffer/service/vertex_array_manager.cc \
 	gpu/command_buffer/service/vertex_attrib_manager.cc \
-	gpu/command_buffer/service/async_pixel_transfer_delegate_egl.cc
+	gpu/command_buffer/service/async_pixel_transfer_manager_egl.cc
 
 
 # Flags passed to both C and C++ files.
@@ -115,7 +115,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -149,7 +148,7 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(gyp_shared_intermediate_dir)/protoc_out \
 	$(gyp_shared_intermediate_dir)/ui/gl \
-	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
+	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
 	$(LOCAL_PATH)/third_party/protobuf \

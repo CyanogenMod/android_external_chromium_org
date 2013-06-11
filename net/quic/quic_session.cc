@@ -14,6 +14,8 @@ using std::vector;
 
 namespace net {
 
+#define ENDPOINT (is_server_ ? "Server: " : " Client: ")
+
 // We want to make sure we delete any closed streams in a safe manner.
 // To avoid deleting a stream in mid-operation, we have a simple shim between
 // us and the stream, so we can delete any streams when we return from
@@ -74,9 +76,16 @@ QuicSession::QuicSession(QuicConnection* connection,
       next_stream_id_(is_server ? 2 : 3),
       is_server_(is_server),
       largest_peer_created_stream_id_(0),
+      error_(QUIC_NO_ERROR),
       goaway_received_(false),
       goaway_sent_(false) {
-  connection->set_visitor(visitor_shim_.get());
+  set_max_open_streams(config_.max_streams_per_connection());
+
+  connection_->set_visitor(visitor_shim_.get());
+  connection_->SetIdleNetworkTimeout(config_.idle_connection_state_lifetime());
+  connection_->SetOverallConnectionTimeout(
+      config_.max_time_before_crypto_handshake());
+  // TODO(satyamshekhar): Set congestion control and ICSL also.
 }
 
 QuicSession::~QuicSession() {
@@ -89,7 +98,7 @@ bool QuicSession::OnPacket(const IPEndPoint& self_address,
                            const QuicPacketHeader& header,
                            const vector<QuicStreamFrame>& frames) {
   if (header.public_header.guid != connection()->guid()) {
-    DLOG(INFO) << "Got packet header for invalid GUID: "
+    DLOG(INFO) << ENDPOINT << "Got packet header for invalid GUID: "
                << header.public_header.guid;
     return false;
   }
@@ -114,16 +123,17 @@ bool QuicSession::OnPacket(const IPEndPoint& self_address,
 
   while (!decompression_blocked_streams_.empty()) {
     QuicHeaderId header_id = decompression_blocked_streams_.begin()->first;
-    if (header_id == decompressor_.current_header_id()) {
-      QuicStreamId stream_id = decompression_blocked_streams_.begin()->second;
-      decompression_blocked_streams_.erase(header_id);
-      ReliableQuicStream* stream = GetStream(stream_id);
-      if (!stream) {
-        connection()->SendConnectionClose(
-            QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
-      }
-      stream->OnDecompressorAvailable();
+    if (header_id != decompressor_.current_header_id()) {
+      break;
     }
+    QuicStreamId stream_id = decompression_blocked_streams_.begin()->second;
+    decompression_blocked_streams_.erase(header_id);
+    ReliableQuicStream* stream = GetStream(stream_id);
+    if (!stream) {
+      connection()->SendConnectionClose(
+          QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
+    }
+    stream->OnDecompressorAvailable();
   }
   return true;
 }
@@ -142,13 +152,17 @@ void QuicSession::OnGoAway(const QuicGoAwayFrame& frame) {
 }
 
 void QuicSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
+  if (error_ == QUIC_NO_ERROR) {
+    error_ = error;
+  }
+
   while (stream_map_.size() != 0) {
     ReliableStreamMap::iterator it = stream_map_.begin();
     QuicStreamId id = it->first;
     it->second->ConnectionClose(error, from_peer);
     // The stream should call CloseStream as part of ConnectionClose.
     if (stream_map_.find(id) != stream_map_.end()) {
-      LOG(DFATAL) << "Stream failed to close under ConnectionClose";
+      LOG(DFATAL) << ENDPOINT << "Stream failed to close under ConnectionClose";
       CloseStream(id);
     }
   }
@@ -194,11 +208,11 @@ void QuicSession::SendGoAway(QuicErrorCode error_code, const string& reason) {
 }
 
 void QuicSession::CloseStream(QuicStreamId stream_id) {
-  DLOG(INFO) << "Closing stream " << stream_id;
+  DLOG(INFO) << ENDPOINT << "Closing stream " << stream_id;
 
   ReliableStreamMap::iterator it = stream_map_.find(stream_id);
   if (it == stream_map_.end()) {
-    DLOG(INFO) << "Stream is already closed: " << stream_id;
+    DLOG(INFO) << ENDPOINT << "Stream is already closed: " << stream_id;
     return;
   }
   ReliableQuicStream* stream = it->second;
@@ -230,15 +244,16 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
       break;
 
     case HANDSHAKE_CONFIRMED:
-      LOG_IF(DFATAL, !config_.negotiated())
+      LOG_IF(DFATAL, !config_.negotiated()) << ENDPOINT
           << "Handshake confirmed without parameter negotiation.";
-      connection_->SetConnectionTimeout(
+      connection_->SetIdleNetworkTimeout(
           config_.idle_connection_state_lifetime());
+      connection_->SetOverallConnectionTimeout(QuicTime::Delta::Infinite());
       max_open_streams_ = config_.max_streams_per_connection();
       break;
 
     default:
-      LOG(ERROR) << "Got unknown handshake event: " << event;
+      LOG(ERROR) << ENDPOINT << "Got unknown handshake event: " << event;
   }
 }
 
@@ -247,8 +262,8 @@ QuicConfig* QuicSession::config() {
 }
 
 void QuicSession::ActivateStream(ReliableQuicStream* stream) {
-  DLOG(INFO) << "num_streams: " << stream_map_.size()
-            << ". activating " << stream->id();
+  DLOG(INFO) << ENDPOINT << "num_streams: " << stream_map_.size()
+             << ". activating " << stream->id();
   DCHECK(stream_map_.count(stream->id()) == 0);
   stream_map_[stream->id()] = stream;
 }

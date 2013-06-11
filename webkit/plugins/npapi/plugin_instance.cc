@@ -5,11 +5,11 @@
 #include "webkit/plugins/npapi/plugin_instance.h"
 
 #include "base/bind.h"
-#include "build/build_config.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "net/base/escape.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
@@ -77,7 +77,7 @@ PluginInstance::~PluginInstance() {
     npp_ = 0;
   }
 
-  if (plugin_)
+  if (plugin_.get())
     plugin_->CloseInstance();
 }
 
@@ -107,7 +107,7 @@ void PluginInstance::RemoveStream(PluginStream* stream) {
   std::vector<scoped_refptr<PluginStream> >::iterator stream_index;
   for (stream_index = open_streams_.begin();
        stream_index != open_streams_.end(); ++stream_index) {
-    if (*stream_index == stream) {
+    if (stream_index->get() == stream) {
       open_streams_.erase(stream_index);
       break;
     }
@@ -534,7 +534,7 @@ void PluginInstance::RequestRead(NPStream* stream, NPByteRange* range_list) {
       range_info.push_back(',');
   }
 
-  if (plugin_data_stream_) {
+  if (plugin_data_stream_.get()) {
     if (plugin_data_stream_->stream() == stream) {
       webplugin_->CancelDocumentLoad();
       plugin_data_stream_ = NULL;
@@ -550,7 +550,7 @@ void PluginInstance::RequestRead(NPStream* stream, NPByteRange* range_list) {
   std::vector<scoped_refptr<PluginStream> >::iterator stream_index;
   for (stream_index = open_streams_.begin();
           stream_index != open_streams_.end(); ++stream_index) {
-    PluginStream* plugin_stream = *stream_index;
+    PluginStream* plugin_stream = stream_index->get();
     if (plugin_stream->stream() == stream) {
       // A stream becomes seekable the first time NPN_RequestRead
       // is called on it.
@@ -671,7 +671,7 @@ void PluginInstance::URLRedirectResponse(bool allow, void* notify_data) {
   std::vector<scoped_refptr<PluginStream> >::iterator stream_index;
   for (stream_index = open_streams_.begin();
           stream_index != open_streams_.end(); ++stream_index) {
-    PluginStream* plugin_stream = *stream_index;
+    PluginStream* plugin_stream = stream_index->get();
     if (plugin_stream->notify_data() == notify_data) {
       WebPluginResourceClient* resource_client =
           plugin_stream->AsResourceClient();

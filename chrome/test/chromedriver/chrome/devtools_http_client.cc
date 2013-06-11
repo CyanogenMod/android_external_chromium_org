@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "base/values.h"
@@ -78,7 +78,8 @@ DevToolsHttpClient::~DevToolsHttpClient() {}
 
 Status DevToolsHttpClient::GetVersion(std::string* version) {
   std::string data;
-  if (!FetchUrlAndLog(server_url_ + "/json/version", context_getter_, &data))
+  if (!FetchUrlAndLog(
+          server_url_ + "/json/version", context_getter_.get(), &data))
     return Status(kChromeNotReachable);
 
   return internal::ParseVersionInfo(data, version);
@@ -86,7 +87,7 @@ Status DevToolsHttpClient::GetVersion(std::string* version) {
 
 Status DevToolsHttpClient::GetWebViewsInfo(WebViewsInfo* views_info) {
   std::string data;
-  if (!FetchUrlAndLog(server_url_ + "/json", context_getter_, &data))
+  if (!FetchUrlAndLog(server_url_ + "/json", context_getter_.get(), &data))
     return Status(kChromeNotReachable);
 
   return internal::ParseWebViewsInfo(data, views_info);
@@ -106,7 +107,7 @@ scoped_ptr<DevToolsClient> DevToolsHttpClient::CreateClient(
 Status DevToolsHttpClient::CloseWebView(const std::string& id) {
   std::string data;
   if (!FetchUrlAndLog(
-          server_url_ + "/json/close/" + id, context_getter_, &data)) {
+          server_url_ + "/json/close/" + id, context_getter_.get(), &data)) {
     return Status(kOk);  // Closing the last web view leads chrome to quit.
   }
 

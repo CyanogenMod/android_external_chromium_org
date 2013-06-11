@@ -49,9 +49,9 @@ void SpdyHttpStream::InitializeWithExistingStream(
 }
 
 SpdyHttpStream::~SpdyHttpStream() {
-  if (stream_) {
+  if (stream_.get()) {
     stream_->DetachDelegate();
-    DCHECK(!stream_);
+    DCHECK(!stream_.get());
   }
 }
 
@@ -71,7 +71,7 @@ int SpdyHttpStream::InitializeStream(const HttpRequestInfo* request_info,
       return error;
 
     // |stream_| may be NULL even if OK was returned.
-    if (stream_) {
+    if (stream_.get()) {
       DCHECK_EQ(stream_->type(), SPDY_PUSH_STREAM);
       stream_->SetDelegate(this);
       return OK;
@@ -97,7 +97,7 @@ const HttpResponseInfo* SpdyHttpStream::GetResponseInfo() const {
 }
 
 UploadProgress SpdyHttpStream::GetUploadProgress() const {
-  if (!HasUploadData())
+  if (!request_info_ || !HasUploadData())
     return UploadProgress();
 
   return UploadProgress(request_info_->upload_data_stream->position(),
@@ -109,7 +109,7 @@ int SpdyHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
   if (stream_closed_)
     return closed_stream_status_;
 
-  CHECK(stream_);
+  CHECK(stream_.get());
 
   // Check if we already have the response headers. If so, return synchronously.
   if(stream_->response_received()) {
@@ -125,7 +125,7 @@ int SpdyHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
 
 int SpdyHttpStream::ReadResponseBody(
     IOBuffer* buf, int buf_len, const CompletionCallback& callback) {
-  if (stream_) {
+  if (stream_.get()) {
     CHECK(stream_->is_idle());
     CHECK(!stream_->closed());
   }
@@ -141,7 +141,7 @@ int SpdyHttpStream::ReadResponseBody(
   }
 
   CHECK(callback_.is_null());
-  CHECK(!user_buffer_);
+  CHECK(!user_buffer_.get());
   CHECK_EQ(0, user_buffer_len_);
 
   callback_ = callback;
@@ -187,7 +187,7 @@ bool SpdyHttpStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
   // The reused flag can only be correctly set once a stream has an ID.  Streams
   // get their IDs once the request has been successfully sent, so this does not
   // behave that differently from other stream types.
-  if (!spdy_session_ || (!stream_ && !stream_closed_))
+  if (!spdy_session_.get() || (!stream_.get() && !stream_closed_))
     return false;
 
   SpdyStreamId stream_id =
@@ -218,7 +218,7 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   if (response_info_)
     response_info_->request_time = request_time;
 
-  CHECK(!request_body_buf_);
+  CHECK(!request_body_buf_.get());
   if (HasUploadData()) {
     // Use kMaxSpdyFrameChunkSize as the buffer size, since the request
     // body data is written with this size at a time.
@@ -282,9 +282,9 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
 
 void SpdyHttpStream::Cancel() {
   callback_.Reset();
-  if (stream_) {
+  if (stream_.get()) {
     stream_->Cancel();
-    DCHECK(!stream_);
+    DCHECK(!stream_.get());
   }
 }
 
@@ -347,7 +347,8 @@ int SpdyHttpStream::OnResponseHeadersReceived(const SpdyHeaderBlock& response,
     default:
       NOTREACHED();
   }
-  response_info_->vary_data.Init(*request_info_, *response_info_->headers);
+  response_info_->vary_data
+      .Init(*request_info_, *response_info_->headers.get());
   // TODO(ahendrickson): This is recorded after the entire SYN_STREAM control
   // frame has been received and processed.  Move to framer?
   response_info_->response_time = response_time;
@@ -373,7 +374,7 @@ int SpdyHttpStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   if (buffer) {
     response_body_queue_.Enqueue(buffer.Pass());
 
-    if (user_buffer_) {
+    if (user_buffer_.get()) {
       // Handing small chunks of data to the caller creates measurable overhead.
       // We buffer data in short time-spans and send a single read notification.
       ScheduleBufferedReadCallback();
@@ -388,7 +389,7 @@ void SpdyHttpStream::OnDataSent() {
 }
 
 void SpdyHttpStream::OnClose(int status) {
-  if (stream_) {
+  if (stream_.get()) {
     stream_closed_ = true;
     closed_stream_status_ = status;
     closed_stream_id_ = stream_->stream_id();
@@ -429,11 +430,11 @@ void SpdyHttpStream::ReadAndSendRequestBodyData() {
     return;
 
   // Read the data from the request body stream.
-  const int rv = request_info_->upload_data_stream->Read(
-      request_body_buf_, request_body_buf_->size(),
-      base::Bind(
-          &SpdyHttpStream::OnRequestBodyReadCompleted,
-          weak_factory_.GetWeakPtr()));
+  const int rv = request_info_->upload_data_stream
+      ->Read(request_body_buf_.get(),
+             request_body_buf_->size(),
+             base::Bind(&SpdyHttpStream::OnRequestBodyReadCompleted,
+                        weak_factory_.GetWeakPtr()));
 
   if (rv != ERR_IO_PENDING) {
     // ERR_IO_PENDING is the only possible error.
@@ -451,7 +452,7 @@ void SpdyHttpStream::OnRequestBodyReadCompleted(int status) {
   } else {
     CHECK_GT(request_body_buf_size_, 0);
   }
-  stream_->SendData(request_body_buf_,
+  stream_->SendData(request_body_buf_.get(),
                     request_body_buf_size_,
                     eof ? NO_MORE_DATA_TO_SEND : MORE_DATA_TO_SEND);
 }
@@ -491,7 +492,7 @@ bool SpdyHttpStream::DoBufferedReadCallback() {
 
   // If the transaction is cancelled or errored out, we don't need to complete
   // the read.
-  if (!stream_ && !stream_closed_)
+  if (!stream_.get() && !stream_closed_)
     return false;
 
   int stream_status =
@@ -508,8 +509,8 @@ bool SpdyHttpStream::DoBufferedReadCallback() {
   }
 
   int rv = 0;
-  if (user_buffer_) {
-    rv = ReadResponseBody(user_buffer_, user_buffer_len_, callback_);
+  if (user_buffer_.get()) {
+    rv = ReadResponseBody(user_buffer_.get(), user_buffer_len_, callback_);
     CHECK_NE(rv, ERR_IO_PENDING);
     user_buffer_ = NULL;
     user_buffer_len_ = 0;
@@ -530,7 +531,7 @@ void SpdyHttpStream::DoCallback(int rv) {
 }
 
 void SpdyHttpStream::GetSSLInfo(SSLInfo* ssl_info) {
-  DCHECK(stream_);
+  DCHECK(stream_.get());
   bool using_npn;
   NextProto protocol_negotiated = kProtoUnknown;
   stream_->GetSSLInfo(ssl_info, &using_npn, &protocol_negotiated);
@@ -538,7 +539,7 @@ void SpdyHttpStream::GetSSLInfo(SSLInfo* ssl_info) {
 
 void SpdyHttpStream::GetSSLCertRequestInfo(
     SSLCertRequestInfo* cert_request_info) {
-  DCHECK(stream_);
+  DCHECK(stream_.get());
   stream_->GetSSLCertRequestInfo(cert_request_info);
 }
 

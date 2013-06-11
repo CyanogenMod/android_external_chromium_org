@@ -327,10 +327,9 @@ DirectoryItem.prototype.decorate = function(
   this.dirEntry_ = dirEntry;
   this.fileFilter_ = this.directoryModel_.getFileFilter();
 
-  // Sets hasChildren=true tentatively. This will be overridden after
+  // Sets hasChildren=false tentatively. This will be overridden after
   // scanning sub-directories in DirectoryTreeUtil.updateSubElementsFromList.
-  // Special search does not have children.
-  this.hasChildren = !PathUtil.isSpecialSearchRoot(path);
+  this.hasChildren = false;
 
   this.addEventListener('expand', this.onExpand_.bind(this), false);
   var volumeManager = VolumeManager.getInstance();
@@ -373,8 +372,23 @@ DirectoryItem.prototype.decorate = function(
  * a complex layout. This call is not necessary, so we are ignoring it.
  *
  * @param {boolean} unused Unused.
+ * @override
  */
 DirectoryItem.prototype.scrollIntoViewIfNeeded = function(unused) {
+};
+
+/**
+ * Removes the child node, but without selecting the parent item, to avoid
+ * unintended changing of directories. Removing is done externally, and other
+ * code will navigate to another directory.
+ *
+ * @param {!cr.ui.TreeItem} child The tree item child to remove.
+ * @override
+ */
+DirectoryItem.prototype.remove = function(child) {
+  this.lastElementChild.removeChild(child);
+  if (this.items.length == 0)
+    this.hasChildren = false;
 };
 
 /**
@@ -553,8 +567,10 @@ DirectoryTree.prototype.decorate = function(directoryModel) {
   chrome.fileBrowserPrivate.onDirectoryChanged.addListener(
       this.privateOnDirectoryChangedBound_);
 
-  if (util.platform.newUI())
-    ScrollBar.createVertical(this.parentNode, this);
+  if (util.platform.newUI()) {
+    this.scrollBar_ = MainPanelScrollBar();
+    this.scrollBar_.initialize(this.parentNode, this);
+  }
 
   if (!util.platform.newUI())
     this.onRootsListChanged_();
@@ -768,4 +784,23 @@ DirectoryTree.prototype.clearTree_ = function(redraw) {
     this.redraw(false);
     cr.dispatchSimpleEvent(this, 'content-updated');
   }
+};
+
+/**
+ * Sets the margin height for the transparent preview panel at the bottom.
+ * @param {number} margin Margin to be set in px.
+ */
+DirectoryTree.prototype.setBottomMarginForPanel = function(margin) {
+  if (!util.platform.newUI())
+    return;
+
+  this.style.paddingBottom = margin + 'px';
+  this.scrollBar_.setBottomMarginForPanel(margin);
+};
+
+/**
+ * Updates the UI after the layout has changed.
+ */
+DirectoryTree.prototype.relayout = function() {
+  cr.dispatchSimpleEvent(this, 'relayout');
 };

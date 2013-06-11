@@ -222,4 +222,4 @@ IN_PROC_BROWSER_TEST_F(OobeTest, DISABLED_NewUser) {
   runner->Run();
 }
 
-}
+}  // namespace

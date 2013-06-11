@@ -15,13 +15,13 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "components_components_gyp_autofill_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/autofill/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['autofill/browser/android/java/src/org/chromium/components/browser/autofill/PersonalAutofillPopulator.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/autofill/jni', '--optimize_generation', '0'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/autofill/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['autofill/browser/android/java/src/org/chromium/components/browser/autofill/PersonalAutofillPopulator.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/autofill/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/autofill/jni/PersonalAutofillPopulator_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/autofill/jni/PersonalAutofillPopulator_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/autofill/jni/PersonalAutofillPopulator_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/autofill/jni/PersonalAutofillPopulator_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/autofill/jni/PersonalAutofillPopulator_jni.h: $(LOCAL_PATH)/components/autofill/browser/android/java/src/org/chromium/components/browser/autofill/PersonalAutofillPopulator.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/autofill/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file autofill/browser/android/java/src/org/chromium/components/browser/autofill/PersonalAutofillPopulator.java --output_dir "$(gyp_shared_intermediate_dir)/autofill/jni" --optimize_generation 0
+$(gyp_shared_intermediate_dir)/autofill/jni/PersonalAutofillPopulator_jni.h: $(LOCAL_PATH)/components/autofill/browser/android/java/src/org/chromium/components/browser/autofill/PersonalAutofillPopulator.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/autofill/jni; cd $(gyp_local_path)/components; ../base/android/jni_generator/jni_generator.py --input_file autofill/browser/android/java/src/org/chromium/components/browser/autofill/PersonalAutofillPopulator.java --output_dir "$(gyp_shared_intermediate_dir)/autofill/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
 
 .PHONY: components_autofill_jni_headers_gyp_rule_trigger
 components_autofill_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/autofill/jni/PersonalAutofillPopulator_jni.h
@@ -84,7 +84,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \

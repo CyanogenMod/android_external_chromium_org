@@ -22,28 +22,6 @@
                    'autofill/browser/autofill_regex_constants.cc.utf8'],
       }],
     },
-    {
-      # Protobuf compiler / generate rule for Autofill's risk integration.
-      'target_name': 'autofill_risk_proto',
-      'type': 'static_library',
-      'sources': [
-        'autofill/browser/risk/proto/fingerprint.proto',
-      ],
-      'variables': {
-        'proto_in_dir': 'autofill/browser/risk/proto',
-        'proto_out_dir': 'components/autofill/browser/risk/proto',
-      },
-      'includes': [ '../build/protoc.gypi' ]
-    },
-    {
-      'target_name': 'autofill_test_util',
-      'type': 'static_library',
-      'sources': [
-        'autofill/browser/wallet/wallet_test_util.cc',
-        'autofill/browser/wallet/wallet_test_util.h',
-      ],
-      'include_dirs': [ '..' ],
-    },
   ],
   'conditions': [
     ['OS != "ios"', {
@@ -53,11 +31,11 @@
           'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
             '../content/content.gyp:content_common',
             '../ipc/ipc.gyp:ipc',
-            '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
+            '../third_party/WebKit/public/blink.gyp:blink',
             '../ui/ui.gyp:ui',
+            '../url/url.gyp:url_lib',
           ],
           'conditions': [
             ['OS == "android"', {
@@ -106,6 +84,9 @@
         },
 
         {
+          # TODO(blundell): Eliminate this target; instead, have only the
+          # autofill_content_browser target and a new top-level
+          # autofill_shared target. crbug.com/247015
           'target_name': 'autofill_browser',
           'type': 'static_library',
           'include_dirs': [
@@ -114,14 +95,12 @@
           'dependencies': [
             'autofill_common',
             'autofill_regexes',
-            'autofill_risk_proto',
             'encryptor',
             'user_prefs',
             'webdata_common',
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:base_prefs',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
             '../content/content.gyp:content_browser',
             '../content/content.gyp:content_common',
             '../google_apis/google_apis.gyp:google_apis',
@@ -133,6 +112,7 @@
             '../third_party/libjingle/libjingle.gyp:libjingle',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
             '../ui/ui.gyp:ui',
+            '../url/url.gyp:url_lib',
             '../webkit/support/webkit_support.gyp:webkit_resources',
 
             'component_resources.gyp:component_resources',
@@ -218,34 +198,10 @@
             'autofill/browser/phone_number.h',
             'autofill/browser/phone_number_i18n.cc',
             'autofill/browser/phone_number_i18n.h',
-            'autofill/browser/risk/fingerprint.cc',
-            'autofill/browser/risk/fingerprint.h',
             'autofill/browser/state_names.cc',
             'autofill/browser/state_names.h',
             'autofill/browser/validation.cc',
             'autofill/browser/validation.h',
-            'autofill/browser/wallet/cart.cc',
-            'autofill/browser/wallet/cart.h',
-            'autofill/browser/wallet/encryption_escrow_client.cc',
-            'autofill/browser/wallet/encryption_escrow_client.h',
-            'autofill/browser/wallet/encryption_escrow_client_observer.h',
-            'autofill/browser/wallet/full_wallet.cc',
-            'autofill/browser/wallet/full_wallet.h',
-            'autofill/browser/wallet/instrument.cc',
-            'autofill/browser/wallet/instrument.h',
-            'autofill/browser/wallet/required_action.cc',
-            'autofill/browser/wallet/required_action.h',
-            'autofill/browser/wallet/wallet_address.cc',
-            'autofill/browser/wallet/wallet_address.h',
-            'autofill/browser/wallet/wallet_client.cc',
-            'autofill/browser/wallet/wallet_client.h',
-            'autofill/browser/wallet/wallet_client_delegate.h',
-            'autofill/browser/wallet/wallet_items.cc',
-            'autofill/browser/wallet/wallet_items.h',
-            'autofill/browser/wallet/wallet_service_url.cc',
-            'autofill/browser/wallet/wallet_service_url.h',
-            'autofill/browser/wallet/wallet_signin_helper.cc',
-            'autofill/browser/wallet/wallet_signin_helper.h',
             'autofill/browser/webdata/autofill_change.cc',
             'autofill/browser/webdata/autofill_change.h',
             'autofill/browser/webdata/autofill_entry.cc',
@@ -269,7 +225,91 @@
         },
 
         {
-          'target_name': 'autofill_renderer',
+          # Protobuf compiler / generate rule for Autofill's risk integration.
+          'target_name': 'autofill_content_risk_proto',
+          'type': 'static_library',
+          'sources': [
+            'autofill/content/browser/risk/proto/fingerprint.proto',
+          ],
+          'variables': {
+            'proto_in_dir': 'autofill/content/browser/risk/proto',
+            'proto_out_dir': 'components/autofill/content/browser/risk/proto',
+          },
+          'includes': [ '../build/protoc.gypi' ]
+        },
+       {
+         'target_name': 'autofill_content_test_util',
+         'type': 'static_library',
+         'sources': [
+           'autofill/content/browser/wallet/wallet_test_util.cc',
+           'autofill/content/browser/wallet/wallet_test_util.h',
+         ],
+         'include_dirs': [ '..' ],
+       },
+       {
+          'target_name': 'autofill_content_browser',
+          'type': 'static_library',
+          'include_dirs': [
+            '..',
+          ],
+          'dependencies': [
+            'autofill_browser',
+            'autofill_common',
+            'autofill_content_risk_proto',
+            'autofill_regexes',
+            'encryptor',
+            'user_prefs',
+            'webdata_common',
+            '../base/base.gyp:base',
+            '../base/base.gyp:base_i18n',
+            '../base/base.gyp:base_prefs',
+            '../content/content.gyp:content_browser',
+            '../content/content.gyp:content_common',
+            '../google_apis/google_apis.gyp:google_apis',
+            '../ipc/ipc.gyp:ipc',
+            '../skia/skia.gyp:skia',
+            '../sql/sql.gyp:sql',
+            '../third_party/icu/icu.gyp:icui18n',
+            '../third_party/icu/icu.gyp:icuuc',
+            '../third_party/libjingle/libjingle.gyp:libjingle',
+            '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
+            '../ui/ui.gyp:ui',
+            '../url/url.gyp:url_lib',
+            '../webkit/support/webkit_support.gyp:webkit_resources',
+
+            'component_resources.gyp:component_resources',
+          ],
+          'sources': [
+            'autofill/content/browser/risk/fingerprint.cc',
+            'autofill/content/browser/risk/fingerprint.h',
+            'autofill/content/browser/wallet/encryption_escrow_client.cc',
+            'autofill/content/browser/wallet/encryption_escrow_client.h',
+            'autofill/content/browser/wallet/encryption_escrow_client_observer.h',
+            'autofill/content/browser/wallet/full_wallet.cc',
+            'autofill/content/browser/wallet/full_wallet.h',
+            'autofill/content/browser/wallet/instrument.cc',
+            'autofill/content/browser/wallet/instrument.h',
+            'autofill/content/browser/wallet/required_action.cc',
+            'autofill/content/browser/wallet/required_action.h',
+            'autofill/content/browser/wallet/wallet_address.cc',
+            'autofill/content/browser/wallet/wallet_address.h',
+            'autofill/content/browser/wallet/wallet_client.cc',
+            'autofill/content/browser/wallet/wallet_client.h',
+            'autofill/content/browser/wallet/wallet_client_delegate.h',
+            'autofill/content/browser/wallet/wallet_items.cc',
+            'autofill/content/browser/wallet/wallet_items.h',
+            'autofill/content/browser/wallet/wallet_service_url.cc',
+            'autofill/content/browser/wallet/wallet_service_url.h',
+            'autofill/content/browser/wallet/wallet_signin_helper.cc',
+            'autofill/content/browser/wallet/wallet_signin_helper.h',
+          ],
+
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
+        },
+
+        {
+          'target_name': 'autofill_content_renderer',
           'type': 'static_library',
           'include_dirs': [
             '..',
@@ -285,19 +325,19 @@
             'component_resources.gyp:component_resources',
           ],
           'sources': [
-            'autofill/renderer/autofill_agent.cc',
-            'autofill/renderer/autofill_agent.h',
-            'autofill/renderer/form_autofill_util.cc',
-            'autofill/renderer/form_autofill_util.h',
-            'autofill/renderer/form_cache.cc',
-            'autofill/renderer/form_cache.h',
-            'autofill/renderer/page_click_listener.h',
-            'autofill/renderer/page_click_tracker.cc',
-            'autofill/renderer/page_click_tracker.h',
-            'autofill/renderer/password_autofill_agent.cc',
-            'autofill/renderer/password_autofill_agent.h',
-            'autofill/renderer/password_generation_manager.cc',
-            'autofill/renderer/password_generation_manager.h',
+            'autofill/content/renderer/autofill_agent.cc',
+            'autofill/content/renderer/autofill_agent.h',
+            'autofill/content/renderer/form_autofill_util.cc',
+            'autofill/content/renderer/form_autofill_util.h',
+            'autofill/content/renderer/form_cache.cc',
+            'autofill/content/renderer/form_cache.h',
+            'autofill/content/renderer/page_click_listener.h',
+            'autofill/content/renderer/page_click_tracker.cc',
+            'autofill/content/renderer/page_click_tracker.h',
+            'autofill/content/renderer/password_autofill_agent.cc',
+            'autofill/content/renderer/password_autofill_agent.h',
+            'autofill/content/renderer/password_generation_manager.cc',
+            'autofill/content/renderer/password_generation_manager.h',
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],

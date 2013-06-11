@@ -17,7 +17,10 @@ import optparse
 import os
 import subprocess
 import sys
+import traceback
 
+CROS_BOARD_ENV = 'BISECT_CROS_BOARD'
+CROS_IP_ENV = 'BISECT_CROS_IP'
 
 def LoadConfigFile(path_to_file):
   """Attempts to load the file 'run-bisect-perf-regression.cfg' as a module
@@ -39,6 +42,9 @@ def LoadConfigFile(path_to_file):
 
     return local_vars['config']
   except:
+    print
+    traceback.print_exc()
+    print
     return None
 
 
@@ -75,10 +81,22 @@ def RunBisectionScript(config, working_directory, path_to_file, path_to_goma):
   if config['max_time_minutes']:
     cmd.extend(['--repeat_test_max_time', config['max_time_minutes']])
 
-  if os.name == 'nt':
-    cmd.extend(['--build_preference', 'ninja'])
-  else:
-    cmd.extend(['--build_preference', 'make'])
+  cmd.extend(['--build_preference', 'ninja'])
+
+  if '--browser=cros' in config['command']:
+    cmd.extend(['--target_platform', 'cros'])
+
+    if os.environ[CROS_BOARD_ENV] and os.environ[CROS_IP_ENV]:
+      cmd.extend(['--cros_board', os.environ[CROS_BOARD_ENV]])
+      cmd.extend(['--cros_remote_ip', os.environ[CROS_IP_ENV]])
+    else:
+      print 'Error: Cros build selected, but BISECT_CROS_IP or'\
+            'BISECT_CROS_BOARD undefined.'
+      print
+      return 1
+
+  if '--browser=android' in config['command']:
+    cmd.extend(['--target_platform', 'android'])
 
   goma_file = ''
   if path_to_goma:
@@ -148,7 +166,8 @@ def main():
 
   config = LoadConfigFile(path_to_file)
   if not config:
-    print 'Error: Could not load config file.'
+    print 'Error: Could not load config file. Double check your changes to '\
+          'run-bisect-perf-regression.cfg for syntax errors.'
     print
     return 1
 

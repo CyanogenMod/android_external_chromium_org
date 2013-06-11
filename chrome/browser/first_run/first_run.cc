@@ -14,8 +14,8 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -585,11 +585,10 @@ void FirstRunBubbleLauncher::Observe(
 
   // Suppress the first run bubble if a Gaia sign in page or the continue
   // URL for the sign in page is showing.
-  if (SyncPromoUI::UseWebBasedSigninFlow()) {
-    if (gaia::IsGaiaSignonRealm(contents->GetURL().GetOrigin()) ||
-        SyncPromoUI::IsContinueUrlForWebBasedSigninFlow(contents->GetURL())) {
-      return;
-    }
+  if (contents &&
+      (gaia::IsGaiaSignonRealm(contents->GetURL().GetOrigin()) ||
+       SyncPromoUI::IsContinueUrlForWebBasedSigninFlow(contents->GetURL()))) {
+    return;
   }
 
   if (contents && contents->GetURL().SchemeIs(chrome::kChromeUIScheme)) {

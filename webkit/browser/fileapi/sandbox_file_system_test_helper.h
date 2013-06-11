@@ -14,7 +14,7 @@
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 
 namespace base {
 class FilePath;
@@ -29,6 +29,7 @@ namespace fileapi {
 class FileSystemContext;
 class FileSystemFileUtil;
 class FileSystemOperationContext;
+class FileSystemOperationRunner;
 class LocalFileSystemOperation;
 
 // Filesystem test helper class that encapsulates test environment for
@@ -70,7 +71,7 @@ class SandboxFileSystemTestHelper {
 
   int64 ComputeCurrentDirectoryDatabaseUsage();
 
-  LocalFileSystemOperation* NewOperation();
+  FileSystemOperationRunner* operation_runner();
   FileSystemOperationContext* NewOperationContext();
 
   FileSystemContext* file_system_context() const {

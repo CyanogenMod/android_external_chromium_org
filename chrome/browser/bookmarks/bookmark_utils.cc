@@ -12,9 +12,9 @@
 #include "base/i18n/string_search.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/history/query_parser.h"
@@ -131,7 +131,7 @@ void CopyToClipboard(BookmarkModel* model,
   if (nodes.empty())
     return;
 
-  BookmarkNodeData(nodes).WriteToClipboard(NULL);
+  BookmarkNodeData(nodes).WriteToClipboard();
 
   if (remove_nodes) {
     for (size_t i = 0; i < nodes.size(); ++i) {
@@ -231,12 +231,6 @@ void GetMostRecentlyAddedEntries(BookmarkModel* model,
     }
   }
 }
-
-TitleMatch::TitleMatch()
-    : node(NULL) {
-}
-
-TitleMatch::~TitleMatch() {}
 
 bool MoreRecentlyAdded(const BookmarkNode* n1, const BookmarkNode* n2) {
   return n1->date_added() > n2->date_added();

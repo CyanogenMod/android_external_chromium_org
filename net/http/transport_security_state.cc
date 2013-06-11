@@ -25,8 +25,8 @@
 #include "base/sha1.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
@@ -756,12 +756,6 @@ bool TransportSecurityState::GetStaticDomainState(
     std::string host_sub_chunk(&canonicalized_host[i],
                                canonicalized_host.size() - i);
     out->domain = DNSDomainToString(host_sub_chunk);
-    std::string hashed_host(HashHost(host_sub_chunk));
-    if (forced_hosts_.find(hashed_host) != forced_hosts_.end()) {
-      *out = forced_hosts_[hashed_host];
-      out->domain = DNSDomainToString(host_sub_chunk);
-      return true;
-    }
     bool ret;
     if (is_build_timely &&
         HasPreload(kPreloadedSTS, kNumPreloadedSTS, canonicalized_host, i, out,
@@ -782,11 +776,6 @@ bool TransportSecurityState::GetStaticDomainState(
 void TransportSecurityState::AddOrUpdateEnabledHosts(
     const std::string& hashed_host, const DomainState& state) {
   enabled_hosts_[hashed_host] = state;
-}
-
-void TransportSecurityState::AddOrUpdateForcedHosts(
-    const std::string& hashed_host, const DomainState& state) {
-  forced_hosts_[hashed_host] = state;
 }
 
 TransportSecurityState::DomainState::DomainState()
@@ -838,13 +827,6 @@ bool TransportSecurityState::DomainState::ShouldUpgradeToSSL() const {
 }
 
 bool TransportSecurityState::DomainState::ShouldSSLErrorsBeFatal() const {
-  return true;
-}
-
-bool TransportSecurityState::DomainState::Equals(
-    const DomainState& other) const {
-  // TODO(palmer): Implement this
-  (void) other;
   return true;
 }
 

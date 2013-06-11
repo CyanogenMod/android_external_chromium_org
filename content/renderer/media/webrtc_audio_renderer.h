@@ -12,7 +12,7 @@
 #include "media/base/audio_decoder.h"
 #include "media/base/audio_pull_fifo.h"
 #include "media/base/audio_renderer_sink.h"
-#include "webkit/media/media_stream_audio_renderer.h"
+#include "webkit/renderer/media/media_stream_audio_renderer.h"
 
 namespace media {
 class AudioOutputDevice;
@@ -97,10 +97,8 @@ class CONTENT_EXPORT WebRtcAudioRenderer
   // AEC.
   int audio_delay_milliseconds_;
 
-  // Lengh of an audio frame in milliseconds.
-  double frame_duration_milliseconds_;
-
-  double fifo_io_ratio_;
+  // Delay due to the FIFO in milliseconds.
+  int fifo_delay_milliseconds_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(WebRtcAudioRenderer);
 };

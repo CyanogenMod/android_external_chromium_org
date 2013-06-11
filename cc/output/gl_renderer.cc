@@ -12,8 +12,8 @@
 
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/video_layer_impl.h"
@@ -37,7 +37,7 @@
 #include "cc/trees/proxy.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "gpu/GLES2/gl2extchromium.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -125,12 +125,10 @@ GLRenderer::GLRenderer(RendererClient* client,
                        OutputSurface* output_surface,
                        ResourceProvider* resource_provider,
                        int highp_threshold_min)
-    : DirectRenderer(client, resource_provider),
+    : DirectRenderer(client, output_surface, resource_provider),
       offscreen_framebuffer_id_(0),
       shared_geometry_quad_(gfx::RectF(-0.5f, -0.5f, 1.0f, 1.0f)),
-      output_surface_(output_surface),
       context_(output_surface->context3d()),
-      is_viewport_changed_(false),
       is_backbuffer_discarded_(false),
       discard_backbuffer_when_not_visible_(false),
       is_using_bind_uniform_(false),
@@ -275,7 +273,6 @@ void GLRenderer::SendManagedMemoryStats(size_t bytes_visible,
 void GLRenderer::ReleaseRenderPassTextures() { render_pass_textures_.clear(); }
 
 void GLRenderer::ViewportChanged() {
-  is_viewport_changed_ = true;
   ReinitializeGrCanvas();
 }
 
@@ -305,18 +302,10 @@ void GLRenderer::BeginDrawingFrame(DrawingFrame* frame) {
   // FIXME: Remove this once backbuffer is automatically recreated on first use
   EnsureBackbuffer();
 
-  if (ViewportSize().IsEmpty())
+  if (client_->DeviceViewport().IsEmpty())
     return;
 
   TRACE_EVENT0("cc", "GLRenderer::DrawLayers");
-  if (is_viewport_changed_) {
-    // Only reshape when we know we are going to draw. Otherwise, the reshape
-    // can leave the window at the wrong size if we never draw and the proper
-    // viewport size is never set.
-    is_viewport_changed_ = false;
-    output_surface_->Reshape(gfx::Size(ViewportWidth(), ViewportHeight()),
-                             DeviceScaleFactor());
-  }
 
   MakeContextCurrent();
 
@@ -1386,8 +1375,7 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
       context_, &highp_threshold_cache_, highp_threshold_min_,
       quad->shared_quad_state->visible_content_rect.bottom_right());
 
-  const VideoYUVProgram* program = GetVideoYUVProgram(tex_coord_precision);
-  DCHECK(program && (program->initialized() || IsContextLost()));
+  bool use_alpha_plane = quad->a_plane_resource_id != 0;
 
   GLC(Context(), Context()->activeTexture(GL_TEXTURE1));
   ResourceProvider::ScopedSamplerGL y_plane_lock(
@@ -1398,19 +1386,61 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
   GLC(Context(), Context()->activeTexture(GL_TEXTURE3));
   ResourceProvider::ScopedSamplerGL v_plane_lock(
       resource_provider_, quad->v_plane_resource_id, GL_TEXTURE_2D, GL_LINEAR);
+  scoped_ptr<ResourceProvider::ScopedSamplerGL> a_plane_lock;
+  if (use_alpha_plane) {
+    GLC(Context(), Context()->activeTexture(GL_TEXTURE4));
+    a_plane_lock.reset(new ResourceProvider::ScopedSamplerGL(
+        resource_provider_,
+        quad->a_plane_resource_id,
+        GL_TEXTURE_2D,
+        GL_LINEAR));
+  }
 
-  SetUseProgram(program->program());
+  int tex_scale_location = -1;
+  int matrix_location = -1;
+  int y_texture_location = -1;
+  int u_texture_location = -1;
+  int v_texture_location = -1;
+  int a_texture_location = -1;
+  int yuv_matrix_location = -1;
+  int yuv_adj_location = -1;
+  int alpha_location = -1;
+  if (use_alpha_plane) {
+    const VideoYUVAProgram* program = GetVideoYUVAProgram(tex_coord_precision);
+    DCHECK(program && (program->initialized() || IsContextLost()));
+    SetUseProgram(program->program());
+    tex_scale_location = program->vertex_shader().tex_scale_location();
+    matrix_location = program->vertex_shader().matrix_location();
+    y_texture_location = program->fragment_shader().y_texture_location();
+    u_texture_location = program->fragment_shader().u_texture_location();
+    v_texture_location = program->fragment_shader().v_texture_location();
+    a_texture_location = program->fragment_shader().a_texture_location();
+    yuv_matrix_location = program->fragment_shader().yuv_matrix_location();
+    yuv_adj_location = program->fragment_shader().yuv_adj_location();
+    alpha_location = program->fragment_shader().alpha_location();
+  } else {
+    const VideoYUVProgram* program = GetVideoYUVProgram(tex_coord_precision);
+    DCHECK(program && (program->initialized() || IsContextLost()));
+    SetUseProgram(program->program());
+    tex_scale_location = program->vertex_shader().tex_scale_location();
+    matrix_location = program->vertex_shader().matrix_location();
+    y_texture_location = program->fragment_shader().y_texture_location();
+    u_texture_location = program->fragment_shader().u_texture_location();
+    v_texture_location = program->fragment_shader().v_texture_location();
+    yuv_matrix_location = program->fragment_shader().yuv_matrix_location();
+    yuv_adj_location = program->fragment_shader().yuv_adj_location();
+    alpha_location = program->fragment_shader().alpha_location();
+  }
 
   GLC(Context(),
-      Context()->uniform2f(program->vertex_shader().tex_scale_location(),
+      Context()->uniform2f(tex_scale_location,
                            quad->tex_scale.width(),
                            quad->tex_scale.height()));
-  GLC(Context(),
-      Context()->uniform1i(program->fragment_shader().y_texture_location(), 1));
-  GLC(Context(),
-      Context()->uniform1i(program->fragment_shader().u_texture_location(), 2));
-  GLC(Context(),
-      Context()->uniform1i(program->fragment_shader().v_texture_location(), 3));
+  GLC(Context(), Context()->uniform1i(y_texture_location, 1));
+  GLC(Context(), Context()->uniform1i(u_texture_location, 2));
+  GLC(Context(), Context()->uniform1i(v_texture_location, 3));
+  if (use_alpha_plane)
+    GLC(Context(), Context()->uniform1i(a_texture_location, 4));
 
   // These values are magic numbers that are used in the transformation from YUV
   // to RGB color values.  They are taken from the following webpage:
@@ -1421,8 +1451,7 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
       1.596f, -.813f, 0.0f,
   };
   GLC(Context(),
-      Context()->uniformMatrix3fv(
-          program->fragment_shader().yuv_matrix_location(), 1, 0, yuv_to_rgb));
+      Context()->uniformMatrix3fv(yuv_matrix_location, 1, 0, yuv_to_rgb));
 
   // These values map to 16, 128, and 128 respectively, and are computed
   // as a fraction over 256 (e.g. 16 / 256 = 0.0625).
@@ -1431,16 +1460,11 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
   //   U - 128  : Turns unsigned U into signed U [-128,127]
   //   V - 128  : Turns unsigned V into signed V [-128,127]
   float yuv_adjust[3] = { -0.0625f, -0.5f, -0.5f, };
-  GLC(Context(),
-      Context()->uniform3fv(
-          program->fragment_shader().yuv_adj_location(), 1, yuv_adjust));
+  GLC(Context(), Context()->uniform3fv(yuv_adj_location, 1, yuv_adjust));
 
-  SetShaderOpacity(quad->opacity(),
-                   program->fragment_shader().alpha_location());
-  DrawQuadGeometry(frame,
-                   quad->quadTransform(),
-                   quad->rect,
-                   program->vertex_shader().matrix_location());
+
+  SetShaderOpacity(quad->opacity(), alpha_location);
+  DrawQuadGeometry(frame, quad->quadTransform(), quad->rect, matrix_location);
 
   // Reset active texture back to texture 0.
   GLC(Context(), Context()->activeTexture(GL_TEXTURE0));
@@ -1503,7 +1527,7 @@ void GLRenderer::DrawPictureQuadDirectToBackbuffer(
     sk_canvas_->clipRect(gfx::RectToSkRect(scissor_rect_),
                          SkRegion::kReplace_Op);
   } else {
-    sk_canvas_->clipRect(gfx::RectToSkRect(gfx::Rect(ViewportSize())),
+    sk_canvas_->clipRect(gfx::RectToSkRect(client_->DeviceViewport()),
                          SkRegion::kReplace_Op);
   }
 
@@ -1970,9 +1994,10 @@ void GLRenderer::SwapBuffers(const ui::LatencyInfo& latency_info) {
   if (capabilities_.using_partial_swap && client_->AllowPartialSwap()) {
     // If supported, we can save significant bandwidth by only swapping the
     // damaged/scissored region (clamped to the viewport)
-    swap_buffer_rect_.Intersect(gfx::Rect(ViewportSize()));
+    swap_buffer_rect_.Intersect(client_->DeviceViewport());
     int flipped_y_pos_of_rect_bottom =
-        ViewportHeight() - swap_buffer_rect_.y() - swap_buffer_rect_.height();
+        client_->DeviceViewport().height() - swap_buffer_rect_.y() -
+        swap_buffer_rect_.height();
     output_surface_->PostSubBuffer(gfx::Rect(swap_buffer_rect_.x(),
                                              flipped_y_pos_of_rect_bottom,
                                              swap_buffer_rect_.width(),
@@ -1987,7 +2012,7 @@ void GLRenderer::SwapBuffers(const ui::LatencyInfo& latency_info) {
   // We don't have real fences, so we mark read fences as passed
   // assuming a double-buffered GPU pipeline. A texture can be
   // written to after one full frame has past since it was last read.
-  if (last_swap_fence_)
+  if (last_swap_fence_.get())
     static_cast<SimpleSwapFence*>(last_swap_fence_.get())->SetHasPassed();
   last_swap_fence_ = resource_provider_->GetReadLockFence();
   resource_provider_->SetReadLockFence(new SimpleSwapFence());
@@ -2126,8 +2151,9 @@ void GLRenderer::DoGetFramebufferPixels(
     gfx::Rect rect,
     bool flipped_y,
     const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback) {
-  DCHECK(rect.right() <= ViewportWidth());
-  DCHECK(rect.bottom() <= ViewportHeight());
+  gfx::Rect window_rect = MoveFromDrawToWindowSpace(rect, flipped_y);
+  DCHECK_LE(window_rect.right(), current_surface_size_.width());
+  DCHECK_LE(window_rect.bottom(), current_surface_size_.height());
 
   bool is_async = !cleanup_callback.is_null();
 
@@ -2167,8 +2193,8 @@ void GLRenderer::DoGetFramebufferPixels(
                                  GL_RGBA,
                                  0,
                                  0,
-                                 current_framebuffer_size_.width(),
-                                 current_framebuffer_size_.height(),
+                                 current_surface_size_.width(),
+                                 current_surface_size_.height(),
                                  0));
     temporary_fbo = context_->createFramebuffer();
     // Attach this texture to an FBO, and perform the readback from that FBO.
@@ -2193,10 +2219,10 @@ void GLRenderer::DoGetFramebufferPixels(
                                      GL_STREAM_READ));
 
   GLC(context_,
-      context_->readPixels(rect.x(),
-                           current_framebuffer_size_.height() - rect.bottom(),
-                           rect.width(),
-                           rect.height(),
+      context_->readPixels(window_rect.x(),
+                           window_rect.y(),
+                           window_rect.width(),
+                           window_rect.height(),
                            GL_RGBA,
                            GL_UNSIGNED_BYTE,
                            NULL));
@@ -2348,7 +2374,7 @@ void GLRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
 
 bool GLRenderer::BindFramebufferToTexture(DrawingFrame* frame,
                                           const ScopedResource* texture,
-                                          gfx::Rect framebuffer_rect) {
+                                          gfx::Rect target_rect) {
   DCHECK(texture->id());
 
   current_framebuffer_lock_.reset();
@@ -2366,9 +2392,11 @@ bool GLRenderer::BindFramebufferToTexture(DrawingFrame* frame,
   DCHECK(context_->checkFramebufferStatus(GL_FRAMEBUFFER) ==
          GL_FRAMEBUFFER_COMPLETE || IsContextLost());
 
-  InitializeMatrices(frame, framebuffer_rect, false);
-  SetDrawViewportSize(framebuffer_rect.size());
-
+  InitializeViewport(frame,
+                     target_rect,
+                     gfx::Rect(target_rect.size()),
+                     target_rect.size(),
+                     false);
   return true;
 }
 
@@ -2389,10 +2417,11 @@ void GLRenderer::SetScissorTestRect(gfx::Rect scissor_rect) {
                         scissor_rect.height()));
 }
 
-void GLRenderer::SetDrawViewportSize(gfx::Size viewport_size) {
-  current_framebuffer_size_ = viewport_size;
-  GLC(context_,
-      context_->viewport(0, 0, viewport_size.width(), viewport_size.height()));
+void GLRenderer::SetDrawViewport(gfx::Rect window_space_viewport) {
+  GLC(context_, context_->viewport(window_space_viewport.x(),
+                                   window_space_viewport.y(),
+                                   window_space_viewport.width(),
+                                   window_space_viewport.height()));
 }
 
 bool GLRenderer::MakeContextCurrent() { return context_->makeContextCurrent(); }
@@ -2737,6 +2766,20 @@ const GLRenderer::VideoYUVProgram* GLRenderer::GetVideoYUVProgram(
   return program.get();
 }
 
+const GLRenderer::VideoYUVAProgram* GLRenderer::GetVideoYUVAProgram(
+    TexCoordPrecision precision) {
+  scoped_ptr<VideoYUVAProgram>& program =
+      (precision == TexCoordPrecisionHigh) ? video_yuva_program_highp_
+                                           : video_yuva_program_;
+  if (!program)
+    program = make_scoped_ptr(new VideoYUVAProgram(context_, precision));
+  if (!program->initialized()) {
+    TRACE_EVENT0("cc", "GLRenderer::videoYUVAProgram::initialize");
+    program->Initialize(context_, is_using_bind_uniform_);
+  }
+  return program.get();
+}
+
 const GLRenderer::VideoStreamTextureProgram*
 GLRenderer::GetVideoStreamTextureProgram(TexCoordPrecision precision) {
   if (!Capabilities().using_egl_image)
@@ -2837,11 +2880,15 @@ void GLRenderer::CleanupSharedObjects() {
 
   if (video_yuv_program_)
     video_yuv_program_->Cleanup(context_);
+  if (video_yuva_program_)
+    video_yuva_program_->Cleanup(context_);
   if (video_stream_texture_program_)
     video_stream_texture_program_->Cleanup(context_);
 
   if (video_yuv_program_highp_)
     video_yuv_program_highp_->Cleanup(context_);
+  if (video_yuva_program_highp_)
+    video_yuva_program_highp_->Cleanup(context_);
   if (video_stream_texture_program_highp_)
     video_stream_texture_program_highp_->Cleanup(context_);
 
@@ -2866,8 +2913,8 @@ void GLRenderer::ReinitializeGrCanvas() {
     return;
 
   GrBackendRenderTargetDesc desc;
-  desc.fWidth = ViewportWidth();
-  desc.fHeight = ViewportHeight();
+  desc.fWidth = client_->DeviceViewport().width();
+  desc.fHeight = client_->DeviceViewport().height();
   desc.fConfig = kRGBA_8888_GrPixelConfig;
   desc.fOrigin = kTopLeft_GrSurfaceOrigin;
   desc.fSampleCnt = 1;

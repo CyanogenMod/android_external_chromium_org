@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
@@ -26,6 +27,12 @@ ProfileHelper::ProfileHelper()
 }
 
 ProfileHelper::~ProfileHelper() {
+  // Checking whether UserManager is initialized covers case
+  // when ScopedTestUserManager is used.
+  if (UserManager::IsInitialized()) {
+    UserManager::Get()->RemoveObserver(this);
+    UserManager::Get()->RemoveSessionStateObserver(this);
+  }
 }
 
 // static
@@ -108,6 +115,7 @@ base::FilePath ProfileHelper::GetActiveUserProfileDir() {
 }
 
 void ProfileHelper::Initialize() {
+  UserManager::Get()->AddObserver(this);
   UserManager::Get()->AddSessionStateObserver(this);
 }
 
@@ -136,15 +144,21 @@ void ProfileHelper::OnBrowsingDataRemoverDone() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// ProfileHelper, UserManager::Observer implementation:
+
+void ProfileHelper::MergeSessionStateChanged(
+    UserManager::MergeSessionState state) {
+  if (state ==  UserManager:: MERGE_STATUS_DONE)
+    ClearSigninProfile(base::Closure());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // ProfileHelper, UserManager::UserSessionStateObserver implementation:
 
 void ProfileHelper::ActiveUserHashChanged(const std::string& hash) {
   active_user_id_hash_ = hash;
   base::FilePath profile_path = GetProfilePathByUserIdHash(hash);
   LOG(INFO) << "Switching to profile path: " << profile_path.value();
-}
-
-void ProfileHelper::PendingUserSessionsRestoreFinished() {
 }
 
 }  // namespace chromeos

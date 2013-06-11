@@ -7,11 +7,10 @@
 #include "base/i18n/time_formatting.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/storage_monitor/media_storage_util.h"
 #include "chrome/browser/storage_monitor/storage_info.h"
 #include "chrome/browser/storage_monitor/storage_monitor.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
@@ -99,17 +98,24 @@ MediaGalleriesDialogController::MediaGalleriesDialogController(
       : web_contents_(web_contents),
         extension_(&extension),
         on_finish_(on_finish) {
+  // Passing unretained pointer is safe, since the dialog controller
+  // is self-deleting, and so won't be deleted until it can be shown
+  // and then closed.
+  StorageMonitor::GetInstance()->Initialize(base::Bind(
+      &MediaGalleriesDialogController::OnStorageMonitorInitialized,
+      base::Unretained(this)));
+}
+
+void MediaGalleriesDialogController::OnStorageMonitorInitialized() {
   MediaFileSystemRegistry* registry =
       g_browser_process->media_file_system_registry();
   preferences_ = registry->GetPreferences(
-      Profile::FromBrowserContext(web_contents->GetBrowserContext()));
+      Profile::FromBrowserContext(web_contents_->GetBrowserContext()));
   InitializePermissions();
 
   dialog_.reset(MediaGalleriesDialog::Create(this));
 
-  StorageMonitor* monitor = StorageMonitor::GetInstance();
-  if (monitor)
-    monitor->AddObserver(this);
+  StorageMonitor::GetInstance()->AddObserver(this);
 
   preferences_->AddGalleryChangeObserver(this);
 }
@@ -120,9 +126,7 @@ MediaGalleriesDialogController::MediaGalleriesDialogController()
       preferences_(NULL) {}
 
 MediaGalleriesDialogController::~MediaGalleriesDialogController() {
-  StorageMonitor* monitor = StorageMonitor::GetInstance();
-  if (monitor)
-    monitor->RemoveObserver(this);
+  StorageMonitor::GetInstance()->RemoveObserver(this);
 
   if (select_folder_dialog_.get())
     select_folder_dialog_->ListenerDestroyed();

@@ -64,7 +64,8 @@ RenderViewHostManager::~RenderViewHostManager() {
 
 void RenderViewHostManager::Init(BrowserContext* browser_context,
                                  SiteInstance* site_instance,
-                                 int routing_id) {
+                                 int routing_id,
+                                 int main_frame_routing_id) {
   // Create a RenderViewHost, once we have an instance.  It is important to
   // immediately give this SiteInstance to a RenderViewHost so that it is
   // ref counted.
@@ -73,7 +74,7 @@ void RenderViewHostManager::Init(BrowserContext* browser_context,
   render_view_host_ = static_cast<RenderViewHostImpl*>(
       RenderViewHostFactory::Create(
           site_instance, render_view_delegate_, render_widget_delegate_,
-          routing_id, false, delegate_->
+          routing_id, main_frame_routing_id, false, delegate_->
           GetControllerForRenderManager().GetSessionStorageNamespace(
               site_instance)));
 
@@ -624,7 +625,7 @@ int RenderViewHostManager::CreateRenderView(
     new_render_view_host = static_cast<RenderViewHostImpl*>(
         RenderViewHostFactory::Create(instance,
             render_view_delegate_, render_widget_delegate_, MSG_ROUTING_NONE,
-            swapped_out, delegate_->
+            MSG_ROUTING_NONE, swapped_out, delegate_->
             GetControllerForRenderManager().GetSessionStorageNamespace(
                 instance)));
 
@@ -676,7 +677,7 @@ void RenderViewHostManager::CommitPending() {
   DCHECK(!(pending_web_ui_.get() && pending_and_current_web_ui_.get()));
   if (pending_web_ui_)
     web_ui_.reset(pending_web_ui_.release());
-  else if (!pending_and_current_web_ui_)
+  else if (!pending_and_current_web_ui_.get())
     web_ui_.reset();
 
   // It's possible for the pending_render_view_host_ to be NULL when we aren't
@@ -832,10 +833,6 @@ RenderViewHostImpl* RenderViewHostManager::UpdateRendererStateForNavigate(
     }
     // Otherwise, it's safe to treat this as a pending cross-site transition.
 
-    // Make sure the old render view stops, in case a load is in progress.
-    render_view_host_->Send(
-        new ViewMsg_Stop(render_view_host_->GetRoutingID()));
-
     // We need to wait until the beforeunload handler has run, unless we are
     // transferring an existing request (in which case it has already run).
     // Suspend the new render view (i.e., don't let it send the cross-site
@@ -846,6 +843,12 @@ RenderViewHostImpl* RenderViewHostManager::UpdateRendererStateForNavigate(
     bool is_transfer =
         entry.transferred_global_request_id() != GlobalRequestID();
     if (!is_transfer) {
+      // Also make sure the old render view stops, in case a load is in
+      // progress.  (We don't want to do this for transfers, since it will
+      // interrupt the transfer with an unexpected DidStopLoading.)
+      render_view_host_->Send(
+          new ViewMsg_Stop(render_view_host_->GetRoutingID()));
+
       pending_render_view_host_->SetNavigationsSuspended(true,
                                                          base::TimeTicks());
     }

@@ -23,6 +23,8 @@ const char kTranslateServerReportedUnsupportedLanguage[] =
     "Translate.ServerReportedUnsupportedLanguage";
 const char kTranslateUnsupportedLanguageAtInitiation[] =
     "Translate.UnsupportedLanguageAtInitiation";
+const char kTranslateLocalesOnDisabledByPrefs[] =
+    "Translate.LocalesOnDisabledByPrefs";
 
 struct MetricsEntry {
   TranslateManagerMetrics::MetricsNameIndex index;
@@ -39,6 +41,8 @@ const MetricsEntry kMetricsEntries[] = {
     kTranslateServerReportedUnsupportedLanguage },
   { TranslateManagerMetrics::UMA_UNSUPPORTED_LANGUAGE_AT_INITIATION,
     kTranslateUnsupportedLanguageAtInitiation },
+  { TranslateManagerMetrics::UMA_LOCALES_ON_DISABLED_BY_PREFS,
+    kTranslateLocalesOnDisabledByPrefs },
 };
 
 COMPILE_ASSERT(arraysize(kMetricsEntries) == TranslateManagerMetrics::UMA_MAX,
@@ -55,17 +59,22 @@ void ReportInitiationStatus(InitiationStatusType type) {
 }
 
 void ReportLanguageDetectionError() {
-  UMA_HISTOGRAM_COUNTS(kTranslateReportLanguageDetectionError, 1);
+  UMA_HISTOGRAM_BOOLEAN(kTranslateReportLanguageDetectionError, true);
 }
 
 void ReportUnsupportedLanguage() {
-  UMA_HISTOGRAM_COUNTS(kTranslateServerReportedUnsupportedLanguage, 1);
+  UMA_HISTOGRAM_BOOLEAN(kTranslateServerReportedUnsupportedLanguage, true);
 }
 
 void ReportUnsupportedLanguageAtInitiation(const std::string& language) {
   int language_code = LanguageUsageMetrics::ToLanguageCode(language);
   UMA_HISTOGRAM_SPARSE_SLOWLY(kTranslateUnsupportedLanguageAtInitiation,
                               language_code);
+}
+
+void ReportLocalesOnDisabledByPrefs(const std::string& locale) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY(kTranslateLocalesOnDisabledByPrefs,
+                              LanguageUsageMetrics::ToLanguageCode(locale));
 }
 
 const char* GetMetricsName(MetricsNameIndex index) {

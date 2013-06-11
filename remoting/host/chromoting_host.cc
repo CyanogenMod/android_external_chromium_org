@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "build/build_config.h"
 #include "remoting/base/constants.h"
 #include "remoting/host/chromoting_host_context.h"
@@ -298,7 +298,8 @@ void ChromotingHost::OnIncomingSession(
       ui_task_runner_,
       connection.Pass(),
       desktop_environment_factory_,
-      max_session_duration_);
+      max_session_duration_,
+      pairing_registry_);
   clients_.push_back(client);
 }
 

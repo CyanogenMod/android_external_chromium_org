@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/path_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -90,6 +90,29 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest, BaseURLParam) {
       content_test_data_dir.AppendASCII("google.mht"));
   NavigateToURL(shell(), test_url);
   EXPECT_EQ("http://www.google.com/", observer.base_url().spec());
+}
+
+// This test ensures a RenderFrameHost object is created for the top level frame
+// in each RenderViewHost.
+IN_PROC_BROWSER_TEST_F(RenderViewHostTest, BasicRenderFrameHost) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  GURL test_url = embedded_test_server()->GetURL("/simple_page.html");
+  NavigateToURL(shell(), test_url);
+
+  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
+      shell()->web_contents()->GetRenderViewHost());
+  EXPECT_TRUE(rvh->main_render_frame_host_.get());
+
+  ShellAddedObserver new_shell_observer;
+  EXPECT_TRUE(ExecuteScript(shell()->web_contents(), "window.open();"));
+  Shell* new_shell = new_shell_observer.GetShell();
+  RenderViewHostImpl* new_rvh = static_cast<RenderViewHostImpl*>(
+      new_shell->web_contents()->GetRenderViewHost());
+
+  EXPECT_TRUE(new_rvh->main_render_frame_host_.get());
+  EXPECT_NE(rvh->main_render_frame_host_->routing_id(),
+            new_rvh->main_render_frame_host_->routing_id());
 }
 
 }  // namespace content

@@ -109,6 +109,12 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
     PictureList::const_iterator picture_list_iterator_;
   };
 
+  void DidBeginTracing();
+
+  bool can_use_lcd_text() const {
+    return enable_lcd_text_;
+  }
+
  protected:
   friend class PicturePile;
   friend class PixelRefIterator;

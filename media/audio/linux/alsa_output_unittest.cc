@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/message_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "media/audio/linux/alsa_output.h"
 #include "media/audio/linux/alsa_wrapper.h"
 #include "media/audio/linux/audio_manager_linux.h"
@@ -83,8 +83,8 @@ class MockAudioManagerLinux : public AudioManagerLinux {
   MOCK_METHOD0(HasAudioInputDevices, bool());
   MOCK_METHOD1(MakeLinearOutputStream, AudioOutputStream*(
       const AudioParameters& params));
-  MOCK_METHOD1(MakeLowLatencyOutputStream, AudioOutputStream*(
-      const AudioParameters& params));
+  MOCK_METHOD2(MakeLowLatencyOutputStream, AudioOutputStream*(
+      const AudioParameters& params, const std::string& input_device_id));
   MOCK_METHOD2(MakeLowLatencyInputStream, AudioInputStream*(
       const AudioParameters& params, const std::string& device_id));
 

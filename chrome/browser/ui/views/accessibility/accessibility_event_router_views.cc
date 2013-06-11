@@ -8,7 +8,7 @@
 #include "base/callback.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/accessibility/accessibility_extension_api.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -63,6 +63,18 @@ void AccessibilityEventRouterViews::HandleAccessibilityEvent(
       break;
     case ui::AccessibilityTypes::EVENT_TEXT_CHANGED:
     case ui::AccessibilityTypes::EVENT_SELECTION_CHANGED:
+      // These two events should only be sent for views that have focus. This
+      // enforces the invariant that we fire events triggered by user action and
+      // not by programmatic logic. For example, the location bar can be updated
+      // by javascript while the user focus is within some other part of the
+      // user interface. In contrast, the other supported events here do not
+      // depend on focus. For example, a menu within a menubar can open or close
+      // while focus is within the location bar or anywhere else as a result of
+      // user action. Note that the below logic can at some point be removed if
+      // we pass more information along to the listener such as focused state.
+      if (!view->GetFocusManager() ||
+          view->GetFocusManager()->GetFocusedView() != view)
+        return;
       notification_type = chrome::NOTIFICATION_ACCESSIBILITY_TEXT_CHANGED;
       break;
     case ui::AccessibilityTypes::EVENT_VALUE_CHANGED:

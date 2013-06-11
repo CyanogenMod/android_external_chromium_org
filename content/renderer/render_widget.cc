@@ -12,7 +12,7 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "cc/base/thread.h"
@@ -35,11 +35,11 @@
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "ipc/ipc_sync_message.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebPoint.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHelperPlugin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPagePopup.h"
@@ -62,7 +62,7 @@
 #include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 
 #if defined(OS_ANDROID)
-#include "content/renderer/android/synchronous_compositor_output_surface.h"
+#include "content/renderer/android/synchronous_compositor_factory.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -215,7 +215,7 @@ RenderWidget* RenderWidget::Create(int32 opener_id,
   scoped_refptr<RenderWidget> widget(
       new RenderWidget(popup_type, screen_info, false));
   if (widget->Init(opener_id)) {  // adds reference on success.
-    return widget;
+    return widget.get();
   }
   return NULL;
 }
@@ -305,12 +305,10 @@ bool RenderWidget::AllowPartialSwap() const {
 
 bool RenderWidget::UsingSynchronousRendererCompositor() const {
 #if defined(OS_ANDROID)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableSynchronousRendererCompositor)) {
-    return true;
-  }
-#endif
+  return SynchronousCompositorFactory::GetInstance() != NULL;
+#else
   return false;
+#endif
 }
 
 bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
@@ -345,6 +343,8 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_ShowImeIfNeeded, OnShowImeIfNeeded)
 #endif
     IPC_MESSAGE_HANDLER(ViewMsg_Snapshot, OnSnapshot)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetBrowserRenderingStats,
+                        OnSetBrowserRenderingStats)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -373,9 +373,13 @@ void RenderWidget::Resize(const gfx::Size& new_size,
                           const gfx::Rect& resizer_rect,
                           bool is_fullscreen,
                           ResizeAck resize_ack) {
-  // A resize ack shouldn't be requested if we have not ACK'd the previous one.
-  DCHECK(resize_ack != SEND_RESIZE_ACK || !next_paint_is_resize_ack());
-  DCHECK(resize_ack == SEND_RESIZE_ACK || resize_ack == NO_RESIZE_ACK);
+  if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
+      !RenderThreadImpl::current()->layout_test_mode()) {
+    // A resize ack shouldn't be requested if we have not ACK'd the previous
+    // one.
+    DCHECK(resize_ack != SEND_RESIZE_ACK || !next_paint_is_resize_ack());
+    DCHECK(resize_ack == SEND_RESIZE_ACK || resize_ack == NO_RESIZE_ACK);
+  }
 
   // Ignore this during shutdown.
   if (!webwidget_)
@@ -409,10 +413,14 @@ void RenderWidget::Resize(const gfx::Size& new_size,
     // send an ACK if we are resized to a non-empty rect.
     webwidget_->resize(new_size);
 
-    // Resize should have caused an invalidation of the entire view.
-    DCHECK(new_size.IsEmpty() || is_accelerated_compositing_active_ ||
-           paint_aggregator_.HasPendingUpdate());
-  } else if (size_browser_expects_ == new_size) {
+    if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
+        !RenderThreadImpl::current()->layout_test_mode()) {
+      // Resize should have caused an invalidation of the entire view.
+      DCHECK(new_size.IsEmpty() || is_accelerated_compositing_active_ ||
+             paint_aggregator_.HasPendingUpdate());
+    }
+  } else if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
+             !RenderThreadImpl::current()->layout_test_mode()) {
     resize_ack = NO_RESIZE_ACK;
   }
 
@@ -469,7 +477,6 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
   Resize(params.new_size, params.physical_backing_size,
          params.overdraw_bottom_height, params.resizer_rect,
          params.is_fullscreen, SEND_RESIZE_ACK);
-  size_browser_expects_ = params.new_size;
 }
 
 void RenderWidget::OnChangeResizeRect(const gfx::Rect& resizer_rect) {
@@ -539,7 +546,6 @@ void RenderWidget::OnUpdateRectAck() {
   TRACE_EVENT0("renderer", "RenderWidget::OnUpdateRectAck");
   DCHECK(update_reply_pending_);
   update_reply_pending_ = false;
-  size_browser_expects_ = size_;
 
   // If we sent an UpdateRect message with a zero-sized bitmap, then we should
   // have no current paint buffer.
@@ -585,9 +591,9 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
 #if defined(OS_ANDROID)
-  if (command_line.HasSwitch(switches::kEnableSynchronousRendererCompositor)) {
-    return scoped_ptr<cc::OutputSurface>(
-        new SynchronousCompositorOutputSurface(routing_id()));
+   if (SynchronousCompositorFactory* factory =
+       SynchronousCompositorFactory::GetInstance()) {
+    return factory->CreateOutputSurface(routing_id());
   }
 #endif
 
@@ -728,6 +734,8 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
 
   if (compositor_)
     compositor_->SetLatencyInfo(latency_info);
+  else
+    latency_info_.MergeWith(latency_info);
 
   base::TimeDelta now = base::TimeDelta::FromInternalValue(
       base::TimeTicks::Now().ToInternalValue());
@@ -1113,9 +1121,6 @@ void RenderWidget::DoDeferredUpdate() {
     return;
   }
 
-  if (is_accelerated_compositing_active_)
-    using_asynchronous_swapbuffers_ = SupportsAsynchronousSwapBuffers();
-
   // Tracking of frame rate jitter
   base::TimeTicks frame_begin_ticks = base::TimeTicks::Now();
   InstrumentWillBeginFrame();
@@ -1125,6 +1130,11 @@ void RenderWidget::DoDeferredUpdate() {
   // GPU acceleration, so make sure to run layout before we send the
   // GpuRenderingActivated message.
   webwidget_->layout();
+
+  // Check for whether we need to track swap buffers. We need to do that after
+  // layout() because it may have switched us to accelerated compositing.
+  if (is_accelerated_compositing_active_)
+    using_asynchronous_swapbuffers_ = SupportsAsynchronousSwapBuffers();
 
   // The following two can result in further layout and possibly
   // enable GPU acceleration so they need to be called before any painting
@@ -1211,6 +1221,11 @@ void RenderWidget::DoDeferredUpdate() {
   pending_update_params_->scale_factor = device_scale_factor_;
   next_paint_flags_ = 0;
   need_update_rect_for_auto_resize_ = false;
+
+  if (!is_accelerated_compositing_active_)
+    pending_update_params_->latency_info = latency_info_;
+
+  latency_info_.Clear();
 
   if (update.scroll_rect.IsEmpty() &&
       !is_accelerated_compositing_active_ &&
@@ -1412,7 +1427,7 @@ void RenderWidget::didAutoResize(const WebSize& new_size) {
     // with invalid damage rects.
     paint_aggregator_.ClearPendingUpdate();
 
-    if (RenderThreadImpl::current()->short_circuit_size_updates()) {
+    if (RenderThreadImpl::current()->layout_test_mode()) {
       WebRect new_pos(rootWindowRect().x,
                       rootWindowRect().y,
                       new_size.width,
@@ -1423,7 +1438,7 @@ void RenderWidget::didAutoResize(const WebSize& new_size) {
 
     AutoResizeCompositor();
 
-    if (!RenderThreadImpl::current()->short_circuit_size_updates())
+    if (!RenderThreadImpl::current()->layout_test_mode())
       need_update_rect_for_auto_resize_ = true;
   }
 }
@@ -1680,7 +1695,7 @@ void RenderWidget::setToolTipText(const WebKit::WebString& text,
 
 void RenderWidget::setWindowRect(const WebRect& pos) {
   if (did_show_) {
-    if (!RenderThreadImpl::current()->short_circuit_size_updates()) {
+    if (!RenderThreadImpl::current()->layout_test_mode()) {
       Send(new ViewHostMsg_RequestMove(routing_id_, pos));
       SetPendingWindowRect(pos);
     } else {
@@ -2324,6 +2339,15 @@ RenderWidgetCompositor* RenderWidget::compositor() const {
   return compositor_.get();
 }
 
+void RenderWidget::OnSetBrowserRenderingStats(
+    const BrowserRenderingStats& stats) {
+  browser_rendering_stats_ = stats;
+}
+
+void RenderWidget::GetBrowserRenderingStats(BrowserRenderingStats* stats) {
+  *stats = browser_rendering_stats_;
+}
+
 void RenderWidget::BeginSmoothScroll(
     bool down,
     const SmoothScrollCompletionCallback& callback,
@@ -2379,7 +2403,7 @@ WebGraphicsContext3DCommandBufferImpl* RenderWidget::CreateGraphicsContext3D(
           RenderThreadImpl::current(),
           weak_ptr_factory_.GetWeakPtr()));
 
-  if (!context->Initialize(
+  if (!context->InitializeWithDefaultBufferSizes(
           attributes,
           false /* bind generates resources */,
           CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE))

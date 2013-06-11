@@ -14,7 +14,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -33,12 +33,14 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/extensions/extension_basic_info.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/web_application_info.h"
@@ -99,11 +101,12 @@ void AppLauncherHandler::CreateAppInfo(
   // impede our ability to determine directionality.
   string16 name = UTF8ToUTF16(extension->name());
   base::i18n::UnadjustStringForLocaleDirection(&name);
-  NewTabUI::SetUrlTitleAndDirection(value, name, extension->GetFullLaunchURL());
+  NewTabUI::SetUrlTitleAndDirection(
+      value, name, extensions::AppLaunchInfo::GetFullLaunchURL(extension));
 
   bool enabled = service->IsExtensionEnabled(extension->id()) &&
       !service->GetTerminatedExtension(extension->id());
-  extension->GetBasicInfo(enabled, value);
+  extensions::GetExtensionBasicInfo(extension, enabled, value);
 
   value->SetBoolean("mayDisable", extensions::ExtensionSystem::Get(
       service->profile())->management_policy()->UserMayModifySettings(
@@ -126,7 +129,8 @@ void AppLauncherHandler::CreateAppInfo(
                                       false, &icon_small_exists);
   value->SetString("icon_small", icon_small.spec());
   value->SetBoolean("icon_small_exists", icon_small_exists);
-  value->SetInteger("launch_container", extension->launch_container());
+  value->SetInteger("launch_container",
+                    extensions::AppLaunchInfo::GetLaunchContainer(extension));
   ExtensionPrefs* prefs = service->extension_prefs();
   value->SetInteger("launch_type",
       prefs->GetLaunchType(extension,
@@ -230,6 +234,10 @@ void AppLauncherHandler::Observe(int type,
       if (!extension->is_app())
         return;
 
+      PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+      if (!ShouldDisplayInNewTabPage(extension, prefs))
+        return;
+
       scoped_ptr<DictionaryValue> app_info(GetAppInfo(extension));
       if (app_info.get()) {
         visible_apps_.insert(extension->id());
@@ -252,6 +260,10 @@ void AppLauncherHandler::Observe(int type,
       if (!extension->is_app())
         return;
 
+      PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+      if (!ShouldDisplayInNewTabPage(extension, prefs))
+        return;
+
       scoped_ptr<DictionaryValue> app_info(GetAppInfo(extension));
       scoped_ptr<base::FundamentalValue> uninstall_value(
           Value::CreateBooleanValue(
@@ -272,7 +284,8 @@ void AppLauncherHandler::Observe(int type,
           content::Details<const std::string>(details).ptr();
       if (id) {
         const Extension* extension =
-            extension_service_->GetExtensionById(*id, false);
+            extension_service_->GetInstalledExtension(*id);
+        DCHECK(extension) << "Could not find extension with id " << *id;
         DictionaryValue app_info;
         CreateAppInfo(extension,
                       extension_service_,

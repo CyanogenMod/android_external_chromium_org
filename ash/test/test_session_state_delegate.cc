@@ -4,8 +4,8 @@
 
 #include "ash/test/test_session_state_delegate.h"
 
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 
 namespace ash {
 namespace test {
@@ -88,13 +88,20 @@ const gfx::ImageSkia& TestSessionStateDelegate::GetUserImage(
   return null_image_;
 }
 
-void TestSessionStateDelegate::GetLoggedInUsers(UserEmailList* users) {
+void TestSessionStateDelegate::GetLoggedInUsers(UserIdList* users) {
 }
 
 void TestSessionStateDelegate::SwitchActiveUser(const std::string& email) {
   activated_user_ = email;
 }
 
+void TestSessionStateDelegate::AddSessionStateObserver(
+    ash::SessionStateObserver* observer) {
+}
+
+void TestSessionStateDelegate::RemoveSessionStateObserver(
+    ash::SessionStateObserver* observer) {
+}
 
 }  // namespace test
 }  // namespace ash

@@ -15,12 +15,12 @@
 #include "content/public/common/ssl_status.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/request_priority.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebPoint.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "ui/base/window_open_disposition.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/webpreferences.h"
 #include "webkit/plugins/webplugininfo.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -54,7 +54,7 @@ IPC_STRUCT_TRAITS_MEMBER(action)
 IPC_STRUCT_TRAITS_MEMBER(submit_element)
 IPC_STRUCT_TRAITS_MEMBER(username_element)
 IPC_STRUCT_TRAITS_MEMBER(username_value)
-IPC_STRUCT_TRAITS_MEMBER(possible_usernames)
+IPC_STRUCT_TRAITS_MEMBER(other_possible_usernames)
 IPC_STRUCT_TRAITS_MEMBER(password_element)
 IPC_STRUCT_TRAITS_MEMBER(password_value)
 IPC_STRUCT_TRAITS_MEMBER(password_autocomplete_set)
@@ -180,7 +180,6 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(device_supports_touch)
   IPC_STRUCT_TRAITS_MEMBER(device_supports_mouse)
   IPC_STRUCT_TRAITS_MEMBER(touch_adjustment_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(touch_drag_drop_enabled)
   IPC_STRUCT_TRAITS_MEMBER(fixed_position_creates_stacking_context)
   IPC_STRUCT_TRAITS_MEMBER(sync_xhr_in_documents_enabled)
   IPC_STRUCT_TRAITS_MEMBER(deferred_image_decoding_enabled)

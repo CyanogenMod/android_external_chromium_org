@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/hash.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -284,9 +285,7 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_FindAndCopy) {
   ui::Clipboard::ObjectMapParams params;
   params.push_back(std::vector<char>());
   objects[ui::Clipboard::CBF_TEXT] = params;
-  clipboard->WriteObjects(ui::Clipboard::BUFFER_STANDARD,
-                          objects,
-                          ui::SourceTag());
+  clipboard->WriteObjects(ui::Clipboard::BUFFER_STANDARD, objects);
 
   browser()->tab_strip_model()->GetActiveWebContents()->
       GetRenderViewHost()->Copy();
@@ -314,10 +313,10 @@ IN_PROC_BROWSER_TEST_P(PDFBrowserTest, Loading) {
                 content::Source<NavigationController>(controller));
   std::string base_url = std::string("files/");
 
-  file_util::FileEnumerator file_enumerator(
+  base::FileEnumerator file_enumerator(
       ui_test_utils::GetTestFilePath(GetPDFTestDir(), base::FilePath()),
       false,
-      file_util::FileEnumerator::FILES,
+      base::FileEnumerator::FILES,
       FILE_PATH_LITERAL("*.pdf"));
   for (base::FilePath file_path = file_enumerator.Next();
        !file_path.empty();

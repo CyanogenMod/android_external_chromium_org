@@ -31,6 +31,8 @@ $(gyp_intermediate_dir)/image_operations.cpp: $(LOCAL_PATH)/skia/ext/image_opera
 	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/lazy_pixel_ref.cpp: $(LOCAL_PATH)/skia/ext/lazy_pixel_ref.cc
 	mkdir -p $(@D); cp $< $@
+$(gyp_intermediate_dir)/lazy_pixel_ref_utils.cpp: $(LOCAL_PATH)/skia/ext/lazy_pixel_ref_utils.cc
+	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/paint_simplifier.cpp: $(LOCAL_PATH)/skia/ext/paint_simplifier.cc
 	mkdir -p $(@D); cp $< $@
 $(gyp_intermediate_dir)/platform_canvas.cpp: $(LOCAL_PATH)/skia/ext/platform_canvas.cc
@@ -52,6 +54,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_intermediate_dir)/google_logging.cpp \
 	$(gyp_intermediate_dir)/image_operations.cpp \
 	$(gyp_intermediate_dir)/lazy_pixel_ref.cpp \
+	$(gyp_intermediate_dir)/lazy_pixel_ref_utils.cpp \
 	$(gyp_intermediate_dir)/paint_simplifier.cpp \
 	$(gyp_intermediate_dir)/platform_canvas.cpp \
 	$(gyp_intermediate_dir)/platform_device.cpp \
@@ -66,6 +69,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkFlate.cpp \
 	third_party/skia/src/core/SkPaintOptionsAndroid.cpp \
+	third_party/skia/src/ports/SkImageDecoder_empty.cpp \
 	third_party/skia/src/images/SkScaledBitmapSampler.cpp \
 	third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp \
 	third_party/skia/src/ports/SkFontConfigInterface_android.cpp \
@@ -73,6 +77,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/ports/SkFontHost_FreeType_common.cpp \
 	third_party/skia/src/ports/SkFontConfigParser_android.cpp \
 	third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp \
+	third_party/skia/src/ports/SkOSFile_posix.cpp \
 	third_party/skia/src/ports/SkOSFile_stdio.cpp \
 	third_party/skia/src/ports/SkThread_pthread.cpp \
 	third_party/skia/src/ports/SkTime_Unix.cpp \
@@ -136,7 +141,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkEdgeClipper.cpp \
 	third_party/skia/src/core/SkEdge.cpp \
 	third_party/skia/src/core/SkError.cpp \
-	third_party/skia/src/core/SkFDStream.cpp \
 	third_party/skia/src/core/SkFilterProc.cpp \
 	third_party/skia/src/core/SkFlattenable.cpp \
 	third_party/skia/src/core/SkFlattenableBuffers.cpp \
@@ -213,9 +217,11 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkUtils.cpp \
 	third_party/skia/src/core/SkWriter32.cpp \
 	third_party/skia/src/core/SkXfermode.cpp \
+	third_party/skia/src/doc/SkDocument.cpp \
 	third_party/skia/src/image/SkDataPixelRef.cpp \
 	third_party/skia/src/image/SkImage.cpp \
 	third_party/skia/src/image/SkImagePriv.cpp \
+	third_party/skia/src/image/SkImage_Codec.cpp \
 	third_party/skia/src/image/SkImage_Picture.cpp \
 	third_party/skia/src/image/SkImage_Raster.cpp \
 	third_party/skia/src/image/SkSurface.cpp \
@@ -258,8 +264,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/pathops/SkReduceOrder.cpp \
 	third_party/skia/src/effects/Sk1DPathEffect.cpp \
 	third_party/skia/src/effects/Sk2DPathEffect.cpp \
-	third_party/skia/src/effects/SkAvoidXfermode.cpp \
 	third_party/skia/src/effects/SkArithmeticMode.cpp \
+	third_party/skia/src/effects/SkAvoidXfermode.cpp \
 	third_party/skia/src/effects/SkBicubicImageFilter.cpp \
 	third_party/skia/src/effects/SkBitmapSource.cpp \
 	third_party/skia/src/effects/SkBlendImageFilter.cpp \
@@ -282,6 +288,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkLayerRasterizer.cpp \
 	third_party/skia/src/effects/SkLerpXfermode.cpp \
 	third_party/skia/src/effects/SkLightingImageFilter.cpp \
+	third_party/skia/src/effects/SkMagnifierImageFilter.cpp \
 	third_party/skia/src/effects/SkMatrixConvolutionImageFilter.cpp \
 	third_party/skia/src/effects/SkMergeImageFilter.cpp \
 	third_party/skia/src/effects/SkMorphologyImageFilter.cpp \
@@ -296,7 +303,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkTableMaskFilter.cpp \
 	third_party/skia/src/effects/SkTestImageFilters.cpp \
 	third_party/skia/src/effects/SkTransparentShader.cpp \
-	third_party/skia/src/effects/SkMagnifierImageFilter.cpp \
+	third_party/skia/src/effects/SkXfermodeImageFilter.cpp \
 	third_party/skia/src/effects/gradients/SkBitmapCache.cpp \
 	third_party/skia/src/effects/gradients/SkClampRange.cpp \
 	third_party/skia/src/effects/gradients/SkGradientShader.cpp \
@@ -434,7 +441,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \

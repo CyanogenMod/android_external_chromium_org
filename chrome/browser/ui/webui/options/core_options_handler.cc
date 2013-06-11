@@ -8,9 +8,9 @@
 #include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/net/url_fixer_upper.h"
@@ -250,6 +250,7 @@ void CoreOptionsHandler::SetPref(const std::string& pref_name,
     case base::Value::TYPE_INTEGER:
     case base::Value::TYPE_DOUBLE:
     case base::Value::TYPE_STRING:
+    case base::Value::TYPE_LIST:
       pref_service->Set(pref_name.c_str(), *value);
       break;
 

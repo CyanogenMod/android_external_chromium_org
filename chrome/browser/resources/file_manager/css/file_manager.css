@@ -182,10 +182,6 @@ body[new-ui] #butter-bar .actions a.x {
   margin-bottom: -14px;
 }
 
-#butter-bar.error {
-  background-color: rgba(221, 75, 57, 0.2);
-}
-
 #butter-bar .butter-message.single-line {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -373,7 +369,7 @@ body[new-ui] #volume-list .volume-icon {
 
 body[new-ui] #directory-tree {
   border-right: 1px solid rgb(212, 212, 212);
-  padding-bottom: 52px;  /* height of the preview panel */
+  padding-bottom: 0;  /* For the preview panel. Will be overridden by JS. */
 }
 
 #directory-tree .tree-row {
@@ -405,9 +401,14 @@ body[new-ui] #directory-tree .tree-children .tree-row {
   height: 37px;
   left: 3px;
   margin: -13px;
+  opacity: 1;
   top: 0;
   vertical-align: middle;
   width: 37px;
+}
+
+body[new-ui] #directory-tree:focus .tree-row[selected] > .expand-icon {
+  background-image: -webkit-canvas(tree-triangle-inverted);
 }
 
 #directory-tree .tree-row > .volume-icon {
@@ -532,6 +533,10 @@ body[new-ui] .search-box-wrapper {
   height: 100%;
 }
 
+body[new-ui] .search-box-wrapper.too-short {
+  visibility: hidden;
+}
+
 body[new-ui] .dialog-header #search-box,
 body[new-ui] .dialog-header #autocomplete-list,
 body[new-ui] .dialog-header #search-icon,
@@ -556,6 +561,11 @@ body[new-ui] .dialog-header #close-button {
   background-image: -webkit-image-set(
     url('../images/files/ui/new-ui/topbar_button_close.png') 1x,
     url('../images/files/ui/new-ui/2x/topbar_button_close.png') 2x);
+}
+
+body[new-ui]:not([type='full-page']) .dialog-header #close-button,
+body[new-ui]:not([type='full-page']) .dialog-header #maximize-button {
+  display: none;
 }
 
 body[maximized][type='full-page'] .dialog-header {
@@ -810,7 +820,7 @@ body[new-ui] .dialog-header button:active {
   color: #333;
   display: -webkit-box;
   height: 29px;
-  line-height: 27px;
+  line-height: 25px;
   max-width: 150px;
   transition: max-width 200ms;
   width: 100%;
@@ -935,6 +945,10 @@ body[new-ui] .search-box-wrapper.has-text + #search-clear-button {
   display: block;
 }
 
+body[new-ui] .search-box-wrapper.too-short + #search-clear-button {
+  display: none;
+}
+
 body[new-ui] #search-clear-button:hover {
   background-image: -webkit-image-set(
     url('../images/files/ui/new-ui/search_clear_hover.png') 1x,
@@ -1014,7 +1028,18 @@ body:not([new-ui]) button#detail-view:not([disabled]) {
 }
 
 body[new-ui] .main-panel #detail-table > list {
-  padding-bottom: 52px;  /* height of the preview panel */
+  padding-bottom: 0;  /* For the preview panel. Will be overridden by JS. */
+}
+
+body[new-ui] .main-panel #detail-table > list > .drag-selection-border {
+  -webkit-box-sizing: border-box;
+  background-color: rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 0; /* Override the style of cr.ui.List */
+  outline: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0; /* Override the style of cr.ui.List */
+  position: absolute;
+  z-index: 2;
 }
 
 .spinner {
@@ -1050,12 +1075,6 @@ body[new-ui] .main-panel #detail-table > list {
   min-width: 22px;
   opacity: 0.6;
   padding-left: 26px;
-}
-
-#spinner-with-text[hidden] {
-  display: block;
-  opacity: 0;
-  transition: opacity 200ms ease-in;
 }
 
 .downloads-warning {
@@ -1134,7 +1153,7 @@ body[new-ui] .main-panel #detail-table > list {
 }
 
 body[new-ui] .thumbnail-grid {
-  padding-bottom: 52px;  /* height of the preview panel */
+  padding-bottom: 0;  /* For the preview panel. Will be overridden by JS. */
 }
 
 body[type='full-page'] .thumbnail-frame > .img-container {
@@ -1143,23 +1162,18 @@ body[type='full-page'] .thumbnail-frame > .img-container {
 
 body[type='full-page'] .thumbnail-frame > .img-container,
 body[type='full-page'] .detail-name .detail-icon,
-body[type='full-page'] .filename-label > * {
+body:not([new-ui])[type='full-page'] .filename-label > * {
   cursor: pointer;
 }
 
-body[type='full-page'] grid .filename-label > :hover {
+body:not([new-ui])[type='full-page'] grid .filename-label > :hover {
   text-decoration: underline;
 }
 
-body[type='full-page'] list .filename-label > :hover,
+body:not([new-ui])[type='full-page'] list .filename-label > :hover,
 .breadcrumb-path:not(.breadcrumb-last):hover,
 .breadcrumb-path.accepts {
   color: rgb(17, 85, 204);
-  text-decoration: underline;
-}
-
-body[new-ui][type='full-page'] list .filename-label > :hover {
-  color: inherit;
   text-decoration: underline;
 }
 
@@ -1475,7 +1489,8 @@ body[new-ui] .preview-panel {
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
   -webkit-transition: background-color 150ms ease;
-  background: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(
+      to bottom, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 1));
   border-top: 1px solid rgb(225, 225, 225);
   bottom: 0;
   display: -webkit-box;
@@ -1616,6 +1631,10 @@ body[new-ui] .table-header-splitter {
   width: 5px;
 }
 
+body[new-ui] .table-header-splitter:last-child {
+  display: none;
+}
+
 /* Container for a table header. */
 .table-header {
   background-color: #f5f5f5;
@@ -1751,6 +1770,10 @@ body[new-ui] #list-container li.table-row .file-checkbox {
   width: 15px;
 }
 
+body[new-ui] #list-container li.table-row .file-checkbox {
+  vertical-align: top;
+}
+
 body[new-ui] #list-container .table-header #select-all-checkbox::after,
 body[new-ui] #list-container li.table-row .file-checkbox::after {
   content: none;
@@ -1822,9 +1845,9 @@ body[new-ui] #delete-button {
     url('../images/files/ui/new-ui/2x/onbutton_trash.png') 2x);
   background-position: center;
   background-repeat: no-repeat;
-  min-width: 27px;  /* overrride */
+  min-width: 25px;  /* overrride */
   padding: 0;  /* overrride */
-  width: 27px;
+  width: 25px;
 }
 
 body #delete-button[disabled] {
@@ -1834,6 +1857,10 @@ body #delete-button[disabled] {
 #tasks-menu menuitem:not(.change-default) {
   background-position: left 10px center;
   padding-left: 32px;
+}
+
+menu[showShortcuts] > menuitem[selected]:not([disabled])::after {
+  color: white;
 }
 
 #preview-lines {
@@ -2463,4 +2490,30 @@ body[new-ui] #iframe-drag-area {
   top: 0;
   width: auto;
   z-index: 101;
+}
+
+body[new-ui] .cr-dialog-frame.error-dialog-frame {
+  width: 300px;
+}
+
+body[new-ui] .error-dialog-frame .error-dialog-img {
+  background-image: -webkit-image-set(
+    url('chrome://theme/IDR_ERROR_NETWORK_GENERIC') 1x,
+    url('chrome://theme/IDR_ERROR_NETWORK_GENERIC@2x') 2x);
+  background-repeat: no-repeat;
+  background-position: center;
+  height: 40px;
+}
+
+.error-dialog-frame .cr-dialog-cancel {
+  display: none;
+}
+
+body[new-ui] .error-dialog-frame .cr-dialog-close,
+body[new-ui] .error-dialog-frame .cr-dialog-title {
+  display: none;
+}
+
+body[new-ui] .error-dialog-frame .cr-dialog-text {
+  text-align: center;
 }

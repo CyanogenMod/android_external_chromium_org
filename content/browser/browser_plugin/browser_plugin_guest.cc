@@ -8,8 +8,8 @@
 
 #include "base/command_line.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest_helper.h"
 #include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
@@ -46,8 +46,8 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/surface/transport_dib.h"
+#include "webkit/common/webdropdata.h"
 #include "webkit/glue/resource_type.h"
-#include "webkit/glue/webdropdata.h"
 
 #if defined(OS_MACOSX)
 #include "content/browser/browser_plugin/browser_plugin_popup_menu_helper_mac.h"
@@ -350,6 +350,8 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_RespondPermission,
                         OnRespondPermission)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetAutoSize, OnSetSize)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent,
+                        OnSetEditCommandsForNextKeyEvent)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetFocus, OnSetFocus)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetName, OnSetName)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetVisibility, OnSetVisibility)
@@ -434,8 +436,12 @@ void BrowserPluginGuest::Initialize(
 
   has_render_view_ = true;
 
-  GetContentClient()->browser()->GuestWebContentsCreated(
-      GetWebContents(), embedder_web_contents_);
+  if (!embedder_web_contents_->
+          GetWebkitPrefs().accelerated_compositing_enabled) {
+    WebPreferences prefs = GetWebContents()->GetWebkitPrefs();
+    prefs.accelerated_compositing_enabled = false;
+    GetWebContents()->GetRenderViewHost()->UpdateWebkitPreferences(prefs);
+  }
 }
 
 BrowserPluginGuest::~BrowserPluginGuest() {
@@ -663,7 +669,7 @@ base::SharedMemory* BrowserPluginGuest::GetDamageBufferFromEmbedder(
       new base::SharedMemory(params.damage_buffer_handle, false));
 #endif
   if (!shared_buf->Map(params.damage_buffer_size)) {
-    NOTREACHED();
+    LOG(WARNING) << "Unable to map the embedder's damage buffer.";
     return NULL;
   }
   return shared_buf.release();
@@ -674,7 +680,8 @@ void BrowserPluginGuest::SetDamageBuffer(
   damage_buffer_.reset(GetDamageBufferFromEmbedder(params));
   // Sanity check: Verify that we've correctly shared the damage buffer memory
   // between the embedder and browser processes.
-  DCHECK(*static_cast<unsigned int*>(damage_buffer_->memory()) == 0xdeadbeef);
+  DCHECK(!damage_buffer_ ||
+      *static_cast<unsigned int*>(damage_buffer_->memory()) == 0xdeadbeef);
   damage_buffer_sequence_id_ = params.damage_buffer_sequence_id;
   damage_buffer_size_ = params.damage_buffer_size;
   damage_view_size_ = params.view_rect.size();
@@ -878,8 +885,6 @@ void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
   BrowserPluginMsg_LoadCommit_Params params;
   params.url = url;
   params.is_top_level = is_main_frame;
-  params.process_id = render_view_host->GetProcess()->GetID();
-  params.route_id = render_view_host->GetRoutingID();
   params.current_entry_index =
       GetWebContents()->GetController().GetCurrentEntryIndex();
   params.entry_count =
@@ -976,6 +981,7 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     case BrowserPluginHostMsg_ResizeGuest::ID:
     case BrowserPluginHostMsg_RespondPermission::ID:
     case BrowserPluginHostMsg_SetAutoSize::ID:
+    case BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent::ID:
     case BrowserPluginHostMsg_SetFocus::ID:
     case BrowserPluginHostMsg_SetName::ID:
     case BrowserPluginHostMsg_SetVisibility::ID:
@@ -1318,6 +1324,13 @@ void BrowserPluginGuest::OnSetSize(
         resize_guest_params.view_rect.size());
   }
   OnResizeGuest(instance_id_, resize_guest_params);
+}
+
+void BrowserPluginGuest::OnSetEditCommandsForNextKeyEvent(
+    int instance_id,
+    const std::vector<EditCommand>& edit_commands) {
+  Send(new InputMsg_SetEditCommandsForNextKeyEvent(routing_id(),
+                                                   edit_commands));
 }
 
 void BrowserPluginGuest::OnSetVisibility(int instance_id, bool visible) {

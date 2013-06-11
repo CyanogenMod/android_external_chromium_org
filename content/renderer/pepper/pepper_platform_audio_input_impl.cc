@@ -6,9 +6,9 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "build/build_config.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
 #include "content/renderer/media/audio_input_message_filter.h"
 #include "content/renderer/pepper/pepper_plugin_delegate_impl.h"
 #include "content/renderer/render_thread_impl.h"
@@ -82,7 +82,7 @@ void PepperPlatformAudioInputImpl::OnStreamCreated(
   // TODO(yzshen): Make use of circular buffer scheme. crbug.com/181449.
   DCHECK_EQ(1, total_segments);
 
-  if (base::MessageLoopProxy::current() != main_message_loop_proxy_) {
+  if (base::MessageLoopProxy::current() != main_message_loop_proxy_.get()) {
     // If shutdown has occurred, |client_| will be NULL and the handles will be
     // cleaned up on the main thread.
     main_message_loop_proxy_->PostTask(
@@ -136,7 +136,7 @@ bool PepperPlatformAudioInputImpl::Initialize(
     webkit::ppapi::PluginDelegate::PlatformAudioInputClient* client) {
   DCHECK(main_message_loop_proxy_->BelongsToCurrentThread());
 
-  if (!plugin_delegate || !client)
+  if (!plugin_delegate.get() || !client)
     return false;
 
   ipc_ = RenderThreadImpl::current()->audio_input_message_filter()->
@@ -208,7 +208,7 @@ void PepperPlatformAudioInputImpl::OnDeviceOpened(int request_id,
                                                   const std::string& label) {
   DCHECK(main_message_loop_proxy_->BelongsToCurrentThread());
 
-  if (succeeded && plugin_delegate_) {
+  if (succeeded && plugin_delegate_.get()) {
     DCHECK(!label.empty());
     label_ = label;
 
@@ -231,7 +231,7 @@ void PepperPlatformAudioInputImpl::OnDeviceOpened(int request_id,
 void PepperPlatformAudioInputImpl::CloseDevice() {
   DCHECK(main_message_loop_proxy_->BelongsToCurrentThread());
 
-  if (plugin_delegate_ && !label_.empty()) {
+  if (plugin_delegate_.get() && !label_.empty()) {
     plugin_delegate_->CloseDevice(label_);
     label_.clear();
   }

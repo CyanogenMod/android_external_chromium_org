@@ -6,8 +6,8 @@
 
 #include "base/command_line.h"
 #include "base/run_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/navigation_controller_impl.h"
@@ -84,6 +84,11 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
  public:
   WebContentsViewAuraTest()
       : screenshot_manager_(NULL) {
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitchASCII(switches::kOverscrollHistoryNavigation,
+                                    std::string("1"));
   }
 
   // Executes the javascript synchronously and makes sure the returned value is

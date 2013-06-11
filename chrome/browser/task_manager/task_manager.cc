@@ -11,9 +11,9 @@
 #include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
@@ -586,11 +586,16 @@ bool TaskManagerModel::GetPhysicalMemory(int index, size_t* result) const {
         !iter->second->GetWorkingSetKBytes(&ws_usage))
       return false;
 
+    values.is_physical_memory_valid = true;
+#if defined(OS_LINUX)
+    // On Linux private memory is also resident. Just use it.
+    values.physical_memory = ws_usage.priv * 1024;
+#else
     // Memory = working_set.private + working_set.shareable.
     // We exclude the shared memory.
-    values.is_physical_memory_valid = true;
     values.physical_memory = iter->second->GetWorkingSetSize();
     values.physical_memory -= ws_usage.shared * 1024;
+#endif
   }
   *result = values.physical_memory;
   return true;
@@ -1540,7 +1545,7 @@ TaskManager* TaskManager::GetInstance() {
 
 void TaskManager::OpenAboutMemory(chrome::HostDesktopType desktop_type) {
   Browser* browser = chrome::FindOrCreateTabbedBrowser(
-      ProfileManager::GetLastUsedProfile(), desktop_type);
+      ProfileManager::GetLastUsedProfileAllowedByPolicy(), desktop_type);
   chrome::NavigateParams params(browser, GURL(chrome::kChromeUIMemoryURL),
                                 content::PAGE_TRANSITION_LINK);
   params.disposition = NEW_FOREGROUND_TAB;

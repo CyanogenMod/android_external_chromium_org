@@ -41,6 +41,7 @@
       'layers/tiled_layer_unittest.cc',
       'output/delegating_renderer_unittest.cc',
       'output/gl_renderer_unittest.cc',
+      'output/output_surface_unittest.cc',
       'output/renderer_pixeltest.cc',
       'output/render_surface_filters_unittest.cc',
       'output/shader_unittest.cc',
@@ -55,6 +56,7 @@
       'resources/picture_pile_unittest.cc',
       'resources/picture_unittest.cc',
       'resources/prioritized_resource_unittest.cc',
+      'resources/raster_worker_pool_unittest.cc',
       'resources/resource_provider_unittest.cc',
       'resources/resource_update_controller_unittest.cc',
       'resources/scoped_resource_unittest.cc',
@@ -62,6 +64,7 @@
       'resources/tile_priority_unittest.cc',
       'scheduler/delay_based_time_source_unittest.cc',
       'scheduler/frame_rate_controller_unittest.cc',
+      'scheduler/rolling_time_delta_history_unittest.cc',
       'scheduler/scheduler_state_machine_unittest.cc',
       'scheduler/scheduler_unittest.cc',
       'scheduler/texture_uploader_unittest.cc',
@@ -191,7 +194,6 @@
       'include_dirs': [
         'test',
         '.',
-        '../third_party/WebKit/Source/Platform/chromium',
       ],
       'conditions': [
         ['OS == "android" and gtest_target_type == "shared_library"', {
@@ -226,14 +228,14 @@
         'cc_test_support',
       ],
       'sources': [
-        'trees/layer_tree_host_perftest.cc',
-        'test/run_all_unittests.cc',
+        'base/worker_pool_perftest.cc',
         'test/cc_test_suite.cc',
+        'test/run_all_unittests.cc',
+        'trees/layer_tree_host_perftest.cc',
       ],
       'include_dirs': [
         'test',
         '.',
-        '../third_party/WebKit/Source/Platform/chromium',
       ],
       'conditions': [
         ['OS == "android" and gtest_target_type == "shared_library"', {
@@ -258,13 +260,12 @@
         'test',
         '.',
         '..',
-        '../third_party/WebKit/Source/Platform/chromium',
       ],
       'dependencies': [
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
-        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '../third_party/WebKit/public/blink.gyp:blink',
         '../third_party/mesa/mesa.gyp:osmesa',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',

@@ -10,7 +10,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/service/service_process.h"
@@ -129,10 +129,8 @@ ServiceURLRequestContext::ServiceURLRequestContext(
   session_params.http_server_properties = http_server_properties();
   scoped_refptr<net::HttpNetworkSession> network_session(
       new net::HttpNetworkSession(session_params));
-  storage_.set_http_transaction_factory(
-      new net::HttpCache(
-          network_session,
-          net::HttpCache::DefaultBackend::InMemory(0)));
+  storage_.set_http_transaction_factory(new net::HttpCache(
+      network_session.get(), net::HttpCache::DefaultBackend::InMemory(0)));
   // In-memory cookie store.
   storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
   storage_.set_http_user_agent_settings(new net::StaticHttpUserAgentSettings(

@@ -8,8 +8,8 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/command_updater.h"
@@ -47,7 +47,8 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/language_detection_details.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
+#include "chrome/common/translate/language_detection_details.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -183,14 +184,15 @@ class InterstitialObserver : public content::WebContentsObserver {
   DISALLOW_COPY_AND_ASSIGN(InterstitialObserver);
 };
 
-class TransfersAllRedirectsContentBrowserClient
+// Causes the browser to swap processes on a redirect to an HTTPS URL.
+class TransferHttpsRedirectsContentBrowserClient
     : public chrome::ChromeContentBrowserClient {
  public:
   virtual bool ShouldSwapProcessesForRedirect(
       content::ResourceContext* resource_context,
       const GURL& current_url,
       const GURL& new_url) OVERRIDE {
-    return true;
+    return new_url.SchemeIs(chrome::kHttpsScheme);
   }
 };
 
@@ -376,10 +378,12 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ReloadThenCancelBeforeUnload) {
                                   ASCIIToUTF16("onbeforeunload=null;"));
 }
 
-// Tests that a cross-process redirect will only cause the beforeunload
-// handler to run once.
-IN_PROC_BROWSER_TEST_F(BrowserTest, SingleBeforeUnloadAfterRedirect) {
-  // Create HTTP and HTTPS servers for cross-site transition.
+// Ensure that a transferred cross-process navigation does not generate
+// DidStopLoading events until the navigation commits.  If it did, then
+// ui_test_utils::NavigateToURL would proceed before the URL had committed.
+// http://crbug.com/243957.
+IN_PROC_BROWSER_TEST_F(BrowserTest, NoStopDuringTransferUntilCommit) {
+  // Create HTTP and HTTPS servers for a cross-site transition.
   ASSERT_TRUE(test_server()->Start());
   net::SpawnedTestServer https_test_server(net::SpawnedTestServer::TYPE_HTTPS,
                                            net::SpawnedTestServer::kLocalhost,
@@ -387,8 +391,43 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, SingleBeforeUnloadAfterRedirect) {
   ASSERT_TRUE(https_test_server.Start());
 
   // Temporarily replace ContentBrowserClient with one that will cause a
-  // process swap on all redirects.
-  TransfersAllRedirectsContentBrowserClient new_client;
+  // process swap on all redirects to HTTPS URLs.
+  TransferHttpsRedirectsContentBrowserClient new_client;
+  content::ContentBrowserClient* old_client =
+      SetBrowserClientForTesting(&new_client);
+
+  GURL init_url(test_server()->GetURL("files/title1.html"));
+  ui_test_utils::NavigateToURL(browser(), init_url);
+
+  // Navigate to a same-site page that redirects, causing a transfer.
+  GURL dest_url(https_test_server.GetURL("files/title2.html"));
+  GURL redirect_url(test_server()->GetURL("server-redirect?" +
+      dest_url.spec()));
+  ui_test_utils::NavigateToURL(browser(), redirect_url);
+
+  // We should immediately see the new committed entry.
+  WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_FALSE(contents->GetController().GetPendingEntry());
+  EXPECT_EQ(dest_url,
+            contents->GetController().GetLastCommittedEntry()->GetURL());
+
+  // Restore previous browser client.
+  SetBrowserClientForTesting(old_client);
+}
+
+// Tests that a cross-process redirect will only cause the beforeunload
+// handler to run once.
+IN_PROC_BROWSER_TEST_F(BrowserTest, SingleBeforeUnloadAfterRedirect) {
+  // Create HTTP and HTTPS servers for a cross-site transition.
+  ASSERT_TRUE(test_server()->Start());
+  net::SpawnedTestServer https_test_server(net::SpawnedTestServer::TYPE_HTTPS,
+                                           net::SpawnedTestServer::kLocalhost,
+                                           base::FilePath(kDocRoot));
+  ASSERT_TRUE(https_test_server.Start());
+
+  // Temporarily replace ContentBrowserClient with one that will cause a
+  // process swap on all redirects to HTTPS URLs.
+  TransferHttpsRedirectsContentBrowserClient new_client;
   content::ContentBrowserClient* old_client =
       SetBrowserClientForTesting(&new_client);
 
@@ -1201,7 +1240,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OpenAppWindowLikeNtp) {
   ASSERT_TRUE(extensions::TabHelper::FromWebContents(app_window));
   EXPECT_FALSE(
       extensions::TabHelper::FromWebContents(app_window)->extension_app());
-  EXPECT_EQ(extension_app->GetFullLaunchURL(), app_window->GetURL());
+  EXPECT_EQ(extensions::AppLaunchInfo::GetFullLaunchURL(extension_app),
+            app_window->GetURL());
 
   // The launch should have created a new browser.
   ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
@@ -1315,8 +1355,9 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, DisableMenuItemsWhenIncognitoIsForced) {
 
   // Create a new browser.
   Browser* new_browser =
-      new Browser(Browser::CreateParams(browser()->profile(),
-                                        browser()->host_desktop_type()));
+      new Browser(Browser::CreateParams(
+          browser()->profile()->GetOffTheRecordProfile(),
+          browser()->host_desktop_type()));
   CommandUpdater* new_command_updater =
       new_browser->command_controller()->command_updater();
   // It should have Bookmarks & Settings commands disabled by default.
@@ -1982,11 +2023,7 @@ class ClickModifierTest : public InProcessBrowserTest {
     if (disposition == CURRENT_TAB) {
       content::WebContents* web_contents =
           browser->tab_strip_model()->GetActiveWebContents();
-      NavigationController* controller =
-          web_contents ? &web_contents->GetController() : NULL;
-      content::TestNavigationObserver same_tab_observer(
-          content::Source<NavigationController>(controller),
-          1);
+      content::TestNavigationObserver same_tab_observer(web_contents);
       SimulateMouseClick(web_contents, modifiers, button);
       base::RunLoop run_loop;
       same_tab_observer.WaitForObservation(

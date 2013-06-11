@@ -890,12 +890,6 @@ enum NotificationType {
   // The details are a chromeos::User object.
   NOTIFICATION_LOGIN_USER_CHANGED,
 
-  // Sent when a chromium os active user has changed.
-  // The details are a chromeos::User object.
-  // This notification is _not_ sent when user logs in to a new or existing
-  // session because NOTIFICATION_LOGIN_USER_CHANGED is sent instead.
-  NOTIFICATION_ACTIVE_USER_CHANGED,
-
   // Sent immediately after the logged-in user's profile is ready.
   // The details are a Profile object.
   NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
@@ -963,10 +957,6 @@ enum NotificationType {
   // First paint event after this fires NOTIFICATION_LOGIN_WEBUI_VISIBLE.
   NOTIFICATION_WIZARD_FIRST_SCREEN_SHOWN,
 
-  // Sent when the EULA has been accepted in the first-run wizard. This is never
-  // sent if the EULA was already accepted at startup.
-  NOTIFICATION_WIZARD_EULA_ACCEPTED,
-
   // Sent when the specific part of login WebUI is considered to be visible.
   // That moment is tracked as the first paint event after one of the:
   // 1. NOTIFICATION_LOGIN_USER_IMAGES_LOADED
@@ -997,6 +987,12 @@ enum NotificationType {
 
   // Sent when proxy dialog is closed.
   NOTIFICATION_LOGIN_PROXY_CHANGED,
+
+  // Send when kiosk auto-launch warning screen is visible.
+  NOTIFICATION_KIOSK_AUTOLAUNCH_WARNING_VISIBLE,
+
+  // Send when kiosk auto-launch warning screen had completed.
+  NOTIFICATION_KIOSK_AUTOLAUNCH_WARNING_COMPLETED,
 
   // Sent when kiosk app list is loaded in UI.
   NOTIFICATION_KIOSK_APPS_LOADED,
@@ -1042,6 +1038,9 @@ enum NotificationType {
   // EnterPuk dialog, either because the user cancelled, or entered a
   // PIN or PUK.
   NOTIFICATION_ENTER_PIN_ENDED,
+
+  // Sent when large cursor is toggled.
+  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_LARGE_CURSOR,
 
   // Sent when high contrast mode is toggled.
   NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,

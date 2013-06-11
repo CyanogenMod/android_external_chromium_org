@@ -7,6 +7,14 @@
 
   cr.define('cr.translateInternals', function() {
 
+    var detectionLogs_ = null;
+
+    function detectionLogs() {
+      if (detectionLogs_ === null)
+        detectionLogs_ = [];
+      return detectionLogs_;
+    }
+
     /**
      * Initializes UI and sends a message to the browser for
      * initialization.
@@ -14,6 +22,9 @@
     function initialize() {
       cr.ui.decorate('tabbox', cr.ui.TabBox);
       chrome.send('requestInfo');
+
+      var button = $('detection-logs-dump');
+      button.addEventListener('click', onDetectionLogsDump);
     }
 
     /**
@@ -64,8 +75,8 @@
      * @return {string} The formatted string.
      */
     function formatTranslateErrorsType(error) {
-      // This list is from chrome/common/translate_errors.h.  If this header
-      // file is updated, the below list also should be updated.
+      // This list is from chrome/common/translate/translate_errors.h.
+      // If this header file is updated, the below list also should be updated.
       var errorStrs = {
         0: 'None',
         1: 'Network',
@@ -191,17 +202,17 @@
     }
 
     /**
-     * Returns a new TD element.
+     * Appends a new TD element to the specified element.
      *
+     * @param {string} parent The element to which a new TD element is appended.
      * @param {string} content The text content of the element.
      * @param {string} className The class name of the element.
-     * @return {string} The new TD element.
      */
-    function createTD(content, className) {
+    function appendTD(parent, content, className) {
       var td = document.createElement('td');
       td.textContent = content;
       td.className = className;
-      return td;
+      parent.appendChild(td);
     }
 
     /**
@@ -211,23 +222,31 @@
      * @param {Object} detail The object which represents the logs.
      */
     function onLanguageDetectionInfoAdded(detail) {
+      cr.translateInternals.detectionLogs().push(detail);
+
       var tr = document.createElement('tr');
 
-      var date = new Date(detail['time']);
-      [
-        createTD(formatDate(date), 'detection-logs-time'),
-        createTD(detail['url'], 'detection-logs-url'),
-        createTD(formatLanguageCode(detail['content_language']),
-                 'detection-logs-content-language'),
-        createTD(formatLanguageCode(detail['cld_language']),
-                 'detection-logs-cld-language'),
-        createTD(detail['is_cld_reliable'],
-                 'detection-logs-is-cld-reliable'),
-        createTD(formatLanguageCode(detail['language']),
-                 'detection-logs-language'),
-      ].forEach(function(td) {
-        tr.appendChild(td);
-      });
+      appendTD(tr, formatDate(new Date(detail['time'])), 'detection-logs-time');
+      appendTD(tr, detail['url'], 'detection-logs-url');
+      appendTD(tr, formatLanguageCode(detail['content_language']),
+               'detection-logs-content-language');
+      appendTD(tr, formatLanguageCode(detail['cld_language']),
+               'detection-logs-cld-language');
+      appendTD(tr, detail['is_cld_reliable'], 'detection-logs-is-cld-reliable');
+      appendTD(tr, formatLanguageCode(detail['html_root_language']),
+               'detection-logs-html-root-language');
+      appendTD(tr, formatLanguageCode(detail['adopted_language']),
+               'detection-logs-adopted-language');
+      appendTD(tr, formatLanguageCode(detail['content']),
+               'detection-logs-content');
+
+      // TD (and TR) can't use the CSS property 'max-height', so DIV
+      // in the content is needed.
+      var contentTD = tr.querySelector('.detection-logs-content');
+      var div = document.createElement('div');
+      div.textContent = contentTD.textContent;
+      contentTD.textContent = '';
+      contentTD.appendChild(div);
 
       var tbody = $('detection-logs').getElementsByTagName('tbody')[0];
       tbody.appendChild(tr);
@@ -242,18 +261,30 @@
     function onTranslateErrorDetailsAdded(details) {
       var tr = document.createElement('tr');
 
-      var errorStr = details['error'] + ': ' +
-          formatTranslateErrorsType(details['error']);
-      [
-        createTD(formatDate(new Date(details['time'])),
-                 'error-logs-time'),
-        createTD(details['url'], 'error-logs-url'),
-        createTD(errorStr, 'error-logs-error'),
-      ].forEach(function(td) {
-        tr.appendChild(td);
-      });
+      appendTD(tr, formatDate(new Date(details['time'])), 'error-logs-time');
+      appendTD(tr, details['url'], 'error-logs-url');
+      appendTD(
+          tr,
+          details['error'] + ': ' + formatTranslateErrorsType(details['error']),
+          'error-logs-error');
 
       var tbody = $('error-logs').getElementsByTagName('tbody')[0];
+      tbody.appendChild(tr);
+    }
+
+    /**
+     * Handles the message of 'translateEventDetailsAdded' from the browser.
+     *
+     * @param {Object} details The object which contains event information.
+     */
+    function onTranslateEventDetailsAdded(details) {
+      var tr = document.createElement('tr');
+      appendTD(tr, formatDate(new Date(details['time'])), 'event-logs-time');
+      appendTD(tr, details['filename'] + ': ' + details['line'],
+               'event-logs-place');
+      appendTD(tr, details['message'], 'event-logs-message');
+
+      var tbody = $('event-logs').getElementsByTagName('tbody')[0];
       tbody.appendChild(tr);
     }
 
@@ -262,18 +293,21 @@
      * called by the browser.
      *
      * @param {string} message The name of the sent message.
-     * @param {Object} detail The argument of the sent message.
+     * @param {Object} details The argument of the sent message.
      */
-    function messageHandler(message, detail) {
+    function messageHandler(message, details) {
       switch (message) {
         case 'languageDetectionInfoAdded':
-          cr.translateInternals.onLanguageDetectionInfoAdded(detail);
+          cr.translateInternals.onLanguageDetectionInfoAdded(details);
           break;
         case 'prefsUpdated':
-          cr.translateInternals.onPrefsUpdated(detail);
+          cr.translateInternals.onPrefsUpdated(details);
           break;
         case 'translateErrorDetailsAdded':
-          cr.translateInternals.onTranslateErrorDetailsAdded(detail);
+          cr.translateInternals.onTranslateErrorDetailsAdded(details);
+          break;
+        case 'translateEventDetailsAdded':
+          cr.translateInternals.onTranslateEventDetailsAdded(details);
           break;
         default:
           console.error('Unknown message:', message);
@@ -281,12 +315,33 @@
       }
     }
 
+    /**
+     * The callback of button#detetion-logs-dump.
+     */
+    function onDetectionLogsDump() {
+      var data = JSON.stringify(cr.translateInternals.detectionLogs());
+      var blob = new Blob([data], {'type': 'text/json'});
+      var url = webkitURL.createObjectURL(blob);
+      var filename = 'translate_internals_detect_logs_dump.json';
+
+      var a = document.createElement('a');
+      a.setAttribute('href', url);
+      a.setAttribute('download', filename);
+
+      var event = document.createEvent('MouseEvent');
+      event.initMouseEvent('click', true, true, window, 0,
+                           0, 0, 0, 0, 0, 0, 0, 0, 0, null);
+      a.dispatchEvent(event);
+    }
+
     return {
+      detectionLogs: detectionLogs,
       initialize: initialize,
       messageHandler: messageHandler,
       onLanguageDetectionInfoAdded: onLanguageDetectionInfoAdded,
       onPrefsUpdated: onPrefsUpdated,
       onTranslateErrorDetailsAdded: onTranslateErrorDetailsAdded,
+      onTranslateEventDetailsAdded: onTranslateEventDetailsAdded,
     };
   });
 

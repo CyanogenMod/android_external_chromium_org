@@ -5,7 +5,7 @@
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
@@ -23,6 +23,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/shell.h"
 #include "content/test/content_browser_test.h"
@@ -69,7 +70,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, NoScriptAccessAfterSwapOut) {
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Open a same-site link in a new window.
   ShellAddedObserver new_shell_observer;
@@ -137,7 +138,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Test clicking a rel=noreferrer + target=blank link.
   ShellAddedObserver new_shell_observer;
@@ -190,7 +191,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Test clicking a same-site rel=noreferrer + target=foo link.
   ShellAddedObserver new_shell_observer;
@@ -243,7 +244,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Test clicking a target=blank link.
   ShellAddedObserver new_shell_observer;
@@ -291,7 +292,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Test clicking a rel=noreferrer link.
   bool success = false;
@@ -359,7 +360,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Test clicking a target=foo link.
   ShellAddedObserver new_shell_observer;
@@ -388,10 +389,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   EXPECT_NE(orig_site_instance, new_site_instance);
 
   // Clicking the original link in the first tab should cause us to swap back.
-  WindowedNotificationObserver navigation_observer(
-      NOTIFICATION_NAV_ENTRY_COMMITTED,
-      Source<NavigationController>(
-          &new_shell->web_contents()->GetController()));
+  TestNavigationObserver navigation_observer(new_shell->web_contents());
   EXPECT_TRUE(ExecuteScriptAndExtractBool(
       shell()->web_contents(),
       "window.domAutomationController.send(clickSameSiteTargetedLink());",
@@ -442,7 +440,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DisownOpener) {
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Test clicking a target=_blank link.
   ShellAddedObserver new_shell_observer;
@@ -476,10 +474,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, DisownOpener) {
 
   // Go back and ensure the opener is still null.
   {
-    WindowedNotificationObserver back_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(
-            &new_shell->web_contents()->GetController()));
+    TestNavigationObserver back_nav_load_observer(new_shell->web_contents());
     new_shell->web_contents()->GetController().GoBack();
     back_nav_load_observer.Wait();
   }
@@ -545,10 +540,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   WebContents* opener_contents = shell()->web_contents();
   scoped_refptr<SiteInstance> orig_site_instance(
       opener_contents->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
-  RenderViewHostManager* opener_manager =
-      static_cast<WebContentsImpl*>(opener_contents)->
-          GetRenderManagerForTesting();
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
+  RenderViewHostManager* opener_manager = static_cast<WebContentsImpl*>(
+      opener_contents)->GetRenderManagerForTesting();
 
   // 1) Open two more windows, one named.  These initially have openers but no
   // reference to each other.  We will later post a message between them.
@@ -595,8 +589,10 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // We now have three windows.  The opener should have a swapped out RVH
   // for the new SiteInstance, but the _blank window should not.
   EXPECT_EQ(3u, Shell::windows().size());
-  EXPECT_TRUE(opener_manager->GetSwappedOutRenderViewHost(foo_site_instance));
-  EXPECT_FALSE(new_manager->GetSwappedOutRenderViewHost(foo_site_instance));
+  EXPECT_TRUE(
+      opener_manager->GetSwappedOutRenderViewHost(foo_site_instance.get()));
+  EXPECT_FALSE(
+      new_manager->GetSwappedOutRenderViewHost(foo_site_instance.get()));
 
   // 2) Fail to post a message from the foo window to the opener if the target
   // origin is wrong.  We won't see an error, but we can check for the right
@@ -607,7 +603,8 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
       "    'http://google.com'));",
       &success));
   EXPECT_TRUE(success);
-  ASSERT_FALSE(opener_manager->GetSwappedOutRenderViewHost(orig_site_instance));
+  ASSERT_FALSE(
+      opener_manager->GetSwappedOutRenderViewHost(orig_site_instance.get()));
 
   // 3) Post a message from the foo window to the opener.  The opener will
   // reply, causing the foo window to update its own title.
@@ -619,7 +616,8 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
       "window.domAutomationController.send(postToOpener('msg','*'));",
       &success));
   EXPECT_TRUE(success);
-  ASSERT_FALSE(opener_manager->GetSwappedOutRenderViewHost(orig_site_instance));
+  ASSERT_FALSE(
+      opener_manager->GetSwappedOutRenderViewHost(orig_site_instance.get()));
   title_observer.Wait();
 
   // We should have received only 1 message in the opener and "foo" tabs,
@@ -653,7 +651,8 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
 
   // This postMessage should have created a swapped out RVH for the new
   // SiteInstance in the target=_blank window.
-  EXPECT_TRUE(new_manager->GetSwappedOutRenderViewHost(foo_site_instance));
+  EXPECT_TRUE(
+      new_manager->GetSwappedOutRenderViewHost(foo_site_instance.get()));
 
   // TODO(nasko): Test subframe targeting of postMessage once
   // http://crbug.com/153701 is fixed.
@@ -683,7 +682,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   WebContents* orig_contents = shell()->web_contents();
   scoped_refptr<SiteInstance> orig_site_instance(
       orig_contents->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Test clicking a target=foo link.
   ShellAddedObserver new_shell_observer;
@@ -712,10 +711,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   EXPECT_NE(orig_site_instance, new_site_instance);
 
   // The opened tab should be able to navigate the opener back to its process.
-  WindowedNotificationObserver navigation_observer(
-      NOTIFICATION_NAV_ENTRY_COMMITTED,
-      Source<NavigationController>(
-          &orig_contents->GetController()));
+  TestNavigationObserver navigation_observer(orig_contents);
   EXPECT_TRUE(ExecuteScriptAndExtractBool(
       new_shell->web_contents(),
       "window.domAutomationController.send(navigateOpener());",
@@ -753,7 +749,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Test clicking a target=foo link.
   ShellAddedObserver new_shell_observer;
@@ -821,7 +817,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, ClickLinkAfter204Error) {
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_TRUE(orig_site_instance != NULL);
+  EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Load a cross-site page that fails with a 204 error.
   NavigateToURL(shell(), https_server.GetURL("nocontent"));
@@ -856,6 +852,92 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, ClickLinkAfter204Error) {
   scoped_refptr<SiteInstance> noref_site_instance(
       shell()->web_contents()->GetSiteInstance());
   EXPECT_EQ(orig_site_instance, noref_site_instance);
+}
+
+// Test for crbug.com/9682.  We should show the URL for a pending renderer-
+// initiated navigation in a new tab, until the content of the initial
+// about:blank page is modified by another window.  At that point, we should
+// revert to showing about:blank to prevent a URL spoof.
+IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, ShowLoadingURLUntilSpoof) {
+  ASSERT_TRUE(test_server()->Start());
+
+  // Load a page that can open a URL that won't commit in a new window.
+  NavigateToURL(
+      shell(), test_server()->GetURL("files/click-nocontent-link.html"));
+  WebContents* orig_contents = shell()->web_contents();
+
+  // Click a /nocontent link that opens in a new window but never commits.
+  ShellAddedObserver new_shell_observer;
+  bool success = false;
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+      orig_contents,
+      "window.domAutomationController.send(clickNoContentTargetedLink());",
+      &success));
+  EXPECT_TRUE(success);
+
+  // Wait for the window to open.
+  Shell* new_shell = new_shell_observer.GetShell();
+
+  // Ensure the destination URL is visible, because it is considered the
+  // initial navigation.
+  WebContents* contents = new_shell->web_contents();
+  EXPECT_TRUE(contents->GetController().IsInitialNavigation());
+  EXPECT_EQ("/nocontent",
+            contents->GetController().GetVisibleEntry()->GetURL().path());
+
+  // Now modify the contents of the new window from the opener.  This will also
+  // modify the title of the document to give us something to listen for.
+  WindowedNotificationObserver title_observer(
+      NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
+      Source<WebContents>(contents));
+  success = false;
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+      orig_contents,
+      "window.domAutomationController.send(modifyNewWindow());",
+      &success));
+  EXPECT_TRUE(success);
+  title_observer.Wait();
+  EXPECT_EQ(ASCIIToUTF16("Modified Title"), contents->GetTitle());
+
+  // At this point, we should no longer be showing the destination URL.
+  // The visible entry should be null, resulting in about:blank in the address
+  // bar.
+  EXPECT_FALSE(contents->GetController().GetVisibleEntry());
+}
+
+// Test for crbug.com/9682.  We should not show the URL for a pending renderer-
+// initiated navigation in a new tab if it is not the initial navigation.  In
+// this case, the renderer will not notify us of a modification, so we cannot
+// show the pending URL without allowing a spoof.
+IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
+                       DontShowLoadingURLIfNotInitialNav) {
+  ASSERT_TRUE(test_server()->Start());
+
+  // Load a page that can open a URL that won't commit in a new window.
+  NavigateToURL(
+      shell(), test_server()->GetURL("files/click-nocontent-link.html"));
+  WebContents* orig_contents = shell()->web_contents();
+
+  // Click a /nocontent link that opens in a new window but never commits.
+  // By using an onclick handler that first creates the window, the slow
+  // navigation is not considered an initial navigation.
+  ShellAddedObserver new_shell_observer;
+  bool success = false;
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+      orig_contents,
+      "window.domAutomationController.send("
+      "clickNoContentScriptedTargetedLink());",
+      &success));
+  EXPECT_TRUE(success);
+
+  // Wait for the window to open.
+  Shell* new_shell = new_shell_observer.GetShell();
+
+  // Ensure the destination URL is not visible, because it is not the initial
+  // navigation.
+  WebContents* contents = new_shell->web_contents();
+  EXPECT_FALSE(contents->GetController().IsInitialNavigation());
+  EXPECT_FALSE(contents->GetController().GetVisibleEntry());
 }
 
 // Test for http://crbug.com/93427.  Ensure that cross-site navigations
@@ -910,66 +992,48 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, BackForwardNotStale) {
 
   // Go back three times to first site.
   {
-    WindowedNotificationObserver back_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(
-            &contents->GetController()));
+    TestNavigationObserver back_nav_load_observer(shell()->web_contents());
     shell()->web_contents()->GetController().GoBack();
     back_nav_load_observer.Wait();
   }
   {
-    WindowedNotificationObserver back_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(
-            &contents->GetController()));
+    TestNavigationObserver back_nav_load_observer(shell()->web_contents());
     shell()->web_contents()->GetController().GoBack();
     back_nav_load_observer.Wait();
   }
   {
-    WindowedNotificationObserver back_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(&contents->GetController()));
+    TestNavigationObserver back_nav_load_observer(shell()->web_contents());
     shell()->web_contents()->GetController().GoBack();
     back_nav_load_observer.Wait();
   }
 
   // Now go forward twice to B2.  Shouldn't be left spinning.
   {
-    WindowedNotificationObserver forward_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(&contents->GetController()));
+    TestNavigationObserver forward_nav_load_observer(shell()->web_contents());
     shell()->web_contents()->GetController().GoForward();
     forward_nav_load_observer.Wait();
   }
   {
-    WindowedNotificationObserver forward_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(&contents->GetController()));
+    TestNavigationObserver forward_nav_load_observer(shell()->web_contents());
     shell()->web_contents()->GetController().GoForward();
     forward_nav_load_observer.Wait();
   }
 
   // Go back twice to first site.
   {
-    WindowedNotificationObserver back_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(&contents->GetController()));
+    TestNavigationObserver back_nav_load_observer(shell()->web_contents());
     shell()->web_contents()->GetController().GoBack();
     back_nav_load_observer.Wait();
   }
   {
-    WindowedNotificationObserver back_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(&contents->GetController()));
+    TestNavigationObserver back_nav_load_observer(shell()->web_contents());
     shell()->web_contents()->GetController().GoBack();
     back_nav_load_observer.Wait();
   }
 
   // Now go forward directly to B3.  Shouldn't be left spinning.
   {
-    WindowedNotificationObserver forward_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(&contents->GetController()));
+    TestNavigationObserver forward_nav_load_observer(shell()->web_contents());
     shell()->web_contents()->GetController().GoToIndex(4);
     forward_nav_load_observer.Wait();
   }
@@ -1033,10 +1097,7 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest,
   // Going back should make the previously swapped-out view to become visible
   // again.
   {
-    WindowedNotificationObserver back_nav_load_observer(
-        NOTIFICATION_NAV_ENTRY_COMMITTED,
-        Source<NavigationController>(
-            &new_shell->web_contents()->GetController()));
+    TestNavigationObserver back_nav_load_observer(new_shell->web_contents());
     new_shell->web_contents()->GetController().GoBack();
     back_nav_load_observer.Wait();
   }
@@ -1118,13 +1179,12 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostManagerTest, LeakingRenderViewHosts) {
   RenderViewHostObserverArray rvh_observers;
 
   GURL navigated_url(test_server()->GetURL("files/title2.html"));
-  GURL view_source_url(chrome::kViewSourceScheme + std::string(":") +
-      navigated_url.spec());
+  GURL view_source_url(kViewSourceScheme + std::string(":") +
+                       navigated_url.spec());
 
   // Let's ensure that when we start with a blank window, navigating away to a
   // view-source URL, we create a new SiteInstance.
-  RenderViewHost* blank_rvh = shell()->web_contents()->
-      GetRenderViewHost();
+  RenderViewHost* blank_rvh = shell()->web_contents()->GetRenderViewHost();
   SiteInstance* blank_site_instance = blank_rvh->GetSiteInstance();
   EXPECT_EQ(shell()->web_contents()->GetURL(), GURL::EmptyGURL());
   EXPECT_EQ(blank_site_instance->GetSiteURL(), GURL::EmptyGURL());

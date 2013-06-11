@@ -106,7 +106,10 @@ class BeginInstallWithManifestFunction
     INVALID_ICON_URL,
 
     // Signin has failed.
-    SIGNIN_FAILED
+    SIGNIN_FAILED,
+
+    // An extension with the same extension id has already been installed.
+    ALREADY_INSTALLED,
   };
 
   BeginInstallWithManifestFunction();
@@ -192,7 +195,6 @@ class CompleteInstallFunction
 
  private:
   void AfterMaybeInstallAppLauncher(bool ok);
-  void OnGetAppLauncherEnabled(std::string id, bool app_launcher_enabled);
 
   scoped_ptr<WebstoreInstaller::Approval> approval_;
 };

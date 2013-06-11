@@ -13,10 +13,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time.h"
 #include "base/timer.h"
-#include "base/utf_string_conversions.h"
 #include "base/win/shortcut.h"
 #include "base/win/windows_version.h"
 #include "chrome/app/chrome_dll_resource.h"
@@ -311,6 +311,7 @@ class AppListController : public AppListServiceImpl {
   virtual void DismissAppList() OVERRIDE;
   virtual bool IsAppListVisible() const OVERRIDE;
   virtual void EnableAppList() OVERRIDE;
+  virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
   virtual AppListControllerDelegate* CreateControllerDelegate() OVERRIDE;
 
   // AppListServiceImpl overrides:
@@ -409,8 +410,7 @@ void AppListControllerDelegateWin::ViewClosing() {
 }
 
 gfx::NativeWindow AppListControllerDelegateWin::GetAppListWindow() {
-  app_list::AppListView* view = AppListController::GetInstance()->GetView();
-  return view ? view->GetWidget()->GetNativeWindow() : NULL;
+  return AppListController::GetInstance()->GetAppListWindow();
 }
 
 gfx::ImageSkia AppListControllerDelegateWin::GetWindowIcon() {
@@ -462,12 +462,12 @@ void AppListControllerDelegateWin::CreateNewWindow(Profile* profile,
 
 void AppListControllerDelegateWin::ActivateApp(
     Profile* profile, const extensions::Extension* extension, int event_flags) {
-  AppListServiceImpl::RecordAppListAppLaunch();
   LaunchApp(profile, extension, event_flags);
 }
 
 void AppListControllerDelegateWin::LaunchApp(
     Profile* profile, const extensions::Extension* extension, int event_flags) {
+  AppListServiceImpl::RecordAppListAppLaunch();
   chrome::OpenApplication(chrome::AppLaunchParams(
       profile, extension, NEW_FOREGROUND_TAB));
 }
@@ -481,6 +481,12 @@ AppListController::AppListController()
       weak_factory_(this) {}
 
 AppListController::~AppListController() {
+}
+
+gfx::NativeWindow AppListController::GetAppListWindow() {
+  if (!IsAppListVisible())
+    return NULL;
+  return current_view_ ? current_view_->GetWidget()->GetNativeWindow() : NULL;
 }
 
 AppListControllerDelegate* AppListController::CreateControllerDelegate() {
@@ -705,8 +711,8 @@ gfx::Point AppListController::FindAnchorPoint(
                     view_size.height() / 2 + kSnapOffset);
 
   gfx::Point anchor = FindReferencePoint(display, cursor);
-  anchor.ClampToMin(bounds_rect.origin());
-  anchor.ClampToMax(bounds_rect.bottom_right());
+  anchor.SetToMax(bounds_rect.origin());
+  anchor.SetToMin(bounds_rect.bottom_right());
   return anchor;
 }
 

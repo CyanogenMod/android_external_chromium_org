@@ -104,11 +104,12 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& rects) OVERRIDE {}
+      const std::vector<gfx::Rect>& rects,
+      const ui::LatencyInfo& latency_info) OVERRIDE {}
   virtual void RenderViewGone(base::TerminationStatus status,
                               int error_code) OVERRIDE;
   virtual void WillDestroyRenderWidget(RenderWidgetHost* rwh) { }
-  virtual void Destroy() OVERRIDE {}
+  virtual void Destroy() OVERRIDE;
   virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE {}
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE {}
@@ -227,6 +228,7 @@ class TestRenderViewHost
                      RenderViewHostDelegate* delegate,
                      RenderWidgetHostDelegate* widget_delegate,
                      int routing_id,
+                     int main_frame_routing_id,
                      bool swapped_out);
   virtual ~TestRenderViewHost();
 

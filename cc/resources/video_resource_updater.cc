@@ -217,7 +217,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     {
       ResourceProvider::ScopedWriteLockSoftware lock(
           resource_provider_, plane_resources[0].resource_id);
-      video_renderer_->Paint(video_frame,
+      video_renderer_->Paint(video_frame.get(),
                              lock.sk_canvas(),
                              video_frame->visible_rect(),
                              0xff);
@@ -365,7 +365,7 @@ void VideoResourceUpdater::ReturnTexture(
     unsigned resource_id,
     unsigned sync_point,
     bool lost_resource) {
-  if (!updater) {
+  if (!updater.get()) {
     // Resource was already deleted.
     return;
   }
@@ -379,7 +379,7 @@ void VideoResourceUpdater::RecycleResource(
     RecycleResourceData data,
     unsigned sync_point,
     bool lost_resource) {
-  if (!updater) {
+  if (!updater.get()) {
     // Resource was already deleted.
     return;
   }

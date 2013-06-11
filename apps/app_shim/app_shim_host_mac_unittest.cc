@@ -28,19 +28,14 @@ class TestingAppShimHost : public AppShimHost {
     fails_profile_ = fails_profile;
   }
 
-  void set_fails_launch(bool fails_launch) {
-    fails_launch_ = fails_launch;
-  }
-
  protected:
-  virtual Profile* FetchProfileForDirectory(const std::string& profile_dir)
+  virtual Profile* FetchProfileForDirectory(const base::FilePath& profile_dir)
       OVERRIDE;
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
  private:
   Profile* test_profile_;
   bool fails_profile_;
-  bool fails_launch_;
 
   ScopedVector<IPC::Message> sent_messages_;
 
@@ -49,8 +44,7 @@ class TestingAppShimHost : public AppShimHost {
 
 TestingAppShimHost::TestingAppShimHost(Profile* profile)
     : test_profile_(profile),
-      fails_profile_(false),
-      fails_launch_(false) {
+      fails_profile_(false) {
 }
 
 bool TestingAppShimHost::ReceiveMessage(IPC::Message* message) {
@@ -65,17 +59,32 @@ bool TestingAppShimHost::Send(IPC::Message* message) {
 }
 
 Profile* TestingAppShimHost::FetchProfileForDirectory(
-    const std::string& profile_dir) {
+    const base::FilePath& profile_dir) {
   return fails_profile_ ? NULL : test_profile_;
 }
+
+const char kTestAppId[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const char kTestProfileDir[] = "Default";
 
 class AppShimHostTest : public testing::Test,
                         public apps::AppShimHandler {
  public:
-  AppShimHostTest() : launch_count_(0), close_count_(0), focus_count_(0) {}
+  AppShimHostTest() : fail_launch_(false),
+                      launch_count_(0),
+                      launch_now_count_(0),
+                      close_count_(0),
+                      focus_count_(0),
+                      quit_count_(0) {}
 
   TestingAppShimHost* host() { return host_.get(); }
   TestingProfile* profile() { return profile_.get(); }
+
+  void LaunchApp(bool launch_now) {
+    EXPECT_TRUE(host()->ReceiveMessage(new AppShimHostMsg_LaunchApp(
+        base::FilePath(kTestProfileDir), kTestAppId,
+        launch_now ? apps::APP_SHIM_LAUNCH_NORMAL :
+            apps::APP_SHIM_LAUNCH_REGISTER_ONLY)));
+  }
 
   bool LaunchWasSuccessful() {
     EXPECT_EQ(1u, host()->sent_messages().size());
@@ -91,17 +100,24 @@ class AppShimHostTest : public testing::Test,
   }
 
  protected:
-  virtual bool OnShimLaunch(Host* host) OVERRIDE {
+  virtual bool OnShimLaunch(Host* host,
+                            apps::AppShimLaunchType launch_type) OVERRIDE {
     ++launch_count_;
-    return true;
+    if (launch_type == apps::APP_SHIM_LAUNCH_NORMAL)
+      ++launch_now_count_;
+    return !fail_launch_;
   }
 
   virtual void OnShimClose(Host* host) OVERRIDE { ++close_count_; }
   virtual void OnShimFocus(Host* host) OVERRIDE { ++focus_count_; }
+  virtual void OnShimQuit(Host* host) OVERRIDE { ++quit_count_; }
 
+  bool fail_launch_;
   int launch_count_;
+  int launch_now_count_;
   int close_count_;
   int focus_count_;
+  int quit_count_;
 
  private:
   virtual void SetUp() OVERRIDE {
@@ -116,40 +132,54 @@ class AppShimHostTest : public testing::Test,
   DISALLOW_COPY_AND_ASSIGN(AppShimHostTest);
 };
 
-const char kTestAppId[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const char kTestProfileDir[] = "Default";
 
 }  // namespace
 
 TEST_F(AppShimHostTest, TestLaunchAppWithHandler) {
   apps::AppShimHandler::RegisterHandler(kTestAppId, this);
-  EXPECT_TRUE(host()->ReceiveMessage(
-      new AppShimHostMsg_LaunchApp(kTestProfileDir, kTestAppId)));
+  LaunchApp(true);
   EXPECT_EQ(kTestAppId,
             implicit_cast<apps::AppShimHandler::Host*>(host())->GetAppId());
   EXPECT_TRUE(LaunchWasSuccessful());
   EXPECT_EQ(1, launch_count_);
+  EXPECT_EQ(1, launch_now_count_);
   EXPECT_EQ(0, focus_count_);
   EXPECT_EQ(0, close_count_);
 
   EXPECT_TRUE(host()->ReceiveMessage(new AppShimHostMsg_FocusApp()));
   EXPECT_EQ(1, focus_count_);
 
+  EXPECT_TRUE(host()->ReceiveMessage(new AppShimHostMsg_QuitApp()));
+  EXPECT_EQ(1, quit_count_);
+
   SimulateDisconnect();
   EXPECT_EQ(1, close_count_);
   apps::AppShimHandler::RemoveHandler(kTestAppId);
 }
 
+TEST_F(AppShimHostTest, TestNoLaunchNow) {
+  apps::AppShimHandler::RegisterHandler(kTestAppId, this);
+  LaunchApp(false);
+  EXPECT_EQ(kTestAppId,
+            implicit_cast<apps::AppShimHandler::Host*>(host())->GetAppId());
+  EXPECT_TRUE(LaunchWasSuccessful());
+  EXPECT_EQ(1, launch_count_);
+  EXPECT_EQ(0, launch_now_count_);
+  EXPECT_EQ(0, focus_count_);
+  EXPECT_EQ(0, close_count_);
+  apps::AppShimHandler::RemoveHandler(kTestAppId);
+}
+
 TEST_F(AppShimHostTest, TestFailProfile) {
   host()->set_fails_profile(true);
-  host()->ReceiveMessage(
-      new AppShimHostMsg_LaunchApp(kTestProfileDir, kTestAppId));
+  LaunchApp(true);
   ASSERT_FALSE(LaunchWasSuccessful());
 }
 
 TEST_F(AppShimHostTest, TestFailLaunch) {
-  host()->set_fails_launch(true);
-  host()->ReceiveMessage(
-      new AppShimHostMsg_LaunchApp(kTestProfileDir, kTestAppId));
+  apps::AppShimHandler::RegisterHandler(kTestAppId, this);
+  fail_launch_ = true;
+  LaunchApp(true);
   ASSERT_FALSE(LaunchWasSuccessful());
+  apps::AppShimHandler::RemoveHandler(kTestAppId);
 }

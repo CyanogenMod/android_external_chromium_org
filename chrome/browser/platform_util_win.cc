@@ -13,8 +13,8 @@
 #include "base/bind_helpers.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_comptr.h"
@@ -84,9 +84,7 @@ void ShowItemInFolderOnFileThread(const base::FilePath& full_path) {
   if (FAILED(hr))
     return;
 
-  const ITEMIDLIST* highlight[] = {
-    {file_item},
-  };
+  const ITEMIDLIST* highlight[] = { file_item };
 
   hr = (*open_folder_and_select_itemsPtr)(dir_item, arraysize(highlight),
                                           highlight, NULL);

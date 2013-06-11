@@ -6,11 +6,11 @@
 
 #include <string>
 
-#include "base/utf_string_conversions.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamSource.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamTrack.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
+#include "base/strings/utf_string_conversions.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/libjingle/source/talk/media/base/videocapturer.h"
 
 namespace content {
@@ -31,7 +31,7 @@ void MockMediaStreamRegistry::Init(const std::string& stream_url) {
   WebKit::WebString webkit_stream_label(UTF8ToUTF16(stream->label()));
   test_stream_.initialize(webkit_stream_label,
                           webkit_audio_tracks, webkit_video_tracks);
-  test_stream_.setExtraData(new MediaStreamExtraData(stream, false));
+  test_stream_.setExtraData(new MediaStreamExtraData(stream.get(), false));
 }
 
 bool MockMediaStreamRegistry::AddVideoTrack(const std::string& track_id) {

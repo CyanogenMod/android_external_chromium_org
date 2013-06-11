@@ -23,7 +23,7 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
 #include "grit/content_resources.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/zlib/google/zip.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/base/origin_url_conversions.h"
@@ -104,7 +104,7 @@ void IndexedDBInternalsUI::GetAllOriginsOnWebkitThread(
   for (ContextList::const_iterator iter = contexts->begin();
        iter != contexts->end();
        ++iter, ++path_iter) {
-    IndexedDBContext* context = *iter;
+    IndexedDBContext* context = iter->get();
     const base::FilePath& context_path = *path_iter;
 
     scoped_ptr<std::vector<IndexedDBInfo> > info_list(
@@ -174,7 +174,7 @@ void IndexedDBInternalsUI::DownloadOriginData(const base::ListValue* args) {
       &FindContext, partition_path, &result_partition, &result_context);
   BrowserContext::ForEachStoragePartition(browser_context, cb);
   DCHECK(result_partition);
-  DCHECK(result_context);
+  DCHECK(result_context.get());
 
   BrowserThread::PostTask(
       BrowserThread::WEBKIT_DEPRECATED,
@@ -301,8 +301,8 @@ void IndexedDBInternalsUI::OnDownloadStarted(
     net::Error error) {
 
   if (error != net::OK) {
-    LOG(ERROR) << "Error downloading database dump: "
-               << net::ErrorToString(error);
+    LOG(ERROR)
+        << "Error downloading database dump: " << net::ErrorToString(error);
     return;
   }
 

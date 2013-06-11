@@ -12,8 +12,8 @@
 #include "base/files/file_path.h"
 #include "base/process.h"
 #include "base/shared_memory.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/common/autocomplete_match_type.h"
@@ -21,12 +21,12 @@
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/instant_types.h"
-#include "chrome/common/language_detection_details.h"
 #include "chrome/common/nacl_types.h"
 #include "chrome/common/omnibox_focus_state.h"
 #include "chrome/common/search_provider.h"
 #include "chrome/common/search_types.h"
-#include "chrome/common/translate_errors.h"
+#include "chrome/common/translate/language_detection_details.h"
+#include "chrome/common/translate/translate_errors.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/top_controls_state.h"
 #include "ipc/ipc_channel_handle.h"
@@ -123,6 +123,7 @@ IPC_ENUM_TRAITS(ChromeViewHostMsg_GetPluginInfo_Status::Value)
 IPC_ENUM_TRAITS(InstantCompleteBehavior)
 IPC_ENUM_TRAITS(InstantSizeUnits)
 IPC_ENUM_TRAITS(InstantSuggestionType)
+IPC_ENUM_TRAITS(OmniboxFocusChangeReason)
 IPC_ENUM_TRAITS(OmniboxFocusState)
 IPC_ENUM_TRAITS(search_provider::OSDDType)
 IPC_ENUM_TRAITS(search_provider::InstallState)
@@ -250,7 +251,9 @@ IPC_STRUCT_TRAITS_BEGIN(LanguageDetectionDetails)
   IPC_STRUCT_TRAITS_MEMBER(content_language)
   IPC_STRUCT_TRAITS_MEMBER(cld_language)
   IPC_STRUCT_TRAITS_MEMBER(is_cld_reliable)
+  IPC_STRUCT_TRAITS_MEMBER(html_root_language)
   IPC_STRUCT_TRAITS_MEMBER(adopted_language)
+  IPC_STRUCT_TRAITS_MEMBER(contents)
 IPC_STRUCT_TRAITS_END()
 
 //-----------------------------------------------------------------------------
@@ -360,19 +363,25 @@ IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFontInformation,
                     string16 /* omnibox_font */,
                     size_t /* omnibox_font_size */)
 
-IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxKeyCaptureChanged,
-                    bool /* is_key_capture_enabled */)
+IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFocusChanged,
+                    OmniboxFocusState /* new_focus_state */,
+                    OmniboxFocusChangeReason /* reason */)
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxMostVisitedItemsChanged,
-                    std::vector<InstantMostVisitedItemIDPair> /* items */)
+                    std::vector<InstantMostVisitedItem> /* items */)
 
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxDeleteMostVisitedItem,
-                    InstantRestrictedID /* most_visited_item_id */)
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SearchBoxDeleteMostVisitedItem,
+                    int /* page_id */,
+                    GURL /* url */)
 
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxUndoMostVisitedDeletion,
-                    InstantRestrictedID /* most_visited_item_id */)
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SearchBoxUndoMostVisitedDeletion,
+                    int /* page_id */,
+                    GURL /* url */)
 
-IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_SearchBoxUndoAllMostVisitedDeletions)
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxUndoAllMostVisitedDeletions,
+                    int /* page_id */)
+
+IPC_MESSAGE_ROUTED0(ChromeViewMsg_SearchBoxToggleVoiceSearch)
 
 // Toggles visual muting of the render view area. This is on when a constrained
 // window is showing.

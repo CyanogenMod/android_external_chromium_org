@@ -10,7 +10,7 @@
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaStreamRegistry.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
 
@@ -190,7 +190,7 @@ bool VideoDestinationHandler::Open(
   // Gets a handler to the native video track, which owns the |writer|.
   MediaStreamExtraData* extra_data =
       static_cast<MediaStreamExtraData*>(stream.extraData());
-  webrtc::MediaStreamInterface* native_stream = extra_data->stream();
+  webrtc::MediaStreamInterface* native_stream = extra_data->stream().get();
   DCHECK(native_stream);
   VideoTrackVector video_tracks = native_stream->GetVideoTracks();
   // Currently one supports one video track per media stream.

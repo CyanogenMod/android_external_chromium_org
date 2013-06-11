@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 
@@ -63,7 +63,7 @@ int PlatformFontMac::GetAverageCharacterWidth() const {
   return average_width_;
 }
 
-int PlatformFontMac::GetStringWidth(const string16& text) const {
+int PlatformFontMac::GetStringWidth(const base::string16& text) const {
   return Canvas::GetStringWidth(text,
                                 Font(const_cast<PlatformFontMac*>(this)));
 }

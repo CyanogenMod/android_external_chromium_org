@@ -10,9 +10,9 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/themes/browser_theme_pack.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -153,7 +153,7 @@ void PerfUITestSuite::BuildCachedThemePakIn(
                         *valid_value,
                         Extension::NO_FLAGS,
                         &error);
-  if (!extension)
+  if (!extension.get())
     LOG(FATAL) << "Error loading theme extension: " << error;
 
   // Build the "Cached Theme.pak" file in the template. (It's not committed
@@ -166,8 +166,8 @@ void PerfUITestSuite::BuildCachedThemePakIn(
                                           &message_loop_);
 
   scoped_refptr<BrowserThemePack> theme(
-      BrowserThemePack::BuildFromExtension(extension));
-  if (!theme)
+      BrowserThemePack::BuildFromExtension(extension.get()));
+  if (!theme.get())
     LOG(FATAL) << "Failed to load theme from extension";
 
   theme->WriteToDisk(extension_base.AppendASCII("Cached Theme.pak"));

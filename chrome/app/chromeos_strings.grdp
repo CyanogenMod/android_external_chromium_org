@@ -146,6 +146,12 @@ Press any key to continue exploring.
   <message name="IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_DESCRIPTION" desc="Description for the flag to disable Chrome Office Viewer component extension.">
     Disable Chrome Office Viewer component extension for testing purpose.
   </message>
+  <message name="IDS_FLAGS_ENABLE_QUICKOFFICE_DESKTOP_EDIT_NAME" desc="Name for the flag to enable office document editing.">
+    Enable document editing.
+  </message>
+  <message name="IDS_FLAGS_ENABLE_QUICKOFFICE_DESKTOP_EDIT_DESCRIPTION" desc="Description for the flag to enable office document editing.">
+    Enable document editing, instead of viewing.
+  </message>
   <message name="IDS_OFFERS_CONSENT_INFOBAR_LABEL_LEARN_MORE" desc="Text of the Learn More link in the echo dialog.">
     Learn More
   </message>
@@ -245,6 +251,15 @@ Press any key to continue exploring.
   <message name="IDS_EULA_SCREEN_TITLE" desc="Title of the OOBE EULA screen">
     The small print
   </message>
+  <message name="IDS_AUTOSTART_WARNING_TITLE" desc="Title of the kiosk autostart screen">
+    Auto-start permission requested
+  </message>
+  <message name="IDS_KIOSK_AUTOSTART_SCREEN_WARNING_MSG" desc="Warning text shown on kiosk autolaunch screen above the exclamation icon.">
+    Do you want to automatically start this app when the machine turns on?
+  </message>
+  <message name="IDS_KIOSK_AUTOSTART_CONFIRM" desc="Confirm button text">
+    Confirm
+  </message>
   <message name="IDS_RESET_SCREEN_TITLE" desc="Title of the reset screen">
     Factory reset
   </message>
@@ -307,6 +322,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OOBE_SPOKEN_FEEDBACK_OPTION" desc="Spoken feedback option shown on OOBE screens accessibility menu.">
     Spoken feedback
+  </message>
+  <message name="IDS_OOBE_LARGE_CURSOR_OPTION" desc="Large cursor option shown on OOBE screens accessibility menu.">
+    Large Cursor
   </message>
   <message name="IDS_OOBE_HIGH_CONTRAST_MODE_OPTION" desc="High contrast mode option shown on OOBE screens accessibility menu.">
     High contrast
@@ -474,6 +492,9 @@ Press any key to continue exploring.
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_SUCCESS_BUTTON_TITLE" desc="Text for button on a screen with successful locally managed user creation text">
     Got it!
   </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_HANDLE_ERROR_BUTTON_TEXT" desc="Text for button on an error screen that closes locally managed user creation dialog">
+    Okay
+  </message>
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_PROFILE_CREATED_TEXT" desc="Messsage indicating that profile was created.">
     A profile for <ph name="USER_DISPLAY_NAME">$1<ex>John</ex></ph> has been created.
   </message>
@@ -519,6 +540,9 @@ Press any key to continue exploring.
   <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE" desc="Text shown next to progress indicator upon managed user creation.">
     Creating profile...
   </message>
+  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_TIMEOUT_MESSAGE" desc="Text shown at the place of progess indicator if creation takes too long and should be cancelled.">
+    Profile takes too long to create. You may want to cancel process and retry later.
+  </message>
   <message name="IDS_USER_IS_LOCALLY_MANAGED_BY_NOTICE" desc="Text for notifications showing that this user is locally managed">
     This user is managed by <ph name="MANAGER_EMAIL">$1<ex>john.doe@example.com</ex></ph>. Device usage and history may be tracked.
   </message>
@@ -533,6 +557,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_KIOSK_APPS_BUTTON" desc="Text shown on a button that brings up the kiosk apps menu on login screen">
     Apps
+  </message>
+  <message name="IDS_CANCEL_USER_ADDING" desc="Text shown on a button that cancel adding user into multiprofile session.">
+    Cancel multiple sign-in
   </message>
   <message name="IDS_LOGIN_OOBE_HELP_DIALOG_TITLE" desc="Default title for help dialogs during OOBE/login">
     Help
@@ -803,6 +830,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_EXPLANATION" desc="In the settings tab, this text explains the accessibiliy features.">
     Enable accessibility features to make your device easier to use.
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_LARGE_CURSOR_DESCRIPTION" desc="In the settings tab, the text next to the checkbox for the large cursor.">
+    Enable Large Cursor
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_SPOKEN_FEEDBACK_DESCRIPTION" desc="In the settings tab, the text next to the checkbox for spoken feedback.">
     Enable spoken feedback
@@ -2254,6 +2284,24 @@ Press any key to continue exploring.
   <message name="IDS_STATUSBAR_NETWORK_DEVICE_CELLULAR" desc="The cellular network device.">
     Mobile Data
   </message>
+  <message name="IDS_NETWORK_TYPE_ETHERNET" desc="The ethernet network type.">
+    Ethernet
+  </message>
+  <message name="IDS_NETWORK_TYPE_WIFI" desc="The wifi network type.">
+    Wi-Fi
+  </message>
+  <message name="IDS_NETWORK_TYPE_WIMAX" desc="The wimax network type.">
+    WiMAX
+  </message>
+  <message name="IDS_NETWORK_TYPE_BLUETOOTH" desc="The bluetooth network type.">
+    Bluetooth
+  </message>
+  <message name="IDS_NETWORK_TYPE_CELLULAR" desc="The cellular network type.">
+    cellular
+  </message>
+  <message name="IDS_NETWORK_TYPE_VPN" desc="The vpn network type.">
+    VPN
+  </message>
   <message name="IDS_STATUSBAR_NETWORK_DEVICE_CONNECTING" desc="The network device status connecting.">
     Connecting...
   </message>
@@ -2683,11 +2731,8 @@ Battery full
   <message name="IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_PRL_VERSION" desc="Label for cellular network modem PRL (Preferred Roaming List) version under chrome://options/internet">
     PRL version:
   </message>
-  <message name="IDS_OPTIONS_KIOSK" desc="Name of the kiosk management section on chrome settings page.">
-    Kiosk
-  </message>
-  <message name="IDS_OPTIONS_KIOSK_MANAGE_BUTTON" desc="Label of the button to bring up kiosk management overlay in the kiosk management section on chrome settings page.">
-    Manage kiosk applications
+  <message name="IDS_EXTENSIONS_ADD_KIOSK_APP_BUTTON" desc="Label of the button to bring up kiosk management overlay on chrome extensions page.">
+    Add kiosk application...
   </message>
   <message name="IDS_OPTIONS_KIOSK_OVERLAY_TITLE" desc="The title text of the kiosk settings overlay.">
     Manage Kiosk Applications
@@ -3642,4 +3687,19 @@ Battery full
   <message name="IDS_KIOSK_APP_ERROR_USER_CANCEL" desc="Error message used when a kiosk app launch is canceled by user.">
     Kiosk application launch canceled.
   </message>
+
+  <!-- About Chrome page -->
+  <message name="IDS_UPGRADE_OFFLINE" desc="Status label: Currently offline">
+    You are currently offline.
+  </message>
+  <message name="IDS_UPGRADE_DISALLOWED" desc="Status label: Upgrade disallowed for the current network">
+    You are currently connected to the <ph name="NETWORK_TYPE">$1<ex>cellular</ex></ph> network.
+  </message>
+  <message name="IDS_UPGRADE_NETWORK_LIST_CELLULAR_ALLOWED" desc="Status label: for updates you need to connect to an Ethernet or Wi-Fi">
+    To check for updates, please use Ethernet or Wi-Fi.
+  </message>
+  <message name="IDS_UPGRADE_NETWORK_LIST_CELLULAR_DISALLOWED" desc="Status label: for updates you need to connect to an Ethernet, mobile data or Wi-Fi">
+    To check for updates, please use Ethernet, Wi-Fi or mobile data.
+  </message>
+
 </grit-part>

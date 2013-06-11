@@ -6,22 +6,22 @@
 
 #include "base/logging.h"
 #include "base/platform_file.h"
-#include "base/utf_string_conversions.h"
-#include "content/common/database_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "content/child/database_util.h"
+#include "content/child/fileapi/webfilesystem_impl.h"
+#include "content/child/indexed_db/proxy_webidbfactory_impl.h"
+#include "content/child/thread_safe_sender.h"
+#include "content/child/webblobregistry_impl.h"
+#include "content/child/webmessageportchannel_impl.h"
 #include "content/common/file_utilities_messages.h"
 #include "content/common/mime_registry_messages.h"
-#include "content/common/thread_safe_sender.h"
-#include "content/common/webmessageportchannel_impl.h"
-#include "content/common_child/fileapi/webfilesystem_impl.h"
-#include "content/common_child/indexed_db/proxy_webidbfactory_impl.h"
-#include "content/common_child/webblobregistry_impl.h"
 #include "content/worker/worker_thread.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "net/base/mime_util.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebBlobRegistry.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFileInfo.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/public/platform/WebBlobRegistry.h"
+#include "third_party/WebKit/public/platform/WebFileInfo.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
@@ -96,7 +96,7 @@ WebFileSystem* WorkerWebKitPlatformSupportImpl::fileSystem() {
 
 WebFileUtilities* WorkerWebKitPlatformSupportImpl::fileUtilities() {
   if (!file_utilities_) {
-    file_utilities_.reset(new FileUtilities(thread_safe_sender_));
+    file_utilities_.reset(new FileUtilities(thread_safe_sender_.get()));
     file_utilities_->set_sandbox_enabled(sandboxEnabled());
   }
   return file_utilities_.get();
@@ -282,8 +282,8 @@ WebString WorkerWebKitPlatformSupportImpl::preferredExtensionForMIMEType(
 }
 
 WebBlobRegistry* WorkerWebKitPlatformSupportImpl::blobRegistry() {
-  if (!blob_registry_.get() && thread_safe_sender_)
-    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
+  if (!blob_registry_.get() && thread_safe_sender_.get())
+    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_.get()));
   return blob_registry_.get();
 }
 

@@ -7,7 +7,7 @@
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/google_apis/event_logger.h"
 
 namespace sync_file_system {
@@ -41,10 +41,6 @@ void Log(logging::LogSeverity severity,
          const tracked_objects::Location& location,
          const char* format,
          ...) {
-  // Ignore log if level severity is not high enough.
-  if (severity < logging::GetMinLogLevel())
-    return;
-
   std::string what;
 
   va_list args;
@@ -61,14 +57,19 @@ void Log(logging::LogSeverity severity,
       location.line_number(),
       what.c_str());
 
-  // Log to WebUI.
+  // Log to WebUI regardless of LogSeverity (e.g. ignores command line flags).
   // On thread-safety: LazyInstance guarantees thread-safety for the object
   // creation. EventLogger::Log() internally maintains the lock.
   google_apis::EventLogger* ptr = g_logger.Pointer();
   ptr->Log("%s", log_output.c_str());
 
-  // Log to console.
-  logging::RawLog(severity, log_output.c_str());
+  // Log to console if the severity is at or above the min level. Need to do
+  // check manually here as using LogMessage directly instead of the LOG macro
+  // doesn't invoke the log severity check.
+  if (severity < logging::GetMinLogLevel())
+    return;
+  logging::LogMessage(location.file_name(), location.line_number(), severity)
+      .stream() << what;
 }
 
 std::vector<google_apis::EventLogger::Event> GetLogHistory() {

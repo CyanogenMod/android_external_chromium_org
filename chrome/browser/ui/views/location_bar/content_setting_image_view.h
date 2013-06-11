@@ -5,11 +5,11 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_LOCATION_BAR_CONTENT_SETTING_IMAGE_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_LOCATION_BAR_CONTENT_SETTING_IMAGE_VIEW_H_
 
-#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/views/location_bar/touchable_location_bar_view.h"
 #include "chrome/common/content_settings_types.h"
 #include "ui/base/animation/animation_delegate.h"
+#include "ui/base/animation/slide_animation.h"
 #include "ui/gfx/font.h"
 #include "ui/views/painter.h"
 #include "ui/views/view.h"
@@ -22,10 +22,6 @@ namespace content {
 class WebContents;
 }
 
-namespace ui {
-class SlideAnimation;
-}
-
 namespace views {
 class ImageView;
 class Label;
@@ -34,87 +30,75 @@ class Label;
 // The ContentSettingImageView displays an icon and optional text label for
 // various content settings affordances in the location bar (i.e. plugin
 // blocking, geolocation).
-class ContentSettingImageView : public views::View,
+class ContentSettingImageView : public TouchableLocationBarView,
                                 public ui::AnimationDelegate,
-                                public TouchableLocationBarView,
+                                public views::View,
                                 public views::WidgetObserver {
  public:
-  // |background_images| is the array of images used to draw
-  // the label animation background (if any).
   ContentSettingImageView(ContentSettingsType content_type,
-                          const int background_images[],
                           LocationBarView* parent,
                           const gfx::Font& font,
                           int font_y_offset,
-                          SkColor font_color);
+                          SkColor text_color,
+                          SkColor parent_background_color);
   virtual ~ContentSettingImageView();
+
+  // TouchableLocationBarView:
+  virtual int GetBuiltInHorizontalPadding() const OVERRIDE;
 
   // Update the decoration from the shown WebContents.
   void Update(content::WebContents* web_contents);
 
-  void SetImage(const gfx::ImageSkia* image_skia);
-  void SetTooltipText(const string16& tooltip);
+ private:
+  // Number of milliseconds spent animating open; also the time spent animating
+  // closed.
+  static const int kOpenTimeMS;
 
-  // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  // The total animation time, including open and close as well as an
+  // intervening "stay open" period.
+  static const int kAnimationDurationMS;
 
-  // ui::EventHandler overrides:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  // Amount of padding at the edges of the bubble.  If |by_icon| is true, this
+  // is the padding next to the icon; otherwise it's the padding next to the
+  // label.  (We increase padding next to the label by the amount of padding
+  // "built in" to the icon in order to make the bubble appear to have
+  // symmetrical padding.)
+  static int GetBubbleOuterPadding(bool by_icon);
 
-  // ui::AnimationDelegate overrides:
+  // ui::AnimationDelegate:
   virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
   virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
   virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE;
 
-  // TouchableLocationBarView.
-  virtual int GetBuiltInHorizontalPadding() const OVERRIDE;
-
-  // views::WidgetObserver override:
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
-
- private:
-  // Invoked when the user clicks on the control.
-  void OnClick(LocationBarView* parent);
-
-  // Start animating the text label if it is not already happening.
-  void StartLabelAnimation(string16 animated_text, int duration_ms);
-  int GetTextAnimationSize(double state, int text_size);
-
-  void PauseAnimation();
-  void UnpauseAnimation();
-
-  // Call to always draw the text by the (optional) icon. Used to draw the web
-  // intents button.
-  void AlwaysDrawText();
-
-  // views::View overrides:
+  // views::View:
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void Layout() OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual void OnPaintBackground(gfx::Canvas* canvas) OVERRIDE;
 
-  // Notify the possibly-running animation that it was clicked.
-  void AnimationOnClick();
+  // views::WidgetObserver:
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
-  // The owning LocationBarView. Weak pointer.
-  LocationBarView* parent_;
+  bool background_showing() const {
+    return slide_animator_.is_animating() || pause_animation_;
+  }
 
-  // Child views that comprise the bubble.
-  views::Label* text_label_;
+  int GetTotalSpacingWhileAnimating() const;
+  void OnClick();
+
+  LocationBarView* parent_;  // Weak, owns us.
+  scoped_ptr<ContentSettingImageModel> content_setting_image_model_;
+  scoped_ptr<views::Painter> background_painter_;
   views::ImageView* icon_;
-
-  scoped_ptr<ui::SlideAnimation> slide_animator_;
-  gfx::Font font_;
-  SkColor font_color_;
+  views::Label* text_label_;
+  ui::SlideAnimation slide_animator_;
   bool pause_animation_;
   double pause_animation_state_;
-  int text_size_;
-  int visible_text_size_;
-  bool force_draw_text_;
-  views::HorizontalPainter background_painter_;
-  scoped_ptr<ContentSettingImageModel> content_setting_image_model_;
   views::Widget* bubble_widget_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(ContentSettingImageView);
+  DISALLOW_COPY_AND_ASSIGN(ContentSettingImageView);
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_LOCATION_BAR_CONTENT_SETTING_IMAGE_VIEW_H_

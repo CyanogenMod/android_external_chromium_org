@@ -5,9 +5,9 @@
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_utils_gtk.h"
 
 #include "base/pickle.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"

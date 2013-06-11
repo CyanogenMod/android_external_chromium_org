@@ -16,8 +16,8 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/system/web_notification/web_notification_tray.h"
 #include "base/bind.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -347,16 +347,21 @@ void WindowTypeLauncher::ButtonPressed(views::Button* sender,
                                             base::TimeDelta::FromSeconds(5));
 
   } else if (sender == show_web_notification_) {
+    scoped_ptr<message_center::Notification> notification;
+    notification.reset(new message_center::Notification(
+        message_center::NOTIFICATION_TYPE_SIMPLE,
+        "id0",
+        ASCIIToUTF16("Test Shell Web Notification"),
+        ASCIIToUTF16("Notification message body."),
+        gfx::Image(),
+        ASCIIToUTF16("www.testshell.org"),
+        "" /* extension id */,
+        NULL /* optional_fields */,
+        NULL /* delegate */));
+
     ash::Shell::GetPrimaryRootWindowController()->shelf()->status_area_widget()
         ->web_notification_tray()->message_center()
-        ->AddNotification(message_center::NOTIFICATION_TYPE_SIMPLE,
-                          "id0",
-                          ASCIIToUTF16("Test Shell Web Notification"),
-                          ASCIIToUTF16("Notification message body."),
-                          ASCIIToUTF16("www.testshell.org"),
-                          "" /* extension id */,
-                          NULL /* optional_fields */,
-                          NULL /* delegate */);
+        ->AddNotification(notification.Pass());
   }
 #if !defined(OS_MACOSX)
       else if (sender == examples_button_) {

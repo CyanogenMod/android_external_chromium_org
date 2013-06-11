@@ -4,15 +4,15 @@
 
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 
+#include "base/command_line.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
@@ -20,6 +20,7 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_contents_view.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
@@ -81,10 +82,10 @@ OmniboxState::OmniboxState(const OmniboxEditModel::State& model_state,
 OmniboxState::~OmniboxState() {}
 
 // This will write |url| and |text| to the clipboard as a well-formed URL.
-void DoCopyURL(const GURL& url, const string16& text, Profile* profile) {
+void DoCopyURL(const GURL& url, const string16& text) {
   BookmarkNodeData data;
   data.ReadFromTuple(url, text);
-  data.WriteToClipboard(profile);
+  data.WriteToClipboard();
 }
 
 }  // namespace
@@ -432,17 +433,21 @@ void OmniboxViewViews::SelectAll(bool reversed) {
 
 void OmniboxViewViews::UpdatePopup() {
   model()->SetInputInProgress(true);
-  if (ime_candidate_window_open_)
-    return;
   if (!model()->has_focus())
     return;
 
+  // Hide the inline autocompletion for IME users.
+  location_bar_view_->SetImeInlineAutocompletion(string16());
+
   // Prevent inline autocomplete when the caret isn't at the end of the text,
-  // and during IME composition editing.
+  // and during IME composition editing unless
+  // |kEnableOmniboxAutoCompletionForIme| is enabled.
   const ui::Range sel = GetSelectedRange();
   model()->StartAutocomplete(
       !sel.is_empty(),
-      sel.GetMax() < text().length() || IsIMEComposing());
+      sel.GetMax() < text().length() ||
+      (IsIMEComposing() && !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableOmniboxAutoCompletionForIme)));
 }
 
 void OmniboxViewViews::SetFocus() {
@@ -475,8 +480,14 @@ bool OmniboxViewViews::OnInlineAutocompleteTextMaybeChanged(
     size_t user_text_length) {
   if (display_text == text())
     return false;
-  ui::Range range(display_text.size(), user_text_length);
-  SetTextAndSelectedRange(display_text, range);
+
+  if (IsIMEComposing()) {
+    location_bar_view_->SetImeInlineAutocompletion(
+        display_text.substr(user_text_length));
+  } else {
+    ui::Range range(display_text.size(), user_text_length);
+    SetTextAndSelectedRange(display_text, range);
+  }
   TextChanged();
   return true;
 }
@@ -567,7 +578,11 @@ int OmniboxViewViews::TextWidth() const {
 }
 
 bool OmniboxViewViews::IsImeComposing() const {
-  return false;
+  return IsIMEComposing();
+}
+
+bool OmniboxViewViews::IsImeShowingPopup() const {
+  return ime_candidate_window_open_;
 }
 
 int OmniboxViewViews::GetMaxEditWidth(int entry_width) const {
@@ -618,7 +633,7 @@ bool OmniboxViewViews::HandleKeyEvent(views::Textfield* textfield,
          event.key_code() == ui::VKEY_RIGHT) ||
         (direction == base::i18n::RIGHT_TO_LEFT &&
          event.key_code() == ui::VKEY_LEFT)) {
-      return model()->CommitSuggestedText(true);
+      return model()->CommitSuggestedText();
     }
   }
 
@@ -642,13 +657,10 @@ void OmniboxViewViews::OnAfterCutOrCopy() {
   model()->AdjustTextForCopy(GetSelectedRange().GetMin(), IsSelectAll(),
                              &selected_text, &url, &write_url);
   if (write_url) {
-    DoCopyURL(url, selected_text, model()->profile());
+    DoCopyURL(url, selected_text);
   } else {
     ui::ScopedClipboardWriter scoped_clipboard_writer(
-        ui::Clipboard::GetForCurrentThread(),
-        ui::Clipboard::BUFFER_STANDARD,
-        content::BrowserContext::GetMarkerForOffTheRecordContext(
-            model()->profile()));
+        ui::Clipboard::GetForCurrentThread(), ui::Clipboard::BUFFER_STANDARD);
     scoped_clipboard_writer.WriteText(selected_text);
   }
 }
@@ -795,13 +807,11 @@ void OmniboxViewViews::ExecuteCommand(int command_id, int event_flags) {
 void OmniboxViewViews::CandidateWindowOpened(
       chromeos::input_method::InputMethodManager* manager) {
   ime_candidate_window_open_ = true;
-  CloseOmniboxPopup();
 }
 
 void OmniboxViewViews::CandidateWindowClosed(
       chromeos::input_method::InputMethodManager* manager) {
   ime_candidate_window_open_ = false;
-  UpdatePopup();
 }
 #endif
 
@@ -864,9 +874,7 @@ string16 OmniboxViewViews::GetSelectedText() const {
 }
 
 void OmniboxViewViews::CopyURL() {
-  DoCopyURL(toolbar_model()->GetURL(),
-            toolbar_model()->GetText(false),
-            model()->profile());
+  DoCopyURL(toolbar_model()->GetURL(), toolbar_model()->GetText(false));
 }
 
 void OmniboxViewViews::OnPaste() {

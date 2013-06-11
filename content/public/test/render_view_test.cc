@@ -15,7 +15,7 @@
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "content/test/mock_render_process.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
@@ -25,7 +25,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/dom_storage/dom_storage_types.h"
+#include "webkit/common/dom_storage/dom_storage_types.h"
 #include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebFrame;
@@ -39,7 +39,8 @@ using WebKit::WebURLRequest;
 namespace {
 const int32 kOpenerId = -2;
 const int32 kRouteId = 5;
-const int32 kNewWindowRouteId = 6;
+const int32 kMainFrameRouteId = 6;
+const int32 kNewWindowRouteId = 7;
 const int32 kSurfaceId = 42;
 
 }  // namespace
@@ -170,6 +171,7 @@ void RenderViewTest::SetUp() {
       WebPreferences(),
       new SharedRenderViewCounter(0),
       kRouteId,
+      kMainFrameRouteId,
       kSurfaceId,
       dom_storage::kInvalidSessionStorageNamespaceId,
       string16(),

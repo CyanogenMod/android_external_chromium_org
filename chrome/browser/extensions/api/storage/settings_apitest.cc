@@ -222,7 +222,8 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
 #endif
 };
 
-IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, SimpleTest) {
+// Flaky. http://crbug.com/248032
+IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, DISABLED_SimpleTest) {
   ASSERT_TRUE(RunExtensionTest("settings/simple_test")) << message_;
 }
 

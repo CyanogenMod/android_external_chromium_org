@@ -18,8 +18,8 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsMemoryAllocation.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsMemoryAllocation.h"
 #include "ui/gfx/quad_f.h"
 
 class SkBitmap;
@@ -104,8 +104,8 @@ class CC_EXPORT GLRenderer
   virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) OVERRIDE;
   virtual bool BindFramebufferToTexture(DrawingFrame* frame,
                                         const ScopedResource* resource,
-                                        gfx::Rect framebuffer_rect) OVERRIDE;
-  virtual void SetDrawViewportSize(gfx::Size viewport_size) OVERRIDE;
+                                        gfx::Rect target_rect) OVERRIDE;
+  virtual void SetDrawViewport(gfx::Rect window_space_viewport) OVERRIDE;
   virtual void SetScissorTestRect(gfx::Rect scissor_rect) OVERRIDE;
   virtual void ClearFramebuffer(DrawingFrame* frame) OVERRIDE;
   virtual void DoDrawQuad(DrawingFrame* frame, const class DrawQuad*) OVERRIDE;
@@ -289,6 +289,8 @@ class CC_EXPORT GLRenderer
       VideoStreamTextureProgram;
   typedef ProgramBinding<VertexShaderPosTexYUVStretch, FragmentShaderYUVVideo>
       VideoYUVProgram;
+  typedef ProgramBinding<VertexShaderPosTexYUVStretch, FragmentShaderYUVAVideo>
+      VideoYUVAProgram;
 
   // Special purpose / effects shaders.
   typedef ProgramBinding<VertexShaderPos, FragmentShaderColor>
@@ -333,6 +335,8 @@ class CC_EXPORT GLRenderer
       TexCoordPrecision precision);
 
   const VideoYUVProgram* GetVideoYUVProgram(
+      TexCoordPrecision precision);
+  const VideoYUVAProgram* GetVideoYUVAProgram(
       TexCoordPrecision precision);
   const VideoStreamTextureProgram* GetVideoStreamTextureProgram(
       TexCoordPrecision precision);
@@ -390,16 +394,17 @@ class CC_EXPORT GLRenderer
       render_pass_mask_color_matrix_program_aa_highp_;
 
   scoped_ptr<VideoYUVProgram> video_yuv_program_;
+  scoped_ptr<VideoYUVAProgram> video_yuva_program_;
   scoped_ptr<VideoStreamTextureProgram> video_stream_texture_program_;
 
   scoped_ptr<VideoYUVProgram> video_yuv_program_highp_;
+  scoped_ptr<VideoYUVAProgram> video_yuva_program_highp_;
   scoped_ptr<VideoStreamTextureProgram> video_stream_texture_program_highp_;
 
   scoped_ptr<DebugBorderProgram> debug_border_program_;
   scoped_ptr<SolidColorProgram> solid_color_program_;
   scoped_ptr<SolidColorProgramAA> solid_color_program_aa_;
 
-  OutputSurface* output_surface_;
   WebKit::WebGraphicsContext3D* context_;
 
   skia::RefPtr<GrContext> gr_context_;
@@ -407,7 +412,6 @@ class CC_EXPORT GLRenderer
 
   gfx::Rect swap_buffer_rect_;
   gfx::Rect scissor_rect_;
-  bool is_viewport_changed_;
   bool is_backbuffer_discarded_;
   bool discard_backbuffer_when_not_visible_;
   bool is_using_bind_uniform_;
@@ -423,7 +427,6 @@ class CC_EXPORT GLRenderer
   ScopedPtrVector<PendingAsyncReadPixels> pending_async_read_pixels_;
 
   scoped_ptr<ResourceProvider::ScopedWriteLockGL> current_framebuffer_lock_;
-  gfx::Size current_framebuffer_size_;
 
   scoped_refptr<ResourceProvider::Fence> last_swap_fence_;
 

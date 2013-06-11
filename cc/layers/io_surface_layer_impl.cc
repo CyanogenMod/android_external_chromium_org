@@ -4,14 +4,14 @@
 
 #include "cc/layers/io_surface_layer_impl.h"
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "cc/layers/quad_sink.h"
 #include "cc/output/gl_renderer.h"  // For the GLC() macro.
 #include "cc/output/output_surface.h"
 #include "cc/quads/io_surface_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "gpu/GLES2/gl2extchromium.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 
@@ -61,15 +61,17 @@ void IOSurfaceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   io_surface_layer->SetIOSurfaceProperties(io_surface_id_, io_surface_size_);
 }
 
-void IOSurfaceLayerImpl::WillDraw(ResourceProvider* resource_provider) {
-  LayerImpl::WillDraw(resource_provider);
+bool IOSurfaceLayerImpl::WillDraw(DrawMode draw_mode,
+                                  ResourceProvider* resource_provider) {
+  if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
+    return false;
 
   if (io_surface_changed_) {
     WebKit::WebGraphicsContext3D* context3d =
         resource_provider->GraphicsContext3D();
     if (!context3d) {
       // FIXME: Implement this path for software compositing.
-      return;
+      return false;
     }
 
     // FIXME: Do this in a way that we can track memory usage.
@@ -98,6 +100,8 @@ void IOSurfaceLayerImpl::WillDraw(ResourceProvider* resource_provider) {
     // has allocated.
     io_surface_changed_ = false;
   }
+
+  return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
 void IOSurfaceLayerImpl::AppendQuads(QuadSink* quad_sink,

@@ -12,8 +12,8 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
@@ -213,10 +213,10 @@ bool SessionModelAssociator::AssociateWindows(bool reload_tabs,
 
         if (reload_tabs) {
           SyncedTabDelegate* tab = (*i)->GetTabAt(j);
-          // It's possible for GetTabAt to return a null tab if it's not in
-          // memory. We can assume this means the tab already existed but hasn't
-          // changed, so no need to reassociate.
-          if (tab && !AssociateTab(*tab, error)) {
+          // It's possible for GetTabAt to return a tab which has no web
+          // contents. We can assume this means the tab already existed but
+          // hasn't changed, so no need to reassociate.
+          if (tab && tab->HasWebContents() && !AssociateTab(*tab, error)) {
             // Association failed. Either we need to re-associate, or this is an
             // unrecoverable error.
             return false;

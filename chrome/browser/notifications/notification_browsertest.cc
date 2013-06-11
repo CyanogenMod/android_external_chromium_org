@@ -11,8 +11,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -112,7 +112,7 @@ class MessageCenterChangeObserver
 
   void OnMessageCenterChanged() {
     notification_received_ = true;
-    if (message_loop_runner_)
+    if (message_loop_runner_.get())
       message_loop_runner_->Quit();
   }
 
@@ -542,7 +542,7 @@ IN_PROC_BROWSER_TEST_F(NotificationsTest, TestCreateSimpleNotification) {
     const Notification& notification = balloon->notification();
     EXPECT_EQ(EXPECTED_ICON_URL, notification.icon_url());
     EXPECT_EQ(ASCIIToUTF16("My Title"), notification.title());
-    EXPECT_EQ(ASCIIToUTF16("My Body"), notification.body());
+    EXPECT_EQ(ASCIIToUTF16("My Body"), notification.message());
   }
 }
 
@@ -961,6 +961,6 @@ IN_PROC_BROWSER_TEST_F(NotificationsTest, TestNotificationReplacement) {
     GURL EXPECTED_ICON_URL = test_server()->GetURL(kExpectedIconUrl);
     EXPECT_EQ(EXPECTED_ICON_URL, notification.icon_url());
     EXPECT_EQ(ASCIIToUTF16("Title2"), notification.title());
-    EXPECT_EQ(ASCIIToUTF16("Body2"), notification.body());
+    EXPECT_EQ(ASCIIToUTF16("Body2"), notification.message());
   }
 }

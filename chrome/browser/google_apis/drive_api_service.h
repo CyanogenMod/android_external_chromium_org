@@ -25,10 +25,10 @@ class URLRequestContextGetter;
 }  // namespace net
 
 namespace google_apis {
-class OperationRunner;
+class RequestSender;
 
-// This class provides Drive operation calls using Drive V2 API.
-// Details of API call are abstracted in each operation class and this class
+// This class provides Drive request calls using Drive V2 API.
+// Details of API call are abstracted in each request class and this class
 // works as a thin wrapper for the API.
 class DriveAPIService : public DriveServiceInterface,
                         public AuthServiceObserver {
@@ -47,7 +47,7 @@ class DriveAPIService : public DriveServiceInterface,
   virtual void Initialize(Profile* profile) OVERRIDE;
   virtual void AddObserver(DriveServiceObserver* observer) OVERRIDE;
   virtual void RemoveObserver(DriveServiceObserver* observer) OVERRIDE;
-  virtual bool CanStartOperation() const OVERRIDE;
+  virtual bool CanSendRequest() const OVERRIDE;
   virtual void CancelAll() OVERRIDE;
   virtual bool CancelForFilePath(const base::FilePath& file_path) OVERRIDE;
   virtual std::string CanonicalizeResourceId(
@@ -162,7 +162,7 @@ class DriveAPIService : public DriveServiceInterface,
 
   net::URLRequestContextGetter* url_request_context_getter_;
   Profile* profile_;
-  scoped_ptr<OperationRunner> runner_;
+  scoped_ptr<RequestSender> sender_;
   ObserverList<DriveServiceObserver> observers_;
   DriveApiUrlGenerator url_generator_;
   const std::string custom_user_agent_;

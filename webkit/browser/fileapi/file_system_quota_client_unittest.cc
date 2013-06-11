@@ -7,7 +7,7 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,7 +20,7 @@
 #include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 
 namespace fileapi {
 namespace {
@@ -59,8 +59,7 @@ class FileSystemQuotaClientTest : public testing::Test {
 
  protected:
   FileSystemQuotaClient* NewQuotaClient(bool is_incognito) {
-    return new FileSystemQuotaClient(
-        file_system_context_, is_incognito);
+    return new FileSystemQuotaClient(file_system_context_.get(), is_incognito);
   }
 
   void GetOriginUsageAsync(FileSystemQuotaClient* quota_client,
@@ -115,7 +114,7 @@ class FileSystemQuotaClientTest : public testing::Test {
   FileSystemOperationContext* CreateFileSystemOperationContext(
       FileSystemType type) {
     FileSystemOperationContext* context =
-        new FileSystemOperationContext(file_system_context_);
+        new FileSystemOperationContext(file_system_context_.get());
     context->set_allowed_bytes_growth(100000000);
     context->set_update_observers(
         *file_system_context_->GetUpdateObservers(type));

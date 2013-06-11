@@ -5,7 +5,6 @@
       <div id="managed-user-creation-flow-intro-placeholder">
         Lorem ipsum dolor...
       </div>
-      <div class="screen-horizontal-splitter"></div>
       <div id="managed-user-creation-flow-intro-text-1">
         Some text on TBD mode.
         Lorem ipsum dolor sit amet, consectetur adipisicing elit,
@@ -56,23 +55,26 @@
       <div id="managed-user-creation-flow-tutorial-placeholder">
         Lorem ipsum dolor...
       </div>
-      <div class="screen-horizontal-splitter"></div>
       <div id="managed-user-creation-flow-tutorial-created-text"></div>
       <div id="managed-user-creation-flow-tutorial-instructions-text"></div>
     </div>
     <div id="managed-user-creation-flow-error" hidden>
-      <div id="managed-user-creation-flow-error-title"
-          i18n-content="managedUserCreationErrorTitle">
+      <div class="error-header">
+        <img alt class="error-icon" src="chrome://theme/IDR_FATAL_ERROR">
+        <div id="managed-user-creation-flow-error-title" class="error-title"
+            i18n-content="managedUserCreationErrorTitle"></div>
       </div>
-      <div id="managed-user-creation-flow-error-value">
+      <div class="error-body">
+        <div id="managed-user-creation-flow-error-value"
+            class="error-message-paragraph"></div>
       </div>
     </div>
   </div>
   <div id="managed-user-creation-flow-controls" class="step-controls">
   </div>
-  <div class="template-progress-container progress-container" hidden>
+  <div class="template-status-container status-container" hidden>
     <span class="id-text"></span>
-    <div class="inline-spinner"></div>
+    <div class="id-spinner inline-spinner"></div>
   </div>
   <div id="managed-user-creation-flow-manager-template" hidden
       class="manager-pod">

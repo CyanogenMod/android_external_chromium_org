@@ -46,6 +46,7 @@
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppp_flash_browser_operations.h"
 #include "ppapi/c/private/ppb_flash_drm.h"
+#include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
 #include "ppapi/proxy/ppapi_param_traits.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
@@ -92,6 +93,9 @@ IPC_ENUM_TRAITS(PP_PrintScalingOption_Dev)
 IPC_ENUM_TRAITS(PP_PrivateFontCharset)
 IPC_ENUM_TRAITS(PP_ResourceImage)
 IPC_ENUM_TRAITS(PP_ResourceString)
+IPC_ENUM_TRAITS_MAX_VALUE(PP_TalkEvent, PP_TALKEVENT_NUM_EVENTS - 1)
+IPC_ENUM_TRAITS_MAX_VALUE(PP_TalkPermission,
+                          PP_TALKPERMISSION_NUM_PERMISSIONS - 1)
 IPC_ENUM_TRAITS(PP_TextInput_Type)
 IPC_ENUM_TRAITS(PP_TrueTypeFontFamily_Dev)
 IPC_ENUM_TRAITS(PP_TrueTypeFontStyle_Dev)
@@ -843,8 +847,6 @@ IPC_SYNC_MESSAGE_ROUTED3_1(PpapiHostMsg_PPBGraphics3D_Create,
                            ppapi::HostResource /* share_context */,
                            std::vector<int32_t> /* attrib_list */,
                            ppapi::HostResource /* result */)
-IPC_SYNC_MESSAGE_ROUTED1_0(PpapiHostMsg_PPBGraphics3D_InitCommandBuffer,
-                           ppapi::HostResource /* context */)
 IPC_SYNC_MESSAGE_ROUTED2_0(PpapiHostMsg_PPBGraphics3D_SetGetBuffer,
                            ppapi::HostResource /* context */,
                            int32 /* transfer_buffer_id */)
@@ -1296,6 +1298,28 @@ IPC_SYNC_MESSAGE_CONTROL2_2(PpapiHostMsg_ResourceSyncCall,
     IPC::Message /* nested_msg */,
     ppapi::proxy::ResourceMessageReplyParams /* reply_params */,
     IPC::Message /* reply_msg */)
+
+// This message is sent from the renderer to the browser when it wants to create
+// a ResourceHost in the browser. It contains the process ID of the plugin and
+// the instance of the plugin for which to create the resource for. params
+// contains the sequence number for the message to track the response.
+// The nested message is a ResourceHost creation message.
+IPC_MESSAGE_CONTROL4(
+    PpapiHostMsg_CreateResourceHostFromHost,
+    int /* child_process_id */,
+    ppapi::proxy::ResourceMessageCallParams /* params */,
+    PP_Instance /* instance */,
+    IPC::Message /* nested_msg */)
+
+// This message is sent from the browser to the renderer when it has created a
+// ResourceHost for the renderer. It contains the sequence number that was sent
+// in the request and the ID of the pending ResourceHost which was created in
+// the browser. This ID is only useful for the plugin which can attach to the
+// ResourceHost in the browser.
+IPC_MESSAGE_CONTROL2(
+    PpapiHostMsg_CreateResourceHostFromHostReply,
+    int32_t /* sequence */,
+    int /* pending_host_id */)
 
 //-----------------------------------------------------------------------------
 // Messages for resources using call/reply above.
@@ -1855,18 +1879,6 @@ IPC_MESSAGE_CONTROL3(PpapiHostMsg_VideoCapture_Open,
                      uint32_t /* buffer_count */)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_VideoCapture_OpenReply)
 
-// Talk ------------------------------------------------------------------------
-
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_Talk_Create)
-
-// Requests talk permissions. The host will respond with GetPermissionReply.
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_Talk_GetPermission)
-
-// Response to GetPermission.
-//
-// The result of this message is the general Pepper "result" in the ReplyParams.
-IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Talk_GetPermissionReply)
-
 // VideoCapture_Dev, host -> plugin
 IPC_MESSAGE_CONTROL3(PpapiPluginMsg_VideoCapture_OnDeviceInfo,
                      PP_VideoCaptureDeviceInfo_Dev /* info */,
@@ -1878,6 +1890,18 @@ IPC_MESSAGE_CONTROL1(PpapiPluginMsg_VideoCapture_OnError,
                      uint32_t /* error */)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_VideoCapture_OnBufferReady,
                      uint32_t /* buffer */)
+
+// Talk ------------------------------------------------------------------------
+
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_Talk_Create)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_Talk_RequestPermission,
+                     PP_TalkPermission /* permission */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Talk_RequestPermissionReply)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_Talk_StartRemoting)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Talk_StartRemotingReply)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_Talk_StopRemoting)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Talk_StopRemotingReply)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_Talk_NotifyEvent, PP_TalkEvent /* event */)
 
 // MediaStream -----------------------------------------------------------------
 

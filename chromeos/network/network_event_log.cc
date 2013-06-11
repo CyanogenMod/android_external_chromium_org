@@ -11,9 +11,9 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_tokenizer.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/escape.h"
 
@@ -97,8 +97,10 @@ std::string LogEntry::GetHtmlText(bool show_desc) const {
   std::string text;
   if (log_level == LOG_LEVEL_DEBUG)
     text += "<i>";
-  else if (log_level == LOG_LEVEL_ERROR)
+  else if (log_level == LOG_LEVEL_USER)
     text += "<b>";
+  else if (log_level == LOG_LEVEL_ERROR)
+    text += "<b><i>";
 
   text += event;
   if (show_desc && !description.empty())
@@ -106,8 +108,10 @@ std::string LogEntry::GetHtmlText(bool show_desc) const {
 
   if (log_level == LOG_LEVEL_DEBUG)
     text += "</i>";
-  else if (log_level == LOG_LEVEL_ERROR)
+  else if (log_level == LOG_LEVEL_USER)
     text += "</b>";
+  else if (log_level == LOG_LEVEL_ERROR)
+    text += "</i></b>";
   return text;
 }
 

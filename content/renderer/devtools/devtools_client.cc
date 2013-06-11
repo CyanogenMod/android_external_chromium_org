@@ -6,28 +6,22 @@
 
 #include "base/command_line.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/common/devtools_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsFrontend.h"
+#include "third_party/WebKit/public/platform/WebFloatPoint.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/base/ui_base_switches.h"
-#include "webkit/appcache/appcache_interfaces.h"
+#include "webkit/common/appcache/appcache_interfaces.h"
 
 using WebKit::WebDevToolsFrontend;
 using WebKit::WebString;
 
 namespace content {
-
-namespace {
-
-bool g_devtools_frontend_testing_enabled = false;
-
-}  // namespace
 
 DevToolsClient::DevToolsClient(RenderViewImpl* render_view)
     : RenderViewObserver(render_view) {
@@ -116,17 +110,12 @@ void DevToolsClient::removeFileSystem(const WebString& fileSystemPath) {
 }
 
 bool DevToolsClient::isUnderTest() {
-  return g_devtools_frontend_testing_enabled;
+  return RenderThreadImpl::current()->layout_test_mode();
 }
 
 void DevToolsClient::OnDispatchOnInspectorFrontend(const std::string& message) {
   web_tools_frontend_->dispatchOnInspectorFrontend(
       WebString::fromUTF8(message));
-}
-
-// static
-void DevToolsClient::EnableDevToolsFrontendTesting() {
-  g_devtools_frontend_testing_enabled = true;
 }
 
 }  // namespace content

@@ -26,6 +26,8 @@ namespace chromeos {
 
 namespace {
 
+const int kUserCreationTimeoutSeconds = 60; // 60 seconds.
+
 bool StoreManagedUserFiles(const std::string& token,
                            const base::FilePath& base_path) {
   if (!base::chromeos::IsRunningOnChromeOS()) {
@@ -44,7 +46,8 @@ LocallyManagedUserCreationController::StatusConsumer::~StatusConsumer() {}
 LocallyManagedUserCreationController::UserCreationContext::UserCreationContext()
     : token_acquired(false),
       token_succesfully_written(false),
-      manager_profile(NULL) {}
+      manager_profile(NULL),
+      service(NULL) {}
 
 LocallyManagedUserCreationController::UserCreationContext::
     ~UserCreationContext() {}
@@ -54,11 +57,15 @@ LocallyManagedUserCreationController*
     LocallyManagedUserCreationController::current_controller_ = NULL;
 
 LocallyManagedUserCreationController::LocallyManagedUserCreationController(
-    LocallyManagedUserCreationController::StatusConsumer* consumer)
+    LocallyManagedUserCreationController::StatusConsumer* consumer,
+    const std::string& manager_id)
     : consumer_(consumer),
       weak_factory_(this) {
   DCHECK(!current_controller_) << "More than one controller exist.";
   current_controller_ = this;
+  creation_context_.reset(
+      new LocallyManagedUserCreationController::UserCreationContext());
+  creation_context_->manager_id = manager_id;
 }
 
 LocallyManagedUserCreationController::~LocallyManagedUserCreationController() {
@@ -74,8 +81,6 @@ void LocallyManagedUserCreationController::SetUpCreation(string16 display_name,
 
 void LocallyManagedUserCreationController::SetManagerProfile(
     Profile* manager_profile) {
-  creation_context_.reset(
-      new LocallyManagedUserCreationController::UserCreationContext());
   creation_context_->manager_profile = manager_profile;
 }
 
@@ -87,7 +92,7 @@ void LocallyManagedUserCreationController::StartCreation() {
   std::string new_id = UserManager::Get()->GenerateUniqueLocallyManagedUserId();
 
   const User* user = UserManager::Get()->CreateLocallyManagedUserRecord(
-      new_id, creation_context_->display_name);
+      creation_context_->manager_id, new_id, creation_context_->display_name);
 
   creation_context_->user_id = user->email();
 
@@ -123,11 +128,16 @@ void LocallyManagedUserCreationController::OnMountSuccess(
     const std::string& mount_hash) {
   creation_context_->mount_hash = mount_hash;
 
-  ManagedUserRegistrationService* service =
+  timeout_timer_.Start(
+      FROM_HERE, base::TimeDelta::FromSeconds(kUserCreationTimeoutSeconds),
+      this,
+      &LocallyManagedUserCreationController::CreationTimedOut);
+
+  creation_context_->service =
       ManagedUserRegistrationServiceFactory::GetForProfile(
           creation_context_->manager_profile);
 
-  service->Register(
+  creation_context_->service->Register(
       creation_context_->display_name,
       base::Bind(&LocallyManagedUserCreationController::RegistrationCallback,
                  weak_factory_.GetWeakPtr()));
@@ -136,15 +146,30 @@ void LocallyManagedUserCreationController::OnMountSuccess(
 void LocallyManagedUserCreationController::RegistrationCallback(
     const GoogleServiceAuthError& error,
     const std::string& token) {
+  timeout_timer_.Stop();
   if (error.state() == GoogleServiceAuthError::NONE) {
     TokenFetched(token);
   } else {
+    // Do not report error if we cancelled request.
+    if (error.state() == GoogleServiceAuthError::REQUEST_CANCELED)
+      return;
     if (consumer_)
       consumer_->OnCreationError(CLOUD_SERVER_ERROR);
   }
 }
 
+void LocallyManagedUserCreationController::CreationTimedOut() {
+  if (consumer_)
+    consumer_->OnCreationTimeout();
+}
+
 void LocallyManagedUserCreationController::FinishCreation() {
+  chrome::AttemptUserExit();
+}
+
+void LocallyManagedUserCreationController::CancelCreation() {
+  if (creation_context_->service)
+    creation_context_->service->CancelPendingRegistration();
   chrome::AttemptUserExit();
 }
 

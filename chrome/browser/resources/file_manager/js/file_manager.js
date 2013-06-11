@@ -13,7 +13,7 @@ window.JSErrorCount = 0;
 /**
  * Count uncaught exceptions.
  */
-window.onerror = function() { window.JSErrorCount++ };
+window.onerror = function() { window.JSErrorCount++; };
 
 /**
  * FileManager constructor.
@@ -38,15 +38,6 @@ function FileManager() {
  * @const
  */
 FileManager.THUMBNAIL_SHOW_DELAY = 100;
-
-/**
- * Delay for resizing the list and the grid view in milliseconds. Used to
- * avoid janky window resize.
- *
- * @type {number}
- * @const
- */
-FileManager.LIST_GRID_RESIZE_DELAY = 100;
 
 FileManager.prototype = {
   __proto__: cr.EventTarget.prototype
@@ -131,6 +122,12 @@ DialogType.isModal = function(type) {
       type == DialogType.SELECT_OPEN_FILE ||
       type == DialogType.SELECT_OPEN_MULTI_FILE;
 };
+
+/**
+ * Bottom magrin of the list and tree for transparent preview panel.
+ * @const
+ */
+var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
 // Anonymous "namespace".
 (function() {
@@ -255,6 +252,8 @@ DialogType.isModal = function(type) {
       this.metadataCache_.removeObserver(this.thumbnailObserverId_);
     if (this.driveObserverId_)
       this.metadataCache_.removeObserver(this.driveObserverId_);
+    if (this.internalObserverId_)
+      this.metadataCache_.removeObserver(this.internalObserverId_);
     this.filesystemObserverId_ = null;
     this.driveObserverId_ = null;
     this.internalObserverId_ = null;
@@ -342,6 +341,8 @@ DialogType.isModal = function(type) {
     // Get startup preferences.
     this.viewOptions_ = {};
     group.add(function(done) {
+      this.dialogType = this.params_.type || DialogType.FULL_PAGE;
+      this.startupPrefName_ = 'file-manager-' + this.dialogType;
       util.platform.getPreference(this.startupPrefName_, function(value) {
         // Load the global default options.
         try {
@@ -374,7 +375,7 @@ DialogType.isModal = function(type) {
     util.installFileErrorToString();
 
     metrics.startInterval('Load.FileSystem');
-    chrome.fileBrowserPrivate.requestLocalFileSystem(function(filesystem) {
+    chrome.fileBrowserPrivate.requestFileSystem(function(filesystem) {
       metrics.recordInterval('Load.FileSystem');
       this.filesystem_ = filesystem;
       callback();
@@ -442,10 +443,6 @@ DialogType.isModal = function(type) {
     dm.addEventListener('scan-updated', this.onScanUpdated_.bind(this));
     dm.addEventListener('rescan-completed',
                         this.refreshCurrentDirectoryMetadata_.bind(this));
-
-    this.directoryModel_.sortFileList(
-        this.viewOptions_.sortField || 'modificationTime',
-        this.viewOptions_.sortDirection || 'desc');
 
     if (util.platform.newUI()) {
       /**
@@ -630,6 +627,10 @@ DialogType.isModal = function(type) {
   };
 
   FileManager.prototype.onMaximize = function() {
+    // Do not maximize when running via chrome://files in a browser.
+    if (util.platform.runningInBrowser())
+      return;
+
     var appWindow = chrome.app.window.current();
     if (appWindow.isMaximized())
       appWindow.restore();
@@ -638,6 +639,10 @@ DialogType.isModal = function(type) {
   };
 
   FileManager.prototype.onClose = function() {
+    // Do not close when running via chrome://files in a browser.
+    if (util.platform.runningInBrowser())
+      return;
+
     window.close();
   };
 
@@ -727,7 +732,19 @@ DialogType.isModal = function(type) {
         Commands.zipSelectionCommand, this, this.directoryModel_);
 
     CommandUtil.registerCommand(doc, 'search', Commands.searchCommand, this,
-            this.dialogDom_.querySelector('#search-box'));
+        this.dialogDom_.querySelector('#search-box'));
+
+    if (util.platform.newUI()) {
+      // Register commands with CTRL-1..9 shortcuts for switching between
+      // volumes.
+      for (var i = 1; i <= 9; i++) {
+        CommandUtil.registerCommand(doc,
+                                    'volume-switch-' + i,
+                                    Commands.volumeSwitchCommand,
+                                    this.volumeList_,
+                                    i);
+      }
+    }
 
     CommandUtil.registerCommand(doc, 'cut', Commands.defaultCommand, doc);
     CommandUtil.registerCommand(doc, 'copy', Commands.defaultCommand, doc);
@@ -811,7 +828,6 @@ DialogType.isModal = function(type) {
     if (window.appState) {
       this.params_ = window.appState.params || {};
       this.defaultPath = window.appState.defaultPath;
-      util.saveAppState();
     } else {
       this.params_ = location.search ?
                      JSON.parse(decodeURIComponent(location.search.substr(1))) :
@@ -887,8 +903,9 @@ DialogType.isModal = function(type) {
     this.initDialogType_();
 
     // Show the window as soon as the UI pre-initialization is done.
-    // Do not call show() when running via chrome://files in a browser.
-    if (this.dialogType == DialogType.FULL_PAGE && util.platform.v2()) {
+    if (this.dialogType == DialogType.FULL_PAGE &&
+        util.platform.v2() &&
+        !util.platform.runningInBrowser()) {
       chrome.app.window.current().show();
       setTimeout(callback, 100);  // Wait until the animation is finished.
     } else {
@@ -1085,12 +1102,12 @@ DialogType.isModal = function(type) {
     // mouse-clicked.
     autocompleteList.handleEnterKeydown = function(event) {
       this.openAutocompleteSuggestion_();
-      this.lastQuery_ = '';
+      this.lastAutocompleteQuery_ = '';
       this.autocompleteList_.suggestions = [];
     }.bind(this);
     autocompleteList.addEventListener('mousedown', function(event) {
       this.openAutocompleteSuggestion_();
-      this.lastQuery_ = '';
+      this.lastAutocompleteQuery_ = '';
       this.autocompleteList_.suggestions = [];
     }.bind(this));
     autocompleteList.addEventListener('mouseover', function(event) {
@@ -1198,6 +1215,10 @@ DialogType.isModal = function(type) {
     this.directoryModel_.start();
 
     this.selectionHandler_ = new FileSelectionHandler(this);
+    this.selectionHandler_.addEventListener('show-preview-panel',
+        this.onPreviewPanelVisibilityChanged_.bind(this, true));
+    this.selectionHandler_.addEventListener('hide-preview-panel',
+        this.onPreviewPanelVisibilityChanged_.bind(this, false));
 
     this.fileWatcher_ = new FileManager.MetadataFileWatcher(this);
     this.fileWatcher_.start();
@@ -1232,8 +1253,10 @@ DialogType.isModal = function(type) {
     this.table_.addEventListener('column-resize-end',
                                  this.updateStartupPrefs_.bind(this));
 
-    this.setListType(this.viewOptions_.listType || FileManager.ListType.DETAIL);
-
+    // Restore preferences.
+    this.directoryModel_.sortFileList(
+        this.viewOptions_.sortField || 'modificationTime',
+        this.viewOptions_.sortDirection || 'desc');
     if (!util.platform.newUI() && this.viewOptions_.columns) {
       var cm = this.table_.columnModel;
       for (var i = 0; i < cm.totalSize; i++) {
@@ -1241,6 +1264,7 @@ DialogType.isModal = function(type) {
           cm.setWidth(i, this.viewOptions_.columns[i]);
       }
     }
+    this.setListType(this.viewOptions_.listType || FileManager.ListType.DETAIL);
 
     this.textSearchState_ = {text: '', date: new Date()};
 
@@ -1309,7 +1333,8 @@ DialogType.isModal = function(type) {
     var prefs = {
       sortField: sortStatus.field,
       sortDirection: sortStatus.direction,
-      columns: []
+      columns: [],
+      listType: this.listType_
     };
     if (!util.platform.newUI()) {
       var cm = this.table_.columnModel;
@@ -1608,46 +1633,15 @@ DialogType.isModal = function(type) {
   };
 
   /**
-   * @param {number=} opt_timeout Timeout in milliseconds.
-   * @private
-   */
-  FileManager.prototype.requestResize_ = function(opt_timeout) {
-    setTimeout(this.onResize_.bind(this), opt_timeout || 0);
-  };
-
-  /**
    * Resize details and thumb views to fit the new window size.
    * @private
    */
   FileManager.prototype.onResize_ = function() {
-    if (this.listType_ == FileManager.ListType.THUMBNAIL) {
-      var g = this.grid_;
-      if (this.resizeGridTimer_) {
-        clearTimeout(this.resizeGridTimer_);
-        this.resizeGridTimer_ = null;
-      }
-      this.resizeGridTimer_ = setTimeout(function() {
-        g.startBatchUpdates();
-        g.columns = 0;
-        g.redraw();
-        g.endBatchUpdates();
-        this.resizeGridTimer_ = null;
-      }.bind(this), FileManager.LIST_GRID_RESIZE_DELAY);
-    } else {
-      var t = this.table_;
-      if (this.resizeTableTimer_) {
-        clearTimeout(this.resizeTableTimer_);
-        this.resizeTableTimer_ = null;
-      }
-      this.resizeTableTimer_ = setTimeout(function() {
-        if (util.platform.newUI()) {
-          if (t.clientWidth > 0)
-            t.normalizeColumns();
-        }
-        t.redraw();
-        this.resizeTableTimer_ = null;
-      }.bind(this), FileManager.LIST_GRID_RESIZE_DELAY);
-    }
+    if (this.listType_ == FileManager.ListType.THUMBNAIL)
+      this.grid_.relayout();
+    else
+      this.table_.relayout();
+    this.directoryTree_.relayout();
 
     if (!util.platform.newUI()) {
       this.breadcrumbs_.truncate();
@@ -1659,12 +1653,46 @@ DialogType.isModal = function(type) {
     }
 
     // Hide the search box if there is not enough space.
-    if (util.platform.newUI())
-      this.searchBox_.hidden = this.searchBoxWrapper_.clientWidth < 100;
+    if (util.platform.newUI()) {
+      this.searchBoxWrapper_.classList.toggle(
+          'too-short',
+          this.searchBoxWrapper_.clientWidth < 100);
+    }
 
     this.searchBreadcrumbs_.truncate();
 
     this.updateWindowState_();
+  };
+
+  /**
+   * Resize details and thumb views to fit the new window size.
+   * @private
+   */
+  FileManager.prototype.onPreviewPanelVisibilityChanged_ = function(visible) {
+    if (!util.platform.newUI())
+      return;
+
+    var panelHeight = visible ? this.getPreviewPanelHeight_() : 0;
+
+    if (this.listType_ == FileManager.ListType.THUMBNAIL)
+      this.grid_.setBottomMarginForPanel(panelHeight);
+    else
+      this.table_.setBottomMarginForPanel(panelHeight);
+    this.directoryTree_.setBottomMarginForPanel(panelHeight);
+  };
+
+  /**
+   * Gets height of the preview panel, using cached value if available. This
+   * returns the value even when the preview panel is hidden.
+   *
+   * @return {number} Height of the preview panel. If failure, returns 0.
+   */
+  FileManager.prototype.getPreviewPanelHeight_ = function() {
+    if (!this.cachedPreviewPanelHeight_) {
+      var previewPanel = this.dialogDom_.querySelector('.preview-panel');
+      this.cachedPreviewPanelHeight_ = previewPanel.clientHeight;
+    }
+    return this.cachedPreviewPanelHeight_;
   };
 
   /**
@@ -2351,9 +2379,9 @@ DialogType.isModal = function(type) {
     }
 
     var clickNumber;
-    if (this.dialogType == DialogType.FULL_PAGE &&
-            (event.target.parentElement.classList.contains('filename-label') ||
-             event.target.classList.contains('detail-icon'))) {
+    if (!util.platform.newUI() && this.dialogType == DialogType.FULL_PAGE &&
+        (event.target.parentElement.classList.contains('filename-label') ||
+         event.target.classList.contains('detail-icon'))) {
       // If full page mode the file name and icon should react on single click.
       clickNumber = 1;
     } else if (this.lastClickedItem_ == listItem) {
@@ -2658,7 +2686,7 @@ DialogType.isModal = function(type) {
           var onError = function(err) {
             this.alert.show(strf('ERROR_RENAMING', entry.name,
                                  util.getFileErrorString(err.code)));
-          };
+          }.bind(this);
           this.directoryModel_.renameEntry(entry, newName, onError.bind(this));
         } else {
           nameNode.textContent = entry.name;
@@ -2987,11 +3015,6 @@ DialogType.isModal = function(type) {
           // If there is a copy in progress, ESC will cancel it.
           event.preventDefault();
           this.copyManager_.requestCancel();
-          return;
-        }
-
-        if (this.butterBar_ && this.butterBar_.hideError()) {
-          event.preventDefault();
           return;
         }
 
@@ -3626,7 +3649,7 @@ DialogType.isModal = function(type) {
     // Remember the most recent query. If there is an other request in progress,
     // then it's result will be discarded and it will call a new request for
     // this query.
-    this.lastQuery_ = query;
+    this.lastAutocompleteQuery_ = query;
     if (this.autocompleteSuggestionsBusy_)
       return;
 
@@ -3661,8 +3684,8 @@ DialogType.isModal = function(type) {
 
         // Discard results for previous requests and fire a new search
         // for the most recent query.
-        if (query != this.lastQuery_) {
-          this.requestAutocompleteSuggestions_(this.lastQuery_);
+        if (query != this.lastAutocompleteQuery_) {
+          this.requestAutocompleteSuggestions_(this.lastAutocompleteQuery_);
           return;
         }
 

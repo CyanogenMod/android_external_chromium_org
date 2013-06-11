@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "ui/base/models/table_model.h"
 
@@ -97,6 +97,10 @@ class TemplateURLTableModel : public ui::TableModel,
   // Returns the index of the last entry shown in the search engines group.
   int last_search_engine_index() const { return last_search_engine_index_; }
 
+  // Returns the index of the last entry shown in the other search engines
+  // group.
+  int last_other_engine_index() const { return last_other_engine_index_; }
+
  private:
   friend class ModelEntry;
 
@@ -117,6 +121,10 @@ class TemplateURLTableModel : public ui::TableModel,
   // Index of the last search engine in entries_. This is used to determine the
   // group boundaries.
   int last_search_engine_index_;
+
+  // Index of the last other engine in entries_. This is used to determine the
+  // group boundaries.
+  int last_other_engine_index_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLTableModel);
 };

@@ -50,15 +50,15 @@
 #include "ash/wm/custom_frame_view_ash.h"
 #include "ash/wm/event_client_impl.h"
 #include "ash/wm/event_rewriter_event_filter.h"
+#include "ash/wm/lock_state_controller.h"
+#include "ash/wm/lock_state_controller_impl2.h"
 #include "ash/wm/overlay_event_filter.h"
 #include "ash/wm/power_button_controller.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/resize_shadow_controller.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "ash/wm/screen_dimmer.h"
-#include "ash/wm/session_state_controller.h"
 #include "ash/wm/session_state_controller_impl.h"
-#include "ash/wm/session_state_controller_impl2.h"
 #include "ash/wm/system_gesture_event_filter.h"
 #include "ash/wm/system_modal_container_event_filter.h"
 #include "ash/wm/system_modal_container_layout_manager.h"
@@ -100,7 +100,6 @@
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget.h"
-#include "ui/views/window/dialog_delegate.h"
 
 #if !defined(OS_MACOSX)
 #include "ash/accelerators/accelerator_controller.h"
@@ -299,7 +298,7 @@ Shell::~Shell() {
   video_detector_.reset();
 
   power_button_controller_.reset();
-  session_state_controller_.reset();
+  lock_state_controller_.reset();
 
   mirror_window_controller_.reset();
 
@@ -440,7 +439,7 @@ void Shell::Init() {
     display_error_observer_.reset(new internal::DisplayErrorObserver());
     output_configurator_->AddObserver(display_error_observer_.get());
     output_configurator_->set_state_controller(display_change_observer_.get());
-    if (command_line->HasSwitch(ash::switches::kAshEnableSoftwareMirroring))
+    if (!command_line->HasSwitch(ash::switches::kAshDisableSoftwareMirroring))
       output_configurator_->set_mirroring_controller(display_manager_.get());
     output_configurator_->Start();
     display_change_observer_->OnDisplayModeChanged();
@@ -531,21 +530,21 @@ void Shell::Init() {
       delegate_->IsFirstRunAfterBoot());
 
   if (command_line->HasSwitch(ash::switches::kAshDisableNewLockAnimations))
-    session_state_controller_.reset(new SessionStateControllerImpl);
+    lock_state_controller_.reset(new SessionStateControllerImpl);
   else
-    session_state_controller_.reset(new SessionStateControllerImpl2);
+    lock_state_controller_.reset(new LockStateControllerImpl2);
   power_button_controller_.reset(new PowerButtonController(
-      session_state_controller_.get()));
-  AddShellObserver(session_state_controller_.get());
+      lock_state_controller_.get()));
+  AddShellObserver(lock_state_controller_.get());
 
+  drag_drop_controller_.reset(new internal::DragDropController);
   mouse_cursor_filter_.reset(new internal::MouseCursorEventFilter());
-  AddPreTargetHandler(mouse_cursor_filter_.get());
+  PrependPreTargetHandler(mouse_cursor_filter_.get());
 
   // Create Controllers that may need root window.
   // TODO(oshima): Move as many controllers before creating
   // RootWindowController as possible.
   visibility_controller_.reset(new AshVisibilityController);
-  drag_drop_controller_.reset(new internal::DragDropController);
   user_action_client_.reset(delegate_->CreateUserActionClient());
   window_modality_controller_.reset(
       new views::corewm::WindowModalityController);
@@ -688,8 +687,6 @@ bool Shell::IsSystemModalWindowOpen() const {
 
 views::NonClientFrameView* Shell::CreateDefaultNonClientFrameView(
     views::Widget* widget) {
-  if (views::DialogDelegate::UseNewStyle())
-    return views::DialogDelegate::CreateNewStyleFrameView(widget);
   // Use translucent-style window frames for dialogs.
   CustomFrameViewAsh* frame_view = new CustomFrameViewAsh;
   frame_view->Init(widget);
@@ -840,7 +837,11 @@ SystemTray* Shell::GetPrimarySystemTray() {
 
 LauncherDelegate* Shell::GetLauncherDelegate() {
   if (!launcher_delegate_) {
-    launcher_model_.reset(new LauncherModel);
+    if (!launcher_model_)
+      launcher_model_.reset(new LauncherModel);
+    // Attempt to create the Launcher. This may fail if the application is not
+    // ready to create it yet, in which case the app is responsible for calling
+    // ash::Shell::CreateLauncher() when ready.
     launcher_delegate_.reset(
         delegate_->CreateLauncherDelegate(launcher_model_.get()));
   }

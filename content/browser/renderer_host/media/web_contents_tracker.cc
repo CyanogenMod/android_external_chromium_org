@@ -4,7 +4,7 @@
 
 #include "content/browser/renderer_host/media/web_contents_tracker.h"
 
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -20,10 +20,10 @@ WebContentsTracker::~WebContentsTracker() {
 
 void WebContentsTracker::Start(int render_process_id, int render_view_id,
                                const ChangeCallback& callback) {
-  DCHECK(!message_loop_ || message_loop_->BelongsToCurrentThread());
+  DCHECK(!message_loop_.get() || message_loop_->BelongsToCurrentThread());
 
   message_loop_ = base::MessageLoopProxy::current();
-  DCHECK(message_loop_);
+  DCHECK(message_loop_.get());
   callback_ = callback;
 
   BrowserThread::PostTask(

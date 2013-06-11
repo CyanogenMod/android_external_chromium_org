@@ -25,6 +25,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/file_version_info.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/i18n/time_formatting.h"
 #include "base/path_service.h"
@@ -32,11 +33,11 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_value_store.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service_mock_builder.h"
 #include "chrome/common/automation_messages.h"
@@ -332,9 +333,9 @@ class PageLoadTest : public testing::Test {
   virtual void SetUp() {
     // Initialize crash_dumps_dir_path_.
     PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dumps_dir_path_);
-    file_util::FileEnumerator enumerator(crash_dumps_dir_path_,
-                                         false,  // not recursive
-                                         file_util::FileEnumerator::FILES);
+    base::FileEnumerator enumerator(crash_dumps_dir_path_,
+                                    false,  // not recursive
+                                    base::FileEnumerator::FILES);
     for (base::FilePath path = enumerator.Next(); !path.value().empty();
          path = enumerator.Next()) {
       if (path.MatchesExtension(FILE_PATH_LITERAL(".dmp")))
@@ -411,9 +412,9 @@ class PageLoadTest : public testing::Test {
                                 NavigationMetrics* metrics) {
     int num_dumps = 0;
 
-    file_util::FileEnumerator enumerator(crash_dumps_dir_path_,
-                                         false,  // not recursive
-                                         file_util::FileEnumerator::FILES);
+    base::FileEnumerator enumerator(crash_dumps_dir_path_,
+                                    false,  // not recursive
+                                    base::FileEnumerator::FILES);
     for (base::FilePath path = enumerator.Next(); !path.value().empty();
          path = enumerator.Next()) {
       if (path.MatchesExtension(FILE_PATH_LITERAL(".dmp")) &&

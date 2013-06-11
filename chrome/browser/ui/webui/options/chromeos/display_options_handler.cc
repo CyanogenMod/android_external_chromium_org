@@ -13,8 +13,8 @@
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/display/display_preferences.h"
 #include "chromeos/display/output_configurator.h"
@@ -251,7 +251,7 @@ void DisplayOptionsHandler::HandleMirroring(const base::ListValue* args) {
 
 void DisplayOptionsHandler::HandleSetPrimary(const base::ListValue* args) {
   DCHECK(!args->empty());
-  int display_id = GetDisplayId(args);
+  int64 display_id = GetDisplayId(args);
   if (display_id == gfx::Display::kInvalidDisplayID)
     return;
 

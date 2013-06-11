@@ -20,9 +20,7 @@ class FakeWebAuthFlow : public WebAuthFlow {
       : WebAuthFlow(delegate,
                     NULL,
                     GURL(),
-                    WebAuthFlow::INTERACTIVE,
-                    gfx::Rect(),
-                    chrome::GetActiveDesktop()) {}
+                    WebAuthFlow::INTERACTIVE) {}
 
   virtual void Start() OVERRIDE {}
 };
@@ -35,9 +33,9 @@ class TestGaiaWebAuthFlow : public GaiaWebAuthFlow {
                       GoogleServiceAuthError::State ubertoken_error_state)
       : GaiaWebAuthFlow(delegate,
                         NULL,
-                        chrome::GetActiveDesktop(),
                         "extension_id",
-                        oauth2_info),
+                        oauth2_info,
+                        "en-us"),
         ubertoken_error_(ubertoken_error_state) {}
 
   virtual void Start() OVERRIDE {
@@ -83,7 +81,6 @@ class IdentityGaiaWebAuthFlowTest : public testing::Test {
     oauth2_info.client_id = "fake.client.id";
     return scoped_ptr<TestGaiaWebAuthFlow>(new TestGaiaWebAuthFlow(
         &delegate_, "extension_id", oauth2_info, ubertoken_error_state_));
-
   }
 
   std::string GetFinalTitle(const std::string& fragment) {

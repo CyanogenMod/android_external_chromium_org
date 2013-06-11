@@ -5,12 +5,14 @@
 #include <map>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/notifications/notification.h"
+#include "chrome/browser/notifications/notification_test_util.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
 #include "chrome/browser/notifications/sync_notifier/synced_notification.h"
+#include "chrome/browser/profiles/profile.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_change_processor.h"
 #include "sync/api/sync_error_factory.h"
@@ -113,8 +115,12 @@ std::string GetNotificationId(const SyncData& sync_data) {
 // Stub out the NotificationUIManager for unit testing.
 class StubNotificationUIManager : public NotificationUIManager {
  public:
-  StubNotificationUIManager() : notification_(GURL(), GURL(), string16(),
-                                              string16(), NULL) {}
+  StubNotificationUIManager()
+      : notification_(GURL(),
+                      GURL(),
+                      string16(),
+                      string16(),
+                      new MockNotificationDelegate("stub")) {}
   virtual ~StubNotificationUIManager() {}
 
   // Adds a notification to be displayed. Virtual for unit test override.
@@ -122,6 +128,7 @@ class StubNotificationUIManager : public NotificationUIManager {
       OVERRIDE {
     // Make a deep copy of the notification that we can inspect.
     notification_ = notification;
+    profile_ = profile;
   }
 
   // Returns true if any notifications match the supplied ID, either currently
@@ -134,6 +141,18 @@ class StubNotificationUIManager : public NotificationUIManager {
   // displayed or in the queue.  Returns true if anything was removed.
   virtual bool CancelById(const std::string& notification_id) OVERRIDE {
     return false;
+  }
+
+  // Adds the notification_id for each outstanding notification to the set
+  // |notification_ids| (must not be NULL).
+  virtual std::set<std::string> GetAllIdsByProfileAndSourceOrigin(
+      Profile* profile,
+      const GURL& source) OVERRIDE {
+    std::set<std::string> notification_ids;
+    if (source == notification_.origin_url() &&
+        profile->IsSameProfile(profile_))
+      notification_ids.insert(notification_.notification_id());
+    return notification_ids;
   }
 
   // Removes notifications matching the |source_origin| (which could be an
@@ -157,6 +176,7 @@ class StubNotificationUIManager : public NotificationUIManager {
  private:
   DISALLOW_COPY_AND_ASSIGN(StubNotificationUIManager);
   Notification notification_;
+  Profile* profile_;
 };
 
 // Dummy SyncChangeProcessor used to help review what SyncChanges are pushed
@@ -231,7 +251,9 @@ class ChromeNotifierServiceTest : public testing::Test {
   virtual ~ChromeNotifierServiceTest() {}
 
   // Methods from testing::Test.
-  virtual void SetUp() {}
+  virtual void SetUp() {
+    ChromeNotifierService::set_avoid_bitmap_fetching_for_test(true);
+  }
   virtual void TearDown() {}
 
   TestChangeProcessor* processor() {
@@ -551,6 +573,7 @@ TEST_F(ChromeNotifierServiceTest, ProcessSyncChangesEmptyModel) {
   // We initially have no data.
   StubNotificationUIManager notification_manager;
   ChromeNotifierService notifier(NULL, &notification_manager);
+  notifier.set_avoid_bitmap_fetching_for_test(true);
 
   notifier.MergeDataAndStartSyncing(
       SYNCED_NOTIFICATIONS,
@@ -582,6 +605,7 @@ TEST_F(ChromeNotifierServiceTest, ProcessSyncChangesEmptyModel) {
 TEST_F(ChromeNotifierServiceTest, LocalRemoteBothNonEmptyNoOverlap) {
   StubNotificationUIManager notification_manager;
   ChromeNotifierService notifier(NULL, &notification_manager);
+  notifier.set_avoid_bitmap_fetching_for_test(true);
 
   // Create some local fake data.
   scoped_ptr<SyncedNotification> n1(CreateNotification(
@@ -645,6 +669,7 @@ TEST_F(ChromeNotifierServiceTest, LocalRemoteBothNonEmptyNoOverlap) {
 TEST_F(ChromeNotifierServiceTest, ModelAssocBothNonEmptyReadMismatch1) {
   StubNotificationUIManager notification_manager;
   ChromeNotifierService notifier(NULL, &notification_manager);
+  notifier.set_avoid_bitmap_fetching_for_test(true);
 
   // Create some local fake data.
   scoped_ptr<SyncedNotification> n1(CreateNotification(
@@ -685,6 +710,7 @@ TEST_F(ChromeNotifierServiceTest, ModelAssocBothNonEmptyReadMismatch1) {
 TEST_F(ChromeNotifierServiceTest, ModelAssocBothNonEmptyReadMismatch2) {
   StubNotificationUIManager notification_manager;
   ChromeNotifierService notifier(NULL, &notification_manager);
+  notifier.set_avoid_bitmap_fetching_for_test(true);
 
   // Create some local fake data.
   scoped_ptr<SyncedNotification> n1(CreateNotification(

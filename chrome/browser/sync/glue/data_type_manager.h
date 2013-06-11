@@ -27,8 +27,7 @@ class DataTypeManager {
                        // types.
 
     CONFIGURING,       // Data types are being started.
-    BLOCKED,           // We can't move forward with configuration because some
-                       // external action must take place (i.e. passphrase).
+    RETRYING,          // Retrying a pending reconfiguration.
 
     CONFIGURED,        // All enabled data types are running.
     STOPPING           // Data types are being stopped.
@@ -42,28 +41,26 @@ class DataTypeManager {
     PARTIAL_SUCCESS,     // Some data types had an error while starting up.
     ABORTED,             // Start was aborted by calling Stop() before
                          // all types were started.
-    CONFIGURE_BLOCKED,   // Configuration was blocked due to missing
-                         // passphrase.
     UNRECOVERABLE_ERROR  // We got an unrecoverable error during startup.
   };
-
-  typedef syncer::ModelTypeSet TypeSet;
 
   // Note: |errors| is only filled when status is not OK.
   struct ConfigureResult {
     ConfigureResult();
     ConfigureResult(ConfigureStatus status,
-                    TypeSet requested_types);
+                    syncer::ModelTypeSet requested_types);
     ConfigureResult(ConfigureStatus status,
-                    TypeSet requested_types,
-                    const std::list<syncer::SyncError>& failed_data_types,
-                    syncer::ModelTypeSet waiting_to_start);
+                    syncer::ModelTypeSet requested_types,
+                    std::map<syncer::ModelType, syncer::SyncError>
+                        failed_data_types,
+                    syncer::ModelTypeSet waiting_to_start,
+                    syncer::ModelTypeSet needs_crypto);
     ~ConfigureResult();
     ConfigureStatus status;
-    TypeSet requested_types;
+    syncer::ModelTypeSet requested_types;
 
     // These types encountered a failure in association.
-    std::list<syncer::SyncError> failed_data_types;
+    std::map<syncer::ModelType, syncer::SyncError> failed_data_types;
 
     // List of types that failed to start association with in our alloted
     // time period(see kDataTypeLoadWaitTimeInSeconds). We move
@@ -71,6 +68,10 @@ class DataTypeManager {
     // background. When these types are loaded DataTypeManager will
     // be informed and another configured cycle will be started.
     syncer::ModelTypeSet waiting_to_start;
+
+    // Those types that are unable to start due to the cryptographer not being
+    // ready.
+    syncer::ModelTypeSet needs_crypto;
   };
 
   virtual ~DataTypeManager() {}
@@ -90,10 +91,10 @@ class DataTypeManager {
   // Note that you may call Configure() while configuration is in
   // progress.  Configuration will be complete only when the
   // desired_types supplied in the last call to Configure is achieved.
-  virtual void Configure(TypeSet desired_types,
+  virtual void Configure(syncer::ModelTypeSet desired_types,
                          syncer::ConfigureReason reason) = 0;
 
-  virtual void PurgeForMigration(TypeSet undesired_types,
+  virtual void PurgeForMigration(syncer::ModelTypeSet undesired_types,
                                  syncer::ConfigureReason reason) = 0;
 
   // Synchronously stops all registered data types.  If called after

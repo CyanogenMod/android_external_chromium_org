@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "content/public/browser/web_ui.h"
 
@@ -64,7 +64,10 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
   void ShowIntroPage();
   void ShowManagerSelectionPage();
   void ShowUsernamePage();
-  void ShowProgress(const string16& message);
+
+  // Shows progress or error message close in the button area. |is_progress| is
+  // true for progress messages and false for error messages.
+  void ShowStatusMessage(bool is_progress, const string16& message);
   void ShowTutorialPage();
 
   void ShowManagerInconsistentStateErrorPage();

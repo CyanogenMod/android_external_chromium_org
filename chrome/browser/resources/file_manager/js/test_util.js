@@ -152,7 +152,6 @@ test.util.getFileList = function(contentWindow) {
       row.querySelector('.date').textContent
     ]);
   }
-  fileList.sort();
   return fileList;
 };
 
@@ -220,6 +219,7 @@ test.util.waitForFileListChange = function(
     contentWindow, lengthBefore, callback) {
   function helper() {
     var files = test.util.getFileList(contentWindow);
+    files.sort();
     var notReadyRows = files.filter(function(row) {
       return row.filter(function(cell) { return cell == '...'; }).length;
     });
@@ -378,16 +378,21 @@ test.util.selectVolume = function(contentWindow, iconName, callback) {
  *
  * @param {Window} contentWindow Window to be tested.
  * @param {Array.<Array.<string>>} expected Expected contents of file list.
- * @param {function(boolean)} callback Callback function to notify the caller
- *     whether expected files turned up or not.
+ * @param {boolean=} opt_orderCheck If it is true, this function also compares
+ *     the order of files.
+ * @param {function()} callback Callback function to notify the caller that
+ *     expected files turned up.
  */
 test.util.waitForFiles = function(contentWindow,
                                   expected,
+                                  opt_orderCheck,
                                   callback) {
   var step = function() {
-    if (chrome.test.checkDeepEq(expected,
-                                test.util.getFileList(contentWindow))) {
-      callback(true);
+    var fileList = test.util.getFileList(contentWindow);
+    if (!opt_orderCheck)
+      fileList.sort();
+    if (chrome.test.checkDeepEq(expected, fileList)) {
+      callback();
       return;
     }
     setTimeout(step, 50);
@@ -416,6 +421,19 @@ test.util.sendEvent = function(
   }
   console.error('Target element for ' + targetQuery + ' not found.');
   return false;
+};
+
+/**
+ * Sends an fake event having the specified type to the target query.
+ *
+ * @param {Window} contentWindow Window to be tested.
+ * @param {string} targetQuery Query to specify the element.
+ * @param {string} event Type of event.
+ * @return {boolean} True if the event is sent to the target, false otherwise.
+ */
+test.util.fakeEvent = function(contentWindow, targetQuery, event) {
+  return test.util.sendEvent(
+      contentWindow, targetQuery, new Event(event));
 };
 
 /**
@@ -455,6 +473,39 @@ test.util.fakeMouseClick = function(
 };
 
 /**
+ * Simulates a fake double click event (left button) to the element specified by
+ * |targetQuery|.
+ *
+ * @param {Window} contentWindow Window to be tested.
+ * @param {string} targetQuery Query to specify the element.
+ * @param {string=} opt_iframeQuery Optional iframe selector.
+ * @return {boolean} True if the event is sent to the target, false otherwise.
+ */
+test.util.fakeMouseDoubleClick = function(
+    contentWindow, targetQuery, opt_iframeQuery) {
+  // Double click is always preceeded with a single click.
+  if (!test.util.fakeMouseClick(contentWindow, targetQuery, opt_iframeQuery))
+    return false;
+
+  // Send the second click event, but with detail equal to 2 (number of clicks)
+  // in a row.
+  var event = new MouseEvent('click', { bubbles: true, detail: 2 });
+  if (!test.util.sendEvent(
+      contentWindow, targetQuery, event, opt_iframeQuery)) {
+    return false;
+  }
+
+  // Send the double click event.
+  var event = new MouseEvent('dblclick', { bubbles: true });
+  if (!test.util.sendEvent(
+      contentWindow, targetQuery, event, opt_iframeQuery)) {
+    return false;
+  }
+
+  return true;
+};
+
+/**
  * Sends a fake mouse down event to the element specified by |targetQuery|.
  *
  * @param {Window} contentWindow Window to be tested.
@@ -465,6 +516,21 @@ test.util.fakeMouseClick = function(
 test.util.fakeMouseDown = function(
     contentWindow, targetQuery, opt_iframeQuery) {
   var event = new MouseEvent('mousedown', { bubbles: true });
+  return test.util.sendEvent(
+      contentWindow, targetQuery, event, opt_iframeQuery);
+};
+
+/**
+ * Sends a fake mouse up event to the element specified by |targetQuery|.
+ *
+ * @param {Window} contentWindow Window to be tested.
+ * @param {string} targetQuery Query to specify the element.
+ * @param {string=} opt_iframeQuery Optional iframe selector.
+ * @return {boolean} True if the event is sent to the target, false otherwise.
+ */
+test.util.fakeMouseUp = function(
+    contentWindow, targetQuery, opt_iframeQuery) {
+  var event = new MouseEvent('mouseup', { bubbles: true });
   return test.util.sendEvent(
       contentWindow, targetQuery, event, opt_iframeQuery);
 };
@@ -500,6 +566,20 @@ test.util.deleteFile = function(contentWindow, filename) {
   // Delete
   test.util.fakeKeyDown(contentWindow, '#file-list', 'U+007F', false);
   return true;
+};
+
+/**
+ * Obtains computed styles of the elements specified by |queries|.
+ *
+ * @param {Window} contentWindow Window to be tested.
+ * @param {Array.<string>>} queries List of elements to be computed styles.
+ * @return {Array.<CSSStyleDeclaration>} List of computed styles.
+ */
+test.util.getComputedStyles = function(contentWindow, queries) {
+  return queries.map(function(query) {
+    var element = contentWindow.document.querySelector(query);
+    return contentWindow.getComputedStyle(element);
+  });
 };
 
 /**
@@ -585,8 +665,20 @@ test.util.registerRemoteTestUtils = function() {
           sendResponse(test.util.fakeMouseClick(
               contentWindow, request.args[0], request.args[1]));
           return false;
+        case 'fakeMouseDoubleClick':
+          sendResponse(test.util.fakeMouseDoubleClick(
+              contentWindow, request.args[0], request.args[1]));
+          return false;
         case 'fakeMouseDown':
           sendResponse(test.util.fakeMouseDown(
+              contentWindow, request.args[0], request.args[1]));
+          return false;
+        case 'fakeMouseUp':
+          sendResponse(test.util.fakeMouseUp(
+              contentWindow, request.args[0], request.args[1]));
+          return false;
+        case 'fakeEvent':
+          sendResponse(test.util.fakeEvent(
               contentWindow, request.args[0], request.args[1]));
           return false;
         case 'copyFile':
@@ -596,10 +688,17 @@ test.util.registerRemoteTestUtils = function() {
           sendResponse(test.util.deleteFile(contentWindow, request.args[0]));
           return false;
         case 'waitForFiles':
-          test.util.waitForFiles(contentWindow, request.args[0], sendResponse);
+          test.util.waitForFiles(contentWindow,
+                                 request.args[0],
+                                 request.args[1],
+                                 sendResponse);
           return true;
         case 'execCommand':
           sendResponse(contentWindow.document.execCommand(request.args[0]));
+          return false;
+        case 'getComputedStyles':
+          sendResponse(test.util.getComputedStyles(contentWindow,
+                                                   request.args[0]));
           return false;
         default:
           console.error('Window function ' + request.func + ' not found.');

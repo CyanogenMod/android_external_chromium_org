@@ -17,7 +17,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/blob/mock_blob_url_request_context.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/syncable/canned_syncable_file_system.h"
 #include "webkit/browser/fileapi/syncable/file_change.h"
@@ -43,7 +43,6 @@ namespace sync_file_system {
 namespace {
 const char kOrigin1[] = "http://example.com";
 const char kOrigin2[] = "http://chromium.org";
-const char kServiceName[] = "test";
 }
 
 class LocalFileSyncContextTest : public testing::Test {
@@ -55,7 +54,7 @@ class LocalFileSyncContextTest : public testing::Test {
         has_inflight_prepare_for_sync_(false) {}
 
   virtual void SetUp() OVERRIDE {
-    EXPECT_TRUE(RegisterSyncableFileSystem(kServiceName));
+    RegisterSyncableFileSystem();
 
     io_thread_.reset(new base::Thread("Thread_IO"));
     io_thread_->StartWithOptions(
@@ -70,7 +69,7 @@ class LocalFileSyncContextTest : public testing::Test {
   }
 
   virtual void TearDown() OVERRIDE {
-    EXPECT_TRUE(RevokeSyncableFileSystem(kServiceName));
+    RevokeSyncableFileSystem();
     io_thread_->Stop();
     file_thread_->Stop();
   }
@@ -164,7 +163,7 @@ class LocalFileSyncContextTest : public testing::Test {
     }
     ASSERT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
     file_error_ = base::PLATFORM_FILE_ERROR_FAILED;
-    file_system->NewOperation()->Truncate(
+    file_system->operation_runner()->Truncate(
         url, 1, base::Bind(&LocalFileSyncContextTest::DidModifyFile,
                            base::Unretained(this)));
   }
@@ -207,21 +206,23 @@ class LocalFileSyncContextTest : public testing::Test {
 };
 
 TEST_F(LocalFileSyncContextTest, ConstructAndDestruct) {
-  sync_context_ = new LocalFileSyncContext(
-      ui_task_runner_, io_task_runner_);
+  sync_context_ =
+      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
   sync_context_->ShutdownOnUIThread();
 }
 
 TEST_F(LocalFileSyncContextTest, InitializeFileSystemContext) {
-  CannedSyncableFileSystem file_system(GURL(kOrigin1), kServiceName,
-                                       io_task_runner_, file_task_runner_);
+  CannedSyncableFileSystem file_system(GURL(kOrigin1),
+                                       io_task_runner_.get(),
+                                       file_task_runner_.get());
   file_system.SetUp();
 
-  sync_context_ = new LocalFileSyncContext(ui_task_runner_, io_task_runner_);
+  sync_context_ =
+      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
 
   // Initializes file_system using |sync_context_|.
   EXPECT_EQ(SYNC_STATUS_OK,
-            file_system.MaybeInitializeFileSystemContext(sync_context_));
+            file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
 
   // Make sure everything's set up for file_system to be able to handle
   // syncable file system operations.
@@ -232,7 +233,7 @@ TEST_F(LocalFileSyncContextTest, InitializeFileSystemContext) {
 
   // Calling MaybeInitialize for the same context multiple times must be ok.
   EXPECT_EQ(SYNC_STATUS_OK,
-            file_system.MaybeInitializeFileSystemContext(sync_context_));
+            file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
   EXPECT_EQ(sync_context_.get(),
             file_system.file_system_context()->sync_context());
 
@@ -254,20 +255,23 @@ TEST_F(LocalFileSyncContextTest, InitializeFileSystemContext) {
 }
 
 TEST_F(LocalFileSyncContextTest, MultipleFileSystemContexts) {
-  CannedSyncableFileSystem file_system1(GURL(kOrigin1), kServiceName,
-                                        io_task_runner_, file_task_runner_);
-  CannedSyncableFileSystem file_system2(GURL(kOrigin2), kServiceName,
-                                        io_task_runner_, file_task_runner_);
+  CannedSyncableFileSystem file_system1(GURL(kOrigin1),
+                                        io_task_runner_.get(),
+                                        file_task_runner_.get());
+  CannedSyncableFileSystem file_system2(GURL(kOrigin2),
+                                        io_task_runner_.get(),
+                                        file_task_runner_.get());
   file_system1.SetUp();
   file_system2.SetUp();
 
-  sync_context_ = new LocalFileSyncContext(ui_task_runner_, io_task_runner_);
+  sync_context_ =
+      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
 
   // Initializes file_system1 and file_system2.
   EXPECT_EQ(SYNC_STATUS_OK,
-            file_system1.MaybeInitializeFileSystemContext(sync_context_));
+            file_system1.MaybeInitializeFileSystemContext(sync_context_.get()));
   EXPECT_EQ(SYNC_STATUS_OK,
-            file_system2.MaybeInitializeFileSystemContext(sync_context_));
+            file_system2.MaybeInitializeFileSystemContext(sync_context_.get()));
 
   EXPECT_EQ(base::PLATFORM_FILE_OK, file_system1.OpenFileSystem());
   EXPECT_EQ(base::PLATFORM_FILE_OK, file_system2.OpenFileSystem());
@@ -340,12 +344,14 @@ TEST_F(LocalFileSyncContextTest, MultipleFileSystemContexts) {
 #define MAYBE_PrepareSyncWhileWriting PrepareSyncWhileWriting
 #endif
 TEST_F(LocalFileSyncContextTest, MAYBE_PrepareSyncWhileWriting) {
-  CannedSyncableFileSystem file_system(GURL(kOrigin1), kServiceName,
-                                       io_task_runner_, file_task_runner_);
+  CannedSyncableFileSystem file_system(GURL(kOrigin1),
+                                       io_task_runner_.get(),
+                                       file_task_runner_.get());
   file_system.SetUp();
-  sync_context_ = new LocalFileSyncContext(ui_task_runner_, io_task_runner_);
+  sync_context_ =
+      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
   EXPECT_EQ(SYNC_STATUS_OK,
-            file_system.MaybeInitializeFileSystemContext(sync_context_));
+            file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
 
   EXPECT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());
 
@@ -397,13 +403,15 @@ TEST_F(LocalFileSyncContextTest, MAYBE_PrepareSyncWhileWriting) {
 }
 
 TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForDeletion) {
-  CannedSyncableFileSystem file_system(GURL(kOrigin1), kServiceName,
-                                       io_task_runner_, file_task_runner_);
+  CannedSyncableFileSystem file_system(GURL(kOrigin1),
+                                       io_task_runner_.get(),
+                                       file_task_runner_.get());
   file_system.SetUp();
 
-  sync_context_ = new LocalFileSyncContext(ui_task_runner_, io_task_runner_);
+  sync_context_ =
+      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
   ASSERT_EQ(SYNC_STATUS_OK,
-            file_system.MaybeInitializeFileSystemContext(sync_context_));
+            file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
   ASSERT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());
 
   // Record the initial usage (likely 0).
@@ -484,13 +492,15 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForAddOrUpdate) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
-  CannedSyncableFileSystem file_system(GURL(kOrigin1), kServiceName,
-                                       io_task_runner_, file_task_runner_);
+  CannedSyncableFileSystem file_system(GURL(kOrigin1),
+                                       io_task_runner_.get(),
+                                       file_task_runner_.get());
   file_system.SetUp();
 
-  sync_context_ = new LocalFileSyncContext(ui_task_runner_, io_task_runner_);
+  sync_context_ =
+      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
   ASSERT_EQ(SYNC_STATUS_OK,
-            file_system.MaybeInitializeFileSystemContext(sync_context_));
+            file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
   ASSERT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());
 
   const FileSystemURL kFile1(file_system.URL("file1"));
@@ -631,13 +641,15 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForAddOrUpdate_NoParent) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
-  CannedSyncableFileSystem file_system(GURL(kOrigin1), kServiceName,
-                                       io_task_runner_, file_task_runner_);
+  CannedSyncableFileSystem file_system(GURL(kOrigin1),
+                                       io_task_runner_.get(),
+                                       file_task_runner_.get());
   file_system.SetUp();
 
-  sync_context_ = new LocalFileSyncContext(ui_task_runner_, io_task_runner_);
+  sync_context_ =
+      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
   ASSERT_EQ(SYNC_STATUS_OK,
-            file_system.MaybeInitializeFileSystemContext(sync_context_));
+            file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
   ASSERT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());
 
   const char kTestFileData[] = "Lorem ipsum!";

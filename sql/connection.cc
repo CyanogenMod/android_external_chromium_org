@@ -11,10 +11,10 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
 
@@ -631,6 +631,13 @@ bool Connection::OpenInternal(const std::string& file_name) {
     return false;
   }
 
+  // SQLite uses a lookaside buffer to improve performance of small mallocs.
+  // Chromium already depends on small mallocs being efficient, so we disable
+  // this to avoid the extra memory overhead.
+  // This must be called immediatly after opening the database before any SQL
+  // statements are run.
+  sqlite3_db_config(db_, SQLITE_DBCONFIG_LOOKASIDE, NULL, 0, 0);
+
   // sqlite3_open() does not actually read the database file (unless a
   // hot journal is found).  Successfully executing this pragma on an
   // existing database requires a valid header on page 1.
@@ -770,19 +777,36 @@ int Connection::OnSqliteError(int err, sql::Statement *stmt) {
 // TODO(shess): Allow specifying integrity_check versus quick_check.
 // TODO(shess): Allow specifying maximum results (default 100 lines).
 bool Connection::IntegrityCheck(std::vector<std::string>* messages) {
-  const char kSql[] = "PRAGMA integrity_check";
-  sql::Statement stmt(GetUniqueStatement(kSql));
-
   messages->clear();
 
-  // The pragma appears to return all results (up to 100 by default)
-  // as a single string.  This doesn't appear to be an API contract,
-  // it could return separate lines, so loop _and_ split.
-  while (stmt.Step()) {
-    std::string result(stmt.ColumnString(0));
-    base::SplitString(result, '\n', messages);
+  // This has the side effect of setting SQLITE_RecoveryMode, which
+  // allows SQLite to process through certain cases of corruption.
+  // Failing to set this pragma probably means that the database is
+  // beyond recovery.
+  const char kWritableSchema[] = "PRAGMA writable_schema = ON";
+  if (!Execute(kWritableSchema))
+    return false;
+
+  bool ret = false;
+  {
+    const char kSql[] = "PRAGMA integrity_check";
+    sql::Statement stmt(GetUniqueStatement(kSql));
+
+    // The pragma appears to return all results (up to 100 by default)
+    // as a single string.  This doesn't appear to be an API contract,
+    // it could return separate lines, so loop _and_ split.
+    while (stmt.Step()) {
+      std::string result(stmt.ColumnString(0));
+      base::SplitString(result, '\n', messages);
+    }
+    ret = stmt.Succeeded();
   }
-  return stmt.Succeeded();
+
+  // Best effort to put things back as they were before.
+  const char kNoWritableSchema[] = "PRAGMA writable_schema = OFF";
+  ignore_result(Execute(kNoWritableSchema));
+
+  return ret;
 }
 
 }  // namespace sql

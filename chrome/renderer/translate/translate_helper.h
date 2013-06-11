@@ -10,7 +10,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time.h"
-#include "chrome/common/translate_errors.h"
+#include "chrome/common/translate/translate_errors.h"
 #include "content/public/renderer/render_view_observer.h"
 
 namespace WebKit {
@@ -27,7 +27,7 @@ class TranslateHelper : public content::RenderViewObserver {
   virtual ~TranslateHelper();
 
   // Informs us that the page's text has been extracted.
-  void PageCaptured(const string16& contents);
+  void PageCaptured(int page_id, const string16& contents);
 
  protected:
   // The following methods are protected so they can be overridden in
@@ -87,16 +87,17 @@ class TranslateHelper : public content::RenderViewObserver {
   virtual double ExecuteScriptAndGetDoubleResult(const std::string& script);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, LanguageCodeTypoCorrection);
-  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, LanguageCodeSynonyms);
-  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, ResetInvalidLanguageCode);
-  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest,
-                           CLDDisagreeWithWrongLanguageCode);
+  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, AdoptHtmlLang);
   FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest,
                            CLDAgreeWithLanguageCodeHavingCountryCode);
   FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest,
+                           CLDDisagreeWithWrongLanguageCode);
+  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest,
                            InvalidLanguageMetaTagProviding);
-  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, AdoptHtmlLang);
+  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, LanguageCodeTypoCorrection);
+  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, LanguageCodeSynonyms);
+  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, ResetInvalidLanguageCode);
+  FRIEND_TEST_ALL_PREFIXES(TranslateHelperTest, SimilarLanguageCode);
 
   // Corrects language code if it contains well-known mistakes.
   static void CorrectLanguageCodeTypo(std::string* code);
@@ -109,6 +110,12 @@ class TranslateHelper : public content::RenderViewObserver {
 
   // Applies a series of language code modification in proper order.
   static void ApplyLanguageCodeCorrection(std::string* code);
+
+  // Checks if languages are matched, or similar. This function returns true
+  // against a language pair containing a language which is difficult for CLD
+  // to distinguish.
+  static bool IsSameOrSimilarLanguages(const std::string& page_language,
+                                       const std::string& cld_language);
 
   // Determines content page language from Content-Language code and contents.
   static std::string DeterminePageLanguage(const std::string& code,
@@ -155,9 +162,12 @@ class TranslateHelper : public content::RenderViewObserver {
   // if the page is being closed.
   WebKit::WebFrame* GetMainFrame();
 
+  // ID to represent a page which TranslateHelper captured and determined a
+  // content language.
+  int page_id_;
+
   // The states associated with the current translation.
   bool translation_pending_;
-  int page_id_;
   std::string source_lang_;
   std::string target_lang_;
 

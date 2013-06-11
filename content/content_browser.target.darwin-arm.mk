@@ -17,6 +17,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,content_browser_devtools_devtools_resources_gyp)/devtools_resources.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_resources_gyp)/webkit_resources.stamp \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_strings_gyp)/webkit_strings.stamp \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_gyp)/sandbox.stamp \
@@ -86,13 +87,15 @@ LOCAL_SRC_FILES := \
 	content/browser/android/download_controller_android_impl.cc \
 	content/browser/android/devtools_auth.cc \
 	content/browser/android/edge_effect.cc \
+	content/browser/android/in_process/synchronous_compositor_impl.cc \
+	content/browser/android/in_process/synchronous_compositor_output_surface.cc \
+	content/browser/android/in_process/synchronous_input_event_filter.cc \
 	content/browser/android/interstitial_page_delegate_android.cc \
 	content/browser/android/load_url_params.cc \
 	content/browser/android/media_player_manager_impl.cc \
 	content/browser/android/media_resource_getter_impl.cc \
 	content/browser/android/overscroll_glow.cc \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
-	content/browser/android/sync_input_event_filter.cc \
 	content/browser/android/touch_point.cc \
 	content/browser/android/tracing_intent_handler.cc \
 	content/browser/android/web_contents_observer_android.cc \
@@ -164,6 +167,7 @@ LOCAL_SRC_FILES := \
 	content/browser/download/drag_download_file.cc \
 	content/browser/download/drag_download_util.cc \
 	content/browser/download/mhtml_generation_manager.cc \
+	content/browser/download/rate_estimator.cc \
 	content/browser/download/save_file.cc \
 	content/browser/download/save_file_manager.cc \
 	content/browser/download/save_file_resource_handler.cc \
@@ -205,9 +209,26 @@ LOCAL_SRC_FILES := \
 	content/browser/in_process_webkit/indexed_db_database_callbacks.cc \
 	content/browser/in_process_webkit/indexed_db_dispatcher_host.cc \
 	content/browser/in_process_webkit/webkit_thread.cc \
+	content/browser/indexed_db/indexed_db_backing_store.cc \
+	content/browser/indexed_db/indexed_db_callbacks_wrapper.cc \
 	content/browser/indexed_db/indexed_db_context_impl.cc \
+	content/browser/indexed_db/indexed_db_cursor.cc \
+	content/browser/indexed_db/indexed_db_database.cc \
+	content/browser/indexed_db/indexed_db_database_callbacks_wrapper.cc \
+	content/browser/indexed_db/indexed_db_factory.cc \
+	content/browser/indexed_db/indexed_db_index_writer.cc \
 	content/browser/indexed_db/indexed_db_internals_ui.cc \
+	content/browser/indexed_db/indexed_db_leveldb_coding.cc \
+	content/browser/indexed_db/indexed_db_metadata.cc \
 	content/browser/indexed_db/indexed_db_quota_client.cc \
+	content/browser/indexed_db/indexed_db_transaction.cc \
+	content/browser/indexed_db/indexed_db_transaction_coordinator.cc \
+	content/browser/indexed_db/leveldb/leveldb_database.cc \
+	content/browser/indexed_db/leveldb/leveldb_transaction.cc \
+	content/browser/indexed_db/leveldb/leveldb_write_batch.cc \
+	content/browser/indexed_db/webidbcursor_impl.cc \
+	content/browser/indexed_db/webidbdatabase_impl.cc \
+	content/browser/indexed_db/webidbfactory_impl.cc \
 	content/browser/loader/async_resource_handler.cc \
 	content/browser/loader/buffered_resource_handler.cc \
 	content/browser/loader/certificate_resource_handler.cc \
@@ -257,7 +278,6 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/database_message_filter.cc \
 	content/browser/renderer_host/dip_util.cc \
 	content/browser/renderer_host/file_utilities_message_filter.cc \
-	content/browser/renderer_host/frame_tree_node.cc \
 	content/browser/renderer_host/gamepad_browser_message_filter.cc \
 	content/browser/renderer_host/gesture_event_filter.cc \
 	content/browser/renderer_host/gpu_message_filter.cc \
@@ -277,7 +297,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/audio_sync_reader.cc \
 	content/browser/renderer_host/media/media_stream_dispatcher_host.cc \
 	content/browser/renderer_host/media/media_stream_manager.cc \
-	content/browser/renderer_host/media/media_stream_ui_controller.cc \
+	content/browser/renderer_host/media/media_stream_ui_proxy.cc \
 	content/browser/renderer_host/media/video_capture_buffer_pool.cc \
 	content/browser/renderer_host/media/video_capture_controller.cc \
 	content/browser/renderer_host/media/video_capture_controller_event_handler.cc \
@@ -288,13 +308,13 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/web_contents_capture_util.cc \
 	content/browser/renderer_host/media/web_contents_tracker.cc \
 	content/browser/renderer_host/media/web_contents_video_capture_device.cc \
-	content/browser/renderer_host/media/webrtc_logging_handler_host.cc \
 	content/browser/renderer_host/memory_benchmark_message_filter.cc \
 	content/browser/renderer_host/native_web_keyboard_event_android.cc \
 	content/browser/renderer_host/native_web_keyboard_event.cc \
 	content/browser/renderer_host/overscroll_configuration.cc \
 	content/browser/renderer_host/overscroll_controller.cc \
 	content/browser/renderer_host/quota_dispatcher_host.cc \
+	content/browser/renderer_host/render_frame_host_impl.cc \
 	content/browser/renderer_host/render_message_filter.cc \
 	content/browser/renderer_host/render_process_host_impl.cc \
 	content/browser/renderer_host/render_view_host_delegate.cc \
@@ -318,6 +338,8 @@ LOCAL_SRC_FILES := \
 	content/browser/resolve_proxy_msg_helper.cc \
 	content/browser/resource_context_impl.cc \
 	content/browser/site_instance_impl.cc \
+	content/browser/speech/speech_recognition_dispatcher_host.cc \
+	content/browser/speech/speech_recognition_manager_impl.cc \
 	content/browser/ssl/ssl_cert_error_handler.cc \
 	content/browser/ssl/ssl_client_auth_handler.cc \
 	content/browser/ssl/ssl_error_handler.cc \
@@ -340,6 +362,7 @@ LOCAL_SRC_FILES := \
 	content/browser/user_metrics.cc \
 	content/browser/utility_process_host_impl.cc \
 	content/browser/web_contents/debug_urls.cc \
+	content/browser/web_contents/frame_tree_node.cc \
 	content/browser/web_contents/interstitial_page_impl.cc \
 	content/browser/web_contents/navigation_controller_impl.cc \
 	content/browser/web_contents/navigation_entry_impl.cc \
@@ -409,7 +432,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -475,11 +497,13 @@ LOCAL_C_INCLUDES := \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(gyp_shared_intermediate_dir)/webkit \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
+	$(LOCAL_PATH)/third_party/leveldatabase/src \
+	$(LOCAL_PATH)/third_party/leveldatabase \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

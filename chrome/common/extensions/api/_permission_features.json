@@ -2,11 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// See c/c/e/features/* to understand this file, in particular feature.h,
+// simple_feature.h, and base_feature_provider.h.
+
 {
   "activeTab": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"],
     "min_manifest_version": 2
+  },
+  "activityLogPrivate": {
+    "channel": "dev",
+    "extension_types": ["extension"],
+    "whitelist": [
+      "acldcpdepobcjbdanifkmfndkjoilgba",  // Activity Log
+      "ajabfgledjhbabeoojlabelaifmakodf"   // For testing
+    ]
   },
   "adview": {
     "channel": "dev",
@@ -180,9 +191,11 @@
     "extension_types": ["extension", "platform_app"]
   },
   "enterprise.platformKeysPrivate": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension", "packaged_app"],
     "whitelist": [
+      "inmdanhiiibfpdlljnjjbchhjgelojnn",  // Dogfood
+      "cbpmgnfekbgbgpkmokfppmldaccjcbnb"   // Test
     ]
   },
   "experimental": {
@@ -254,7 +267,7 @@
     "extension_types": ["extension", "packaged_app"],
     "inplies_full_url_access": true
   },
-  "inputMethodPrivate": {
+  "inputMethodPrivate": [{
     "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"],
     "whitelist": [
@@ -262,10 +275,13 @@
       "gnedhmakppccajfpfiihfcdlnpgomkcf",  // Citrix Receiver Beta
       "fjcibdnjlbfnbfdjneajpipnlcppleek",  // Citrix Receiver Dev
       "pnhechapfaindjhompbnflcldabbghjo",  // HTerm
-      "okddffdblfhhnmhodogpojmfkjmhinfp",  // HTerm dev
-      "fpfbhcjppmaeaijcidgiibchfbnhbelj"  // Google Japanese Input
+      "okddffdblfhhnmhodogpojmfkjmhinfp"  // HTerm dev
     ]
-  },
+  },{
+    "channel": "stable",
+    "extension_types": ["extension", "packaged_app", "platform_app"],
+    "location": "component"
+  }],
   "location": [
     {
       "channel": "dev",
@@ -344,6 +360,14 @@
       "ehibbfinohgbchlgdbfpikodjaojhccn",  // Editor
       "pmofbkohncoogjjhahejjfbppikbjigm",  // Google Now
       "iejldcgjigodajhjecapkeiggcncflph"   // Google Now dev
+    ]
+  },
+  "musicManagerPrivate": {
+    "channel": "dev",
+    "extension_types": ["platform_app"],
+    "whitelist": [
+      "4B1D0E19C6C43C008C44A8278C8B5BFE15ABEB3C", // Music Manager
+      "B8F61FD1B25DE03706DBB8906A73261E4DBB992A"  // Test
     ]
   },
   "nativeMessaging": [
@@ -476,6 +500,20 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"],
     "min_manifest_version": 2
+  },
+  "systemInfo.cpu": {
+    "channel": "dev",
+    "extension_types": [
+      "extension", "packaged_app", "hosted_app", "platform_app"
+    ],
+    "whitelist": [""]
+  },
+  "systemInfo.memory": {
+    "channel": "dev",
+    "extension_types": [
+      "extension", "packaged_app", "hosted_app", "platform_app"
+    ],
+    "whitelist": [""]
   },
   "systemInfo.display": {
     "channel": "stable",

@@ -47,6 +47,7 @@ bool AppShimHost::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(AppShimHost, message)
     IPC_MESSAGE_HANDLER(AppShimHostMsg_LaunchApp, OnLaunchApp)
     IPC_MESSAGE_HANDLER(AppShimHostMsg_FocusApp, OnFocus)
+    IPC_MESSAGE_HANDLER(AppShimHostMsg_QuitApp, OnQuit)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -62,7 +63,9 @@ bool AppShimHost::Send(IPC::Message* message) {
   return channel_->Send(message);
 }
 
-void AppShimHost::OnLaunchApp(std::string profile_dir, std::string app_id) {
+void AppShimHost::OnLaunchApp(base::FilePath profile_dir,
+                              std::string app_id,
+                              apps::AppShimLaunchType launch_type) {
   DCHECK(CalledOnValidThread());
   DCHECK(!profile_);
   if (profile_) {
@@ -71,10 +74,15 @@ void AppShimHost::OnLaunchApp(std::string profile_dir, std::string app_id) {
     return;
   }
 
-  profile_ = FetchProfileForDirectory(profile_dir);
+  if (!(profile_ = FetchProfileForDirectory(profile_dir))) {
+    Send(new AppShimMsg_LaunchApp_Done(false));
+    return;
+  }
+
   app_id_ = app_id;
+
   apps::AppShimHandler* handler = apps::AppShimHandler::GetForAppMode(app_id_);
-  bool success = handler && handler->OnShimLaunch(this);
+  bool success = handler && handler->OnShimLaunch(this, launch_type);
   Send(new AppShimMsg_LaunchApp_Done(success));
 }
 
@@ -85,24 +93,29 @@ void AppShimHost::OnFocus() {
     handler->OnShimFocus(this);
 }
 
-Profile* AppShimHost::FetchProfileForDirectory(const std::string& profile_dir) {
+void AppShimHost::OnQuit() {
+  DCHECK(CalledOnValidThread());
+  apps::AppShimHandler* handler = apps::AppShimHandler::GetForAppMode(app_id_);
+  if (handler)
+    handler->OnShimQuit(this);
+}
+
+Profile* AppShimHost::FetchProfileForDirectory(
+    const base::FilePath& profile_dir) {
   ProfileManager* profileManager = g_browser_process->profile_manager();
-  // Even though the name of this function is "unsafe", there's no security
-  // issue here -- the check for the profile name in the profile info cache
-  // ensures that we never access any directory that isn't a known profile.
-  base::FilePath path = base::FilePath::FromUTF8Unsafe(profile_dir);
-  path = profileManager->user_data_dir().Append(path);
+  // Check for the profile name in the profile info cache to ensure that we
+  // never access any directory that isn't a known profile.
+  base::FilePath path = profileManager->user_data_dir().Append(profile_dir);
   ProfileInfoCache& cache = profileManager->GetProfileInfoCache();
-  // This ensures that the given profile path is acutally a profile that we
-  // already know about.
   if (cache.GetIndexOfProfileWithPath(path) == std::string::npos) {
     LOG(ERROR) << "Requested directory is not a known profile '"
-               << profile_dir << "'.";
+               << profile_dir.value() << "'.";
     return NULL;
   }
   Profile* profile = profileManager->GetProfile(path);
   if (!profile) {
-    LOG(ERROR) << "Couldn't get profile for directory '" << profile_dir << "'.";
+    LOG(ERROR) << "Couldn't get profile for directory '"
+               << profile_dir.value() << "'.";
     return NULL;
   }
   return profile;

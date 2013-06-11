@@ -42,19 +42,14 @@ class TestPasswordGenerationManager : public PasswordGenerationManager {
 };
 
 class PasswordGenerationManagerTest : public ChromeRenderViewHostTestHarness {
- public:
-  PasswordGenerationManagerTest()
-      : ChromeRenderViewHostTestHarness(),
-        ui_thread_(content::BrowserThread::UI, &message_loop_),
-        io_thread_(content::BrowserThread::IO) {}
-
+ protected:
   virtual void SetUp() OVERRIDE {
     TestingProfile* profile = CreateProfile();
     profile->CreateRequestContext();
     browser_context_.reset(profile);
 
+    SetThreadBundleOptions(content::TestBrowserThreadBundle::REAL_IO_THREAD);
     ChromeRenderViewHostTestHarness::SetUp();
-    io_thread_.StartIOThread();
 
     password_generation_manager_.reset(
         new TestPasswordGenerationManager(web_contents()));
@@ -71,10 +66,6 @@ class PasswordGenerationManagerTest : public ChromeRenderViewHostTestHarness {
   void UpdateState(bool new_renderer) {
     password_generation_manager_->UpdateState(NULL, new_renderer);
   }
-
- protected:
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread io_thread_;
 
   scoped_ptr<TestPasswordGenerationManager> password_generation_manager_;
 };
@@ -164,7 +155,7 @@ TEST_F(PasswordGenerationManagerTest, UpdatePasswordSyncState) {
   preferred_set.Put(syncer::EXTENSIONS);
   preferred_set.Put(syncer::PREFERENCES);
   sync_service->ChangePreferredDataTypes(preferred_set);
-  syncer::ModelTypeSet new_set = sync_service->GetPreferredDataTypes();
+  syncer::ModelTypeSet new_set = sync_service->GetActiveDataTypes();
   UpdateState(false);
   EXPECT_EQ(0u, password_generation_manager_->GetSentStates().size());
 

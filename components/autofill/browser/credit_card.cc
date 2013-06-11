@@ -12,11 +12,11 @@
 #include "base/basictypes.h"
 #include "base/guid.h"
 #include "base/logging.h"
-#include "base/string16.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/autofill/browser/autofill_field.h"
 #include "components/autofill/browser/autofill_regexes.h"
 #include "components/autofill/browser/autofill_type.h"
@@ -341,7 +341,7 @@ void CreditCard::SetRawInfo(AutofillFieldType type,
 }
 
 base::string16 CreditCard::GetInfo(AutofillFieldType type,
-                             const std::string& app_locale) const {
+                                   const std::string& app_locale) const {
   if (type == CREDIT_CARD_NUMBER)
     return StripSeparators(number_);
 

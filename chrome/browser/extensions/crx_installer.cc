@@ -14,12 +14,12 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/sequenced_task_runner.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "chrome/browser/extensions/convert_user_script.h"
 #include "chrome/browser/extensions/convert_web_app.h"
@@ -41,6 +41,8 @@
 #include "chrome/common/extensions/manifest.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
+#include "chrome/common/extensions/manifest_url_handler.h"
+#include "chrome/common/extensions/user_script.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -143,14 +145,13 @@ void CrxInstaller::InstallCrx(const base::FilePath& source_file) {
   source_file_ = source_file;
 
   scoped_refptr<SandboxedUnpacker> unpacker(
-      new SandboxedUnpacker(
-          source_file,
-          content::ResourceDispatcherHost::Get() != NULL,
-          install_source_,
-          creation_flags_,
-          install_directory_,
-          installer_task_runner_,
-          this));
+      new SandboxedUnpacker(source_file,
+                            content::ResourceDispatcherHost::Get() != NULL,
+                            install_source_,
+                            creation_flags_,
+                            install_directory_,
+                            installer_task_runner_.get(),
+                            this));
 
   if (!installer_task_runner_->PostTask(
           FROM_HERE,
@@ -175,12 +176,12 @@ void CrxInstaller::ConvertUserScriptOnFileThread() {
   string16 error;
   scoped_refptr<Extension> extension = ConvertUserScriptToExtension(
       source_file_, download_url_, install_directory_, &error);
-  if (!extension) {
+  if (!extension.get()) {
     ReportFailureFromFileThread(CrxInstallerError(error));
     return;
   }
 
-  OnUnpackSuccess(extension->path(), extension->path(), NULL, extension);
+  OnUnpackSuccess(extension->path(), extension->path(), NULL, extension.get());
 }
 
 void CrxInstaller::InstallWebApp(const WebApplicationInfo& web_app) {
@@ -199,7 +200,7 @@ void CrxInstaller::ConvertWebAppOnFileThread(
   string16 error;
   scoped_refptr<Extension> extension(
       ConvertWebAppToExtension(web_app, base::Time::Now(), install_directory));
-  if (!extension) {
+  if (!extension.get()) {
     // Validation should have stopped any potential errors before getting here.
     NOTREACHED() << "Could not convert web app to extension.";
     return;
@@ -207,7 +208,7 @@ void CrxInstaller::ConvertWebAppOnFileThread(
 
   // TODO(aa): conversion data gets lost here :(
 
-  OnUnpackSuccess(extension->path(), extension->path(), NULL, extension);
+  OnUnpackSuccess(extension->path(), extension->path(), NULL, extension.get());
 }
 
 CrxInstallerError CrxInstaller::AllowInstall(const Extension* extension) {
@@ -310,7 +311,7 @@ CrxInstallerError CrxInstaller::AllowInstall(const Extension* extension) {
       // For apps with a gallery update URL, require that they be installed
       // from the gallery.
       // TODO(erikkay) Apply this rule for paid extensions and themes as well.
-      if (extension->UpdatesFromGallery()) {
+      if (ManifestURL::UpdatesFromGallery(extension)) {
         return CrxInstallerError(
             l10n_util::GetStringFUTF16(
                 IDS_EXTENSION_DISALLOW_NON_DOWNLOADED_GALLERY_INSTALLS,
@@ -399,7 +400,7 @@ void CrxInstaller::OnUnpackSuccess(const base::FilePath& temp_dir,
 
 void CrxInstaller::CheckImportsAndRequirements() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  ExtensionService* service = service_weak_;
+  ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
     return;
 
@@ -450,7 +451,7 @@ void CrxInstaller::OnRequirementsChecked(
 
 void CrxInstaller::ConfirmInstall() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  ExtensionService* service = service_weak_;
+  ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
     return;
 
@@ -498,7 +499,7 @@ void CrxInstaller::ConfirmInstall() {
 void CrxInstaller::InstallUIProceed() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  ExtensionService* service = service_weak_;
+  ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
     return;
 
@@ -659,7 +660,7 @@ void CrxInstaller::ReportSuccessFromFileThread() {
 void CrxInstaller::ReportSuccessFromUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (!service_weak_ || service_weak_->browser_terminating())
+  if (!service_weak_.get() || service_weak_->browser_terminating())
     return;
 
   if (!update_from_settings_page_) {
@@ -757,7 +758,7 @@ void CrxInstaller::CleanupTempFiles() {
 void CrxInstaller::CheckUpdateFromSettingsPage() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  ExtensionService* service = service_weak_;
+  ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
     return;
 
@@ -778,7 +779,7 @@ void CrxInstaller::CheckUpdateFromSettingsPage() {
 void CrxInstaller::ConfirmReEnable() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  ExtensionService* service = service_weak_;
+  ExtensionService* service = service_weak_.get();
   if (!service || service->browser_terminating())
     return;
 

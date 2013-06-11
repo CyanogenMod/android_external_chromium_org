@@ -73,12 +73,12 @@ class DialogNotification {
     NONE,
     AUTOCHECKOUT_ERROR,
     AUTOCHECKOUT_SUCCESS,
+    DEVELOPER_WARNING,
     EXPLANATORY_MESSAGE,
     REQUIRED_ACTION,
     SECURITY_WARNING,
     VALIDATION_ERROR,
     WALLET_ERROR,
-    WALLET_SIGNIN_PROMO,
     WALLET_USAGE_CONFIRMATION,
   };
 
@@ -151,6 +151,11 @@ struct SuggestionState {
   string16 extra_text;
   gfx::Image extra_icon;
   bool editable;
+};
+
+enum ValidationType {
+  VALIDATE_EDIT,   // Validate user edits. Allow for empty fields.
+  VALIDATE_FINAL,  // Full form validation. Required fields can't be empty.
 };
 
 typedef std::vector<DetailInput> DetailInputs;

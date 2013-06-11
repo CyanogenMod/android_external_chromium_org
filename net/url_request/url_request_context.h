@@ -45,7 +45,8 @@ class URLRequestThrottlerManager;
 // these member variables, since they may be shared. For the ones that aren't
 // shared, URLRequestContextStorage can be helpful in defining their storage.
 class NET_EXPORT URLRequestContext
-    : NON_EXPORTED_BASE(public base::NonThreadSafe) {
+    : NON_EXPORTED_BASE(public base::NonThreadSafe),
+      public base::SupportsWeakPtr<URLRequestContext> {
  public:
   URLRequestContext();
   virtual ~URLRequestContext();
@@ -107,7 +108,9 @@ class NET_EXPORT URLRequestContext
   }
 
   // Get the ssl config service for this context.
-  SSLConfigService* ssl_config_service() const { return ssl_config_service_; }
+  SSLConfigService* ssl_config_service() const {
+    return ssl_config_service_.get();
+  }
   void set_ssl_config_service(SSLConfigService* service) {
     ssl_config_service_ = service;
   }

@@ -19,7 +19,7 @@
 #include "webkit/browser/fileapi/file_system_options.h"
 #include "webkit/browser/fileapi/file_system_quota_util.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
-#include "webkit/quota/special_storage_policy.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
@@ -159,18 +159,16 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
 
   void CollectOpenFileSystemMetrics(base::PlatformFileError error_code);
 
-  // Returns update observers for the given type.
+  // Returns observers for the given type.
   const UpdateObserverList* GetUpdateObservers(FileSystemType type) const;
+  const AccessObserverList* GetAccessObservers(FileSystemType type) const;
 
-  void AddSyncableFileUpdateObserver(FileUpdateObserver* observer,
-                                     base::SequencedTaskRunner* task_runner);
-  void AddSyncableFileChangeObserver(FileChangeObserver* observer,
-                                     base::SequencedTaskRunner* task_runner);
-
-  // Returns a LocalFileSystemOperation that can be used to apply changes
-  // to the syncable filesystem.
-  LocalFileSystemOperation* CreateFileSystemOperationForSync(
-      FileSystemContext* file_system_context);
+  void AddFileUpdateObserver(FileSystemType type,
+                             FileUpdateObserver* observer,
+                             base::SequencedTaskRunner* task_runner);
+  void AddFileChangeObserver(FileSystemType type,
+                             FileChangeObserver* observer,
+                             base::SequencedTaskRunner* task_runner);
 
   void set_enable_temporary_file_system_in_incognito(bool enable) {
     enable_temporary_file_system_in_incognito_ = enable;
@@ -232,6 +230,7 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
 
   // Observers.
   UpdateObserverList update_observers_;
+  ChangeObserverList change_observers_;
   AccessObserverList access_observers_;
 
   // Observers for syncable file systems.

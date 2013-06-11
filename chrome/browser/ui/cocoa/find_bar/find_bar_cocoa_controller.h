@@ -5,14 +5,13 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_nsobject.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/point.h"
 
 class Browser;
 class FindBarBridge;
 @class FindBarTextField;
 class FindNotificationDetails;
-@class FindTextFieldEditor;
 @class FocusTracker;
 
 // A controller for the find bar in the browser window.  Manages
@@ -48,9 +47,6 @@ class FindNotificationDetails;
   // stopAnimation.
   scoped_nsobject<NSViewAnimation> moveAnimation_;
 
-  // Custom editor for NSTextField allows to customize cut/copy.
-  scoped_nsobject<FindTextFieldEditor> customTextFieldEditor_;
-
   // If YES, do nothing as a result of find pasteboard update notifications.
   BOOL suppressPboardUpdateActions_;
 
@@ -60,6 +56,8 @@ class FindNotificationDetails;
   // Default width of FindBar.
   CGFloat defaultWidth_;
 };
+
+@property (readonly, nonatomic) NSView* findBarView;
 
 // Initializes a new FindBarCocoaController.
 - (id)initWithBrowser:(Browser*)browser;
@@ -101,8 +99,5 @@ class FindNotificationDetails;
 
 // Returns the width of the FindBar.
 - (int)findBarWidth;
-
-// Returns custom editor for findText_.
-- (id)customFieldEditorForObject:(id)obj;
 
 @end

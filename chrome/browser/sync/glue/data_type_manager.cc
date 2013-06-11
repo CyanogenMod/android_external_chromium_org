@@ -11,7 +11,8 @@ DataTypeManager::ConfigureResult::ConfigureResult()
 }
 
 DataTypeManager::ConfigureResult::ConfigureResult(ConfigureStatus status,
-                                                  TypeSet requested_types)
+                                                  syncer::ModelTypeSet
+                                                      requested_types)
     : status(status),
       requested_types(requested_types) {
   DCHECK_EQ(OK, status);
@@ -19,14 +20,16 @@ DataTypeManager::ConfigureResult::ConfigureResult(ConfigureStatus status,
 
 DataTypeManager::ConfigureResult::ConfigureResult(
     ConfigureStatus status,
-    TypeSet requested_types,
-    const std::list<syncer::SyncError>& failed_data_types,
-    syncer::ModelTypeSet waiting_to_start)
+    syncer::ModelTypeSet requested_types,
+    std::map<syncer::ModelType, syncer::SyncError> failed_data_types,
+    syncer::ModelTypeSet waiting_to_start,
+    syncer::ModelTypeSet needs_crypto)
     : status(status),
       requested_types(requested_types),
       failed_data_types(failed_data_types),
-      waiting_to_start(waiting_to_start) {
-  if (!failed_data_types.empty()) {
+      waiting_to_start(waiting_to_start),
+      needs_crypto(needs_crypto) {
+  if (!failed_data_types.empty() || !needs_crypto.Empty()) {
     DCHECK_NE(OK, status);
   }
 }

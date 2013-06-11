@@ -22,9 +22,9 @@
 #include "base/nix/xdg_util.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_item_model.h"
@@ -1449,6 +1449,13 @@ bool BrowserWindowGtk::CanClose() const {
     // down. When the tab strip is empty we'll be called back again.
     gtk_widget_hide(GTK_WIDGET(window_));
     browser_->OnWindowClosing();
+    browser_->tab_strip_model()->CloseAllTabs();
+    return false;
+  } else if (!browser_->HasCompletedUnloadProcessing()) {
+    // The browser needs to finish running unload handlers.
+    // Hide the window (so it appears to have closed immediately), and
+    // the browser will call us back again when it is ready to close.
+    gtk_widget_hide(GTK_WIDGET(window_));
     return false;
   }
 

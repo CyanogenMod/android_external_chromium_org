@@ -15,9 +15,9 @@
 
 #include "base/base64.h"
 #include "base/basictypes.h"
-#include "base/string_util.h"
 #include "base/strings/string_tokenizer.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/proxy/proxy_api_constants.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"

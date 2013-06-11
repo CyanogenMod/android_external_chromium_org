@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/message_center/fake_message_center.h"
 #include "ui/message_center/notification.h"
@@ -131,6 +131,7 @@ void MessageCenterViewTest::SetUp() {
                             std::string("notification id"),
                             UTF8ToUTF16("title"),
                             UTF8ToUTF16("message"),
+                            gfx::Image(),
                             UTF8ToUTF16("display source"),
                             std::string("extension id"),
                             NULL,

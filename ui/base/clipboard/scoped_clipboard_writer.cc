@@ -9,7 +9,7 @@
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 
 #include "base/pickle.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/size.h"
 
 namespace ui {
@@ -17,21 +17,12 @@ namespace ui {
 ScopedClipboardWriter::ScopedClipboardWriter(Clipboard* clipboard,
                                              Clipboard::Buffer buffer)
     : clipboard_(clipboard),
-      buffer_(buffer),
-      source_tag_() {
-}
-
-ScopedClipboardWriter::ScopedClipboardWriter(Clipboard* clipboard,
-                                             Clipboard::Buffer buffer,
-                                             SourceTag source_tag)
-    : clipboard_(clipboard),
-      buffer_(buffer),
-      source_tag_(source_tag) {
+      buffer_(buffer) {
 }
 
 ScopedClipboardWriter::~ScopedClipboardWriter() {
   if (!objects_.empty() && clipboard_)
-    clipboard_->WriteObjects(buffer_, objects_, source_tag_);
+    clipboard_->WriteObjects(buffer_, objects_);
 }
 
 void ScopedClipboardWriter::WriteText(const string16& text) {

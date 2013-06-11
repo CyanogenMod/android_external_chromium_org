@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
@@ -30,6 +30,7 @@
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/sync_helper.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -132,7 +133,7 @@ class InstalledBubbleContent : public views::View,
     bool has_keybinding = GetKeybinding(&command);
     string16 key;  // Keyboard shortcut or keyword to display in the bubble.
 
-    if (extension->GetSyncType() == Extension::SYNC_TYPE_EXTENSION &&
+    if (extensions::sync_helper::IsSyncableExtension(extension) &&
         SyncPromoUI::ShouldShowSyncPromo(browser->profile()))
       flavors_ |= SIGN_IN_PROMO;
 
@@ -261,7 +262,7 @@ class InstalledBubbleContent : public views::View,
       configure_url += chrome::kExtensionConfigureCommandsSubPage;
     } else if (source == sign_in_link_) {
       configure_url = SyncPromoUI::GetSyncPromoURL(
-          GURL(), SyncPromoUI::SOURCE_EXTENSION_INSTALL_BUBBLE, false).spec();
+          SyncPromoUI::SOURCE_EXTENSION_INSTALL_BUBBLE, false).spec();
     } else {
       NOTREACHED();
       return;

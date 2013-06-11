@@ -4,9 +4,9 @@
 
 #include <string>
 
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/push_messaging/sync_setup_helper.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -111,7 +111,7 @@ class PushMessagingCanaryTest : public ExtensionApiTest {
     resolver->AllowDirectLookup("*.gstatic.com");
     resolver->AllowDirectLookup("*.googleapis.com");
     mock_host_resolver_override_.reset(
-        new net::ScopedDefaultHostResolverProc(resolver));
+        new net::ScopedDefaultHostResolverProc(resolver.get()));
   }
 
   // We need to reset the DNS lookup when we finish, or the test will fail.

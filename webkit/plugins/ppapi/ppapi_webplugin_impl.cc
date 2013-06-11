@@ -11,10 +11,10 @@
 #include "googleurl/src/gurl.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/var_tracker.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
+#include "third_party/WebKit/public/platform/WebPoint.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
@@ -84,13 +84,12 @@ WebKit::WebPluginContainer* WebPluginImpl::container() const {
 
 bool WebPluginImpl::initialize(WebPluginContainer* container) {
   // The plugin delegate may have gone away.
-  if (!init_data_->delegate)
+  if (!init_data_->delegate.get())
     return false;
 
-  instance_ = init_data_->module->CreateInstance(init_data_->delegate,
-                                                 container,
-                                                 init_data_->url);
-  if (!instance_)
+  instance_ = init_data_->module
+      ->CreateInstance(init_data_->delegate.get(), container, init_data_->url);
+  if (!instance_.get())
     return false;
 
   // Enable script objects for this plugin.
@@ -123,7 +122,7 @@ void WebPluginImpl::destroy() {
   if (container_)
     container_->clearScriptObjects();
 
-  if (instance_) {
+  if (instance_.get()) {
     ::ppapi::PpapiGlobals::Get()->GetVarTracker()->ReleaseVar(instance_object_);
     instance_object_ = PP_MakeUndefined();
     instance_->Delete();
@@ -140,13 +139,13 @@ NPObject* WebPluginImpl::scriptableObject() {
     instance_object_ = instance_->GetInstanceObject();
   // GetInstanceObject talked to the plugin which may have removed the instance
   // from the DOM, in which case instance_ would be NULL now.
-  if (!instance_)
+  if (!instance_.get())
     return NULL;
 
   scoped_refptr<NPObjectVar> object(NPObjectVar::FromPPVar(instance_object_));
   // If there's an InstanceObject, tell the Instance's MessageChannel to pass
   // any non-postMessage calls to it.
-  if (object) {
+  if (object.get()) {
     instance_->message_channel().SetPassthroughObject(object->np_object());
   }
   NPObject* message_channel_np_object(instance_->message_channel().np_object());

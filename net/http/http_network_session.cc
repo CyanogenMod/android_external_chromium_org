@@ -82,7 +82,6 @@ HttpNetworkSession::Params::Params()
       spdy_max_concurrent_streams_limit(0),
       time_func(&base::TimeTicks::Now),
       enable_quic(false),
-      origin_port_to_force_quic_on(0),
       quic_clock(NULL),
       quic_random(NULL),
       enable_user_alternate_protocol_ports(false),
@@ -130,7 +129,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
       http_stream_factory_(new HttpStreamFactoryImpl(this)),
       params_(params) {
   DCHECK(proxy_service_);
-  DCHECK(ssl_config_service_);
+  DCHECK(ssl_config_service_.get());
   CHECK(http_server_properties_);
 }
 
@@ -193,8 +192,8 @@ Value* HttpNetworkSession::QuicInfoToValue() const {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->Set("sessions", quic_stream_factory_.QuicStreamFactoryInfoToValue());
   dict->SetBoolean("quic_enabled", params_.enable_quic);
-  dict->SetInteger("origin_port_to_force_quic_on",
-                   params_.origin_port_to_force_quic_on);
+  dict->SetString("origin_to_force_quic_on",
+                  params_.origin_to_force_quic_on.ToString());
   return dict;
 }
 

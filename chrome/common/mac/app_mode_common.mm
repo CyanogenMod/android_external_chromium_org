@@ -10,12 +10,17 @@ const char kAppShimSocketName[] = "App Shim Socket";
 
 const char kAppListModeId[] = "app_list";
 
+const char kNoLaunchApp[] = "no-launch-app";
+
+NSString* const kCFBundleDisplayNameKey = @"CFBundleDisplayName";
+NSString* const kLSHasLocalizedDisplayNameKey = @"LSHasLocalizedDisplayName";
 NSString* const kBrowserBundleIDKey = @"CrBundleIdentifier";
 NSString* const kCrAppModeShortcutIDKey = @"CrAppModeShortcutID";
 NSString* const kCrAppModeShortcutNameKey = @"CrAppModeShortcutName";
 NSString* const kCrAppModeShortcutURLKey = @"CrAppModeShortcutURL";
 NSString* const kCrAppModeUserDataDirKey = @"CrAppModeUserDataDir";
 NSString* const kCrAppModeProfileDirKey = @"CrAppModeProfileDir";
+NSString* const kCrAppModeProfileNameKey = @"CrAppModeProfileName";
 
 NSString* const kLastRunAppBundlePathPrefsKey = @"LastRunAppBundlePath";
 

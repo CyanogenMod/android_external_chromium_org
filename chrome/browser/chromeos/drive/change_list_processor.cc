@@ -70,14 +70,14 @@ ChangeListProcessor::ChangeListProcessor(ResourceMetadata* resource_metadata)
 ChangeListProcessor::~ChangeListProcessor() {
 }
 
-void ChangeListProcessor::ApplyFeeds(
+void ChangeListProcessor::Apply(
     scoped_ptr<google_apis::AboutResource> about_resource,
     ScopedVector<ChangeList> change_lists,
-    bool is_delta_feed) {
-  DCHECK(is_delta_feed || about_resource.get());
+    bool is_delta_update) {
+  DCHECK(is_delta_update || about_resource.get());
 
   int64 largest_changestamp = 0;
-  if (is_delta_feed) {
+  if (is_delta_update) {
     if (!change_lists.empty()) {
       // The changestamp appears in the first page of the change list.
       // The changestamp does not appear in the full resource list.
@@ -95,7 +95,7 @@ void ChangeListProcessor::ApplyFeeds(
   }
 
   ChangeListToEntryMapUMAStats uma_stats;
-  FeedToEntryMap(change_lists.Pass(), &entry_map_, &uma_stats);
+  ConvertToMap(change_lists.Pass(), &entry_map_, &uma_stats);
 
   // Add the largest changestamp for directories.
   for (ResourceEntryMap::iterator it = entry_map_.begin();
@@ -106,7 +106,7 @@ void ChangeListProcessor::ApplyFeeds(
     }
   }
 
-  ApplyEntryMap(is_delta_feed, about_resource.Pass());
+  ApplyEntryMap(is_delta_update, about_resource.Pass());
 
   // Update the root entry and finish.
   UpdateRootEntry(largest_changestamp);
@@ -117,15 +117,15 @@ void ChangeListProcessor::ApplyFeeds(
   DLOG_IF(ERROR, error != FILE_ERROR_OK) << "SetLargestChangeStamp failed: "
                                          << FileErrorToString(error);
 
-  // Shouldn't record histograms when processing delta feeds.
-  if (!is_delta_feed)
+  // Shouldn't record histograms when processing delta update.
+  if (!is_delta_update)
     uma_stats.UpdateFileCountUmaHistograms();
 }
 
 void ChangeListProcessor::ApplyEntryMap(
-    bool is_delta_feed,
+    bool is_delta_update,
     scoped_ptr<google_apis::AboutResource> about_resource) {
-  if (!is_delta_feed) {  // Full update.
+  if (!is_delta_update) {  // Full update.
     DCHECK(about_resource);
 
     FileError error = resource_metadata_->Reset();
@@ -163,8 +163,9 @@ void ChangeListProcessor::ApplyEntryMap(
 
 void ChangeListProcessor::ApplyEntry(const ResourceEntry& entry) {
   // Lookup the entry.
-  FileError error =
-      resource_metadata_->GetResourceEntryById(entry.resource_id(), NULL, NULL);
+  ResourceEntry existing_entry;
+  FileError error = resource_metadata_->GetResourceEntryById(
+      entry.resource_id(), &existing_entry);
 
   if (error == FILE_ERROR_OK) {
     if (entry.deleted()) {
@@ -196,26 +197,23 @@ void ChangeListProcessor::AddEntry(const ResourceEntry& entry) {
 }
 
 void ChangeListProcessor::RemoveEntry(const ResourceEntry& entry) {
-  scoped_ptr<std::set<base::FilePath> > child_directories;
+  std::set<base::FilePath> child_directories;
   if (entry.file_info().is_directory()) {
-    child_directories =
-        resource_metadata_->GetChildDirectories(entry.resource_id());
+    resource_metadata_->GetChildDirectories(entry.resource_id(),
+                                            &child_directories);
   }
 
   base::FilePath file_path =
       resource_metadata_->GetFilePath(entry.resource_id());
 
-  FileError error = resource_metadata_->RemoveEntry(entry.resource_id(), NULL);
+  FileError error = resource_metadata_->RemoveEntry(entry.resource_id());
 
   if (error == FILE_ERROR_OK) {
     // Notify parent.
     changed_dirs_.insert(file_path.DirName());
 
     // Notify children, if any.
-    if (child_directories) {
-      changed_dirs_.insert(child_directories->begin(),
-                           child_directories->end());
-    }
+    changed_dirs_.insert(child_directories.begin(), child_directories.end());
 
     // If entry is a directory, notify self.
     if (entry.file_info().is_directory())
@@ -227,7 +225,7 @@ void ChangeListProcessor::RefreshEntry(const ResourceEntry& entry) {
   base::FilePath old_file_path =
       resource_metadata_->GetFilePath(entry.resource_id());
 
-  FileError error = resource_metadata_->RefreshEntry(entry, NULL, NULL);
+  FileError error = resource_metadata_->RefreshEntry(entry);
 
   if (error == FILE_ERROR_OK) {
     base::FilePath new_file_path =
@@ -250,7 +248,7 @@ void ChangeListProcessor::RefreshEntry(const ResourceEntry& entry) {
 }
 
 // static
-void ChangeListProcessor::FeedToEntryMap(
+void ChangeListProcessor::ConvertToMap(
     ScopedVector<ChangeList> change_lists,
     ResourceEntryMap* entry_map,
     ChangeListToEntryMapUMAStats* uma_stats) {
@@ -298,7 +296,7 @@ void ChangeListProcessor::UpdateRootEntry(int64 largest_changestamp) {
   // The changestamp should always be updated.
   root.mutable_directory_specific_info()->set_changestamp(largest_changestamp);
 
-  error = resource_metadata_->RefreshEntry(root, NULL, NULL);
+  error = resource_metadata_->RefreshEntry(root);
 
   LOG_IF(WARNING, error != FILE_ERROR_OK) << "Failed to refresh root directory";
 }

@@ -19,8 +19,8 @@
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "build/build_config.h"
 #include "sync/engine/get_commit_ids_command.h"
@@ -241,7 +241,7 @@ class SyncerTest : public testing::Test,
     syncer_ = new Syncer();
 
     syncable::ReadTransaction trans(FROM_HERE, directory());
-    syncable::Directory::ChildHandles children;
+    syncable::Directory::Metahandles children;
     directory()->GetChildHandlesById(&trans, trans.root_id(), &children);
     ASSERT_EQ(0u, children.size());
     saw_syncer_event_ = false;
@@ -644,19 +644,21 @@ TEST_F(SyncerTest, GetCommitIdsCommandTruncates) {
   }
 
   // The arrangement is now: x (b (d) c (e)) w j
-  // Entry "w" is in conflict, making its sucessors unready to commit.
+  // Entry "w" is in conflict, so it is not eligible for commit.
   vector<int64> unsynced_handle_view;
   vector<syncable::Id> expected_order;
   {
     syncable::ReadTransaction rtrans(FROM_HERE, directory());
     GetUnsyncedEntries(&rtrans, &unsynced_handle_view);
   }
-  // The expected order is "x", "b", "c", "d", "e", truncated appropriately.
+  // The expected order is "x", "b", "c", "d", "e", "j", truncated
+  // appropriately.
   expected_order.push_back(ids_.MakeServer("x"));
   expected_order.push_back(ids_.MakeLocal("b"));
   expected_order.push_back(ids_.MakeLocal("c"));
   expected_order.push_back(ids_.MakeLocal("d"));
   expected_order.push_back(ids_.MakeLocal("e"));
+  expected_order.push_back(ids_.MakeLocal("j"));
   DoTruncationTest(unsynced_handle_view, expected_order);
 }
 
@@ -1092,6 +1094,7 @@ TEST_F(SyncerTest, TestPurgeWhileUnsynced) {
   }
 
   directory()->PurgeEntriesWithTypeIn(ModelTypeSet(PREFERENCES),
+                                      ModelTypeSet(),
                                       ModelTypeSet());
 
   SyncShareNudge();
@@ -1126,8 +1129,9 @@ TEST_F(SyncerTest, TestPurgeWhileUnapplied) {
     parent.Put(syncable::ID, parent_id_);
   }
 
-  directory()->PurgeEntriesWithTypeIn(
-      ModelTypeSet(BOOKMARKS), ModelTypeSet());
+  directory()->PurgeEntriesWithTypeIn(ModelTypeSet(BOOKMARKS),
+                                      ModelTypeSet(),
+                                      ModelTypeSet());
 
   SyncShareNudge();
   directory()->SaveChanges();
@@ -1165,7 +1169,8 @@ TEST_F(SyncerTest, TestPurgeWithJournal) {
   }
 
   directory()->PurgeEntriesWithTypeIn(ModelTypeSet(PREFERENCES, BOOKMARKS),
-                                      ModelTypeSet(BOOKMARKS));
+                                      ModelTypeSet(BOOKMARKS),
+                                      ModelTypeSet());
   {
     // Verify bookmark nodes are saved in delete journal but not preference
     // node.
@@ -2347,7 +2352,7 @@ TEST_F(SyncerTest, DoublyChangedWithResolver) {
                                   local_cache_guid(), local_id.GetServerId());
   mock_server_->set_conflict_all_commits(true);
   SyncShareNudge();
-  syncable::Directory::ChildHandles children;
+  syncable::Directory::Metahandles children;
   {
     syncable::ReadTransaction trans(FROM_HERE, directory());
     directory()->GetChildHandlesById(&trans, parent_id_, &children);
@@ -2450,7 +2455,7 @@ TEST_F(SyncerTest, ParentAndChildBothMatch) {
   SyncShareNudge();
   {
     syncable::ReadTransaction trans(FROM_HERE, directory());
-    Directory::ChildHandles children;
+    Directory::Metahandles children;
     directory()->GetChildHandlesById(&trans, root_id_, &children);
     EXPECT_EQ(1u, children.size());
     directory()->GetChildHandlesById(&trans, parent_id, &children);
@@ -2458,7 +2463,7 @@ TEST_F(SyncerTest, ParentAndChildBothMatch) {
     std::vector<int64> unapplied;
     directory()->GetUnappliedUpdateMetaHandles(&trans, all_types, &unapplied);
     EXPECT_EQ(0u, unapplied.size());
-    syncable::Directory::UnsyncedMetaHandles unsynced;
+    syncable::Directory::Metahandles unsynced;
     directory()->GetUnsyncedMetaHandles(&trans, &unsynced);
     EXPECT_EQ(0u, unsynced.size());
     saw_syncer_event_ = false;
@@ -3917,7 +3922,7 @@ TEST_F(SyncerTest, ClientTagUpdateClashesWithLocalEntry) {
     EXPECT_EQ("tag2", tag2.Get(UNIQUE_CLIENT_TAG));
     tag2_metahandle = tag2.Get(META_HANDLE);
 
-    syncable::Directory::ChildHandles children;
+    syncable::Directory::Metahandles children;
     directory()->GetChildHandlesById(&trans, trans.root_id(), &children);
     ASSERT_EQ(2U, children.size());
   }
@@ -3957,7 +3962,7 @@ TEST_F(SyncerTest, ClientTagUpdateClashesWithLocalEntry) {
     EXPECT_EQ("tag2", tag2.Get(UNIQUE_CLIENT_TAG));
     EXPECT_EQ(tag2_metahandle, tag2.Get(META_HANDLE));
 
-    syncable::Directory::ChildHandles children;
+    syncable::Directory::Metahandles children;
     directory()->GetChildHandlesById(&trans, trans.root_id(), &children);
     ASSERT_EQ(2U, children.size());
   }
@@ -4036,7 +4041,7 @@ TEST_F(SyncerTest, ClientTagClashWithinBatchOfUpdates) {
     EXPECT_EQ(21, tag_c.Get(BASE_VERSION));
     EXPECT_EQ("tag c", tag_c.Get(UNIQUE_CLIENT_TAG));
 
-    syncable::Directory::ChildHandles children;
+    syncable::Directory::Metahandles children;
     directory()->GetChildHandlesById(&trans, trans.root_id(), &children);
     ASSERT_EQ(3U, children.size());
   }

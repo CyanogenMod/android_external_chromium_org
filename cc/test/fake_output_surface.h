@@ -11,7 +11,7 @@
 #include "cc/output/output_surface.h"
 #include "cc/output/software_output_device.h"
 #include "cc/test/test_web_graphics_context_3d.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 
 namespace cc {
 
@@ -58,9 +58,10 @@ class FakeOutputSurface : public OutputSurface {
   }
 
   static scoped_ptr<FakeOutputSurface> CreateDeferredGL(
+      scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
       scoped_ptr<SoftwareOutputDevice> software_device) {
     scoped_ptr<FakeOutputSurface> result(
-        new FakeOutputSurface(software_device.Pass(), false));
+        new FakeOutputSurface(context3d.Pass(), software_device.Pass(), false));
     result->capabilities_.deferred_gl_initialization = true;
     return result.Pass();
   }
@@ -81,12 +82,17 @@ class FakeOutputSurface : public OutputSurface {
   }
   virtual bool ForcedDrawToSoftwareDevice() const OVERRIDE;
 
- private:
+ protected:
   FakeOutputSurface(
       scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
       bool has_parent);
 
   FakeOutputSurface(
+      scoped_ptr<SoftwareOutputDevice> software_device,
+      bool has_parent);
+
+  FakeOutputSurface(
+      scoped_ptr<WebKit::WebGraphicsContext3D> context3d,
       scoped_ptr<SoftwareOutputDevice> software_device,
       bool has_parent);
 

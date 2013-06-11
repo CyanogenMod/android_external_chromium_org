@@ -12,6 +12,7 @@
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
 #include "content/port/common/input_event_ack_state.h"
+#include "content/renderer/gpu/input_handler_manager_client.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 
@@ -26,36 +27,25 @@
 namespace content {
 
 class CONTENT_EXPORT InputEventFilter
-    : public IPC::ChannelProxy::MessageFilter {
+    : public InputHandlerManagerClient,
+      public IPC::ChannelProxy::MessageFilter {
  public:
-  typedef base::Callback<void(int /*routing_id*/,
-                              const WebKit::WebInputEvent*)> Handler;
+  InputEventFilter(IPC::Listener* main_listener,
+                   const scoped_refptr<base::MessageLoopProxy>& target_loop);
 
   // The |handler| is invoked on the thread associated with |target_loop| to
-  // handle input events matching the filtered routes.  In response, the
-  // handler should call either DidHandleInputEvent or DidNotHandleInputEvent.
-  // These may be called asynchronously to the handler invocation, but they
-  // must be called on the target thread.
+  // handle input events matching the filtered routes.
   //
-  // If DidNotHandleInputEvent is called with send_to_widget set to true, then
+  // If INPUT_EVENT_ACK_STATE_NOT_CONSUMED is returned by the handler,
   // the original InputMsg_HandleInputEvent message will be delivered to
   // |main_listener| on the main thread.  (The "main thread" in this context is
-  // the thread where the InputEventFilter was constructed.)  If send_to_widget
-  // is true, then a InputHostMsg_HandleInputEvent_ACK will not be
-  // generated, leaving that responsibility up to the eventual handler on the
-  // main thread.
+  // the thread where the InputEventFilter was constructed.)  The responsibility
+  // is left to the eventual handler to deliver the corresponding
+  // InputHostMsg_HandleInputEvent_ACK.
   //
-  InputEventFilter(IPC::Listener* main_listener,
-                   const scoped_refptr<base::MessageLoopProxy>& target_loop,
-                   const Handler& handler);
-
-  // Define the message routes to be filtered.
-  void AddRoute(int routing_id);
-  void RemoveRoute(int routing_id);
-
-  // Called on the target thread by the Handler.
-  void DidHandleInputEvent();
-  void DidNotHandleInputEvent(bool send_to_widget);
+  virtual void SetBoundHandler(const Handler& handler) OVERRIDE;
+  virtual void DidAddInputHandler(int routing_id) OVERRIDE;
+  virtual void DidRemoveInputHandler(int routing_id) OVERRIDE;
 
   // IPC::ChannelProxy::MessageFilter methods:
   virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
@@ -64,7 +54,9 @@ class CONTENT_EXPORT InputEventFilter
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Expects a InputMsg_HandleInputEvent message.
-  static const WebKit::WebInputEvent* CrackMessage(const IPC::Message& message);
+  static const WebKit::WebInputEvent* CrackMessage(
+      const IPC::Message& message,
+      ui::LatencyInfo* latency_info);
 
  private:
   friend class IPC::ChannelProxy::MessageFilter;
@@ -86,7 +78,6 @@ class CONTENT_EXPORT InputEventFilter
   // The handler_ only gets Run on the thread corresponding to target_loop_.
   scoped_refptr<base::MessageLoopProxy> target_loop_;
   Handler handler_;
-  std::queue<IPC::Message> messages_;
 
   // Protects access to routes_.
   base::Lock routes_lock_;

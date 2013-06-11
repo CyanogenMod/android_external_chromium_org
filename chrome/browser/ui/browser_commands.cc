@@ -7,7 +7,7 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
@@ -399,6 +399,8 @@ void OpenCurrentURL(Browser* browser) {
   if (!location_bar)
     return;
 
+  GURL url(location_bar->GetInputString());
+
   content::PageTransition page_transition = location_bar->GetPageTransition();
   content::PageTransition page_transition_without_qualifier(
       PageTransitionStripQualifier(page_transition));
@@ -414,10 +416,8 @@ void OpenCurrentURL(Browser* browser) {
   if (page_transition_without_qualifier != content::PAGE_TRANSITION_TYPED &&
       page_transition_without_qualifier != content::PAGE_TRANSITION_RELOAD &&
       browser->instant_controller() &&
-      browser->instant_controller()->OpenInstant(open_disposition))
+      browser->instant_controller()->OpenInstant(open_disposition, url))
     return;
-
-  GURL url(location_bar->GetInputString());
 
   NavigateParams params(browser, url, page_transition);
   params.disposition = open_disposition;
@@ -929,6 +929,8 @@ void OpenUpdateChromeDialog(Browser* browser) {
 void ToggleSpeechInput(Browser* browser) {
   browser->tab_strip_model()->GetActiveWebContents()->
       GetRenderViewHost()->ToggleSpeechInput();
+  if (browser->instant_controller())
+    browser->instant_controller()->ToggleVoiceSearch();
 }
 
 bool CanRequestTabletSite(WebContents* current_tab) {
@@ -1008,14 +1010,15 @@ void ViewSource(Browser* browser,
   // Note that Clone does not copy the pending or transient entries, so the
   // active entry in view_source_contents will be the last committed entry.
   WebContents* view_source_contents = contents->Clone();
-  view_source_contents->GetController().PruneAllButActive();
+  DCHECK(view_source_contents->GetController().CanPruneAllButVisible());
+  view_source_contents->GetController().PruneAllButVisible();
   NavigationEntry* active_entry =
       view_source_contents->GetController().GetActiveEntry();
   if (!active_entry)
     return;
 
-  GURL view_source_url = GURL(kViewSourceScheme + std::string(":") +
-      url.spec());
+  GURL view_source_url =
+      GURL(content::kViewSourceScheme + std::string(":") + url.spec());
   active_entry->SetVirtualURL(view_source_url);
 
   // Do not restore scroller position.

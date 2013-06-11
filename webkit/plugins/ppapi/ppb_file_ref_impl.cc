@@ -7,7 +7,7 @@
 #include "base/files/file_util_proxy.h"
 #include "base/platform_file.h"
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "ppapi/c/pp_errors.h"
@@ -97,22 +97,7 @@ void PlatformFileInfoToPPFileInfo(
     PP_FileSystemType file_system_type,
     PP_FileInfo* info) {
   DCHECK(info);
-
-  info->size = file_info.size;
-  info->system_type = file_system_type;
-  info->creation_time = ::ppapi::TimeToPPTime(file_info.creation_time);
-  info->last_access_time = ::ppapi::TimeToPPTime(file_info.last_accessed);
-  info->last_modified_time = ::ppapi::TimeToPPTime(file_info.last_modified);
-
-  if (file_info.is_symbolic_link) {
-    // Only external filesystem may have symbolic link files.
-    DCHECK_EQ(PP_FILESYSTEMTYPE_EXTERNAL, file_system_type);
-    info->type = PP_FILETYPE_OTHER;
-  } else if (file_info.is_directory) {
-    info->type = PP_FILETYPE_DIRECTORY;
-  } else {
-    info->type = PP_FILETYPE_REGULAR;
-  }
+  ::ppapi::PlatformFileInfoToPepperFileInfo(file_info, file_system_type, info);
 }
 
 void GetFileInfoCallback(
@@ -123,7 +108,7 @@ void GetFileInfoCallback(
     base::PlatformFileError error_code,
     const base::PlatformFileInfo& file_info) {
   base::FileUtilProxy::Close(
-      task_runner, file, base::Bind(&IgnoreCloseCallback));
+      task_runner.get(), file, base::Bind(&IgnoreCloseCallback));
 
   if (!TrackedCallback::IsPending(callback))
     return;
@@ -156,11 +141,12 @@ void QueryCallback(scoped_refptr<base::TaskRunner> task_runner,
   base::PlatformFile file = passed_file.ReleaseValue();
 
   if (!base::FileUtilProxy::GetFileInfoFromPlatformFile(
-          task_runner, file,
-          base::Bind(&GetFileInfoCallback, task_runner, file, info,
-                     callback))) {
+          task_runner.get(),
+          file,
+          base::Bind(
+              &GetFileInfoCallback, task_runner, file, info, callback))) {
     base::FileUtilProxy::Close(
-        task_runner, file, base::Bind(&IgnoreCloseCallback));
+        task_runner.get(), file, base::Bind(&IgnoreCloseCallback));
     callback->Run(PP_ERROR_FAILED);
   }
 }
@@ -313,7 +299,7 @@ PP_Resource PPB_FileRef_Impl::GetParent() {
 
   scoped_refptr<PPB_FileRef_Impl> parent_ref(
       CreateInternal(pp_instance(), file_system_, parent_path));
-  if (!parent_ref)
+  if (!parent_ref.get())
     return 0;
   return parent_ref->GetReference();
 }
@@ -393,9 +379,9 @@ int32_t PPB_FileRef_Impl::Rename(PP_Resource new_pp_file_ref,
 PP_Var PPB_FileRef_Impl::GetAbsolutePath() {
   if (GetFileSystemType() != PP_FILESYSTEMTYPE_EXTERNAL)
     return GetPath();
-  if (!external_path_var_) {
-    external_path_var_ = new StringVar(
-        external_file_system_path_.AsUTF8Unsafe());
+  if (!external_path_var_.get()) {
+    external_path_var_ =
+        new StringVar(external_file_system_path_.AsUTF8Unsafe());
   }
   return external_path_var_->GetPPVar();
 }
@@ -461,7 +447,7 @@ int32_t PPB_FileRef_Impl::QueryInHost(
     scoped_refptr<TrackedCallback> callback) {
   scoped_refptr<PluginInstance> plugin_instance =
       ResourceHelper::GetPluginInstance(this);
-  if (!plugin_instance)
+  if (!plugin_instance.get())
     return PP_ERROR_FAILED;
 
   if (!file_system_) {

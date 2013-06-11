@@ -8,9 +8,9 @@
 
 #include "base/prefs/overlay_user_pref_store.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
@@ -27,7 +27,7 @@
 #include "grit/platform_locale_settings.h"
 #include "third_party/icu/public/common/unicode/uchar.h"
 #include "third_party/icu/public/common/unicode/uscript.h"
-#include "webkit/glue/webpreferences.h"
+#include "webkit/common/webpreferences.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && defined(ENABLE_THEMES)
 #include "chrome/browser/themes/theme_service.h"
@@ -122,6 +122,7 @@ const char* kPrefsToObserve[] = {
 #if defined(OS_ANDROID)
   prefs::kWebKitFontScaleFactor,
   prefs::kWebKitForceEnableZoom,
+  prefs::kWebKitPasswordEchoEnabled,
 #endif
   prefs::kWebKitJavascriptEnabled,
   prefs::kWebKitJavaEnabled,
@@ -482,6 +483,7 @@ void PrefsTabHelper::InitIncognitoUserPrefStore(
   // profile.  All preferences that store information about the browsing history
   // or behavior of the user should have this property.
   pref_store->RegisterOverlayPref(prefs::kBrowserWindowPlacement);
+  pref_store->RegisterOverlayPref(prefs::kSaveFileDefaultDirectory);
 #if defined(OS_ANDROID) || defined(OS_IOS)
   pref_store->RegisterOverlayPref(prefs::kProxy);
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
@@ -555,20 +557,15 @@ void PrefsTabHelper::RegisterUserPrefs(
       prefs::kWebKitForceEnableZoom,
       pref_defaults.force_enable_zoom,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kWebKitPasswordEchoEnabled,
+      pref_defaults.password_echo_enabled,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
-
-#if !defined(OS_MACOSX)
   registry->RegisterLocalizedStringPref(
       prefs::kAcceptLanguages,
       IDS_ACCEPT_LANGUAGES,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-#else
-  // Not used in OSX.
-  registry->RegisterLocalizedStringPref(
-      prefs::kAcceptLanguages,
-      IDS_ACCEPT_LANGUAGES,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-#endif
   registry->RegisterLocalizedStringPref(
       prefs::kDefaultCharset,
       IDS_DEFAULT_ENCODING,

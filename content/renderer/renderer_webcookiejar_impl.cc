@@ -4,11 +4,11 @@
 
 #include "content/renderer/renderer_webcookiejar_impl.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCookie.h"
+#include "third_party/WebKit/public/platform/WebCookie.h"
 #include "webkit/glue/webcookie.h"
 
 using WebKit::WebCookie;

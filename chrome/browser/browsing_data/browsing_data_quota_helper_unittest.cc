@@ -12,8 +12,8 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "chrome/browser/browsing_data/browsing_data_quota_helper_impl.h"
 #include "content/public/test/test_browser_thread.h"
-#include "webkit/quota/mock_storage_client.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/quota/mock_storage_client.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 using content::BrowserThread;
 
@@ -42,7 +42,7 @@ class BrowsingDataQuotaHelperTest : public testing::Test {
     helper_ = new BrowsingDataQuotaHelperImpl(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-        quota_manager_);
+        quota_manager_.get());
   }
 
   virtual void TearDown() OVERRIDE {

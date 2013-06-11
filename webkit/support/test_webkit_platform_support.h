@@ -6,21 +6,21 @@
 #define WEBKIT_SUPPORT_TEST_WEBKIT_PLATFORM_SUPPORT_H_
 
 #include "base/compiler_specific.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebUnitTestSupport.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebUnitTestSupport.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/mocks/mock_webhyphenator.h"
 #include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
+#include "webkit/support/mock_webclipboard_impl.h"
+#include "webkit/support/simple_appcache_system.h"
 #include "webkit/support/simple_database_system.h"
+#include "webkit/support/simple_dom_storage_system.h"
+#include "webkit/support/simple_file_system.h"
+#include "webkit/support/simple_webcookiejar_impl.h"
+#include "webkit/support/test_shell_webmimeregistry_impl.h"
 #include "webkit/support/weburl_loader_mock_factory.h"
-#include "webkit/tools/test_shell/mock_webclipboard_impl.h"
-#include "webkit/tools/test_shell/simple_appcache_system.h"
-#include "webkit/tools/test_shell/simple_dom_storage_system.h"
-#include "webkit/tools/test_shell/simple_file_system.h"
-#include "webkit/tools/test_shell/simple_webcookiejar_impl.h"
-#include "webkit/tools/test_shell/test_shell_webmimeregistry_impl.h"
 
 class TestShellWebBlobRegistryImpl;
 
@@ -51,6 +51,7 @@ class TestWebKitPlatformSupport :
   virtual WebKit::WebBlobRegistry* blobRegistry();
   virtual WebKit::WebFileSystem* fileSystem();
   virtual WebKit::WebHyphenator* hyphenator();
+  virtual WebKit::WebIDBFactory* idbFactory();
 
   virtual bool sandboxEnabled();
   virtual WebKit::Platform::FileHandle databaseOpenFile(

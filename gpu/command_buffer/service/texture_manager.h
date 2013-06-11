@@ -13,6 +13,7 @@
 #include "base/hash_tables.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/observer_list.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
@@ -27,7 +28,7 @@ class Display;
 class ErrorState;
 class FeatureInfo;
 class FramebufferManager;
-class TextureDefinition;
+class MailboxManager;
 class TextureManager;
 class TextureRef;
 
@@ -80,6 +81,7 @@ class GPU_EXPORT Texture {
   }
 
   void SetServiceId(GLuint service_id) {
+    DCHECK(service_id);
     service_id_ = service_id;
   }
 
@@ -123,10 +125,6 @@ class GPU_EXPORT Texture {
     return !!target();
   }
 
-  void SetNotOwned() {
-    owned_ = false;
-  }
-
   bool IsAttachedToFramebuffer() const {
     return framebuffer_attachment_count_ != 0;
   }
@@ -142,15 +140,6 @@ class GPU_EXPORT Texture {
 
   bool IsStreamTexture() const {
     return stream_texture_;
-  }
-
-  // Gets the async transfer state for this texture. Note: the transfer state is
-  // owned by a single TextureRef.
-  AsyncPixelTransferState* GetAsyncTransferState() const;
-
-  bool AsyncTransferIsInProgress() {
-    AsyncPixelTransferState* state = GetAsyncTransferState();
-    return state && state->TransferIsInProgress();
   }
 
   void SetImmutable(bool immutable) {
@@ -170,6 +159,7 @@ class GPU_EXPORT Texture {
   }
 
  private:
+  friend class MailboxManager;
   friend class TextureManager;
   friend class TextureRef;
   friend class TextureTestHelper;
@@ -304,6 +294,8 @@ class GPU_EXPORT Texture {
       const FeatureInfo* feature_info,
       GLenum target, GLint level, std::string* signature) const;
 
+  void SetMailboxManager(MailboxManager* mailbox_manager);
+
   // Updates the unsafe textures count in all the managers referencing this
   // texture.
   void UpdateSafeToRenderFrom(bool cleared);
@@ -322,6 +314,8 @@ class GPU_EXPORT Texture {
   // Increment the framebuffer state change count in all the managers
   // referencing this texture.
   void IncAllFramebufferStateChangeCount();
+
+  MailboxManager* mailbox_manager_;
 
   // Info about each face and level of texture.
   std::vector<std::vector<LevelInfo> > level_infos_;
@@ -371,10 +365,6 @@ class GPU_EXPORT Texture {
   // The number of framebuffers this texture is attached to.
   int framebuffer_attachment_count_;
 
-  // Whether the associated context group owns this texture and should delete
-  // it.
-  bool owned_;
-
   // Whether this is a special streaming texture.
   bool stream_texture_;
 
@@ -397,21 +387,14 @@ class GPU_EXPORT Texture {
 // Multiple TextureRef can point to the same texture with cross-context sharing.
 class GPU_EXPORT TextureRef : public base::RefCounted<TextureRef> {
  public:
-  TextureRef(TextureManager* manager, Texture* texture);
+  TextureRef(TextureManager* manager, GLuint client_id, Texture* texture);
   static scoped_refptr<TextureRef> Create(TextureManager* manager,
+                                          GLuint client_id,
                                           GLuint service_id);
   const Texture* texture() const { return texture_; }
   Texture* texture() { return texture_; }
+  GLuint client_id() const { return client_id_; }
   GLuint service_id() const { return texture_->service_id(); }
-
-  // Sets the async transfer state for this texture. Only a single TextureRef
-  // can set this on a given texture at any time.
-  // NOTE: this should be per-context rather than per-texture. crbug.com/240504
-  void SetAsyncTransferState(
-      scoped_ptr<AsyncPixelTransferState> state) {
-    DCHECK(!state || !texture_->GetAsyncTransferState());
-    async_transfer_state_ = state.Pass();
-  }
 
  private:
   friend class base::RefCounted<TextureRef>;
@@ -421,15 +404,11 @@ class GPU_EXPORT TextureRef : public base::RefCounted<TextureRef> {
   ~TextureRef();
   const TextureManager* manager() const { return manager_; }
   TextureManager* manager() { return manager_; }
-  AsyncPixelTransferState* async_transfer_state() const {
-    return async_transfer_state_.get();
-  }
+  void reset_client_id() { client_id_ = 0; }
 
   TextureManager* manager_;
   Texture* texture_;
-
-  // State to facilitate async transfers on this texture.
-  scoped_ptr<AsyncPixelTransferState> async_transfer_state_;
+  GLuint client_id_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureRef);
 };
@@ -441,6 +420,21 @@ class GPU_EXPORT TextureRef : public base::RefCounted<TextureRef> {
 // shared by multiple GLES2Decoders.
 class GPU_EXPORT TextureManager {
  public:
+  class GPU_EXPORT DestructionObserver {
+   public:
+    DestructionObserver();
+    virtual ~DestructionObserver();
+
+    // Called in ~TextureManager.
+    virtual void OnTextureManagerDestroying(TextureManager* manager) = 0;
+
+    // Called via ~TextureRef.
+    virtual void OnTextureRefDestroying(TextureRef* texture) = 0;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(DestructionObserver);
+  };
+
   enum DefaultAndBlackTextures {
     kTexture2D,
     kCubeMap,
@@ -500,12 +494,12 @@ class GPU_EXPORT TextureManager {
   // True if this texture meets all the GLES2 criteria for rendering.
   // See section 3.8.2 of the GLES2 spec.
   bool CanRender(const TextureRef* ref) const {
-    return ref->texture()->CanRender(feature_info_);
+    return ref->texture()->CanRender(feature_info_.get());
   }
 
   // Returns true if mipmaps can be generated by GL.
   bool CanGenerateMipmaps(const TextureRef* ref) const {
-    return ref->texture()->CanGenerateMipmaps(feature_info_);
+    return ref->texture()->CanGenerateMipmaps(feature_info_.get());
   }
 
   // Sets the Texture's target
@@ -543,15 +537,10 @@ class GPU_EXPORT TextureManager {
         params.type, true /* cleared */ );
   }
 
-  // Save the texture definition and leave it undefined.
-  TextureDefinition* Save(TextureRef* ref);
+  Texture* Produce(TextureRef* ref);
 
-  // Redefine all the levels from the texture definition.
-  bool Restore(
-      const char* function_name,
-      GLES2Decoder* decoder,
-      TextureRef* ref,
-      TextureDefinition* definition);
+  // Maps an existing texture into the texture manager, at a given client ID.
+  TextureRef* Consume(GLuint client_id, Texture* texture);
 
   // Sets a mip as cleared.
   void SetLevelCleared(TextureRef* ref, GLenum target,
@@ -584,19 +573,20 @@ class GPU_EXPORT TextureManager {
   // Removes a texture info.
   void RemoveTexture(GLuint client_id);
 
-  // Gets a client id for a given service id.
-  bool GetClientId(GLuint service_id, GLuint* client_id) const;
+  // Gets a Texture for a given service id (note: it assumes the texture object
+  // is still mapped in this TextureManager).
+  Texture* GetTextureForServiceId(GLuint service_id) const;
 
   TextureRef* GetDefaultTextureInfo(GLenum target) {
     switch (target) {
       case GL_TEXTURE_2D:
-        return default_textures_[kTexture2D];
+        return default_textures_[kTexture2D].get();
       case GL_TEXTURE_CUBE_MAP:
-        return default_textures_[kCubeMap];
+        return default_textures_[kCubeMap].get();
       case GL_TEXTURE_EXTERNAL_OES:
-        return default_textures_[kExternalOES];
+        return default_textures_[kExternalOES].get();
       case GL_TEXTURE_RECTANGLE_ARB:
-        return default_textures_[kRectangleARB];
+        return default_textures_[kRectangleARB].get();
       default:
         NOTREACHED();
         return NULL;
@@ -648,6 +638,14 @@ class GPU_EXPORT TextureManager {
       GLenum target,
       GLint level,
       std::string* signature) const;
+
+  void AddObserver(DestructionObserver* observer) {
+    destruction_observers_.AddObserver(observer);
+  }
+
+  void RemoveObserver(DestructionObserver* observer) {
+    destruction_observers_.RemoveObserver(observer);
+  }
 
  private:
   friend class Texture;
@@ -701,6 +699,8 @@ class GPU_EXPORT TextureManager {
 
   // The default textures for each target (texture name = 0)
   scoped_refptr<TextureRef> default_textures_[kNumDefaultTextures];
+
+  ObserverList<DestructionObserver> destruction_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureManager);
 };

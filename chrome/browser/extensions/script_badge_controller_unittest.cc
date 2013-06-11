@@ -7,7 +7,7 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/script_badge_controller.h"
@@ -37,8 +37,6 @@
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
 
-using content::BrowserThread;
-
 namespace extensions {
 namespace {
 
@@ -46,8 +44,6 @@ class ScriptBadgeControllerTest : public ChromeRenderViewHostTestHarness {
  public:
   ScriptBadgeControllerTest()
       : feature_override_(FeatureSwitch::script_badges(), true),
-        ui_thread_(BrowserThread::UI, base::MessageLoop::current()),
-        file_thread_(BrowserThread::FILE, base::MessageLoop::current()),
         current_channel_(chrome::VersionInfo::CHANNEL_DEV) {}
 
   virtual void SetUp() OVERRIDE {
@@ -55,6 +51,10 @@ class ScriptBadgeControllerTest : public ChromeRenderViewHostTestHarness {
     // extensions::TabHelper's location_bar_controller field.  Do
     // not use that for testing.
     ChromeRenderViewHostTestHarness::SetUp();
+
+#if defined OS_CHROMEOS
+  test_user_manager_.reset(new chromeos::ScopedTestUserManager());
+#endif
 
     Profile* profile =
         Profile::FromBrowserContext(web_contents()->GetBrowserContext());
@@ -72,6 +72,13 @@ class ScriptBadgeControllerTest : public ChromeRenderViewHostTestHarness {
         TabHelper::FromWebContents(web_contents())->location_bar_controller());
   }
 
+  virtual void TearDown() OVERRIDE {
+#if defined OS_CHROMEOS
+    test_user_manager_.reset();
+#endif
+    ChromeRenderViewHostTestHarness::TearDown();
+  }
+
  protected:
   // Creates a test extension and adds it to |extension_service_|.
   scoped_refptr<const Extension> AddTestExtension() {
@@ -85,7 +92,7 @@ class ScriptBadgeControllerTest : public ChromeRenderViewHostTestHarness {
             .Set("page_action", DictionaryBuilder()
                 .Set("default_title", "Hello")))
         .Build();
-    extension_service_->AddExtension(extension);
+    extension_service_->AddExtension(extension.get());
     return extension;
   }
 
@@ -98,14 +105,12 @@ class ScriptBadgeControllerTest : public ChromeRenderViewHostTestHarness {
 
  private:
   FeatureSwitch::ScopedOverride feature_override_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
   Feature::ScopedCurrentChannel current_channel_;
 
 #if defined OS_CHROMEOS
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
   chromeos::ScopedTestCrosSettings test_cros_settings_;
-  chromeos::ScopedTestUserManager test_user_manager_;
+  scoped_ptr<chromeos::ScopedTestUserManager> test_user_manager_;
 #endif
 };
 
@@ -152,7 +157,7 @@ TEST_F(ScriptBadgeControllerTest, ExecutionMakesBadgeVisible) {
       web_contents()->GetController().GetActiveEntry()->GetPageID(),
       GURL(std::string()));
   EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
-              testing::ElementsAre(GetScriptBadge(*extension)));
+              testing::ElementsAre(GetScriptBadge(*extension.get())));
   EXPECT_THAT(location_bar_updated.events, testing::Gt(0));
 };
 
@@ -182,7 +187,7 @@ TEST_F(ScriptBadgeControllerTest, FragmentNavigation) {
         GURL(std::string()));
 
     EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
-                testing::ElementsAre(GetScriptBadge(*extension)));
+                testing::ElementsAre(GetScriptBadge(*extension.get())));
     EXPECT_EQ(1, location_bar_updated.events);
   }
 
@@ -198,7 +203,7 @@ TEST_F(ScriptBadgeControllerTest, FragmentNavigation) {
     NavigateAndCommit(GURL("http://www.google.com#hash"));
 
     EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
-              testing::ElementsAre(GetScriptBadge(*extension)));
+                testing::ElementsAre(GetScriptBadge(*extension.get())));
     EXPECT_EQ(0, location_bar_updated.events);
   }
 
@@ -230,7 +235,7 @@ TEST_F(ScriptBadgeControllerTest, GetAttentionMakesBadgeVisible) {
                    .Set("permissions", ListBuilder()
                         .Append("tabs")))
       .Build();
-  extension_service_->AddExtension(extension);
+  extension_service_->AddExtension(extension.get());
 
   // Establish a page id.
   NavigateAndCommit(GURL("http://www.google.com"));
@@ -251,7 +256,7 @@ TEST_F(ScriptBadgeControllerTest, GetAttentionMakesBadgeVisible) {
   script_badge_controller_->GetAttentionFor(extension->id());
 
   EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
-              testing::ElementsAre(GetScriptBadge(*extension)));
+              testing::ElementsAre(GetScriptBadge(*extension.get())));
   EXPECT_THAT(initial_badge_display.events, testing::Gt(0));
 
   CountingNotificationObserver subsequent_get_attention_call;
@@ -264,7 +269,7 @@ TEST_F(ScriptBadgeControllerTest, GetAttentionMakesBadgeVisible) {
   script_badge_controller_->GetAttentionFor(extension->id());
 
   EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
-              testing::ElementsAre(GetScriptBadge(*extension)));
+              testing::ElementsAre(GetScriptBadge(*extension.get())));
   EXPECT_EQ(0, subsequent_get_attention_call.events);
 };
 

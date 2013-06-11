@@ -10,7 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/renderer_host/media/audio_mirroring_manager.h"
 #include "content/browser/renderer_host/media/web_contents_capture_util.h"
@@ -116,9 +116,9 @@ WebContentsAudioInputStream::Impl::Impl(
       target_render_process_id_(render_process_id),
       target_render_view_id_(render_view_id),
       callback_(NULL) {
-  DCHECK(message_loop_);
+  DCHECK(message_loop_.get());
   DCHECK(mirroring_manager_);
-  DCHECK(tracker_);
+  DCHECK(tracker_.get());
   DCHECK(mixer_stream_.get());
 }
 
@@ -237,7 +237,9 @@ media::AudioOutputStream* WebContentsAudioInputStream::Impl::AddInput(
   // guarantee the VirtualAudioInputStream (mixer_stream_) outlives the
   // VirtualAudioOutputStream.
   return new media::VirtualAudioOutputStream(
-      params, message_loop_, mixer_stream_.get(),
+      params,
+      message_loop_.get(),
+      mixer_stream_.get(),
       base::Bind(&Impl::ReleaseInput, this));
 }
 

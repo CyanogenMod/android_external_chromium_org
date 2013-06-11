@@ -7,6 +7,7 @@
 #include <cmath>
 
 #import "base/mac/foundation_util.h"
+#import "base/mac/sdk_forward_declarations.h"
 #import "ui/base/cocoa/window_size_constants.h"
 #import "ui/message_center/cocoa/notification_controller.h"
 #import "ui/message_center/cocoa/popup_collection.h"
@@ -17,35 +18,6 @@
 enum {
   NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
 };
-
-enum {
-  NSEventPhaseNone        = 0, // event not associated with a phase.
-  NSEventPhaseBegan       = 0x1 << 0,
-  NSEventPhaseStationary  = 0x1 << 1,
-  NSEventPhaseChanged     = 0x1 << 2,
-  NSEventPhaseEnded       = 0x1 << 3,
-  NSEventPhaseCancelled   = 0x1 << 4,
-};
-typedef NSUInteger NSEventPhase;
-
-enum {
-  NSEventSwipeTrackingLockDirection = 0x1 << 0,
-  NSEventSwipeTrackingClampGestureAmount = 0x1 << 1
-};
-typedef NSUInteger NSEventSwipeTrackingOptions;
-
-@interface NSEvent (LionAPI)
-- (NSEventPhase)phase;
-- (CGFloat)scrollingDeltaX;
-- (CGFloat)scrollingDeltaY;
-- (void)trackSwipeEventWithOptions:(NSEventSwipeTrackingOptions)options
-          dampenAmountThresholdMin:(CGFloat)minDampenThreshold
-                               max:(CGFloat)maxDampenThreshold
-                      usingHandler:(void (^)(CGFloat gestureAmount,
-                                             NSEventPhase phase,
-                                             BOOL isComplete,
-                                             BOOL* stop))trackingHandler;
-@end
 #endif  // MAC_OS_X_VERSION_10_7
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -58,7 +30,7 @@ typedef NSUInteger NSEventSwipeTrackingOptions;
 
 // Window Subclass /////////////////////////////////////////////////////////////
 
-@interface MCPopupWindow : NSWindow {
+@interface MCPopupWindow : NSPanel {
   // The cumulative X and Y scrollingDeltas since the -scrollWheel: event began.
   NSPoint totalScrollDelta_;
 }
@@ -89,9 +61,15 @@ typedef NSUInteger NSEventSwipeTrackingOptions;
   if (shouldTrackSwipe) {
     MCPopupController* controller =
         base::mac::ObjCCastStrict<MCPopupController>([self windowController]);
+    BOOL directionInverted = [event isDirectionInvertedFromDevice];
 
     auto handler = ^(CGFloat gestureAmount, NSEventPhase phase,
                      BOOL isComplete, BOOL* stop) {
+        // The swipe direction should match the direction the user's fingers
+        // are moving, not the interpreted scroll direction.
+        if (directionInverted)
+          gestureAmount *= -1;
+
         if (phase == NSEventPhaseBegan) {
           [controller notificationSwipeStarted];
           return;
@@ -103,7 +81,7 @@ typedef NSUInteger NSEventSwipeTrackingOptions;
         if (ended || isComplete)
           [controller notificationSwipeEnded:ended complete:isComplete];
     };
-    [event trackSwipeEventWithOptions:0
+    [event trackSwipeEventWithOptions:NSEventSwipeTrackingLockDirection
              dampenAmountThresholdMin:-1
                                   max:1
                          usingHandler:handler];
@@ -121,7 +99,8 @@ typedef NSUInteger NSEventSwipeTrackingOptions;
            popupCollection:(MCPopupCollection*)popupCollection {
   scoped_nsobject<MCPopupWindow> window(
       [[MCPopupWindow alloc] initWithContentRect:ui::kWindowSizeDeterminedLater
-                                  styleMask:NSBorderlessWindowMask
+                                  styleMask:NSBorderlessWindowMask |
+                                            NSNonactivatingPanelMask
                                     backing:NSBackingStoreBuffered
                                       defer:YES]);
   if ((self = [super initWithWindow:window])) {
@@ -153,7 +132,10 @@ typedef NSUInteger NSEventSwipeTrackingOptions;
     boundsAnimation_.reset();
   }
   [super close];
-  [self release];
+  [self performSelectorOnMainThread:@selector(release)
+                         withObject:nil
+                      waitUntilDone:NO
+                              modes:@[ NSDefaultRunLoopMode ]];
 }
 
 - (MCNotificationController*)notificationController {
@@ -204,23 +186,42 @@ typedef NSUInteger NSEventSwipeTrackingOptions;
 }
 
 - (void)showWithAnimation:(NSRect)newBounds {
+  bounds_ = newBounds;
   NSRect startBounds = newBounds;
   startBounds.origin.x += startBounds.size.width;
-  startBounds.size.width = 0;
-  bounds_ = startBounds;
   [[self window] setFrame:startBounds display:NO];
+  [[self window] setAlphaValue:0];
   [self showWindow:nil];
-  [self setBounds:newBounds];
+
+  // Slide-in and fade-in simultaneously.
+  NSDictionary* animationDict = @{
+    NSViewAnimationTargetKey : [self window],
+    NSViewAnimationEndFrameKey : [NSValue valueWithRect:newBounds],
+    NSViewAnimationEffectKey : NSViewAnimationFadeInEffect
+  };
+  boundsAnimation_.reset([[NSViewAnimation alloc]
+      initWithViewAnimations:[NSArray arrayWithObject:animationDict]]);
+  [boundsAnimation_ setDuration:[popupCollection_ popupAnimationDuration]];
+  [boundsAnimation_ setDelegate:self];
+  [boundsAnimation_ startAnimation];
 }
 
 - (void)closeWithAnimation {
   if (isClosing_)
     return;
+
   isClosing_ = YES;
 
+  // If the notification was swiped closed, do not animate it as the
+  // notification has already faded out.
+  if (swipeGestureEnded_) {
+    [self close];
+    return;
+  }
+
   NSDictionary* animationDict = @{
-    NSViewAnimationTargetKey:   [self window],
-    NSViewAnimationEffectKey:   NSViewAnimationFadeOutEffect
+    NSViewAnimationTargetKey : [self window],
+    NSViewAnimationEffectKey : NSViewAnimationFadeOutEffect
   };
   boundsAnimation_.reset([[NSViewAnimation alloc]
       initWithViewAnimations:[NSArray arrayWithObject:animationDict]]);
@@ -243,8 +244,8 @@ typedef NSUInteger NSEventSwipeTrackingOptions;
   bounds_ = newBounds;
 
   NSDictionary* animationDict = @{
-    NSViewAnimationTargetKey:   [self window],
-    NSViewAnimationEndFrameKey: [NSValue valueWithRect:newBounds]
+    NSViewAnimationTargetKey :   [self window],
+    NSViewAnimationEndFrameKey : [NSValue valueWithRect:newBounds]
   };
   boundsAnimation_.reset([[NSViewAnimation alloc]
       initWithViewAnimations:[NSArray arrayWithObject:animationDict]]);

@@ -19,11 +19,12 @@
 #include "base/environment.h"
 #include "base/file_version_info.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/win/metro.h"
 #include "base/win/pe_image.h"
 #include "base/win/registry.h"
 #include "base/win/win_util.h"
@@ -835,6 +836,10 @@ bool ShowRestartDialogIfCrashed(bool* exit_now) {
     return false;
   }
 
+  // If we are being launched in metro mode don't try to show the dialog.
+  if (base::win::IsMetroProcess())
+    return false;
+
   // Only show this for the browser process. See crbug.com/132119.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   std::string process_type =
@@ -878,10 +883,17 @@ extern "C" int __declspec(dllexport) CrashForException(
     EXCEPTION_POINTERS* info) {
   if (g_breakpad) {
     g_breakpad->WriteMinidumpForException(info);
-    NtTerminateProcessPtr real_terminate_proc =
-        reinterpret_cast<NtTerminateProcessPtr>(
-            static_cast<char*>(g_real_terminate_process_stub));
-    real_terminate_proc(::GetCurrentProcess(), content::RESULT_CODE_KILLED);
+    // Patched stub exists based on conditions (See InitCrashReporter).
+    // As a side note this function also gets called from
+    // WindowProcExceptionFilter.
+    if (g_real_terminate_process_stub == NULL) {
+      ::TerminateProcess(::GetCurrentProcess(), content::RESULT_CODE_KILLED);
+    } else {
+      NtTerminateProcessPtr real_terminate_proc =
+          reinterpret_cast<NtTerminateProcessPtr>(
+              static_cast<char*>(g_real_terminate_process_stub));
+      real_terminate_proc(::GetCurrentProcess(), content::RESULT_CODE_KILLED);
+    }
   }
   return EXCEPTION_CONTINUE_SEARCH;
 }

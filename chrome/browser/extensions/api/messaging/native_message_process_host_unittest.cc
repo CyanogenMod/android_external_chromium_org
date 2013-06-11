@@ -15,7 +15,7 @@
 #include "base/platform_file.h"
 #include "base/process_util.h"
 #include "base/run_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/sequenced_worker_pool.h"
@@ -29,7 +29,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
@@ -79,10 +79,11 @@ class FakeLauncher : public NativeProcessLauncher {
 class NativeMessagingTest : public ::testing::Test,
                             public NativeMessageProcessHost::Client,
                             public base::SupportsWeakPtr<NativeMessagingTest> {
- public:
+ protected:
   NativeMessagingTest()
       : current_channel_(chrome::VersionInfo::CHANNEL_DEV),
-        native_message_process_host_(NULL) {
+        native_message_process_host_(NULL),
+        thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -91,10 +92,6 @@ class NativeMessagingTest : public ::testing::Test,
     // directory.
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_DATA, &user_data_dir_));
     ASSERT_TRUE(PathService::Override(chrome::DIR_USER_DATA, GetTestDir()));
-    ui_thread_.reset(new content::TestBrowserThread(BrowserThread::UI,
-                                                    &message_loop_));
-    io_thread_.reset(new content::TestBrowserThread(BrowserThread::IO,
-                                                    &message_loop_));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -104,24 +101,20 @@ class NativeMessagingTest : public ::testing::Test,
       BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE,
                                 native_message_process_host_.release());
     }
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   virtual void PostMessageFromNativeProcess(
       int port_id,
-      const std::string& message) OVERRIDE  {
-    last_message_ = message;
-
-    // Parse the message.
-    base::Value* parsed = base::JSONReader::Read(message);
-    base::DictionaryValue* dict_value;
-    if (parsed && parsed->GetAsDictionary(&dict_value)) {
-      last_message_parsed_.reset(dict_value);
-    } else {
-      LOG(ERROR) << "Failed to parse " << message;
-      last_message_parsed_.reset();
-      delete parsed;
-    }
+      scoped_ptr<base::ListValue> message_as_list) OVERRIDE  {
+    // |message_as_list| should contain a single DictionaryValue. Extract it
+    // into |last_message_|.
+    ASSERT_EQ(1u, message_as_list->GetSize());
+    base::Value* last_message_value = NULL;
+    message_as_list->Remove(0, &last_message_value);
+    ASSERT_EQ(base::Value::TYPE_DICTIONARY, last_message_value->GetType());
+    last_message_.reset(
+        static_cast<base::DictionaryValue*>(last_message_value));
 
     if (read_message_run_loop_)
       read_message_run_loop_->Quit();
@@ -153,12 +146,9 @@ class NativeMessagingTest : public ::testing::Test,
   Feature::ScopedCurrentChannel current_channel_;
   scoped_ptr<NativeMessageProcessHost> native_message_process_host_;
   base::FilePath user_data_dir_;
-  base::MessageLoopForIO message_loop_;
   scoped_ptr<base::RunLoop> read_message_run_loop_;
-  scoped_ptr<content::TestBrowserThread> ui_thread_;
-  scoped_ptr<content::TestBrowserThread> io_thread_;
-  std::string last_message_;
-  scoped_ptr<base::DictionaryValue> last_message_parsed_;
+  content::TestBrowserThreadBundle thread_bundle_;
+  scoped_ptr<DictionaryValue> last_message_;
 };
 
 // Read a single message from a local file.
@@ -175,19 +165,26 @@ TEST_F(NativeMessagingTest, SingleSendMessageRead) {
   read_message_run_loop_.reset(new base::RunLoop());
   read_message_run_loop_->RunUntilIdle();
 
-  if (last_message_.empty()) {
+  if (!last_message_) {
     read_message_run_loop_.reset(new base::RunLoop());
     native_message_process_host_->ReadNowForTesting();
     read_message_run_loop_->Run();
   }
-  EXPECT_EQ(kTestMessage, last_message_);
+  ASSERT_TRUE(last_message_);
+
+  scoped_ptr<base::Value> kTestMessageAsValue(
+      base::JSONReader::Read(kTestMessage));
+  ASSERT_TRUE(kTestMessageAsValue);
+  EXPECT_TRUE(base::Value::Equals(kTestMessageAsValue.get(),
+                                  last_message_.get()))
+      << "Expected " << *kTestMessageAsValue << " got " << *last_message_;
 }
 
 // Tests sending a single message. The message should get written to
 // |temp_file| and should match the contents of single_message_request.msg.
 TEST_F(NativeMessagingTest, SingleSendMessageWrite) {
   base::FilePath temp_output_file = temp_dir_.path().AppendASCII("output");
-  base::FilePath temp_input_file = CreateTempFileWithMessage(std::string());
+  base::FilePath temp_input_file = CreateTempFileWithMessage("{}");
 
   scoped_ptr<NativeProcessLauncher> launcher(
       new FakeLauncher(temp_input_file, temp_output_file));
@@ -195,10 +192,10 @@ TEST_F(NativeMessagingTest, SingleSendMessageWrite) {
       AsWeakPtr(), kTestNativeMessagingExtensionId, "empty_app.py",
       0, launcher.Pass());
   ASSERT_TRUE(native_message_process_host_.get());
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   native_message_process_host_->Send(kTestMessage);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   std::string output;
   base::TimeTicks start_time = base::TimeTicks::Now();
@@ -233,30 +230,29 @@ TEST_F(NativeMessagingTest, EchoConnect) {
   native_message_process_host_->Send("{\"text\": \"Hello.\"}");
   read_message_run_loop_.reset(new base::RunLoop());
   read_message_run_loop_->Run();
-  ASSERT_FALSE(last_message_.empty());
-  ASSERT_TRUE(last_message_parsed_);
+  ASSERT_TRUE(last_message_);
 
   std::string expected_url = std::string("chrome-extension://") +
       kTestNativeMessagingExtensionId + "/";
   int id;
-  EXPECT_TRUE(last_message_parsed_->GetInteger("id", &id));
+  EXPECT_TRUE(last_message_->GetInteger("id", &id));
   EXPECT_EQ(1, id);
   std::string text;
-  EXPECT_TRUE(last_message_parsed_->GetString("echo.text", &text));
+  EXPECT_TRUE(last_message_->GetString("echo.text", &text));
   EXPECT_EQ("Hello.", text);
   std::string url;
-  EXPECT_TRUE(last_message_parsed_->GetString("caller_url", &url));
+  EXPECT_TRUE(last_message_->GetString("caller_url", &url));
   EXPECT_EQ(expected_url, url);
 
 
   native_message_process_host_->Send("{\"foo\": \"bar\"}");
   read_message_run_loop_.reset(new base::RunLoop());
   read_message_run_loop_->Run();
-  EXPECT_TRUE(last_message_parsed_->GetInteger("id", &id));
+  EXPECT_TRUE(last_message_->GetInteger("id", &id));
   EXPECT_EQ(2, id);
-  EXPECT_TRUE(last_message_parsed_->GetString("echo.foo", &text));
+  EXPECT_TRUE(last_message_->GetString("echo.foo", &text));
   EXPECT_EQ("bar", text);
-  EXPECT_TRUE(last_message_parsed_->GetString("caller_url", &url));
+  EXPECT_TRUE(last_message_->GetString("caller_url", &url));
   EXPECT_EQ(expected_url, url);
 }
 

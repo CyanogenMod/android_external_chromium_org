@@ -11,10 +11,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/sync/profile_signin_confirmation_helper.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/webui/constrained_web_dialog_ui.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
@@ -24,9 +21,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace content {
-class WebContents;
-}
+// ProfileSigninConfirmationHandler --------------------------------------------
 
 namespace {
 
@@ -34,9 +29,7 @@ class ProfileSigninConfirmationHandler : public content::WebUIMessageHandler {
  public:
   ProfileSigninConfirmationHandler(
       const ProfileSigninConfirmationDialog* dialog,
-      const base::Closure& cancel_signin,
-      const base::Closure& signin_with_new_profile,
-      const base::Closure& continue_signin);
+      ui::ProfileSigninConfirmationDelegate* delegate_);
   virtual ~ProfileSigninConfirmationHandler();
   virtual void RegisterMessages() OVERRIDE;
 
@@ -49,36 +42,30 @@ class ProfileSigninConfirmationHandler : public content::WebUIMessageHandler {
   // Weak ptr to parent dialog.
   const ProfileSigninConfirmationDialog* dialog_;
 
-  // Dialog button callbacks.
-  base::Closure cancel_signin_;
-  base::Closure signin_with_new_profile_;
-  base::Closure continue_signin_;
+  // Dialog button handling.
+  ui::ProfileSigninConfirmationDelegate* delegate_;
 };
 
-}  // namespace
-
 ProfileSigninConfirmationHandler::ProfileSigninConfirmationHandler(
-      const ProfileSigninConfirmationDialog* dialog,
-      const base::Closure& cancel_signin,
-      const base::Closure& signin_with_new_profile,
-      const base::Closure& continue_signin)
-  : dialog_(dialog),
-    cancel_signin_(cancel_signin),
-    signin_with_new_profile_(signin_with_new_profile),
-    continue_signin_(continue_signin) {
+    const ProfileSigninConfirmationDialog* dialog,
+    ui::ProfileSigninConfirmationDelegate* delegate)
+  : dialog_(dialog), delegate_(delegate) {
 }
 
 ProfileSigninConfirmationHandler::~ProfileSigninConfirmationHandler() {
 }
 
 void ProfileSigninConfirmationHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback("cancel",
+  web_ui()->RegisterMessageCallback(
+      "cancel",
       base::Bind(&ProfileSigninConfirmationHandler::OnCancelButtonClicked,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("createNewProfile",
+  web_ui()->RegisterMessageCallback(
+      "createNewProfile",
       base::Bind(&ProfileSigninConfirmationHandler::OnCreateProfileClicked,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("continue",
+  web_ui()->RegisterMessageCallback(
+      "continue",
       base::Bind(&ProfileSigninConfirmationHandler::OnContinueButtonClicked,
                  base::Unretained(this)));
 }
@@ -86,83 +73,88 @@ void ProfileSigninConfirmationHandler::RegisterMessages() {
 void ProfileSigninConfirmationHandler::OnCancelButtonClicked(
     const base::ListValue* args) {
   // TODO(dconnelly): redirect back to NTP?
-  cancel_signin_.Run();
+  delegate_->OnCancelSignin();
   dialog_->Close();
 }
 
 void ProfileSigninConfirmationHandler::OnCreateProfileClicked(
     const base::ListValue* args) {
-  signin_with_new_profile_.Run();
+  delegate_->OnSigninWithNewProfile();
   dialog_->Close();
 }
 
 void ProfileSigninConfirmationHandler::OnContinueButtonClicked(
     const base::ListValue* args) {
-  continue_signin_.Run();
+  delegate_->OnContinueSignin();
   dialog_->Close();
 }
 
-void ProfileSigninConfirmationDialog::ShowDialog(
+}  // namespace
+
+#if !defined(TOOLKIT_VIEWS) && !defined(OS_MACOSX)
+namespace chrome {
+// static
+// Declared in browser_dialogs.h
+void ShowProfileSigninConfirmationDialog(
+    Browser* browser,
+    content::WebContents* web_contents,
     Profile* profile,
     const std::string& username,
-    const base::Closure& cancel_signin,
-    const base::Closure& signin_with_new_profile,
-    const base::Closure& continue_signin) {
-  ProfileSigninConfirmationDialog *dialog =
-    new ProfileSigninConfirmationDialog(profile,
-                                        username,
-                                        cancel_signin,
-                                        signin_with_new_profile,
-                                        continue_signin);
-  ui::CheckShouldPromptForNewProfile(
-      profile,
-      base::Bind(&ProfileSigninConfirmationDialog::Show,
-                 dialog->weak_pointer_factory_.GetWeakPtr()));
+    ui::ProfileSigninConfirmationDelegate* delegate) {
+  ProfileSigninConfirmationDialog::ShowDialog(web_contents,
+                                              profile,
+                                              username,
+                                              delegate);
 }
+}  // namespace chrome
+#endif
+
+// ProfileSigninConfirmationDialog ---------------------------------------------
 
 ProfileSigninConfirmationDialog::ProfileSigninConfirmationDialog(
+    content::WebContents* web_contents,
     Profile* profile,
     const std::string& username,
-    const base::Closure& cancel_signin,
-    const base::Closure& signin_with_new_profile,
-    const base::Closure& continue_signin)
-  : username_(username),
-    prompt_for_new_profile_(true),
-    cancel_signin_(cancel_signin),
-    signin_with_new_profile_(signin_with_new_profile),
-    continue_signin_(continue_signin),
+    ui::ProfileSigninConfirmationDelegate* delegate)
+  : web_contents_(web_contents),
     profile_(profile),
-    weak_pointer_factory_(this) {
+    username_(username),
+    signin_delegate_(delegate),
+    dialog_delegate_(NULL),
+    prompt_for_new_profile_(true) {
 }
 
 ProfileSigninConfirmationDialog::~ProfileSigninConfirmationDialog() {
 }
 
+// static
+void ProfileSigninConfirmationDialog::ShowDialog(
+  content::WebContents* web_contents,
+  Profile* profile,
+  const std::string& username,
+  ui::ProfileSigninConfirmationDelegate* delegate) {
+  ProfileSigninConfirmationDialog* dialog =
+      new ProfileSigninConfirmationDialog(web_contents,
+                                          profile,
+                                          username,
+                                          delegate);
+  ui::CheckShouldPromptForNewProfile(
+      profile,
+      // This callback is guaranteed to be invoked, and once it is, the dialog
+      // owns itself.
+      base::Bind(&ProfileSigninConfirmationDialog::Show,
+                 base::Unretained(dialog)));
+}
+
 void ProfileSigninConfirmationDialog::Close() const {
   closed_by_handler_ = true;
-  delegate_->OnDialogCloseFromWebUI();
+  dialog_delegate_->OnDialogCloseFromWebUI();
 }
 
 void ProfileSigninConfirmationDialog::Show(bool prompt) {
   prompt_for_new_profile_ = prompt;
-
-  Browser* browser = FindBrowserWithProfile(profile_,
-                                            chrome::GetActiveDesktop());
-  if (!browser) {
-    DLOG(WARNING) << "No browser found to display the confirmation dialog";
-    cancel_signin_.Run();
-    return;
-  }
-
-  content::WebContents* web_contents =
-      browser->tab_strip_model()->GetActiveWebContents();
-  if (!web_contents) {
-    DLOG(WARNING) << "No web contents found to display the confirmation dialog";
-    cancel_signin_.Run();
-    return;
-  }
-
-  delegate_ = CreateConstrainedWebDialog(profile_, this, NULL, web_contents);
+  dialog_delegate_ =
+      CreateConstrainedWebDialog(profile_, this, NULL, web_contents_);
 }
 
 ui::ModalType ProfileSigninConfirmationDialog::GetDialogModalType() const {
@@ -170,8 +162,7 @@ ui::ModalType ProfileSigninConfirmationDialog::GetDialogModalType() const {
 }
 
 string16 ProfileSigninConfirmationDialog::GetDialogTitle() const {
-  return l10n_util::GetStringUTF16(
-      IDS_ENTERPRISE_SIGNIN_PROFILE_LINK_DIALOG_TITLE);
+  return l10n_util::GetStringUTF16(IDS_ENTERPRISE_SIGNIN_TITLE);
 }
 
 GURL ProfileSigninConfirmationDialog::GetDialogContentURL() const {
@@ -181,10 +172,7 @@ GURL ProfileSigninConfirmationDialog::GetDialogContentURL() const {
 void ProfileSigninConfirmationDialog::GetWebUIMessageHandlers(
     std::vector<content::WebUIMessageHandler*>* handlers) const {
   handlers->push_back(
-      new ProfileSigninConfirmationHandler(this,
-                                           cancel_signin_,
-                                           signin_with_new_profile_,
-                                           continue_signin_));
+      new ProfileSigninConfirmationHandler(this, signin_delegate_));
 }
 
 void ProfileSigninConfirmationDialog::GetDialogSize(gfx::Size* size) const {
@@ -214,7 +202,7 @@ std::string ProfileSigninConfirmationDialog::GetDialogArgs() const {
 void ProfileSigninConfirmationDialog::OnDialogClosed(
     const std::string& json_retval) {
   if (!closed_by_handler_)
-    cancel_signin_.Run();
+    signin_delegate_->OnCancelSignin();
 }
 
 void ProfileSigninConfirmationDialog::OnCloseContents(

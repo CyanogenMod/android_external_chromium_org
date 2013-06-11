@@ -9,7 +9,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/autofill/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/common/form_field_data.h"
 #include "content/public/test/test_browser_thread.h"
@@ -49,7 +49,7 @@ class AwFormDatabaseServiceTest : public Test {
   // The path to the temporary directory used for the test operations.
   base::ScopedTempDir temp_dir_;
   // A message loop for UI thread.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   JNIEnv* env_;

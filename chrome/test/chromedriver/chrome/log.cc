@@ -6,7 +6,8 @@
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/logging.h"
 
@@ -55,8 +56,7 @@ void TruncateContainedStrings(base::Value* value) {
   }
 }
 
-// Pretty prints encapsulated JSON and truncates long strings for display.
-std::string ConvertForDisplay(const std::string& input) {
+std::string ConvertForDisplayInternal(const std::string& input) {
   size_t left = input.find("{");
   size_t right = input.rfind("}");
   if (left == std::string::npos || right == std::string::npos)
@@ -76,10 +76,18 @@ std::string ConvertForDisplay(const std::string& input) {
   return display;
 }
 
+// Pretty prints encapsulated JSON and truncates long strings for display.
+std::string ConvertForDisplay(const std::string& input) {
+  std::string display = ConvertForDisplayInternal(input);
+  char remove_chars[] = {'\r'};
+  RemoveChars(display, remove_chars, &display);
+  return display;
+}
+
 }  // namespace
 
-void Log::AddEntry(Log::Level level, const std::string& message) {
-  return AddEntry(base::Time::Now(), level, message);
+void Log::AddEntry(Level level, const std::string& message) {
+ AddEntryTimestamped(base::Time::Now(), level, message);
 }
 
 Logger::Logger() : min_log_level_(kLog), start_(base::Time::Now()) {}
@@ -89,9 +97,9 @@ Logger::Logger(Level min_log_level)
 
 Logger::~Logger() {}
 
-void Logger::AddEntry(const base::Time& time,
-                      Level level,
-                      const std::string& message) {
+void Logger::AddEntryTimestamped(const base::Time& timestamp,
+                                 Level level,
+                                 const std::string& message) {
   if (level < min_log_level_)
     return;
 
@@ -114,7 +122,7 @@ void Logger::AddEntry(const base::Time& time,
   }
   std::string entry =
       base::StringPrintf("[%.3lf][%s]: %s",
-                         base::TimeDelta(time - start_).InSecondsF(),
+                         base::TimeDelta(timestamp - start_).InSecondsF(),
                          level_name,
                          ConvertForDisplay(message).c_str());
   const char* format = "%s\n";

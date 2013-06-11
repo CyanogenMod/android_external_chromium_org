@@ -31,8 +31,6 @@
 
 namespace talk_base {
 
-class LogMessageDelegate;
-
 ///////////////////////////////////////////////////////////////////////////////
 // ConstantLabel can be used to easily generate string names from constant
 // values.  This can be useful for logging descriptive names of error messages.
@@ -165,9 +163,8 @@ void LogMultiline(LoggingSeverity level, const char* label, bool input,
                   const void* data, size_t len, bool hex_mode,
                   LogMultilineState* state);
 
-// Registers a delegate to receive diagnostic logging messages. Not thread safe,
-// must be called from the same thread.
-void InitDiagnosticLoggingDelegate(LogMessageDelegate* delegate);
+void InitDiagnosticLoggingDelegateFunction(
+    void (*delegate)(const std::string&));
 
 }  // namespace talk_base
 
@@ -187,7 +184,7 @@ void InitDiagnosticLoggingDelegate(LogMessageDelegate* delegate);
 
 #define LOG_V(sev) VLOG(sev)
 #undef LOG
-#define LOG(sev) LOG_V(talk_base::sev)
+#define LOG(sev) DIAGNOSTIC_LOG(talk_base::sev)
 
 // The _F version prefixes the message with the current function name.
 #if defined(__GNUC__) && defined(_DEBUG)

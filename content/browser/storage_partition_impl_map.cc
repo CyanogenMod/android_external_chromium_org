@@ -7,11 +7,12 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
@@ -63,8 +64,8 @@ class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
     if (!webkit_blob_protocol_handler_impl_) {
       webkit_blob_protocol_handler_impl_.reset(
           new WebKitBlobProtocolHandlerImpl(blob_storage_context_->controller(),
-                                            stream_context_,
-                                            file_system_context_));
+                                            stream_context_.get(),
+                                            file_system_context_.get()));
     }
     return webkit_blob_protocol_handler_impl_->MaybeCreateJob(request,
                                                               network_delegate);
@@ -93,7 +94,7 @@ class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
         net::NetworkDelegate* network_delegate) const OVERRIDE {
       scoped_refptr<Stream> stream =
           stream_context_->registry()->GetStream(request->url());
-      if (stream)
+      if (stream.get())
         return new StreamURLRequestJob(request, network_delegate, stream);
 
       return webkit_blob::BlobProtocolHandler::MaybeCreateJob(
@@ -182,12 +183,12 @@ const int kPartitionNameHashBytes = 6;
 
 // Needed for selecting all files in ObliterateOneDirectory() below.
 #if defined(OS_POSIX)
-const int kAllFileTypes = file_util::FileEnumerator::FILES |
-                          file_util::FileEnumerator::DIRECTORIES |
-                          file_util::FileEnumerator::SHOW_SYM_LINKS;
+const int kAllFileTypes = base::FileEnumerator::FILES |
+                          base::FileEnumerator::DIRECTORIES |
+                          base::FileEnumerator::SHOW_SYM_LINKS;
 #else
-const int kAllFileTypes = file_util::FileEnumerator::FILES |
-                          file_util::FileEnumerator::DIRECTORIES;
+const int kAllFileTypes = base::FileEnumerator::FILES |
+                          base::FileEnumerator::DIRECTORIES;
 #endif
 
 base::FilePath GetStoragePartitionDomainPath(
@@ -208,7 +209,7 @@ void ObliterateOneDirectory(const base::FilePath& current_dir,
                             std::vector<base::FilePath>* paths_to_consider) {
   CHECK(current_dir.IsAbsolute());
 
-  file_util::FileEnumerator enumerator(current_dir, false, kAllFileTypes);
+  base::FileEnumerator enumerator(current_dir, false, kAllFileTypes);
   for (base::FilePath to_delete = enumerator.Next(); !to_delete.empty();
        to_delete = enumerator.Next()) {
     // Enum tracking which of the 3 possible actions to take for |to_delete|.
@@ -322,7 +323,7 @@ void BlockingGarbageCollect(
     scoped_ptr<base::hash_set<base::FilePath> > active_paths) {
   CHECK(storage_root.IsAbsolute());
 
-  file_util::FileEnumerator enumerator(storage_root, false, kAllFileTypes);
+  base::FileEnumerator enumerator(storage_root, false, kAllFileTypes);
   base::FilePath trash_directory;
   if (!file_util::CreateTemporaryDirInDir(storage_root, kTrashDirname,
                                           &trash_directory)) {

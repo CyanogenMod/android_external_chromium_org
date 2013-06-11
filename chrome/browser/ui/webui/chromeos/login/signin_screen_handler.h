@@ -72,6 +72,9 @@ class SigninScreenHandlerDelegate {
   // Cancels current password changed flow.
   virtual void CancelPasswordChangedFlow() = 0;
 
+  // Cancels user adding.
+  virtual void CancelUserAdding() = 0;
+
   // Create a new Google account.
   virtual void CreateAccount() = 0;
 
@@ -117,6 +120,9 @@ class SigninScreenHandlerDelegate {
 
   // Shows Reset screen.
   virtual void ShowResetScreen() = 0;
+
+  // Shows Reset screen.
+  virtual void ShowKioskAutolaunchScreen() = 0;
 
   // Show wrong hwid screen.
   virtual void ShowWrongHWIDScreen() = 0;
@@ -297,6 +303,7 @@ class SigninScreenHandler
   void HandleShowAddUser(const base::ListValue* args);
   void HandleToggleEnrollmentScreen();
   void HandleToggleResetScreen();
+  void HandleToggleKioskAutolaunchScreen();
   void HandleLaunchHelpApp(double help_topic_id);
   void HandleCreateAccount();
   void HandleAccountPickerReady();
@@ -309,6 +316,7 @@ class SigninScreenHandler
   void HandleOpenProxySettings();
   void HandleLoginVisible(const std::string& source);
   void HandleCancelPasswordChangedFlow();
+  void HandleCancelUserAdding();
   void HandleMigrateUserData(const std::string& password);
   void HandleResyncUserData();
   void HandleLoginUIStateChanged(const std::string& source, bool new_value);
@@ -446,6 +454,12 @@ class SigninScreenHandler
   // NOTIFICATION_AUTH_NEEDED and reset on either NOTIFICATION_AUTH_SUPPLIED or
   // NOTIFICATION_AUTH_CANCELLED.
   bool has_pending_auth_ui_;
+
+  // Whether to ignore the next net::ERR_ABORTED frame error. ERR_ABORTED could
+  // be triggered when reloading gaia frame's src with a pending load.
+  // ReloadGaiaExtension() sets this flag to true to ignore potential
+  // ERR_ABORTED triggered from its reload request. See http://crbug.com/242527.
+  bool ignore_next_user_abort_frame_error_;
 
   // Testing helper, specifies new value for gaia url.
   GURL gaia_url_for_test_;

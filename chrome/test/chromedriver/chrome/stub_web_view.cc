@@ -20,8 +20,8 @@ Status StubWebView::ConnectIfNecessary() {
   return Status(kOk);
 }
 
-DevToolsClient* StubWebView::GetDevToolsClient() {
-  return NULL;
+Status StubWebView::HandleReceivedEvents() {
+  return Status(kOk);
 }
 
 Status StubWebView::Load(const std::string& url) {
@@ -85,7 +85,8 @@ Status StubWebView::DeleteCookie(const std::string& name,
   return Status(kOk);
 }
 
-Status StubWebView::WaitForPendingNavigations(const std::string& frame_id) {
+Status StubWebView::WaitForPendingNavigations(const std::string& frame_id,
+                                              int timeout) {
   return Status(kOk);
 }
 

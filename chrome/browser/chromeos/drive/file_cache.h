@@ -13,7 +13,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "chrome/browser/chromeos/drive/file_cache_metadata.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 
 class Profile;
@@ -34,6 +33,11 @@ class FileCacheEntry;
 // set to TEST_CACHE_STATE_NONE.
 typedef base::Callback<void(bool success, const FileCacheEntry& cache_entry)>
     GetCacheEntryCallback;
+
+// Callback for Iterate().
+typedef base::Callback<void(const std::string& resource_id,
+                            const FileCacheEntry& cache_entry)>
+    CacheIterateCallback;
 
 namespace internal {
 
@@ -68,7 +72,7 @@ class FileCache {
   // Enum defining GCache subdirectory location.
   // This indexes into |FileCache::cache_paths_| vector.
   enum CacheSubDirectoryType {
-    CACHE_TYPE_META = 0,       // Downloaded feeds.
+    CACHE_TYPE_META = 0,       // Resource metadata.
     CACHE_TYPE_PERSISTENT,     // Files that are pinned or modified locally,
                                // not evictable, hopefully.
     CACHE_TYPE_TMP,            // Files that don't meet criteria to be in
@@ -204,12 +208,17 @@ class FileCache {
                                       FileOperationType file_operation_type,
                                       const FileOperationCallback& callback);
 
-  // Pins the specified entry.
+  // Runs Pin() on |blocking_task_runner_|, and calls |callback| with the result
+  // asynchronously.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void PinOnUIThread(const std::string& resource_id,
                      const std::string& md5,
                      const FileOperationCallback& callback);
+
+  // Pins the specified entry.
+  FileError Pin(const std::string& resource_id,
+                const std::string& md5);
 
   // Runs Unpin() on |blocking_task_runner_|, and calls |callback| with the
   // result asynchronously.
@@ -222,12 +231,11 @@ class FileCache {
   // Unpins the specified entry.
   FileError Unpin(const std::string& resource_id, const std::string& md5);
 
-  // Sets the state of the cache entry corresponding to |resource_id| and |md5|
-  // as mounted.
+  // Sets the state of the cache entry corresponding to |resource_id| as
+  // mounted.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void MarkAsMountedOnUIThread(const std::string& resource_id,
-                               const std::string& md5,
                                const GetFileFromCacheCallback& callback);
 
   // Set the state of the cache entry corresponding to file_path as unmounted.
@@ -236,12 +244,17 @@ class FileCache {
   void MarkAsUnmountedOnUIThread(const base::FilePath& file_path,
                                  const FileOperationCallback& callback);
 
-  // Marks the specified entry dirty.
+  // Runs MarkDirty() on |blocking_task_runner_|, and calls |callback| with the
+  // result asynchronously.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void MarkDirtyOnUIThread(const std::string& resource_id,
                            const std::string& md5,
                            const FileOperationCallback& callback);
+
+  // Marks the specified entry dirty.
+  FileError MarkDirty(const std::string& resource_id,
+                      const std::string& md5);
 
   // Commits changes for the specified dirty entry.
   // |callback| must not be null.
@@ -276,9 +289,6 @@ class FileCache {
   // |callback| must not be null.
   void RequestInitialize(const InitializeCacheCallback& callback);
 
-  // Utility method to call InitializeForTesting on UI thread.
-  void RequestInitializeForTesting();
-
   // Destroys this cache. This function posts a task to the blocking task
   // runner to safely delete the object.
   // Must be called on the UI thread.
@@ -302,6 +312,7 @@ class FileCache {
 
  private:
   friend class FileCacheTest;
+  friend class FileCacheTestOnUIThread;
 
   // Enum defining origin of a cached file.
   enum CachedFileOrigin {
@@ -328,10 +339,6 @@ class FileCache {
   // Initializes the cache. Returns true on success.
   bool InitializeOnBlockingPool();
 
-  // Initializes the cache with in-memory cache for testing.
-  // The in-memory cache is used since it's faster than the db.
-  void InitializeOnBlockingPoolForTesting();
-
   // Destroys the cache on the blocking pool.
   void DestroyOnBlockingPool();
 
@@ -344,21 +351,12 @@ class FileCache {
                           FileOperationType file_operation_type,
                           CachedFileOrigin origin);
 
-  // Used to implement PinOnUIThread.
-  FileError Pin(const std::string& resource_id,
-                const std::string& md5);
-
   // Used to implement MarkAsMountedOnUIThread.
   FileError MarkAsMounted(const std::string& resource_id,
-                          const std::string& md5,
                           base::FilePath* cache_file_path);
 
   // Used to implement MarkAsUnmountedOnUIThread.
   FileError MarkAsUnmounted(const base::FilePath& file_path);
-
-  // Used to implement MarkDirtyOnUIThread.
-  FileError MarkDirty(const std::string& resource_id,
-                      const std::string& md5);
 
   // Used to implement ClearAllOnUIThread.
   bool ClearAll();

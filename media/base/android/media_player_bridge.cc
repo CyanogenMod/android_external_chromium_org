@@ -8,7 +8,7 @@
 #include "base/android/jni_string.h"
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "jni/MediaPlayerBridge_jni.h"
 #include "jni/MediaPlayer_jni.h"
 #include "media/base/android/media_player_manager.h"
@@ -35,11 +35,11 @@ namespace media {
 MediaPlayerAndroid* MediaPlayerAndroid::Create(
     int player_id,
     const GURL& url,
-    bool is_media_source,
+    SourceType source_type,
     const GURL& first_party_for_cookies,
     bool hide_url_log,
     MediaPlayerManager* manager) {
-  if (!is_media_source) {
+  if (source_type == SOURCE_TYPE_URL) {
     MediaPlayerBridge* media_player_bridge = new MediaPlayerBridge(
         player_id,
         url,
@@ -127,9 +127,13 @@ void MediaPlayerBridge::SetMediaPlayerListener() {
   listener_.CreateMediaPlayerListener(j_context, j_media_player_.obj());
 }
 
-void MediaPlayerBridge::SetVideoSurface(jobject surface) {
+void MediaPlayerBridge::SetDuration(base::TimeDelta duration) {
+  duration_ = duration;
+}
+
+void MediaPlayerBridge::SetVideoSurface(gfx::ScopedJavaSurface surface) {
   if (j_media_player_.is_null()) {
-    if (surface == NULL)
+    if (surface.IsSurfaceEmpty())
       return;
     Prepare();
   }
@@ -138,7 +142,7 @@ void MediaPlayerBridge::SetVideoSurface(jobject surface) {
   CHECK(env);
 
   JNI_MediaPlayer::Java_MediaPlayer_setSurface(
-      env, j_media_player_.obj(), surface);
+      env, j_media_player_.obj(), surface.j_surface().obj());
 }
 
 void MediaPlayerBridge::Prepare() {
@@ -287,7 +291,7 @@ void MediaPlayerBridge::Release() {
     pending_seek_ = GetCurrentTime();
   prepared_ = false;
   pending_play_ = false;
-  SetVideoSurface(NULL);
+  SetVideoSurface(gfx::ScopedJavaSurface());
 
   JNIEnv* env = base::android::AttachCurrentThread();
   JNI_MediaPlayer::Java_MediaPlayer_release(env, j_media_player_.obj());
@@ -415,6 +419,14 @@ bool MediaPlayerBridge::CanSeekBackward() {
 
 bool MediaPlayerBridge::IsPlayerReady() {
   return prepared_;
+}
+
+GURL MediaPlayerBridge::GetUrl() {
+  return url_;
+}
+
+GURL MediaPlayerBridge::GetFirstPartyForCookies() {
+  return first_party_for_cookies_;
 }
 
 }  // namespace media

@@ -37,17 +37,11 @@ namespace {
 FileError CheckPreConditionForEnsureFileDownloaded(
     internal::ResourceMetadata* metadata,
     internal::FileCache* cache,
-    const base::FilePath& file_path,
-    base::FilePath* cache_file_path,
-    ResourceEntry* entry) {
+    ResourceEntry* entry,
+    base::FilePath* cache_file_path) {
   DCHECK(metadata);
   DCHECK(cache);
   DCHECK(cache_file_path);
-  DCHECK(entry);
-
-  FileError error = metadata->GetResourceEntryByPath(file_path, entry);
-  if (error != FILE_ERROR_OK)
-    return error;
 
   if (entry->file_info().is_directory())
     return FILE_ERROR_NOT_A_FILE;
@@ -74,15 +68,63 @@ FileError CheckPreConditionForEnsureFileDownloaded(
     return FILE_ERROR_OK;
   }
 
-  // Look up if there exists the cache file.
-  FileError cache_error = cache->GetFile(
-      entry->resource_id(),
-      entry->file_specific_info().file_md5(),
-      cache_file_path);
-  DCHECK((cache_error == FILE_ERROR_OK && !cache_file_path->empty()) ||
-         (cache_error == FILE_ERROR_NOT_FOUND && cache_file_path->empty()));
+  // Get the cache file path if available.
+  cache->GetFile(entry->resource_id(),
+                 entry->file_specific_info().md5(),
+                 cache_file_path);
 
-  return error;
+  // If the cache file is available and dirty, the modified file info needs to
+  // be stored in |entry|.
+  // TODO(kinaba): crbug.com/246469. The logic below is a duplicate of that in
+  // drive::FileSystem::CheckLocalModificationAndRun. We should merge them once
+  // the drive::FS side is also converted to run fully on blocking pool.
+  if (!cache_file_path->empty()) {
+    FileCacheEntry cache_entry;
+    if (cache->GetCacheEntry(entry->resource_id(),
+                             entry->file_specific_info().md5(),
+                             &cache_entry) &&
+        cache_entry.is_dirty()) {
+      base::PlatformFileInfo file_info;
+      if (file_util::GetFileInfo(*cache_file_path, &file_info)) {
+        PlatformFileInfoProto entry_file_info;
+        util::ConvertPlatformFileInfoToResourceEntry(file_info,
+                                                     &entry_file_info);
+        *entry->mutable_file_info() = entry_file_info;
+      }
+    }
+  }
+
+  return FILE_ERROR_OK;
+}
+
+// Calls CheckPreConditionForEnsureFileDownloaded() with the entry specified by
+// the given ID.
+FileError CheckPreConditionForEnsureFileDownloadedByResourceId(
+    internal::ResourceMetadata* metadata,
+    internal::FileCache* cache,
+    const std::string& resource_id,
+    base::FilePath* cache_file_path,
+    ResourceEntry* entry) {
+  FileError error = metadata->GetResourceEntryById(resource_id, entry);
+  if (error != FILE_ERROR_OK)
+    return error;
+  return CheckPreConditionForEnsureFileDownloaded(
+      metadata, cache, entry, cache_file_path);
+}
+
+// Calls CheckPreConditionForEnsureFileDownloaded() with the entry specified by
+// the given file path.
+FileError CheckPreConditionForEnsureFileDownloadedByPath(
+    internal::ResourceMetadata* metadata,
+    internal::FileCache* cache,
+    const base::FilePath& file_path,
+    base::FilePath* cache_file_path,
+    ResourceEntry* entry) {
+  FileError error = metadata->GetResourceEntryByPath(file_path, entry);
+  if (error != FILE_ERROR_OK)
+    return error;
+  return CheckPreConditionForEnsureFileDownloaded(
+      metadata, cache, entry, cache_file_path);
 }
 
 // Creates a file with unique name in |dir| and stores the path to |temp_file|.
@@ -121,10 +163,18 @@ FileError PrepareForDownloadFile(
   DCHECK(drive_file_path);
   DCHECK(temp_download_file);
 
-  FileError error = metadata->RefreshEntry(
-      ConvertToResourceEntry(*gdata_entry), drive_file_path, entry);
+  *entry = ConvertToResourceEntry(*gdata_entry);
+  FileError error = metadata->RefreshEntry(*entry);
   if (error != FILE_ERROR_OK)
     return error;
+
+  error = metadata->GetResourceEntryById(entry->resource_id(), entry);
+  if (error != FILE_ERROR_OK)
+    return error;
+
+  *drive_file_path = metadata->GetFilePath(entry->resource_id());
+  if (drive_file_path->empty())
+    return FILE_ERROR_NOT_FOUND;
 
   // Ensure enough space in the cache.
   if (!cache->FreeDiskSpaceIfNeededFor(entry->file_info().size()))
@@ -150,18 +200,6 @@ FileError UpdateLocalStateForDownloadFile(
     const base::FilePath& downloaded_file_path,
     base::FilePath* cache_file_path) {
   DCHECK(cache);
-
-  // If user cancels download of a pinned-but-not-fetched file, mark file as
-  // unpinned so that we do not sync the file again.
-  if (gdata_error == google_apis::GDATA_CANCELLED) {
-    FileCacheEntry cache_entry;
-    if (cache->GetCacheEntry(resource_id, md5, &cache_entry) &&
-        cache_entry.is_pinned()) {
-      // TODO(hshi): http://crbug.com/127138 notify when file properties change.
-      // This allows file manager to clear the "Available offline" checkbox.
-      cache->Unpin(resource_id, md5);
-    }
-  }
 
   FileError error = util::GDataToFileError(gdata_error);
   if (error != FILE_ERROR_OK) {
@@ -269,7 +307,38 @@ DownloadOperation::DownloadOperation(
 DownloadOperation::~DownloadOperation() {
 }
 
-void DownloadOperation::EnsureFileDownloaded(
+void DownloadOperation::EnsureFileDownloadedByResourceId(
+    const std::string& resource_id,
+    const ClientContext& context,
+    const GetFileContentInitializedCallback& initialized_callback,
+    const google_apis::GetContentCallback& get_content_callback,
+    const GetFileCallback& completion_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!completion_callback.is_null());
+
+  DownloadCallback callback(
+      initialized_callback, get_content_callback, completion_callback);
+
+  ResourceEntry* entry = new ResourceEntry;
+  base::FilePath* cache_file_path = new base::FilePath;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&CheckPreConditionForEnsureFileDownloadedByResourceId,
+                 base::Unretained(metadata_),
+                 base::Unretained(cache_),
+                 resource_id,
+                 cache_file_path,
+                 entry),
+      base::Bind(&DownloadOperation::EnsureFileDownloadedAfterCheckPreCondition,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 context,
+                 callback,
+                 base::Passed(make_scoped_ptr(entry)),
+                 base::Owned(cache_file_path)));
+}
+
+void DownloadOperation::EnsureFileDownloadedByPath(
     const base::FilePath& file_path,
     const ClientContext& context,
     const GetFileContentInitializedCallback& initialized_callback,
@@ -286,7 +355,7 @@ void DownloadOperation::EnsureFileDownloaded(
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
       FROM_HERE,
-      base::Bind(&CheckPreConditionForEnsureFileDownloaded,
+      base::Bind(&CheckPreConditionForEnsureFileDownloadedByPath,
                  base::Unretained(metadata_),
                  base::Unretained(cache_),
                  file_path,
@@ -294,7 +363,6 @@ void DownloadOperation::EnsureFileDownloaded(
                  entry),
       base::Bind(&DownloadOperation::EnsureFileDownloadedAfterCheckPreCondition,
                  weak_ptr_factory_.GetWeakPtr(),
-                 file_path,
                  context,
                  callback,
                  base::Passed(make_scoped_ptr(entry)),
@@ -302,7 +370,6 @@ void DownloadOperation::EnsureFileDownloaded(
 }
 
 void DownloadOperation::EnsureFileDownloadedAfterCheckPreCondition(
-    const base::FilePath& file_path,
     const ClientContext& context,
     const DownloadCallback& callback,
     scoped_ptr<ResourceEntry> entry,
@@ -439,7 +506,7 @@ void DownloadOperation::EnsureFileDownloadedAfterDownloadFile(
       base::Bind(&UpdateLocalStateForDownloadFile,
                  base::Unretained(cache_),
                  entry_ptr->resource_id(),
-                 entry_ptr->file_specific_info().file_md5(),
+                 entry_ptr->file_specific_info().md5(),
                  gdata_error,
                  downloaded_file_path,
                  cache_file_path),

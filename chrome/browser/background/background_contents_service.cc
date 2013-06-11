@@ -4,13 +4,14 @@
 
 #include "chrome/browser/background/background_contents_service.h"
 
+#include "apps/app_load_service.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/browser_process.h"
@@ -92,8 +93,7 @@ class CrashNotificationDelegate : public NotificationDelegate {
       if (!service->GetAppBackgroundContents(ASCIIToUTF16(extension_id_)))
         service->LoadBackgroundContentsForExtension(profile_, extension_id_);
     } else if (is_platform_app_) {
-      extensions::ExtensionSystem::Get(profile_)->extension_service()->
-          RestartExtension(extension_id_);
+      apps::AppLoadService::Get(profile_)->RestartApplication(extension_id_);
     } else {
       extensions::ExtensionSystem::Get(profile_)->extension_service()->
           ReloadExtension(extension_id_);
@@ -139,14 +139,13 @@ void NotificationImageReady(
     notification_icon = rb.GetImageNamed(IDR_EXTENSION_DEFAULT_ICON);
   }
   string16 title;  // no notification title
-  DesktopNotificationService::AddIconNotification(
-      extension_url,
-      title,
-      message,
-      notification_icon,
-      string16(),
-      delegate,
-      profile);
+  DesktopNotificationService::AddIconNotification(extension_url,
+                                                  title,
+                                                  message,
+                                                  notification_icon,
+                                                  string16(),
+                                                  delegate.get(),
+                                                  profile);
 }
 #endif
 

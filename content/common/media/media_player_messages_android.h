@@ -11,6 +11,8 @@
 #include "content/common/content_export.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
+#include "media/base/android/media_player_android.h"
+#include "media/base/media_keys.h"
 #include "ui/gfx/rect_f.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -22,6 +24,7 @@
 IPC_ENUM_TRAITS(media::AudioCodec)
 IPC_ENUM_TRAITS(media::DemuxerStream::Status)
 IPC_ENUM_TRAITS(media::DemuxerStream::Type)
+IPC_ENUM_TRAITS(media::MediaKeys::KeyError)
 IPC_ENUM_TRAITS(media::VideoCodec)
 
 IPC_STRUCT_TRAITS_BEGIN(media::MediaPlayerHostMsg_DemuxerReady_Params)
@@ -60,6 +63,8 @@ IPC_STRUCT_TRAITS_BEGIN(media::SubsampleEntry)
   IPC_STRUCT_TRAITS_MEMBER(clear_bytes)
   IPC_STRUCT_TRAITS_MEMBER(cypher_bytes)
 IPC_STRUCT_TRAITS_END()
+
+IPC_ENUM_TRAITS(media::MediaPlayerAndroid::SourceType)
 
 // Messages for notifying the render process of media playback status -------
 
@@ -125,13 +130,17 @@ IPC_MESSAGE_ROUTED1(MediaPlayerMsg_DidMediaPlayerPause,
 IPC_MESSAGE_ROUTED3(MediaPlayerMsg_MediaSeekRequest,
                     int /* player_id */,
                     base::TimeDelta /* time_to_seek */,
-                    bool /* request_texture_peer */)
+                    uint32 /* seek_request_id */)
 
 // The media source player reads data from demuxer
 IPC_MESSAGE_ROUTED3(MediaPlayerMsg_ReadFromDemuxer,
                     int /* player_id */,
                     media::DemuxerStream::Type /* type */,
                     bool /* seek_done */)
+
+// The player needs new config data
+IPC_MESSAGE_ROUTED1(MediaPlayerMsg_MediaConfigRequest,
+                    int /* player_id */)
 
 // Messages for controllering the media playback in browser process ----------
 
@@ -143,11 +152,12 @@ IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_DestroyMediaPlayer,
 IPC_MESSAGE_ROUTED0(MediaPlayerHostMsg_DestroyAllMediaPlayers)
 
 // Initialize a media player object with the given player_id.
-IPC_MESSAGE_ROUTED4(MediaPlayerHostMsg_MediaPlayerInitialize,
-                    int /* player_id */,
-                    GURL /* url */,
-                    bool /* is_media_source */,
-                    GURL /* first_party_for_cookies */)
+IPC_MESSAGE_ROUTED4(
+    MediaPlayerHostMsg_MediaPlayerInitialize,
+    int /* player_id */,
+    GURL /* url */,
+    media::MediaPlayerAndroid::SourceType /* source_type */,
+    GURL /* first_party_for_cookies */)
 
 // Pause the player.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_MediaPlayerPause,
@@ -175,8 +185,9 @@ IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_ExitFullscreen,
                     int /* player_id */)
 
 // Sent when the seek request is received by the WebMediaPlayerAndroid.
-IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_MediaSeekRequestAck,
-                    int /* player_id */)
+IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_MediaSeekRequestAck,
+                    int /* player_id */,
+                    uint32 /* seek_request_id */)
 
 // Inform the media source player that the demuxer is ready.
 IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_DemuxerReady,
@@ -196,3 +207,44 @@ IPC_MESSAGE_ROUTED3(MediaPlayerHostMsg_NotifyExternalSurface,
                     gfx::RectF /* rect */)
 
 #endif
+
+// Messages for encrypted media extensions API ------------------------------
+
+IPC_MESSAGE_ROUTED4(MediaPlayerHostMsg_GenerateKeyRequest,
+                    int /* player_id */,
+                    std::string /* key_system */,
+                    std::string /* type */,
+                    std::vector<uint8> /* init_data */)
+
+IPC_MESSAGE_ROUTED5(MediaPlayerHostMsg_AddKey,
+                    int /* player_id */,
+                    std::string /* key_system */,
+                    std::vector<uint8> /* key */,
+                    std::vector<uint8> /* init_data */,
+                    std::string /* session_id */)
+
+IPC_MESSAGE_ROUTED3(MediaPlayerHostMsg_CancelKeyRequest,
+                    int /* player_id */,
+                    std::string /* key_system */,
+                    std::string /* session_id */)
+
+IPC_MESSAGE_ROUTED3(MediaPlayerMsg_KeyAdded,
+                    int /* player_id */,
+                    std::string /* key_system */,
+                    std::string /* session_id */)
+
+IPC_MESSAGE_ROUTED5(MediaPlayerMsg_KeyError,
+                    int /* player_id */,
+                    std::string /* key_system */,
+                    std::string /* session_id */,
+                    media::MediaKeys::KeyError /* error_code */,
+                    int /* system_code */)
+
+IPC_MESSAGE_ROUTED5(MediaPlayerMsg_KeyMessage,
+                    int /* player_id */,
+                    std::string /* key_system */,
+                    std::string /* session_id */,
+                    std::string /* message */,
+                    std::string /* destination_url */)
+
+// NeedKey is fired and handled in the renderer. Hence no message is needed.

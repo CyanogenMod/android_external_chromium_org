@@ -7,8 +7,9 @@
 #include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/signin/oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
@@ -19,6 +20,7 @@
 #include "net/base/load_flags.h"
 #include "net/base/url_util.h"
 #include "net/http/http_status_code.h"
+#include "net/http/http_util.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
@@ -88,6 +90,10 @@ class RequestImpl : public WebHistoryService::Request,
     DCHECK_EQ(source, url_fetcher_.get());
     response_code_ = url_fetcher_->GetResponseCode();
 
+    UMA_HISTOGRAM_CUSTOM_ENUMERATION("WebHistory.OAuthTokenResponseCode",
+        net::HttpUtil::MapStatusCodeForHistogram(response_code_),
+        net::HttpUtil::GetStatusCodesForHistogram());
+
     // If the response code indicates that the token might not be valid,
     // invalidate the token and try again.
     if (response_code_ == net::HTTP_UNAUTHORIZED && ++auth_retry_count_ <= 1) {
@@ -117,6 +123,8 @@ class RequestImpl : public WebHistoryService::Request,
     DCHECK(!access_token.empty());
     access_token_ = access_token;
 
+    UMA_HISTOGRAM_BOOLEAN("WebHistory.OAuthTokenCompletion", true);
+
     // Got an access token -- start the actual API request.
     url_fetcher_.reset(CreateUrlFetcher(access_token));
     url_fetcher_->Start();
@@ -127,6 +135,9 @@ class RequestImpl : public WebHistoryService::Request,
       const GoogleServiceAuthError& error) OVERRIDE {
     token_request_.reset();
     is_pending_ = false;
+
+    UMA_HISTOGRAM_BOOLEAN("WebHistory.OAuthTokenCompletion", false);
+
     callback_.Run(this, false);
     // It is valid for the callback to delete |this|, so do not access any
     // members below here.
@@ -206,7 +217,12 @@ scoped_ptr<DictionaryValue> ReadResponse(RequestImpl* request) {
 // Converts a time into a string for use as a parameter in a request to the
 // history server.
 std::string ServerTimeString(base::Time time) {
-  return base::Int64ToString((time - base::Time::UnixEpoch()).InMicroseconds());
+  if (time < base::Time::UnixEpoch()) {
+    return base::Int64ToString(0);
+  } else {
+    return base::Int64ToString(
+        (time - base::Time::UnixEpoch()).InMicroseconds());
+  }
 }
 
 // Returns a URL for querying the history server for a query specified by

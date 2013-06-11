@@ -64,6 +64,7 @@ class LayerTreeHostImplTest : public testing::Test,
       : proxy_(scoped_ptr<Thread>(NULL)),
         always_impl_thread_(&proxy_),
         always_main_thread_blocked_(&proxy_),
+        did_try_initialize_renderer_(false),
         on_can_draw_state_changed_called_(false),
         has_pending_tree_(false),
         did_request_commit_(false),
@@ -90,6 +91,11 @@ class LayerTreeHostImplTest : public testing::Test,
 
   virtual void TearDown() OVERRIDE {}
 
+  virtual void DidTryInitializeRendererOnImplThread(
+      bool success,
+      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE {
+    did_try_initialize_renderer_ = true;
+  }
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
   virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
@@ -114,7 +120,6 @@ class LayerTreeHostImplTest : public testing::Test,
   virtual void SetNeedsCommitOnImplThread() OVERRIDE {
     did_request_commit_ = true;
   }
-  virtual void SetNeedsManageTilesOnImplThread() OVERRIDE {}
   virtual void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> events,
       base::Time wall_clock_time) OVERRIDE {}
@@ -128,8 +133,6 @@ class LayerTreeHostImplTest : public testing::Test,
   virtual void RenewTreePriority() OVERRIDE {}
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
       OVERRIDE {}
-  virtual void DidReceiveLastInputEventForBeginFrameOnImplThread(
-      base::TimeTicks frame_time) OVERRIDE {}
   virtual void DidActivatePendingTree() OVERRIDE {}
 
   void set_reduce_memory_result(bool reduce_memory_result) {
@@ -277,6 +280,7 @@ class LayerTreeHostImplTest : public testing::Test,
 
   scoped_ptr<LayerTreeHostImpl> host_impl_;
   FakeRenderingStatsInstrumentation stats_instrumentation_;
+  bool did_try_initialize_renderer_;
   bool on_can_draw_state_changed_called_;
   bool has_pending_tree_;
   bool did_request_commit_;
@@ -1057,27 +1061,44 @@ class DidDrawCheckLayer : public TiledLayerImpl {
     return scoped_ptr<LayerImpl>(new DidDrawCheckLayer(tree_impl, id));
   }
 
+  virtual bool WillDraw(DrawMode draw_mode, ResourceProvider* provider)
+      OVERRIDE {
+    will_draw_called_ = true;
+    if (will_draw_returns_false_)
+      return false;
+    return TiledLayerImpl::WillDraw(draw_mode, provider);
+  }
+
+  virtual void AppendQuads(QuadSink* quad_sink,
+                           AppendQuadsData* append_quads_data) OVERRIDE {
+    append_quads_called_ = true;
+    TiledLayerImpl::AppendQuads(quad_sink, append_quads_data);
+  }
+
   virtual void DidDraw(ResourceProvider* provider) OVERRIDE {
     did_draw_called_ = true;
+    TiledLayerImpl::DidDraw(provider);
   }
 
-  virtual void WillDraw(ResourceProvider* provider) OVERRIDE {
-    will_draw_called_ = true;
-  }
-
-  bool did_draw_called() const { return did_draw_called_; }
   bool will_draw_called() const { return will_draw_called_; }
+  bool append_quads_called() const { return append_quads_called_; }
+  bool did_draw_called() const { return did_draw_called_; }
+
+  void set_will_draw_returns_false() { will_draw_returns_false_ = true; }
 
   void ClearDidDrawCheck() {
-    did_draw_called_ = false;
     will_draw_called_ = false;
+    append_quads_called_ = false;
+    did_draw_called_ = false;
   }
 
  protected:
   DidDrawCheckLayer(LayerTreeImpl* tree_impl, int id)
       : TiledLayerImpl(tree_impl, id),
-        did_draw_called_(false),
-        will_draw_called_(false) {
+        will_draw_returns_false_(false),
+        will_draw_called_(false),
+        append_quads_called_(false),
+        did_draw_called_(false) {
     SetAnchorPoint(gfx::PointF());
     SetBounds(gfx::Size(10, 10));
     SetContentBounds(gfx::Size(10, 10));
@@ -1093,9 +1114,50 @@ class DidDrawCheckLayer : public TiledLayerImpl {
   }
 
  private:
-  bool did_draw_called_;
+  bool will_draw_returns_false_;
   bool will_draw_called_;
+  bool append_quads_called_;
+  bool did_draw_called_;
 };
+
+TEST_F(LayerTreeHostImplTest, WillDrawReturningFalseDoesNotCall) {
+  // The root layer is always drawn, so run this test on a child layer that
+  // will be masked out by the root layer's bounds.
+  host_impl_->active_tree()->SetRootLayer(
+      DidDrawCheckLayer::Create(host_impl_->active_tree(), 1));
+  DidDrawCheckLayer* root = static_cast<DidDrawCheckLayer*>(
+      host_impl_->active_tree()->root_layer());
+
+  root->AddChild(DidDrawCheckLayer::Create(host_impl_->active_tree(), 2));
+  DidDrawCheckLayer* layer =
+      static_cast<DidDrawCheckLayer*>(root->children()[0]);
+
+  {
+    LayerTreeHostImpl::FrameData frame;
+    EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect(10, 10)));
+    host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
+    host_impl_->DidDrawAllLayers(frame);
+
+    EXPECT_TRUE(layer->will_draw_called());
+    EXPECT_TRUE(layer->append_quads_called());
+    EXPECT_TRUE(layer->did_draw_called());
+  }
+
+  {
+    LayerTreeHostImpl::FrameData frame;
+
+    layer->set_will_draw_returns_false();
+    layer->ClearDidDrawCheck();
+
+    EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect(10, 10)));
+    host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
+    host_impl_->DidDrawAllLayers(frame);
+
+    EXPECT_TRUE(layer->will_draw_called());
+    EXPECT_FALSE(layer->append_quads_called());
+    EXPECT_FALSE(layer->did_draw_called());
+  }
+}
 
 TEST_F(LayerTreeHostImplTest, DidDrawNotCalledOnHiddenLayer) {
   // The root layer is always drawn, so run this test on a child layer that
@@ -4546,8 +4608,8 @@ class TestRenderer : public GLRenderer, public RendererClient {
   }
 
   // RendererClient implementation.
-  virtual gfx::Size DeviceViewportSize() const OVERRIDE {
-    return viewport_size_;
+  virtual gfx::Rect DeviceViewport() const OVERRIDE {
+    return gfx::Rect(viewport_size_);
   }
   virtual float DeviceScaleFactor() const OVERRIDE {
     return 1.f;
@@ -5730,6 +5792,7 @@ TEST_F(LayerTreeHostImplTest, ForcedDrawToSoftwareDeviceBasicRender) {
   host_impl_->SetViewportSize(gfx::Size(50, 50));
   CountingSoftwareDevice* software_device = new CountingSoftwareDevice();
   FakeOutputSurface* output_surface = FakeOutputSurface::CreateDeferredGL(
+      scoped_ptr<WebKit::WebGraphicsContext3D>(),
       scoped_ptr<SoftwareOutputDevice>(software_device)).release();
   host_impl_->InitializeRenderer(scoped_ptr<OutputSurface>(output_surface));
 
@@ -5747,6 +5810,72 @@ TEST_F(LayerTreeHostImplTest, ForcedDrawToSoftwareDeviceBasicRender) {
   // Call other API methods that are likely to hit NULL pointer in this mode.
   EXPECT_TRUE(host_impl_->AsValue());
   EXPECT_TRUE(host_impl_->ActivationStateAsValue());
+}
+
+TEST_F(LayerTreeHostImplTest,
+       ForcedDrawToSoftwareDeviceSkipsUnsupportedLayers) {
+  FakeOutputSurface* output_surface = FakeOutputSurface::CreateDeferredGL(
+      scoped_ptr<WebKit::WebGraphicsContext3D>(),
+      scoped_ptr<SoftwareOutputDevice>(new CountingSoftwareDevice())).release();
+  host_impl_->InitializeRenderer(
+      scoped_ptr<OutputSurface>(output_surface));
+
+  output_surface->set_forced_draw_to_software_device(true);
+  EXPECT_TRUE(output_surface->ForcedDrawToSoftwareDevice());
+
+  // SolidColorLayerImpl will be drawn.
+  scoped_ptr<SolidColorLayerImpl> root_layer =
+      SolidColorLayerImpl::Create(host_impl_->active_tree(), 1);
+
+  // VideoLayerImpl will not be drawn.
+  FakeVideoFrameProvider provider;
+  scoped_ptr<VideoLayerImpl> video_layer =
+      VideoLayerImpl::Create(host_impl_->active_tree(), 2, &provider);
+  video_layer->SetBounds(gfx::Size(10, 10));
+  video_layer->SetContentBounds(gfx::Size(10, 10));
+  video_layer->SetDrawsContent(true);
+  root_layer->AddChild(video_layer.PassAs<LayerImpl>());
+  SetupRootLayerImpl(root_layer.PassAs<LayerImpl>());
+
+  LayerTreeHostImpl::FrameData frame;
+  EXPECT_TRUE(host_impl_->PrepareToDraw(&frame, gfx::Rect()));
+  host_impl_->DrawLayers(&frame, base::TimeTicks::Now());
+  host_impl_->DidDrawAllLayers(frame);
+
+  EXPECT_EQ(1u, frame.will_draw_layers.size());
+  EXPECT_EQ(host_impl_->active_tree()->root_layer(), frame.will_draw_layers[0]);
+}
+
+TEST_F(LayerTreeHostImplTest, DeferredInitializeSmoke) {
+  host_impl_->InitializeRenderer(
+      scoped_ptr<OutputSurface>(FakeOutputSurface::CreateDeferredGL(
+          scoped_ptr<WebKit::WebGraphicsContext3D>(
+              TestWebGraphicsContext3D::Create(
+                  WebKit::WebGraphicsContext3D::Attributes())),
+          scoped_ptr<SoftwareOutputDevice>(new CountingSoftwareDevice()))));
+
+  // Add two layers.
+  scoped_ptr<SolidColorLayerImpl> root_layer =
+      SolidColorLayerImpl::Create(host_impl_->active_tree(), 1);
+  FakeVideoFrameProvider provider;
+  scoped_ptr<VideoLayerImpl> video_layer =
+      VideoLayerImpl::Create(host_impl_->active_tree(), 2, &provider);
+  video_layer->SetBounds(gfx::Size(10, 10));
+  video_layer->SetContentBounds(gfx::Size(10, 10));
+  video_layer->SetDrawsContent(true);
+  root_layer->AddChild(video_layer.PassAs<LayerImpl>());
+  SetupRootLayerImpl(root_layer.PassAs<LayerImpl>());
+
+  // Software draw.
+  DrawFrame();
+
+  // DeferredInitialize and hardware draw.
+  EXPECT_FALSE(did_try_initialize_renderer_);
+  host_impl_->DeferredInitialize(scoped_refptr<ContextProvider>());
+  EXPECT_TRUE(did_try_initialize_renderer_);
+
+  // Defer intialized GL draw.
+  DrawFrame();
 }
 
 }  // namespace

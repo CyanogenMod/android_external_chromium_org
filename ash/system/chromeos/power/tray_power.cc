@@ -13,9 +13,9 @@
 #include "ash/system/tray/tray_notification_view.h"
 #include "ash/system/tray/tray_utils.h"
 #include "base/command_line.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chromeos/dbus/power_supply_status.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
@@ -217,11 +217,12 @@ TrayPower::~TrayPower() {
 // static
 bool TrayPower::IsBatteryChargingUnreliable(
     const chromeos::PowerSupplyStatus& supply_status) {
-  return
-      supply_status.battery_state ==
-          PowerSupplyStatus::NEITHER_CHARGING_NOR_DISCHARGING ||
-      supply_status.battery_state ==
-          PowerSupplyStatus::CONNECTED_TO_USB;
+  // Sometimes devices can get into a state where the battery is almost fully
+  // charged and the power subsystem reports "neither charging nor discharging"
+  // despite the battery not at 100%. For now, only report unreliable charging
+  // on USB.
+  // TODO(derat): Update this when the power manager code is refactored for M29.
+  return supply_status.battery_state == PowerSupplyStatus::CONNECTED_TO_USB;
 }
 
 // static

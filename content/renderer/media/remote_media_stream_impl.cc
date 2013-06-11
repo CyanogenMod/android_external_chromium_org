@@ -7,9 +7,9 @@
 #include <string>
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/renderer/media/media_stream_extra_data.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 
 namespace content {
 
@@ -25,7 +25,7 @@ class RemoteMediaStreamTrackObserver
   virtual ~RemoteMediaStreamTrackObserver();
 
   webrtc::MediaStreamTrackInterface* observered_track() {
-    return webrtc_track_;
+    return webrtc_track_.get();
   }
   const WebKit::WebMediaStreamTrack& webkit_track() { return webkit_track_; }
 

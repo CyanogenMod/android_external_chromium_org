@@ -36,10 +36,8 @@ void NavigateToURLBlockUntilNavigationsComplete(Shell* window,
                                                 const GURL& url,
                                                 int number_of_navigations) {
   WaitForLoadStop(window->web_contents());
-  NavigationController* controller = &window->web_contents()->GetController();
-  TestNavigationObserver same_tab_observer(
-      Source<NavigationController>(controller),
-      number_of_navigations);
+  TestNavigationObserver same_tab_observer(window->web_contents(),
+                                           number_of_navigations);
 
   window->LoadURL(url);
 
@@ -84,7 +82,7 @@ Shell* ShellAddedObserver::GetShell() {
 void ShellAddedObserver::ShellCreated(Shell* shell) {
   DCHECK(!shell_);
   shell_ = shell;
-  if (runner_)
+  if (runner_.get())
     runner_->QuitClosure().Run();
 }
 

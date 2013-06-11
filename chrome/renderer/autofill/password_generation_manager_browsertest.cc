@@ -6,14 +6,14 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/test/base/chrome_render_view_test.h"
 #include "components/autofill/common/autofill_messages.h"
-#include "components/autofill/renderer/password_generation_manager.h"
+#include "components/autofill/content/renderer/password_generation_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 
 using WebKit::WebDocument;
 using WebKit::WebElement;
@@ -65,6 +65,12 @@ class PasswordGenerationManagerTest : public ChromeRenderViewTest {
     // to use a test manager anyway, we just create our own.
     ChromeRenderViewTest::SetUp();
     generation_manager_.reset(new TestPasswordGenerationManager(view_));
+  }
+
+  virtual void TearDown() {
+    LoadHTML("");
+    generation_manager_.reset();
+    ChromeRenderViewTest::TearDown();
   }
 
   void SimulateClickOnDecoration(WebKit::WebInputElement* input_element) {

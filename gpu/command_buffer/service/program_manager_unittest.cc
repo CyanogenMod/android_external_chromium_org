@@ -7,8 +7,8 @@
 #include <algorithm>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/common_decoder.h"
@@ -108,17 +108,17 @@ TEST_F(ProgramManagerTest, DeleteBug) {
   scoped_refptr<Program> program2(
       manager_.CreateProgram(kClient2Id, kService2Id));
   // Check program got created.
-  ASSERT_TRUE(program1);
-  ASSERT_TRUE(program2);
-  manager_.UseProgram(program1);
-  manager_.MarkAsDeleted(&shader_manager, program1);
+  ASSERT_TRUE(program1.get());
+  ASSERT_TRUE(program2.get());
+  manager_.UseProgram(program1.get());
+  manager_.MarkAsDeleted(&shader_manager, program1.get());
   //  Program will be deleted when last ref is released.
   EXPECT_CALL(*gl_, DeleteProgram(kService2Id))
       .Times(1)
       .RetiresOnSaturation();
-  manager_.MarkAsDeleted(&shader_manager, program2);
-  EXPECT_TRUE(manager_.IsOwned(program1));
-  EXPECT_FALSE(manager_.IsOwned(program2));
+  manager_.MarkAsDeleted(&shader_manager, program2.get());
+  EXPECT_TRUE(manager_.IsOwned(program1.get()));
+  EXPECT_FALSE(manager_.IsOwned(program2.get()));
 }
 
 TEST_F(ProgramManagerTest, Program) {

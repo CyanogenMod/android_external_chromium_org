@@ -52,6 +52,7 @@ class UserManagerImpl
   virtual void Shutdown() OVERRIDE;
   virtual UserImageManager* GetUserImageManager() OVERRIDE;
   virtual const UserList& GetUsers() const OVERRIDE;
+  virtual UserList GetUsersAdmittedForMultiProfile() const OVERRIDE;
   virtual const UserList& GetLoggedInUsers() const OVERRIDE;
   virtual const UserList& GetLRULoggedInUsers() OVERRIDE;
   virtual void UserLoggedIn(const std::string& email,
@@ -82,6 +83,10 @@ class UserManagerImpl
                                     const std::string& display_email) OVERRIDE;
   virtual std::string GetUserDisplayEmail(
       const std::string& username) const OVERRIDE;
+  virtual string16 GetManagerDisplayNameForManagedUser(
+      const std::string& managed_user_id) const OVERRIDE;
+  virtual std::string GetManagerUserIdForManagedUser(
+      const std::string& managed_user_id) const OVERRIDE;
   virtual bool IsCurrentUserOwner() const OVERRIDE;
   virtual bool IsCurrentUserNew() const OVERRIDE;
   virtual bool IsCurrentUserNonCryptohomeDataEphemeral() const OVERRIDE;
@@ -108,9 +113,8 @@ class UserManagerImpl
   virtual void RemoveSessionStateObserver(
       UserManager::UserSessionStateObserver* obs) OVERRIDE;
   virtual void NotifyLocalStateChanged() OVERRIDE;
-  virtual std::string GetManagerForManagedUser(
-      const std::string& managed_user_id) const OVERRIDE;
   virtual const User* CreateLocallyManagedUserRecord(
+      const std::string& manager_id,
       const std::string& e_mail,
       const string16& display_name) OVERRIDE;
   virtual std::string GenerateUniqueLocallyManagedUserId() OVERRIDE;
@@ -257,6 +261,9 @@ class UserManagerImpl
 
   // Notifies observers that merge session state had changed.
   void NotifyMergeSessionStateChanged();
+
+  // Notifies observers that active user has changed.
+  void NotifyActiveUserChanged(const User* active_user);
 
   // Notifies observers that active user_id hash has changed.
   void NotifyActiveUserHashChanged(const std::string& hash);

@@ -13,11 +13,11 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/test/test_file_util.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/common/cancelable_request.h"
@@ -478,6 +478,9 @@ class DownloadTest : public InProcessBrowserTest {
 
     browser->profile()->GetPrefs()->SetFilePath(
         prefs::kDownloadDefaultDirectory,
+        downloads_directory_.path());
+    browser->profile()->GetPrefs()->SetFilePath(
+        prefs::kSaveFileDefaultDirectory,
         downloads_directory_.path());
 
     return true;
@@ -1174,10 +1177,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadResourceThrottleCancels) {
 
   // Try to start the download via Javascript and wait for the corresponding
   // load stop event.
-  content::TestNavigationObserver observer(
-      content::Source<content::NavigationController>(
-          &web_contents->GetController()),
-      1);
+  content::TestNavigationObserver observer(web_contents);
   bool download_assempted;
   ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
       browser()->tab_strip_model()->GetActiveWebContents(),
@@ -1394,6 +1394,9 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_IncognitoRegular) {
   EXPECT_EQ(2, window_count);
   incognito->profile()->GetPrefs()->SetFilePath(
       prefs::kDownloadDefaultDirectory,
+      GetDownloadsDirectory());
+  incognito->profile()->GetPrefs()->SetFilePath(
+      prefs::kSaveFileDefaultDirectory,
       GetDownloadsDirectory());
 
   download_items.clear();
@@ -1782,7 +1785,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadHistoryDangerCheck) {
   std::vector<DownloadItem*> downloads;
   DownloadManagerForBrowser(browser())->GetAllDownloads(&downloads);
   ASSERT_EQ(1u, downloads.size());
-  downloads[0]->DangerousDownloadValidated();
+  downloads[0]->ValidateDangerousDownload();
   download_observer->WaitForFinished();
 
   // Get history details and confirm it's what you expect.
@@ -2941,4 +2944,30 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_DenyDanger) {
   EXPECT_EQ(1u, observer->NumDownloadsSeenInState(DownloadItem::CANCELLED));
   EXPECT_EQ(1u, observer->NumDangerousDownloadsSeen());
   EXPECT_FALSE(browser()->window()->IsDownloadShelfVisible());
+}
+
+IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadPrefs_SaveFilePath) {
+  DownloadPrefs* on_prefs = DownloadServiceFactory::GetForProfile(
+      browser()->profile())->GetDownloadManagerDelegate()->download_prefs();
+  DownloadPrefs* off_prefs = DownloadServiceFactory::GetForProfile(
+      browser()->profile()->GetOffTheRecordProfile())
+    ->GetDownloadManagerDelegate()->download_prefs();
+  base::FilePath dir(on_prefs->SaveFilePath());
+  EXPECT_EQ(dir.value(), off_prefs->SaveFilePath().value());
+
+  on_prefs->SetSaveFilePath(dir.AppendASCII("on"));
+  EXPECT_EQ(dir.AppendASCII("on").value(), on_prefs->SaveFilePath().value());
+  EXPECT_EQ(dir.AppendASCII("on").value(), off_prefs->SaveFilePath().value());
+
+  on_prefs->SetSaveFilePath(dir);
+  EXPECT_EQ(dir.value(), on_prefs->SaveFilePath().value());
+  EXPECT_EQ(dir.value(), off_prefs->SaveFilePath().value());
+
+  off_prefs->SetSaveFilePath(dir.AppendASCII("off"));
+  EXPECT_EQ(dir.value(), on_prefs->SaveFilePath().value());
+  EXPECT_EQ(dir.AppendASCII("off").value(), off_prefs->SaveFilePath().value());
+
+  on_prefs->SetSaveFilePath(dir.AppendASCII("on"));
+  EXPECT_EQ(dir.AppendASCII("on").value(), on_prefs->SaveFilePath().value());
+  EXPECT_EQ(dir.AppendASCII("off").value(), off_prefs->SaveFilePath().value());
 }

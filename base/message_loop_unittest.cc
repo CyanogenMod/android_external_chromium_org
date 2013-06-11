@@ -436,10 +436,9 @@ class RecordDeletionProbe : public RefCounted<RecordDeletionProbe> {
 
   ~RecordDeletionProbe() {
     *was_deleted_ = true;
-    if (post_on_delete_)
+    if (post_on_delete_.get())
       MessageLoop::current()->PostTask(
-          FROM_HERE,
-          Bind(&RecordDeletionProbe::Run, post_on_delete_.get()));
+          FROM_HERE, Bind(&RecordDeletionProbe::Run, post_on_delete_.get()));
   }
 
   scoped_refptr<RecordDeletionProbe> post_on_delete_;
@@ -1420,7 +1419,7 @@ void RunTest_RecursivePosts(MessageLoop::Type message_loop_type,
 
 #if defined(OS_WIN)
 
-class DispatcherImpl : public MessageLoopForUI::Dispatcher {
+class DispatcherImpl : public base::MessageLoopForUI::Dispatcher {
  public:
   DispatcherImpl() : dispatch_count_(0) {}
 

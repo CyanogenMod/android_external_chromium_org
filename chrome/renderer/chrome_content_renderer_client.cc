@@ -9,7 +9,8 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_content_client.h"
@@ -64,9 +65,9 @@
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
 #include "chrome/renderer/tts_dispatcher.h"
 #include "chrome/renderer/validation_message_agent.h"
-#include "components/autofill/renderer/autofill_agent.h"
-#include "components/autofill/renderer/password_autofill_agent.h"
-#include "components/autofill/renderer/password_generation_manager.h"
+#include "components/autofill/content/renderer/autofill_agent.h"
+#include "components/autofill/content/renderer/password_autofill_agent.h"
+#include "components/autofill/content/renderer/password_generation_manager.h"
 #include "components/visitedlink/renderer/visitedlink_slave.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/render_thread.h"
@@ -78,9 +79,6 @@
 #include "grit/renderer_resources.h"
 #include "ipc/ipc_sync_channel.h"
 #include "net/base/net_errors.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
@@ -90,6 +88,9 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -99,6 +100,10 @@
 #include "webkit/plugins/ppapi/ppapi_interface_factory.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
+
+#if defined(ENABLE_WEBRTC)
+#include "chrome/renderer/media/webrtc_logging_message_filter.h"
+#endif
 
 using autofill::AutofillAgent;
 using autofill::PasswordAutofillAgent;
@@ -223,6 +228,10 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   phishing_classifier_.reset(safe_browsing::PhishingClassifierFilter::Create());
 #endif
   prerender_dispatcher_.reset(new prerender::PrerenderDispatcher());
+#if defined(ENABLE_WEBRTC)
+  webrtc_logging_message_filter_ = new WebRtcLoggingMessageFilter(
+      content::RenderThread::Get()->GetIOMessageLoopProxy());
+#endif
 
   RenderThread* thread = RenderThread::Get();
 
@@ -234,6 +243,10 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   thread->AddObserver(spellcheck_.get());
   thread->AddObserver(visited_link_slave_.get());
   thread->AddObserver(prerender_dispatcher_.get());
+
+#if defined(ENABLE_WEBRTC)
+  thread->AddFilter(webrtc_logging_message_filter_.get());
+#endif
 
   thread->RegisterExtension(extensions_v8::ExternalExtension::Get());
   thread->RegisterExtension(extensions_v8::LoadTimesExtension::Get());
@@ -873,6 +886,7 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
                                              const GURL& url,
                                              const std::string& http_method,
                                              bool is_initial_navigation,
+                                             bool is_server_redirect,
                                              bool* send_referrer) {
   DCHECK(!frame->parent());
 
@@ -915,11 +929,12 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
   bool is_extension_url = !!new_url_extension;
 
   // If the navigation would cross an app extent boundary, we also need
-  // to defer to the browser to ensure process isolation.
-  // TODO(erikkay) This is happening inside of a check to is_content_initiated
-  // which means that things like the back button won't trigger it.  Is that
-  // OK?
-  if (CrossesExtensionExtents(frame, url, *extensions, is_extension_url,
+  // to defer to the browser to ensure process isolation.  This is not necessary
+  // for server redirects, which will be transferred to a new process by the
+  // browser process when they are ready to commit.  It is necessary for client
+  // redirects, which won't be transferred in the same way.
+  if (!is_server_redirect &&
+      CrossesExtensionExtents(frame, url, *extensions, is_extension_url,
           is_initial_navigation)) {
     // Include the referrer in this case since we're going from a hosted web
     // page. (the packaged case is handled previously by the extension
@@ -976,6 +991,16 @@ bool ChromeContentRendererClient::WillSendRequest(
           frame)) {
     *new_url = GURL(chrome::kExtensionResourceInvalidRequestURL);
     return true;
+  }
+
+  const content::RenderView* render_view =
+      content::RenderView::FromWebView(frame->view());
+  SearchBox* search_box = SearchBox::Get(render_view);
+  if (search_box && url.SchemeIs(chrome::kChromeSearchScheme)) {
+    if (url.host() == chrome::kChromeUIThumbnailHost)
+      return search_box->GenerateThumbnailURLFromTransientURL(url, new_url);
+    else if (url.host() == chrome::kChromeUIFaviconHost)
+      return search_box->GenerateFaviconURLFromTransientURL(url, new_url);
   }
 
   return false;

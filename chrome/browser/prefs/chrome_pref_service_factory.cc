@@ -5,6 +5,7 @@
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 
 #include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
@@ -83,7 +84,7 @@ void PrepareBuilder(
 #endif  // ENABLE_CONFIGURATION_POLICY
 
   builder->WithAsync(async);
-  builder->WithExtensionPrefs(extension_prefs);
+  builder->WithExtensionPrefs(extension_prefs.get());
   builder->WithCommandLinePrefs(
       new CommandLinePrefStore(CommandLine::ForCurrentProcess()));
   builder->WithReadErrorCallback(base::Bind(&HandleReadError));
@@ -108,7 +109,7 @@ PrefService* CreateLocalState(
                  policy_service,
                  extension_prefs,
                  async);
-  return builder.Create(pref_registry);
+  return builder.Create(pref_registry.get());
 }
 
 PrefServiceSyncable* CreateProfilePrefs(
@@ -118,6 +119,7 @@ PrefServiceSyncable* CreateProfilePrefs(
     const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry,
     bool async) {
+  TRACE_EVENT0("browser", "chrome_prefs::CreateProfilePrefs");
   PrefServiceSyncableBuilder builder;
   PrepareBuilder(&builder,
                  pref_filename,
@@ -125,7 +127,7 @@ PrefServiceSyncable* CreateProfilePrefs(
                  policy_service,
                  extension_prefs,
                  async);
-  return builder.CreateSyncable(pref_registry);
+  return builder.CreateSyncable(pref_registry.get());
 }
 
 }  // namespace chrome_prefs

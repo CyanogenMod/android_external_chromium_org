@@ -6,8 +6,8 @@
 
 #include "chrome/common/prerender_messages.h"
 #include "content/public/renderer/render_view.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "webkit/media/webmediaplayer_delegate.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "webkit/renderer/media/webmediaplayer_delegate.h"
 
 namespace prerender {
 
@@ -36,15 +36,6 @@ void PrerenderWebMediaPlayer::load(const WebKit::WebURL& url,
   }
   url_loaded_ = true;
   WebMediaPlayerImpl::load(url, cors_mode);
-}
-
-void PrerenderWebMediaPlayer::cancelLoad() {
-  if (is_prerendering_) {
-    url_to_load_.reset(NULL);
-    cors_mode_ = CORSModeUnspecified;
-    return;
-  }
-  WebMediaPlayerImpl::cancelLoad();
 }
 
 bool PrerenderWebMediaPlayer::OnMessageReceived(const IPC::Message& message) {

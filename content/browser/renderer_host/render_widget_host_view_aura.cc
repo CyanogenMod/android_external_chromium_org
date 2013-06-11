@@ -10,9 +10,10 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
+#include "cc/resources/texture_mailbox.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/renderer_host/backing_store_aura.h"
@@ -28,7 +29,6 @@
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/port/browser/render_widget_host_view_port.h"
-#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
@@ -345,26 +345,10 @@ void AcknowledgeBufferForGpu(
       route_id, gpu_host_id, ack);
 }
 
-void CopySnapshotToVideoFrame(const scoped_refptr<media::VideoFrame>& target,
-                              const gfx::Rect& region_in_frame,
-                              const base::Callback<void(bool)>& callback,
-                              bool succeed,
-                              const SkBitmap& bitmap) {
-  if (!succeed) {
-    callback.Run(false);
-    return;
-  }
-
-  DCHECK(region_in_frame.size() == gfx::Size(bitmap.width(), bitmap.height()));
-  {
-    SkAutoLockPixels lock(bitmap);
-    media::CopyRGBToVideoFrame(
-        reinterpret_cast<const uint8*>(bitmap.getPixels()),
-        bitmap.rowBytes(),
-        region_in_frame,
-        target.get());
-  }
-  callback.Run(true);
+void ReleaseMailbox(scoped_ptr<base::SharedMemory> shared_memory,
+                    base::Callback<void()> callback,
+                    unsigned sync_point, bool lost_resource) {
+  callback.Run();
 }
 
 }  // namespace
@@ -407,9 +391,12 @@ void RenderWidgetHostViewAura::ApplyEventFilterForPopupExit(
   if (event->type() != ui::ET_MOUSE_PRESSED || !event->target())
     return;
 
-  DCHECK(popup_parent_host_view_);
   aura::Window* target = static_cast<aura::Window*>(event->target());
-  if (target != window_ && target != popup_parent_host_view_->window_) {
+  if (target != window_ &&
+      (!popup_parent_host_view_ ||
+       target != popup_parent_host_view_->window_)) {
+    // Note: popup_parent_host_view_ may be NULL when there are multiple
+    // popup children per view. See: RenderWidgetHostViewAura::InitAsPopup().
     in_shutdown_ = true;
     host_->Shutdown();
   }
@@ -534,10 +521,13 @@ class RenderWidgetHostViewAura::TransientWindowObserver
 
   void SendPluginCutoutRects() {
     std::vector<gfx::Rect> cutouts;
-    const aura::Window::Windows& transients = top_level_->transient_children();
-    for (size_t i = 0; i < transients.size(); ++i) {
-      if (transients[i]->IsVisible())
-        cutouts.push_back(transients[i]->GetBoundsInRootWindow());
+    if (top_level_) {
+      const aura::Window::Windows& transients =
+          top_level_->transient_children();
+      for (size_t i = 0; i < transients.size(); ++i) {
+        if (transients[i]->IsVisible())
+          cutouts.push_back(transients[i]->GetBoundsInRootWindow());
+      }
     }
 
     view_->UpdateTransientRects(cutouts);
@@ -958,7 +948,9 @@ bool RenderWidgetHostViewAura::HasFocus() const {
 }
 
 bool RenderWidgetHostViewAura::IsSurfaceAvailableForCopy() const {
-  return current_surface_ || current_dib_ || !!host_->GetBackingStore(false);
+  return current_surface_ ||
+      current_software_frame_.IsValid() ||
+      !!host_->GetBackingStore(false);
 }
 
 void RenderWidgetHostViewAura::Show() {
@@ -1045,9 +1037,12 @@ void RenderWidgetHostViewAura::ImeCompositionRangeChanged(
 void RenderWidgetHostViewAura::DidUpdateBackingStore(
     const gfx::Rect& scroll_rect,
     const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects) {
+    const std::vector<gfx::Rect>& copy_rects,
+    const ui::LatencyInfo& latency_info) {
   if (accelerated_compositing_state_changed_)
     UpdateExternalTexture();
+
+  software_latency_info_.MergeWith(latency_info);
 
   // Use the state of the RenderWidgetHost and not the window as the two may
   // differ. In particular if the window is hidden but the renderer isn't and we
@@ -1126,12 +1121,10 @@ void RenderWidgetHostViewAura::SelectionChanged(const string16& text,
   if (text.empty() || range.is_empty())
     return;
 
-  BrowserContext* browser_context = host_->GetProcess()->GetBrowserContext();
   // Set the BUFFER_SELECTION to the ui::Clipboard.
   ui::ScopedClipboardWriter clipboard_writer(
       ui::Clipboard::GetForCurrentThread(),
-      ui::Clipboard::BUFFER_SELECTION,
-      BrowserContext::GetMarkerForOffTheRecordContext(browser_context));
+      ui::Clipboard::BUFFER_SELECTION);
   clipboard_writer.WriteText(text);
 #endif  // defined(USE_X11) && !defined(OS_CHROMEOS)
 }
@@ -1252,18 +1245,60 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurfaceToVideoFrame(
                               region_in_frame.y() & ~1,
                               region_in_frame.width() & ~1,
                               region_in_frame.height() & ~1);
+  ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
+  GLHelper* gl_helper = factory->GetGLHelper();
+  if (!gl_helper) {
+    return;
+  }
+  // Convert |src_subrect| from the views coordinate (upper-left origin) into
+  // the OpenGL coordinate (lower-left origin).
+  gfx::Rect src_subrect_in_gl = src_subrect;
+  src_subrect_in_gl.set_y(GetViewBounds().height() - src_subrect.bottom());
+  gfx::Rect src_subrect_in_pixel =
+      ConvertRectToPixel(current_surface_->device_scale_factor(),
+                         src_subrect_in_gl);
+
+  if (!yuv_readback_pipeline_ ||
+      yuv_readback_pipeline_->scaler()->SrcSize() != current_surface_->size() ||
+      yuv_readback_pipeline_->scaler()->SrcSubrect() != src_subrect_in_pixel ||
+      yuv_readback_pipeline_->scaler()->DstSize() != region_in_frame.size()) {
+    GLHelper::ScalerQuality quality = GLHelper::SCALER_QUALITY_FAST;
+    std::string quality_switch = switches::kTabCaptureDownscaleQuality;
+    // If we're scaling up, we can use the "best" quality.
+    if (current_surface_->size().width() < region_in_frame.size().width() &&
+        current_surface_->size().height() < region_in_frame.size().height()) {
+      quality_switch = switches::kTabCaptureUpscaleQuality;
+    }
+
+    std::string switch_value =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(quality_switch);
+    if (switch_value == "fast") {
+      quality = GLHelper::SCALER_QUALITY_FAST;
+    } else if (switch_value == "good") {
+      quality = GLHelper::SCALER_QUALITY_GOOD;
+    } else if (switch_value == "best") {
+      quality = GLHelper::SCALER_QUALITY_BEST;
+    }
+
+    yuv_readback_pipeline_.reset(
+        gl_helper->CreateReadbackPipelineYUV(quality,
+                                             current_surface_->size(),
+                                             src_subrect_in_pixel,
+                                             target->coded_size(),
+                                             region_in_frame,
+                                             true,
+                                             true));
+  }
 
   scoped_callback_runner.Release();
-
-  CopyFromCompositingSurfaceHelper(src_subrect,
-                                   region_in_frame.size(),
-                                   base::Bind(CopySnapshotToVideoFrame,
-                                              target,
-                                              region_in_frame,
-                                              callback));
+  yuv_readback_pipeline_->ReadbackYUV(
+      current_surface_->PrepareTexture(),
+      target,
+      callback);
 }
 
 bool RenderWidgetHostViewAura::CanCopyToVideoFrame() const {
+  // TODO(skaslev): Implement this path for s/w compositing.
   return current_surface_ != NULL && host_->is_accelerated_compositing_active();
 }
 
@@ -1326,17 +1361,20 @@ void RenderWidgetHostViewAura::UpdateExternalTexture() {
 
   bool is_compositing_active = host_->is_accelerated_compositing_active();
   if (is_compositing_active && current_surface_) {
-    window_->SetExternalTexture(current_surface_.get());
+    window_->layer()->SetExternalTexture(current_surface_.get());
     current_frame_size_ = ConvertSizeToDIP(
         current_surface_->device_scale_factor(), current_surface_->size());
     CheckResizeLock();
-  } else if (is_compositing_active && current_dib_) {
-    window_->SetExternalTexture(NULL);
-    current_frame_size_ = ConvertSizeToDIP(last_swapped_surface_scale_factor_,
-                                           last_swapped_surface_size_);
+  } else if (is_compositing_active &&
+             current_software_frame_.IsSharedMemory()) {
+    window_->layer()->SetTextureMailbox(current_software_frame_,
+                                        last_swapped_surface_scale_factor_);
+    current_frame_size_ = ConvertSizeToDIP(
+        last_swapped_surface_scale_factor_,
+        current_software_frame_.shared_memory_size());
     CheckResizeLock();
   } else {
-    window_->SetExternalTexture(NULL);
+    window_->layer()->SetExternalTexture(NULL);
     resize_lock_.reset();
     host_->WasResized();
   }
@@ -1445,14 +1483,17 @@ void RenderWidgetHostViewAura::AcceleratedSurfaceBuffersSwapped(
       params_in_pixel.route_id,
       gpu_host_id,
       params_in_pixel.mailbox_name);
-  BuffersSwapped(
-      params_in_pixel.size, params_in_pixel.scale_factor,
-      params_in_pixel.mailbox_name, ack_callback);
+  BuffersSwapped(params_in_pixel.size,
+                 params_in_pixel.scale_factor,
+                 params_in_pixel.mailbox_name,
+                 params_in_pixel.latency_info,
+                 ack_callback);
 }
 
 void RenderWidgetHostViewAura::SwapDelegatedFrame(
     scoped_ptr<cc::DelegatedFrameData> frame_data,
-    float frame_device_scale_factor) {
+    float frame_device_scale_factor,
+    const ui::LatencyInfo& latency_info) {
   gfx::Size frame_size_in_dip;
   if (!frame_data->render_pass_list.empty()) {
     frame_size_in_dip = gfx::ToFlooredSize(gfx::ScaleSize(
@@ -1478,6 +1519,7 @@ void RenderWidgetHostViewAura::SwapDelegatedFrame(
   if (!compositor) {
     SendDelegatedFrameAck();
   } else {
+    compositor->SetLatencyInfo(latency_info);
     AddOnCommitCallbackAndDisableLocks(
         base::Bind(&RenderWidgetHostViewAura::SendDelegatedFrameAck,
                    AsWeakPtr()));
@@ -1493,62 +1535,71 @@ void RenderWidgetHostViewAura::SendDelegatedFrameAck() {
 
 void RenderWidgetHostViewAura::SwapSoftwareFrame(
     scoped_ptr<cc::SoftwareFrameData> frame_data,
-    float frame_device_scale_factor) {
+    float frame_device_scale_factor,
+    const ui::LatencyInfo& latency_info) {
   const gfx::Size& frame_size = frame_data->size;
   const gfx::Rect& damage_rect = frame_data->damage_rect;
-  const TransportDIB::Id& dib_id = frame_data->dib_id;
-  scoped_ptr<TransportDIB> dib(host_->GetProcess()->MapTransportDIB(dib_id));
+  gfx::Size frame_size_in_dip =
+      ConvertSizeToDIP(frame_device_scale_factor, frame_size);
+  if (ShouldSkipFrame(frame_size_in_dip)) {
+    SendSoftwareFrameAck(frame_data->id);
+    return;
+  }
 
-  // Validate the received DIB.
-  size_t expected_size = 4 * frame_size.GetArea();
-  if (!dib || dib->size() < expected_size) {
+  base::SharedMemoryHandle handle = frame_data->handle;
+#ifdef OS_WIN
+  BOOL success = ::DuplicateHandle(
+      host_->GetProcess()->GetHandle(), frame_data->handle,
+      ::GetCurrentProcess(), &handle,
+      0, TRUE, DUPLICATE_SAME_ACCESS);
+  if (!success) {
+    host_->GetProcess()->ReceivedBadMessage();
+    return;
+  }
+#endif
+  const size_t expected_size = 4 * frame_size.GetArea();
+  scoped_ptr<base::SharedMemory> shared_memory(
+      new base::SharedMemory(handle, false));
+  if (!shared_memory->Map(expected_size)) {
     host_->GetProcess()->ReceivedBadMessage();
     return;
   }
 
   if (last_swapped_surface_size_ != frame_size) {
     DLOG_IF(ERROR, damage_rect != gfx::Rect(frame_size))
-      << "Expected full damage rect";
+        << "Expected full damage rect";
   }
-
-  TransportDIB::Id last_dib_id = current_dib_id_;
-  current_dib_.reset(dib.release());
-  current_dib_id_ = dib_id;
   last_swapped_surface_size_ = frame_size;
   last_swapped_surface_scale_factor_ = frame_device_scale_factor;
 
-  ui::Compositor* compositor = GetCompositor();
-  if (!compositor) {
-    SendSoftwareFrameAck(last_dib_id);
-    return;
-  }
-
-  gfx::Size frame_size_in_dip =
-      ConvertSizeToDIP(frame_device_scale_factor, frame_size);
-  if (ShouldSkipFrame(frame_size_in_dip)) {
-    can_lock_compositor_ = NO_PENDING_COMMIT;
-    SendSoftwareFrameAck(last_dib_id);
-  } else {
-    AddOnCommitCallbackAndDisableLocks(
-        base::Bind(&RenderWidgetHostViewAura::SendSoftwareFrameAck,
-                   AsWeakPtr(), last_dib_id));
-  }
-
+  base::SharedMemory* shared_memory_raw_ptr = shared_memory.get();
+  cc::TextureMailbox::ReleaseCallback callback =
+      base::Bind(ReleaseMailbox, Passed(&shared_memory),
+                 base::Bind(&RenderWidgetHostViewAura::SendSoftwareFrameAck,
+                            AsWeakPtr(), frame_data->id));
+  current_software_frame_ =
+      cc::TextureMailbox(shared_memory_raw_ptr, frame_size, callback);
+  DCHECK(current_software_frame_.IsSharedMemory());
   current_frame_size_ = frame_size_in_dip;
-  CheckResizeLock();
+
   released_front_lock_ = NULL;
-  window_->SetExternalTexture(NULL);
+  CheckResizeLock();
+  window_->layer()->SetTextureMailbox(current_software_frame_,
+                                      frame_device_scale_factor);
   window_->SchedulePaintInRect(
       ConvertRectToDIP(frame_device_scale_factor, damage_rect));
 
+  ui::Compositor* compositor = GetCompositor();
+  if (compositor)
+    compositor->SetLatencyInfo(latency_info);
   if (paint_observer_)
     paint_observer_->OnUpdateCompositorContent();
 }
 
 void RenderWidgetHostViewAura::SendSoftwareFrameAck(
-    const TransportDIB::Id& id) {
+    unsigned software_frame_id) {
   cc::CompositorFrameAck ack;
-  ack.last_dib_id = id;
+  ack.last_software_frame_id = software_frame_id;
   RenderWidgetHostImpl::SendSwapCompositorFrameAck(
       host_->GetRoutingID(), host_->GetProcess()->GetID(), ack);
 }
@@ -1557,13 +1608,15 @@ void RenderWidgetHostViewAura::OnSwapCompositorFrame(
     scoped_ptr<cc::CompositorFrame> frame) {
   if (frame->delegated_frame_data) {
     SwapDelegatedFrame(frame->delegated_frame_data.Pass(),
-                       frame->metadata.device_scale_factor);
+                       frame->metadata.device_scale_factor,
+                       frame->metadata.latency_info);
     return;
   }
 
   if (frame->software_frame_data) {
     SwapSoftwareFrame(frame->software_frame_data.Pass(),
-                      frame->metadata.device_scale_factor);
+                      frame->metadata.device_scale_factor,
+                      frame->metadata.latency_info);
     return;
   }
 
@@ -1587,9 +1640,11 @@ void RenderWidgetHostViewAura::OnSwapCompositorFrame(
   std::string mailbox_name(
       reinterpret_cast<const char*>(frame->gl_frame_data->mailbox.name),
       sizeof(frame->gl_frame_data->mailbox.name));
-  BuffersSwapped(
-      frame->gl_frame_data->size, frame->metadata.device_scale_factor,
-      mailbox_name, ack_callback);
+  BuffersSwapped(frame->gl_frame_data->size,
+                 frame->metadata.device_scale_factor,
+                 mailbox_name,
+                 frame->metadata.latency_info,
+                 ack_callback);
 }
 
 #if defined(OS_WIN)
@@ -1606,6 +1661,7 @@ void RenderWidgetHostViewAura::BuffersSwapped(
     const gfx::Size& size,
     float surface_scale_factor,
     const std::string& mailbox_name,
+    const ui::LatencyInfo& latency_info,
     const BufferPresentedCallback& ack_callback) {
   scoped_refptr<ui::Texture> texture_to_return(current_surface_);
   const gfx::Rect surface_rect = gfx::Rect(size);
@@ -1621,6 +1677,7 @@ void RenderWidgetHostViewAura::BuffersSwapped(
   if (compositor) {
     gfx::Size surface_size = ConvertSizeToDIP(surface_scale_factor, size);
     window_->SchedulePaintInRect(gfx::Rect(surface_size));
+    compositor->SetLatencyInfo(latency_info);
   }
 
   if (paint_observer_)
@@ -1695,6 +1752,7 @@ void RenderWidgetHostViewAura::AcceleratedSurfacePostSubBuffer(
     if (paint_observer_)
       paint_observer_->OnUpdateCompositorContent();
     window_->SchedulePaintInRect(rect_to_paint);
+    compositor->SetLatencyInfo(params_in_pixel.latency_info);
   }
 
   SwapBuffersCompleted(ack_callback, previous_texture);
@@ -1930,6 +1988,10 @@ void RenderWidgetHostViewAura::InsertChar(char16 ch, int flags) {
   }
 }
 
+gfx::NativeWindow RenderWidgetHostViewAura::GetAttachedWindow() const {
+  return window_;
+}
+
 ui::TextInputType RenderWidgetHostViewAura::GetTextInputType() const {
   return text_input_type_;
 }
@@ -2154,36 +2216,8 @@ void RenderWidgetHostViewAura::OnCaptureLost() {
 }
 
 void RenderWidgetHostViewAura::OnPaint(gfx::Canvas* canvas) {
-  bool is_compositing_active = host_->is_accelerated_compositing_active();
   bool has_backing_store = !!host_->GetBackingStore(false);
-  if (is_compositing_active && current_dib_) {
-    const gfx::Size window_size = window_->bounds().size();
-    const gfx::Size& frame_size = last_swapped_surface_size_;
-
-    SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                     frame_size.width(),
-                     frame_size.height());
-    bitmap.setPixels(current_dib_->memory());
-
-    SkCanvas* sk_canvas = canvas->sk_canvas();
-    sk_canvas->drawBitmap(bitmap, 0, 0);
-
-    if (frame_size != window_size) {
-      SkRegion region;
-      region.op(0, 0, window_size.width(), window_size.height(),
-                SkRegion::kUnion_Op);
-      region.op(0, 0, frame_size.width(), frame_size.height(),
-                SkRegion::kDifference_Op);
-      SkPaint paint;
-      paint.setColor(SK_ColorWHITE);
-      for (SkRegion::Iterator it(region); !it.done(); it.next())
-        sk_canvas->drawIRect(it.rect(), paint);
-    }
-
-    if (paint_observer_)
-      paint_observer_->OnPaintComplete();
-  } else if (!is_compositing_active && has_backing_store) {
+  if (has_backing_store) {
     paint_canvas_ = canvas;
     BackingStoreAura* backing_store = static_cast<BackingStoreAura*>(
         host_->GetBackingStore(true));
@@ -2192,6 +2226,11 @@ void RenderWidgetHostViewAura::OnPaint(gfx::Canvas* canvas) {
 
     if (paint_observer_)
       paint_observer_->OnPaintComplete();
+    ui::Compositor* compositor = GetCompositor();
+    if (compositor) {
+      compositor->SetLatencyInfo(software_latency_info_);
+      software_latency_info_.Clear();
+    }
   } else if (aura::Env::GetInstance()->render_white_bg()) {
     canvas->DrawColor(SK_ColorWHITE);
   }
@@ -2270,7 +2309,7 @@ scoped_refptr<ui::Texture> RenderWidgetHostViewAura::CopyTexture() {
 // RenderWidgetHostViewAura, ui::EventHandler implementation:
 
 void RenderWidgetHostViewAura::OnKeyEvent(ui::KeyEvent* event) {
-  TRACE_EVENT0("browser", "RenderWidgetHostViewAura::OnKeyEvent");
+  TRACE_EVENT0("input", "RenderWidgetHostViewAura::OnKeyEvent");
   if (touch_editing_client_ && touch_editing_client_->HandleInputEvent(event))
     return;
 
@@ -2321,7 +2360,7 @@ void RenderWidgetHostViewAura::OnKeyEvent(ui::KeyEvent* event) {
 }
 
 void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
-  TRACE_EVENT0("browser", "RenderWidgetHostViewAura::OnMouseEvent");
+  TRACE_EVENT0("input", "RenderWidgetHostViewAura::OnMouseEvent");
 
   if (touch_editing_client_ && touch_editing_client_->HandleInputEvent(event))
     return;
@@ -2330,6 +2369,14 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
     aura::client::CursorClient* cursor_client =
         aura::client::GetCursorClient(window_->GetRootWindow());
     DCHECK(!cursor_client || !cursor_client->IsCursorVisible());
+
+    if (event->type() == ui::ET_MOUSEWHEEL) {
+      WebKit::WebMouseWheelEvent mouse_wheel_event =
+          MakeWebMouseWheelEvent(static_cast<ui::MouseWheelEvent*>(event));
+      if (mouse_wheel_event.deltaX != 0 || mouse_wheel_event.deltaY != 0)
+        host_->ForwardWheelEvent(mouse_wheel_event);
+      return;
+    }
 
     WebKit::WebMouseEvent mouse_event = MakeWebMouseEvent(event);
     gfx::Point center(gfx::Rect(window_->bounds().size()).CenterPoint());
@@ -2426,7 +2473,7 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
 }
 
 void RenderWidgetHostViewAura::OnScrollEvent(ui::ScrollEvent* event) {
-  TRACE_EVENT0("browser", "RenderWidgetHostViewAura::OnScrollEvent");
+  TRACE_EVENT0("input", "RenderWidgetHostViewAura::OnScrollEvent");
   if (touch_editing_client_ && touch_editing_client_->HandleInputEvent(event))
     return;
 
@@ -2453,7 +2500,7 @@ void RenderWidgetHostViewAura::OnScrollEvent(ui::ScrollEvent* event) {
 }
 
 void RenderWidgetHostViewAura::OnTouchEvent(ui::TouchEvent* event) {
-  TRACE_EVENT0("browser", "RenderWidgetHostViewAura::OnTouchEvent");
+  TRACE_EVENT0("input", "RenderWidgetHostViewAura::OnTouchEvent");
   if (touch_editing_client_ && touch_editing_client_->HandleInputEvent(event))
     return;
 
@@ -2478,7 +2525,7 @@ void RenderWidgetHostViewAura::OnTouchEvent(ui::TouchEvent* event) {
 }
 
 void RenderWidgetHostViewAura::OnGestureEvent(ui::GestureEvent* event) {
-  TRACE_EVENT0("browser", "RenderWidgetHostViewAura::OnGestureEvent");
+  TRACE_EVENT0("input", "RenderWidgetHostViewAura::OnGestureEvent");
   // Pinch gestures are currently disabled by default. See crbug.com/128477.
   if ((event->type() == ui::ET_GESTURE_PINCH_BEGIN ||
       event->type() == ui::ET_GESTURE_PINCH_UPDATE ||

@@ -8,7 +8,7 @@
 
 #include "base/basictypes.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/font.h"
 
 namespace gfx {
@@ -55,7 +55,7 @@ int PlatformFontIOS::GetAverageCharacterWidth() const {
   return average_width_;
 }
 
-int PlatformFontIOS::GetStringWidth(const string16& text) const {
+int PlatformFontIOS::GetStringWidth(const base::string16& text) const {
   NSString* ns_text = base::SysUTF16ToNSString(text);
   return [ns_text sizeWithFont:GetNativeFont()].width;
 }

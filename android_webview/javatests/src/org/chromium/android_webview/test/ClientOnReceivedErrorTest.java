@@ -5,6 +5,7 @@
 package org.chromium.android_webview.test;
 
 import android.test.suitebuilder.annotation.MediumTest;
+import android.webkit.WebSettings;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AndroidProtocolHandler;
@@ -117,5 +118,22 @@ public class ClientOnReceivedErrorTest extends AwTestBase {
                      onReceivedErrorHelper.getErrorCode());
         assertEquals(url, onReceivedErrorHelper.getFailingUrl());
         assertNotNull(onReceivedErrorHelper.getDescription());
+    }
+
+    @MediumTest
+    @Feature({"AndroidWebView"})
+    public void testCacheMiss() throws Throwable {
+        TestCallbackHelperContainer.OnReceivedErrorHelper onReceivedErrorHelper =
+                mContentsClient.getOnReceivedErrorHelper();
+        final String url = "http://example.com/index.html";
+        int onReceivedErrorCallCount = onReceivedErrorHelper.getCallCount();
+        getAwSettingsOnUiThread(mAwContents).setCacheMode(WebSettings.LOAD_CACHE_ONLY);
+        loadUrlAsync(mAwContents, url);
+
+        onReceivedErrorHelper.waitForCallback(onReceivedErrorCallCount);
+        assertEquals(ErrorCodeConversionHelper.ERROR_UNKNOWN,
+                     onReceivedErrorHelper.getErrorCode());
+        assertEquals(url, onReceivedErrorHelper.getFailingUrl());
+        assertFalse(onReceivedErrorHelper.getDescription().isEmpty());
     }
 }

@@ -101,6 +101,7 @@ bool ContentRendererClient::ShouldFork(WebKit::WebFrame* frame,
                                        const GURL& url,
                                        const std::string& http_method,
                                        bool is_initial_navigation,
+                                       bool is_server_redirect,
                                        bool* send_referrer) {
   return false;
 }
@@ -157,14 +158,6 @@ bool ContentRendererClient::HandleSetCookieRequest(
 bool ContentRendererClient::AllowBrowserPlugin(
     WebKit::WebPluginContainer* container) const {
   return false;
-}
-
-MessageLoop* ContentRendererClient::OverrideCompositorMessageLoop() const {
-  return NULL;
-}
-
-bool ContentRendererClient::ShouldCreateCompositorInputHandler() const {
-  return true;
 }
 
 }  // namespace content

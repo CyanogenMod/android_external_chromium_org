@@ -13,10 +13,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSocketStreamError.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebSocketStreamHandleClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/platform/WebSocketStreamError.h"
+#include "third_party/WebKit/public/platform/WebSocketStreamHandleClient.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/glue/websocketstreamhandle_bridge.h"
 #include "webkit/glue/websocketstreamhandle_delegate.h"
@@ -64,7 +64,7 @@ class WebSocketStreamHandleImpl::Context
   virtual ~Context() {
     DCHECK(!handle_);
     DCHECK(!client_);
-    DCHECK(!bridge_);
+    DCHECK(!bridge_.get());
   }
 
   WebSocketStreamHandleImpl* handle_;
@@ -86,7 +86,7 @@ void WebSocketStreamHandleImpl::Context::Connect(
     const WebURL& url,
     WebKitPlatformSupportImpl* platform) {
   VLOG(1) << "Connect url=" << url;
-  DCHECK(!bridge_);
+  DCHECK(!bridge_.get());
   bridge_ = platform->CreateWebSocketBridge(handle_, this);
   AddRef();  // Will be released by DidClose().
   bridge_->Connect(url);
@@ -94,14 +94,14 @@ void WebSocketStreamHandleImpl::Context::Connect(
 
 bool WebSocketStreamHandleImpl::Context::Send(const WebData& data) {
   VLOG(1) << "Send data.size=" << data.size();
-  DCHECK(bridge_);
+  DCHECK(bridge_.get());
   return bridge_->Send(
       std::vector<char>(data.data(), data.data() + data.size()));
 }
 
 void WebSocketStreamHandleImpl::Context::Close() {
   VLOG(1) << "Close";
-  if (bridge_)
+  if (bridge_.get())
     bridge_->Close();
 }
 
@@ -112,7 +112,7 @@ void WebSocketStreamHandleImpl::Context::Detach() {
   // the |bridge_| here.  Then |bridge_| will call back DidClose, and will
   // be released by itself.
   // Otherwise, |bridge_| is NULL.
-  if (bridge_)
+  if (bridge_.get())
     bridge_->Close();
 }
 

@@ -4,6 +4,9 @@
 
 #include "chrome/browser/spellchecker/spellcheck_message_filter.h"
 
+#include <algorithm>
+#include <functional>
+
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -101,9 +104,12 @@ void SpellCheckMessageFilter::OnRespondDocumentMarkers(
     const std::vector<uint32>& markers) {
   SpellcheckService* spellcheck =
       SpellcheckServiceFactory::GetForRenderProcessId(render_process_id_);
-  DCHECK(spellcheck);
-  spellcheck->GetFeedbackSender()->OnReceiveDocumentMarkers(render_process_id_,
-                                                            markers);
+  // Spellcheck service may not be available for a renderer process that is
+  // shutting down.
+  if (!spellcheck)
+    return;
+  spellcheck->GetFeedbackSender()->OnReceiveDocumentMarkers(
+      render_process_id_, markers);
 }
 
 #if !defined(OS_MACOSX)
@@ -111,9 +117,16 @@ void SpellCheckMessageFilter::OnCallSpellingService(
     int route_id,
     int identifier,
     const string16& text,
-    const std::vector<SpellCheckMarker>& markers) {
+    std::vector<SpellCheckMarker> markers) {
   DCHECK(!text.empty());
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  // Erase invalid markers (with offsets out of boundaries of text length).
+  markers.erase(
+      std::remove_if(
+          markers.begin(),
+          markers.end(),
+          std::not1(SpellCheckMarker::IsValidPredicate(text.length()))),
+      markers.end());
   CallSpellingService(text, route_id, identifier, markers);
 }
 

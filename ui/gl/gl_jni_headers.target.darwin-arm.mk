@@ -17,13 +17,13 @@ GYP_TARGET_DEPENDENCIES := \
 
 
 ### Generated for rule "ui_gl_gl_gyp_gl_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../../base/android/jni_generator/jni_generator.py'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gl/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gl/jni', '--optimize_generation', '0'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gl/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gl/jni', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/gl/jni; cd $(gyp_local_path)/ui/gl; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gl/jni" --optimize_generation 0
+$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/ui/gl/jni; cd $(gyp_local_path)/ui/gl; ../../base/android/jni_generator/jni_generator.py --input_file ../android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java --output_dir "$(gyp_shared_intermediate_dir)/ui/gl/jni" --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt
 
 .PHONY: ui_gl_gl_jni_headers_gyp_rule_trigger
 ui_gl_gl_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h
@@ -86,7 +86,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \

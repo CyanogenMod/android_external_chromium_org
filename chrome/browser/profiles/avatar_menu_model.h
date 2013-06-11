@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -89,6 +89,15 @@ class AvatarMenuModel : public content::NotificationObserver {
 
   // Returns true if the add profile link should be shown.
   bool ShouldShowAddNewProfileLink() const;
+
+  // Returns information about a managed user which will be displayed in the
+  // avatar menu. If the profile does not belong to a managed user, an empty
+  // string will be returned.
+  base::string16 GetManagedUserInformation() const;
+
+  // Returns the icon for the managed user which will be displayed in the
+  // avatar menu.
+  const gfx::Image& GetManagedUserIcon() const;
 
   // This model is also used for the always-present Mac system menubar. As the
   // last active browser changes, the model needs to update accordingly.

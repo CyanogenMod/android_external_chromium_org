@@ -7,7 +7,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_network_session.h"
@@ -478,7 +478,13 @@ TEST_P(HttpProxyClientSocketPoolSpdy2Test, TunnelUnexpectedClose) {
   EXPECT_FALSE(handle_.socket());
 
   data_->RunFor(3);
-  EXPECT_EQ(ERR_CONNECTION_CLOSED, callback_.WaitForResult());
+  if (GetParam() == SPDY) {
+    // SPDY cannot process a headers block unless it's complete and so it
+    // returns ERR_CONNECTION_CLOSED in this case.
+    EXPECT_EQ(ERR_CONNECTION_CLOSED, callback_.WaitForResult());
+  } else {
+    EXPECT_EQ(ERR_HEADERS_TRUNCATED, callback_.WaitForResult());
+  }
   EXPECT_FALSE(handle_.is_initialized());
   EXPECT_FALSE(handle_.socket());
 }
@@ -597,7 +603,7 @@ TEST_P(HttpProxyClientSocketPoolSpdy2Test, TunnelSetupRedirect) {
     const ProxyClientSocket* tunnel_socket =
         static_cast<ProxyClientSocket*>(handle_.socket());
     const HttpResponseInfo* response = tunnel_socket->GetConnectResponseInfo();
-    const HttpResponseHeaders* headers = response->headers;
+    const HttpResponseHeaders* headers = response->headers.get();
 
     // Make sure Set-Cookie header was stripped.
     EXPECT_FALSE(headers->HasHeader("set-cookie"));

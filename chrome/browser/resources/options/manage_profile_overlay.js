@@ -48,12 +48,29 @@ cr.define('options', function() {
       self.registerCommonEventHandlers_('manage',
                                         self.submitManageChanges_.bind(self));
 
+      // Override the create-profile-ok and create-* keydown handlers, to avoid
+      // closing the overlay until we finish creating the profile.
+      $('create-profile-ok').onclick = function(event) {
+        self.submitCreateProfile_();
+      };
+      $('create-profile-name').onkeydown =
+          $('create-profile-icon-grid').onkeydown = function(event) {
+        // Submit if the OK button is enabled and we hit enter.
+        if (!$('create-profile-ok').disabled &&
+            event.keyIdentifier === 'Enter') {
+          self.submitCreateProfile_();
+        }
+      };
+
+      $('create-profile-cancel').onclick = function(event) {
+        CreateProfileOverlay.cancelCreateProfile();
+      };
+
       if (loadTimeData.getBoolean('managedUsersEnabled')) {
         $('create-profile-limited-container').hidden = false;
       }
       $('manage-profile-cancel').onclick =
-          $('delete-profile-cancel').onclick =
-              $('create-profile-cancel').onclick = function(event) {
+          $('delete-profile-cancel').onclick = function(event) {
         OptionsPage.closeOverlay();
       };
       $('delete-profile-ok').onclick = function(event) {
@@ -67,11 +84,11 @@ cr.define('options', function() {
         chrome.send('removeProfileShortcut', [self.profileInfo_.filePath]);
       };
 
-      $('create-profile-limited-signed-in-link').onclick = function() {
+      $('create-profile-limited-signed-in-link').onclick = function(event) {
         OptionsPage.navigateToPage('managedUserLearnMore');
       };
 
-      $('create-profile-limited-not-signed-in-link').onclick = function() {
+      $('create-profile-limited-not-signed-in-link').onclick = function(event) {
         // The signin process will open an overlay to configure sync, which
         // would replace this overlay. It's smoother to close this one now.
         // TODO(pamg): Move the sync-setup overlay to a higher layer so this one
@@ -128,7 +145,8 @@ cr.define('options', function() {
       $(mode + '-profile-name').onkeydown =
           $(mode + '-profile-icon-grid').onkeydown = function(event) {
         // Submit if the OK button is enabled and we hit enter.
-        if (!$(mode + '-profile-ok').disabled && event.keyCode == 13) {
+        if (!$(mode + '-profile-ok').disabled &&
+            event.keyIdentifier === 'Enter') {
           OptionsPage.closeOverlay();
           submitFunction();
         }
@@ -229,14 +247,18 @@ cr.define('options', function() {
      * @param {string} mode A label that specifies the type of dialog
      *     box which is currently being viewed (i.e. 'create' or
      *     'manage').
+     * @param {boolean} disableOKButton True if the dialog's OK button should be
+     *     disabled when the error bubble is shown. It will be (re-)enabled when
+     *     the error bubble is hidden.
      * @private
      */
-    showErrorBubble_: function(errorText, mode) {
+    showErrorBubble_: function(errorText, mode, disableOKButton) {
       var nameErrorEl = $(mode + '-profile-error-bubble');
       nameErrorEl.hidden = false;
       nameErrorEl.textContent = loadTimeData.getString(errorText);
 
-      $(mode + '-profile-ok').disabled = true;
+      if (disableOKButton)
+        $(mode + '-profile-ok').disabled = true;
     },
 
     /**
@@ -266,7 +288,7 @@ cr.define('options', function() {
       if (newName == oldName) {
         this.hideErrorBubble_(mode);
       } else if (this.profileNames_[newName] != undefined) {
-        this.showErrorBubble_('manageProfilesDuplicateNameError', mode);
+        this.showErrorBubble_('manageProfilesDuplicateNameError', mode, true);
       } else {
         this.hideErrorBubble_(mode);
 
@@ -294,12 +316,17 @@ cr.define('options', function() {
      * @private
      */
     submitCreateProfile_: function() {
+      this.hideErrorBubble_('create');
+      CreateProfileOverlay.updateCreateInProgress(true);
+
       // Get the user's chosen name and icon, or default if they do not
       // wish to customize their profile.
       var name = $('create-profile-name').value;
       var iconUrl = $('create-profile-icon-grid').selectedItem;
       var createShortcut = $('create-shortcut').checked;
       var isManaged = $('create-profile-limited').checked;
+
+      // 'createProfile' is handled by the BrowserOptionsHandler.
       chrome.send('createProfile',
                   [name, iconUrl, createShortcut, isManaged]);
     },
@@ -418,7 +445,8 @@ cr.define('options', function() {
       $('manage-profile-overlay-delete').hidden = true;
       $('create-profile-instructions').textContent =
          loadTimeData.getStringF('createProfileInstructions');
-      ManageProfileOverlay.getInstance().hideErrorBubble_('create');
+      this.hideErrorBubble_();
+      this.updateCreateInProgress_(false);
 
       var shortcutsEnabled = loadTimeData.getBoolean('profileShortcutsEnabled');
       $('create-shortcut-container').hidden = !shortcutsEnabled;
@@ -427,6 +455,95 @@ cr.define('options', function() {
       $('create-profile-name-label').hidden = true;
       $('create-profile-name').hidden = true;
       $('create-profile-ok').disabled = true;
+    },
+
+    /** @override */
+    handleCancel: function() {
+      this.cancelCreateProfile_();
+    },
+
+    /** @override */
+    showErrorBubble_: function(errorText) {
+      ManageProfileOverlay.getInstance().showErrorBubble_(errorText,
+                                                          'create',
+                                                          false);
+    },
+
+    /** @override */
+    hideErrorBubble_: function() {
+      ManageProfileOverlay.getInstance().hideErrorBubble_('create');
+    },
+
+    /**
+     * Updates the UI when a profile create step begins or ends.
+     * Note that hideErrorBubble_() also enables the "OK" button, so it
+     * must be called before this function if both are used.
+     * @param {boolean} inProgress True if the UI should be updated to show that
+     *     profile creation is now in progress.
+     * @private
+     */
+    updateCreateInProgress_: function(inProgress) {
+      $('create-profile-icon-grid').disabled = inProgress;
+      $('create-profile-name').disabled = inProgress;
+      $('create-shortcut').disabled = inProgress;
+      $('create-profile-limited').disabled = inProgress;
+      $('create-profile-ok').disabled = inProgress;
+
+      $('create-profile-throbber').hidden = !inProgress;
+    },
+
+    /**
+     * Cancels the creation of the a profile. It is safe to call this even
+     * when no profile is in the process of being created.
+     * @private
+     */
+    cancelCreateProfile_: function() {
+      OptionsPage.closeOverlay();
+      chrome.send('cancelCreateProfile');
+      this.hideErrorBubble_();
+      this.updateCreateInProgress_(false);
+    },
+
+    /**
+     * Shows an error message describing a local error (most likely a disk
+     * error) when creating a new profile. Called by BrowserOptions via the
+     * BrowserOptionsHandler.
+     * @private
+     */
+    onLocalError_: function() {
+      this.updateCreateInProgress_(false);
+      this.showErrorBubble_('createProfileLocalError');
+    },
+
+    /**
+     * Shows an error message describing a remote error (most likely a network
+     * error) when creating a new profile. Called by BrowserOptions via the
+     * BrowserOptionsHandler.
+     * @private
+     */
+    onRemoteError_: function() {
+      this.updateCreateInProgress_(false);
+      this.showErrorBubble_('createProfileRemoteError');
+    },
+
+    /**
+     * For new limited users, shows a confirmation page after successfully
+     * creating a new profile; otherwise, the handler will open a new window.
+     * @param {Object} profileInfo An object of the form:
+     *     profileInfo = {
+     *       name: "Profile Name",
+     *       filePath: "/path/to/profile/data/on/disk"
+     *       isManaged: (true|false),
+     *     };
+     * @private
+     */
+    onSuccess_: function(profileInfo) {
+      this.updateCreateInProgress_(false);
+      OptionsPage.closeOverlay();
+      if (profileInfo.isManaged) {
+        ManagedUserCreateConfirmOverlay.setProfileInfo(profileInfo);
+        OptionsPage.navigateToPage('managedUserCreateConfirm');
+      }
     },
 
     /**
@@ -448,6 +565,11 @@ cr.define('options', function() {
 
   // Forward public APIs to private implementations.
   [
+    'cancelCreateProfile',
+    'onLocalError',
+    'onRemoteError',
+    'onSuccess',
+    'updateCreateInProgress',
     'updateSignedInStatus',
   ].forEach(function(name) {
     CreateProfileOverlay[name] = function() {

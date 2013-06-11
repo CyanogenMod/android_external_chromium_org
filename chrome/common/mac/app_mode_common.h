@@ -8,7 +8,7 @@
 #import <Foundation/Foundation.h>
 
 #include "base/files/file_path.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 // This file contains constants, interfaces, etc. which are common to the
 // browser application and the app mode loader (a.k.a. shim).
@@ -29,6 +29,19 @@ extern const char kAppShimSocketName[];
 // Special app mode id used for the App Launcher.
 extern const char kAppListModeId[];
 
+// Instructs the app shim to send LaunchApp with launch_now = false. This
+// associates the shim without launching the app.
+extern const char kNoLaunchApp[];
+
+// The display name of the bundle as shown in Finder and the Dock. For localized
+// bundles, this overrides the bundle's file name.
+extern NSString* const kCFBundleDisplayNameKey;
+
+// The key specifying whether the display name should be localized. This makes
+// Finder look in localization folders in the app bundle for a display name.
+// (e.g. Content/Resources/en.lproj/)
+extern NSString* const kLSHasLocalizedDisplayNameKey;
+
 // The key under which the browser's bundle ID will be stored in the
 // app mode launcher bundle's Info.plist.
 extern NSString* const kBrowserBundleIDKey;
@@ -47,6 +60,9 @@ extern NSString* const kCrAppModeUserDataDirKey;
 
 // Key for the app's extension path.
 extern NSString* const kCrAppModeProfileDirKey;
+
+// Key for the app's profile display name.
+extern NSString* const kCrAppModeProfileNameKey;
 
 // When the Chrome browser is run, it stores its location in the defaults
 // system using this key.

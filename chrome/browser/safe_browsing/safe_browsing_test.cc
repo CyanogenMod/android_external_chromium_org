@@ -21,15 +21,15 @@
 #include "base/environment.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/database_manager.h"
@@ -170,7 +170,7 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
   }
 
   SafeBrowsingDatabaseManager* database_manager() {
-    return safe_browsing_service_->database_manager();
+    return safe_browsing_service_->database_manager().get();
   }
 
   bool is_checked_url_in_db() {

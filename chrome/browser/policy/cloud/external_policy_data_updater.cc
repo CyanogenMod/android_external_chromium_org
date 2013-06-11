@@ -217,11 +217,9 @@ const ExternalPolicyDataUpdater::Request&
 void ExternalPolicyDataUpdater::FetchJob::Start() {
   fetcher_.reset(net::URLFetcher::Create(id_, GURL(request_.url),
                                          net::URLFetcher::GET, this));
-  fetcher_->SetRequestContext(updater_->request_context_);
-  fetcher_->SetLoadFlags(net::LOAD_BYPASS_CACHE |
-                         net::LOAD_DISABLE_CACHE |
-                         net::LOAD_DO_NOT_SAVE_COOKIES |
-                         net::LOAD_IS_DOWNLOAD |
+  fetcher_->SetRequestContext(updater_->request_context_.get());
+  fetcher_->SetLoadFlags(net::LOAD_BYPASS_CACHE | net::LOAD_DISABLE_CACHE |
+                         net::LOAD_DO_NOT_SAVE_COOKIES | net::LOAD_IS_DOWNLOAD |
                          net::LOAD_DO_NOT_SEND_COOKIES |
                          net::LOAD_DO_NOT_SEND_AUTH_DATA);
   fetcher_->SetAutomaticallyRetryOnNetworkChanges(3);
@@ -388,7 +386,7 @@ void ExternalPolicyDataUpdater::StartNextJobs() {
     return;
 
   while (running_jobs_ < max_parallel_jobs_ && !job_queue_.empty()) {
-    FetchJob* job = job_queue_.front();
+    FetchJob* job = job_queue_.front().get();
     job_queue_.pop();
 
     // Some of the jobs may have been invalidated, and have to be skipped.

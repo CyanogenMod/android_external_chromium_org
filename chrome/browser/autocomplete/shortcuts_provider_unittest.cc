@@ -15,8 +15,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
 #include "base/prefs/pref_service.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
@@ -645,8 +645,8 @@ TEST_F(ShortcutsProviderTest, DeleteMatch) {
   EXPECT_FALSE(backend_->shortcuts_map().end() ==
                backend_->shortcuts_map().find(ASCIIToUTF16("erase")));
 
-  AutocompleteMatch match(provider_, 1200, true,
-                          AutocompleteMatchType::HISTORY_TITLE);
+  AutocompleteMatch match(
+      provider_.get(), 1200, true, AutocompleteMatchType::HISTORY_TITLE);
 
   match.destination_url = GURL(shortcuts_to_test_delete[0].url);
   match.contents = ASCIIToUTF16(shortcuts_to_test_delete[0].contents);

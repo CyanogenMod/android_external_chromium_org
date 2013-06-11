@@ -7,9 +7,10 @@
 #include "ash/shell.h"
 #include "ash/system/chromeos/network/network_observer.h"
 #include "ash/system/tray/system_tray_notifier.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
@@ -17,6 +18,7 @@
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using chromeos::NetworkConnectionHandler;
 using chromeos::NetworkHandler;
 using chromeos::NetworkState;
 using chromeos::NetworkStateHandler;
@@ -25,26 +27,19 @@ namespace {
 
 const int kMinTimeBetweenOutOfCreditsNotifySeconds = 10 * 60;
 
-ash::NetworkObserver::NetworkType GetAshNetworkType(
-    const NetworkState* network) {
-  const std::string& type = network->type();
-  if (type == flimflam::kTypeCellular) {
-    if (network->technology() == flimflam::kNetworkTechnologyLte ||
-        network->technology() == flimflam::kNetworkTechnologyLteAdvanced)
-      return ash::NetworkObserver::NETWORK_CELLULAR_LTE;
-    else
-      return ash::NetworkObserver::NETWORK_CELLULAR;
-  }
-  if (type == flimflam::kTypeEthernet)
-     return ash::NetworkObserver::NETWORK_ETHERNET;
-  if (type == flimflam::kTypeWifi)
-     return ash::NetworkObserver::NETWORK_WIFI;
-  if (type == flimflam::kTypeBluetooth)
-     return ash::NetworkObserver::NETWORK_BLUETOOTH;
-  return ash::NetworkObserver::NETWORK_UNKNOWN;
+// Error messages based on |error_name|, not network_state->error().
+string16 GetConnectErrorString(const std::string& error_name) {
+  if (error_name == NetworkConnectionHandler::kErrorNotFound)
+    return l10n_util::GetStringUTF16(IDS_CHROMEOS_NETWORK_ERROR_CONNECT_FAILED);
+  return string16();
 }
 
-string16 GetErrorString(const std::string& error) {
+// Error messages based on network_state->error().
+string16 GetErrorString(const NetworkState* network_state) {
+  DCHECK(network_state);
+  const std::string& error = network_state->error();
+  if (error.empty())
+    return string16();
   if (error == flimflam::kErrorOutOfRange)
     return l10n_util::GetStringUTF16(IDS_CHROMEOS_NETWORK_ERROR_OUT_OF_RANGE);
   if (error == flimflam::kErrorPinMissing)
@@ -104,16 +99,18 @@ string16 GetErrorString(const std::string& error) {
 }  // namespace
 
 namespace ash {
-namespace internal {
 
 NetworkStateNotifier::NetworkStateNotifier()
     : cellular_out_of_credits_(false) {
-  NetworkHandler::Get()->network_state_handler()->AddObserver(this);
-  InitializeNetworks();
+  if (NetworkHandler::IsInitialized()) {
+    NetworkHandler::Get()->network_state_handler()->AddObserver(this);
+    InitializeNetworks();
+  }
 }
 
 NetworkStateNotifier::~NetworkStateNotifier() {
-  NetworkHandler::Get()->network_state_handler()->RemoveObserver(this);
+  if (NetworkHandler::IsInitialized())
+    NetworkHandler::Get()->network_state_handler()->RemoveObserver(this);
 }
 
 void NetworkStateNotifier::DefaultNetworkChanged(const NetworkState* network) {
@@ -154,16 +151,7 @@ void NetworkStateNotifier::NetworkConnectionStateChanged(
 
   NET_LOG_EVENT("ConnectionFailure", network->path());
 
-  std::vector<string16> no_links;
-  ash::NetworkObserver::NetworkType network_type = GetAshNetworkType(network);
-  string16 error = GetErrorString(network->error());
-  ash::Shell::GetInstance()->system_tray_notifier()->NotifySetNetworkMessage(
-      this, ash::NetworkObserver::ERROR_CONNECT_FAILED, network_type,
-      l10n_util::GetStringUTF16(IDS_NETWORK_CONNECTION_ERROR_TITLE),
-      l10n_util::GetStringFUTF16(
-            IDS_NETWORK_CONNECTION_ERROR_MESSAGE_WITH_DETAILS,
-            UTF8ToUTF16(network->name()), error),
-      no_links);
+  ShowConnectError("", network);
 }
 
 void NetworkStateNotifier::NetworkPropertiesUpdated(
@@ -180,15 +168,15 @@ void NetworkStateNotifier::NetworkPropertiesUpdated(
       base::TimeDelta dtime = base::Time::Now() - out_of_credits_notify_time_;
       if (dtime.InSeconds() > kMinTimeBetweenOutOfCreditsNotifySeconds) {
         out_of_credits_notify_time_ = base::Time::Now();
-        ash::NetworkObserver::NetworkType network_type =
-            GetAshNetworkType(network);
         std::vector<string16> links;
         links.push_back(
             l10n_util::GetStringFUTF16(IDS_NETWORK_OUT_OF_CREDITS_LINK,
                                        UTF8ToUTF16(network->name())));
         ash::Shell::GetInstance()->system_tray_notifier()->
             NotifySetNetworkMessage(
-                this, ash::NetworkObserver::ERROR_OUT_OF_CREDITS, network_type,
+                this,
+                NetworkObserver::ERROR_OUT_OF_CREDITS,
+                NetworkObserver::GetNetworkTypeForNetworkState(network),
                 l10n_util::GetStringUTF16(IDS_NETWORK_OUT_OF_CREDITS_TITLE),
                 l10n_util::GetStringUTF16(IDS_NETWORK_OUT_OF_CREDITS_BODY),
                 links);
@@ -200,7 +188,7 @@ void NetworkStateNotifier::NetworkPropertiesUpdated(
 void NetworkStateNotifier::NotificationLinkClicked(
     NetworkObserver::MessageType message_type,
     size_t link_index) {
-  if (message_type == ash::NetworkObserver::ERROR_OUT_OF_CREDITS) {
+  if (message_type == NetworkObserver::ERROR_OUT_OF_CREDITS) {
     if (!cellular_network_.empty()) {
       // This will trigger the activation / portal code.
       Shell::GetInstance()->system_tray_delegate()->ConfigureNetwork(
@@ -209,6 +197,42 @@ void NetworkStateNotifier::NotificationLinkClicked(
     ash::Shell::GetInstance()->system_tray_notifier()->
         NotifyClearNetworkMessage(message_type);
   }
+}
+
+void NetworkStateNotifier::ShowNetworkConnectError(
+    const std::string& error_name,
+    const std::string& service_path) {
+  const NetworkState* network = NetworkHandler::Get()->network_state_handler()->
+      GetNetworkState(service_path);
+  ShowConnectError(error_name, network);
+}
+
+void NetworkStateNotifier::ShowConnectError(const std::string& error_name,
+                                            const NetworkState* network) {
+  std::vector<string16> no_links;
+  string16 error = GetConnectErrorString(error_name);
+  if (error.empty() && network)
+    error = GetErrorString(network);
+  if (error.empty())
+    error = l10n_util::GetStringUTF16(IDS_CHROMEOS_NETWORK_ERROR_UNKNOWN);
+  std::string name = network ? network->name() : "";
+  string16 error_msg;
+  if (network && !network->error_details().empty()) {
+    error_msg = l10n_util::GetStringFUTF16(
+        IDS_NETWORK_CONNECTION_ERROR_MESSAGE_WITH_SERVER_MESSAGE,
+        UTF8ToUTF16(name), error, UTF8ToUTF16(network->error_details()));
+  } else {
+    error_msg = l10n_util::GetStringFUTF16(
+        IDS_NETWORK_CONNECTION_ERROR_MESSAGE_WITH_DETAILS,
+        UTF8ToUTF16(name), error);
+  }
+  ash::Shell::GetInstance()->system_tray_notifier()->NotifySetNetworkMessage(
+      this,
+      NetworkObserver::ERROR_CONNECT_FAILED,
+      NetworkObserver::GetNetworkTypeForNetworkState(network),
+      l10n_util::GetStringUTF16(IDS_NETWORK_CONNECTION_ERROR_TITLE),
+      error_msg,
+      no_links);
 }
 
 void NetworkStateNotifier::InitializeNetworks() {
@@ -228,5 +252,4 @@ void NetworkStateNotifier::InitializeNetworks() {
     last_active_network_ = default_network->path();
 }
 
-}  // namespace internal
 }  // namespace ash

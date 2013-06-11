@@ -21,7 +21,7 @@
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_com_initializer.h"
@@ -638,6 +638,11 @@ installer::InstallStatus InstallProductsHelper(
   DCHECK(archive_type);
   const bool system_install = installer_state.system_install();
   installer::InstallStatus install_status = installer::UNKNOWN_STATUS;
+
+  // Drop to background processing mode if the process was started below the
+  // normal process priority class.
+  bool entered_background_mode = installer::AdjustProcessPriority();
+  VLOG_IF(1, entered_background_mode) << "Entered background processing mode.";
 
   // For install the default location for chrome.packed.7z is in current
   // folder, so get that value first.

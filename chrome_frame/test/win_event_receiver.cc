@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
+#include "base/strings/string_util.h"
 #include "base/win/object_watcher.h"
-#include "base/string_util.h"
 #include "chrome_frame/function_stub.h"
 
 // WinEventReceiver methods
@@ -116,7 +116,7 @@ WindowWatchdog::ProcessExitObserver::ProcessExitObserver(
     object_watcher_.StartWatching(process_handle_, this);
   } else {
     // Process is gone, so the window must be gone too. Notify our observer!
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&ProcessExitObserver::OnObjectSignaled,
                               weak_factory_.GetWeakPtr(), HANDLE(NULL)));
   }

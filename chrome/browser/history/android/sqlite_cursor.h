@@ -12,7 +12,7 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
@@ -136,6 +136,10 @@ class SQLiteCursor {
 
   virtual ~SQLiteCursor();
 
+  // Destory SQLiteCursor object on UI thread. All cleanup need finish in UI
+  // thread.
+  void DestroyOnUIThread();
+
   // This method is for testing only.
   void set_test_observer(TestObserver* test_observer) {
     test_observer_ = test_observer;
@@ -154,9 +158,6 @@ class SQLiteCursor {
 
   // The callback function of MoveTo().
   void OnMoved(AndroidHistoryProviderService::Handle handle, int pos);
-
-  // Used to cancel all request on the UI thread during shutdown.
-  void CancelAllRequests(base::WaitableEvent* finished);
 
   JavaColumnType GetColumnTypeInternal(int column);
 

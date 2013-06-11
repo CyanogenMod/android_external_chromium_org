@@ -5,6 +5,7 @@
 #ifndef CHROME_TEST_BASE_MODULE_SYSTEM_TEST_H_
 #define CHROME_TEST_BASE_MODULE_SYSTEM_TEST_H_
 
+#include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/module_system.h"
 #include "chrome/renderer/extensions/scoped_persistent.h"
 #include "v8/include/v8.h"
@@ -25,6 +26,8 @@ class StringSourceMap;
 //
 // By default a test will fail if no method in the native module 'assert' is
 // called. This behaviour can be overridden by calling ExpectNoAssertionsMade().
+//
+// TODO(kalman): move this back into chrome/renderer/extensions.
 class ModuleSystemTest : public testing::Test {
  public:
   ModuleSystemTest();
@@ -44,6 +47,11 @@ class ModuleSystemTest : public testing::Test {
   // name.
   void OverrideNativeHandler(const std::string& name, const std::string& code);
 
+  // Registers |file_name| from chrome/test/data/extensions as a module name
+  // |module_name|.
+  void RegisterTestFile(const std::string& module_name,
+                        const std::string& file_name);
+
   // Make the test fail if any asserts are called. By default a test will fail
   // if no asserts are called.
   void ExpectNoAssertionsMade();
@@ -53,7 +61,7 @@ class ModuleSystemTest : public testing::Test {
 
   v8::Isolate* isolate_;
   v8::HandleScope handle_scope_;
-  extensions::ScopedPersistent<v8::Context> context_;
+  scoped_ptr<extensions::ChromeV8Context> context_;
   AssertNatives* assert_natives_;
   scoped_ptr<StringSourceMap> source_map_;
   scoped_ptr<extensions::ModuleSystem> module_system_;

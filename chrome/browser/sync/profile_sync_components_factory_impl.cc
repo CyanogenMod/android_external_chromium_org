@@ -60,6 +60,8 @@
 #include "sync/api/syncable_service.h"
 
 #if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_registration_service.h"
+#include "chrome/browser/managed_mode/managed_user_registration_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/policy/managed_mode_policy_provider.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
@@ -283,10 +285,16 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-  if (ManagedUserService::ProfileIsManaged(profile_)) {
-    pss->RegisterDataTypeController(
-        new UIDataTypeController(
-            syncer::MANAGED_USER_SETTINGS, this, profile_, pss));
+  if (ManagedUserService::AreManagedUsersEnabled()) {
+    if (ManagedUserService::ProfileIsManaged(profile_)) {
+      pss->RegisterDataTypeController(
+          new UIDataTypeController(
+              syncer::MANAGED_USER_SETTINGS, this, profile_, pss));
+    } else {
+      pss->RegisterDataTypeController(
+          new UIDataTypeController(
+              syncer::MANAGED_USERS, this, profile_, pss));
+    }
   }
 #endif
 }
@@ -294,15 +302,17 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
 DataTypeManager* ProfileSyncComponentsFactoryImpl::CreateDataTypeManager(
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
         debug_info_listener,
-    SyncBackendHost* backend,
     const DataTypeController::TypeMap* controllers,
+    const browser_sync::DataTypeEncryptionHandler* encryption_handler,
+    SyncBackendHost* backend,
     DataTypeManagerObserver* observer,
-    const FailedDatatypesHandler* failed_datatypes_handler) {
+    browser_sync::FailedDataTypesHandler* failed_data_types_handler) {
   return new DataTypeManagerImpl(debug_info_listener,
-                                 backend,
                                  controllers,
+                                 encryption_handler,
+                                 backend,
                                  observer,
-                                 failed_datatypes_handler);
+                                 failed_data_types_handler);
 }
 
 browser_sync::GenericChangeProcessor*
@@ -337,14 +347,14 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
           syncer::PRIORITY_PREFERENCES)->AsWeakPtr();
     case syncer::AUTOFILL:
     case syncer::AUTOFILL_PROFILE: {
-      if (!web_data_service_)
+      if (!web_data_service_.get())
         return base::WeakPtr<syncer::SyncableService>();
       if (type == syncer::AUTOFILL) {
         return AutocompleteSyncableService::FromWebDataService(
-            web_data_service_)->AsWeakPtr();
+            web_data_service_.get())->AsWeakPtr();
       } else {
         return AutofillProfileSyncableService::FromWebDataService(
-            web_data_service_)->AsWeakPtr();
+            web_data_service_.get())->AsWeakPtr();
       }
     }
     case syncer::APPS:
@@ -387,6 +397,9 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
     case syncer::MANAGED_USER_SETTINGS:
       return policy::ProfilePolicyConnectorFactory::GetForProfile(profile_)->
           managed_mode_policy_provider()->AsWeakPtr();
+    case syncer::MANAGED_USERS:
+      return ManagedUserRegistrationServiceFactory::GetForProfile(profile_)->
+          AsWeakPtr();
 #endif
     default:
       // The following datatypes still need to be transitioned to the

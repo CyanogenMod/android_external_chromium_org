@@ -8,15 +8,14 @@
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/favicon/favicon_util.h"
 #include "chrome/browser/history/history_db_task.h"
@@ -537,19 +536,12 @@ const BookmarkNode* SetURL(int profile,
   if (test()->use_verifier()) {
     const BookmarkNode* v_node = NULL;
     FindNodeInVerifier(GetBookmarkModel(profile), node, &v_node);
-    bookmark_utils::ApplyEditsWithNoFolderChange(
-        GetVerifierBookmarkModel(),
-        v_node->parent(),
-        BookmarkEditor::EditDetails::EditNode(v_node),
-        v_node->GetTitle(),
-        new_url);
+    if (v_node->is_url())
+      GetVerifierBookmarkModel()->SetURL(v_node, new_url);
   }
-  return bookmark_utils::ApplyEditsWithNoFolderChange(
-      GetBookmarkModel(profile),
-      node->parent(),
-      BookmarkEditor::EditDetails::EditNode(node),
-      node->GetTitle(),
-      new_url);
+  if (node->is_url())
+    GetBookmarkModel(profile)->SetURL(node, new_url);
+  return node;
 }
 
 void Move(int profile,

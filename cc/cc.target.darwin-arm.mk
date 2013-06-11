@@ -14,7 +14,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp)/gpu.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -128,6 +129,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/caching_bitmap_content_layer_updater.cc \
 	cc/resources/content_layer_updater.cc \
 	cc/resources/image_layer_updater.cc \
+	cc/resources/image_raster_worker_pool.cc \
 	cc/resources/layer_quad.cc \
 	cc/resources/layer_tiling_data.cc \
 	cc/resources/layer_updater.cc \
@@ -140,6 +142,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/picture_pile.cc \
 	cc/resources/picture_pile_base.cc \
 	cc/resources/picture_pile_impl.cc \
+	cc/resources/pixel_buffer_raster_worker_pool.cc \
 	cc/resources/prioritized_resource.cc \
 	cc/resources/prioritized_resource_manager.cc \
 	cc/resources/priority_calculator.cc \
@@ -162,6 +165,7 @@ LOCAL_SRC_FILES := \
 	cc/scheduler/delay_based_time_source.cc \
 	cc/scheduler/frame_rate_controller.cc \
 	cc/scheduler/rate_limiter.cc \
+	cc/scheduler/rolling_time_delta_history.cc \
 	cc/scheduler/scheduler.cc \
 	cc/scheduler/scheduler_settings.cc \
 	cc/scheduler/scheduler_state_machine.cc \
@@ -223,7 +227,6 @@ MY_DEFS := \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
-	'-DENABLE_DOUBLE_RESOURCE_LOAD_TIMING' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_GPU=1' \
@@ -276,11 +279,10 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
 	$(gyp_shared_intermediate_dir)/ui/gl \
-	$(LOCAL_PATH)/third_party/mesa/MesaLib/include \
+	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
-	$(LOCAL_PATH)/third_party/WebKit/Source/Platform/chromium \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \

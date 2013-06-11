@@ -119,7 +119,7 @@ void FakeSocket::DoAsyncWrite(scoped_refptr<net::IOBuffer> buf, int buf_len,
     return;
   }
 
-  DoWrite(buf, buf_len);
+  DoWrite(buf.get(), buf_len);
   callback.Run(buf_len);
 }
 
@@ -127,10 +127,12 @@ void FakeSocket::DoWrite(net::IOBuffer* buf, int buf_len) {
   written_data_.insert(written_data_.end(),
                        buf->data(), buf->data() + buf_len);
 
-  if (peer_socket_) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FakeSocket::AppendInputData, peer_socket_,
-        std::vector<char>(buf->data(), buf->data() + buf_len)));
+  if (peer_socket_.get()) {
+    message_loop_->PostTask(
+        FROM_HERE,
+        base::Bind(&FakeSocket::AppendInputData,
+                   peer_socket_,
+                   std::vector<char>(buf->data(), buf->data() + buf_len)));
   }
 }
 

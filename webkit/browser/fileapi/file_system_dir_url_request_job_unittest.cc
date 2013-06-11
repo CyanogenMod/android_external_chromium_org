@@ -13,7 +13,7 @@
 #include "base/message_loop.h"
 #include "base/platform_file.h"
 #include "base/strings/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/http/http_request_headers.h"
@@ -28,7 +28,7 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/mock_file_system_context.h"
 #include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
-#include "webkit/quota/mock_special_storage_policy.h"
+#include "webkit/browser/quota/mock_special_storage_policy.h"
 
 namespace fileapi {
 namespace {
@@ -106,8 +106,8 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
   }
 
   FileSystemOperationContext* NewOperationContext() {
-    FileSystemOperationContext* context(new FileSystemOperationContext(
-        file_system_context_));
+    FileSystemOperationContext* context(
+        new FileSystemOperationContext(file_system_context_.get()));
     context->set_allowed_bytes_growth(1024);
     return context;
   }

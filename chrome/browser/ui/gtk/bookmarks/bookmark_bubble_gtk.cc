@@ -11,8 +11,8 @@
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -99,7 +99,6 @@ BookmarkBubbleGtk::BookmarkBubbleGtk(GtkWidget* anchor,
       model_(BookmarkModelFactory::GetForProfile(profile)),
       theme_service_(GtkThemeService::GetFrom(profile_)),
       anchor_(anchor),
-      content_(NULL),
       name_entry_(NULL),
       folder_combo_(NULL),
       bubble_(NULL),
@@ -198,8 +197,6 @@ BookmarkBubbleGtk::BookmarkBubbleGtk(GtkWidget* anchor,
 }
 
 BookmarkBubbleGtk::~BookmarkBubbleGtk() {
-  DCHECK(!content_);  // |content_| should have already been destroyed.
-
   DCHECK(g_bubble);
   g_bubble = NULL;
 
@@ -215,7 +212,6 @@ BookmarkBubbleGtk::~BookmarkBubbleGtk() {
 void BookmarkBubbleGtk::OnDestroy(GtkWidget* widget) {
   // We are self deleting, we have a destroy signal setup to catch when we
   // destroyed (via the BubbleGtk being destroyed), and delete ourself.
-  content_ = NULL;  // We are being destroyed.
   delete this;
 }
 

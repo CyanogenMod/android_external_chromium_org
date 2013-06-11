@@ -16,7 +16,8 @@
 #include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/base/origin_url_conversions.h"
 #include "webkit/browser/fileapi/file_observers.h"
@@ -24,10 +25,12 @@
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/native_file_util.h"
+#include "webkit/browser/fileapi/sandbox_isolated_origin_database.h"
 #include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/fileapi/sandbox_origin_database.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
+#include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/quota/quota_manager.h"
 
 // Example of various paths:
 //   void ObfuscatedFileUtil::DoSomething(const FileSystemURL& url) {
@@ -44,8 +47,6 @@ namespace {
 
 typedef SandboxDirectoryDatabase::FileId FileId;
 typedef SandboxDirectoryDatabase::FileInfo FileInfo;
-
-const int64 kFlushDelaySeconds = 10 * 60;  // 10 minutes
 
 void InitFileInfo(
     SandboxDirectoryDatabase::FileInfo* file_info,
@@ -92,6 +93,49 @@ void TouchDirectory(SandboxDirectoryDatabase* db, FileId dir_id) {
   DCHECK(db);
   if (!db->UpdateModificationTime(dir_id, base::Time::Now()))
     NOTREACHED();
+}
+
+class Deleter {
+ public:
+  explicit Deleter(ObfuscatedFileUtil* util) : util_(util) {}
+
+  void operator()(bool* ptr) const {
+    if (*ptr)
+      util_->ResetObjectLifetimeTracker();
+    delete ptr;
+  }
+
+ private:
+  ObfuscatedFileUtil* util_;
+};
+
+void MaybeDropDatabases(
+    ObfuscatedFileUtil* util,
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner,
+    scoped_ptr<bool, Deleter> object_still_alive,
+    int64 db_flush_delay_seconds) {
+  // If object isn't alive, DB has already been dropped by dtor.
+  if (!*object_still_alive)
+    return;
+
+  // Check to see if DB was recently used. If yes, restart timer so it triggers
+  // again in kFlushDelaySeconds from the last time it was used.
+  base::TimeDelta last_used_delta =
+      base::TimeTicks::Now() - util->db_last_use_time();
+  int64 next_timer_delta = db_flush_delay_seconds - last_used_delta.InSeconds();
+  if (next_timer_delta > 0) {
+    file_task_runner->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&MaybeDropDatabases,
+                   base::Unretained(util),
+                   file_task_runner,
+                   base::Passed(&object_still_alive),
+                   db_flush_delay_seconds),
+        base::TimeDelta::FromSeconds(next_timer_delta));
+    return;
+  }
+
+  util->DropDatabases();
 }
 
 const base::FilePath::CharType kTemporaryDirectoryName[] = FILE_PATH_LITERAL("t");
@@ -210,7 +254,7 @@ class ObfuscatedOriginEnumerator
  public:
   typedef SandboxOriginDatabase::OriginRecord OriginRecord;
   ObfuscatedOriginEnumerator(
-      SandboxOriginDatabase* origin_database,
+      SandboxOriginDatabaseInterface* origin_database,
       const base::FilePath& base_file_path)
       : base_file_path_(base_file_path) {
     if (origin_database)
@@ -240,7 +284,8 @@ class ObfuscatedOriginEnumerator
       NOTREACHED();
       return false;
     }
-    base::FilePath path = base_file_path_.Append(current_.path).Append(type_string);
+    base::FilePath path =
+        base_file_path_.Append(current_.path).Append(type_string);
     return file_util::DirectoryExists(path);
   }
 
@@ -251,11 +296,21 @@ class ObfuscatedOriginEnumerator
 };
 
 ObfuscatedFileUtil::ObfuscatedFileUtil(
-    const base::FilePath& file_system_directory)
-    : file_system_directory_(file_system_directory) {
+    quota::SpecialStoragePolicy* special_storage_policy,
+    const base::FilePath& file_system_directory,
+    base::SequencedTaskRunner* file_task_runner)
+    : special_storage_policy_(special_storage_policy),
+      file_system_directory_(file_system_directory),
+      file_task_runner_(file_task_runner),
+      db_flush_delay_seconds_(10 * 60), // 10 mins.
+      object_lifetime_tracker_(NULL) {
 }
 
 ObfuscatedFileUtil::~ObfuscatedFileUtil() {
+  // Mark as deleted so that the callback doesn't run on invalid object.
+  if (object_lifetime_tracker_)
+    *object_lifetime_tracker_ = false;
+
   DropDatabases();
 }
 
@@ -269,7 +324,6 @@ PlatformFileError ObfuscatedFileUtil::CreateOrOpen(
       file_flags & base::PLATFORM_FILE_WRITE &&
       context->quota_limit_type() == quota::kQuotaLimitTypeUnlimited) {
     DCHECK_EQ(base::PLATFORM_FILE_OK, error);
-    DCHECK_EQ(kFileSystemTypePersistent, url.type());
     context->file_system_context()->GetQuotaUtil(url.type())->
         StickyInvalidateUsageCache(url.origin(), url.type());
   }
@@ -339,7 +393,8 @@ PlatformFileError ObfuscatedFileUtil::CreateDirectory(
   // TODO(kinuko): Remove this dirty hack when we fully support directory
   // operations or clean up the code if we decided not to support directory
   // operations. (http://crbug.com/161442)
-  if (url.type() == kFileSystemTypeSyncable &&
+  if ((url.type() == kFileSystemTypeSyncable ||
+       url.type() == kFileSystemTypeSyncableForInternalSync) &&
       !sync_file_system::IsSyncFSDirectoryOperationEnabled()) {
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   }
@@ -881,8 +936,8 @@ base::FilePath ObfuscatedFileUtil::GetDirectoryForOriginAndType(
 bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
     const GURL& origin, FileSystemType type) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  base::FilePath origin_type_path = GetDirectoryForOriginAndType(origin, type, false,
-                                                           &error);
+  base::FilePath origin_type_path = GetDirectoryForOriginAndType(
+      origin, type, false, &error);
   if (origin_type_path.empty())
     return true;
 
@@ -911,6 +966,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
     other_types.push_back(kFileSystemTypePersistent);
   if (type != kFileSystemTypeSyncable)
     other_types.push_back(kFileSystemTypeSyncable);
+  DCHECK(type != kFileSystemTypeSyncableForInternalSync);
 
   for (size_t i = 0; i < other_types.size(); ++i) {
     if (file_util::DirectoryExists(
@@ -941,6 +997,7 @@ base::FilePath::StringType ObfuscatedFileUtil::GetDirectoryNameForType(
     case kFileSystemTypePersistent:
       return kPersistentDirectoryName;
     case kFileSystemTypeSyncable:
+    case kFileSystemTypeSyncableForInternalSync:
       return kSyncableDirectoryName;
     case kFileSystemTypeUnknown:
     default:
@@ -975,15 +1032,57 @@ bool ObfuscatedFileUtil::DestroyDirectoryDatabase(
   }
 
   PlatformFileError error = base::PLATFORM_FILE_OK;
-  base::FilePath path = GetDirectoryForOriginAndType(origin, type, false, &error);
+  base::FilePath path = GetDirectoryForOriginAndType(
+      origin, type, false, &error);
   if (path.empty() || error == base::PLATFORM_FILE_ERROR_NOT_FOUND)
     return true;
   return SandboxDirectoryDatabase::DestroyDatabase(path);
 }
 
+void ObfuscatedFileUtil::ResetObjectLifetimeTracker() {
+  object_lifetime_tracker_ = NULL;
+}
+
+void ObfuscatedFileUtil::DropDatabases() {
+  origin_database_.reset();
+  STLDeleteContainerPairSecondPointers(
+      directories_.begin(), directories_.end());
+  directories_.clear();
+}
+
 // static
 int64 ObfuscatedFileUtil::ComputeFilePathCost(const base::FilePath& path) {
   return UsageForPath(VirtualPath::BaseName(path).value().size());
+}
+
+void ObfuscatedFileUtil::MaybePrepopulateDatabase() {
+  base::FilePath isolated_origin_dir = file_system_directory_.Append(
+      SandboxIsolatedOriginDatabase::kOriginDirectory);
+  if (!file_util::DirectoryExists(isolated_origin_dir))
+    return;
+
+  const FileSystemType kPrepopulateTypes[] = {
+    kFileSystemTypePersistent, kFileSystemTypeTemporary
+  };
+
+  // Prepulate the directory database(s) if and only if this instance is
+  // initialized for isolated storage dedicated for a single origin.
+  for (size_t i = 0; i < arraysize(kPrepopulateTypes); ++i) {
+    const FileSystemType type = kPrepopulateTypes[i];
+    base::FilePath::StringType type_string = GetDirectoryNameForType(type);
+    DCHECK(!type_string.empty());
+    base::FilePath path = isolated_origin_dir.Append(type_string);
+    if (!file_util::DirectoryExists(path))
+      continue;
+    scoped_ptr<SandboxDirectoryDatabase> db(new SandboxDirectoryDatabase(path));
+    if (db->Init(SandboxDirectoryDatabase::FAIL_ON_CORRUPTION)) {
+      directories_[GetFileSystemTypeString(type)] = db.release();
+      MarkUsed();
+      // Don't populate more than one database, as it may rather hurt
+      // performance.
+      break;
+    }
+  }
 }
 
 PlatformFileError ObfuscatedFileUtil::GetFileInfoInternal(
@@ -1048,8 +1147,8 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
       dest_origin, dest_type, true);
 
   PlatformFileError error = base::PLATFORM_FILE_OK;
-  base::FilePath root = GetDirectoryForOriginAndType(dest_origin, dest_type, false,
-                                               &error);
+  base::FilePath root = GetDirectoryForOriginAndType(
+      dest_origin, dest_type, false, &error);
   if (error != base::PLATFORM_FILE_OK)
     return error;
 
@@ -1120,10 +1219,27 @@ PlatformFileError ObfuscatedFileUtil::CreateFile(
 base::FilePath ObfuscatedFileUtil::DataPathToLocalPath(
     const GURL& origin, FileSystemType type, const base::FilePath& data_path) {
   PlatformFileError error = base::PLATFORM_FILE_OK;
-  base::FilePath root = GetDirectoryForOriginAndType(origin, type, false, &error);
+  base::FilePath root = GetDirectoryForOriginAndType(
+      origin, type, false, &error);
   if (error != base::PLATFORM_FILE_OK)
     return base::FilePath();
   return root.Append(data_path);
+}
+
+std::string ObfuscatedFileUtil::GetDirectoryDatabaseKey(
+    const GURL& origin, FileSystemType type) {
+  std::string type_string = GetFileSystemTypeString(type);
+  if (type_string.empty()) {
+    LOG(WARNING) << "Unknown filesystem type requested:" << type;
+    return std::string();
+  }
+  // For isolated origin we just use a type string as a key.
+  if (special_storage_policy_ &&
+      special_storage_policy_->HasIsolatedStorage(origin)) {
+    return type_string;
+  }
+  return UTF16ToUTF8(webkit_base::GetOriginIdentifierFromURL(origin)) +
+      type_string;
 }
 
 // TODO(ericu): How to do the whole validation-without-creation thing?
@@ -1132,14 +1248,10 @@ base::FilePath ObfuscatedFileUtil::DataPathToLocalPath(
 // Still doesn't answer the quota issue, though.
 SandboxDirectoryDatabase* ObfuscatedFileUtil::GetDirectoryDatabase(
     const GURL& origin, FileSystemType type, bool create) {
-  std::string type_string = GetFileSystemTypeString(type);
-  if (type_string.empty()) {
-    LOG(WARNING) << "Unknown filesystem type requested:" << type;
+  std::string key = GetDirectoryDatabaseKey(origin, type);
+  if (key.empty())
     return NULL;
-  }
-  std::string key =
-      UTF16ToUTF8(webkit_base::GetOriginIdentifierFromURL(origin)) +
-      type_string;
+
   DirectoryMap::iterator iter = directories_.find(key);
   if (iter != directories_.end()) {
     MarkUsed();
@@ -1147,7 +1259,8 @@ SandboxDirectoryDatabase* ObfuscatedFileUtil::GetDirectoryDatabase(
   }
 
   PlatformFileError error = base::PLATFORM_FILE_OK;
-  base::FilePath path = GetDirectoryForOriginAndType(origin, type, create, &error);
+  base::FilePath path = GetDirectoryForOriginAndType(
+      origin, type, create, &error);
   if (error != base::PLATFORM_FILE_OK) {
     LOG(WARNING) << "Failed to get origin+type directory: " << path.value();
     return NULL;
@@ -1160,6 +1273,14 @@ SandboxDirectoryDatabase* ObfuscatedFileUtil::GetDirectoryDatabase(
 
 base::FilePath ObfuscatedFileUtil::GetDirectoryForOrigin(
     const GURL& origin, bool create, base::PlatformFileError* error_code) {
+  if (special_storage_policy_.get() &&
+      special_storage_policy_->HasIsolatedStorage(origin)) {
+    if (isolated_origin_.is_empty())
+      isolated_origin_ = origin;
+    CHECK_EQ(isolated_origin_.spec(), origin.spec())
+        << "multiple origins for an isolated site";
+  }
+
   if (!InitOriginDatabase(create)) {
     if (error_code) {
       *error_code = create ?
@@ -1219,32 +1340,50 @@ void ObfuscatedFileUtil::InvalidateUsageCache(
 }
 
 void ObfuscatedFileUtil::MarkUsed() {
-  if (timer_.IsRunning())
-    timer_.Reset();
-  else
-    timer_.Start(FROM_HERE, base::TimeDelta::FromSeconds(kFlushDelaySeconds),
-                 this, &ObfuscatedFileUtil::DropDatabases);
-}
+  db_last_use_time_ = base::TimeTicks::Now();
 
-void ObfuscatedFileUtil::DropDatabases() {
-  origin_database_.reset();
-  STLDeleteContainerPairSecondPointers(
-      directories_.begin(), directories_.end());
-  directories_.clear();
+  // If object_lifetime_tracker_ is valid, then callback timer already running.
+  if (object_lifetime_tracker_)
+    return;
+
+  // Initialize object lifetime tracker for the first time.
+  object_lifetime_tracker_ = new bool(true);
+
+  scoped_ptr<bool, Deleter> scoper(object_lifetime_tracker_, Deleter(this));
+  file_task_runner_->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&MaybeDropDatabases,
+                 base::Unretained(this),
+                 file_task_runner_,
+                 base::Passed(&scoper),
+                 db_flush_delay_seconds_),
+      base::TimeDelta::FromSeconds(db_flush_delay_seconds_));
 }
 
 bool ObfuscatedFileUtil::InitOriginDatabase(bool create) {
-  if (!origin_database_) {
-    if (!create && !file_util::DirectoryExists(file_system_directory_))
-      return false;
-    if (!file_util::CreateDirectory(file_system_directory_)) {
-      LOG(WARNING) << "Failed to create FileSystem directory: " <<
-          file_system_directory_.value();
-      return false;
-    }
-    origin_database_.reset(
-        new SandboxOriginDatabase(file_system_directory_));
+  if (origin_database_)
+    return true;
+
+  if (!create && !file_util::DirectoryExists(file_system_directory_))
+    return false;
+  if (!file_util::CreateDirectory(file_system_directory_)) {
+    LOG(WARNING) << "Failed to create FileSystem directory: " <<
+        file_system_directory_.value();
+    return false;
   }
+
+  if (!isolated_origin_.is_empty()) {
+    DCHECK(special_storage_policy_->HasIsolatedStorage(isolated_origin_));
+    origin_database_.reset(
+        new SandboxIsolatedOriginDatabase(
+            UTF16ToUTF8(webkit_base::GetOriginIdentifierFromURL(
+                    isolated_origin_)),
+            file_system_directory_));
+    return true;
+  }
+
+  origin_database_.reset(
+      new SandboxOriginDatabase(file_system_directory_));
   return true;
 }
 
@@ -1260,8 +1399,8 @@ PlatformFileError ObfuscatedFileUtil::GenerateNewLocalPath(
     return base::PLATFORM_FILE_ERROR_FAILED;
 
   PlatformFileError error = base::PLATFORM_FILE_OK;
-  base::FilePath new_local_path = GetDirectoryForOriginAndType(origin, type,
-                                                               false, &error);
+  base::FilePath new_local_path = GetDirectoryForOriginAndType(
+      origin, type, false, &error);
   if (error != base::PLATFORM_FILE_OK)
     return base::PLATFORM_FILE_ERROR_FAILED;
 

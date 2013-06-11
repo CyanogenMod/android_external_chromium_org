@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/extensions/platform_app_browsertest_util.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/test_launcher_utils.h"
-#include "chrome/test/base/ui_controls.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -18,6 +17,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/browser_test_utils.h"
 #include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/base/test/ui_controls.h"
 
 class WebViewInteractiveTest
     : public extensions::PlatformAppBrowserTest {
@@ -70,6 +70,18 @@ class WebViewInteractiveTest
     // Send Ctrl+C on Windows and Linux/ChromeOS.
     ASSERT_TRUE(ui_test_utils::SendKeyPressToWindowSync(
         GetPlatformAppWindow(), ui::VKEY_C, true, false, false, false));
+#endif
+  }
+
+  void SendStartOfLineKeyPressToPlatformApp() {
+#if defined(OS_MACOSX)
+    // Send Cmd+Left on MacOSX.
+    ASSERT_TRUE(ui_test_utils::SendKeyPressToWindowSync(
+        GetPlatformAppWindow(), ui::VKEY_LEFT, false, false, false, true));
+#else
+    // Send Ctrl+Left on Windows and Linux/ChromeOS.
+    ASSERT_TRUE(ui_test_utils::SendKeyPressToWindowSync(
+        GetPlatformAppWindow(), ui::VKEY_LEFT, true, false, false, false));
 #endif
   }
 
@@ -169,7 +181,7 @@ class WebViewInteractiveTest
    private:
     void CreatedCallback(content::RenderWidgetHost* rwh) {
       last_render_widget_host_ = rwh;
-      if (message_loop_)
+      if (message_loop_.get())
         message_loop_->Quit();
       else
         created_ = true;
@@ -347,12 +359,36 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, EditCommands) {
 
   ExtensionTestMessageListener copy_listener("copy", false);
   SendCopyKeyPressToPlatformApp();
+
   // Wait for the guest to receive a 'copy' edit command.
   ASSERT_TRUE(copy_listener.WaitUntilSatisfied());
 }
 
-// Disabled due to timeouts/crashing on several platforms. crbug.com/241912
-IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DISABLED_NewWindow) {
+// Tests that guests receive edit commands and respond appropriately.
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, EditCommandsNoMenu) {
+  SetupTest("web_view/edit_commands_no_menu",
+      "files/extensions/platform_apps/web_view/edit_commands_no_menu/"
+      "guest.html");
+
+  ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
+      GetPlatformAppWindow()));
+
+  // Flush any pending events to make sure we start with a clean slate.
+  content::RunAllPendingInMessageLoop();
+
+  ExtensionTestMessageListener start_of_line_listener("StartOfLine", false);
+  SendStartOfLineKeyPressToPlatformApp();
+  // Wait for the guest to receive a 'copy' edit command.
+  ASSERT_TRUE(start_of_line_listener.WaitUntilSatisfied());
+}
+
+// Flaky on Windows. http://crbug.com/248423
+#if defined(OS_WIN)
+#define MAYBE_NewWindow DISABLED_NewWindow
+#else
+#define MAYBE_NewWindow NewWindow
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, MAYBE_NewWindow) {
   ASSERT_TRUE(StartTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/newwindow"))
       << message_;
@@ -380,7 +416,8 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PopupPositioning) {
 
 // Tests that moving browser plugin (without resize/UpdateRects) correctly
 // repositions popup.
-IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PopupPositioningMoved) {
+// Started flakily failing after a Blink roll: http://crbug.com/245332
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DISABLED_PopupPositioningMoved) {
   SetupTest(
       "web_view/popup_positioning_moved",
       "files/extensions/platform_apps/web_view/popup_positioning_moved"

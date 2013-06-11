@@ -73,10 +73,6 @@ namespace extension_manifest_keys {
   extern const char kLaunchContainer[];
   extern const char kLaunchHeight[];
   extern const char kLaunchLocalPath[];
-  extern const char kLaunchMaxHeight[];
-  extern const char kLaunchMaxWidth[];
-  extern const char kLaunchMinHeight[];
-  extern const char kLaunchMinWidth[];
   extern const char kLaunchWebURL[];
   extern const char kLaunchWidth[];
   extern const char kLayouts[];
@@ -91,6 +87,7 @@ namespace extension_manifest_keys {
   extern const char kNaClModulesPath[];
   extern const char kName[];
   extern const char kOAuth2[];
+  extern const char kOAuth2AutoApprove[];
   extern const char kOAuth2ClientId[];
   extern const char kOAuth2Scopes[];
   extern const char kOfflineEnabled[];
@@ -279,7 +276,6 @@ namespace extension_manifest_errors {
   extern const char kInvalidImportId[];
   extern const char kInvalidImportVersion[];
   extern const char kInvalidIncognitoBehavior[];
-  extern const char kInvalidIncognitoModeForPlatformApp[];
   extern const char kInvalidInputComponents[];
   extern const char kInvalidInputComponentDescription[];
   extern const char kInvalidInputComponentLayoutName[];

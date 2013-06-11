@@ -60,8 +60,8 @@ ThreadProxy::ThreadProxy(LayerTreeHost* layer_tree_host,
       next_frame_is_newly_committed_frame_on_impl_thread_(false),
       throttle_frame_production_(
           layer_tree_host->settings().throttle_frame_production),
-      render_parent_drives_begin_frame__(
-          layer_tree_host->settings().render_parent_drives_begin_frame_),
+      begin_frame_scheduling_enabled_(
+          layer_tree_host->settings().begin_frame_scheduling_enabled),
       using_synchronous_renderer_compositor_(
           layer_tree_host->settings().using_synchronous_renderer_compositor),
       vsync_client_(NULL),
@@ -216,7 +216,7 @@ void ThreadProxy::DoCreateAndInitializeOutputSurface() {
   if (created_offscreen_context_provider_) {
     offscreen_context_provider = layer_tree_host_->client()->
         OffscreenContextProviderForCompositorThread();
-    success = !!offscreen_context_provider;
+    success = !!offscreen_context_provider.get();
     if (!success) {
       OnOutputSurfaceInitializeAttempted(false, capabilities);
       return;
@@ -382,21 +382,6 @@ void ThreadProxy::SetNeedsCommitOnImplThread() {
   DCHECK(IsImplThread());
   TRACE_EVENT0("cc", "ThreadProxy::SetNeedsCommitOnImplThread");
   scheduler_on_impl_thread_->SetNeedsCommit();
-}
-
-void ThreadProxy::SetNeedsManageTilesOnImplThread() {
-  if (manage_tiles_pending_)
-    return;
-  Proxy::ImplThread()->PostTask(
-      base::Bind(&ThreadProxy::ManageTilesOnImplThread, impl_thread_weak_ptr_));
-  manage_tiles_pending_ = true;
-}
-
-void ThreadProxy::ManageTilesOnImplThread() {
-  // TODO(nduca): If needed, move this into CCSchedulerStateMachine.
-  manage_tiles_pending_ = false;
-  if (layer_tree_host_impl_)
-    layer_tree_host_impl_->ManageTiles();
 }
 
 void ThreadProxy::PostAnimationEventsToMainThreadOnImplThread(
@@ -730,7 +715,7 @@ void ThreadProxy::BeginFrameOnMainThread(
       layer_tree_host_->needs_offscreen_context()) {
     offscreen_context_provider = layer_tree_host_->client()->
         OffscreenContextProviderForCompositorThread();
-    if (offscreen_context_provider)
+    if (offscreen_context_provider.get())
       created_offscreen_context_provider_ = true;
   }
 
@@ -782,25 +767,27 @@ void ThreadProxy::StartCommitOnImplThread(
     return;
   }
 
-  if (offscreen_context_provider)
+  if (offscreen_context_provider.get())
     offscreen_context_provider->BindToCurrentThread();
   if (layer_tree_host_impl_->resource_provider()) {
     layer_tree_host_impl_->resource_provider()->
         set_offscreen_context_provider(offscreen_context_provider);
   }
 
-  if (layer_tree_host_->contents_texture_manager()->
-          LinkedEvictedBackingsExist()) {
-    // Clear any uploads we were making to textures linked to evicted
-    // resources
-    queue->ClearUploadsToEvictedResources();
-    // Some textures in the layer tree are invalid. Kick off another commit
-    // to fill them again.
-    SetNeedsCommitOnImplThread();
-  }
+  if (layer_tree_host_->contents_texture_manager()) {
+    if (layer_tree_host_->contents_texture_manager()->
+            LinkedEvictedBackingsExist()) {
+      // Clear any uploads we were making to textures linked to evicted
+      // resources
+      queue->ClearUploadsToEvictedResources();
+      // Some textures in the layer tree are invalid. Kick off another commit
+      // to fill them again.
+      SetNeedsCommitOnImplThread();
+    }
 
-  layer_tree_host_->contents_texture_manager()->
-      PushTexturePrioritiesToBackings();
+    layer_tree_host_->contents_texture_manager()->
+        PushTexturePrioritiesToBackings();
+  }
 
   commit_completion_event_on_impl_thread_ = completion;
   if (layer_tree_host_impl_->resource_provider()) {
@@ -984,6 +971,12 @@ ThreadProxy::ScheduledActionDrawAndSwapInternal(bool forced_draw) {
   if (draw_frame)
     CheckOutputSurfaceStatusOnImplThread();
 
+  // Update the tile state after drawing.  This prevents manage tiles from
+  // being in the critical path for getting things on screen, but still
+  // makes sure that tile state is updated on a semi-regular basis.
+  if (layer_tree_host_impl_->settings().impl_side_painting)
+    layer_tree_host_impl_->ManageTiles();
+
   return result;
 }
 
@@ -1116,7 +1109,7 @@ void ThreadProxy::InitializeImplOnImplThread(CompletionEvent* completion) {
           layer_tree_host_->settings().refresh_rate);
   scoped_ptr<FrameRateController> frame_rate_controller;
   if (throttle_frame_production_) {
-    if (render_parent_drives_begin_frame__) {
+    if (begin_frame_scheduling_enabled_) {
       frame_rate_controller.reset(
           new FrameRateController(VSyncTimeSource::Create(
               this,
@@ -1162,9 +1155,6 @@ void ThreadProxy::InitializeOutputSurfaceOnImplThread(
 
   *success = layer_tree_host_impl_->InitializeRenderer(output_surface.Pass());
 
-  if (offscreen_context_provider)
-    offscreen_context_provider->BindToCurrentThread();
-
   if (*success) {
     *capabilities = layer_tree_host_impl_->GetRendererCapabilities();
     scheduler_on_impl_thread_->SetSwapBuffersCompleteSupported(
@@ -1181,16 +1171,34 @@ void ThreadProxy::InitializeOutputSurfaceOnImplThread(
 
     scheduler_on_impl_thread_->SetMaxFramesPending(max_frames_pending);
 
-    if (layer_tree_host_impl_->resource_provider())
-      layer_tree_host_impl_->resource_provider()->
-          set_offscreen_context_provider(offscreen_context_provider);
-
     scheduler_on_impl_thread_->DidCreateAndInitializeOutputSurface();
-  } else if (offscreen_context_provider) {
-    offscreen_context_provider->VerifyContexts();
   }
 
+  DidTryInitializeRendererOnImplThread(*success, offscreen_context_provider);
+
   completion->Signal();
+}
+
+void ThreadProxy::DidTryInitializeRendererOnImplThread(
+    bool success,
+    scoped_refptr<ContextProvider> offscreen_context_provider) {
+  DCHECK(IsImplThread());
+  DCHECK(!inside_draw_);
+
+  if (offscreen_context_provider.get())
+    offscreen_context_provider->BindToCurrentThread();
+
+  if (success) {
+    DCHECK_EQ(layer_tree_host_impl_->GetRendererCapabilities()
+                  .using_swap_complete_callback,
+              scheduler_on_impl_thread_->swap_buffers_complete_supported());
+    if (layer_tree_host_impl_->resource_provider()) {
+      layer_tree_host_impl_->resource_provider()->
+          set_offscreen_context_provider(offscreen_context_provider);
+    }
+  } else if (offscreen_context_provider.get()) {
+    offscreen_context_provider->VerifyContexts();
+  }
 }
 
 void ThreadProxy::FinishGLOnImplThread(CompletionEvent* completion) {
@@ -1365,15 +1373,6 @@ void ThreadProxy::RequestScrollbarAnimationOnImplThread(base::TimeDelta delay) {
 void ThreadProxy::StartScrollbarAnimationOnImplThread() {
   layer_tree_host_impl_->StartScrollbarAnimation(
       layer_tree_host_impl_->CurrentFrameTimeTicks());
-}
-
-void ThreadProxy::DidReceiveLastInputEventForBeginFrameOnImplThread(
-    base::TimeTicks frame_time) {
-  if (render_parent_drives_begin_frame__) {
-    TRACE_EVENT0("cc",
-        "ThreadProxy::DidReceiveLastInputEventForBeginFrameOnImplThread");
-    BeginFrameOnImplThread(frame_time);
-  }
 }
 
 void ThreadProxy::DidActivatePendingTree() {

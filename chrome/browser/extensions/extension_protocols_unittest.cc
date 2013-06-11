@@ -6,6 +6,7 @@
 
 #include "base/file_util.h"
 #include "base/message_loop.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_protocols.h"
@@ -15,15 +16,13 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/test/mock_resource_context.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/constants.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-using content::BrowserThread;
 
 namespace extensions {
 
@@ -63,12 +62,31 @@ scoped_refptr<Extension> CreateWebStoreExtension() {
   return extension;
 }
 
+scoped_refptr<Extension> CreateTestResponseHeaderExtension() {
+  DictionaryValue manifest;
+  manifest.SetString("name", "An extension with web-accessible resources");
+  manifest.SetString("version", "2");
+
+  ListValue* web_accessible_list = new ListValue();
+  web_accessible_list->AppendString("test.dat");
+  manifest.Set("web_accessible_resources", web_accessible_list);
+
+  base::FilePath path;
+  EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &path));
+  path = path.AppendASCII("extensions").AppendASCII("response_headers");
+
+  std::string error;
+  scoped_refptr<Extension> extension(
+      Extension::Create(path, Manifest::UNPACKED, manifest,
+                        Extension::NO_FLAGS, &error));
+  EXPECT_TRUE(extension.get()) << error;
+  return extension;
+}
+
 class ExtensionProtocolTest : public testing::Test {
  public:
   ExtensionProtocolTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_),
-        file_thread_(BrowserThread::FILE, &message_loop_),
-        io_thread_(BrowserThread::IO, &message_loop_) {}
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
 
   virtual void SetUp() OVERRIDE {
     testing::Test::SetUp();
@@ -89,7 +107,7 @@ class ExtensionProtocolTest : public testing::Test {
         resource_context_.GetRequestContext();
     job_factory_.SetProtocolHandler(
         kExtensionScheme,
-        CreateExtensionProtocolHandler(incognito, extension_info_map_));
+        CreateExtensionProtocolHandler(incognito, extension_info_map_.get()));
     request_context->set_job_factory(&job_factory_);
   }
 
@@ -105,10 +123,7 @@ class ExtensionProtocolTest : public testing::Test {
   }
 
  protected:
-  base::MessageLoopForIO message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
-  content::TestBrowserThread io_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_refptr<ExtensionInfoMap> extension_info_map_;
   net::URLRequestJobFactoryImpl job_factory_;
   const net::URLRequestJobFactory* old_factory_;
@@ -144,7 +159,7 @@ TEST_F(ExtensionProtocolTest, IncognitoRequest) {
     scoped_refptr<Extension> extension =
         CreateTestExtension(cases[i].name, cases[i].incognito_split_mode);
     extension_info_map_->AddExtension(
-        extension, base::Time::Now(), cases[i].incognito_enabled);
+        extension.get(), base::Time::Now(), cases[i].incognito_enabled);
 
     // First test a main frame request.
     {
@@ -192,8 +207,7 @@ TEST_F(ExtensionProtocolTest, ComponentResourceRequest) {
   SetProtocolHandler(false);
 
   scoped_refptr<Extension> extension = CreateWebStoreExtension();
-  extension_info_map_->AddExtension(
-      extension, base::Time::Now(), false);
+  extension_info_map_->AddExtension(extension.get(), base::Time::Now(), false);
 
   // First test it with the extension enabled.
   {
@@ -213,6 +227,40 @@ TEST_F(ExtensionProtocolTest, ComponentResourceRequest) {
                             resource_context_.GetRequestContext());
     StartRequest(&request, ResourceType::MEDIA);
     EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
+  }
+}
+
+// Tests that a URL request for resource from an extension returns a few
+// expected response headers.
+TEST_F(ExtensionProtocolTest, ResourceRequestResponseHeaders) {
+  // Register a non-incognito extension protocol handler.
+  SetProtocolHandler(false);
+
+  scoped_refptr<Extension> extension = CreateTestResponseHeaderExtension();
+  extension_info_map_->AddExtension(extension, base::Time::Now(), false);
+
+  {
+    net::URLRequest request(extension->GetResourceURL("test.dat"),
+                            &test_delegate_,
+                            resource_context_.GetRequestContext());
+    StartRequest(&request, ResourceType::MEDIA);
+    EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
+
+    // Check that cache-related headers are set.
+    std::string etag;
+    request.GetResponseHeaderByName("ETag", &etag);
+    EXPECT_TRUE(StartsWithASCII(etag, "\"", false));
+    EXPECT_TRUE(EndsWith(etag, "\"", false));
+
+    std::string revalidation_header;
+    request.GetResponseHeaderByName("cache-control", &revalidation_header);
+    EXPECT_EQ("no-cache", revalidation_header);
+
+    // We set test.dat as web-accessible, so it should have a CORS header.
+    std::string access_control;
+    request.GetResponseHeaderByName("Access-Control-Allow-Origin",
+                                    &access_control);
+    EXPECT_EQ("*", access_control);
   }
 }
 

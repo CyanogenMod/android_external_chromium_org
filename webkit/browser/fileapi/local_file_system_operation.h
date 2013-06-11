@@ -9,11 +9,13 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/file_writer_delegate.h"
 #include "webkit/common/blob/scoped_file.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace chromeos {
@@ -32,13 +34,15 @@ class RecursiveOperationDelegate;
 
 // FileSystemOperation implementation for local file systems.
 class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
-    : public NON_EXPORTED_BASE(FileSystemOperation) {
+    : public NON_EXPORTED_BASE(FileSystemOperation),
+      public base::SupportsWeakPtr<LocalFileSystemOperation> {
  public:
   // NOTE: This constructor should not be called outside MountPointProviders;
   // instead please consider using
   // file_system_context->CreateFileSystemOperation() to instantiate
   // an appropriate FileSystemOperation.
   LocalFileSystemOperation(
+      const FileSystemURL& url,
       FileSystemContext* file_system_context,
       scoped_ptr<FileSystemOperationContext> operation_context);
 
@@ -88,11 +92,6 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
   virtual void CreateSnapshotFile(
       const FileSystemURL& path,
       const SnapshotFileCallback& callback) OVERRIDE;
-
-  // Creates a nestable operation that inherits operation context
-  // from this operation.  The operation created by this method have to
-  // be die before this operation goes away.
-  virtual LocalFileSystemOperation* CreateNestedOperation();
 
   // Copies in a single file from a different filesystem.
   //
@@ -166,21 +165,10 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
                            base::FilePath* platform_path);
 
   FileSystemContext* file_system_context() const {
-    return file_system_context_;
-  }
-
-  FileSystemOperationContext* operation_context() const {
-    if (parent_operation_)
-      return parent_operation_->operation_context();
-    return operation_context_.get();
+    return file_system_context_.get();
   }
 
  private:
-  enum OperationMode {
-    OPERATION_MODE_READ,
-    OPERATION_MODE_WRITE,
-  };
-
   friend class sync_file_system::SyncableFileSystemOperation;
 
   // Queries the quota and usage and then runs the given |task|.
@@ -244,14 +232,8 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
                                        base::PlatformFileError rv,
                                        bool created);
 
-  // Generic callback that translates platform errors to WebKit error codes.
-  void DidFinishFileOperation(const StatusCallback& callback,
-                              base::PlatformFileError rv);
-
-  // Generic callback when we delegated the operation.
-  void DidFinishDelegatedOperation(const StatusCallback& callback,
-                                   base::PlatformFileError rv);
-
+  void DidFinishOperation(const StatusCallback& callback,
+                          base::PlatformFileError rv);
   void DidDirectoryExists(const StatusCallback& callback,
                           base::PlatformFileError rv,
                           const base::PlatformFileInfo& file_info,
@@ -260,35 +242,15 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
                      base::PlatformFileError rv,
                      const base::PlatformFileInfo& file_info,
                      const base::FilePath& unused);
-  void DidGetMetadata(const GetMetadataCallback& callback,
-                      base::PlatformFileError rv,
-                      const base::PlatformFileInfo& file_info,
-                      const base::FilePath& platform_path);
-  void DidReadDirectory(const ReadDirectoryCallback& callback,
-                        base::PlatformFileError rv,
-                        const std::vector<DirectoryEntry>& entries,
-                        bool has_more);
   void DidWrite(const FileSystemURL& url,
+                const WriteCallback& callback,
                 base::PlatformFileError rv,
                 int64 bytes,
                 FileWriterDelegate::WriteProgressStatus write_status);
-  void DidTouchFile(const StatusCallback& callback,
-                    base::PlatformFileError rv);
   void DidOpenFile(const OpenFileCallback& callback,
                    base::PlatformFileError rv,
                    base::PassPlatformFile file,
                    bool created);
-  void DidCreateSnapshotFile(
-      const SnapshotFileCallback& callback,
-      base::PlatformFileError result,
-      const base::PlatformFileInfo& file_info,
-      const base::FilePath& platform_path,
-      const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
-
-  // Checks the validity of a given |url| and populates |file_util| for |mode|.
-  base::PlatformFileError SetUp(
-      const FileSystemURL& url,
-      OperationMode mode);
 
   // Used only for internal assertions.
   // Returns false if there's another inflight pending operation.
@@ -299,23 +261,9 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
   scoped_ptr<FileSystemOperationContext> operation_context_;
   AsyncFileUtil* async_file_util_;  // Not owned.
 
-  // If this operation is created as a sub-operation for nested operation,
-  // this holds non-null value and points to the parent operation.
-  // TODO(kinuko): Cleanup this when we finish cleaning up the
-  // FileSystemOperation lifetime issue.
-  base::WeakPtr<LocalFileSystemOperation> parent_operation_;
-
-  // These are all used only by Write().
-  friend class FileWriterDelegate;
   scoped_ptr<FileWriterDelegate> file_writer_delegate_;
-
   scoped_ptr<RecursiveOperationDelegate> recursive_operation_delegate_;
 
-  // write_callback is kept in this class for so that we can dispatch it when
-  // the operation is cancelled. calcel_callback is kept for canceling a
-  // Truncate() operation. We can't actually stop Truncate in another thread;
-  // after it resumed from the working thread, cancellation takes place.
-  WriteCallback write_callback_;
   StatusCallback cancel_callback_;
 
   // Used only by OpenFile, in order to clone the file handle back to the
@@ -324,14 +272,6 @@ class WEBKIT_STORAGE_EXPORT LocalFileSystemOperation
 
   // A flag to make sure we call operation only once per instance.
   OperationType pending_operation_;
-
-  // We keep track of the file to be modified by this operation so that
-  // we can notify observers when we're done.
-  FileSystemURL write_target_url_;
-
-  // LocalFileSystemOperation instance is usually deleted upon completion but
-  // could be deleted while it has inflight callbacks when Cancel is called.
-  base::WeakPtrFactory<LocalFileSystemOperation> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalFileSystemOperation);
 };

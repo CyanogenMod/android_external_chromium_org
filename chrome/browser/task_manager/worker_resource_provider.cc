@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/resource_provider.h"
@@ -141,7 +141,7 @@ void SharedWorkerResource::Inspect() const {
     return;
   scoped_refptr<DevToolsAgentHost> agent_host(
       DevToolsAgentHost::GetForWorker(process_id_, routing_id_));
-  DevToolsWindow::OpenDevToolsWindowForWorker(profile, agent_host);
+  DevToolsWindow::OpenDevToolsWindowForWorker(profile, agent_host.get());
 }
 
 bool SharedWorkerResource::SupportNetworkUsage() const {

@@ -8,8 +8,6 @@
 #include <string>
 
 #include "base/callback_forward.h"
-#include "base/platform_file.h"
-#include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "googleurl/src/gurl.h"
@@ -18,6 +16,7 @@ class Profile;
 
 namespace base {
 class FilePath;
+struct PlatformFileInfo;
 }
 
 namespace fileapi {
@@ -27,6 +26,7 @@ class FileSystemURL;
 namespace drive {
 
 class PlatformFileInfoProto;
+class ResourceEntry;
 
 namespace util {
 
@@ -40,8 +40,7 @@ const base::FilePath::CharType kLocallyModifiedFileExtension[] =
 // "<resource-id>.<md5>.mounted".
 const base::FilePath::CharType kMountedArchiveFileExtension[] =
     FILE_PATH_LITERAL("mounted");
-const base::FilePath::CharType kWildCard[] =
-    FILE_PATH_LITERAL("*");
+const base::FilePath::CharType kWildCard[] = FILE_PATH_LITERAL("*");
 
 // Special resource IDs introduced to manage pseudo directory tree locally.
 // These strings are supposed to be different from any resource ID used on the
@@ -64,20 +63,11 @@ const base::FilePath::CharType kDriveMyDriveRootDirName[] =
 const base::FilePath::CharType kDriveOtherDirName[] =
     FILE_PATH_LITERAL("other");
 
-const base::FilePath::CharType kDriveMyDriveRootPath[] =
-    FILE_PATH_LITERAL("drive/root");
-
-const base::FilePath::CharType kDriveOtherDirPath[] =
-    FILE_PATH_LITERAL("drive/other");
-
 // Returns the path of the top root of the pseudo tree.
 const base::FilePath& GetDriveGrandRootPath();
 
 // Returns the path of the directory representing "My Drive".
 const base::FilePath& GetDriveMyDriveRootPath();
-
-// Returns the path of the directory representing entries other than "My Drive".
-const base::FilePath& GetDriveOtherDirPath();
 
 // Returns the Drive mount point path, which looks like "/special/drive".
 const base::FilePath& GetDriveMountPointPath();
@@ -94,9 +84,6 @@ ResourceEntry CreateOtherDirEntry();
 
 // Returns the Drive mount path as string.
 const std::string& GetDriveMountPointPathAsString();
-
-// Returns the 'local' root of remote file system as "/special".
-const base::FilePath& GetSpecialRemoteRootPath();
 
 // Returns the gdata file resource url formatted as "drive:<path>"
 GURL FilePathToDriveURL(const base::FilePath& path);
@@ -137,9 +124,11 @@ std::string EscapeCacheFileName(const std::string& filename);
 // This is the inverse of EscapeCacheFileName.
 std::string UnescapeCacheFileName(const std::string& filename);
 
-// Escapes forward slashes from file names with magic unicode character
-// \u2215 pretty much looks the same in UI.
-std::string EscapeUtf8FileName(const std::string& input);
+// Converts the given string to a form suitable as a file name. Specifically,
+// - Normalizes in Unicode Normalization Form C.
+// - Replaces slashes '/' with \u2215 that pretty much looks the same in UI.
+// |input| must be a valid UTF-8 encoded string.
+std::string NormalizeFileName(const std::string& input);
 
 // Gets the cache root path (i.e. <user_profile_dir>/GCache/v1) from the
 // profile.

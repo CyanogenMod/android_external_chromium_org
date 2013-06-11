@@ -14,7 +14,7 @@
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_observer_tracker.h"
 #include "extensions/common/view_type.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
 
 class GURL;
 class SkBitmap;
@@ -71,9 +71,9 @@ class ExtensionHelper
                            const base::ListValue& response,
                            const std::string& error);
   void OnExtensionMessageInvoke(const std::string& extension_id,
+                                const std::string& module_name,
                                 const std::string& function_name,
                                 const base::ListValue& args,
-                                const GURL& event_url,
                                 bool user_gesture);
   void OnExtensionDispatchOnConnect(
       int target_port_id,
@@ -81,7 +81,7 @@ class ExtensionHelper
       const base::DictionaryValue& source_tab,
       const ExtensionMsg_ExternalConnectionInfo& info);
   void OnExtensionDeliverMessage(int target_port_id,
-                                 const std::string& message);
+                                 const base::ListValue& message);
   void OnExtensionDispatchOnDisconnect(int port_id,
                                        const std::string& error_message);
   void OnExecuteCode(const ExtensionMsg_ExecuteCode_Params& params);

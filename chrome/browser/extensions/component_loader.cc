@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/json/json_string_value_serializer.h"
+#include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -33,6 +34,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -186,13 +188,13 @@ void ComponentLoader::Load(const ComponentExtensionInfo& info) {
       *info.manifest,
       flags,
       &error));
-  if (!extension) {
+  if (!extension.get()) {
     LOG(ERROR) << error;
     return;
   }
 
   CHECK_EQ(info.extension_id, extension->id()) << extension->name();
-  extension_service_->AddComponentExtension(extension);
+  extension_service_->AddComponentExtension(extension.get());
 }
 
 void ComponentLoader::RemoveAll() {
@@ -372,8 +374,6 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
     Add(IDR_SETTINGS_APP_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("settings_app")));
 #endif
-    Add(IDR_IDENTITY_API_SCOPE_APPROVAL_MANIFEST,
-        base::FilePath(FILE_PATH_LITERAL("identity_scope_approval_dialog")));
   }
 
 #if defined(OS_CHROMEOS)
@@ -384,7 +384,11 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 #if defined(GOOGLE_CHROME_BUILD)
     if (!command_line->HasSwitch(
             chromeos::switches::kDisableQuickofficeComponentApp)) {
-      std::string id = Add(IDR_QUICK_OFFICE_MANIFEST, base::FilePath(
+      int manifest_id = IDR_QUICK_OFFICE_MANIFEST;
+      if (command_line->HasSwitch(switches::kEnableQuickofficeEdit)) {
+        manifest_id = IDR_QUICKOFFICE_EDITOR_MANIFEST;
+      }
+      std::string id = Add(manifest_id, base::FilePath(
           FILE_PATH_LITERAL("/usr/share/chromeos-assets/quick_office")));
       if (command_line->HasSwitch(chromeos::switches::kGuestSession)) {
         // TODO(dpolukhin): Hack to enable HTML5 temporary file system for
@@ -416,7 +420,8 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   }
 
   // Load ChromeVox extension now if spoken feedback is enabled.
-  if (local_state_->GetBoolean(prefs::kSpokenFeedbackEnabled)) {
+  if (chromeos::AccessibilityManager::Get() &&
+      chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
     base::FilePath path =
         base::FilePath(extension_misc::kChromeVoxExtensionPath);
     Add(IDR_CHROMEVOX_MANIFEST, path);
@@ -424,7 +429,8 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(ENABLE_GOOGLE_NOW)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::FieldTrialList::FindFullName("GoogleNow") == "Enable" ||
+      CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableGoogleNowIntegration)) {
     Add(IDR_GOOGLE_NOW_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("google_now")));

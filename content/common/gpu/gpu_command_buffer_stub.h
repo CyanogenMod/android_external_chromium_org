@@ -29,9 +29,9 @@
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gpu_preference.h"
-#include "ui/surface/transport_dib.h"
 
 namespace gpu {
+struct Mailbox;
 namespace gles2 {
 class ImageManager;
 class MailboxManager;
@@ -124,7 +124,7 @@ class GpuCommandBufferStub
 
   void SendCachedShader(const std::string& key, const std::string& shader);
 
-  gfx::GLSurface* surface() const { return surface_; }
+  gfx::GLSurface* surface() const { return surface_.get(); }
 
   void AddDestructionObserver(DestructionObserver* observer);
   void RemoveDestructionObserver(DestructionObserver* observer);
@@ -149,9 +149,7 @@ class GpuCommandBufferStub
   void OnInitialize(base::SharedMemoryHandle shared_state_shm,
                     IPC::Message* reply_message);
   void OnSetGetBuffer(int32 shm_id, IPC::Message* reply_message);
-  void OnSetParent(int32 parent_route_id,
-                   uint32 parent_texture_id,
-                   IPC::Message* reply_message);
+  void OnProduceFrontBuffer(const gpu::Mailbox& mailbox);
   void OnGetState(IPC::Message* reply_message);
   void OnGetStateFast(IPC::Message* reply_message);
   void OnAsyncFlush(int32 put_offset, uint32 flush_count);
@@ -228,11 +226,6 @@ class GpuCommandBufferStub
   // elide redundant work).
   bool last_memory_allocation_valid_;
   GpuMemoryAllocation last_memory_allocation_;
-
-  // SetParent may be called before Initialize, in which case we need to keep
-  // around the parent stub, so that Initialize can set the parent correctly.
-  base::WeakPtr<GpuCommandBufferStub> parent_stub_for_initialization_;
-  uint32 parent_texture_for_initialization_;
 
   GpuWatchdog* watchdog_;
 

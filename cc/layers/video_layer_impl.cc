@@ -69,8 +69,10 @@ void VideoLayerImpl::DidBecomeActive() {
   provider_client_impl_->set_active_video_layer(this);
 }
 
-void VideoLayerImpl::WillDraw(ResourceProvider* resource_provider) {
-  LayerImpl::WillDraw(resource_provider);
+bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
+                              ResourceProvider* resource_provider) {
+  if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
+    return false;
 
   // Explicitly acquire and release the provider mutex so it can be held from
   // WillDraw to DidDraw. Since the compositor thread is in the middle of
@@ -81,13 +83,15 @@ void VideoLayerImpl::WillDraw(ResourceProvider* resource_provider) {
   // lock should not cause a deadlock.
   frame_ = provider_client_impl_->AcquireLockAndCurrentFrame();
 
-  if (!frame_) {
+  if (!frame_.get()) {
     // Drop any resources used by the updater if there is no frame to display.
     updater_.reset();
 
     provider_client_impl_->ReleaseLock();
-    return;
+    return false;
   }
+
+  LayerImpl::WillDraw(draw_mode, resource_provider);
 
   if (!updater_)
     updater_.reset(new VideoResourceUpdater(resource_provider));
@@ -105,14 +109,14 @@ void VideoLayerImpl::WillDraw(ResourceProvider* resource_provider) {
     software_resources_ = external_resources.software_resources;
     software_release_callback_ =
         external_resources.software_release_callback;
-    return;
+    return true;
   }
 
   if (external_resources.hardware_resource) {
     hardware_resource_ = external_resources.hardware_resource;
     hardware_release_callback_ =
         external_resources.hardware_release_callback;
-    return;
+    return true;
   }
 
   for (size_t i = 0; i < external_resources.mailboxes.size(); ++i) {
@@ -120,12 +124,13 @@ void VideoLayerImpl::WillDraw(ResourceProvider* resource_provider) {
         resource_provider->CreateResourceFromTextureMailbox(
             external_resources.mailboxes[i]));
   }
+
+  return true;
 }
 
 void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
                                  AppendQuadsData* append_quads_data) {
-  if (!frame_)
-    return;
+  DCHECK(frame_.get());
 
   SharedQuadState* shared_quad_state =
       quad_sink->UseSharedQuadState(CreateSharedQuadState());
@@ -168,7 +173,7 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
       break;
     }
     case VideoFrameExternalResources::YUV_RESOURCE: {
-      DCHECK_EQ(frame_resources_.size(), 3u);
+      DCHECK_GE(frame_resources_.size(), 3u);
       if (frame_resources_.size() < 3u)
         break;
       gfx::SizeF tex_scale(tex_width_scale, tex_height_scale);
@@ -179,7 +184,9 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
                              tex_scale,
                              frame_resources_[0],
                              frame_resources_[1],
-                             frame_resources_[2]);
+                             frame_resources_[2],
+                             frame_resources_.size() > 3 ?
+                                 frame_resources_[3] : 0);
       quad_sink->Append(yuv_video_quad.PassAs<DrawQuad>(), append_quads_data);
       break;
     }
@@ -280,8 +287,7 @@ void VideoLayerImpl::AppendQuads(QuadSink* quad_sink,
 void VideoLayerImpl::DidDraw(ResourceProvider* resource_provider) {
   LayerImpl::DidDraw(resource_provider);
 
-  if (!frame_)
-    return;
+  DCHECK(frame_.get());
 
   if (frame_resource_type_ ==
       VideoFrameExternalResources::SOFTWARE_RESOURCE) {

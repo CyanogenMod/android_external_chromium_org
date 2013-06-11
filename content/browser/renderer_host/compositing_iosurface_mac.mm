@@ -18,6 +18,8 @@
 #include "content/browser/renderer_host/compositing_iosurface_context_mac.h"
 #include "content/browser/renderer_host/compositing_iosurface_shader_programs_mac.h"
 #include "content/browser/renderer_host/compositing_iosurface_transformer_mac.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/common/content_constants_internal.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
@@ -148,6 +150,20 @@ bool MapBufferToVideoFrame(
   return buf != NULL;
 }
 
+void SetSurfaceOrder(NSOpenGLContext* context,
+                     CompositingIOSurfaceMac::SurfaceOrder surface_order) {
+  GLint old_gl_surface_order = 0;
+  GLint new_gl_surface_order =
+      surface_order == CompositingIOSurfaceMac::SURFACE_ORDER_ABOVE_WINDOW ? 1
+                                                                           : -1;
+  [context getValues:&old_gl_surface_order forParameter:NSOpenGLCPSurfaceOrder];
+
+  if (old_gl_surface_order != new_gl_surface_order) {
+    [context setValues:&new_gl_surface_order
+          forParameter:NSOpenGLCPSurfaceOrder];
+  }
+}
+
 }  // namespace
 
 CVReturn DisplayLinkCallback(CVDisplayLinkRef display_link,
@@ -222,18 +238,26 @@ void CompositingIOSurfaceMac::CopyContext::PrepareForAsynchronousReadback() {
 
 
 // static
-CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(
-    int window_number,
-    SurfaceOrder surface_order) {
+CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(int window_number) {
   TRACE_EVENT0("browser", "CompositingIOSurfaceMac::Create");
+
+  scoped_refptr<CompositingIOSurfaceContext> context =
+      CompositingIOSurfaceContext::Get(window_number);
+  if (!context) {
+    LOG(WARNING) << "Failed to create context for IOSurface";
+    return NULL;
+  }
+
+  return Create(context);
+}
+
+CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(
+    const scoped_refptr<CompositingIOSurfaceContext>& context) {
   IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
   if (!io_surface_support) {
     LOG(WARNING) << "No IOSurface support";
     return NULL;
   }
-
-  scoped_refptr<CompositingIOSurfaceContext> context =
-      CompositingIOSurfaceContext::Get(window_number, surface_order);
 
   return new CompositingIOSurfaceMac(io_surface_support,
                                      context);
@@ -241,10 +265,11 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(
 
 CompositingIOSurfaceMac::CompositingIOSurfaceMac(
     IOSurfaceSupport* io_surface_support,
-    scoped_refptr<CompositingIOSurfaceContext> context)
+    const scoped_refptr<CompositingIOSurfaceContext>& context)
     : io_surface_support_(io_surface_support),
       context_(context),
       io_surface_handle_(0),
+      scale_factor_(1.f),
       texture_(0),
       finish_copy_timer_(
           FROM_HERE,
@@ -300,12 +325,9 @@ void CompositingIOSurfaceMac::SetupCVDisplayLink() {
   StopDisplayLink();
 }
 
-void CompositingIOSurfaceMac::SwitchToContextOnNewWindow(
-    NSView* view,
-    int window_number,
-    SurfaceOrder surface_order) {
-  if (window_number == context_->window_number() &&
-      surface_order == context_->surface_order())
+void CompositingIOSurfaceMac::SwitchToContextOnNewWindow(NSView* view,
+                                                         int window_number) {
+  if (window_number == context_->window_number())
     return;
 
   // Asynchronous copies must complete in the same context they started in,
@@ -320,8 +342,7 @@ void CompositingIOSurfaceMac::SwitchToContextOnNewWindow(
   }
 
   scoped_refptr<CompositingIOSurfaceContext> new_context =
-      CompositingIOSurfaceContext::Get(window_number,
-                                       surface_order);
+      CompositingIOSurfaceContext::Get(window_number);
   if (!new_context)
     return;
 
@@ -358,15 +379,19 @@ CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {
   context_ = nil;
 }
 
-void CompositingIOSurfaceMac::SetIOSurface(uint64 io_surface_handle,
-                                           const gfx::Size& size,
-                                           float scale_factor) {
+void CompositingIOSurfaceMac::SetIOSurface(
+    uint64 io_surface_handle,
+    const gfx::Size& size,
+    float scale_factor,
+    const ui::LatencyInfo& latency_info) {
   pixel_io_surface_size_ = size;
+  scale_factor_ = scale_factor;
   dip_io_surface_size_ = gfx::ToFlooredSize(
-      gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor));
+      gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor_));
   CGLSetCurrentContext(context_->cgl_context());
   MapIOSurfaceToTexture(io_surface_handle);
   CGLSetCurrentContext(0);
+  latency_info_.MergeWith(latency_info);
 }
 
 int CompositingIOSurfaceMac::GetRendererID() {
@@ -379,28 +404,44 @@ int CompositingIOSurfaceMac::GetRendererID() {
 }
 
 void CompositingIOSurfaceMac::DrawIOSurface(
-    NSView* view,
-    float scale_factor,
-    int window_number,
-    SurfaceOrder surface_order,
-    RenderWidgetHostViewFrameSubscriber* frame_subscriber) {
+    RenderWidgetHostViewMac* render_widget_host_view) {
+  DCHECK(!render_widget_host_view->use_core_animation_);
 
+  NSView* view = render_widget_host_view->cocoa_view();
+  content::CompositingIOSurfaceMac::SurfaceOrder surface_order =
+     render_widget_host_view->allow_overlapping_views_
+     ? content::CompositingIOSurfaceMac::SURFACE_ORDER_BELOW_WINDOW
+     : content::CompositingIOSurfaceMac::SURFACE_ORDER_ABOVE_WINDOW;
+
+  SwitchToContextOnNewWindow(view, render_widget_host_view->window_number());
+  SetSurfaceOrder(context_->nsgl_context(), surface_order);
+
+  CGLSetCurrentContext(context_->cgl_context());
+  [context_->nsgl_context() setView:view];
+
+  gfx::Size window_size(NSSizeToCGSize([view frame].size));
+
+  DrawIOSurface(
+      window_size,
+      render_widget_host_view->scale_factor(),
+      render_widget_host_view->frame_subscriber(),
+      false);
+}
+
+void CompositingIOSurfaceMac::DrawIOSurface(
+    const gfx::Size& window_size,
+    float window_scale_factor,
+    RenderWidgetHostViewFrameSubscriber* frame_subscriber,
+    bool using_core_animation) {
   if (display_link_ == NULL)
     SetupCVDisplayLink();
 
-  SwitchToContextOnNewWindow(view, window_number, surface_order);
-
-  CGLSetCurrentContext(context_->cgl_context());
-
   bool has_io_surface = MapIOSurfaceToTexture(io_surface_handle_);
-
   TRACE_EVENT1("browser", "CompositingIOSurfaceMac::DrawIOSurface",
                "has_io_surface", has_io_surface);
 
-  [context_->nsgl_context() setView:view];
-  gfx::Size window_size(NSSizeToCGSize([view frame].size));
   gfx::Size pixel_window_size = gfx::ToFlooredSize(
-      gfx::ScaleSize(window_size, scale_factor));
+      gfx::ScaleSize(window_size, window_scale_factor));
   glViewport(0, 0, pixel_window_size.width(), pixel_window_size.height());
 
   SurfaceQuad quad;
@@ -500,7 +541,12 @@ void CompositingIOSurfaceMac::DrawIOSurface(
     }
   }
 
-  CGLFlushDrawable(context_->cgl_context());
+  if (!using_core_animation)
+    CGLFlushDrawable(context_->cgl_context());
+
+  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
+  RenderWidgetHostImpl::CompositorFrameDrawn(latency_info_);
+  latency_info_.Clear();
 
   // For latency_tests.cc:
   UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete",
@@ -510,7 +556,8 @@ void CompositingIOSurfaceMac::DrawIOSurface(
   std::vector<base::Closure> copy_done_callbacks;
   FinishAllCopiesWithinContext(&copy_done_callbacks);
 
-  CGLSetCurrentContext(0);
+  if (!using_core_animation)
+    CGLSetCurrentContext(0);
 
   if (!copy_done_callback.is_null())
     copy_done_callbacks.push_back(copy_done_callback);

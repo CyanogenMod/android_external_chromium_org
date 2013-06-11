@@ -33,7 +33,6 @@ class SearchBoxExtension {
   static bool PageSupportsInstant(WebKit::WebFrame* frame);
 
   // Extended API.
-  static void DispatchOnWindowReady(WebKit::WebFrame* frame);
   static void DispatchAutocompleteResults(WebKit::WebFrame* frame);
   static void DispatchUpOrDownKeyPress(WebKit::WebFrame* frame, int count);
   static void DispatchEscKeyPress(WebKit::WebFrame* frame);
@@ -41,6 +40,8 @@ class SearchBoxExtension {
   static void DispatchMarginChange(WebKit::WebFrame* frame);
   static void DispatchThemeChange(WebKit::WebFrame* frame);
   static void DispatchBarsHidden(WebKit::WebFrame* frame);
+  static void DispatchFocusChange(WebKit::WebFrame* frame);
+  static void DispatchToggleVoiceSearch(WebKit::WebFrame* frame);
 
   // New Tab Page API.
   static void DispatchMostVisitedChanged(WebKit::WebFrame* frame);

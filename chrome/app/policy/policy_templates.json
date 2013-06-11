@@ -72,7 +72,7 @@
 #   numbers can be any string that does not contain ':' or '-' characters.
 #
 #   Currently supported product names:
-#       'chrome_frame', 'chrome_os'
+#       'chrome_frame', 'chrome_os', 'android',
 #       'chrome.win', 'chrome.linux', 'chrome.mac', 'chrome.*'
 #     For example if 'chrome.*:5-10' is specified for a policy, then it should
 #     be read as:
@@ -112,7 +112,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 209
+#   For your editing convenience: highest ID currently used: 214
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -325,10 +325,13 @@
         'dynamic_refresh': True,
         'per_profile': False,
       },
-      'example_value': ['file', 'mailto'],
+      'deprecated': True,
+      'example_value': ['file', 'https'],
       'id': 85,
       'caption': '''Disable URL protocol schemes''',
-      'desc': '''Disables the listed protocol schemes in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
+      'desc': '''This policy is deprecated, please use URLBlacklist instead.
+
+      Disables the listed protocol schemes in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
       URLs using a scheme from this list will not load and can not be navigated to.
 
@@ -698,7 +701,7 @@
           'name': 'PasswordManagerEnabled',
           'type': 'main',
           'schema': { 'type': 'boolean' },
-          'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
+          'supported_on': ['chrome.*:8-', 'chrome_os:0.11-', 'android:30-'],
           'features': {
             'can_be_recommended': True,
             'dynamic_refresh': True,
@@ -995,7 +998,7 @@
       'name': 'ClearSiteDataOnExit',
       'type': 'main',
       'schema': { 'type': 'boolean' },
-      'supported_on': ['chrome.*:11-29', 'chrome_os:0.11-0.29'],
+      'supported_on': ['chrome.*:11-28', 'chrome_os:0.11-0.28'],
       'features': {
         'can_be_recommended': True,
         'dynamic_refresh': True,
@@ -2906,7 +2909,7 @@
         'type': 'array',
         'items': { 'type': 'string' },
       },
-      'supported_on': ['chrome.*:15-', 'chrome_os:0.15-'],
+      'supported_on': ['chrome.*:15-', 'chrome_os:0.15-', 'android:30-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -2935,7 +2938,7 @@
         'type': 'array',
         'items': { 'type': 'string' },
       },
-      'supported_on': ['chrome.*:15-', 'chrome_os:0.15-'],
+      'supported_on': ['chrome.*:15-', 'chrome_os:0.15-', 'android:30-'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -3005,7 +3008,7 @@
       'name': 'EnterpriseWebStoreURL',
       'type': 'string',
       'schema': { 'type': 'string' },
-      'supported_on': ['chrome.*:17-29', 'chrome_os:0.17-0.29'],
+      'supported_on': ['chrome.*:17-28', 'chrome_os:0.17-0.28'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -3020,7 +3023,7 @@
       'name': 'EnterpriseWebStoreName',
       'type': 'string',
       'schema': { 'type': 'string' },
-      'supported_on': ['chrome.*:17-29', 'chrome_os:0.17-0.29'],
+      'supported_on': ['chrome.*:17-28', 'chrome_os:0.17-0.28'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
@@ -3779,7 +3782,7 @@
       'supported_on': ['chrome.*:25-', 'chrome_os:0.23-'],
       'features': {
         'dynamic_refresh': True,
-        'per_profile': True,
+        'per_profile': False,
       },
       'example_value': False,
       'id': 160,
@@ -4407,6 +4410,26 @@
 
           If this policy is set to false, screen wake lock requests will get ignored.''',
         },
+        {
+          'name': 'UserActivityScreenDimDelayScale',
+          'type': 'int',
+          'schema': { 'type': 'integer' },
+          'supported_on': ['chrome_os:29-'],
+          'features': {
+            'dynamic_refresh': True,
+            'per_profile': False,
+          },
+          'example_value': 200,
+          'id': 210,
+          'caption': '''Percentage by which to scale the screen dim delay if the user becomes active after dimming''',
+          'desc': '''Specifies the percentage by which the screen dim delay is scaled when user activity is observed while the screen is dimmed or soon after the screen has been turned off.
+
+          If this policy is set, it specifies the percentage by which the screen dim delay is scaled when user activity is observed while the screen is dimmed or soon after the screen has been turned off. When the dim delay is scaled, the screen off, screen lock and idle delays get adjusted to maintain the same distances from the screen dim delay as originally configured.
+
+          If this policy is unset, a default scale factor is used.
+
+          The scale factor must be 100% or more.''',
+        },
       ],
     },
     {
@@ -4476,6 +4499,111 @@
 
           If this policy is left unset, Accessibility options will not appear in the system tray menu, but the user can cause the Accessibility options to appear via the Settings page.'''
         },
+        {
+          'name': 'LargeCursorEnabled',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome_os:29-'],
+          'features': {
+            'can_be_recommended': True,
+            'dynamic_refresh': True,
+            'per_profile': True,
+          },
+          'example_value': True,
+          'id': 211,
+          'caption': '''Enable large cursor''',
+          'desc': '''Enable the large cursor accessibility feature.
+
+          If this policy is set to true, the large cursor will always be enabled.
+
+          If this policy is set to false, the large cursor will always be disabled.
+
+          If you set this policy, users cannot change or override it.
+
+          If this policy is left unset, the large cursor is disabled initially but can be enabled by the user anytime.'''
+        },
+        {
+          'name': 'SpokenFeedbackEnabled',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome_os:29-'],
+          'features': {
+            'can_be_recommended': True,
+            'dynamic_refresh': True,
+            'per_profile': True,
+          },
+          'example_value': True,
+          'id': 212,
+          'caption': '''Enable spoken feedback''',
+          'desc': '''Enable the spoken feedback accessibility feature.
+
+          If this policy is set to true, spoken feedback will always be enabled.
+
+          If this policy is set to false, spoken feedback will always be disabled.
+
+          If you set this policy, users cannot change or override it.
+
+          If this policy is left unset, spoken feedback is disabled initially but can be enabled by the user anytime.'''
+        },
+        {
+          'name': 'HighContrastEnabled',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome_os:29-'],
+          'features': {
+            'can_be_recommended': True,
+            'dynamic_refresh': True,
+            'per_profile': True,
+          },
+          'example_value': True,
+          'id': 213,
+          'caption': '''Enable high contrast mode''',
+          'desc': '''Enable the high contrast mode accessibility feature.
+
+          If this policy is set to true, high contrast mode will always be enabled.
+
+          If this policy is set to false, high contrast mode will always be disabled.
+
+          If you set this policy, users cannot change or override it.
+
+          If this policy is left unset, high contrast mode is disabled initially but can be enabled by the user anytime.'''
+        },
+        {
+          'name': 'ScreenMagnifierType',
+          'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 0, 1 ],
+          },
+          'items': [
+            {
+              'name': 'None',
+              'value': 0,
+              'caption': '''Screen magnifier disabled''',
+            },
+            {
+              'name': 'Full-screen',
+              'value': 1,
+              'caption': '''Full-screen magnifier enabled''',
+            },
+          ],
+          'supported_on': ['chrome_os:29-'],
+          'features': {
+            'can_be_recommended': True,
+            'dynamic_refresh': True,
+            'per_profile': True,
+          },
+          'example_value': 1,
+          'id': 214,
+          'caption': '''Set screen magnifier type''',
+          'desc': '''Set the type of screen magnifier that is enabled.
+
+          If this policy is set, it controls the type of screen magnifier that is enabled. Setting the policy to "None" disables the screen magnifier.
+
+          If you set this policy, users cannot change or override it.
+
+          If this policy is left unset, the screen magnifier is disabled initially but can be enabled by the user anytime.''',
+        },
       ],
     },
     {
@@ -4517,7 +4645,7 @@
       'name': 'UptimeLimit',
       'type': 'int',
       'schema': { 'type': 'integer' },
-      'supported_on': ['chrome_os:27-'],
+      'supported_on': ['chrome_os:29-'],
       'device_only': True,
       'features': {
         'dynamic_refresh': True,
@@ -4533,7 +4661,9 @@
 
       If you set this policy, users cannot change or override it.
 
-      An automatic reboot is scheduled at the selected time but may be delayed on the device by up to 24 hours, e.g. if a user is currently using the device or an app/extension has requested reboots to be inhibited temporarily.
+      An automatic reboot is scheduled at the selected time but may be delayed on the device by up to 24 hours if a user is currently using the device.
+
+      Note: Currently, automatic reboots are only enabled while the login screen is being shown or a kiosk app session is in progress. This will change in the future and the policy will always apply, regardless of whether a session of any particular type is in progress or not.
 
       The policy value should be specified in seconds. Values are clamped to be at least 3600 (one hour).''',
     },
@@ -4541,7 +4671,7 @@
       'name': 'RebootAfterUpdate',
       'type': 'main',
       'schema': { 'type': 'boolean' },
-      'supported_on': ['chrome_os:27-'],
+      'supported_on': ['chrome_os:29-'],
       'device_only': True,
       'features': {
         'dynamic_refresh': True,
@@ -4551,11 +4681,13 @@
       'caption': '''Automatically reboot after update''',
       'desc': '''Schedule an automatic reboot after a <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> update has been applied.
 
-      When this policy is set to true, an automatic reboot is scheduled when a <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> update has been applied and a reboot is required to complete the update process. The reboot is scheduled immediately but may be delayed on the device by up to 24 hours, e.g. if a user is currently using the device or an app/extension has requested reboots to be inhibited temporarily.
+      When this policy is set to true, an automatic reboot is scheduled when a <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> update has been applied and a reboot is required to complete the update process. The reboot is scheduled immediately but may be delayed on the device by up to 24 hours if a user is currently using the device.
 
       When this policy is set to false, no automatic reboot is scheduled after applying a <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> update. The update process is completed when the user next reboots the device.
 
-      If you set this policy, users cannot change or override it.''',
+      If you set this policy, users cannot change or override it.
+
+      Note: Currently, automatic reboots are only enabled while the login screen is being shown or a kiosk app session is in progress. This will change in the future and the policy will always apply, regardless of whether a session of any particular type is in progress or not.''',
     },
     {
       'name': 'VariationsRestrictParameter',

@@ -17,10 +17,10 @@
 #include "base/run_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "base/version.h"
 #include "chrome/browser/extensions/blacklist.h"
@@ -251,7 +251,7 @@ class MockService : public TestExtensionService {
         manifest.SetString(extension_manifest_keys::kUpdateURL, *update_url);
       scoped_refptr<Extension> e =
           prefs_->AddExtensionWithManifest(manifest, location);
-      ASSERT_TRUE(e != NULL);
+      ASSERT_TRUE(e.get() != NULL);
       list->push_back(e);
     }
   }
@@ -267,15 +267,15 @@ class MockService : public TestExtensionService {
 };
 
 
-bool ShouldInstallExtensionsOnly(const Extension& extension) {
-  return extension.GetType() == Manifest::TYPE_EXTENSION;
+bool ShouldInstallExtensionsOnly(const Extension* extension) {
+  return extension->GetType() == Manifest::TYPE_EXTENSION;
 }
 
-bool ShouldInstallThemesOnly(const Extension& extension) {
-  return extension.is_theme();
+bool ShouldInstallThemesOnly(const Extension* extension) {
+  return extension->is_theme();
 }
 
-bool ShouldAlwaysInstall(const Extension& extension) {
+bool ShouldAlwaysInstall(const Extension* extension) {
   return true;
 }
 
@@ -689,7 +689,7 @@ class ExtensionUpdaterTest : public testing::Test {
     const std::string& id = extensions[0]->id();
     EXPECT_CALL(delegate, GetPingDataForExtension(id, _));
 
-    downloader.AddExtension(*extensions[0], 0);
+    downloader.AddExtension(*extensions[0].get(), 0);
     downloader.StartAllPending();
     net::TestURLFetcher* fetcher =
         factory.GetFetcherByID(ExtensionDownloader::kManifestFetcherId);
@@ -1447,7 +1447,7 @@ class ExtensionUpdaterTest : public testing::Test {
         new ExtensionDownloader(&updater, service.request_context()));
 
     ManifestFetchData fetch_data(update_url, 0);
-    const Extension* extension = tmp[0];
+    const Extension* extension = tmp[0].get();
     fetch_data.AddExtension(extension->id(),
                             extension->VersionString(),
                             &kNeverPingedData,

@@ -10,7 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/task_runner_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
@@ -101,10 +101,9 @@ DatabaseQuotaClient::DatabaseQuotaClient(
 }
 
 DatabaseQuotaClient::~DatabaseQuotaClient() {
-  if (db_tracker_thread_ &&
-      !db_tracker_thread_->RunsTasksOnCurrentThread() &&
-      db_tracker_) {
-    DatabaseTracker* tracker = db_tracker_;
+  if (db_tracker_thread_.get() &&
+      !db_tracker_thread_->RunsTasksOnCurrentThread() && db_tracker_.get()) {
+    DatabaseTracker* tracker = db_tracker_.get();
     tracker->AddRef();
     db_tracker_ = NULL;
     if (!db_tracker_thread_->ReleaseSoon(FROM_HERE, tracker))
@@ -134,11 +133,9 @@ void DatabaseQuotaClient::GetOriginUsage(
   }
 
   base::PostTaskAndReplyWithResult(
-      db_tracker_thread_,
+      db_tracker_thread_.get(),
       FROM_HERE,
-      base::Bind(&GetOriginUsageOnDBThread,
-                 db_tracker_,
-                 origin_url),
+      base::Bind(&GetOriginUsageOnDBThread, db_tracker_, origin_url),
       callback);
 }
 
@@ -209,7 +206,7 @@ void DatabaseQuotaClient::DeleteOriginData(
                  callback);
 
   PostTaskAndReplyWithResult(
-      db_tracker_thread_,
+      db_tracker_thread_.get(),
       FROM_HERE,
       base::Bind(&DatabaseTracker::DeleteDataForOrigin,
                  db_tracker_,

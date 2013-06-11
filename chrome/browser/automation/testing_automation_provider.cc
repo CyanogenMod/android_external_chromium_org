@@ -21,10 +21,10 @@
 #include "base/process.h"
 #include "base/process_util.h"
 #include "base/sequenced_task_runner.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
@@ -146,7 +146,7 @@
 #include "ui/base/events/event_constants.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/ui_base_types.h"
-#include "webkit/glue/webdropdata.h"
+#include "webkit/common/webdropdata.h"
 #include "webkit/plugins/webplugininfo.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
@@ -195,7 +195,7 @@ namespace {
 // Helper to reply asynchronously if |automation| is still valid.
 void SendSuccessReply(base::WeakPtr<AutomationProvider> automation,
                       IPC::Message* reply_message) {
-  if (automation)
+  if (automation.get())
     AutomationJSONReply(automation.get(), reply_message).SendSuccess(NULL);
 }
 
@@ -208,9 +208,9 @@ void DidEnablePlugin(base::WeakPtr<AutomationProvider> automation,
   if (did_enable) {
     SendSuccessReply(automation, reply_message);
   } else {
-    if (automation) {
-      AutomationJSONReply(automation.get(), reply_message).SendError(
-          base::StringPrintf(error_msg.c_str(), path.c_str()));
+    if (automation.get()) {
+      AutomationJSONReply(automation.get(), reply_message)
+          .SendError(base::StringPrintf(error_msg.c_str(), path.c_str()));
     }
   }
 }
@@ -1086,8 +1086,7 @@ void TestingAutomationProvider::OpenNewBrowserWindowWithNewProfile(
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   new BrowserOpenedWithNewProfileNotificationObserver(this, reply_message);
   profile_manager->CreateMultiProfileAsync(
-      string16(), string16(), ProfileManager::CreateCallback(),
-      chrome::HOST_DESKTOP_TYPE_NATIVE, false);
+      string16(), string16(), ProfileManager::CreateCallback(), false);
 }
 
 // Sample json input: { "command": "GetMultiProfileInfo" }
@@ -2641,11 +2640,11 @@ void TestingAutomationProvider::PerformActionOnDownload(
   } else if (action == "decline_dangerous_download") {
     new AutomationProviderDownloadModelChangedObserver(
         this, reply_message, download_manager);
-    selected_item->Delete(DownloadItem::DELETE_DUE_TO_USER_DISCARD);
+    selected_item->Remove();
   } else if (action == "save_dangerous_download") {
     selected_item->AddObserver(new AutomationProviderDownloadUpdatedObserver(
         this, reply_message, false, browser->profile()->IsOffTheRecord()));
-    selected_item->DangerousDownloadValidated();
+    selected_item->ValidateDangerousDownload();
   } else if (action == "pause") {
     if (!selected_item->IsInProgress() || selected_item->IsPaused()) {
       // Action would be a no-op; respond right from here.  No-op implies
@@ -3675,7 +3674,7 @@ void TestingAutomationProvider::GetExtensionsInfo(DictionaryValue* args,
       ExtensionActionManager::Get(browser->profile());
   for (ExtensionList::const_iterator it = all.begin();
        it != all.end(); ++it) {
-    const Extension* extension = *it;
+    const Extension* extension = it->get();
     std::string id = extension->id();
     DictionaryValue* extension_value = new DictionaryValue;
     extension_value->SetString("id", id);
@@ -4041,7 +4040,7 @@ namespace {
 void SendSuccessIfAlive(
     base::WeakPtr<AutomationProvider> provider,
     IPC::Message* reply_message) {
-  if (provider)
+  if (provider.get())
     AutomationJSONReply(provider.get(), reply_message).SendSuccess(NULL);
 }
 

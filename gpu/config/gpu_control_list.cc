@@ -7,9 +7,9 @@
 #include "base/cpu.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_util.h"
@@ -758,10 +758,14 @@ GpuControlList::GpuControlListEntry::GetEntryFromValue(
         }
         ScopedGpuControlListEntry exception(GetEntryFromValue(
             exception_value, false, feature_map, supports_feature_type_all));
-        if (exception == NULL) {
+        if (exception.get() == NULL) {
           LOG(WARNING) << "Malformed exceptions entry " << entry->id();
           return NULL;
         }
+        // Exception should inherit vendor_id from parent, otherwise if only
+        // device_ids are specified in Exception, the info will be incomplete.
+        if (exception->vendor_id_ == 0 && entry->vendor_id_ != 0)
+          exception->vendor_id_ = entry->vendor_id_;
         if (exception->contains_unknown_fields_) {
           LOG(WARNING) << "Exception with unknown fields " << entry->id();
           entry->contains_unknown_fields_ = true;
@@ -1221,7 +1225,7 @@ bool GpuControlList::LoadList(const base::DictionaryValue& parsed_json,
     DCHECK(browser_version_support == kSupported);
     ScopedGpuControlListEntry entry(GpuControlListEntry::GetEntryFromValue(
         list_item, true, feature_map_, supports_feature_type_all_));
-    if (entry == NULL)
+    if (entry.get() == NULL)
       return false;
     if (entry->id() > max_entry_id)
       max_entry_id = entry->id();
@@ -1301,7 +1305,7 @@ void GpuControlList::GetDecisionEntries(
 void GpuControlList::GetReasons(base::ListValue* problem_list) const {
   DCHECK(problem_list);
   for (size_t i = 0; i < active_entries_.size(); ++i) {
-    GpuControlListEntry* entry = active_entries_[i];
+    GpuControlListEntry* entry = active_entries_[i].get();
     if (entry->disabled())
       continue;
     base::DictionaryValue* problem = new base::DictionaryValue();

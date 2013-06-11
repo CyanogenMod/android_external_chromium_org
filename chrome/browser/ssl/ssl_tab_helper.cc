@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
@@ -120,10 +120,9 @@ string16 SSLCertResultInfoBarDelegate::GetButtonLabel(
 }
 
 bool SSLCertResultInfoBarDelegate::Accept() {
-  ShowCertificateViewer(
-      web_contents(),
-      web_contents()->GetView()->GetTopLevelNativeWindow(),
-      cert_);
+  ShowCertificateViewer(web_contents(),
+                        web_contents()->GetView()->GetTopLevelNativeWindow(),
+                        cert_.get());
   return false;  // Hiding the infobar just as the dialog opens looks weird.
 }
 
@@ -217,7 +216,7 @@ void SSLTabHelper::ShowClientCertificateRequestDialog(
 
 void SSLTabHelper::OnVerifyClientCertificateError(
     scoped_refptr<SSLAddCertHandler> handler, int error_code) {
-  SSLAddCertData* add_cert_data = GetAddCertData(handler);
+  SSLAddCertData* add_cert_data = GetAddCertData(handler.get());
   // Display an infobar with the error message.
   // TODO(davidben): Display a more user-friendly error string.
   add_cert_data->ShowInfoBar(
@@ -234,7 +233,7 @@ void SSLTabHelper::AskToAddClientCertificate(
 
 void SSLTabHelper::OnAddClientCertificateSuccess(
     scoped_refptr<SSLAddCertHandler> handler) {
-  SSLAddCertData* add_cert_data = GetAddCertData(handler);
+  SSLAddCertData* add_cert_data = GetAddCertData(handler.get());
   // Display an infobar to inform the user.
   net::X509Certificate* cert = handler->cert();
   // TODO(evanm): GetDisplayName should return UTF-16.
@@ -246,7 +245,7 @@ void SSLTabHelper::OnAddClientCertificateSuccess(
 
 void SSLTabHelper::OnAddClientCertificateError(
     scoped_refptr<SSLAddCertHandler> handler, int error_code) {
-  SSLAddCertData* add_cert_data = GetAddCertData(handler);
+  SSLAddCertData* add_cert_data = GetAddCertData(handler.get());
   // Display an infobar with the error message.
   // TODO(davidben): Display a more user-friendly error string.
   add_cert_data->ShowInfoBar(
