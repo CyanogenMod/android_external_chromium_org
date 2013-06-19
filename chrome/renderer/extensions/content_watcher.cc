@@ -9,9 +9,9 @@
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 namespace extensions {
 
@@ -30,12 +30,11 @@ class MutationHandler : public ChromeV8Extension {
   }
 
  private:
-  v8::Handle<v8::Value> FrameMutated(const v8::Arguments& args) {
+  void FrameMutated(const v8::FunctionCallbackInfo<v8::Value>& args) {
     if (content_watcher_.get()) {
       content_watcher_->ScanAndNotify(
           WebKit::WebFrame::frameForContext(context()->v8_context()));
     }
-    return v8::Undefined();
   }
 
   base::WeakPtr<ContentWatcher> content_watcher_;

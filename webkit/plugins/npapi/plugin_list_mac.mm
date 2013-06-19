@@ -13,9 +13,9 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/native_library.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 
@@ -275,7 +275,11 @@ bool PluginList::ReadWebPluginInfo(const base::FilePath &filename,
   return false;
 }
 
-void PluginList::GetPluginDirectories(std::vector<base::FilePath>* plugin_dirs) {
+void PluginList::GetPluginDirectories(
+    std::vector<base::FilePath>* plugin_dirs) {
+  if (PluginList::plugins_discovery_disabled_)
+    return;
+
   // Load from the user's area
   GetPluginCommonDirectory(plugin_dirs, true);
 

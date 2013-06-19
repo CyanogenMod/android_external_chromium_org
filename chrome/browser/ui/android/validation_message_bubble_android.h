@@ -8,7 +8,7 @@
 #include <jni.h>
 
 #include "base/android/scoped_java_ref.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/ui/validation_message_bubble.h"
 
 namespace content {
@@ -28,8 +28,9 @@ class ValidationMessageBubbleAndroid : public chrome::ValidationMessageBubble {
                                  const string16& main_text,
                                  const string16& sub_text);
   virtual ~ValidationMessageBubbleAndroid();
-  virtual void MoveOnAnchor(content::RenderWidgetHost* widget_host,
-                            const gfx::Rect& anchor_in_screen);
+  virtual void SetPositionRelativeToAnchor(
+      content::RenderWidgetHost* widget_host,
+      const gfx::Rect& anchor_in_screen) OVERRIDE;
 
   static bool Register(JNIEnv* env);
 

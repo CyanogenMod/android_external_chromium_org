@@ -15,10 +15,10 @@
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemEntry.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFileSystemCallbacks.h"
+#include "third_party/WebKit/public/web/WebFileSystemEntry.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/browser/blob/blob_storage_controller.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
@@ -330,16 +330,13 @@ void SimpleFileSystem::DidFinish(WebFileSystemCallbacks* callbacks,
 
 void SimpleFileSystem::DidGetMetadata(WebFileSystemCallbacks* callbacks,
                                       base::PlatformFileError result,
-                                      const base::PlatformFileInfo& info,
-                                      const base::FilePath& platform_path) {
+                                      const base::PlatformFileInfo& info) {
   if (result == base::PLATFORM_FILE_OK) {
     WebFileInfo web_file_info;
     web_file_info.length = info.size;
     web_file_info.modificationTime = info.last_modified.ToDoubleT();
     web_file_info.type = info.is_directory ?
         WebFileInfo::TypeDirectory : WebFileInfo::TypeFile;
-    web_file_info.platformPath =
-        webkit_base::FilePathToWebString(platform_path);
     callbacks->didReadMetadata(web_file_info);
   } else {
     callbacks->didFail(fileapi::PlatformFileErrorToWebFileError(result));

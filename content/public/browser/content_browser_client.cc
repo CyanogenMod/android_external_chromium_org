@@ -263,6 +263,7 @@ bool ContentBrowserClient::SupportsBrowserPlugin(
 bool ContentBrowserClient::AllowPepperSocketAPI(
     BrowserContext* browser_context,
     const GURL& url,
+    bool private_api,
     const SocketPermissionRequest& params) {
   return false;
 }
@@ -273,6 +274,10 @@ base::FilePath ContentBrowserClient::GetHyphenDictionaryDirectory() {
 
 ui::SelectFilePolicy* ContentBrowserClient::CreateSelectFilePolicy(
     WebContents* web_contents) {
+  return NULL;
+}
+
+LocationProvider* ContentBrowserClient::OverrideSystemLocationProvider() {
   return NULL;
 }
 

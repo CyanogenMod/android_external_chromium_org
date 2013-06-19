@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var forEach = require('utils').forEach;
 var lastError = require('lastError');
 var logging = requireNative('logging');
 var natives = requireNative('sendRequest');
@@ -15,6 +14,18 @@ var requests = {};
 // Used to prevent double Activity Logging for API calls that use both custom
 // bindings and ExtensionFunctions (via sendRequest).
 var calledSendRequest = false;
+
+// Runs a user-supplied callback safely.
+function safeCallbackApply(name, request, callback, args) {
+  try {
+    callback.apply(request, args);
+  } catch (e) {
+    var errorMessage = "Error in response to " + name + ": " + e;
+    if (request.stack && request.stack != '')
+      errorMessage += "\n" + request.stack;
+    console.error(errorMessage);
+  }
+}
 
 // Callback handling.
 function handleResponse(requestId, name, success, responseList, error) {
@@ -36,18 +47,20 @@ function handleResponse(requestId, name, success, responseList, error) {
         chromesForLastError.push(chromeForCallback);
     }
 
-    forEach(chromesForLastError, function(i, c) {lastError.clear(c)});
+    $Array.forEach(chromesForLastError, function(c) {lastError.clear(c)});
     if (!success) {
       if (!error)
         error = "Unknown error.";
-      forEach(chromesForLastError, function(i, c) {
+      $Array.forEach(chromesForLastError, function(c) {
         lastError.set(name, error, request.stack, c)
       });
     }
 
     if (request.customCallback) {
-      var customCallbackArgs = [name, request].concat(responseList);
-      request.customCallback.apply(request, customCallbackArgs);
+      safeCallbackApply(name,
+                        request,
+                        request.customCallback,
+                        [name, request].concat(responseList));
     }
 
     if (request.callback) {
@@ -56,30 +69,15 @@ function handleResponse(requestId, name, success, responseList, error) {
       // calls may not return data if they observe the caller
       // has not provided a callback.
       if (logging.DCHECK_IS_ON() && !error) {
-        try {
-          if (!request.callbackSchema.parameters) {
-            throw new Error("No callback schemas defined");
-          }
-
-          validate(responseList, request.callbackSchema.parameters);
-        } catch (exception) {
-          return "Callback validation error during " + name + " -- " +
-                 exception.stack;
-        }
+        if (!request.callbackSchema.parameters)
+          throw new Error(name + ": no callback schema defined");
+        validate(responseList, request.callbackSchema.parameters);
       }
-
-      try {
-        request.callback.apply(request, responseList);
-      } catch (e) {
-        var errorMessage = "Error in response to " + name + ": " + e;
-        if (request.stack && request.stack != '')
-          errorMessage += "\n" + request.stack;
-        console.error(errorMessage);
-      }
+      safeCallbackApply(name, request, request.callback, responseList);
     }
   } finally {
     delete requests[requestId];
-    forEach(chromesForLastError, function(i, c) {lastError.clear(c)});
+    $Array.forEach(chromesForLastError, function(c) {lastError.clear(c)});
   }
 };
 

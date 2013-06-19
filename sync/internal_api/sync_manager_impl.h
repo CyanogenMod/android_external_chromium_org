@@ -13,7 +13,6 @@
 #include "sync/engine/all_status.h"
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/sync_engine_event.h"
-#include "sync/engine/throttled_data_type_tracker.h"
 #include "sync/engine/traffic_recorder.h"
 #include "sync/internal_api/change_reorder_buffer.h"
 #include "sync/internal_api/debug_info_event_listener.h"
@@ -21,6 +20,7 @@
 #include "sync/internal_api/js_sync_encryption_handler_observer.h"
 #include "sync/internal_api/js_sync_manager_observer.h"
 #include "sync/internal_api/public/sync_manager.h"
+#include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/sync_encryption_handler_impl.h"
 #include "sync/js/js_backend.h"
 #include "sync/notifier/invalidation_handler.h"
@@ -82,7 +82,8 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       Encryptor* encryptor,
       UnrecoverableErrorHandler* unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction
-          report_unrecoverable_error_function) OVERRIDE;
+          report_unrecoverable_error_function,
+      bool use_oauth2_token) OVERRIDE;
   virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
@@ -372,8 +373,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   JsSyncManagerObserver js_sync_manager_observer_;
   JsMutationEventObserver js_mutation_event_observer_;
   JsSyncEncryptionHandlerObserver js_sync_encryption_handler_observer_;
-
-  ThrottledDataTypeTracker throttled_data_type_tracker_;
 
   // This is for keeping track of client events to send to the server.
   DebugInfoEventListener debug_info_event_listener_;

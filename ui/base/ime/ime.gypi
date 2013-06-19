@@ -18,6 +18,12 @@
       'input_method_factory.h',
       'input_method_ibus.cc',
       'input_method_ibus.h',
+      'input_method_imm32.cc',
+      'input_method_imm32.h',
+      'input_method_initializer.h',
+      'input_method_initializer.cc',
+      'input_method_tsf.cc',
+      'input_method_tsf.h',
       'input_method_win.cc',
       'input_method_win.h',
       'mock_input_method.cc',
@@ -44,13 +50,15 @@
     '<@(tsf_files)',
   ],
   'conditions': [
-    ['use_aura==0', {
+    ['use_aura==0 and OS!="win"', {
       'sources!': [
         '<@(ime_files)',
       ],
       'sources/': [
         # gtk_im_context_util* use ui::CompositionText.
         ['include', 'composition_text\\.(cc|h)$'],
+        # Initializer code is platform neutral.
+        ['include', 'input_method_initializer\\.(cc|h)$'],
         # native_textfield_views* use ui::TextInputClient.
         ['include', 'text_input_client\\.(cc|h)$'],
       ],
@@ -70,6 +78,10 @@
     ['OS!="win"', {
       'sources!': [
         '<@(tsf_files)',
+        'input_method_imm32.cc',
+        'input_method_imm32.h',
+        'input_method_tsf.cc',
+        'input_method_tsf.h',
       ],
     }],
   ],

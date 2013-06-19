@@ -322,6 +322,55 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="AsyncDNS.ServerCount">
+  <summary>
+    Count of servers in DnsConfig. Recorded on every new DnsSession, which is
+    created on DNS change.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ServerFailureIndex">
+  <summary>
+    Index in DnsConfig of the failing server, recorded at the time of failure.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ServerFailuresAfterNetworkChange">
+  <summary>
+    Count of server failures after network change before first success in the
+    DnsSession. Recorded at the time of first success.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ServerFailuresAfterSuccess">
+  <summary>
+    Count of server failures after success until the end of the session. Server
+    has reported success at some point during the session. Recorded at the end
+    of the DnsSession.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ServerFailuresBeforeSuccess">
+  <summary>
+    Count of server failures before success. This is NOT the first success in
+    the DnsSession. Recorded at the time of success.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ServerFailuresWithoutSuccess">
+  <summary>
+    Count of server failures without success until the end of the session.
+    Server has never reported success during the DnsSession. Recorded at the end
+    of the DnsSession.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.ServerIsGood" units="BooleanSuccess">
+  <summary>
+    The current server is &quot;good&quot; and does not have to be skipped.
+  </summary>
+</histogram>
+
 <histogram name="AsyncDNS.SortFailure" units="milliseconds">
   <summary>
     Duration of time taken in failing calls to AddressSorter in dual-stack
@@ -333,6 +382,40 @@ other types of suffix sets.
   <summary>
     Duration of time taken in successful calls to AddressSorter in dual-stack
     resolutions using DnsTask.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.SuffixSearchDone">
+  <summary>
+    The number of names from the search name list consumed during a successful
+    transaction (QTYPE A only).
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.SuffixSearchRemain">
+  <summary>
+    The number of names left on the search name list at the end of a successful
+    transaction (QTYPE A only).
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.SuffixSearchStart">
+  <summary>
+    The number of names on the search name list at the start of a transaction
+    (QTYPE A only).
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TCPAttemptFail" units="milliseconds">
+  <summary>
+    Duration of time taken by DnsTCPAttempt in failed attempts. Excludes
+    timeouts.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.TCPAttemptSuccess" units="milliseconds">
+  <summary>
+    Duration of time taken by DnsTCPAttempt in successful attempts.
   </summary>
 </histogram>
 
@@ -449,6 +532,13 @@ other types of suffix sets.
   <summary>
     Duration of time since the last empty config result to the time a non-change
     OnHostsChange is received.
+  </summary>
+</histogram>
+
+<histogram name="AsyncDNS.WatchStatus" enum="AsyncDNSWatchStatus">
+  <summary>
+    The result of DnsConfigService watch. Counts STARTED on every initialization
+    and FAILED_* on any failure.
   </summary>
 </histogram>
 
@@ -839,6 +929,41 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="clickjacking.discard_download" units="ms">
+  <summary>
+    The length of time between a dangerous download appearing on the downloads
+    shelf, and the &quot;Discard&quot; button being clicked.
+  </summary>
+</histogram>
+
+<histogram name="clickjacking.launch_url" units="ms">
+  <summary>
+    The length of time between the external protocol dialog being shown and the
+    &quot;Launch Application&quot; button being clicked.
+  </summary>
+</histogram>
+
+<histogram name="clickjacking.open_download" units="ms">
+  <summary>
+    The length of time between a download appearing on the download shelf, and
+    the user opening it by clicking the item or pressing return.
+  </summary>
+</histogram>
+
+<histogram name="clickjacking.report_and_discard_download" units="ms">
+  <summary>
+    Time between &quot;Report and Discard&quot; button being shown and it being
+    clicked.
+  </summary>
+</histogram>
+
+<histogram name="clickjacking.save_download" units="ms">
+  <summary>
+    The length of time between a dangerous download appearing on the download
+    shelf, and the &quot;Keep&quot; button being clicked.
+  </summary>
+</histogram>
+
 <histogram name="Clipboard.IncognitoUseCase" enum="ClipboardAction">
   <obsolete>
     Deprecated as of 4/2013, experiment confirmed correctness of our patch.
@@ -849,10 +974,52 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Cookie.ParsedCookieStatus" enum="ParsedCookieStatus">
+  <summary>
+    When parsing a cookie, indicates if control characters were present in any
+    of the cookie values and if any of the cookie values were invalid.
+    Specifically, checks that all of the parsed values are valid according to
+    the valid token definition in Section 2.2 of RFC2616 which specifies a token
+    must have no separators (i.e. no characters from the following string,
+    ignoring the starting and ending single quote: '()&lt;&gt;@,;:\&quot;/[]?={}
+    \t') and no control characters.
+  </summary>
+</histogram>
+
 <histogram name="Cookie.ReinstatedCookies" units="seconds">
   <summary>
     The duration in seconds between a cookie getting evicted (due to the number
     of cookies exceeding a domain limit), and subsequently reinstated.
+  </summary>
+</histogram>
+
+<histogram name="Cookie.SetAttributePairCharsValidity" enum="BooleanValid">
+  <summary>
+    Indicates whether a cookie attribute pair was set with both a valid key and
+    a valid attribute value or not. For the key, this implies that it was a
+    valid token as defined in Section 2.2 of RFC2616 which specifies a token
+    must have no separators (i.e. no characters from the following string,
+    ignoring the starting and ending single quote: '()&lt;&gt;@,;:\&quot;/[]?={}
+    \t') and no control characters. For the value, this implies that it
+    contained no control characters and no semicolon.
+  </summary>
+</histogram>
+
+<histogram name="Cookie.SetNameValidity" enum="BooleanValid">
+  <summary>
+    Indicates whether a cookie name was set with a valid token. A valid token is
+    defined in Section 2.2 of RFC2616 which specifies a token must have no
+    separators (i.e. no characters from the following string, ignoring the
+    starting and ending single quote: '()&lt;&gt;@,;:\&quot;/[]?={} \t') and no
+    control characters.
+  </summary>
+</histogram>
+
+<histogram name="Cookie.SetValueCookieValueValidity" enum="BooleanValid">
+  <summary>
+    Indicates whether a cookie value was valid or invalid when there was an
+    attempt to set it, where a valid value is defined in RFC 6265 as ASCII
+    characters excluding controls, whitspace, comma, semicolon, and backslash.
   </summary>
 </histogram>
 
@@ -1526,6 +1693,380 @@ other types of suffix sets.
   <summary>
     Number of requests that waited for load of domain bound cert database.
   </summary>
+</histogram>
+
+<histogram name="Download.AcceptRangesBytes.KBytes" units="KB">
+  <summary>The length of downloads for serves that accept byte ranges.</summary>
+</histogram>
+
+<histogram name="Download.AcceptRangesMissingOrInvalid.KBytes" units="KB">
+  <summary>
+    The length of downloads for serves that do not specify whether the accept
+    ranges, or have invalid ranges specified.
+  </summary>
+</histogram>
+
+<histogram name="Download.AcceptRangesNone.KBytes" units="KB">
+  <summary>
+    The length of downloads for serves that do not accept ranges.
+  </summary>
+</histogram>
+
+<histogram name="Download.ActualBandwidth" units="Bytes/second">
+  <summary>The actual bandwidth (per read) of a download.</summary>
+</histogram>
+
+<histogram name="Download.ApiFunctions" enum="DownloadFunctions">
+  <summary>Downloads extension API function calls.</summary>
+</histogram>
+
+<histogram name="Download.BandwidthDiskBytesPerSecond">
+  <summary>
+    Disk bandwidth (defined as total bytes divided by the amount of time blocked
+    on write or close on the file descriptor) seen for a single download.
+  </summary>
+</histogram>
+
+<histogram name="Download.BandwidthOverallBytesPerSecond">
+  <summary>
+    Overall bandwidth seen for the download.  Note that this is measured at the
+    point at which the file is written, and so will not take into account the
+    time costs of activities that occur after file write is completed (e.g. safe
+    browsing scanning).
+  </summary>
+</histogram>
+
+<histogram name="Download.BandwidthUsed" units="%">
+  <summary>
+    The percentage of the potential bandwidth actually used (per read) of a
+    download.  An entry of 100% implies that Chrome was the limiting factor in
+    download speed.
+  </summary>
+</histogram>
+
+<histogram name="Download.ClearAllSize">
+  <summary>
+    The number of downloads in history at the time it is cleared.
+  </summary>
+</histogram>
+
+<histogram name="Download.ContentDisposition" enum="DownloadContentDisposition">
+  <summary>
+    Content-Disposition header features. The presence of a Content-Disposition
+    header, use of 'name', 'filename' and 'filename*' parameters, and string
+    encoding schemes are counted for each unthrottled download. The total number
+    downloads is Download.Counts[5] (Initiated and Unthrottled).
+  </summary>
+</histogram>
+
+<histogram name="Download.ContentImageType" enum="DownloadImageType">
+  <summary>Types of images that are downloaded.</summary>
+</histogram>
+
+<histogram name="Download.ContentType" enum="DownloadContentType">
+  <summary>Content types that are downloaded.</summary>
+</histogram>
+
+<histogram name="Download.Counts" enum="DownloadCountType">
+  <summary>
+    Various individual counts in the download system; see DownloadCountType for
+    details.
+  </summary>
+</histogram>
+
+<histogram name="Download.CountsChrome" enum="ChromeDownloadCountType">
+  <summary>
+    Various individual counts in the download system, for example the number of
+    downloads blocked by throttling from the DownloadRequestLimiter.
+  </summary>
+</histogram>
+
+<histogram name="Download.DangerousDownloadValidated"
+    enum="DownloadItem.DangerType">
+  <summary>
+    User chose to save a download which was marked dangerous. Grouped by the
+    type of danger.
+  </summary>
+</histogram>
+
+<histogram name="Download.DatabaseRecordDropped"
+    enum="DownloadDatabaseRecordDroppedType">
+  <summary>Reason for dropping a record read in from the DB.</summary>
+</histogram>
+
+<histogram name="Download.DatabaseRemoveDownloadsCount">
+  <summary>Number of downloads removed from the history at once.</summary>
+</histogram>
+
+<histogram name="Download.DatabaseRemoveDownloadsTime" units="microseconds">
+  <summary>How long it took to delete some downloads from history.</summary>
+</histogram>
+
+<histogram name="Download.DatabaseRemoveDownloadsTimePerRecord"
+    units="nanoseconds/record">
+  <summary>
+    How long it took to delete some downloads from history, per download.
+  </summary>
+</histogram>
+
+<histogram name="Download.Discard" enum="DownloadItem.DangerType">
+  <summary>
+    A download which was marked dangerous was discarded without the user
+    directly choosing, because the browser was closed.  Grouped by the type of
+    danger.
+  </summary>
+</histogram>
+
+<histogram name="Download.DiskBandwidthUsedPercentage" units="Percent">
+  <summary>
+    The percentage of the available disk bandwidth that was used by the
+    download.  100% indicates that the disk bandwidth was the limiting factor
+    for the download.
+  </summary>
+</histogram>
+
+<histogram name="Download.DOMEvent" enum="DownloadDOMEvent">
+  <summary>User actions in chrome://downloads</summary>
+</histogram>
+
+<histogram name="Download.DownloadSize" units="KB">
+  <summary>The size of successfully completed downloads.</summary>
+</histogram>
+
+<histogram name="Download.FilePickerResult" enum="DownloadFilePickerResult">
+  <summary>
+    How the user interacts with the file chooser when doing a &quot;Save
+    As&quot; for non-full-page saves.
+  </summary>
+</histogram>
+
+<histogram name="Download.FileThreadBlockedTime">
+  <summary>
+    The amount of time in milliseconds the file thread blocks for each set of
+    buffers drained from the incoming pipe (ms).
+  </summary>
+</histogram>
+
+<histogram name="Download.FileThreadReceiveBuffers">
+  <summary>
+    The number of buffers in a call to DownloadManager::UpdateDownload.
+  </summary>
+</histogram>
+
+<histogram name="Download.FirstOpenTime" units="milliseconds">
+  <summary>
+    The time between a download completing and the file being opened for the
+    first time.
+  </summary>
+</histogram>
+
+<histogram name="Download.HistorySize">
+  <summary>
+    The number of items in the History database, at the time a new download is
+    recorded.
+  </summary>
+</histogram>
+
+<histogram name="Download.HistorySize2">
+  <summary>
+    The number of items in the History database, at the time a new download is
+    recorded. Higher maximum, more buckets than Download.HistorySize.
+  </summary>
+</histogram>
+
+<histogram name="Download.InterruptedAtEndError" enum="NetErrorCodes">
+  <summary>
+    Positive net error code that caused a download to be interrupted at the
+    *end* of a download (when the number of bytes is known). This is only
+    triggered when the total content size is known before any bytes are
+    transferred, such as when a Content-Length header is supplied.
+  </summary>
+</histogram>
+
+<histogram name="Download.InterruptedAtEndReason" enum="InterruptReason">
+  <summary>
+    The reason that a download was interrupted at the *end* of a download (when
+    the number of bytes is known). This is only triggered when the total content
+    size is known before any bytes are transferred, such as when a
+    Content-Length header is supplied.
+  </summary>
+</histogram>
+
+<histogram name="Download.InterruptedError" enum="NetErrorCodes">
+  <summary>
+    Positive net error code that caused a download to be interrupted.
+  </summary>
+</histogram>
+
+<histogram name="Download.InterruptedOverrunBytes">
+  <summary>
+    The excessive number of bytes which have been received at the time that a
+    download is interrupted. This is only triggered when the total content size
+    is known before any bytes are transferred, such as when a Content-Length
+    header is supplied.
+  </summary>
+</histogram>
+
+<histogram name="Download.InterruptedReason" enum="InterruptReason">
+  <summary>The reason that a download was interrupted.</summary>
+</histogram>
+
+<histogram name="Download.InterruptedReceivedSizeK" units="KB">
+  <summary>
+    The number of kilobytes received for a download at the time it is
+    interrupted.
+  </summary>
+</histogram>
+
+<histogram name="Download.InterruptedTotalSizeK" units="KB">
+  <summary>
+    The reported total size in kilobytes for a download at the time it is
+    interrupted. This is essentially the size reported by the Content-Length
+    header. If no size is specified up-front, it is not recorded in the
+    histogram. For example, a download transferred with chunked encoding will
+    not be recorded.
+  </summary>
+</histogram>
+
+<histogram name="Download.InterruptedUnderrunBytes">
+  <summary>
+    The total number of bytes minus the received number of bytes at the time
+    that a download is interrupted. This is only triggered when the total
+    content size is known before any bytes are transferred, such as when a
+    Content-Length header is supplied.
+  </summary>
+</histogram>
+
+<histogram name="Download.InterruptedUnknownSize"
+    enum="DownloadInterruptedUnknownSizeType">
+  <summary>
+    True if the size of an interrupted download is unknown, false if it is
+    known.
+  </summary>
+</histogram>
+
+<histogram name="Download.MapErrorNetworkFailed" enum="NetErrorCodes">
+  <summary>
+    Network error that produced a DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED
+    result in DownloadResourceHandler::OnResponseCompleted().
+  </summary>
+</histogram>
+
+<histogram name="Download.MapWinShErrorAccessDenied"
+    enum="SpecialShFileOperationCodes">
+  <summary>
+    Windows error that produced a DOWNLOAD_INTERRUPT_REASON_ACCESS_DENIED result
+    in MapShFileOperationCodes().
+  </summary>
+</histogram>
+
+<histogram name="Download.MapWinShErrorFileFailed"
+    enum="SpecialShFileOperationCodes">
+  <summary>
+    Windows error that produced a DOWNLOAD_INTERRUPT_REASON_FILE_FAILED result
+    in MapShFileOperationCodes().
+  </summary>
+</histogram>
+
+<histogram name="Download.OnChanged">
+  <summary>
+    Percentage of DownloadItem::Observer::OnDownloadUpdated events that
+    signified a change in the extension API representation of the download.
+  </summary>
+</histogram>
+
+<histogram name="Download.OpensOutstanding">
+  <summary>The number of unopened downloads, when one is opened.</summary>
+</histogram>
+
+<histogram name="Download.OpenTime" units="milliseconds">
+  <summary>
+    The time between a download completing and the file being opened.
+  </summary>
+</histogram>
+
+<histogram name="Download.PotentialBandwidth" units="Bytes/second">
+  <summary>
+    The maximum bandwidth (per read) that Chrome could have provided for the
+    download.  If the actual bandwidth equals the potential bandwidth, that
+    means that Chrome was the limiting factor for download bandwidth.
+  </summary>
+</histogram>
+
+<histogram name="Download.ResourceHandlerBlockedPercentage" units="Percent">
+  <summary>
+    The percentage of the lifetime of the DownloadResourceHandler for which it
+    was blocked by downstream flow control.  0% indicates that the network
+    bandwidth was the limiting factor for the download.
+  </summary>
+</histogram>
+
+<histogram name="Download.SavePackage" enum="DownloadSavePackageEvent">
+  <summary>
+    Events (e.g. Started, Cancelled, Finished, Write to Completed file, Write to
+    Failed file) occuring within the state machine of a SavePackage operation.
+  </summary>
+</histogram>
+
+<histogram name="Download.ShelfInProgressSizeOnAutoClose">
+  <summary>
+    The number of download items in progress on the shelf when it closes
+    automatically.
+  </summary>
+</histogram>
+
+<histogram name="Download.ShelfInProgressSizeOnUserClose">
+  <summary>
+    The number of download items in progress on the shelf when the user closes
+    it.
+  </summary>
+</histogram>
+
+<histogram name="Download.ShelfSizeOnAutoClose">
+  <summary>
+    The number of download items on the shelf when it closes automatically.
+  </summary>
+</histogram>
+
+<histogram name="Download.ShelfSizeOnUserClose">
+  <summary>
+    The number of download items on the shelf when the user closes it.
+  </summary>
+</histogram>
+
+<histogram name="Download.Sources" enum="DownloadSource">
+  <summary>
+    The initiation source (if initiated within the content layer of chrome) for
+    a download.
+  </summary>
+</histogram>
+
+<histogram name="Download.SourcesChrome" enum="ChromeDownloadSource">
+  <summary>
+    The initiation source (if initiated within the above-content layer of
+    chrome) for a download.
+  </summary>
+</histogram>
+
+<histogram name="Download.Time" units="milliseconds">
+  <summary>Time between the start of a download and its completion.</summary>
+</histogram>
+
+<histogram name="Download.UserDiscard" enum="DownloadItem.DangerType">
+  <summary>
+    User chose to discard a download which was marked dangerous.  Grouped by the
+    type of danger.
+  </summary>
+</histogram>
+
+<histogram name="Download.WriteLoopCount">
+  <summary>
+    The number of iterations for the write loop in BaseFile::AppendDataTofile().
+  </summary>
+</histogram>
+
+<histogram name="Download.WriteSize" units="Bytes">
+  <summary>The write size for calls to BaseFile::AppendDataTofile().</summary>
 </histogram>
 
 <histogram name="Drive.CacheDBOpenStatus" enum="DriveCacheDBOpenStatus">
@@ -3019,6 +3560,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Media.AudioSampleFormat" enum="AudioSampleFormat">
+  <summary>
+    Audio sample format in HTML5 media. Logged when Audio Decoder initializes.
+  </summary>
+</histogram>
+
 <histogram name="Media.AudioSamplesPerSecond" enum="AudioSampleRate">
   <summary>Audio samples per second in HTML5 media.</summary>
 </histogram>
@@ -3081,6 +3628,13 @@ other types of suffix sets.
 
 <histogram name="Media.DetectedVideoCodec" enum="FFmpegCodecs">
   <summary>Video codec used in HTML5 media.</summary>
+</histogram>
+
+<histogram name="Media.DevicePermissionActions" enum="DevicePermissionActions">
+  <summary>
+    Measures the actions taken in the media infobar, which prompts the users for
+    device permission.
+  </summary>
 </histogram>
 
 <histogram name="Media.Duration" units="ms">
@@ -3269,6 +3823,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Media.InfoLoadDelay" units="milliseconds">
+  <summary>
+    The time it takes to perform redirect tracking and a CORS access check while
+    preparing to play a media file.
+  </summary>
+</histogram>
+
 <histogram name="Media.LinuxAudioIO" enum="LinuxAudioIO">
   <summary>
     Audio IO layer used by the Linux OS, sampled once at startup of the browser.
@@ -3317,6 +3878,21 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Media.Netflix.DelayedAndDroppedFramesPer5Sec"
+    units="frames/5s">
+  <summary>
+    The average number of delayed and dropped frames for the Netflix
+    application.  Reported every 5 seconds.
+  </summary>
+</histogram>
+
+<histogram name="Media.Netflix.DisplayedFramesPerSecond" units="frames/s">
+  <summary>
+    The average number of displayed frames for the Netflix application. Reported
+    every 5 seconds.
+  </summary>
+</histogram>
+
 <histogram name="Media.Netflix.VideoBitrate" units="kbps">
   <summary>
     Video bit rate as reported by the Netflix application.  May be reported
@@ -3348,6 +3924,21 @@ other types of suffix sets.
   <summary>
     Vertical video resolution rounded to the nearest bucket. (Corresponds
     roughly to the number in 720p.)
+  </summary>
+</histogram>
+
+<histogram name="Media.PlayMovies.DelayedAndDroppedFramesPer5Sec"
+    units="frames/5s">
+  <summary>
+    The average number of delayed and dropped frames for the PlayMovies
+    application.  Reported every 5 seconds.
+  </summary>
+</histogram>
+
+<histogram name="Media.PlayMovies.DisplayedFramesPerSecond" units="frames/s">
+  <summary>
+    The average number of displayed frames for the PlayMovies application.
+    Reported every 5 seconds.
   </summary>
 </histogram>
 
@@ -3436,6 +4027,10 @@ other types of suffix sets.
     Time needed to buffer A/V data after an underrun for the YouTube
     application.
   </summary>
+</histogram>
+
+<histogram name="Memory.ProcessLimit">
+  <summary>The current process limit.  Recorded once per UMA ping.</summary>
 </histogram>
 
 <histogram name="MemoryAndroid.DeviceMemoryClass">
@@ -4319,11 +4914,39 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.HttpContentFreshnessLifetime" units="milliseconds">
+  <summary>Length of time that a received resource will be cacheable.</summary>
+</histogram>
+
 <histogram name="Net.HttpContentLength" units="bytes">
   <summary>
     Size of the response body. This is the actual number of bytes received,
     which usually agrees with but is not necessarily the same as the size
     specified by the Content-Length header.
+  </summary>
+</histogram>
+
+<histogram name="Net.HttpContentLengthCacheable" units="bytes">
+  <summary>
+    Size of the response body if it is cacheable. This is the actual number of
+    bytes received, which usually agrees with but is not necessarily the same as
+    the size specified by the Content-Length header.
+  </summary>
+</histogram>
+
+<histogram name="Net.HttpContentLengthCacheable24Hours" units="bytes">
+  <summary>
+    Size of the response body if it is cacheable for at least 24 hours. This is
+    the actual number of bytes received, which usually agrees with but is not
+    necessarily the same as the size specified by the Content-Length header.
+  </summary>
+</histogram>
+
+<histogram name="Net.HttpContentLengthCacheable4Hours" units="bytes">
+  <summary>
+    Size of the response body if it is cacheable for at least 4 hours. This is
+    the actual number of bytes received, which usually agrees with but is not
+    necessarily the same as the size specified by the Content-Length header.
   </summary>
 </histogram>
 
@@ -8533,6 +9156,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.SchemeCancelReason"
+    enum="PrerenderSchemeCancelReason">
+  <summary>
+    The detailed reason why a prerender is canceled with
+    FINAL_STATUS_UNSUPPORTED_SCHEME
+  </summary>
+</histogram>
+
 <histogram name="Prerender.Sessions" enum="PrerenderMode">
   <obsolete>
     deprecated Nov 16 2012
@@ -8624,6 +9255,26 @@ other types of suffix sets.
     Time elapsed before the user decided to cancel creation of a new profile.
     Since only managed-user profile creation can be canceled, this time comes
     from managed-user registration.
+  </summary>
+</histogram>
+
+<histogram name="Renderer.DrawDuration" units="milliseconds">
+  <summary>The time it takes for the compositor to draw a frame.</summary>
+</histogram>
+
+<histogram name="Renderer.DrawDurationOverestimate" units="milliseconds">
+  <summary>
+    The amount by which the compositor's draw duration was overestimated in a
+    particular frame (0 if the duration was perfectly predicted or
+    underestimated).
+  </summary>
+</histogram>
+
+<histogram name="Renderer.DrawDurationUnderestimate" units="milliseconds">
+  <summary>
+    The amount by which the compositor's draw duration was underestimated in a
+    particular frame (0 if the duration was perfectly predicted or
+    overestimated).
   </summary>
 </histogram>
 
@@ -10009,6 +10660,53 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SBDownloadFeedback.Activations" enum="DownloadItem.DangerType">
+  <summary>
+    Count of times download feedback has been started, broken down by danger
+    type.
+  </summary>
+</histogram>
+
+<histogram name="SBDownloadFeedback.ActiveFeedbacks">
+  <summary>
+    When a new download feedback request is added, records the number of
+    download requests currently active and/or pending.
+  </summary>
+</histogram>
+
+<histogram name="SBDownloadFeedback.Shown" enum="DownloadItem.DangerType">
+  <summary>
+    Count of times download feedback button has been shown, broken down by
+    danger type.
+  </summary>
+</histogram>
+
+<histogram name="SBDownloadFeedback.SizeEligibleKB" units="KB">
+  <summary>
+    Size of downloads that were of the correct danger type, regardless if they
+    meet the max file size check or if they are actually uploaded or not.
+  </summary>
+</histogram>
+
+<histogram name="SBDownloadFeedback.SizeFailure" units="bytes">
+  <summary>
+    Size of downloads that failed to be uploaded to the feedback service.
+  </summary>
+</histogram>
+
+<histogram name="SBDownloadFeedback.SizeSuccess" units="bytes">
+  <summary>
+    Size of downloads that were successfully uploaded to the feedback service.
+  </summary>
+</histogram>
+
+<histogram name="SBDownloadFeedback.UploadResult"
+    enum="SBDownloadFeedbackUploadResult">
+  <summary>
+    Final result of attempt to upload binary to download feedback service.
+  </summary>
+</histogram>
+
 <histogram name="Search.DefaultSearchProvider" enum="OmniboxSearchEngine">
   <summary>
     The id of the default search engine that is loaded after Chrome startup. See
@@ -10257,6 +10955,78 @@ other types of suffix sets.
   <summary>The outcome of Entry::WriteData in the simple cache.</summary>
 </histogram>
 
+<histogram name="SiteIsolation.BrowsingInstanceCount">
+  <summary>
+    The count of all current BrowsingInstances.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.CurrentRendererProcessCount">
+  <summary>
+    The count of all renderer processes, including WebUI and extensions.
+    Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.IsolateAllSitesProcessCountEstimate">
+  <summary>
+    The upper bound of the predicted renderer process count if we isolated all
+    sites, subject to the process limit.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.IsolateAllSitesProcessCountLowerBound">
+  <summary>
+    The lower bound of the predicted renderer process count if we isolated all
+    sites, subject to the process limit.  Happens to be the number of unique
+    sites.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.IsolateAllSitesProcessCountNoLimit">
+  <summary>
+    The predicted renderer process count if we isolated all sites and if there
+    were no process limit.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.IsolateAllSitesTotalProcessCountEstimate">
+  <summary>
+    The predicted total process count if we isolated all sites, subject to the
+    process limit.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.IsolateHttpsSitesProcessCountEstimate">
+  <summary>
+    The upper bound of the predicted renderer process count if we isolated only
+    HTTPS (not HTTP) sites, subject to the process limit.  Recorded once per UMA
+    ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.IsolateHttpsSitesProcessCountLowerBound">
+  <summary>
+    The lower bound of the predicted renderer process count if we isolated only
+    HTTPS (not HTTP) sites, subject to the process limit.  Happens to be the
+    number of isolated sites.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.IsolateHttpsSitesProcessCountNoLimit">
+  <summary>
+    The predicted renderer process count if we isolated only HTTPS (not HTTP)
+    sites and if there were no process limit.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
+<histogram name="SiteIsolation.IsolateHttpsSitesTotalProcessCountEstimate">
+  <summary>
+    The predicted total process count if we isolated only HTTPS (not HTTP)
+    sites, subject to the process limit.  Recorded once per UMA ping.
+  </summary>
+</histogram>
+
 <histogram name="Sqlite.AppCache.Error" enum="SqliteErrorCode">
   <summary>Error codes returned by sqlite for the appcache db.</summary>
 </histogram>
@@ -10344,6 +11114,13 @@ other types of suffix sets.
   <summary>
     Age of auth tokens younger than one hour that were rejected by the sync
     server. Measured from the time they were created.
+  </summary>
+</histogram>
+
+<histogram name="Sync.RefreshTokenAvailable" enum="BooleanSuccess">
+  <summary>
+    Whether OAuth2 refresh token was available at the time when
+    ProfileSyncService was starting backend.
   </summary>
 </histogram>
 
@@ -10574,6 +11351,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Translate.ServerReportedUnsupportedLanguage">
+  <obsolete>
+    Deprecated 5/2013 by Translate.UndisplayableLanguage
+  </obsolete>
   <summary>
     The number of times the detected language is not supported by Translate
     Element.
@@ -10633,6 +11413,15 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Translate.UndisplayableLanguage" enum="LanguageCode">
+  <summary>
+    Logs an undisplayable language included in the language list sent by the
+    Translate server. The Translate server sends the list each time the user
+    runs Chrome. This metrics tells us that there is a language which UI should
+    support but doesn't.
+  </summary>
+</histogram>
+
 <histogram name="Translate.UnsupportedLanguageAtInitiation" enum="LanguageCode">
   <summary>
     Logs an unsupported source language detected during initiation of the
@@ -10647,6 +11436,13 @@ other types of suffix sets.
   <summary>
     The time from a page content language being determined to user requesting
     Chrome Translate.
+  </summary>
+</histogram>
+
+<histogram name="UMA.LowEntropySourceValue">
+  <summary>
+    Distribution of the low entropy source value used for field trial
+    randomization, recorded on startup.
   </summary>
 </histogram>
 
@@ -10863,6 +11659,37 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebCore.FeatureObserver.CSSProperties"
+    enum="MappedCSSProperties">
+  <summary>
+    Records usage of CSS properties used on a page, either statically or
+    dynamically, from the time the page is initialised to when it is closed or
+    navigated away from. Each property is counted at most once per page per
+    view.
+  </summary>
+  <details>
+    Every time a CSS property is parsed on a page, that property is recorded as
+    having been used. The histogram is updated with this data whenever a page is
+    closed, or a page navigation happens. Each histogram bucket corresponds to a
+    CSS property (eg width, border-radius). The exception is the bucket numbered
+    '1' - this counts the number of pages that CSS properties were counted on.
+
+    These numbers give the percentage of pages that use a CSS property. For
+    example, if the 'border-radius' histogram bucket has a count of 250, and the
+    page count bucket (i.e. bucket number 1) has a count of 1000 - this means
+    that 1000 pages were recorded, and border-radius was used on 25% of those
+    pages.
+
+    Internally, each WebCore::Page has a WebCore::UseCounter instance, with
+    booleans recording use of each CSS property - one boolean per property. Upon
+    destruction of the WebCore::Page (e.g. by the user closing the tab), or a
+    page navigation happening, the histogram is updated. For each boolean that
+    is set to True, the corresponding histogram bucket for that CSS property is
+    incremented by 1. The page count bucket (i.e. bucket number 1) is always
+    incremented by 1 on each histogram update.
+  </details>
+</histogram>
+
 <histogram name="WebCore.IndexedDB.BackingStore.ConsistencyError"
     enum="IDBLevelDBBackingStoreInternalErrorType">
   <summary>
@@ -10940,9 +11767,23 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebCore.IndexedDB.LevelDBOpenErrors.EnvMethod"
+    enum="LevelDBIOErrorMethods">
+  <summary>
+    LevelDBEnv methods that generated IO errors when opening a database.
+  </summary>
+</histogram>
+
 <histogram name="WebCore.IndexedDB.LevelDBWriteErrors" enum="LevelDBErrorTypes">
   <summary>
     Error classes returned by LevelDB when it failed to write to a database.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.IndexedDB.LevelDBWriteErrors.EnvMethod"
+    enum="LevelDBIOErrorMethods">
+  <summary>
+    LevelDBEnv methods that generated IO errors when writing to a database.
   </summary>
 </histogram>
 
@@ -11030,6 +11871,14 @@ other types of suffix sets.
   <summary>
     Whether a locallly installed font is actually used when @font-face had local
     sources.
+  </summary>
+</histogram>
+
+<histogram name="WebFont.WebFontsInPage">
+  <summary>
+    The number of webfonts used in a page. This is recorded when the first
+    layout is done, and so will not count webfonts dynamically loaded by
+    scripts.
   </summary>
 </histogram>
 
@@ -11341,6 +12190,18 @@ other types of suffix sets.
   </int>
 </enum>
 
+<enum name="AsyncDNSWatchStatus" type="int">
+  <int value="0" label="STARTED">Started.</int>
+  <int value="1" label="FAILED_TO_START_CONFIG">
+    Failed to start watching config.
+  </int>
+  <int value="2" label="FAILED_TO_START_HOSTS">
+    Failed to start watching HOSTS.
+  </int>
+  <int value="3" label="FAILED_CONFIG">Failed during watching config.</int>
+  <int value="4" label="FAILED_HOSTS">Failed during watching HOSTS.</int>
+</enum>
+
 <enum name="AudioCodec" type="int">
   <int value="0" label="kUnknownAudioCodec"/>
   <int value="1" label="kCodecAAC"/>
@@ -11372,6 +12233,16 @@ other types of suffix sets.
 <enum name="AudioRendererEvents" type="int">
   <int value="0" label="Initialized"/>
   <int value="1" label="Runtime error"/>
+</enum>
+
+<enum name="AudioSampleFormat" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Unsigned 8-bit"/>
+  <int value="2" label="Signed 16-bit"/>
+  <int value="3" label="Signed 32-bit"/>
+  <int value="4" label="Float 32-bit"/>
+  <int value="5" label="Signed 16-bit planar"/>
+  <int value="6" label="Float 32-bit planar"/>
 </enum>
 
 <enum name="AudioSampleRate" type="int">
@@ -11720,6 +12591,11 @@ other types of suffix sets.
   <int value="1" label="Used"/>
 </enum>
 
+<enum name="BooleanValid" type="int">
+  <int value="0" label="Invalid"/>
+  <int value="1" label="Valid"/>
+</enum>
+
 <enum name="BooleanWiped" type="int">
   <int value="0" label="Re-enabled"/>
   <int value="1" label="Wiped out"/>
@@ -11762,6 +12638,22 @@ other types of suffix sets.
   <int value="0" label="Was never read to end"/>
   <int value="1" label="CRC check not done"/>
   <int value="2" label="CRC check done"/>
+</enum>
+
+<enum name="ChromeDownloadCountType" type="int">
+  <int value="0" label="Initiated by Navigation (Obsolete)"/>
+  <int value="1" label="Initiated by Context Menu (Obsolete)"/>
+  <int value="2" label="Initiated by WebStore Installer (Obsolete)"/>
+  <int value="3" label="Initiated by ImageBurner (Obsolete)"/>
+  <int value="4" label="Blocked by Throttling"/>
+</enum>
+
+<enum name="ChromeDownloadSource" type="int">
+  <int value="0" label="Initiated by Navigation"/>
+  <int value="1" label="Initiated by Context Menu"/>
+  <int value="2" label="Initiated by WebStore Installer"/>
+  <int value="3" label="Initiated by ImageBurner"/>
+  <int value="4" label="Initiated by Plugin Installer"/>
 </enum>
 
 <enum name="ClipboardAction" type="int">
@@ -11903,6 +12795,13 @@ other types of suffix sets.
   <int value="8" label="PlayMusic"/>
 </enum>
 
+<enum name="DevicePermissionActions" type="int">
+  <int value="0" label="AllowHttps"/>
+  <int value="1" label="AllowHttp"/>
+  <int value="2" label="Deny"/>
+  <int value="3" label="Cancel"/>
+</enum>
+
 <enum name="DNSEmptyAddressListAndNoError" type="int">
   <int value="0" label="Error reported or Address List is not empty"/>
   <int value="1" label="Success reported but Address List is empty"/>
@@ -11967,6 +12866,135 @@ other types of suffix sets.
   <int value="0" label="POST"/>
   <int value="1" label="GET_CACHABLE"/>
   <int value="2" label="GET_NON_CACHABLE"/>
+</enum>
+
+<enum name="DownloadContentDisposition" type="int">
+  <int value="0" label="Content-Disposition header present"/>
+  <int value="1" label="Valid"/>
+  <int value="2" label="Has disposition-type"/>
+  <int value="3" label="Has unknown disposition-type"/>
+  <int value="4" label="Has 'name' attribute"/>
+  <int value="5" label="Has 'filename' attribute"/>
+  <int value="6" label="Has 'filename*' attribute"/>
+  <int value="7" label="Has non-ASCII strings"/>
+  <int value="8" label="Has percent encoded strings"/>
+  <int value="9" label="Has RFC 2047 encoded strings"/>
+  <int value="10" label="Has 'name' attribute only"/>
+</enum>
+
+<enum name="DownloadContentType" type="int">
+  <int value="0" label="UNRECOGNIZED"/>
+  <int value="1" label="TEXT"/>
+  <int value="2" label="IMAGE"/>
+  <int value="3" label="AUDIO"/>
+  <int value="4" label="VIDEO"/>
+  <int value="5" label="OCTET_STREAM"/>
+  <int value="6" label="PDF"/>
+  <int value="7" label="DOC"/>
+  <int value="8" label="XLS"/>
+  <int value="9" label="PPT"/>
+  <int value="10" label="ARCHIVE"/>
+  <int value="11" label="EXE"/>
+  <int value="12" label="DMG"/>
+  <int value="13" label="CRX"/>
+</enum>
+
+<enum name="DownloadCountType" type="int">
+  <int value="0" label="Initiated by Navigation (Obsolete)"/>
+  <int value="1" label="Initiated by Context Menu (Obsolete)"/>
+  <int value="2" label="Initiated by SavePackage Failure (Obsolete)"/>
+  <int value="3" label="Initiated by Drag-n-drop (Obsolete)"/>
+  <int value="4" label="Initiated by Renderer (Obsolete)"/>
+  <int value="5" label="Initiated and Unthrottled"/>
+  <int value="6" label="Completed"/>
+  <int value="7" label="Cancelled"/>
+  <int value="8" label="Started"/>
+  <int value="9" label="Interrupted"/>
+  <int value="10" label="Calls to AppendDataToFile (Size)"/>
+  <int value="11" label="Calls to AppendDataToFile (Count)"/>
+  <int value="12" label="Interrupted at End of Download"/>
+  <int value="13" label="Attempt to Append to Detached File"/>
+</enum>
+
+<enum name="DownloadDatabaseRecordDroppedType" type="int">
+  <int value="0" label="Bad State"/>
+  <int value="1" label="Bad Danger Type"/>
+</enum>
+
+<enum name="DownloadDOMEvent" type="int">
+  <int value="0" label="GetDownloads"/>
+  <int value="1" label="OpenFile"/>
+  <int value="2" label="Drag"/>
+  <int value="3" label="SaveDangerous"/>
+  <int value="4" label="DiscardDangerous"/>
+  <int value="5" label="Show"/>
+  <int value="6" label="Pause"/>
+  <int value="7" label="Remove"/>
+  <int value="8" label="Cancel"/>
+  <int value="9" label="ClearAll"/>
+  <int value="10" label="OpenFolder"/>
+  <int value="11" label="Resume"/>
+</enum>
+
+<enum name="DownloadFilePickerResult" type="int">
+  <int value="0" label="SAME"/>
+  <int value="1" label="DIFFERENT_DIR"/>
+  <int value="2" label="DIFFERENT_NAME"/>
+  <int value="3" label="CANCEL"/>
+</enum>
+
+<enum name="DownloadFunctions" type="int">
+  <int value="0" label="download"/>
+  <int value="1" label="search"/>
+  <int value="2" label="pause"/>
+  <int value="3" label="resume"/>
+  <int value="4" label="cancel"/>
+  <int value="5" label="erase"/>
+  <int value="6" label="set_destination"/>
+  <int value="7" label="accept_danger"/>
+  <int value="8" label="show"/>
+  <int value="9" label="drag"/>
+</enum>
+
+<enum name="DownloadImageType" type="int">
+  <int value="0" label="Unrecognized"/>
+  <int value="1" label="GIF"/>
+  <int value="2" label="JPEG"/>
+  <int value="3" label="PNG"/>
+  <int value="4" label="TIFF"/>
+  <int value="5" label="ICON"/>
+  <int value="6" label="WEBP"/>
+</enum>
+
+<enum name="DownloadInterruptedUnknownSizeType" type="int">
+  <int value="0" label="Size Known"/>
+  <int value="1" label="Size Unknown"/>
+</enum>
+
+<enum name="DownloadItem.DangerType" type="int">
+  <int value="0" label="NOT_DANGEROUS"/>
+  <int value="1" label="DANGEROUS_FILE"/>
+  <int value="2" label="DANGEROUS_URL"/>
+  <int value="3" label="DANGEROUS_CONTENT"/>
+  <int value="4" label="MAYBE_DANGEROUS_CONTENT"/>
+  <int value="5" label="UNCOMMON_CONTENT"/>
+  <int value="6" label="USER_VALIDATED"/>
+  <int value="7" label="DANGEROUS_HOST"/>
+</enum>
+
+<enum name="DownloadSavePackageEvent" type="int">
+  <int value="0" label="Started"/>
+  <int value="1" label="Cancelled"/>
+  <int value="2" label="Finished"/>
+  <int value="3" label="Write to already completed file"/>
+  <int value="4" label="Write to already failed file"/>
+</enum>
+
+<enum name="DownloadSource" type="int">
+  <int value="0" label="Initiated by Save Package on Non-HTML content"/>
+  <int value="1" label="Initiated by Drag-and-drop"/>
+  <int value="2" label="Initiated by RPC from Renderer"/>
+  <int value="3" label="Initiated by Save from Pepper"/>
 </enum>
 
 <enum name="DriveCacheDBOpenStatus" type="int">
@@ -13973,6 +15001,7 @@ other types of suffix sets.
   <int value="3" label="Page not current: origin/path mismatch"/>
   <int value="4" label="Page not current: instant not supported"/>
   <int value="5" label="No overlay"/>
+  <int value="6" label="Javascript disabled"/>
 </enum>
 
 <enum name="InstantExtended_InstantNavigation" type="int">
@@ -14006,6 +15035,30 @@ other types of suffix sets.
   <int value="5" label="SSE4.1"/>
   <int value="6" label="SSE4.3"/>
   <int value="7" label="AVX"/>
+</enum>
+
+<enum name="InterruptReason" type="int">
+  <int value="0" label="NONE"/>
+  <int value="1" label="FILE_FAILED"/>
+  <int value="2" label="FILE_ACCESS_DENIED"/>
+  <int value="3" label="FILE_NO_SPACE"/>
+  <int value="5" label="FILE_NAME_TOO_LONG"/>
+  <int value="6" label="FILE_TOO_LARGE"/>
+  <int value="7" label="FILE_VIRUS_INFECTED"/>
+  <int value="10" label="FILE_TRANSIENT_ERROR"/>
+  <int value="11" label="FILE_BLOCKED"/>
+  <int value="12" label="FILE_SECURITY_CHECK_FAILED"/>
+  <int value="20" label="NETWORK_FAILED"/>
+  <int value="21" label="NETWORK_TIMEOUT"/>
+  <int value="22" label="NETWORK_DISCONNECTED"/>
+  <int value="23" label="NETWORK_SERVER_DOWN"/>
+  <int value="30" label="SERVER_FAILED"/>
+  <int value="31" label="SERVER_NO_RANGE"/>
+  <int value="32" label="SERVER_PRECONDITION"/>
+  <int value="33" label="SERVER_BAD_CONTENT"/>
+  <int value="40" label="USER_CANCELED"/>
+  <int value="41" label="USER_SHUTDOWN"/>
+  <int value="50" label="CRASH"/>
 </enum>
 
 <enum name="IPV6ProbeResult" type="int">
@@ -14634,6 +15687,433 @@ other types of suffix sets.
   <int value="9" label="PRERENDER_LOAD">Speculative prerendering of a page</int>
 </enum>
 
+<enum name="MappedCSSProperties" type="int">
+<!-- See http://src.chromium.org/viewvc/blink/trunk/Source/core/page/UseCounter.cpp -->
+
+  <int value="1" label="Total Pages Measured"/>
+  <int value="2" label="color"/>
+  <int value="3" label="direction"/>
+  <int value="4" label="display"/>
+  <int value="5" label="font"/>
+  <int value="6" label="font-family"/>
+  <int value="7" label="font-size"/>
+  <int value="8" label="font-style"/>
+  <int value="9" label="font-variant"/>
+  <int value="10" label="font-weight"/>
+  <int value="11" label="text-rendering"/>
+  <int value="12" label="webkit-font-feature-settings"/>
+  <int value="13" label="webkit-font-kerning"/>
+  <int value="14" label="webkit-font-smoothing"/>
+  <int value="15" label="webkit-font-variant-ligatures"/>
+  <int value="16" label="webkit-locale"/>
+  <int value="17" label="webkit-text-orientation"/>
+  <int value="18" label="webkit-writing-mode"/>
+  <int value="19" label="zoom"/>
+  <int value="20" label="line-height"/>
+  <int value="21" label="background"/>
+  <int value="22" label="background-attachment"/>
+  <int value="23" label="background-clip"/>
+  <int value="24" label="background-color"/>
+  <int value="25" label="background-image"/>
+  <int value="26" label="background-origin"/>
+  <int value="27" label="background-position"/>
+  <int value="28" label="background-position-x"/>
+  <int value="29" label="background-position-y"/>
+  <int value="30" label="background-repeat"/>
+  <int value="31" label="background-repeat-x"/>
+  <int value="32" label="background-repeat-y"/>
+  <int value="33" label="background-size"/>
+  <int value="34" label="border"/>
+  <int value="35" label="border-bottom"/>
+  <int value="36" label="border-bottom-color"/>
+  <int value="37" label="border-bottom-left-radius"/>
+  <int value="38" label="border-bottom-right-radius"/>
+  <int value="39" label="border-bottom-style"/>
+  <int value="40" label="border-bottom-width"/>
+  <int value="41" label="border-collapse"/>
+  <int value="42" label="border-color"/>
+  <int value="43" label="border-image"/>
+  <int value="44" label="border-image-outset"/>
+  <int value="45" label="border-image-repeat"/>
+  <int value="46" label="border-image-slice"/>
+  <int value="47" label="border-image-source"/>
+  <int value="48" label="border-image-width"/>
+  <int value="49" label="border-left"/>
+  <int value="50" label="border-left-color"/>
+  <int value="51" label="border-left-style"/>
+  <int value="52" label="border-left-width"/>
+  <int value="53" label="border-radius"/>
+  <int value="54" label="border-right"/>
+  <int value="55" label="border-right-color"/>
+  <int value="56" label="border-right-style"/>
+  <int value="57" label="border-right-width"/>
+  <int value="58" label="border-spacing"/>
+  <int value="59" label="border-style"/>
+  <int value="60" label="border-top"/>
+  <int value="61" label="border-top-color"/>
+  <int value="62" label="border-top-left-radius"/>
+  <int value="63" label="border-top-right-radius"/>
+  <int value="64" label="border-top-style"/>
+  <int value="65" label="border-top-width"/>
+  <int value="66" label="border-width"/>
+  <int value="67" label="bottom"/>
+  <int value="68" label="box-shadow"/>
+  <int value="69" label="box-sizing"/>
+  <int value="70" label="caption-side"/>
+  <int value="71" label="clear"/>
+  <int value="72" label="clip"/>
+  <int value="73" label="webkit-clip-path"/>
+  <int value="74" label="content"/>
+  <int value="75" label="counter-increment"/>
+  <int value="76" label="counter-reset"/>
+  <int value="77" label="cursor"/>
+  <int value="78" label="empty-cells"/>
+  <int value="79" label="float"/>
+  <int value="80" label="font-stretch"/>
+  <int value="81" label="height"/>
+  <int value="82" label="image-rendering"/>
+  <int value="83" label="left"/>
+  <int value="84" label="letter-spacing"/>
+  <int value="85" label="list-style"/>
+  <int value="86" label="list-style-image"/>
+  <int value="87" label="list-style-position"/>
+  <int value="88" label="list-style-type"/>
+  <int value="89" label="margin"/>
+  <int value="90" label="margin-bottom"/>
+  <int value="91" label="margin-left"/>
+  <int value="92" label="margin-right"/>
+  <int value="93" label="margin-top"/>
+  <int value="94" label="max-height"/>
+  <int value="95" label="max-width"/>
+  <int value="96" label="min-height"/>
+  <int value="97" label="min-width"/>
+  <int value="98" label="opacity"/>
+  <int value="99" label="orphans"/>
+  <int value="100" label="outline"/>
+  <int value="101" label="outline-color"/>
+  <int value="102" label="outline-offset"/>
+  <int value="103" label="outline-style"/>
+  <int value="104" label="outline-width"/>
+  <int value="105" label="overflow"/>
+  <int value="106" label="overflow-wrap"/>
+  <int value="107" label="overflow-x"/>
+  <int value="108" label="overflow-y"/>
+  <int value="109" label="padding"/>
+  <int value="110" label="padding-bottom"/>
+  <int value="111" label="padding-left"/>
+  <int value="112" label="padding-right"/>
+  <int value="113" label="padding-top"/>
+  <int value="114" label="page"/>
+  <int value="115" label="page-break-after"/>
+  <int value="116" label="page-break-before"/>
+  <int value="117" label="page-break-inside"/>
+  <int value="118" label="pointer-events"/>
+  <int value="119" label="position"/>
+  <int value="120" label="quotes"/>
+  <int value="121" label="resize"/>
+  <int value="122" label="right"/>
+  <int value="123" label="size"/>
+  <int value="124" label="src"/>
+  <int value="125" label="speak"/>
+  <int value="126" label="table-layout"/>
+  <int value="127" label="tab-size"/>
+  <int value="128" label="text-align"/>
+  <int value="129" label="text-decoration"/>
+  <int value="130" label="text-indent"/>
+  <int value="131" label="text-line-through"/>
+  <int value="132" label="text-line-through-color"/>
+  <int value="133" label="text-line-through-mode"/>
+  <int value="134" label="text-line-through-style"/>
+  <int value="135" label="text-line-through-width"/>
+  <int value="136" label="text-overflow"/>
+  <int value="137" label="text-overline"/>
+  <int value="138" label="text-overline-color"/>
+  <int value="139" label="text-overline-mode"/>
+  <int value="140" label="text-overline-style"/>
+  <int value="141" label="text-overline-width"/>
+  <int value="142" label="text-shadow"/>
+  <int value="143" label="text-transform"/>
+  <int value="144" label="text-underline"/>
+  <int value="145" label="text-underline-color"/>
+  <int value="146" label="text-underline-mode"/>
+  <int value="147" label="text-underline-style"/>
+  <int value="148" label="text-underline-width"/>
+  <int value="149" label="top"/>
+  <int value="150" label="transition"/>
+  <int value="151" label="transition-delay"/>
+  <int value="152" label="transition-duration"/>
+  <int value="153" label="transition-property"/>
+  <int value="154" label="transition-timing-function"/>
+  <int value="155" label="unicode-bidi"/>
+  <int value="156" label="unicode-range"/>
+  <int value="157" label="vertical-align"/>
+  <int value="158" label="visibility"/>
+  <int value="159" label="white-space"/>
+  <int value="160" label="widows"/>
+  <int value="161" label="width"/>
+  <int value="162" label="word-break"/>
+  <int value="163" label="word-spacing"/>
+  <int value="164" label="word-wrap"/>
+  <int value="165" label="z-index"/>
+  <int value="166" label="webkit-animation"/>
+  <int value="167" label="webkit-animation-delay"/>
+  <int value="168" label="webkit-animation-direction"/>
+  <int value="169" label="webkit-animation-duration"/>
+  <int value="170" label="webkit-animation-fill-mode"/>
+  <int value="171" label="webkit-animation-iteration-count"/>
+  <int value="172" label="webkit-animation-name"/>
+  <int value="173" label="webkit-animation-play-state"/>
+  <int value="174" label="webkit-animation-timing-function"/>
+  <int value="175" label="webkit-appearance"/>
+  <int value="176" label="webkit-aspect-ratio"/>
+  <int value="177" label="webkit-backface-visibility"/>
+  <int value="178" label="webkit-background-clip"/>
+  <int value="179" label="webkit-background-composite"/>
+  <int value="180" label="webkit-background-origin"/>
+  <int value="181" label="webkit-background-size"/>
+  <int value="182" label="webkit-border-after"/>
+  <int value="183" label="webkit-border-after-color"/>
+  <int value="184" label="webkit-border-after-style"/>
+  <int value="185" label="webkit-border-after-width"/>
+  <int value="186" label="webkit-border-before"/>
+  <int value="187" label="webkit-border-before-color"/>
+  <int value="188" label="webkit-border-before-style"/>
+  <int value="189" label="webkit-border-before-width"/>
+  <int value="190" label="webkit-border-end"/>
+  <int value="191" label="webkit-border-end-color"/>
+  <int value="192" label="webkit-border-end-style"/>
+  <int value="193" label="webkit-border-end-width"/>
+  <int value="194" label="webkit-border-fit"/>
+  <int value="195" label="webkit-border-horizontal-spacing"/>
+  <int value="196" label="webkit-border-image"/>
+  <int value="197" label="webkit-border-radius"/>
+  <int value="198" label="webkit-border-start"/>
+  <int value="199" label="webkit-border-start-color"/>
+  <int value="200" label="webkit-border-start-style"/>
+  <int value="201" label="webkit-border-start-width"/>
+  <int value="202" label="webkit-border-vertical-spacing"/>
+  <int value="203" label="webkit-box-align"/>
+  <int value="204" label="webkit-box-direction"/>
+  <int value="205" label="webkit-box-flex"/>
+  <int value="206" label="webkit-box-flex-group"/>
+  <int value="207" label="webkit-box-lines"/>
+  <int value="208" label="webkit-box-ordinal-group"/>
+  <int value="209" label="webkit-box-orient"/>
+  <int value="210" label="webkit-box-pack"/>
+  <int value="211" label="webkit-box-reflect"/>
+  <int value="212" label="webkit-box-shadow"/>
+  <int value="213" label="webkit-color-correction"/>
+  <int value="214" label="webkit-column-axis"/>
+  <int value="215" label="webkit-column-break-after"/>
+  <int value="216" label="webkit-column-break-before"/>
+  <int value="217" label="webkit-column-break-inside"/>
+  <int value="218" label="webkit-column-count"/>
+  <int value="219" label="webkit-column-gap"/>
+  <int value="220" label="webkit-column-progression"/>
+  <int value="221" label="webkit-column-rule"/>
+  <int value="222" label="webkit-column-rule-color"/>
+  <int value="223" label="webkit-column-rule-style"/>
+  <int value="224" label="webkit-column-rule-width"/>
+  <int value="225" label="webkit-column-span"/>
+  <int value="226" label="webkit-column-width"/>
+  <int value="227" label="webkit-columns"/>
+  <int value="228" label="webkit-box-decoration-break"/>
+  <int value="229" label="webkit-filter"/>
+  <int value="230" label="webkit-align-content"/>
+  <int value="231" label="webkit-align-items"/>
+  <int value="232" label="webkit-align-self"/>
+  <int value="233" label="webkit-flex"/>
+  <int value="234" label="webkit-flex-basis"/>
+  <int value="235" label="webkit-flex-direction"/>
+  <int value="236" label="webkit-flex-flow"/>
+  <int value="237" label="webkit-flex-grow"/>
+  <int value="238" label="webkit-flex-shrink"/>
+  <int value="239" label="webkit-flex-wrap"/>
+  <int value="240" label="webkit-justify-content"/>
+  <int value="241" label="webkit-font-size-delta"/>
+  <int value="242" label="webkit-grid-columns"/>
+  <int value="243" label="webkit-grid-rows"/>
+  <int value="244" label="webkit-grid-start"/>
+  <int value="245" label="webkit-grid-end"/>
+  <int value="246" label="webkit-grid-before"/>
+  <int value="247" label="webkit-grid-after"/>
+  <int value="248" label="webkit-grid-column"/>
+  <int value="249" label="webkit-grid-row"/>
+  <int value="250" label="webkit-grid-auto-flow"/>
+  <int value="251" label="webkit-highlight"/>
+  <int value="252" label="webkit-hyphenate-character"/>
+  <int value="253" label="webkit-hyphenate-limit-after"/>
+  <int value="254" label="webkit-hyphenate-limit-before"/>
+  <int value="255" label="webkit-hyphenate-limit-lines"/>
+  <int value="256" label="webkit-hyphens"/>
+  <int value="257" label="webkit-line-box-contain"/>
+  <int value="258" label="webkit-line-align"/>
+  <int value="259" label="webkit-line-break"/>
+  <int value="260" label="webkit-line-clamp"/>
+  <int value="261" label="webkit-line-grid"/>
+  <int value="262" label="webkit-line-snap"/>
+  <int value="263" label="webkit-logical-width"/>
+  <int value="264" label="webkit-logical-height"/>
+  <int value="265" label="webkit-margin-after-collapse"/>
+  <int value="266" label="webkit-margin-before-collapse"/>
+  <int value="267" label="webkit-margin-bottom-collapse"/>
+  <int value="268" label="webkit-margin-top-collapse"/>
+  <int value="269" label="webkit-margin-collapse"/>
+  <int value="270" label="webkit-margin-after"/>
+  <int value="271" label="webkit-margin-before"/>
+  <int value="272" label="webkit-margin-end"/>
+  <int value="273" label="webkit-margin-start"/>
+  <int value="274" label="webkit-marquee"/>
+  <int value="275" label="webkit-marquee-direction"/>
+  <int value="276" label="webkit-marquee-increment"/>
+  <int value="277" label="webkit-marquee-repetition"/>
+  <int value="278" label="webkit-marquee-speed"/>
+  <int value="279" label="webkit-marquee-style"/>
+  <int value="280" label="webkit-mask"/>
+  <int value="281" label="webkit-mask-box-image"/>
+  <int value="282" label="webkit-mask-box-image-outset"/>
+  <int value="283" label="webkit-mask-box-image-repeat"/>
+  <int value="284" label="webkit-mask-box-image-slice"/>
+  <int value="285" label="webkit-mask-box-image-source"/>
+  <int value="286" label="webkit-mask-box-image-width"/>
+  <int value="287" label="webkit-mask-clip"/>
+  <int value="288" label="webkit-mask-composite"/>
+  <int value="289" label="webkit-mask-image"/>
+  <int value="290" label="webkit-mask-origin"/>
+  <int value="291" label="webkit-mask-position"/>
+  <int value="292" label="webkit-mask-position-x"/>
+  <int value="293" label="webkit-mask-position-y"/>
+  <int value="294" label="webkit-mask-repeat"/>
+  <int value="295" label="webkit-mask-repeat-x"/>
+  <int value="296" label="webkit-mask-repeat-y"/>
+  <int value="297" label="webkit-mask-size"/>
+  <int value="298" label="webkit-max-logical-width"/>
+  <int value="299" label="webkit-max-logical-height"/>
+  <int value="300" label="webkit-min-logical-width"/>
+  <int value="301" label="webkit-min-logical-height"/>
+  <int value="302" label="webkit-nbsp-mode"/>
+  <int value="303" label="webkit-order"/>
+  <int value="304" label="webkit-padding-after"/>
+  <int value="305" label="webkit-padding-before"/>
+  <int value="306" label="webkit-padding-end"/>
+  <int value="307" label="webkit-padding-start"/>
+  <int value="308" label="webkit-perspective"/>
+  <int value="309" label="webkit-perspective-origin"/>
+  <int value="310" label="webkit-perspective-origin-x"/>
+  <int value="311" label="webkit-perspective-origin-y"/>
+  <int value="312" label="webkit-print-color-adjust"/>
+  <int value="313" label="webkit-rtl-ordering"/>
+  <int value="314" label="webkit-ruby-position"/>
+  <int value="315" label="webkit-text-combine"/>
+  <int value="316" label="webkit-text-decorations-in-effect"/>
+  <int value="317" label="webkit-text-emphasis"/>
+  <int value="318" label="webkit-text-emphasis-color"/>
+  <int value="319" label="webkit-text-emphasis-position"/>
+  <int value="320" label="webkit-text-emphasis-style"/>
+  <int value="321" label="webkit-text-fill-color"/>
+  <int value="322" label="webkit-text-security"/>
+  <int value="323" label="webkit-text-stroke"/>
+  <int value="324" label="webkit-text-stroke-color"/>
+  <int value="325" label="webkit-text-stroke-width"/>
+  <int value="326" label="webkit-transform"/>
+  <int value="327" label="webkit-transform-origin"/>
+  <int value="328" label="webkit-transform-origin-x"/>
+  <int value="329" label="webkit-transform-origin-y"/>
+  <int value="330" label="webkit-transform-origin-z"/>
+  <int value="331" label="webkit-transform-style"/>
+  <int value="332" label="webkit-transition"/>
+  <int value="333" label="webkit-transition-delay"/>
+  <int value="334" label="webkit-transition-duration"/>
+  <int value="335" label="webkit-transition-property"/>
+  <int value="336" label="webkit-transition-timing-function"/>
+  <int value="337" label="webkit-user-drag"/>
+  <int value="338" label="webkit-user-modify"/>
+  <int value="339" label="webkit-user-select"/>
+  <int value="340" label="webkit-flow-into"/>
+  <int value="341" label="webkit-flow-from"/>
+  <int value="342" label="webkit-region-overflow"/>
+  <int value="343" label="webkit-region-break-after"/>
+  <int value="344" label="webkit-region-break-before"/>
+  <int value="345" label="webkit-region-break-inside"/>
+  <int value="346" label="webkit-shape-inside"/>
+  <int value="347" label="webkit-shape-outside"/>
+  <int value="348" label="webkit-shape-margin"/>
+  <int value="349" label="webkit-shape-padding"/>
+  <int value="350" label="webkit-wrap-flow"/>
+  <int value="351" label="webkit-wrap-through"/>
+  <int value="352" label="webkit-wrap"/>
+  <int value="353" label="webkit-tap-highlight-color"/>
+  <int value="354" label="webkit-app-region"/>
+  <int value="355" label="clip-path"/>
+  <int value="356" label="clip-rule"/>
+  <int value="357" label="mask"/>
+  <int value="358" label="enable-background"/>
+  <int value="359" label="filter"/>
+  <int value="360" label="flood-color"/>
+  <int value="361" label="flood-opacity"/>
+  <int value="362" label="lighting-color"/>
+  <int value="363" label="stop-color"/>
+  <int value="364" label="stop-opacity"/>
+  <int value="365" label="color-interpolation"/>
+  <int value="366" label="color-interpolation-filters"/>
+  <int value="367" label="color-profile"/>
+  <int value="368" label="color-rendering"/>
+  <int value="369" label="fill"/>
+  <int value="370" label="fill-opacity"/>
+  <int value="371" label="fill-rule"/>
+  <int value="372" label="marker"/>
+  <int value="373" label="marker-end"/>
+  <int value="374" label="marker-mid"/>
+  <int value="375" label="marker-start"/>
+  <int value="376" label="mask-type"/>
+  <int value="377" label="shape-rendering"/>
+  <int value="378" label="stroke"/>
+  <int value="379" label="stroke-dasharray"/>
+  <int value="380" label="stroke-dashoffset"/>
+  <int value="381" label="stroke-linecap"/>
+  <int value="382" label="stroke-linejoin"/>
+  <int value="383" label="stroke-miterlimit"/>
+  <int value="384" label="stroke-opacity"/>
+  <int value="385" label="stroke-width"/>
+  <int value="386" label="alignment-baseline"/>
+  <int value="387" label="baseline-shift"/>
+  <int value="388" label="dominant-baseline"/>
+  <int value="389" label="glyph-orientation-horizontal"/>
+  <int value="390" label="glyph-orientation-vertical"/>
+  <int value="391" label="kerning"/>
+  <int value="392" label="text-anchor"/>
+  <int value="393" label="vector-effect"/>
+  <int value="394" label="writing-mode"/>
+  <int value="395" label="webkit-svg-shadow"/>
+  <int value="396" label="webkit-cursor-visibility"/>
+  <int value="397" label="image-orientation"/>
+  <int value="398" label="image-resolution"/>
+  <int value="399" label="webkit-blend-mode"/>
+  <int value="400" label="webkit-background-blend-mode"/>
+  <int value="401" label="webkit-text-decoration-line"/>
+  <int value="402" label="webkit-text-decoration-style"/>
+  <int value="403" label="webkit-text-decoration-color"/>
+  <int value="404" label="webkit-text-align-last"/>
+  <int value="405" label="webkit-text-underline-position"/>
+  <int value="406" label="max-zoom"/>
+  <int value="407" label="min-zoom"/>
+  <int value="408" label="orientation"/>
+  <int value="409" label="user-zoom"/>
+  <int value="410" label="webkit-dashboard-region"/>
+  <int value="411" label="webkit-overflow-scrolling"/>
+  <int value="412" label="webkit-app-region"/>
+  <int value="413" label="webkit-filter"/>
+  <int value="414" label="webkit-box-decoration-break"/>
+  <int value="415" label="webkit-tap-highlight-color"/>
+  <int value="416" label="buffered-rendering"/>
+  <int value="417" label="grid-auto-rows"/>
+  <int value="418" label="grid-auto-columns"/>
+  <int value="419" label="background-blend-mode"/>
+  <int value="420" label="mix-blend-mode"/>
+  <int value="421" label="touch-action"/>
+  <int value="422" label="grid-area"/>
+</enum>
+
 <enum name="MediaContainers" type="int">
   <int value="0" label="Unknown"/>
   <int value="1" label="AAC (Advanced Audio Coding)"/>
@@ -14678,10 +16158,6 @@ other types of suffix sets.
 <enum name="MediaKeyError" type="int">
   <int value="1" label="kUnknownError"/>
   <int value="2" label="kClientError"/>
-  <int value="3" label="kServiceError"/>
-  <int value="4" label="kOutputError"/>
-  <int value="5" label="kHardwareChangeError"/>
-  <int value="6" label="kDomainError"/>
 </enum>
 
 <enum name="MediaKeyException" type="int">
@@ -15325,6 +16801,13 @@ other types of suffix sets.
   <int value="4" label="East">Scrolled from left towards right</int>
 </enum>
 
+<enum name="ParsedCookieStatus" type="int">
+  <int value="0" label="All cookie values valid and without control chars"/>
+  <int value="1" label="Cookie contains control chars"/>
+  <int value="2" label="Cookie is invalid"/>
+  <int value="3" label="Cookie contains both control chars and is invalid"/>
+</enum>
+
 <enum name="PepperVideoDecodeError" type="int">
   <int value="1" label="Illegal state">
     An operation was attempted during an incompatible decoder state.
@@ -15619,6 +17102,20 @@ other types of suffix sets.
   <int value="1" label="PAGEVIEW_EVENT_TOP_SITE_NEW_URL"/>
   <int value="2" label="PAGEVIEW_EVENT_LOAD_START"/>
   <int value="3" label="PAGEVIEW_EVENT_TOP_SITE_LOAD_START"/>
+</enum>
+
+<enum name="PrerenderSchemeCancelReason" type="int">
+  <int value="0" label="EXTERNAL_PROTOCOL"/>
+  <int value="1" label="DATA"/>
+  <int value="2" label="BLOB"/>
+  <int value="3" label="FILE"/>
+  <int value="4" label="FILESYSTEM"/>
+  <int value="5" label="WEBSOCKET"/>
+  <int value="6" label="FTP"/>
+  <int value="7" label="CHROME"/>
+  <int value="8" label="CHROME_EXTENSION"/>
+  <int value="9" label="ABOUT"/>
+  <int value="10" label="UNKNOWN"/>
 </enum>
 
 <enum name="PrerenderTabHelperEvents" type="int">
@@ -15957,6 +17454,17 @@ other types of suffix sets.
   <int value="5" label="MODEL_MISSING_FIELDS"/>
 </enum>
 
+<enum name="SBDownloadFeedbackUploadResult" type="int">
+  <int value="0" label="SUCCESS"/>
+  <int value="1" label="UPLOAD_SUCCESS"/>
+  <int value="2" label="UPLOAD_CANCELLED"/>
+  <int value="3" label="UPLOAD_METADATA_NET_ERROR"/>
+  <int value="4" label="UPLOAD_METADATA_RESPONSE_ERROR"/>
+  <int value="5" label="UPLOAD_FILE_NET_ERROR"/>
+  <int value="6" label="UPLOAD_FILE_RESPONSE_ERROR"/>
+  <int value="7" label="UPLOAD_COMPLETE_RESPONSE_ERROR"/>
+</enum>
+
 <enum name="ShillTerminationActionResult" type="int">
   <summary>
     The termination action result types come from TerminationActionResult in
@@ -16161,6 +17669,36 @@ other types of suffix sets.
 <enum name="SpdySettingsSent" type="int">
   <int value="0" label="not sent"/>
   <int value="1" label="sent"/>
+</enum>
+
+<enum name="SpecialShFileOperationCodes" type="int">
+  <summary>Legacy error codes still returned by |ShFileOperation()|</summary>
+  <int value="5" label="Access denied"/>
+  <int value="113" label="Source and Destination are same file"/>
+  <int value="114" label="Multiple source mapped to single destination"/>
+  <int value="115" label="Rename to different directory"/>
+  <int value="116" label="Source root"/>
+  <int value="117" label="Canceled by user"/>
+  <int value="118" label="Destination is subtree of source"/>
+  <int value="120" label="Denied by security settings"/>
+  <int value="121" label="Path length exceeded MAX_PATH"/>
+  <int value="122" label="Multiple destination paths"/>
+  <int value="124" label="Path invalid"/>
+  <int value="125" label="Source and destination have same parent"/>
+  <int value="126" label="Destination exists"/>
+  <int value="128" label="Destination exists as folder"/>
+  <int value="129" label="Name length exceeded MAX_PATH"/>
+  <int value="130" label="Destination read-only CD-ROM"/>
+  <int value="131" label="Destination read-only DVD"/>
+  <int value="132" label="Destination writable CD-ROM"/>
+  <int value="133" label="File too large"/>
+  <int value="134" label="Source read-only CD-ROM"/>
+  <int value="135" label="Source read-only DVD"/>
+  <int value="136" label="Source writable CD-ROM"/>
+  <int value="183" label="Operation exceeded MAX_PATH"/>
+  <int value="1026" label="Invalid path / unknown"/>
+  <int value="65536" label="Unspecified destination error"/>
+  <int value="65652" label="Destination root"/>
 </enum>
 
 <enum name="SqliteErrorCode" type="int">
@@ -18182,6 +19720,7 @@ other types of suffix sets.
 </fieldtrial>
 
 <fieldtrial name="SqliteDatabases" separator=".">
+  <group name="Activity" label="Activity"/>
   <group name="AppCache" label="AppCache"/>
   <group name="Cookie" label="Cookie"/>
   <group name="DatabaseTracker" label="DatabaseTracker"/>
@@ -18189,6 +19728,7 @@ other types of suffix sets.
   <group name="DomStorageDatabase" label="DomStorageDatabase"/>
   <group name="History" label="History"/>
   <group name="Quota" label="Quota"/>
+  <group name="SyncDirectory" label="SyncDirectory"/>
   <group name="Text" label="Text"/>
   <group name="Thumbnail" label="Thumbnail"/>
   <group name="TopSites" label="TopSites"/>

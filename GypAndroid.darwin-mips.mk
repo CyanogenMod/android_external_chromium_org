@@ -15,6 +15,7 @@ include $(LOCAL_PATH)/base/allocator/allocator_extension_thunks.target.darwin-mi
 include $(LOCAL_PATH)/base/base.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_i18n.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_java_activity_state.target.darwin-mips.mk
+include $(LOCAL_PATH)/base/base_java_memory_pressure_level_list.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_prefs.target.darwin-mips.mk
 include $(LOCAL_PATH)/base/base_static.target.darwin-mips.mk
@@ -24,12 +25,12 @@ include $(LOCAL_PATH)/build/temp_gyp/googleurl.target.darwin-mips.mk
 include $(LOCAL_PATH)/cc/cc.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_browser.target.darwin-mips.mk
-include $(LOCAL_PATH)/components/autofill_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_content_risk_proto.target.darwin-mips.mk
+include $(LOCAL_PATH)/components/autofill_core_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.darwin-mips.mk
-include $(LOCAL_PATH)/components/component_resources.target.darwin-mips.mk
+include $(LOCAL_PATH)/components/component_strings.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/encryptor.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.darwin-mips.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.darwin-mips.mk
@@ -61,6 +62,7 @@ include $(LOCAL_PATH)/content/generate_content_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/java_set_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/page_transition_types_java.target.darwin-mips.mk
 include $(LOCAL_PATH)/content/result_codes_java.target.darwin-mips.mk
+include $(LOCAL_PATH)/content/speech_recognition_error_java.target.darwin-mips.mk
 include $(LOCAL_PATH)/crypto/crypto.target.darwin-mips.mk
 include $(LOCAL_PATH)/google_apis/google_apis.target.darwin-mips.mk
 include $(LOCAL_PATH)/gpu/command_buffer/gles2_utils.target.darwin-mips.mk
@@ -100,6 +102,7 @@ include $(LOCAL_PATH)/skia/skia.target.darwin-mips.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.darwin-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-mips.mk
@@ -145,9 +148,10 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.darwi
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/angle/src/translator_common.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/angle/src/translator_glsl.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_common.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_glsl.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-mips.mk
@@ -224,6 +228,7 @@ include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.darwin-mips.mk
+include $(LOCAL_PATH)/webkit/support/glue_child.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/glue_renderer.target.darwin-mips.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.darwin-mips.mk

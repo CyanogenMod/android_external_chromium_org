@@ -65,7 +65,7 @@ PendingDialog* PendingDialog::GetInstance() {
 
 void PendingDialog::Add(int32 tab_id,
                          scoped_refptr<SelectFileDialogExtension> dialog) {
-  DCHECK(dialog);
+  DCHECK(dialog.get());
   if (map_.find(tab_id) == map_.end())
     map_.insert(std::make_pair(tab_id, dialog));
   else
@@ -109,7 +109,7 @@ SelectFileDialogExtension::SelectFileDialogExtension(
 }
 
 SelectFileDialogExtension::~SelectFileDialogExtension() {
-  if (extension_dialog_)
+  if (extension_dialog_.get())
     extension_dialog_->ObserverDestroyed();
 }
 
@@ -168,7 +168,7 @@ void SelectFileDialogExtension::OnFileSelected(
     int index) {
   scoped_refptr<SelectFileDialogExtension> dialog =
       PendingDialog::GetInstance()->Find(tab_id);
-  if (!dialog)
+  if (!dialog.get())
     return;
   dialog->selection_type_ = SINGLE_FILE;
   dialog->selection_files_.clear();
@@ -182,7 +182,7 @@ void SelectFileDialogExtension::OnMultiFilesSelected(
     const std::vector<ui::SelectedFileInfo>& files) {
   scoped_refptr<SelectFileDialogExtension> dialog =
       PendingDialog::GetInstance()->Find(tab_id);
-  if (!dialog)
+  if (!dialog.get())
     return;
   dialog->selection_type_ = MULTIPLE_FILES;
   dialog->selection_files_ = files;
@@ -193,7 +193,7 @@ void SelectFileDialogExtension::OnMultiFilesSelected(
 void SelectFileDialogExtension::OnFileSelectionCanceled(int32 tab_id) {
   scoped_refptr<SelectFileDialogExtension> dialog =
       PendingDialog::GetInstance()->Find(tab_id);
-  if (!dialog)
+  if (!dialog.get())
     return;
   dialog->selection_type_ = CANCEL;
   dialog->selection_files_.clear();
@@ -201,7 +201,7 @@ void SelectFileDialogExtension::OnFileSelectionCanceled(int32 tab_id) {
 }
 
 content::RenderViewHost* SelectFileDialogExtension::GetRenderViewHost() {
-  if (extension_dialog_)
+  if (extension_dialog_.get())
     return extension_dialog_->host()->render_view_host();
   return NULL;
 }
@@ -326,6 +326,8 @@ void SelectFileDialogExtension::SelectFileImpl(
   }
 
   base::FilePath virtual_path;
+  base::FilePath fallback_path = profile_->last_selected_directory().Append(
+      default_dialog_path.BaseName());
   // If an absolute path is specified as the default path, convert it to the
   // virtual path in the file browser extension. Due to the current design,
   // an invalid temporal cache file path may passed as |default_dialog_path|
@@ -335,8 +337,7 @@ void SelectFileDialogExtension::SelectFileImpl(
       (file_manager_util::ConvertFileToRelativeFileSystemPath(
            profile_, kFileBrowserDomain, default_dialog_path, &virtual_path) ||
        file_manager_util::ConvertFileToRelativeFileSystemPath(
-           profile_, kFileBrowserDomain, profile_->last_selected_directory(),
-           &virtual_path))) {
+           profile_, kFileBrowserDomain, fallback_path, &virtual_path))) {
     virtual_path = base::FilePath("/").Append(virtual_path);
   } else {
     // If the path was relative, or failed to convert, just use the base name,

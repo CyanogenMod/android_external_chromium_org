@@ -9,9 +9,6 @@
 #include "base/stl_util.h"
 #include "base/threading/thread.h"
 #include "components/webdata/common/web_database_service.h"
-#ifdef DEBUG
-#include "content/public/browser/browser_thread.h"
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -21,16 +18,14 @@
 
 using base::Bind;
 using base::Time;
-using content::BrowserThread;
 
-WebDataServiceBase::WebDataServiceBase(scoped_refptr<WebDatabaseService> wdbs,
-                                       const ProfileErrorCallback& callback)
-    : wdbs_(wdbs),
+WebDataServiceBase::WebDataServiceBase(
+    scoped_refptr<WebDatabaseService> wdbs,
+    const ProfileErrorCallback& callback,
+    const scoped_refptr<base::MessageLoopProxy>& ui_thread)
+    : base::RefCountedDeleteOnMessageLoop<WebDataServiceBase>(ui_thread),
+      wdbs_(wdbs),
       profile_error_callback_(callback) {
-  // WebDataService requires DB thread if instantiated.
-  // Set WebDataServiceFactory::GetInstance()->SetTestingFactory(&profile, NULL)
-  // if you do not want to instantiate WebDataService in your test.
-  DCHECK(BrowserThread::IsWellKnownThread(BrowserThread::DB));
 }
 
 void WebDataServiceBase::ShutdownOnUIThread() {
@@ -61,14 +56,14 @@ void WebDataServiceBase::CancelRequest(Handle h) {
 }
 
 bool WebDataServiceBase::IsDatabaseLoaded() {
-  if (!wdbs_)
+  if (!wdbs_.get())
     return false;
   return wdbs_->db_loaded();
 }
 
 void WebDataServiceBase::RegisterDBLoadedCallback(
     const base::Callback<void(void)>& callback) {
-  if (!wdbs_)
+  if (!wdbs_.get())
     return;
   wdbs_->RegisterDBLoadedCallback(callback);
 }

@@ -19,6 +19,10 @@
 #include "media/base/android/media_player_manager.h"
 #include "ui/gfx/rect_f.h"
 
+namespace media {
+class MediaDrmBridge;
+}
+
 namespace content {
 
 class WebContents;
@@ -28,7 +32,7 @@ class WebContents;
 // them to corresponding MediaPlayerAndroid object. Callbacks from
 // MediaPlayerAndroid objects are converted to IPCs and then sent to the
 // render process.
-class MediaPlayerManagerImpl
+class CONTENT_EXPORT MediaPlayerManagerImpl
     : public RenderViewHostObserver,
       public media::MediaPlayerManager {
  public:
@@ -65,27 +69,23 @@ class MediaPlayerManagerImpl
       int player_id,
       media::DemuxerStream::Type type,
       bool seek_done) OVERRIDE;
-  virtual void RequestMediaResources(
-      media::MediaPlayerAndroid* player) OVERRIDE;
-  virtual void ReleaseMediaResources(
-      media::MediaPlayerAndroid* player) OVERRIDE;
+  virtual void RequestMediaResources(int player_id) OVERRIDE;
+  virtual void ReleaseMediaResources(int player_id) OVERRIDE;
   virtual media::MediaResourceGetter* GetMediaResourceGetter() OVERRIDE;
   virtual media::MediaPlayerAndroid* GetFullscreenPlayer() OVERRIDE;
   virtual media::MediaPlayerAndroid* GetPlayer(int player_id) OVERRIDE;
+  virtual media::MediaDrmBridge* GetDrmBridge(int media_keys_id) OVERRIDE;
   virtual void DestroyAllMediaPlayers() OVERRIDE;
   virtual void OnMediaSeekRequest(int player_id, base::TimeDelta time_to_seek,
                                   unsigned seek_request_id) OVERRIDE;
   virtual void OnMediaConfigRequest(int player_id) OVERRIDE;
-  virtual void OnKeyAdded(int player_id,
-                          const std::string& key_system,
+  virtual void OnKeyAdded(int media_keys_id,
                           const std::string& session_id) OVERRIDE;
-  virtual void OnKeyError(int player_id,
-                          const std::string& key_system,
+  virtual void OnKeyError(int media_keys_id,
                           const std::string& session_id,
                           media::MediaKeys::KeyError error_code,
                           int system_code) OVERRIDE;
-  virtual void OnKeyMessage(int player_id,
-                            const std::string& key_system,
+  virtual void OnKeyMessage(int media_keys_id,
                             const std::string& session_id,
                             const std::string& message,
                             const std::string& destination_url) OVERRIDE;
@@ -123,18 +123,15 @@ class MediaPlayerManagerImpl
       int player_id,
       const media::MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params);
   void OnMediaSeekRequestAck(int player_id, unsigned seek_request_id);
-  void OnGenerateKeyRequest(int player_id,
-                            const std::string& key_system,
+  void OnGenerateKeyRequest(int media_keys_id,
                             const std::string& type,
                             const std::vector<uint8>& init_data);
-  void OnAddKey(int player_id,
-                const std::string& key_system,
+  void OnAddKey(int media_keys_id,
                 const std::vector<uint8>& key,
                 const std::vector<uint8>& init_data,
                 const std::string& session_id);
-  void OnCancelKeyRequest(int player_id,
-                          const std::string& key_system,
-                          const std::string& session_id);
+  void OnCancelKeyRequest(int media_keys_id, const std::string& session_id);
+  void OnDurationChanged(int player_id, const base::TimeDelta& duration);
 
 #if defined(GOOGLE_TV)
   virtual void OnNotifyExternalSurface(
@@ -147,9 +144,15 @@ class MediaPlayerManagerImpl
   // Removes the player with the specified id.
   void RemovePlayer(int player_id);
 
+  // Removes the DRM bridge with the specified id.
+  void RemoveDrmBridge(int key_id);
+
  private:
   // An array of managed players.
   ScopedVector<media::MediaPlayerAndroid> players_;
+
+  // An array of managed media DRM bridges.
+  ScopedVector<media::MediaDrmBridge> drm_bridges_;
 
   // The fullscreen video view object or NULL if video is not played in
   // fullscreen.

@@ -12,10 +12,9 @@
 #include "media/base/media_log.h"
 #include "media/filters/chunk_demuxer.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/web/WebMediaSource.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "webkit/renderer/media/android/webmediaplayer_proxy_android.h"
-#include "webkit/renderer/media/crypto/key_systems.h"
 #include "webkit/renderer/media/webmediaplayer_util.h"
 #include "webkit/renderer/media/webmediasourceclient_impl.h"
 
@@ -86,6 +85,7 @@ void MediaSourceDelegate::Destroy() {
     return;
   }
 
+  duration_change_cb_.Reset();
   update_network_state_cb_.Reset();
   media_source_.reset();
   proxy_ = NULL;
@@ -99,15 +99,17 @@ void MediaSourceDelegate::Destroy() {
 void MediaSourceDelegate::InitializeMediaSource(
     WebKit::WebMediaSource* media_source,
     const media::NeedKeyCB& need_key_cb,
-    const UpdateNetworkStateCB& update_network_state_cb) {
+    const UpdateNetworkStateCB& update_network_state_cb,
+    const DurationChangeCB& duration_change_cb) {
   DCHECK(media_source);
   media_source_.reset(media_source);
   need_key_cb_ = need_key_cb;
   update_network_state_cb_ = update_network_state_cb;
+  duration_change_cb_ = duration_change_cb;
 
   chunk_demuxer_.reset(new media::ChunkDemuxer(
       BIND_TO_RENDER_LOOP(&MediaSourceDelegate::OnDemuxerOpened),
-      BIND_TO_RENDER_LOOP_2(&MediaSourceDelegate::OnNeedKey, "", ""),
+      BIND_TO_RENDER_LOOP_1(&MediaSourceDelegate::OnNeedKey, ""),
       base::Bind(&MediaSourceDelegate::OnAddTextTrack,
                  base::Unretained(this)),
       base::Bind(&LogMediaSourceError, media_log_)));
@@ -185,7 +187,12 @@ void MediaSourceDelegate::AddBufferedTimeRange(base::TimeDelta start,
 }
 
 void MediaSourceDelegate::SetDuration(base::TimeDelta duration) {
-  // Do nothing
+  DVLOG(1) << "MediaSourceDelegate::SetDuration(" << duration.InSecondsF()
+           << ") : " << player_id_;
+  // Notify our owner (e.g. WebMediaPlayerAndroid) that
+  // duration has changed.
+  if (!duration_change_cb_.is_null())
+    duration_change_cb_.Run(duration);
 }
 
 void MediaSourceDelegate::OnReadFromDemuxer(media::DemuxerStream::Type type,
@@ -377,10 +384,10 @@ int MediaSourceDelegate::GetDurationMs() {
     return -1;
 
   double duration_ms = chunk_demuxer_->GetDuration() * 1000;
-  if (duration_ms > std::numeric_limits<int>::max()) {
+  if (duration_ms > std::numeric_limits<int32>::max()) {
     LOG(WARNING) << "Duration from ChunkDemuxer is too large; probably "
                     "something has gone wrong.";
-    return std::numeric_limits<int>::max();
+    return std::numeric_limits<int32>::max();
   }
   return duration_ms;
 }
@@ -393,16 +400,14 @@ void MediaSourceDelegate::OnDemuxerOpened() {
       chunk_demuxer_.get(), base::Bind(&LogMediaSourceError, media_log_)));
 }
 
-void MediaSourceDelegate::OnNeedKey(const std::string& key_system,
-                                    const std::string& session_id,
+void MediaSourceDelegate::OnNeedKey(const std::string& session_id,
                                     const std::string& type,
                                     scoped_ptr<uint8[]> init_data,
                                     int init_data_size) {
   if (need_key_cb_.is_null())
     return;
 
-  need_key_cb_.Run(
-      key_system, session_id, type, init_data.Pass(), init_data_size);
+  need_key_cb_.Run(session_id, type, init_data.Pass(), init_data_size);
 }
 
 scoped_ptr<media::TextTrack> MediaSourceDelegate::OnAddTextTrack(

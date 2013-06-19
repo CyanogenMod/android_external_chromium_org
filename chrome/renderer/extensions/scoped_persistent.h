@@ -51,7 +51,7 @@ class ScopedPersistent {
       const_cast<v8::Persistent<T>* >(&handle_));
   }
 
-  v8::Handle<T> newHandle() const {
+  v8::Handle<T> NewHandle() const {
     if (handle_.IsEmpty())
       return v8::Local<T>();
     return v8::Local<T>::New(GetIsolate(handle_), handle_);
@@ -60,7 +60,7 @@ class ScopedPersistent {
   template<typename P>
   void MakeWeak(P* parameters,
                 typename v8::WeakReferenceCallbacks<T, P>::Revivable callback) {
-    handle_.MakeWeak(GetIsolate(handle_), parameters, callback);
+    handle_.MakeWeak(parameters, callback);
   }
 
  private:

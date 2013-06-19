@@ -12,10 +12,6 @@ TestWebContentsView::TestWebContentsView() {
 TestWebContentsView::~TestWebContentsView() {
 }
 
-void TestWebContentsView::ShowContextMenu(const ContextMenuParams& params,
-                                          ContextMenuSourceType type) {
-}
-
 void TestWebContentsView::ShowPopupMenu(const gfx::Rect& bounds,
                                         int item_height,
                                         double item_font_size,
@@ -86,6 +82,10 @@ gfx::Rect TestWebContentsView::GetViewBounds() const {
 
 #if defined(OS_MACOSX)
 void TestWebContentsView::SetAllowOverlappingViews(bool overlapping) {
+}
+
+bool TestWebContentsView::GetAllowOverlappingViews() const {
+  return false;
 }
 #endif
 

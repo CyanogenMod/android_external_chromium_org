@@ -17,6 +17,15 @@ include_rules = [
   "-base/prefs",
 
   "+cc",
+  "-cc/base/thread.h",  # http://crbug.com/249172
+  "!cc/base/thread_impl.h",  # http://crbug.com/249172
+  # If you want to use any of these files, move them to src/base first.
+  "-cc/base/hash_pair.h",
+  "-cc/base/scoped_ptr_algorithm.h",
+  "-cc/base/scoped_ptr_deque.h",
+  "-cc/base/scoped_ptr_hash_map.h",
+  "-cc/base/scoped_ptr_vector.h",
+
   "+crypto",
   "+grit/content_resources.h",
   "+grit/ui_resources.h",
@@ -52,6 +61,7 @@ include_rules = [
 
   # Allow inclusion of third-party code:
   "+third_party/angle",
+  "+third_party/angle_dx11",
   "+third_party/flac",
   "+third_party/gpsd",
   "+third_party/libjingle",
@@ -64,7 +74,7 @@ include_rules = [
   "+third_party/webrtc",
   "+third_party/zlib/google",
   "+third_party/WebKit/public/platform",
-  "+third_party/WebKit/Source/WebKit/chromium",
+  "+third_party/WebKit/public/web",
 
   "+ui/android",
   # Aura is analogous to Win32 or a Gtk, so it is allowed.

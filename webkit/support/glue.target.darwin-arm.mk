@@ -21,8 +21,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_resources_gyp)/webkit_resources.stamp \
-	$(call intermediates-dir-for,GYP,webkit_support_webkit_strings_gyp)/webkit_strings.stamp \
-	$(call intermediates-dir-for,GYP,webkit_support_overscroller_jni_headers_gyp)/overscroller_jni_headers.stamp
+	$(call intermediates-dir-for,GYP,webkit_support_webkit_strings_gyp)/webkit_strings.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -35,9 +34,6 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	webkit/glue/cursor_utils.cc \
-	webkit/glue/fling_curve_configuration.cc \
-	webkit/glue/fling_animator_impl_android.cc \
 	webkit/glue/ftp_directory_listing_response_delegate.cc \
 	webkit/glue/glue_serialize_deprecated.cc \
 	webkit/glue/image_decoder.cc \
@@ -47,21 +43,13 @@ LOCAL_SRC_FILES := \
 	webkit/glue/resource_type.cc \
 	webkit/glue/scoped_clipboard_writer_glue.cc \
 	webkit/glue/simple_webmimeregistry_impl.cc \
-	webkit/glue/touch_fling_gesture_curve.cc \
-	webkit/glue/web_discardable_memory_impl.cc \
 	webkit/glue/webclipboard_impl.cc \
 	webkit/glue/webcookie.cc \
-	webkit/glue/webfallbackthemeengine_impl.cc \
 	webkit/glue/webfileutilities_impl.cc \
 	webkit/glue/webkit_glue.cc \
 	webkit/glue/webkitplatformsupport_impl.cc \
-	webkit/glue/webmenuitem.cc \
 	webkit/glue/websocketstreamhandle_impl.cc \
-	webkit/glue/webthemeengine_impl_android.cc \
-	webkit/glue/webthread_impl.cc \
-	webkit/glue/weburlloader_impl.cc \
-	webkit/glue/web_io_operators.cc \
-	webkit/glue/worker_task_runner.cc
+	webkit/glue/weburlloader_impl.cc
 
 
 # Flags passed to both C and C++ files.
@@ -105,6 +93,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \

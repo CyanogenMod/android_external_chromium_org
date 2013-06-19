@@ -9,8 +9,8 @@
 #include <string>
 
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/google_apis/drive_api_url_generator.h"
-#include "chrome/browser/google_apis/drive_service_interface.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/sync_file_system/drive/api_util_interface.h"
 #include "net/base/network_change_notifier.h"
@@ -51,7 +51,6 @@ class APIUtil : public drive::APIUtilInterface,
 
   static scoped_ptr<APIUtil> CreateForTesting(
       Profile* profile,
-      const GURL& base_url,
       scoped_ptr<google_apis::DriveServiceInterface> drive_service,
       scoped_ptr<google_apis::DriveUploaderInterface> drive_uploader);
 

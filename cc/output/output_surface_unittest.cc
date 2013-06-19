@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/test/test_simple_task_runner.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/software_output_device.h"
+#include "cc/test/scheduler_test_common.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -25,19 +27,43 @@ class TestOutputSurface : public OutputSurface {
                     scoped_ptr<cc::SoftwareOutputDevice> software_device)
       : OutputSurface(context3d.Pass(), software_device.Pass()) {}
 
-  OutputSurfaceClient* client() { return client_; }
-
   bool InitializeNewContext3D(
       scoped_ptr<WebKit::WebGraphicsContext3D> new_context3d) {
     return InitializeAndSetContext3D(new_context3d.Pass(),
                                      scoped_refptr<ContextProvider>());
+  }
+
+  bool HasClientForTesting() {
+    return HasClient();
+  }
+
+  void OnVSyncParametersChangedForTesting(base::TimeTicks timebase,
+                                          base::TimeDelta interval) {
+    OnVSyncParametersChanged(timebase, interval);
+  }
+
+  void BeginFrameForTesting() {
+    BeginFrame(BeginFrameArgs::CreateForTesting());
+  }
+
+  void DidSwapBuffersForTesting() {
+    DidSwapBuffers();
+  }
+
+  int pending_swap_buffers() {
+    return pending_swap_buffers_;
+  }
+
+  void OnSwapBuffersCompleteForTesting() {
+    OnSwapBuffersComplete(NULL);
   }
 };
 
 class FakeOutputSurfaceClient : public OutputSurfaceClient {
  public:
   FakeOutputSurfaceClient()
-      : deferred_initialize_result_(true),
+      : begin_frame_count_(0),
+        deferred_initialize_result_(true),
         deferred_initialize_called_(false),
         did_lose_output_surface_called_(false) {}
 
@@ -47,15 +73,19 @@ class FakeOutputSurfaceClient : public OutputSurfaceClient {
     return deferred_initialize_result_;
   }
   virtual void SetNeedsRedrawRect(gfx::Rect damage_rect) OVERRIDE {}
-  virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
-                                        base::TimeDelta interval) OVERRIDE {}
-  virtual void BeginFrame(base::TimeTicks frame_time) OVERRIDE {}
+  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE {
+    begin_frame_count_++;
+  }
   virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE {}
   virtual void DidLoseOutputSurface() OVERRIDE {
     did_lose_output_surface_called_ = true;
   }
   virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
                                           gfx::Rect viewport) OVERRIDE {}
+
+  int begin_frame_count() {
+    return begin_frame_count_;
+  }
 
   void set_deferred_initialize_result(bool result) {
     deferred_initialize_result_ = result;
@@ -70,6 +100,7 @@ class FakeOutputSurfaceClient : public OutputSurfaceClient {
   }
 
  private:
+  int begin_frame_count_;
   bool deferred_initialize_result_;
   bool deferred_initialize_called_;
   bool did_lose_output_surface_called_;
@@ -81,11 +112,11 @@ TEST(OutputSurfaceTest, ClientPointerIndicatesBindToClientSuccess) {
 
   TestOutputSurface output_surface(
       context3d.PassAs<WebKit::WebGraphicsContext3D>());
-  EXPECT_EQ(NULL, output_surface.client());
+  EXPECT_FALSE(output_surface.HasClientForTesting());
 
   FakeOutputSurfaceClient client;
   EXPECT_TRUE(output_surface.BindToClient(&client));
-  EXPECT_EQ(&client, output_surface.client());
+  EXPECT_TRUE(output_surface.HasClientForTesting());
   EXPECT_FALSE(client.deferred_initialize_called());
 
   // Verify DidLoseOutputSurface callback is hooked up correctly.
@@ -104,11 +135,11 @@ TEST(OutputSurfaceTest, ClientPointerIndicatesBindToClientFailure) {
 
   TestOutputSurface output_surface(
       context3d.PassAs<WebKit::WebGraphicsContext3D>());
-  EXPECT_EQ(NULL, output_surface.client());
+  EXPECT_FALSE(output_surface.HasClientForTesting());
 
   FakeOutputSurfaceClient client;
   EXPECT_FALSE(output_surface.BindToClient(&client));
-  EXPECT_EQ(NULL, output_surface.client());
+  EXPECT_FALSE(output_surface.HasClientForTesting());
 }
 
 class InitializeNewContext3D : public ::testing::Test {
@@ -121,13 +152,13 @@ class InitializeNewContext3D : public ::testing::Test {
  protected:
   void BindOutputSurface() {
     EXPECT_TRUE(output_surface_.BindToClient(&client_));
-    EXPECT_EQ(&client_, output_surface_.client());
+    EXPECT_TRUE(output_surface_.HasClientForTesting());
   }
 
   void InitializeNewContextExpectFail() {
     EXPECT_FALSE(output_surface_.InitializeNewContext3D(
         context3d_.PassAs<WebKit::WebGraphicsContext3D>()));
-    EXPECT_EQ(&client_, output_surface_.client());
+    EXPECT_TRUE(output_surface_.HasClientForTesting());
 
     EXPECT_FALSE(output_surface_.context3d());
     EXPECT_TRUE(output_surface_.software_device());
@@ -162,6 +193,112 @@ TEST_F(InitializeNewContext3D, ClientDeferredInitializeFails) {
   BindOutputSurface();
   client_.set_deferred_initialize_result(false);
   InitializeNewContextExpectFail();
+}
+
+TEST(OutputSurfaceTest, BeginFrameEmulation) {
+  scoped_ptr<TestWebGraphicsContext3D> context3d =
+      TestWebGraphicsContext3D::Create();
+
+  TestOutputSurface output_surface(
+      context3d.PassAs<WebKit::WebGraphicsContext3D>());
+  EXPECT_FALSE(output_surface.HasClientForTesting());
+
+  FakeOutputSurfaceClient client;
+  EXPECT_TRUE(output_surface.BindToClient(&client));
+  EXPECT_TRUE(output_surface.HasClientForTesting());
+  EXPECT_FALSE(client.deferred_initialize_called());
+
+  // Initialize BeginFrame emulation
+  scoped_refptr<base::TestSimpleTaskRunner> task_runner =
+      new base::TestSimpleTaskRunner;
+  bool throttle_frame_production = true;
+  const base::TimeDelta display_refresh_interval =
+      BeginFrameArgs::DefaultInterval();
+
+  output_surface.InitializeBeginFrameEmulation(
+      task_runner.get(),
+      throttle_frame_production,
+      display_refresh_interval);
+
+  output_surface.SetMaxFramesPending(2);
+
+  // We should start off with 0 BeginFrames
+  EXPECT_EQ(client.begin_frame_count(), 0);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 0);
+
+  // We should not have a pending task until a BeginFrame has been requested.
+  EXPECT_FALSE(task_runner->HasPendingTask());
+  output_surface.SetNeedsBeginFrame(true);
+  EXPECT_TRUE(task_runner->HasPendingTask());
+
+  // BeginFrame should be called on the first tick.
+  task_runner->RunPendingTasks();
+  EXPECT_EQ(client.begin_frame_count(), 1);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 0);
+
+  // BeginFrame should not be called when there is a pending BeginFrame.
+  task_runner->RunPendingTasks();
+  EXPECT_EQ(client.begin_frame_count(), 1);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 0);
+
+  // DidSwapBuffers should clear the pending BeginFrame.
+  output_surface.DidSwapBuffersForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 1);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+  task_runner->RunPendingTasks();
+  EXPECT_EQ(client.begin_frame_count(), 2);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+
+  // BeginFrame should be throttled by pending swap buffers.
+  output_surface.DidSwapBuffersForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 2);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 2);
+  task_runner->RunPendingTasks();
+  EXPECT_EQ(client.begin_frame_count(), 2);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 2);
+
+  // SwapAck should decrement pending swap buffers and unblock BeginFrame again.
+  output_surface.OnSwapBuffersCompleteForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 2);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+  task_runner->RunPendingTasks();
+  EXPECT_EQ(client.begin_frame_count(), 3);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+
+  // Calling SetNeedsBeginFrame again indicates a swap did not occur but
+  // the client still wants another BeginFrame.
+  output_surface.SetNeedsBeginFrame(true);
+  task_runner->RunPendingTasks();
+  EXPECT_EQ(client.begin_frame_count(), 4);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+
+  // Disabling SetNeedsBeginFrame should prevent further BeginFrames.
+  output_surface.SetNeedsBeginFrame(false);
+  task_runner->RunPendingTasks();
+  EXPECT_FALSE(task_runner->HasPendingTask());
+  EXPECT_EQ(client.begin_frame_count(), 4);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+
+  // Optimistically injected BeginFrames without a SetNeedsBeginFrame should be
+  // allowed.
+  output_surface.BeginFrameForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 5);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+
+  // Optimistically injected BeginFrames without a SetNeedsBeginFrame should
+  // still be throttled by pending begin frames however.
+  output_surface.BeginFrameForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 5);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
+
+  // Optimistically injected BeginFrames without a SetNeedsBeginFrame should
+  // also be throttled by pending swap buffers.
+  output_surface.DidSwapBuffersForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 5);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 2);
+  output_surface.BeginFrameForTesting();
+  EXPECT_EQ(client.begin_frame_count(), 5);
+  EXPECT_EQ(output_surface.pending_swap_buffers(), 2);
 }
 
 }  // namespace

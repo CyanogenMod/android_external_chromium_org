@@ -136,7 +136,9 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
 
     // Register private permissions.
     { APIPermission::kActivityLogPrivate, "activityLogPrivate",
-      APIPermissionInfo::kFlagCannotBeOptional },
+      APIPermissionInfo::kFlagCannotBeOptional,
+      IDS_EXTENSION_PROMPT_WARNING_ACTIVITY_LOG_PRIVATE,
+      PermissionMessage::kActivityLogPrivate },
     { APIPermission::kAutoTestPrivate, "autotestPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kBookmarkManagerPrivate, "bookmarkManagerPrivate",
@@ -167,6 +169,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagCannotBeOptional,
       IDS_EXTENSION_PROMPT_WARNING_MUSIC_MANAGER_PRIVATE,
       PermissionMessage::kMusicManagerPrivate },
+    { APIPermission::kPreferencesPrivate, "preferencesPrivate",
+      APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kSystemPrivate, "systemPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kCloudPrintPrivate, "cloudPrintPrivate",
@@ -174,6 +178,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     { APIPermission::kInputMethodPrivate, "inputMethodPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kEchoPrivate, "echoPrivate",
+      APIPermissionInfo::kFlagCannotBeOptional },
+    { APIPermission::kFeedbackPrivate, "feedbackPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kRtcPrivate, "rtcPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },

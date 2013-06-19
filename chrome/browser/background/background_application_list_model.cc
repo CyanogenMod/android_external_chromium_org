@@ -90,7 +90,7 @@ void GetServiceApplications(ExtensionService* service,
   for (ExtensionSet::const_iterator cursor = extensions->begin();
        cursor != extensions->end();
        ++cursor) {
-    const Extension* extension = *cursor;
+    const Extension* extension = cursor->get();
     if (BackgroundApplicationListModel::IsBackgroundApp(*extension,
                                                         service->profile())) {
       applications_result->push_back(extension);
@@ -103,7 +103,7 @@ void GetServiceApplications(ExtensionService* service,
   for (ExtensionSet::const_iterator cursor = extensions->begin();
        cursor != extensions->end();
        ++cursor) {
-    const Extension* extension = *cursor;
+    const Extension* extension = cursor->get();
     if (BackgroundApplicationListModel::IsBackgroundApp(*extension,
                                                         service->profile())) {
       applications_result->push_back(extension);
@@ -139,10 +139,7 @@ BackgroundApplicationListModel::Application::~Application() {
 BackgroundApplicationListModel::Application::Application(
     BackgroundApplicationListModel* model,
     const Extension* extension)
-    : extension_(extension),
-      icon_(NULL),
-      model_(model) {
-}
+    : extension_(extension), model_(model) {}
 
 void BackgroundApplicationListModel::Application::OnImageLoaded(
     const gfx::Image& image) {

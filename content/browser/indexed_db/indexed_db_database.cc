@@ -188,27 +188,23 @@ class DeleteIndexAbortOperation : public IndexedDBTransaction::Operation {
 class GetOperation : public IndexedDBTransaction::Operation {
  public:
   GetOperation(scoped_refptr<IndexedDBBackingStore> backing_store,
-               const IndexedDBDatabaseMetadata& metadata,
+               int64 database_id,
                int64 object_store_id,
                int64 index_id,
+               const IndexedDBKeyPath& key_path,
+               const bool auto_increment,
                scoped_ptr<IndexedDBKeyRange> key_range,
                indexed_db::CursorType cursor_type,
                scoped_refptr<IndexedDBCallbacksWrapper> callbacks)
       : backing_store_(backing_store),
-        database_id_(metadata.id),
+        database_id_(database_id),
         object_store_id_(object_store_id),
         index_id_(index_id),
-        key_path_(metadata.object_stores.find(object_store_id)
-                      ->second.key_path),
-        auto_increment_(metadata.object_stores.find(object_store_id)
-                            ->second.auto_increment),
+        key_path_(key_path),
+        auto_increment_(auto_increment),
         key_range_(key_range.Pass()),
         cursor_type_(cursor_type),
         callbacks_(callbacks) {
-    DCHECK(metadata.object_stores.find(object_store_id) !=
-           metadata.object_stores.end());
-    DCHECK(metadata.object_stores.find(object_store_id)->second.id ==
-           object_store_id);
   }
   virtual void Perform(IndexedDBTransaction* transaction) OVERRIDE;
 
@@ -714,13 +710,19 @@ void IndexedDBDatabase::Get(
       transactions_.find(transaction_id);
   if (trans_iterator == transactions_.end())
     return;
+  IndexedDBDatabaseMetadata::ObjectStoreMap::const_iterator store_iterator =
+      metadata_.object_stores.find(object_store_id);
+  if (store_iterator == metadata_.object_stores.end())
+    return;
   IndexedDBTransaction* transaction = trans_iterator->second;
 
   transaction->ScheduleTask(new GetOperation(
       backing_store_,
-      metadata_,
+      metadata_.id,
       object_store_id,
       index_id,
+      store_iterator->second.key_path,
+      store_iterator->second.auto_increment,
       key_range.Pass(),
       key_only ? indexed_db::CURSOR_KEY_ONLY : indexed_db::CURSOR_KEY_AND_VALUE,
       callbacks));
@@ -1020,7 +1022,7 @@ void PutOperation::Perform(IndexedDBTransaction* transaction) {
   for (size_t i = 0; i < index_writers.size(); ++i) {
     IndexedDBObjectStoreImpl::IndexWriter* index_writer = index_writers[i];
     index_writer->WriteIndexKeys(record_identifier,
-                                 backing_store_,
+                                 backing_store_.get(),
                                  transaction->BackingStoreTransaction(),
                                  database_id_,
                                  object_store_.id);
@@ -1520,7 +1522,7 @@ void IndexedDBDatabase::CreateTransaction(
           static_cast<indexed_db::TransactionMode>(mode),
           this);
   DCHECK(transactions_.find(transaction_id) == transactions_.end());
-  transactions_[transaction_id] = transaction;
+  transactions_[transaction_id] = transaction.get();
 }
 
 bool IndexedDBDatabase::IsOpenConnectionBlocked() const {
@@ -1617,7 +1619,7 @@ void IndexedDBDatabase::RunVersionChangeTransaction(
     int64 transaction_id,
     int64 requested_version) {
 
-  DCHECK(callbacks);
+  DCHECK(callbacks.get());
   DCHECK(database_callbacks_set_.has(database_callbacks));
   if (ConnectionCount() > 1) {
     // Front end ensures the event is not fired at connections that have
@@ -1626,7 +1628,7 @@ void IndexedDBDatabase::RunVersionChangeTransaction(
              database_callbacks_set_.begin();
          it != database_callbacks_set_.end();
          ++it) {
-      if (*it != database_callbacks.get())
+      if (it->get() != database_callbacks.get())
         (*it)->OnVersionChange(metadata_.int_version, requested_version);
     }
     // TODO(jsbell): Remove the call to on_blocked and instead wait
@@ -1699,7 +1701,7 @@ bool IndexedDBDatabase::IsDeleteDatabaseBlocked() const {
 void IndexedDBDatabase::DeleteDatabaseFinal(
     scoped_refptr<IndexedDBCallbacksWrapper> callbacks) {
   DCHECK(!IsDeleteDatabaseBlocked());
-  DCHECK(backing_store_);
+  DCHECK(backing_store_.get());
   if (!backing_store_->DeleteDatabase(metadata_.name)) {
     callbacks->OnError(
         IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
@@ -1715,7 +1717,7 @@ void IndexedDBDatabase::DeleteDatabaseFinal(
 
 void IndexedDBDatabase::Close(
     scoped_refptr<IndexedDBDatabaseCallbacksWrapper> callbacks) {
-  DCHECK(callbacks);
+  DCHECK(callbacks.get());
   DCHECK(database_callbacks_set_.has(callbacks));
 
   // Close outstanding transactions from the closing connection. This
@@ -1729,7 +1731,7 @@ void IndexedDBDatabase::Close(
                                         end = transactions.end();
          it != end;
          ++it) {
-      if (it->second->connection() == callbacks)
+      if (it->second->connection() == callbacks.get())
         it->second->Abort(
             IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionUnknownError,
                                    "Connection is closing."));
@@ -1738,7 +1740,7 @@ void IndexedDBDatabase::Close(
 
   database_callbacks_set_.erase(callbacks);
   if (pending_second_half_open_ &&
-      pending_second_half_open_->DatabaseCallbacks() == callbacks) {
+      pending_second_half_open_->DatabaseCallbacks().get() == callbacks.get()) {
     pending_second_half_open_->Callbacks()->OnError(
         IndexedDBDatabaseError(WebKit::WebIDBDatabaseExceptionAbortError,
                                "The connection was closed."));
@@ -1764,7 +1766,7 @@ void IndexedDBDatabase::Close(
 
     // This check should only be false in unit tests.
     // TODO(jsbell): Assert factory_ || we're executing a unit test.
-    if (factory_)
+    if (factory_.get())
       factory_->RemoveIDBDatabaseBackend(identifier_);
   }
 }

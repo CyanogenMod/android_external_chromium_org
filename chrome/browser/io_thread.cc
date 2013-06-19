@@ -11,6 +11,7 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/leak_tracker.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -125,6 +126,7 @@ class SystemURLRequestContext : public net::URLRequestContext {
 };
 
 scoped_ptr<net::HostResolver> CreateGlobalHostResolver(net::NetLog* net_log) {
+  TRACE_EVENT0("startup", "IOThread::CreateGlobalHostResolver");
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
   net::HostResolver::Options options;
@@ -462,6 +464,7 @@ net::URLRequestContextGetter* IOThread::system_url_request_context_getter() {
 }
 
 void IOThread::Init() {
+  TRACE_EVENT0("startup", "IOThread::Init");
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
 #if defined(USE_NSS) || defined(OS_IOS)
@@ -522,8 +525,10 @@ void IOThread::Init() {
   globals_->http_user_agent_settings.reset(
       new BasicHttpUserAgentSettings(std::string()));
   if (command_line.HasSwitch(switches::kHostRules)) {
+    TRACE_EVENT_BEGIN0("startup", "IOThread::Init:SetRulesFromString");
     globals_->host_mapping_rules->SetRulesFromString(
         command_line.GetSwitchValueASCII(switches::kHostRules));
+    TRACE_EVENT_END0("startup", "IOThread::Init:SetRulesFromString");
   }
   if (command_line.HasSwitch(switches::kIgnoreCertificateErrors))
     globals_->ignore_certificate_errors = true;
@@ -556,10 +561,12 @@ void IOThread::Init() {
   session_params.proxy_service =
       globals_->proxy_script_fetcher_proxy_service.get();
 
+  TRACE_EVENT_BEGIN0("startup", "IOThread::Init:HttpNetworkSession");
   scoped_refptr<net::HttpNetworkSession> network_session(
       new net::HttpNetworkSession(session_params));
   globals_->proxy_script_fetcher_http_transaction_factory
       .reset(new net::HttpNetworkLayer(network_session.get()));
+  TRACE_EVENT_END0("startup", "IOThread::Init:HttpNetworkSession");
   scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
       new net::URLRequestJobFactoryImpl());
   job_factory->SetProtocolHandler(chrome::kDataScheme,
@@ -673,6 +680,10 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kMaxSpdyConcurrentStreams)) {
     globals_->max_spdy_concurrent_streams_limit.set(
         GetSwitchValueAsInt(command_line, switches::kMaxSpdyConcurrentStreams));
+  }
+  if (command_line.HasSwitch(switches::kTrustedSpdyProxy)) {
+    globals_->trusted_spdy_proxy.set(
+        command_line.GetSwitchValueASCII(switches::kTrustedSpdyProxy));
   }
   if (command_line.HasSwitch(switches::kIgnoreUrlFetcherCertRequests))
     net::URLFetcher::SetIgnoreCertificateRequests(true);
@@ -870,6 +881,8 @@ void IOThread::InitializeNetworkSessionParams(
       &params->enable_spdy_ping_based_connection_checking);
   globals_->spdy_default_protocol.CopyToIfSet(
       &params->spdy_default_protocol);
+  globals_->trusted_spdy_proxy.CopyToIfSet(
+      &params->trusted_spdy_proxy);
   globals_->enable_quic.CopyToIfSet(&params->enable_quic);
   globals_->origin_to_force_quic_on.CopyToIfSet(
       &params->origin_to_force_quic_on);

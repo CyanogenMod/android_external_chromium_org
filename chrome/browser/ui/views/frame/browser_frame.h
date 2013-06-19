@@ -83,11 +83,13 @@ class BrowserFrame
   virtual bool GetAccelerator(int command_id,
                               ui::Accelerator* accelerator) OVERRIDE;
   virtual ui::ThemeProvider* GetThemeProvider() const OVERRIDE;
+  virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
   virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE;
 
   // Overridden from views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& p) OVERRIDE;
+                                      const gfx::Point& p,
+                                      ui::MenuSourceType source_type) OVERRIDE;
 
   // Returns true if we should leave any offset at the frame caption. Typically
   // when the frame is maximized/full screen we want to leave no offset at the

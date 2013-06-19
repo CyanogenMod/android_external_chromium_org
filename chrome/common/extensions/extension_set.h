@@ -13,7 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "chrome/common/extensions/extension.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
 class ExtensionURLInfo {
  public:
@@ -60,6 +60,9 @@ class ExtensionSet {
     }
     const scoped_refptr<const extensions::Extension> operator*() {
       return it_->second;
+    }
+    const scoped_refptr<const extensions::Extension>* operator->() {
+      return &it_->second;
     }
     bool operator!=(const const_iterator& other) { return it_ != other.it_; }
     bool operator==(const const_iterator& other) { return it_ == other.it_; }

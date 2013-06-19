@@ -93,15 +93,9 @@ gfx::Display& GetInvalidDisplay() {
   return *invalid_display;
 }
 
-// Used to either create or close the mirror window
-// after all displays and associated RootWidows are
-// configured in UpdateDisplay.
-class MirrorWindowUpdater {
- public:
-  virtual ~MirrorWindowUpdater() {}
-};
-
-class MirrorWindowCreator : public MirrorWindowUpdater {
+// Scoped objects used to either create or close the mirror window
+// at specific timing.
+class MirrorWindowCreator {
  public:
   explicit MirrorWindowCreator(const DisplayInfo& display_info)
       : display_info_(display_info) {
@@ -117,7 +111,7 @@ class MirrorWindowCreator : public MirrorWindowUpdater {
   DISALLOW_COPY_AND_ASSIGN(MirrorWindowCreator);
 };
 
-class MirrorWindowCloser : public MirrorWindowUpdater {
+class MirrorWindowCloser {
  public:
   MirrorWindowCloser() {}
   virtual ~MirrorWindowCloser() {
@@ -421,6 +415,14 @@ void DisplayManager::UpdateDisplays() {
 
 void DisplayManager::UpdateDisplays(
     const std::vector<DisplayInfo>& updated_display_info_list) {
+#if defined(OS_WIN)
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    DCHECK_EQ(1u, updated_display_info_list.size()) <<
+        "Multiple display test does not work on Win8 bots. Please "
+        "skip (don't disable) the test using |SupportMultipleDisplay()|";
+  }
+#endif
+
   DisplayInfoList new_display_info_list = updated_display_info_list;
   std::sort(displays_.begin(), displays_.end(), DisplaySortFunctor());
   std::sort(new_display_info_list.begin(),
@@ -436,7 +438,8 @@ void DisplayManager::UpdateDisplays(
   DisplayList new_displays;
   bool update_mouse_location = false;
 
-  scoped_ptr<MirrorWindowUpdater> mirror_window_updater;
+  scoped_ptr<MirrorWindowCreator> mirror_window_creater;
+
   // Use the internal display or 1st as the mirror source, then scale
   // the root window so that it matches the external display's
   // resolution. This is necessary in order for scaling to work while
@@ -454,7 +457,7 @@ void DisplayManager::UpdateDisplays(
       InsertAndUpdateDisplayInfo(info);
 
       mirrored_display_ = CreateDisplayFromDisplayInfoById(new_info_iter->id());
-      mirror_window_updater.reset(
+      mirror_window_creater.reset(
           new MirrorWindowCreator(display_info_[new_info_iter->id()]));
       ++new_info_iter;
       // Remove existing external dispaly if it is going to be mirrored.
@@ -528,9 +531,10 @@ void DisplayManager::UpdateDisplays(
     }
   }
 
+  scoped_ptr<MirrorWindowCloser> mirror_window_closer;
   // Try to close mirror window unless mirror window is necessary.
-  if (!mirror_window_updater.get())
-    mirror_window_updater.reset(new MirrorWindowCloser);
+  if (!mirror_window_creater.get())
+    mirror_window_closer.reset(new MirrorWindowCloser);
 
   // Do not update |displays_| if there's nothing to be updated. Without this,
   // it will not update the display layout, which causes the bug
@@ -560,13 +564,17 @@ void DisplayManager::UpdateDisplays(
     Shell::GetInstance()->screen()->NotifyDisplayRemoved(displays_.back());
     displays_.pop_back();
   }
-  // Create or delete the mirror window here to avoid creating two
-  // compositor on one display.
-  mirror_window_updater.reset();
+  // Close the mirror window here to avoid creating two compositor on
+  // one display.
+  mirror_window_closer.reset();
   for (std::vector<size_t>::iterator iter = added_display_indices.begin();
        iter != added_display_indices.end(); ++iter) {
     Shell::GetInstance()->screen()->NotifyDisplayAdded(displays_[*iter]);
   }
+  // Create the mirror window after all displays are added so that
+  // it can mirror the display newly added. This can happen when switching
+  // from dock mode to software mirror mode.
+  mirror_window_creater.reset();
   for (std::vector<size_t>::iterator iter = changed_display_indices.begin();
        iter != changed_display_indices.end(); ++iter) {
     Shell::GetInstance()->screen()->NotifyBoundsChanged(displays_[*iter]);
@@ -740,23 +748,18 @@ void DisplayManager::ToggleDisplayScaleFactor() {
   UpdateDisplays(new_display_info_list);
 }
 
-void DisplayManager::OnRootWindowResized(const aura::RootWindow* root,
-                                         const gfx::Size& old_size) {
+void DisplayManager::OnRootWindowHostResized(const aura::RootWindow* root) {
   if (change_display_upon_host_resize_) {
     gfx::Display& display = FindDisplayForRootWindow(root);
     gfx::Size old_display_size_in_pixel = display.GetSizeInPixel();
     display_info_[display.id()].SetBounds(
         gfx::Rect(root->GetHostOrigin(), root->GetHostSize()));
-    const gfx::Size& new_root_size = root->bounds().size();
     // It's tricky to support resizing mirror window on desktop.
     if (software_mirroring_enabled_ && mirrored_display_.id() == display.id())
       return;
-    if (old_size != new_root_size) {
-      display.SetSize(display_info_[display.id()].size_in_pixel());
-      Shell::GetInstance()->screen()->NotifyBoundsChanged(display);
-      Shell::GetInstance()->mirror_window_controller()->
-          UpdateWindow();
-    }
+    display.SetSize(display_info_[display.id()].size_in_pixel());
+    Shell::GetInstance()->screen()->NotifyBoundsChanged(display);
+    Shell::GetInstance()->mirror_window_controller()->UpdateWindow();
   }
 }
 

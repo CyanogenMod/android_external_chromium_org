@@ -315,7 +315,7 @@ class LayerTreeHostScrollTestCaseWithChild
     }
   }
 
-  virtual void TreeActivatedOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
     LayerImpl* root_impl = impl->active_tree()->root_layer();
     LayerImpl* root_scroll_layer_impl = root_impl->children()[0];
     LayerImpl* child_layer_impl = root_scroll_layer_impl->children()[0];
@@ -762,9 +762,9 @@ class LayerTreeHostScrollTestLayerStructureChange
     scoped_refptr<Layer> root_layer = Layer::Create();
     root_layer->SetBounds(gfx::Size(10, 10));
 
-    Layer* root_scroll_layer = CreateScrollLayer(root_layer,
-        &root_scroll_layer_client_);
-    CreateScrollLayer(root_layer, &sibling_scroll_layer_client_);
+    Layer* root_scroll_layer =
+        CreateScrollLayer(root_layer.get(), &root_scroll_layer_client_);
+    CreateScrollLayer(root_layer.get(), &sibling_scroll_layer_client_);
     CreateScrollLayer(root_scroll_layer, &child_scroll_layer_client_);
 
     layer_tree_host()->SetRootLayer(root_layer);
@@ -822,7 +822,7 @@ class LayerTreeHostScrollTestLayerStructureChange
     scroll_layer->SetMaxScrollOffset(gfx::Vector2d(100, 100));
     scroll_layer->set_layer_scroll_client(client);
     client->owner_ = this;
-    client->layer_ = scroll_layer;
+    client->layer_ = scroll_layer.get();
     parent->AddChild(scroll_layer);
     return scroll_layer.get();
   }

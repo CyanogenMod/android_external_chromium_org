@@ -97,22 +97,6 @@ FileTransferController.prototype = {
   },
 
   /**
-   * @this {FileTransferController}
-   * @param {HTMLElement} breadcrumbsContainer Element which contains target
-   *     breadcrumbs.
-   */
-  attachBreadcrumbsDropTarget: function(breadcrumbsController) {
-    var container = breadcrumbsController.getContainer();
-    container.addEventListener('dragover',
-        this.onDragOver_.bind(this, true, null));
-    container.addEventListener('dragenter',
-        this.onDragEnterBreadcrumbs_.bind(this, breadcrumbsController));
-    container.addEventListener('dragleave',
-        this.onDragLeave_.bind(this, null));
-    container.addEventListener('drop', this.onDrop_.bind(this, true));
-  },
-
-  /**
    * Attach handlers of copy, cut and paste operations to the document.
    *
    * @this {FileTransferController}
@@ -306,11 +290,12 @@ FileTransferController.prototype = {
     // Check if a drag selection should be initiated or not.
     // TODO(hirono): Support drag selection on the grid view. crbug.com/247278
     if (list.id == 'file-list') {
-      if (event.shiftKey) {
+      if (list.parentNode.shouldStartDragSelection(event)) {
         this.dragSelector_.startDragSelection(list, event);
         return;
       }
     }
+
     // Nothing selected.
     if (!this.selectedEntries_.length) {
       event.preventDefault();

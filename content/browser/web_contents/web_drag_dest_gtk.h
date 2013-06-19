@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "webkit/common/webdropdata.h"
 
@@ -100,6 +100,9 @@ class CONTENT_EXPORT WebDragDestGtk {
 
   // A delegate that can receive drag information about drag events.
   WebDragDestDelegate* delegate_;
+
+  // True if the drag has been canceled.
+  bool canceled_;
 
   base::WeakPtrFactory<WebDragDestGtk> method_factory_;
 

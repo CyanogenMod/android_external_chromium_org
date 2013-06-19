@@ -244,7 +244,6 @@ TEST_F(QuicCryptoServerStreamTest, WithoutCertificates) {
 
   // Only 2 client hellos need to be sent in the no-certs case: one to get the
   // source-address token and the second to finish.
-  // TODO(rtenneti): Enable testing of ProofVerifier.
   EXPECT_EQ(2, CompleteCryptoHandshake());
   EXPECT_TRUE(stream_.encryption_established());
   EXPECT_TRUE(stream_.handshake_confirmed());
@@ -258,12 +257,11 @@ TEST_F(QuicCryptoServerStreamTest, ChannelID) {
 
   client_options_.channel_id_enabled = true;
   // TODO(rtenneti): Enable testing of ProofVerifier.
+  // CompleteCryptoHandshake verifies
+  // stream_.crypto_negotiated_params().channel_id is correct.
   EXPECT_EQ(2, CompleteCryptoHandshake());
   EXPECT_TRUE(stream_.encryption_established());
   EXPECT_TRUE(stream_.handshake_confirmed());
-  // TODO(rtenneti): Enable testing of ChannelID.
-  // EXPECT_EQ(CryptoTestUtils::ChannelIDKeyForHostname("test.example.com"),
-  //          stream_.crypto_negotiated_params().channel_id);
 }
 
 }  // namespace

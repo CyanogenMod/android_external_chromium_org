@@ -57,7 +57,7 @@ class CONTENT_EXPORT TouchEditableImplAura
   virtual void ConvertPointToScreen(gfx::Point* point) OVERRIDE;
   virtual void ConvertPointFromScreen(gfx::Point* point) OVERRIDE;
   virtual bool DrawsHandles() OVERRIDE;
-  virtual void OpenContextMenu(const gfx::Point anchor) OVERRIDE;
+  virtual void OpenContextMenu(const gfx::Point& anchor) OVERRIDE;
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual bool GetAcceleratorForCommandId(
@@ -86,6 +86,8 @@ class CONTENT_EXPORT TouchEditableImplAura
   // True if |rwhva_| is currently handling a gesture that could result in a
   // change in selection.
   bool selection_gesture_in_process_;
+
+  bool handles_hidden_due_to_scroll_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchEditableImplAura);
 };

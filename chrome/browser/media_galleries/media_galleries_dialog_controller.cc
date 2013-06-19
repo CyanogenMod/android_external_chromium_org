@@ -32,10 +32,10 @@ bool IsAttachedDevice(const std::string& device_id) {
   if (!StorageInfo::IsRemovableDevice(device_id))
     return false;
 
-  std::vector<StorageInfo> removable_storages =
-      StorageMonitor::GetInstance()->GetAttachedStorage();
-  for (size_t i = 0; i < removable_storages.size(); ++i) {
-    if (removable_storages[i].device_id() == device_id)
+  std::vector<StorageInfo> storages =
+      StorageMonitor::GetInstance()->GetAllAvailableStorages();
+  for (size_t i = 0; i < storages.size(); ++i) {
+    if (storages[i].device_id() == device_id)
       return true;
   }
   return false;
@@ -126,7 +126,8 @@ MediaGalleriesDialogController::MediaGalleriesDialogController()
       preferences_(NULL) {}
 
 MediaGalleriesDialogController::~MediaGalleriesDialogController() {
-  StorageMonitor::GetInstance()->RemoveObserver(this);
+  if (chrome::StorageMonitor::GetInstance())
+    StorageMonitor::GetInstance()->RemoveObserver(this);
 
   if (select_folder_dialog_.get())
     select_folder_dialog_->ListenerDestroyed();
@@ -392,7 +393,8 @@ void MediaGalleriesDialogController::OnRemovableStorageDetached(
 }
 
 void MediaGalleriesDialogController::OnGalleryChanged(
-    MediaGalleriesPreferences* pref, const std::string& extension_id) {
+    MediaGalleriesPreferences* pref, const std::string& extension_id,
+    MediaGalleryPrefId /* pref_id */, bool /* has_permission */) {
   DCHECK_EQ(preferences_, pref);
   if (extension_id.empty() || extension_id == extension_->id())
     UpdateGalleriesOnPreferencesEvent();
@@ -437,8 +439,10 @@ void MediaGalleriesDialogController::SavePermissions() {
 
     // TODO(gbillock): Should be adding volume metadata during FileSelected.
     const MediaGalleryPrefInfo& gallery = iter->pref_info;
-    MediaGalleryPrefId id = preferences_->AddGalleryWithName(
-        gallery.device_id, gallery.display_name, gallery.path, true);
+    MediaGalleryPrefId id = preferences_->AddGallery(
+        gallery.device_id, gallery.path, true,
+        gallery.volume_label, gallery.vendor_name, gallery.model_name,
+        gallery.total_size_in_bytes, gallery.last_attach_time);
     preferences_->SetGalleryPermissionForExtension(*extension_, id, true);
   }
 }

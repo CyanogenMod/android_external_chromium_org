@@ -247,21 +247,21 @@
         'linux_util.h',
         'md5.cc',
         'md5.h',
-        'message_pump_android.cc',
-        'message_pump_android.h',
-        'message_pump_glib.cc',
-        'message_pump_glib.h',
-        'message_pump_gtk.cc',
-        'message_pump_gtk.h',
-        'message_pump_io_ios.cc',
-        'message_pump_io_ios.h',
-        'message_pump_observer.h',
-        'message_pump_aurax11.cc',
-        'message_pump_aurax11.h',
-        'message_pump_libevent.cc',
-        'message_pump_libevent.h',
-        'message_pump_mac.h',
-        'message_pump_mac.mm',
+        'message_loop/message_pump_android.cc',
+        'message_loop/message_pump_android.h',
+        'message_loop/message_pump_glib.cc',
+        'message_loop/message_pump_glib.h',
+        'message_loop/message_pump_gtk.cc',
+        'message_loop/message_pump_gtk.h',
+        'message_loop/message_pump_io_ios.cc',
+        'message_loop/message_pump_io_ios.h',
+        'message_loop/message_pump_observer.h',
+        'message_loop/message_pump_aurax11.cc',
+        'message_loop/message_pump_aurax11.h',
+        'message_loop/message_pump_libevent.cc',
+        'message_loop/message_pump_libevent.h',
+        'message_loop/message_pump_mac.h',
+        'message_loop/message_pump_mac.mm',
         'metrics/field_trial.cc',
         'metrics/field_trial.h',
         'posix/file_descriptor_shuffle.cc',
@@ -494,6 +494,7 @@
         'i18n/rtl_unittest.cc',
         'i18n/string_search_unittest.cc',
         'i18n/time_formatting_unittest.cc',
+        'ini_parser_unittest.cc',
         'ios/device_util_unittest.mm',
         'json/json_parser_unittest.cc',
         'json/json_reader_unittest.cc',
@@ -525,10 +526,10 @@
         'memory/weak_ptr_unittest.nc',
         'message_loop/message_loop_proxy_impl_unittest.cc',
         'message_loop/message_loop_proxy_unittest.cc',
-        'message_loop_unittest.cc',
-        'message_pump_glib_unittest.cc',
-        'message_pump_io_ios_unittest.cc',
-        'message_pump_libevent_unittest.cc',
+        'message_loop/message_loop_unittest.cc',
+        'message_loop/message_pump_glib_unittest.cc',
+        'message_loop/message_pump_io_ios_unittest.cc',
+        'message_loop/message_pump_libevent_unittest.cc',
         'metrics/sample_map_unittest.cc',
         'metrics/sample_vector_unittest.cc',
         'metrics/bucket_ranges_unittest.cc',
@@ -573,6 +574,7 @@
         'sequence_checker_impl_unittest.cc',
         'sha1_unittest.cc',
         'stl_util_unittest.cc',
+        'strings/nullable_string16_unittest.cc',
         'strings/string16_unittest.cc',
         'strings/stringprintf_unittest.cc',
         'strings/string_number_conversions_unittest.cc',
@@ -684,7 +686,7 @@
             # Requires spawning processes.
             ['exclude', '^metrics/stats_table_unittest\\.cc$'],
             # iOS does not use message_pump_libevent.
-            ['exclude', '^message_pump_libevent_unittest\\.cc$'],
+            ['exclude', '^message_loop/message_pump_libevent_unittest\\.cc$'],
           ],
           'conditions': [
             ['coverage != 0', {
@@ -746,12 +748,12 @@
           ],
         }, {  # use_glib!=1
           'sources!': [
-            'message_pump_glib_unittest.cc',
+            'message_loop/message_pump_glib_unittest.cc',
           ]
         }],
         ['use_ozone == 1', {
           'sources!': [
-            'message_pump_glib_unittest.cc',
+            'message_loop/message_pump_glib_unittest.cc',
           ]
         }],
         ['OS == "win"', {
@@ -764,7 +766,7 @@
             'file_descriptor_shuffle_unittest.cc',
             'files/dir_reader_posix_unittest.cc',
             'threading/worker_pool_posix_unittest.cc',
-            'message_pump_libevent_unittest.cc',
+            'message_loop/message_pump_libevent_unittest.cc',
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [
@@ -822,6 +824,7 @@
         'base_i18n',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
       'export_dependent_settings': [
         'base',
@@ -1144,6 +1147,7 @@
             'android/java/src/org/chromium/base/BuildInfo.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
+            'android/java/src/org/chromium/base/MemoryPressureListener.java',
             'android/java/src/org/chromium/base/PathService.java',
             'android/java/src/org/chromium/base/PathUtils.java',
             'android/java/src/org/chromium/base/PowerMonitor.java',
@@ -1170,6 +1174,7 @@
           },
           'dependencies': [
             'base_java_activity_state',
+            'base_java_memory_pressure_level_list',
           ],
           'includes': [ '../build/java.gypi' ],
           'conditions': [
@@ -1193,6 +1198,18 @@
           'variables': {
             'package_name': 'org/chromium/base',
             'template_deps': ['android/activity_state_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
+        },
+        {
+          'target_name': 'base_java_memory_pressure_level_list',
+          'type': 'none',
+          'sources': [
+            'android/java/src/org/chromium/base/MemoryPressureLevelList.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/base',
+            'template_deps': ['memory/memory_pressure_level_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },

@@ -13,12 +13,10 @@
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_metadata.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
-#include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseError.h"
-#include "third_party/WebKit/public/platform/WebIDBMetadata.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 
 using WebKit::WebString;
-using WebKit::WebData;
 using WebKit::WebIDBDatabaseError;
 
 namespace content {
@@ -53,7 +51,7 @@ void WebIDBDatabaseImpl::createTransaction(
     IndexedDBDatabaseCallbacks* /*callbacks*/,
     const std::vector<int64>& object_store_ids,
     unsigned short mode) {
-  if (!database_callbacks_)
+  if (!database_callbacks_.get())
     return;
   database_backend_->CreateTransaction(
       id, database_callbacks_.get(), object_store_ids, mode);
@@ -62,14 +60,14 @@ void WebIDBDatabaseImpl::createTransaction(
 void WebIDBDatabaseImpl::close() {
   // Use the callbacks passed in to the constructor so that the backend in
   // multi-process chromium knows which database connection is closing.
-  if (!database_callbacks_)
+  if (!database_callbacks_.get())
     return;
   database_backend_->Close(database_callbacks_);
   database_callbacks_ = NULL;
 }
 
 void WebIDBDatabaseImpl::forceClose() {
-  if (!database_callbacks_)
+  if (!database_callbacks_.get())
     return;
   database_backend_->Close(database_callbacks_);
   database_callbacks_->OnForcedClose();
@@ -77,18 +75,18 @@ void WebIDBDatabaseImpl::forceClose() {
 }
 
 void WebIDBDatabaseImpl::abort(long long transaction_id) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->Abort(transaction_id);
 }
 
 void WebIDBDatabaseImpl::abort(long long transaction_id,
                                const WebIDBDatabaseError& error) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->Abort(transaction_id, IndexedDBDatabaseError(error));
 }
 
 void WebIDBDatabaseImpl::commit(long long transaction_id) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->Commit(transaction_id);
 }
 
@@ -100,7 +98,7 @@ void WebIDBDatabaseImpl::openCursor(long long transaction_id,
                                     bool key_only,
                                     WebKit::WebIDBDatabase::TaskType task_type,
                                     IndexedDBCallbacksBase* callbacks) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->OpenCursor(
         transaction_id,
         object_store_id,
@@ -117,7 +115,7 @@ void WebIDBDatabaseImpl::count(long long transaction_id,
                                long long index_id,
                                const IndexedDBKeyRange& key_range,
                                IndexedDBCallbacksBase* callbacks) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->Count(transaction_id,
                              object_store_id,
                              index_id,
@@ -131,7 +129,7 @@ void WebIDBDatabaseImpl::get(long long transaction_id,
                              const IndexedDBKeyRange& key_range,
                              bool key_only,
                              IndexedDBCallbacksBase* callbacks) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->Get(transaction_id,
                            object_store_id,
                            index_id,
@@ -148,7 +146,7 @@ void WebIDBDatabaseImpl::put(long long transaction_id,
                              IndexedDBCallbacksBase* callbacks,
                              const std::vector<int64>& index_ids,
                              const std::vector<IndexKeys>& index_keys) {
-  if (!database_backend_)
+  if (!database_backend_.get())
     return;
 
   DCHECK_EQ(index_ids.size(), index_keys.size());
@@ -169,7 +167,7 @@ void WebIDBDatabaseImpl::setIndexKeys(
     const IndexedDBKey& primary_key,
     const std::vector<int64>& index_ids,
     const std::vector<IndexKeys>& index_keys) {
-  if (!database_backend_)
+  if (!database_backend_.get())
     return;
 
   DCHECK_EQ(index_ids.size(), index_keys.size());
@@ -185,7 +183,7 @@ void WebIDBDatabaseImpl::setIndexesReady(
     long long transaction_id,
     long long object_store_id,
     const std::vector<int64>& web_index_ids) {
-  if (!database_backend_)
+  if (!database_backend_.get())
     return;
 
   std::vector<int64> index_ids(web_index_ids.size());
@@ -199,7 +197,7 @@ void WebIDBDatabaseImpl::deleteRange(long long transaction_id,
                                      long long object_store_id,
                                      const IndexedDBKeyRange& key_range,
                                      IndexedDBCallbacksBase* callbacks) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->DeleteRange(
         transaction_id,
         object_store_id,
@@ -210,7 +208,7 @@ void WebIDBDatabaseImpl::deleteRange(long long transaction_id,
 void WebIDBDatabaseImpl::clear(long long transaction_id,
                                long long object_store_id,
                                IndexedDBCallbacksBase* callbacks) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->Clear(transaction_id,
                              object_store_id,
                              IndexedDBCallbacksWrapper::Create(callbacks));
@@ -223,7 +221,7 @@ void WebIDBDatabaseImpl::createIndex(long long transaction_id,
                                      const IndexedDBKeyPath& key_path,
                                      bool unique,
                                      bool multi_entry) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->CreateIndex(transaction_id,
                                    object_store_id,
                                    index_id,
@@ -236,7 +234,7 @@ void WebIDBDatabaseImpl::createIndex(long long transaction_id,
 void WebIDBDatabaseImpl::deleteIndex(long long transaction_id,
                                      long long object_store_id,
                                      long long index_id) {
-  if (database_backend_)
+  if (database_backend_.get())
     database_backend_->DeleteIndex(transaction_id, object_store_id, index_id);
 }
 

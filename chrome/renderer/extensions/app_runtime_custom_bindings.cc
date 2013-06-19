@@ -8,8 +8,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBlob.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSerializedScriptValue.h"
+#include "third_party/WebKit/public/web/WebBlob.h"
+#include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
 
 using WebKit::WebBlob;
 using WebKit::WebSerializedScriptValue;
@@ -17,7 +17,7 @@ using WebKit::WebString;
 
 namespace {
 
-v8::Handle<v8::Value> DeserializeString(const v8::Arguments &args) {
+void DeserializeString(const v8::FunctionCallbackInfo<v8::Value> &args) {
   DCHECK(args.Length() == 1);
   DCHECK(args[0]->IsString());
 
@@ -25,20 +25,20 @@ v8::Handle<v8::Value> DeserializeString(const v8::Arguments &args) {
   WebString data_webstring = WebString::fromUTF8(data_v8);
   WebSerializedScriptValue serialized =
       WebSerializedScriptValue::fromString(data_webstring);
-  return serialized.deserialize();
+  args.GetReturnValue().Set(serialized.deserialize());
 }
 
-v8::Handle<v8::Value> SerializeToString(const v8::Arguments &args) {
+void SerializeToString(const v8::FunctionCallbackInfo<v8::Value> &args) {
   DCHECK(args.Length() == 1);
   WebSerializedScriptValue data =
       WebSerializedScriptValue::serialize(args[0]);
   WebString data_webstring = data.toString();
 
   std::string v = std::string(data_webstring.utf8());
-  return v8::String::New(v.c_str());
+  args.GetReturnValue().Set(v8::String::New(v.c_str()));
 }
 
-v8::Handle<v8::Value> CreateBlob(const v8::Arguments &args) {
+void CreateBlob(const v8::FunctionCallbackInfo<v8::Value> &args) {
   DCHECK(args.Length() == 2);
   DCHECK(args[0]->IsString());
   DCHECK(args[1]->IsNumber());
@@ -49,7 +49,7 @@ v8::Handle<v8::Value> CreateBlob(const v8::Arguments &args) {
   DCHECK(base::StringToInt64(blob_length_string, &blob_length));
   WebKit::WebBlob web_blob = WebBlob::createFromFile(
       WebString::fromUTF8(blob_file_path), blob_length);
-  return web_blob.toV8Value();
+  args.GetReturnValue().Set(web_blob.toV8Value());
 }
 
 }  // namespace

@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/containers/hash_tables.h"
 #include "base/file_util.h"
 #include "base/gtest_prod_util.h"
-#include "base/hash_tables.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
 #include "sync/internal_api/public/util/weak_handle.h"
@@ -256,6 +256,10 @@ class SYNC_EXPORT Directory {
 
   // Counts all items under the given node, including the node itself.
   int GetTotalNodeCount(BaseTransaction*, EntryKernel* kernel_) const;
+
+  // Returns this item's position within its parent folder.
+  // The left-most item is 0, second left-most is 1, etc.
+  int GetPositionIndex(BaseTransaction*, EntryKernel* kernel_) const;
 
   // Returns true iff |id| has children.
   bool HasChildren(BaseTransaction* trans, const Id& id);

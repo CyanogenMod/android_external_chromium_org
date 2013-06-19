@@ -9,8 +9,8 @@
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/string_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
@@ -77,6 +77,10 @@ PluginList* PluginList::Singleton() {
 bool PluginList::DebugPluginLoading() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDebugPluginLoading);
+}
+
+void PluginList::DisablePluginsDiscovery() {
+  plugins_discovery_disabled_ = true;
 }
 
 void PluginList::RefreshPlugins() {
@@ -237,7 +241,8 @@ PluginList::PluginList()
 #if defined(OS_WIN)
       dont_load_new_wmp_(false),
 #endif
-      loading_state_(LOADING_STATE_NEEDS_REFRESH) {
+      loading_state_(LOADING_STATE_NEEDS_REFRESH),
+      plugins_discovery_disabled_(false) {
 }
 
 void PluginList::LoadPluginsIntoPluginListInternal(
@@ -346,7 +351,7 @@ void PluginList::GetPluginPathsToLoad(std::vector<base::FilePath>* plugin_paths)
       GetPluginsInDir(directories_to_scan[i], plugin_paths);
 
 #if defined(OS_WIN)
-  GetPluginPathsFromRegistry(plugin_paths);
+    GetPluginPathsFromRegistry(plugin_paths);
 #endif
   }
 }

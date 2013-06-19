@@ -12,56 +12,86 @@
 namespace remoting {
 namespace protocol {
 
-// How many bytes of random data to use for the client id and shared secret.
+// How many bytes of random data to use for the shared secret.
 const int kKeySize = 16;
 
-PairingRegistry::PairingRegistry(scoped_ptr<Delegate> delegate,
-                                 const PairedClients& paired_clients)
+PairingRegistry::Pairing::Pairing() {
+}
+
+PairingRegistry::Pairing::Pairing(const base::Time& created_time,
+                                  const std::string& client_name,
+                                  const std::string& client_id,
+                                  const std::string& shared_secret)
+    : created_time_(created_time),
+      client_name_(client_name),
+      client_id_(client_id),
+      shared_secret_(shared_secret) {
+}
+
+PairingRegistry::Pairing PairingRegistry::Pairing::Create(
+    const std::string& client_name) {
+  base::Time created_time = base::Time::Now();
+  std::string client_id = base::GenerateGUID();
+  std::string shared_secret;
+  char buffer[kKeySize];
+  crypto::RandBytes(buffer, arraysize(buffer));
+  if (!base::Base64Encode(base::StringPiece(buffer, arraysize(buffer)),
+                          &shared_secret)) {
+    LOG(FATAL) << "Base64Encode failed.";
+  }
+  return Pairing(created_time, client_name, client_id, shared_secret);
+}
+
+PairingRegistry::Pairing::~Pairing() {
+}
+
+bool PairingRegistry::Pairing::operator==(const Pairing& other) const {
+  return created_time_ == other.created_time_ &&
+         client_id_ == other.client_id_ &&
+         client_name_ == other.client_name_ &&
+         shared_secret_ == other.shared_secret_;
+}
+
+bool PairingRegistry::Pairing::is_valid() const {
+  return !client_id_.empty() && !shared_secret_.empty();
+}
+
+PairingRegistry::PairingRegistry(scoped_ptr<Delegate> delegate)
     : delegate_(delegate.Pass()) {
   DCHECK(delegate_);
-  paired_clients_ = paired_clients;
 }
 
 PairingRegistry::~PairingRegistry() {
 }
 
-const PairingRegistry::Pairing& PairingRegistry::CreatePairing(
+PairingRegistry::Pairing PairingRegistry::CreatePairing(
     const std::string& client_name) {
   DCHECK(CalledOnValidThread());
-
-  Pairing result;
-  result.client_name = client_name;
-  result.client_id = base::GenerateGUID();
-
-  // Create a random shared secret to authenticate this client.
-  char buffer[kKeySize];
-  crypto::RandBytes(buffer, arraysize(buffer));
-  if (!base::Base64Encode(base::StringPiece(buffer, arraysize(buffer)),
-                          &result.shared_secret)) {
-    LOG(FATAL) << "Base64Encode failed.";
-  }
-
-  // Save the result via the Delegate and return it to the caller.
-  paired_clients_[result.client_id] = result;
-  delegate_->Save(paired_clients_);
-
-  return paired_clients_[result.client_id];
-}
-
-std::string PairingRegistry::GetSecret(const std::string& client_id) const {
-  DCHECK(CalledOnValidThread());
-
-  std::string result;
-  PairedClients::const_iterator i = paired_clients_.find(client_id);
-  if (i != paired_clients_.end()) {
-    result = i->second.shared_secret;
-  }
+  Pairing result = Pairing::Create(client_name);
+  delegate_->AddPairing(result, AddPairingCallback());
   return result;
 }
 
-void NotImplementedPairingRegistryDelegate::Save(
-    const PairingRegistry::PairedClients& paired_clients) {
+void PairingRegistry::GetPairing(const std::string& client_id,
+                                 const GetPairingCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  delegate_->GetPairing(client_id, callback);
+}
+
+void NotImplementedPairingRegistryDelegate::AddPairing(
+    const PairingRegistry::Pairing& new_paired_client,
+    const PairingRegistry::AddPairingCallback& callback) {
   NOTIMPLEMENTED();
+  if (!callback.is_null()) {
+    callback.Run(false);
+  }
+}
+
+void NotImplementedPairingRegistryDelegate::GetPairing(
+    const std::string& client_id,
+    const PairingRegistry::GetPairingCallback& callback) {
+  NOTIMPLEMENTED();
+  callback.Run(PairingRegistry::Pairing());
 }
 
 }  // namespace protocol

@@ -22,8 +22,8 @@
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/field_types.h"
 #include "components/autofill/browser/validation.h"
-#include "components/autofill/common/form_field_data.h"
-#include "grit/component_resources.h"
+#include "components/autofill/core/common/form_field_data.h"
+#include "grit/component_strings.h"
 #include "grit/webkit_resources.h"
 #include "third_party/icu/public/common/unicode/uloc.h"
 #include "third_party/icu/public/i18n/unicode/dtfmtsym.h"
@@ -159,6 +159,29 @@ base::string16 CreditCard::TypeForDisplay(const std::string& type) {
   // include a new card.
   DCHECK_EQ(kGenericCard, type);
   return base::string16();
+}
+
+// static
+int CreditCard::IconResourceId(const std::string& type) {
+  if (type == kAmericanExpressCard)
+    return IDR_AUTOFILL_CC_AMEX;
+  if (type == kDinersCard)
+    return IDR_AUTOFILL_CC_DINERS;
+  if (type == kDiscoverCard)
+    return IDR_AUTOFILL_CC_DISCOVER;
+  if (type == kJCBCard)
+    return IDR_AUTOFILL_CC_JCB;
+  if (type == kMasterCard)
+    return IDR_AUTOFILL_CC_MASTERCARD;
+  if (type == kSoloCard)
+    return IDR_AUTOFILL_CC_SOLO;
+  if (type == kVisaCard)
+    return IDR_AUTOFILL_CC_VISA;
+
+  // If you hit this DCHECK, the above list of cases needs to be updated to
+  // include a new card.
+  DCHECK_EQ(kGenericCard, type);
+  return IDR_AUTOFILL_CC_GENERIC;
 }
 
 // static
@@ -455,28 +478,6 @@ base::string16 CreditCard::TypeAndLastFourDigits() const {
   return type + ASCIIToUTF16(" - ") + digits;
 }
 
-int CreditCard::IconResourceId() const {
-  if (type_ == kAmericanExpressCard)
-    return IDR_AUTOFILL_CC_AMEX;
-  if (type_ == kDinersCard)
-    return IDR_AUTOFILL_CC_DINERS;
-  if (type_ == kDiscoverCard)
-    return IDR_AUTOFILL_CC_DISCOVER;
-  if (type_ == kJCBCard)
-    return IDR_AUTOFILL_CC_JCB;
-  if (type_ == kMasterCard)
-    return IDR_AUTOFILL_CC_MASTERCARD;
-  if (type_ == kSoloCard)
-    return IDR_AUTOFILL_CC_SOLO;
-  if (type_ == kVisaCard)
-    return IDR_AUTOFILL_CC_VISA;
-
-  // If you hit this DCHECK, the above list of cases needs to be updated to
-  // include a new card.
-  DCHECK_EQ(kGenericCard, type_);
-  return IDR_AUTOFILL_CC_GENERIC;
-}
-
 void CreditCard::operator=(const CreditCard& credit_card) {
   if (this == &credit_card)
     return;
@@ -498,9 +499,14 @@ bool CreditCard::UpdateFromImportedCard(const CreditCard& imported_card,
     return false;
   }
 
-  DCHECK(!imported_card.IsVerified());
-  if (this->IsVerified())
+  // Heuristically aggregated data should never overwrite verified data.
+  // Instead, discard any heuristically aggregated credit cards that disagree
+  // with explicitly entered data, so that the UI is not cluttered with
+  // duplicate cards.
+  if (this->IsVerified() && !imported_card.IsVerified())
     return true;
+
+  set_origin(imported_card.origin());
 
   // Note that the card number is intentionally not updated, so as to preserve
   // any formatting (i.e. separator characters).  Since the card number is not

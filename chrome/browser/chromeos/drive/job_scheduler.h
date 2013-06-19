@@ -13,8 +13,8 @@
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/chromeos/drive/job_queue.h"
-#include "chrome/browser/google_apis/drive_service_interface.h"
-#include "chrome/browser/google_apis/drive_uploader.h"
+#include "chrome/browser/drive/drive_service_interface.h"
+#include "chrome/browser/drive/drive_uploader.h"
 #include "net/base/network_change_notifier.h"
 
 class Profile;
@@ -194,14 +194,20 @@ class JobScheduler
     explicit JobEntry(JobType type);
     ~JobEntry();
 
+    // General user-visible information on the job.
     JobInfo job_info;
 
     // Context of the job.
     ClientContext context;
 
+    // The number of times the jobs is retried due to server errors.
     int retry_count;
 
-    base::Closure task;
+    // The callback to start the job. Called each time it is retry.
+    base::Callback<google_apis::CancelCallback()> task;
+
+    // The callback to cancel the running job. It is returned from task.Run().
+    google_apis::CancelCallback cancel_callback;
   };
 
   // Parameters for DriveUploader::ResumeUploadFile.

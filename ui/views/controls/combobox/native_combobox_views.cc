@@ -43,7 +43,7 @@ const int kMenuBorderWidthRight = 1;
 const int kMenuBorderWidthBottom = 2;
 
 // Limit how small a combobox can be.
-const int kMinComboboxWidth = 148;
+const int kMinComboboxWidth = 25;
 
 // Size of the combobox arrow margins
 const int kDisclosureArrowLeftPadding = 7;
@@ -99,7 +99,7 @@ bool NativeComboboxViews::OnMousePressed(const ui::MouseEvent& mouse_event) {
   combobox_->RequestFocus();
   if (mouse_event.IsLeftMouseButton()) {
     UpdateFromModel();
-    ShowDropDownMenu();
+    ShowDropDownMenu(ui::MENU_SOURCE_MOUSE);
   }
 
   return true;
@@ -181,7 +181,7 @@ void NativeComboboxViews::OnBlur() {
 void NativeComboboxViews::OnGestureEvent(ui::GestureEvent* gesture) {
   if (gesture->type() == ui::ET_GESTURE_TAP) {
     UpdateFromModel();
-    ShowDropDownMenu();
+    ShowDropDownMenu(ui::MENU_SOURCE_TOUCH);
     gesture->StopPropagation();
     return;
   }
@@ -244,12 +244,11 @@ gfx::Size NativeComboboxViews::GetPreferredSize() {
   // The preferred size will drive the local bounds which in turn is used to set
   // the minimum width for the dropdown list.
   gfx::Insets insets = GetInsets();
-  int total_width = content_width_ + insets.width() +
-      kDisclosureArrowLeftPadding + disclosure_arrow_->width() +
-      kDisclosureArrowRightPadding;
+  int total_width = std::max(kMinComboboxWidth, content_width_) +
+      insets.width() + kDisclosureArrowLeftPadding +
+      disclosure_arrow_->width() + kDisclosureArrowRightPadding;
 
-  return gfx::Size(std::min(kMinComboboxWidth, total_width),
-                   content_height_ + insets.height());
+  return gfx::Size(total_width, content_height_ + insets.height());
 }
 
 View* NativeComboboxViews::GetView() {
@@ -369,7 +368,7 @@ void NativeComboboxViews::PaintText(gfx::Canvas* canvas) {
   canvas->Restore();
 }
 
-void NativeComboboxViews::ShowDropDownMenu() {
+void NativeComboboxViews::ShowDropDownMenu(ui::MenuSourceType source_type) {
 
   if (!dropdown_list_menu_runner_.get())
     UpdateFromModel();
@@ -398,7 +397,8 @@ void NativeComboboxViews::ShowDropDownMenu() {
   dropdown_open_ = true;
   if (dropdown_list_menu_runner_->RunMenuAt(
           GetWidget(), NULL, bounds, MenuItemView::TOPLEFT,
-          MenuRunner::HAS_MNEMONICS) == MenuRunner::MENU_DELETED)
+          source_type, MenuRunner::HAS_MNEMONICS) ==
+      MenuRunner::MENU_DELETED)
     return;
   dropdown_open_ = false;
 

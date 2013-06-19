@@ -9,8 +9,8 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "cc/layers/io_surface_layer.h"
 #include "googleurl/src/gurl.h"
@@ -19,16 +19,16 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebCookieJar.h"
 #include "third_party/WebKit/public/platform/WebData.h"
@@ -804,7 +804,7 @@ void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
   // through. More investigation is needed. http://crbug.com/105346
   if (next_io_surface_allocated_) {
     if (next_io_surface_id_) {
-      if (!io_surface_layer_) {
+      if (!io_surface_layer_.get()) {
         io_surface_layer_ = cc::IOSurfaceLayer::Create();
         web_layer_.reset(new webkit::WebLayerImpl(io_surface_layer_));
         container_->setWebLayer(web_layer_.get());
@@ -819,7 +819,7 @@ void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
     }
     next_io_surface_allocated_ = false;
   } else {
-    if (io_surface_layer_)
+    if (io_surface_layer_.get())
       io_surface_layer_->SetNeedsDisplay();
   }
 }

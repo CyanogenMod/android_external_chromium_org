@@ -223,7 +223,7 @@ URLRequestContext* URLRequestContextBuilder::Build() {
 #else
   ProxyConfigService* proxy_config_service =
       ProxyService::CreateSystemProxyConfigService(
-          base::ThreadTaskRunnerHandle::Get(),
+          base::ThreadTaskRunnerHandle::Get().get(),
           context->file_message_loop());
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
   storage->set_proxy_service(
@@ -274,12 +274,12 @@ URLRequestContext* URLRequestContextBuilder::Build() {
     HttpCache::BackendFactory* http_cache_backend = NULL;
     if (http_cache_params_.type == HttpCacheParams::DISK) {
       context->StartCacheThread();
-      http_cache_backend =
-          new HttpCache::DefaultBackend(DISK_CACHE,
-                                        net::CACHE_BACKEND_DEFAULT,
-                                        http_cache_params_.path,
-                                        http_cache_params_.max_size,
-                                        context->cache_message_loop_proxy());
+      http_cache_backend = new HttpCache::DefaultBackend(
+          DISK_CACHE,
+          net::CACHE_BACKEND_DEFAULT,
+          http_cache_params_.path,
+          http_cache_params_.max_size,
+          context->cache_message_loop_proxy().get());
     } else {
       http_cache_backend =
           HttpCache::DefaultBackend::InMemory(http_cache_params_.max_size);

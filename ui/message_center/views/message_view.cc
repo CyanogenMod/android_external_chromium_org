@@ -301,7 +301,8 @@ class MessageViewContextMenuController : public views::ContextMenuController {
  protected:
   // Overridden from views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& point) OVERRIDE;
+                                      const gfx::Point& point,
+                                      ui::MenuSourceType source_type) OVERRIDE;
 
   message_center::MessageCenter* message_center_;
   std::string notification_id_;
@@ -323,7 +324,8 @@ MessageViewContextMenuController::~MessageViewContextMenuController() {
 
 void MessageViewContextMenuController::ShowContextMenuForView(
     views::View* source,
-    const gfx::Point& point) {
+    const gfx::Point& point,
+    ui::MenuSourceType source_type) {
   MenuModel menu_model(message_center_, notification_id_,
                        display_source_, extension_id_);
   if (menu_model.GetItemCount() == 0)
@@ -336,6 +338,7 @@ void MessageViewContextMenuController::ShowContextMenuForView(
       NULL,
       gfx::Rect(point, gfx::Size()),
       views::MenuItemView::TOPRIGHT,
+      source_type,
       views::MenuRunner::HAS_MNEMONICS));
 }
 
@@ -357,6 +360,7 @@ MessageView::MessageView(const Notification& notification,
   close->SetHoveredImage(IDR_NOTIFICATION_CLOSE_HOVER);
   close->SetPressedImage(IDR_NOTIFICATION_CLOSE_PRESSED);
   close->set_owned_by_client();
+  close->set_animate_on_state_change(false);
   close->SetAccessibleName(l10n_util::GetStringUTF16(
       IDS_MESSAGE_CENTER_CLOSE_NOTIFICATION_BUTTON_ACCESSIBLE_NAME));
   close_button_.reset(close);
@@ -367,12 +371,10 @@ MessageView::MessageView(const Notification& notification,
   expand->SetHoveredImage(IDR_NOTIFICATION_EXPAND_HOVER);
   expand->SetPressedImage(IDR_NOTIFICATION_EXPAND_PRESSED);
   expand->set_owned_by_client();
+  expand->set_animate_on_state_change(false);
   expand->SetAccessibleName(l10n_util::GetStringUTF16(
       IDS_MESSAGE_CENTER_EXPAND_NOTIFICATION_BUTTON_ACCESSIBLE_NAME));
   expand_button_.reset(expand);
-
-  if (IsRichNotificationEnabled())
-    set_border(new ShadowBorder());
 }
 
 MessageView::MessageView() {
@@ -387,6 +389,10 @@ gfx::Insets MessageView::GetShadowInsets() {
                      kShadowBlur / 2,
                      kShadowBlur / 2 + kShadowOffset,
                      kShadowBlur / 2);
+}
+
+void MessageView::CreateShadowBorder() {
+  set_border(new ShadowBorder());
 }
 
 bool MessageView::IsCloseButtonFocused() {

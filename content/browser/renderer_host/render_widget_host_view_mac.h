@@ -21,7 +21,7 @@
 #include "content/common/edit_command.h"
 #import "content/public/browser/render_widget_host_view_mac_base.h"
 #include "ipc/ipc_sender.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "ui/base/cocoa/base_view.h"
 #include "webkit/common/cursors/webcursor.h"
 
@@ -244,8 +244,8 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    bool can_compose_inline) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
@@ -319,21 +319,25 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
 
   void SetTextInputActive(bool active);
 
+  // Change this view to use CoreAnimation to draw.
+  void EnableCoreAnimation();
+
   // Sends completed plugin IME notification and text back to the renderer.
   void PluginImeCompositionCompleted(const string16& text, int plugin_id);
 
   const std::string& selected_text() const { return selected_text_; }
 
-  // Call setNeedsDisplay on the cocoa_view_. The IOSurface will be drawn during
-  // the next drawRect. Return true if the Ack should be sent, false if it
-  // should be deferred until drawRect.
+  // Update the IOSurface to be drawn and call setNeedsDisplay on
+  // |cocoa_view_|. Returns false if an unexpected error cause creation of the
+  // IOSurface or its texture to fail, or if there was an error on the GL
+  // context.
   bool CompositorSwapBuffers(uint64 surface_handle,
                              const gfx::Size& size,
                              float scale_factor,
                              const ui::LatencyInfo& latency_info);
-  // Ack pending SwapBuffers requests, if any, to unblock the GPU process. Has
-  // no effect if there are no pending requests.
-  void AckPendingSwapBuffers();
+
+  // Called when a GPU error is detected. Deletes all compositing state.
+  void GotAcceleratedCompositingError();
 
   // Returns true and stores first rectangle for character range if the
   // requested |range| is already cached, otherwise returns false.
@@ -433,6 +437,9 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   friend class RenderWidgetHostView;
   friend class RenderWidgetHostViewMacTest;
 
+  void GetVSyncParameters(
+      base::TimeTicks* timebase, base::TimeDelta* interval);
+
   // The view will associate itself with the given widget. The native view must
   // be hooked up immediately to the view hierarchy, or else when it is
   // deleted it will delete this out from under the caller.
@@ -445,13 +452,21 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // invoke it from the message loop.
   void ShutdownHost();
 
-  // Change this view to use CoreAnimation to draw.
-  void EnableCoreAnimation();
+  bool CreateCompositedIOSurfaceAndLayer();
+  void DestroyCompositedIOSurfaceAndLayer();
 
   // Called when a GPU SwapBuffers is received.
   void GotAcceleratedFrame();
   // Called when a software DIB is received.
   void GotSoftwareFrame();
+
+  // Ack pending SwapBuffers requests, if any, to unblock the GPU process. Has
+  // no effect if there are no pending requests.
+  void AckPendingSwapBuffers();
+
+  // Ack pending SwapBuffers requests, but no more frequently than the vsync
+  // rate if the renderer is not throttling the swap rate.
+  void ThrottledAckPendingSwapBuffers();
 
   void OnPluginFocusChanged(bool focused, int plugin_id);
   void OnStartPluginIme();
@@ -472,7 +487,8 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   gfx::Rect GetScaledOpenGLPixelRect(const gfx::Rect& rect);
 
   // The associated view. This is weak and is inserted into the view hierarchy
-  // to own this RenderWidgetHostViewMac object.
+  // to own this RenderWidgetHostViewMac object. Set to nil at the start of the
+  // destructor.
   RenderWidgetHostViewCocoa* cocoa_view_;
 
   // Indicates if the page is loading.
@@ -502,6 +518,15 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // List of pending swaps for deferred acking:
   //   pairs of (route_id, gpu_host_id).
   std::list<std::pair<int32, int32> > pending_swap_buffers_acks_;
+
+  // Factory used to cancel outstanding throttled AckPendingSwapBuffers calls.
+  base::WeakPtrFactory<RenderWidgetHostViewMac>
+      pending_swap_buffers_acks_weak_factory_;
+
+  // The earliest time at which the next swap ack may be sent. Only relevant
+  // when swaps are not being throttled by the renderer (when threaded
+  // compositing is off).
+  base::Time next_swap_ack_time_;
 
   // The current composition character range and its bounds.
   ui::Range composition_range_;

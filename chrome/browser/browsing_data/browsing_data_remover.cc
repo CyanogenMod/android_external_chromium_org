@@ -114,6 +114,28 @@ BrowsingDataRemover* BrowsingDataRemover::CreateForRange(Profile* profile,
 // Static.
 BrowsingDataRemover* BrowsingDataRemover::CreateForPeriod(Profile* profile,
     TimePeriod period) {
+  switch (period) {
+    case LAST_HOUR:
+      content::RecordAction(
+          UserMetricsAction("ClearBrowsingData_LastHour"));
+      break;
+    case LAST_DAY:
+      content::RecordAction(
+          UserMetricsAction("ClearBrowsingData_LastDay"));
+      break;
+    case LAST_WEEK:
+      content::RecordAction(
+          UserMetricsAction("ClearBrowsingData_LastWeek"));
+      break;
+    case FOUR_WEEKS:
+      content::RecordAction(
+          UserMetricsAction("ClearBrowsingData_LastMonth"));
+      break;
+    case EVERYTHING:
+      content::RecordAction(
+          UserMetricsAction("ClearBrowsingData_Everything"));
+      break;
+  }
   return new BrowsingDataRemover(profile,
       BrowsingDataRemover::CalculateBeginDeleteTime(period),
       base::Time::Max());
@@ -454,7 +476,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
   if (remove_mask & REMOVE_PASSWORDS) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Passwords"));
     PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-        profile_, Profile::EXPLICIT_ACCESS);
+        profile_, Profile::EXPLICIT_ACCESS).get();
 
     if (password_store)
       password_store->RemoveLoginsCreatedBetween(delete_begin_, delete_end_);
@@ -516,6 +538,12 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
       prerender_manager->ClearData(
           prerender::PrerenderManager::CLEAR_PRERENDER_CONTENTS);
     }
+
+    // Tell the shader disk cache to clear.
+    waiting_for_clear_shader_cache_ = true;
+    content::RecordAction(UserMetricsAction("ClearBrowsingData_ShaderCache"));
+
+    ClearShaderCacheOnUIThread();
   }
 
 #if defined(ENABLE_PLUGINS)
@@ -532,13 +560,6 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
         pepper_flash_settings_manager_->DeauthorizeContentLicenses(prefs);
   }
 #endif
-
-  if (remove_mask & REMOVE_SHADER_CACHE) {
-    waiting_for_clear_shader_cache_ = true;
-    content::RecordAction(UserMetricsAction("ClearBrowsingData_ShaderCache"));
-
-    ClearShaderCacheOnUIThread();
-  }
 
   // Always wipe accumulated network related data (TransportSecurityState and
   // HttpServerPropertiesManager data).
@@ -689,7 +710,7 @@ void BrowsingDataRemover::ClearLoggedInPredictor() {
     return;
 
   predictors::LoggedInPredictorTable* logged_in_table =
-      predictor_db->logged_in_table();
+      predictor_db->logged_in_table().get();
   if (!logged_in_table)
     return;
 

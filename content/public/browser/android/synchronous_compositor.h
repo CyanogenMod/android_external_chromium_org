@@ -5,6 +5,7 @@
 #ifndef CONTENT_PUBLIC_BROWSER_ANDROID_SYNCHRONOUS_COMPOSITOR_H_
 #define CONTENT_PUBLIC_BROWSER_ANDROID_SYNCHRONOUS_COMPOSITOR_H_
 
+#include "content/common/content_export.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
@@ -23,7 +24,7 @@ class SynchronousCompositorClient;
 // Interface for embedders that wish to direct compositing operations
 // synchronously under their own control. Only meaningful when the
 // kEnableSyncrhonousRendererCompositor flag is specified.
-class SynchronousCompositor {
+class CONTENT_EXPORT SynchronousCompositor {
  public:
   // Must be called once per WebContents instance. Will create the compositor
   // instance as needed, but only if |client| is non-NULL.
@@ -50,6 +51,11 @@ class SynchronousCompositor {
   // "On demand" SW draw, into the supplied canvas (observing the transform
   // and clip set there-in).
   virtual bool DemandDrawSw(SkCanvas* canvas) = 0;
+
+  // Should be called by the embedder after the embedder had modified the
+  // scroll offset of the root layer (as returned by
+  // SynchronousCompositorClient::GetTotalRootLayerScrollOffset).
+  virtual void DidChangeRootLayerScrollOffset() = 0;
 
  protected:
   virtual ~SynchronousCompositor() {}

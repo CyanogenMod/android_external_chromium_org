@@ -49,7 +49,7 @@ class CONTENT_EXPORT AccessibilityTreeFormatter {
   //     "children": [ ]
   //   } ]
   // }
-  scoped_ptr<DictionaryValue> BuildAccessibilityTree();
+  scoped_ptr<base::DictionaryValue> BuildAccessibilityTree();
 
   // Dumps a BrowserAccessibility tree into a string.
   void FormatAccessibilityTree(string16* contents);
@@ -103,24 +103,30 @@ class CONTENT_EXPORT AccessibilityTreeFormatter {
                                         string16* contents,
                                         int indent);
   void RecursiveBuildAccessibilityTree(const BrowserAccessibility& node,
-                                       DictionaryValue* tree_node);
-  void RecursiveFormatAccessibilityTree(const DictionaryValue& tree_node,
+                                       base::DictionaryValue* tree_node);
+  void RecursiveFormatAccessibilityTree(const base::DictionaryValue& tree_node,
                                         string16* contents,
                                         int depth = 0);
 
   // Overridden by each platform to add the required attributes for each node
   // into the given dict.
-  void AddProperties(const BrowserAccessibility& node, DictionaryValue* dict);
+  void AddProperties(const BrowserAccessibility& node,
+                     base::DictionaryValue* dict);
+
+  // Returns true by default; can be overridden by the platform to
+  // prune some children from the tree when they wouldn't be exposed
+  // natively on that platform.
+  virtual bool IncludeChildren(const BrowserAccessibility& node);
 
   string16 FormatCoordinates(const char* name,
                              const char* x_name,
                              const char* y_name,
-                             const DictionaryValue& value);
+                             const base::DictionaryValue& value);
 
   // Returns a platform specific representation of a BrowserAccessibility.
   // Should be zero or more complete lines, each with |prefix| prepended
   // (to indent each line).
-  string16 ToString(const DictionaryValue& node, const string16& indent);
+  string16 ToString(const base::DictionaryValue& node, const string16& indent);
 
   void Initialize();
 

@@ -6,13 +6,13 @@
 #define CONTENT_PUBLIC_RENDERER_RENDER_VIEW_H_
 
 #include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/top_controls_state.h"
 #include "ipc/ipc_sender.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
+#include "third_party/WebKit/public/web/WebNavigationPolicy.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "ui/gfx/native_widget_types.h"
 
 class SkPicture;

@@ -23,9 +23,9 @@
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/sha1.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -436,9 +436,12 @@ void PluginList::GetPluginDirectories(std::vector<base::FilePath>* plugin_dirs) 
   // We first consult Chrome-specific dirs, then fall back on the logic
   // Mozilla uses.
 
-  // Note: "extra" plugin dirs, including the Plugins subdirectory of
-  // your Chrome config, are examined before these.  See the logic
-  // related to extra_plugin_dirs in plugin_list.cc.
+  if (PluginList::plugins_discovery_disabled_)
+    return;
+
+  // Note: "extra" plugin dirs and paths are examined before these.
+  // "Extra" are those added by PluginList::AddExtraPluginDir() and
+  // PluginList::AddExtraPluginPath().
 
   // The Chrome binary dir + "plugins/".
   base::FilePath dir;

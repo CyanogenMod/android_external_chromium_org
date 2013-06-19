@@ -14,6 +14,7 @@
 #include "net/base/net_log_unittest.h"
 #include "net/base/request_priority.h"
 #include "net/socket/next_proto.h"
+#include "net/socket/socket_test_util.h"
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_protocol.h"
@@ -129,7 +130,7 @@ class SpdyStreamTest : public ::testing::Test,
 INSTANTIATE_TEST_CASE_P(
     NextProto,
     SpdyStreamTest,
-    testing::Values(kProtoSPDY2, kProtoSPDY3, kProtoSPDY31));
+    testing::Values(kProtoSPDY2, kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2));
 
 TEST_P(SpdyStreamTest, SendDataAfterOpen) {
   GURL url(kStreamUrl);

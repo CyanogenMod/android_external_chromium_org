@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/stl_util.h"
@@ -29,6 +30,7 @@
 #include "webkit/browser/fileapi/syncable/sync_direction.h"
 #include "webkit/browser/fileapi/syncable/sync_file_metadata.h"
 #include "webkit/browser/fileapi/syncable/sync_status_code.h"
+#include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 
 using content::BrowserThread;
 using fileapi::FileSystemURL;
@@ -97,6 +99,36 @@ void DidHandleOriginForExtensionEnabledEvent(
               origin.spec().c_str());
 }
 
+// Gets called repeatedly until every SyncFileStatus has been mapped.
+void DidGetFileSyncStatus(
+    const SyncStatusCallback& callback,
+    FileMetadata* metadata,
+    size_t expected_results,
+    size_t* num_results,
+    SyncStatusCode sync_status_code,
+    SyncFileStatus sync_file_status) {
+  DCHECK(metadata);
+  DCHECK(num_results);
+
+  // TODO(calvinlo): Unfortunately the sync_status_code will only be OK if
+  // the app that matches the url.origin() is actually running. Otherwise
+  // the FileSystemContext isn't loaded into the map in
+  // LocalFileSyncService::HasPendingLocalChanges() and the contains key check
+  // fails. This causes SYNC_FILE_ERROR_INVALID_URL to be returned.
+  // With this check in, the SyncFileStatus will therefore show nothing (for
+  // SYNC_FILE_STATUS_UNKNOWN) for syncFS apps which aren't running.
+  metadata->sync_status = (sync_status_code == SYNC_STATUS_OK) ?
+      sync_file_status : SYNC_FILE_STATUS_UNKNOWN;
+
+  // Once all results have been received, run the callback to signal end.
+  DCHECK_LE(*num_results, expected_results);
+  (*num_results)++;
+  if (*num_results < expected_results)
+    return;
+
+  callback.Run(SYNC_STATUS_OK);
+}
+
 }  // namespace
 
 void SyncFileSystemService::Shutdown() {
@@ -128,7 +160,8 @@ void SyncFileSystemService::InitializeForApp(
   DCHECK(remote_file_service_);
   DCHECK(app_origin == app_origin.GetOrigin());
 
-  DVLOG(1) << "InitializeForApp: " << app_origin.spec();
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "Initializing for App: %s", app_origin.spec().c_str());
 
   local_file_service_->MaybeInitializeFileSystemContext(
       app_origin, file_system_context,
@@ -144,6 +177,47 @@ void SyncFileSystemService::GetExtensionStatusMap(
     std::map<GURL, std::string>* status_map) {
   DCHECK(status_map);
   remote_file_service_->GetOriginStatusMap(status_map);
+}
+
+void SyncFileSystemService::GetFileMetadataMap(
+    RemoteFileSyncService::OriginFileMetadataMap* metadata_map,
+    size_t* num_results,
+    const SyncStatusCallback& callback) {
+  DCHECK(metadata_map);
+  DCHECK(num_results);
+  remote_file_service_->GetFileMetadataMap(metadata_map);
+
+  // Figure out how many results have to be waited on before callback.
+  size_t expected_results = 0;
+  RemoteFileSyncService::OriginFileMetadataMap::iterator origin_itr;
+  for (origin_itr = metadata_map->begin();
+       origin_itr != metadata_map->end();
+       ++origin_itr)
+    expected_results += origin_itr->second.size();
+  if (expected_results == 0) {
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
+
+  // After all metadata loaded, sync status can be added to each entry.
+  for (origin_itr = metadata_map->begin();
+       origin_itr != metadata_map->end();
+       ++origin_itr) {
+    RemoteFileSyncService::FileMetadataMap::iterator file_path_itr;
+    for (file_path_itr = origin_itr->second.begin();
+         file_path_itr != origin_itr->second.end();
+         ++file_path_itr) {
+      const GURL& origin = origin_itr->first;
+      const base::FilePath& file_path = file_path_itr->first;
+      const FileSystemURL url = CreateSyncableFileSystemURL(origin, file_path);
+      FileMetadata& metadata = file_path_itr->second;
+      GetFileSyncStatus(url, base::Bind(&DidGetFileSyncStatus,
+                                        callback,
+                                        &metadata,
+                                        expected_results,
+                                        num_results));
+    }
+  }
 }
 
 void SyncFileSystemService::GetFileSyncStatus(
@@ -316,7 +390,8 @@ void SyncFileSystemService::StartRemoteSync() {
     return;
   DCHECK(sync_enabled_);
 
-  DVLOG(1) << "Calling ProcessRemoteChange";
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "Calling ProcessRemoteChange for RemoteSync");
   remote_sync_running_ = true;
   remote_file_service_->ProcessRemoteChange(
       base::Bind(&SyncFileSystemService::DidProcessRemoteChange,
@@ -329,7 +404,8 @@ void SyncFileSystemService::StartLocalSync() {
     return;
   DCHECK(sync_enabled_);
 
-  DVLOG(1) << "Calling ProcessLocalChange";
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "Calling ProcessLocalChange for LocalSync");
   local_sync_running_ = true;
   local_file_service_->ProcessLocalChange(
       base::Bind(&SyncFileSystemService::DidProcessLocalChange,
@@ -339,10 +415,9 @@ void SyncFileSystemService::StartLocalSync() {
 void SyncFileSystemService::DidProcessRemoteChange(
     SyncStatusCode status,
     const FileSystemURL& url) {
-  DVLOG(1) << "DidProcessRemoteChange: "
-           << " status=" << status
-           << " (" << SyncStatusCodeToString(status) << ")"
-           << " url=" << url.DebugString();
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "ProcessRemoteChange finished with status=%d (%s) for url=%s",
+            status, SyncStatusCodeToString(status), url.DebugString().c_str());
   DCHECK(remote_sync_running_);
   remote_sync_running_ = false;
 
@@ -372,10 +447,9 @@ void SyncFileSystemService::DidProcessRemoteChange(
 
 void SyncFileSystemService::DidProcessLocalChange(
     SyncStatusCode status, const FileSystemURL& url) {
-  DVLOG(1) << "DidProcessLocalChange:"
-           << " status=" << status
-           << " (" << SyncStatusCodeToString(status) << ")"
-           << " url=" << url.DebugString();
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "ProcessLocalChange finished with status=%d (%s) for url=%s",
+            status, SyncStatusCodeToString(status), url.DebugString().c_str());
   DCHECK(local_sync_running_);
   local_sync_running_ = false;
 
@@ -410,7 +484,10 @@ void SyncFileSystemService::OnSyncEnabledForRemoteSync() {
 void SyncFileSystemService::OnLocalChangeAvailable(int64 pending_changes) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_GE(pending_changes, 0);
-  DVLOG(1) << "OnLocalChangeAvailable: " << pending_changes;
+  if (pending_local_changes_ != pending_changes) {
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "OnLocalChangeAvailable: %" PRId64, pending_changes);
+  }
   pending_local_changes_ = pending_changes;
   if (pending_changes == 0)
     return;
@@ -423,7 +500,11 @@ void SyncFileSystemService::OnLocalChangeAvailable(int64 pending_changes) {
 void SyncFileSystemService::OnRemoteChangeQueueUpdated(int64 pending_changes) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_GE(pending_changes, 0);
-  DVLOG(1) << "OnRemoteChangeQueueUpdated: " << pending_changes;
+
+  if (pending_remote_changes_ != pending_changes) {
+    util::Log(logging::LOG_VERBOSE, FROM_HERE,
+              "OnRemoteChangeAvailable: %" PRId64, pending_changes);
+  }
   pending_remote_changes_ = pending_changes;
   if (pending_changes == 0)
     return;
@@ -441,8 +522,8 @@ void SyncFileSystemService::OnRemoteServiceStateUpdated(
     RemoteServiceState state,
     const std::string& description) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DVLOG(1) << "OnRemoteServiceStateUpdated: " << state
-           << " " << description;
+  util::Log(logging::LOG_INFO, FROM_HERE,
+            "OnRemoteServiceStateChanged: %d %s", state, description.c_str());
 
   if (state == REMOTE_SERVICE_OK) {
     base::MessageLoopProxy::current()->PostTask(

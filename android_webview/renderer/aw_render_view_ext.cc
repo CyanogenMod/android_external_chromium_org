@@ -8,7 +8,6 @@
 
 #include "android_webview/common/aw_hit_test_data.h"
 #include "android_webview/common/render_view_messages.h"
-#include "android_webview/common/renderer_picture_map.h"
 #include "base/bind.h"
 #include "base/strings/string_piece.h"
 #include "content/public/common/url_constants.h"
@@ -28,11 +27,19 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/skia/include/core/SkPicture.h"
 
 namespace android_webview {
 
 namespace {
+
+bool AllowMixedContent(const WebKit::WebURL& url) {
+  // We treat non-standard schemes as "secure" in the WebView to allow them to
+  // be used for request interception.
+  // TODO(benm): Tighten this restriction by requiring embedders to register
+  // their custom schemes? See b/9420953.
+  GURL gurl(url);
+  return !gurl.IsStandard();
+}
 
 GURL GetAbsoluteUrl(const WebKit::WebNode& node, const string16& url_fragment) {
   return GURL(node.document().completeURL(url_fragment));
@@ -167,19 +174,20 @@ void AwRenderViewExt::OnDocumentHasImagesRequest(int id) {
                                                    hasImages));
 }
 
-bool AwRenderViewExt::allowImage(WebKit::WebFrame* frame,
-                                 bool enabled_per_settings,
-                                 const WebKit::WebURL& image_url) {
-  // Implementing setBlockNetworkImages, so allow local scheme images to be
-  // loaded.
-  if (enabled_per_settings)
-    return true;
+bool AwRenderViewExt::allowDisplayingInsecureContent(
+      WebKit::WebFrame* frame,
+      bool enabled_per_settings,
+      const WebKit::WebSecurityOrigin& origin,
+      const WebKit::WebURL& url) {
+  return enabled_per_settings ? true : AllowMixedContent(url);
+}
 
-  // For compatibility, only blacklist network schemes instead of whitelisting.
-  const GURL url(image_url);
-  return !(url.SchemeIs(chrome::kHttpScheme) ||
-           url.SchemeIs(chrome::kHttpsScheme) ||
-           url.SchemeIs(chrome::kFtpScheme));
+bool AwRenderViewExt::allowRunningInsecureContent(
+      WebKit::WebFrame* frame,
+      bool enabled_per_settings,
+      const WebKit::WebSecurityOrigin& origin,
+      const WebKit::WebURL& url) {
+  return enabled_per_settings ? true : AllowMixedContent(url);
 }
 
 void AwRenderViewExt::DidCommitProvisionalLoad(WebKit::WebFrame* frame,

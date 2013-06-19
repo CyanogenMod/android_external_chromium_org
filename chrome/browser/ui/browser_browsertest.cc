@@ -57,6 +57,7 @@
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -262,7 +263,7 @@ class BrowserTest : public ExtensionBrowserTest {
     for (ExtensionSet::const_iterator it = extensions->begin();
          it != extensions->end(); ++it) {
       if ((*it)->name() == "App Test")
-        return *it;
+        return it->get();
     }
     NOTREACHED();
     return NULL;

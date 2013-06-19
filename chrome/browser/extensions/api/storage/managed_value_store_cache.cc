@@ -24,6 +24,7 @@
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/value_store/value_store_change.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_set.h"
@@ -32,6 +33,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
 
 using content::BrowserThread;
 
@@ -78,6 +80,9 @@ class ManagedValueStoreCache::ExtensionTracker
 ManagedValueStoreCache::ExtensionTracker::ExtensionTracker(Profile* profile)
     : profile_(profile),
       weak_factory_(this) {
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSIONS_READY,
+                 content::Source<Profile>(profile_));
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_LOADED,
                  content::Source<Profile>(profile_));
@@ -144,7 +149,7 @@ void ManagedValueStoreCache::ExtensionTracker::LoadSchemas(
     // and is valid.
     std::string error;
     scoped_ptr<policy::PolicySchema> schema =
-        StorageSchemaManifestHandler::GetSchema(*it, &error);
+        StorageSchemaManifestHandler::GetSchema(it->get(), &error);
     CHECK(schema) << error;
     descriptor->RegisterComponent((*it)->id(), schema.Pass());
   }

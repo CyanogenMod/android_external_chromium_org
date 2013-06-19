@@ -40,13 +40,15 @@ NetworkHandler::~NetworkHandler() {
 }
 
 void NetworkHandler::Init() {
+  cert_loader_->Init();
   network_state_handler_->InitShillPropertyHandler();
   network_configuration_handler_->Init(network_state_handler_.get());
   managed_network_configuration_handler_->Init(
       network_state_handler_.get(),
       network_profile_handler_.get(),
       network_configuration_handler_.get());
-  network_connection_handler_->Init(network_state_handler_.get(),
+  network_connection_handler_->Init(cert_loader_.get(),
+                                    network_state_handler_.get(),
                                     network_configuration_handler_.get());
   geolocation_handler_->Init();
 }

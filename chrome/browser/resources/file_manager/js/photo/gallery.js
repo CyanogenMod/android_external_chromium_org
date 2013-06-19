@@ -99,7 +99,7 @@ Gallery.openStandalone = function(path, pageState, opt_callback) {
   var currentDir;
   var urls = [];
   var selectedUrls = [];
-  var appWindow = util.platform.v2() ? chrome.app.window.current() : null;
+  var appWindow = chrome.app.window.current();
 
   Gallery.getFileBrowserPrivate().requestFileSystem(function(filesystem) {
     // If the path points to the directory scan it.
@@ -206,10 +206,6 @@ Gallery.prototype.initListeners_ = function() {
   this.keyDownBound_ = this.onKeyDown_.bind(this);
   this.document_.body.addEventListener('keydown', this.keyDownBound_);
 
-  util.disableBrowserShortcutKeys(this.document_);
-  if (!util.platform.v2())
-    util.enableNewFullScreenHandler(this.document_);
-
   this.inactivityWatcher_ = new MouseInactivityWatcher(
       this.container_, Gallery.FADE_TIMEOUT, this.hasActiveTool.bind(this));
 
@@ -274,17 +270,15 @@ Gallery.prototype.initDom_ = function() {
   util.createChild(backButton);
   backButton.addEventListener('click', this.onBack_.bind(this));
 
-  if (util.platform.newUI()) {
-    var maximizeButton = util.createChild(this.header_,
-                                          'maximize-button tool dimmable',
-                                          'button');
-    maximizeButton.addEventListener('click', this.onMaximize_.bind(this));
+  var maximizeButton = util.createChild(this.header_,
+                                        'maximize-button tool dimmable',
+                                        'button');
+  maximizeButton.addEventListener('click', this.onMaximize_.bind(this));
 
-    var closeButton = util.createChild(this.header_,
-                                       'close-button tool dimmable',
-                                       'button');
-    closeButton.addEventListener('click', this.onClose_.bind(this));
-  }
+  var closeButton = util.createChild(this.header_,
+                                     'close-button tool dimmable',
+                                     'button');
+  closeButton.addEventListener('click', this.onClose_.bind(this));
 
   this.filenameSpacer_ = util.createChild(this.toolbar_, 'filename-spacer');
   this.filenameEdit_ = util.createChild(this.filenameSpacer_,
@@ -305,21 +299,26 @@ Gallery.prototype.initDom_ = function() {
   this.prompt_ = new ImageEditor.Prompt(
       this.container_, this.displayStringFunction_);
 
-  var onThumbnailError = this.context_.onThumbnailError || function() {};
-
   this.modeButton_ = util.createChild(this.toolbar_, 'button mode', 'button');
   this.modeButton_.addEventListener('click',
       this.toggleMode_.bind(this, null));
 
   this.mosaicMode_ = new MosaicMode(content,
-      this.dataModel_, this.selectionModel_, this.metadataCache_,
-      this.toggleMode_.bind(this, null), onThumbnailError);
+                                    this.dataModel_,
+                                    this.selectionModel_,
+                                    this.metadataCache_,
+                                    this.toggleMode_.bind(this, null));
 
-  this.slideMode_ = new SlideMode(this.container_, content,
-      this.toolbar_, this.prompt_,
-      this.dataModel_, this.selectionModel_, this.context_,
-      this.toggleMode_.bind(this), onThumbnailError,
-      this.displayStringFunction_);
+  this.slideMode_ = new SlideMode(this.container_,
+                                  content,
+                                  this.toolbar_,
+                                  this.prompt_,
+                                  this.dataModel_,
+                                  this.selectionModel_,
+                                  this.context_,
+                                  this.toggleMode_.bind(this),
+                                  this.displayStringFunction_);
+
   this.slideMode_.addEventListener('image-displayed', function() {
     cr.dispatchSimpleEvent(this, 'image-displayed');
   }.bind(this));
@@ -345,8 +344,7 @@ Gallery.prototype.initDom_ = function() {
 
   this.slideMode_.addEventListener('useraction', this.onUserAction_.bind(this));
 
-  if (util.platform.newUI())
-    document.body.setAttribute('new-ui', '');
+  document.body.setAttribute('new-ui', '');
 };
 
 /**
@@ -748,9 +746,8 @@ Gallery.prototype.updateSelectionAndState_ = function() {
         this.displayStringFunction_('ITEMS_SELECTED', selectedItems.length);
   }
 
-  window.top.util.updateAppState(true /*replace*/, path,
+  window.top.util.updateAppState(path,
       {gallery: (this.currentMode_ == this.mosaicMode_ ? 'mosaic' : 'slide')});
-
 
   // We can't rename files in readonly directory.
   // We can only rename a single file.
@@ -899,10 +896,9 @@ Gallery.prototype.toggleShare_ = function() {
 Gallery.prototype.updateShareMenu_ = function() {
   var urls = this.getSelectedUrls();
 
-  var internalId = util.platform.getAppId();
   function isShareAction(task) {
     var taskParts = task.taskId.split('|');
-    return taskParts[0] != internalId;
+    return taskParts[0] != chrome.runtime.id;
   }
 
   var api = Gallery.getFileBrowserPrivate();

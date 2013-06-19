@@ -15,10 +15,10 @@
 #include "net/base/test_completion_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "webkit/base/origin_url_conversions.h"
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/browser/quota/quota_manager.h"
+#include "webkit/common/database/database_identifier.h"
 
 namespace {
 
@@ -39,7 +39,7 @@ class TestObserver : public webkit_database::DatabaseTracker::Observer {
   }
 
   virtual ~TestObserver() {}
-  virtual void OnDatabaseSizeChanged(const base::string16& origin_identifier,
+  virtual void OnDatabaseSizeChanged(const std::string& origin_identifier,
                                      const base::string16& database_name,
                                      int64 database_size) OVERRIDE {
     if (!observe_size_changes_)
@@ -50,7 +50,7 @@ class TestObserver : public webkit_database::DatabaseTracker::Observer {
     database_size_ = database_size;
   }
   virtual void OnDatabaseScheduledForDeletion(
-      const base::string16& origin_identifier,
+      const std::string& origin_identifier,
       const base::string16& database_name) OVERRIDE {
     if (!observe_scheduled_deletions_)
       return;
@@ -63,7 +63,7 @@ class TestObserver : public webkit_database::DatabaseTracker::Observer {
     new_notification_received_ = false;
     return temp_new_notification_received;
   }
-  base::string16 GetNotificationOriginIdentifier() {
+  std::string GetNotificationOriginIdentifier() {
     return origin_identifier_;
   }
   base::string16 GetNotificationDatabaseName() { return database_name_; }
@@ -73,13 +73,13 @@ class TestObserver : public webkit_database::DatabaseTracker::Observer {
   bool new_notification_received_;
   bool observe_size_changes_;
   bool observe_scheduled_deletions_;
-  base::string16 origin_identifier_;
+  std::string origin_identifier_;
   base::string16 database_name_;
   int64 database_size_;
 };
 
 void CheckNotificationReceived(TestObserver* observer,
-                               const base::string16& expected_origin_identifier,
+                               const std::string& expected_origin_identifier,
                                const base::string16& expected_database_name,
                                int64 expected_database_size) {
   EXPECT_TRUE(observer->DidReceiveNewNotification());
@@ -204,10 +204,10 @@ class DatabaseTracker_TestHelper_Test {
 
     // Create and open three databases.
     int64 database_size = 0;
-    const base::string16 kOrigin1 =
-        webkit_base::GetOriginIdentifierFromURL(GURL(kOrigin1Url));
-    const base::string16 kOrigin2 =
-        webkit_base::GetOriginIdentifierFromURL(GURL(kOrigin2Url));
+    const std::string kOrigin1 =
+        webkit_database::GetIdentifierFromOrigin(GURL(kOrigin1Url));
+    const std::string kOrigin2 =
+        webkit_database::GetIdentifierFromOrigin(GURL(kOrigin2Url));
     const base::string16 kDB1 = ASCIIToUTF16("db1");
     const base::string16 kDB2 = ASCIIToUTF16("db2");
     const base::string16 kDB3 = ASCIIToUTF16("db3");
@@ -249,8 +249,8 @@ class DatabaseTracker_TestHelper_Test {
     tracker->DatabaseClosed(kOrigin1, kDB1);
     result = callback.GetResult(result);
     EXPECT_EQ(net::OK, result);
-    EXPECT_FALSE(file_util::PathExists(tracker->DatabaseDirectory().Append(
-        base::FilePath::FromWStringHack(UTF16ToWide(kOrigin1)))));
+    EXPECT_FALSE(file_util::PathExists(
+          tracker->DatabaseDirectory().AppendASCII(kOrigin1)));
 
     // Recreate db1.
     tracker->DatabaseOpened(kOrigin1, kDB1, kDescription, 0,
@@ -285,8 +285,8 @@ class DatabaseTracker_TestHelper_Test {
     tracker->DatabaseClosed(kOrigin2, kDB2);
     result = callback.GetResult(result);
     EXPECT_EQ(net::OK, result);
-    EXPECT_FALSE(file_util::PathExists(tracker->DatabaseDirectory().Append(
-        base::FilePath::FromWStringHack(UTF16ToWide(kOrigin1)))));
+    EXPECT_FALSE(file_util::PathExists(
+        tracker->DatabaseDirectory().AppendASCII(kOrigin1)));
     EXPECT_TRUE(
         file_util::PathExists(tracker->GetFullDBFilePath(kOrigin2, kDB2)));
     EXPECT_TRUE(
@@ -318,10 +318,10 @@ class DatabaseTracker_TestHelper_Test {
 
     // Open three new databases.
     int64 database_size = 0;
-    const base::string16 kOrigin1 =
-        webkit_base::GetOriginIdentifierFromURL(GURL(kOrigin1Url));
-    const base::string16 kOrigin2 =
-        webkit_base::GetOriginIdentifierFromURL(GURL(kOrigin2Url));
+    const std::string kOrigin1 =
+        webkit_database::GetIdentifierFromOrigin(GURL(kOrigin1Url));
+    const std::string kOrigin2 =
+        webkit_database::GetIdentifierFromOrigin(GURL(kOrigin2Url));
     const base::string16 kDB1 = ASCIIToUTF16("db1");
     const base::string16 kDB2 = ASCIIToUTF16("db2");
     const base::string16 kDB3 = ASCIIToUTF16("db3");
@@ -415,12 +415,12 @@ class DatabaseTracker_TestHelper_Test {
     std::vector<OriginInfo> origins_info;
     EXPECT_TRUE(tracker->GetAllOriginsInfo(&origins_info));
     EXPECT_EQ(size_t(2), origins_info.size());
-    EXPECT_EQ(kOrigin1, origins_info[0].GetOrigin());
+    EXPECT_EQ(kOrigin1, origins_info[0].GetOriginIdentifier());
     EXPECT_EQ(1, origins_info[0].TotalSize());
     EXPECT_EQ(1, origins_info[0].GetDatabaseSize(kDB1));
     EXPECT_EQ(0, origins_info[0].GetDatabaseSize(kDB3));
 
-    EXPECT_EQ(kOrigin2, origins_info[1].GetOrigin());
+    EXPECT_EQ(kOrigin2, origins_info[1].GetOriginIdentifier());
     EXPECT_EQ(2, origins_info[1].TotalSize());
 
     // Trying to delete an origin with databases in use should fail
@@ -437,7 +437,7 @@ class DatabaseTracker_TestHelper_Test {
     origins_info.clear();
     EXPECT_TRUE(tracker->GetAllOriginsInfo(&origins_info));
     EXPECT_EQ(size_t(1), origins_info.size());
-    EXPECT_EQ(kOrigin2, origins_info[0].GetOrigin());
+    EXPECT_EQ(kOrigin2, origins_info[0].GetOriginIdentifier());
 
     origin1_info = tracker->GetCachedOriginInfo(kOrigin1);
     EXPECT_TRUE(origin1_info);
@@ -446,8 +446,8 @@ class DatabaseTracker_TestHelper_Test {
 
   static void DatabaseTrackerQuotaIntegration() {
     const GURL kOrigin(kOrigin1Url);
-    const base::string16 kOriginId =
-        webkit_base::GetOriginIdentifierFromURL(kOrigin);
+    const std::string kOriginId =
+        webkit_database::GetIdentifierFromOrigin(kOrigin);
     const base::string16 kName = ASCIIToUTF16("name");
     const base::string16 kDescription = ASCIIToUTF16("description");
 
@@ -544,10 +544,10 @@ class DatabaseTracker_TestHelper_Test {
 
   static void DatabaseTrackerClearSessionOnlyDatabasesOnExit() {
     int64 database_size = 0;
-    const base::string16 kOrigin1 =
-        webkit_base::GetOriginIdentifierFromURL(GURL(kOrigin1Url));
-    const base::string16 kOrigin2 =
-        webkit_base::GetOriginIdentifierFromURL(GURL(kOrigin2Url));
+    const std::string kOrigin1 =
+        webkit_database::GetIdentifierFromOrigin(GURL(kOrigin1Url));
+    const std::string kOrigin2 =
+        webkit_database::GetIdentifierFromOrigin(GURL(kOrigin2Url));
     const base::string16 kDB1 = ASCIIToUTF16("db1");
     const base::string16 kDB2 = ASCIIToUTF16("db2");
     const base::string16 kDescription = ASCIIToUTF16("database_description");
@@ -567,7 +567,7 @@ class DatabaseTracker_TestHelper_Test {
                               false,
                               special_storage_policy.get(),
                               NULL,
-                              base::MessageLoopProxy::current()));
+                              base::MessageLoopProxy::current().get()));
 
       // Open two new databases.
       tracker->DatabaseOpened(kOrigin1, kDB1, kDescription, 0,
@@ -611,7 +611,7 @@ class DatabaseTracker_TestHelper_Test {
     // kOrigin1 was not session-only, so it survived. kOrigin2 was session-only
     // and it got deleted.
     EXPECT_EQ(size_t(1), origins_info.size());
-    EXPECT_EQ(kOrigin1, origins_info[0].GetOrigin());
+    EXPECT_EQ(kOrigin1, origins_info[0].GetOriginIdentifier());
     EXPECT_TRUE(
         file_util::PathExists(tracker->GetFullDBFilePath(kOrigin1, kDB1)));
     EXPECT_EQ(base::FilePath(), tracker->GetFullDBFilePath(kOrigin2, kDB2));
@@ -624,10 +624,10 @@ class DatabaseTracker_TestHelper_Test {
 
   static void DatabaseTrackerSetForceKeepSessionState() {
     int64 database_size = 0;
-    const base::string16 kOrigin1 =
-        webkit_base::GetOriginIdentifierFromURL(GURL(kOrigin1Url));
-    const base::string16 kOrigin2 =
-        webkit_base::GetOriginIdentifierFromURL(GURL(kOrigin2Url));
+    const std::string kOrigin1 =
+        webkit_database::GetIdentifierFromOrigin(GURL(kOrigin1Url));
+    const std::string kOrigin2 =
+        webkit_database::GetIdentifierFromOrigin(GURL(kOrigin2Url));
     const base::string16 kDB1 = ASCIIToUTF16("db1");
     const base::string16 kDB2 = ASCIIToUTF16("db2");
     const base::string16 kDescription = ASCIIToUTF16("database_description");
@@ -647,7 +647,7 @@ class DatabaseTracker_TestHelper_Test {
                               false,
                               special_storage_policy.get(),
                               NULL,
-                              base::MessageLoopProxy::current()));
+                              base::MessageLoopProxy::current().get()));
       tracker->SetForceKeepSessionState();
 
       // Open two new databases.
@@ -702,8 +702,8 @@ class DatabaseTracker_TestHelper_Test {
 
   static void EmptyDatabaseNameIsValid() {
     const GURL kOrigin(kOrigin1Url);
-    const base::string16 kOriginId =
-        webkit_base::GetOriginIdentifierFromURL(kOrigin);
+    const std::string kOriginId =
+        webkit_database::GetIdentifierFromOrigin(kOrigin);
     const base::string16 kEmptyName;
     const base::string16 kDescription(ASCIIToUTF16("description"));
     const base::string16 kChangedDescription(
@@ -751,8 +751,8 @@ class DatabaseTracker_TestHelper_Test {
 
   static void HandleSqliteError() {
     const GURL kOrigin(kOrigin1Url);
-    const base::string16 kOriginId =
-        webkit_base::GetOriginIdentifierFromURL(kOrigin);
+    const std::string kOriginId =
+        webkit_database::GetIdentifierFromOrigin(kOrigin);
     const base::string16 kName(ASCIIToUTF16("name"));
     const base::string16 kDescription(ASCIIToUTF16("description"));
 

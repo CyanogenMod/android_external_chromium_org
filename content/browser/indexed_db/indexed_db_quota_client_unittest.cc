@@ -16,7 +16,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/base/origin_url_conversions.h"
+#include "webkit/common/database/database_identifier.h"
 
 // Declared to shorten the line lengths.
 static const quota::StorageType kTemp = quota::kStorageTypeTemporary;
@@ -128,7 +128,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
 
   void AddFakeIndexedDB(const GURL& origin, int size) {
     base::FilePath file_path_origin = idb_context()->GetFilePathForTesting(
-        webkit_base::GetOriginIdentifierFromURL(origin));
+        webkit_database::GetIdentifierFromOrigin(origin));
     if (!file_util::CreateDirectory(file_path_origin)) {
       LOG(ERROR) << "failed to file_util::CreateDirectory "
                  << file_path_origin.value();
@@ -165,7 +165,8 @@ class IndexedDBQuotaClientTest : public testing::Test {
 };
 
 TEST_F(IndexedDBQuotaClientTest, GetOriginUsage) {
-  IndexedDBQuotaClient client(base::MessageLoopProxy::current(), idb_context());
+  IndexedDBQuotaClient client(base::MessageLoopProxy::current().get(),
+                              idb_context());
 
   AddFakeIndexedDB(kOriginA, 6);
   AddFakeIndexedDB(kOriginB, 3);
@@ -182,7 +183,8 @@ TEST_F(IndexedDBQuotaClientTest, GetOriginUsage) {
 }
 
 TEST_F(IndexedDBQuotaClientTest, GetOriginsForHost) {
-  IndexedDBQuotaClient client(base::MessageLoopProxy::current(), idb_context());
+  IndexedDBQuotaClient client(base::MessageLoopProxy::current().get(),
+                              idb_context());
 
   EXPECT_EQ(kOriginA.host(), kOriginB.host());
   EXPECT_NE(kOriginA.host(), kOriginOther.host());
@@ -206,7 +208,8 @@ TEST_F(IndexedDBQuotaClientTest, GetOriginsForHost) {
 }
 
 TEST_F(IndexedDBQuotaClientTest, GetOriginsForType) {
-  IndexedDBQuotaClient client(base::MessageLoopProxy::current(), idb_context());
+  IndexedDBQuotaClient client(base::MessageLoopProxy::current().get(),
+                              idb_context());
 
   EXPECT_TRUE(GetOriginsForType(&client, kTemp).empty());
   EXPECT_TRUE(GetOriginsForType(&client, kPerm).empty());
@@ -220,7 +223,8 @@ TEST_F(IndexedDBQuotaClientTest, GetOriginsForType) {
 }
 
 TEST_F(IndexedDBQuotaClientTest, DeleteOrigin) {
-  IndexedDBQuotaClient client(base::MessageLoopProxy::current(), idb_context());
+  IndexedDBQuotaClient client(base::MessageLoopProxy::current().get(),
+                              idb_context());
 
   AddFakeIndexedDB(kOriginA, 1000);
   AddFakeIndexedDB(kOriginB, 50);

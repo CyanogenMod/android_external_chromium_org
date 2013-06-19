@@ -68,6 +68,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -95,10 +96,10 @@ LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES := \
+	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
-	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/third_party/sqlite \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \

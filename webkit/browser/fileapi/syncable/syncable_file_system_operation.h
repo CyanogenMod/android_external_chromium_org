@@ -13,7 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "webkit/browser/fileapi/local_file_system_operation.h"
-#include "webkit/storage/webkit_storage_export.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace fileapi {
 class FileSystemContext;
@@ -26,7 +26,7 @@ namespace sync_file_system {
 class SyncableFileOperationRunner;
 
 // A wrapper class of LocalFileSystemOperation for syncable file system.
-class WEBKIT_STORAGE_EXPORT SyncableFileSystemOperation
+class WEBKIT_STORAGE_BROWSER_EXPORT SyncableFileSystemOperation
     : public fileapi::LocalFileSystemOperation,
       public base::SupportsWeakPtr<SyncableFileSystemOperation>,
       public base::NonThreadSafe {
@@ -57,10 +57,9 @@ class WEBKIT_STORAGE_EXPORT SyncableFileSystemOperation
                              const ReadDirectoryCallback& callback) OVERRIDE;
   virtual void Remove(const fileapi::FileSystemURL& url, bool recursive,
                       const StatusCallback& callback) OVERRIDE;
-  virtual void Write(const net::URLRequestContext* url_request_context,
-                     const fileapi::FileSystemURL& url,
-                     const GURL& blob_url,
-                     int64 offset,
+  virtual void Write(const fileapi::FileSystemURL& url,
+                     scoped_ptr<fileapi::FileWriterDelegate> writer_delegate,
+                     scoped_ptr<net::URLRequest> blob_request,
                      const WriteCallback& callback) OVERRIDE;
   virtual void Truncate(const fileapi::FileSystemURL& url, int64 length,
                         const StatusCallback& callback) OVERRIDE;

@@ -5,11 +5,11 @@
 #include "webkit/renderer/webpreferences_renderer.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNetworkStateNotifier.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSettings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebNetworkStateNotifier.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/web/WebSettings.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/icu/public/common/unicode/uchar.h"
@@ -288,6 +288,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setCSSStickyPositionEnabled(prefs.css_sticky_position_enabled);
   settings->setExperimentalCSSCustomFilterEnabled(prefs.css_shaders_enabled);
   settings->setExperimentalCSSGridLayoutEnabled(prefs.css_grid_layout_enabled);
+  settings->setRegionBasedColumnsEnabled(prefs.region_based_columns_enabled);
 
   WebRuntimeFeatures::enableLazyLayout(prefs.lazy_layout_enabled);
   WebRuntimeFeatures::enableTouch(prefs.touch_enabled);

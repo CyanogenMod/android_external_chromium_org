@@ -217,13 +217,16 @@ public class AwTestBase
         return testContainerView;
     }
 
+    // The browser context needs to be a process-wide singleton.
+    private AwBrowserContext mBrowserContext =
+            new AwBrowserContext(new InMemorySharedPreferences());
+
     protected AwTestContainerView createDetachedAwTestContainerView(
             final AwContentsClient awContentsClient,
             final TestDependencyFactory testDependencyFactory) {
         final AwTestContainerView testContainerView = new AwTestContainerView(getActivity());
         testContainerView.initialize(new AwContents(
-                new AwBrowserContext(new InMemorySharedPreferences()),
-                testContainerView, testContainerView.getInternalAccessDelegate(),
+                mBrowserContext, testContainerView, testContainerView.getInternalAccessDelegate(),
                 awContentsClient, false, testDependencyFactory.createLayoutSizer()));
         return testContainerView;
     }

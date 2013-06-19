@@ -18,6 +18,7 @@
 #include "ppapi/proxy/flash_menu_resource.h"
 #include "ppapi/proxy/graphics_2d_resource.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
+#include "ppapi/proxy/host_resolver_resource.h"
 #include "ppapi/proxy/net_address_resource.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
@@ -33,12 +34,14 @@
 #include "ppapi/proxy/ppb_network_monitor_private_proxy.h"
 #include "ppapi/proxy/ppb_tcp_server_socket_private_proxy.h"
 #include "ppapi/proxy/ppb_tcp_socket_private_proxy.h"
+#include "ppapi/proxy/ppb_tcp_socket_proxy.h"
 #include "ppapi/proxy/ppb_video_decoder_proxy.h"
 #include "ppapi/proxy/ppb_x509_certificate_private_proxy.h"
 #include "ppapi/proxy/printing_resource.h"
 #include "ppapi/proxy/talk_resource.h"
 #include "ppapi/proxy/truetype_font_resource.h"
 #include "ppapi/proxy/udp_socket_private_resource.h"
+#include "ppapi/proxy/udp_socket_resource.h"
 #include "ppapi/proxy/url_loader_resource.h"
 #include "ppapi/proxy/url_request_info_resource.h"
 #include "ppapi/proxy/url_response_info_resource.h"
@@ -248,29 +251,24 @@ PP_Resource ResourceCreationProxy::CreateGraphics3DRaw(
   return 0;
 }
 
+PP_Resource ResourceCreationProxy::CreateHostResolver(PP_Instance instance) {
+  return (new HostResolverResource(GetConnection(), instance))->GetReference();
+}
+
 PP_Resource ResourceCreationProxy::CreateHostResolverPrivate(
     PP_Instance instance) {
   return (new HostResolverPrivateResource(
       GetConnection(), instance))->GetReference();
 }
 
-PP_Resource ResourceCreationProxy::CreateImageData(PP_Instance instance,
-                                                   PP_ImageDataFormat format,
-                                                   const PP_Size* size,
-                                                   PP_Bool init_to_zero) {
-  return PPB_ImageData_Proxy::CreateProxyResource(instance, format, *size,
-                                                  init_to_zero);
-}
-
-PP_Resource ResourceCreationProxy::CreateImageDataNaCl(
+PP_Resource ResourceCreationProxy::CreateImageData(
     PP_Instance instance,
+    PPB_ImageData_Shared::ImageDataType type,
     PP_ImageDataFormat format,
     const PP_Size* size,
     PP_Bool init_to_zero) {
-  // These really only are different on the host side. On the plugin side, we
-  // always request a "platform" ImageData if we're trusted, or a "NaCl" one
-  // if we're untrusted (see PPB_ImageData_Proxy::CreateProxyResource()).
-  return CreateImageData(instance, format, size, init_to_zero);
+  return PPB_ImageData_Proxy::CreateProxyResource(instance, type,
+                                                  format, *size, init_to_zero);
 }
 
 PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv4Address(
@@ -285,6 +283,13 @@ PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv6Address(
     const PP_NetAddress_IPv6_Dev* ipv6_addr) {
   return (new NetAddressResource(GetConnection(), instance,
                                  *ipv6_addr))->GetReference();
+}
+
+PP_Resource ResourceCreationProxy::CreateNetAddressFromNetAddressPrivate(
+    PP_Instance instance,
+    const PP_NetAddress_Private& private_addr) {
+  return (new NetAddressResource(GetConnection(), instance,
+                                 private_addr))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateNetworkMonitor(
@@ -304,9 +309,18 @@ PP_Resource ResourceCreationProxy::CreateTCPServerSocketPrivate(
   return PPB_TCPServerSocket_Private_Proxy::CreateProxyResource(instance);
 }
 
+PP_Resource ResourceCreationProxy::CreateTCPSocket(
+    PP_Instance instance) {
+  return PPB_TCPSocket_Proxy::CreateProxyResource(instance);
+}
+
 PP_Resource ResourceCreationProxy::CreateTCPSocketPrivate(
     PP_Instance instance) {
   return PPB_TCPSocket_Private_Proxy::CreateProxyResource(instance);
+}
+
+PP_Resource ResourceCreationProxy::CreateUDPSocket(PP_Instance instance) {
+  return (new UDPSocketResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateUDPSocketPrivate(

@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
@@ -160,6 +160,7 @@ class GPU_EXPORT Texture {
 
  private:
   friend class MailboxManager;
+  friend class MailboxManagerTest;
   friend class TextureManager;
   friend class TextureRef;
   friend class TextureTestHelper;

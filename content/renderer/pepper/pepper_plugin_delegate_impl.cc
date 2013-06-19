@@ -83,14 +83,14 @@
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_tcp_server_socket_private_api.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebScreenInfo.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/size.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
@@ -286,7 +286,8 @@ void DidOpenFileSystemURL(
   // Make sure we won't leak file handle if the requester has died.
   if (file != base::kInvalidPlatformFileValue) {
     base::FileUtilProxy::Close(
-        RenderThreadImpl::current()->GetFileThreadMessageLoopProxy(), file,
+        RenderThreadImpl::current()->GetFileThreadMessageLoopProxy().get(),
+        file,
         base::Bind(&DoNotifyCloseFile, file_open_id));
   }
 }
@@ -831,8 +832,10 @@ webkit::ppapi::PluginDelegate::PlatformContext3D*
 webkit::ppapi::PluginDelegate::PlatformVideoCapture*
 PepperPluginDelegateImpl::CreateVideoCapture(
     const std::string& device_id,
+    const GURL& document_url,
     PlatformVideoCaptureEventHandler* handler) {
-  return new PepperPlatformVideoCaptureImpl(AsWeakPtr(), device_id, handler);
+  return new PepperPlatformVideoCaptureImpl(AsWeakPtr(), device_id,
+                                            document_url, handler);
 }
 
 webkit::ppapi::PluginDelegate::PlatformVideoDecoder*
@@ -877,11 +880,12 @@ PepperPluginDelegateImpl::CreateAudioOutput(
 webkit::ppapi::PluginDelegate::PlatformAudioInput*
 PepperPluginDelegateImpl::CreateAudioInput(
     const std::string& device_id,
+    const GURL& document_url,
     uint32_t sample_rate,
     uint32_t sample_count,
     webkit::ppapi::PluginDelegate::PlatformAudioInputClient* client) {
   return PepperPlatformAudioInputImpl::Create(
-      AsWeakPtr(), device_id, static_cast<int>(sample_rate),
+      AsWeakPtr(), device_id, document_url, static_cast<int>(sample_rate),
       static_cast<int>(sample_count), client);
 }
 
@@ -965,7 +969,8 @@ void PepperPluginDelegateImpl::OnAsyncFileOpened(
   callback->Run(error_code, base::PassPlatformFile(&file));
   // Make sure we won't leak file handle if the requester has died.
   if (file != base::kInvalidPlatformFileValue)
-    base::FileUtilProxy::Close(GetFileThreadMessageLoopProxy(), file,
+    base::FileUtilProxy::Close(GetFileThreadMessageLoopProxy().get(),
+                               file,
                                base::FileUtilProxy::StatusCallback());
   delete callback;
 }
@@ -1604,6 +1609,7 @@ int PepperPluginDelegateImpl::GetRoutingID() const {
 
 int PepperPluginDelegateImpl::OpenDevice(PP_DeviceType_Dev type,
                                          const std::string& device_id,
+                                         const GURL& document_url,
                                          const OpenDeviceCallback& callback) {
   int request_id =
       device_enumeration_event_handler_->RegisterOpenDeviceCallback(callback);
@@ -1614,7 +1620,7 @@ int PepperPluginDelegateImpl::OpenDevice(PP_DeviceType_Dev type,
       device_enumeration_event_handler_.get()->AsWeakPtr(),
       device_id,
       PepperDeviceEnumerationEventHandler::FromPepperDeviceType(type),
-      GURL());
+      document_url.GetOrigin());
 #else
   base::MessageLoop::current()->PostTask(
       FROM_HERE,

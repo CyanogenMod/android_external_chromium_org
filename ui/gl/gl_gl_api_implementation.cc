@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_state_restorer.h"
@@ -195,6 +195,8 @@ GLApi::GLApi() {
 }
 
 GLApi::~GLApi() {
+  if (GetCurrentGLApi() == this)
+    SetGLApi(NULL);
 }
 
 GLApiBase::GLApiBase()

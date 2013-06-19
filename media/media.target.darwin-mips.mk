@@ -61,6 +61,7 @@ LOCAL_SRC_FILES := \
 	media/audio/virtual_audio_output_stream.cc \
 	media/base/android/demuxer_stream_player_params.cc \
 	media/base/android/media_resource_getter.cc \
+	media/base/audio_buffer.cc \
 	media/base/audio_converter.cc \
 	media/base/audio_decoder.cc \
 	media/base/audio_decoder_config.cc \
@@ -95,6 +96,7 @@ LOCAL_SRC_FILES := \
 	media/base/pipeline.cc \
 	media/base/pipeline_status.cc \
 	media/base/ranges.cc \
+	media/base/sample_format.cc \
 	media/base/seekable_buffer.cc \
 	media/base/serial_runner.cc \
 	media/base/simd/convert_rgb_to_yuv_c.cc \
@@ -198,6 +200,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -238,6 +241,8 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
+	$(LOCAL_PATH)/third_party/khronos \
+	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/config \

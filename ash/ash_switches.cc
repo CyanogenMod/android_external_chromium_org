@@ -77,6 +77,9 @@ const char kAshEnableAdvancedGestures[] = "ash-enable-advanced-gestures";
 // main monitor as internal.
 const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
 
+// Enable the dock area on a desktop.
+const char kAshEnableDockedWindows[] = "ash-enable-docked-windows";
+
 // Enable immersive fullscreen mode, regardless of default setting.
 const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
 
@@ -100,6 +103,11 @@ const char kAshEnableWorkspaceScrubbing[] = "ash-enable-workspace-scrubbing";
 // Forces chrome to use mirror mode when an external display is connected.
 const char kAshForceMirrorMode[] = "ash-force-mirror-mode";
 
+// Hides notifications that are irrelevant to Chrome OS device factory testing,
+// such as battery level updates.
+const char kAshHideNotificationsForFactory[] =
+    "ash-hide-notifications-for-factory";
+
 // Sets a window size, optional position, and optional scale factor.
 // "1024x768" creates a window of size 1024x768.
 // "100+200-1024x768" positions the window at 100,200.
@@ -119,6 +127,14 @@ const char kAshSecondaryDisplayLayout[] = "ash-secondary-display-layout";
 
 // Enables the heads-up display for tracking touch points.
 const char kAshTouchHud[] = "ash-touch-hud";
+
+// Use alternate layout of the shelf for testing a new look and feel:
+// Slightly smaller profile, only 2 states for the "bar highlight" on
+// launcher buttons, app list icon with more visible state indication,
+// app list icon repositionable and defaulting as 1st item in shelf,
+// more visible state indication for background on status area.
+// crbug's [244983, 244990, 244994, 245005, 245012]
+const char kAshUseAlternateShelfLayout[] = "ash-use-alternate-shelf";
 
 // Uses the 1st display in --ash-host-window-bounds as internal display.
 // This is for debugging on linux desktop.
@@ -155,6 +171,11 @@ bool ShowAudioDeviceMenu() {
   return ash::switches::UseNewAudioHandler() &&
       CommandLine::ForCurrentProcess()->
           HasSwitch(ash::switches::kAshEnableAudioDeviceMenu);
+}
+
+bool UseAlternateShelfLayout() {
+  return CommandLine::ForCurrentProcess()->
+        HasSwitch(ash::switches::kAshUseAlternateShelfLayout);
 }
 
 }  // namespace switches

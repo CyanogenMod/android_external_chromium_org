@@ -46,11 +46,11 @@
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.h"
+#include "chrome/browser/nacl_host/nacl_host_message_filter.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
-#include "chrome/browser/pepper_permission_util.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/plugins/plugin_info_message_filter.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
@@ -96,8 +96,10 @@
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/extensions/permissions/socket_permission.h"
 #include "chrome/common/logging_chrome.h"
+#include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
@@ -185,6 +187,10 @@
 
 #if defined(ENABLE_WEBRTC)
 #include "chrome/browser/media/webrtc_logging_handler_host.h"
+#endif
+
+#if defined(FILE_MANAGER_EXTENSION)
+#include "chrome/browser/chromeos/extensions/file_manager/file_manager_util.h"
 #endif
 
 using base::FileDescriptor;
@@ -276,7 +282,14 @@ bool RemoveUberHost(GURL* url) {
     new_path = old_path.substr(separator);
   }
 
+  // Do not allow URLs with paths empty before the first slash since we can't
+  // have an empty host. (e.g "foo://chrome//")
+  if (new_host.empty())
+    return false;
+
   *url = ReplaceURLHostAndPath(*url, new_host, new_path);
+
+  DCHECK(url->is_valid());
 
   return true;
 }
@@ -733,6 +746,10 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
   host->GetChannel()->AddFilter(new TtsMessageFilter(id, profile));
 #if defined(ENABLE_WEBRTC)
   host->GetChannel()->AddFilter(new WebRtcLoggingHandlerHost());
+#endif
+#if !defined(DISABLE_NACL)
+  host->GetChannel()->AddFilter(new NaClHostMessageFilter(id, profile,
+    context));
 #endif
 
   host->Send(new ChromeViewMsg_SetIsIncognitoProcess(
@@ -1277,6 +1294,9 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       autofill::switches::kEnableInteractiveAutocomplete,
       switches::kAllowHTTPBackgroundPage,
       switches::kAllowLegacyExtensionManifests,
+      // TODO(victorhsieh): remove the following flag once we move PPAPI FileIO
+      // to browser.
+      switches::kAllowNaClFileHandleAPI,
       switches::kAllowScriptingGallery,
       switches::kAppsCheckoutURL,
       switches::kAppsGalleryURL,
@@ -1685,7 +1705,7 @@ void ChromeContentBrowserClient::RequestDesktopNotificationPermission(
     for (ExtensionSet::const_iterator iter = extensions.begin();
          iter != extensions.end(); ++iter) {
       if (notification_service->IsExtensionEnabled((*iter)->id())) {
-        extension = *iter;
+        extension = iter->get();
         break;
       }
     }
@@ -1978,7 +1998,7 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
 #else
   // The user stylesheet watcher may not exist in a testing profile.
   UserStyleSheetWatcher* user_style_sheet_watcher =
-      UserStyleSheetWatcherFactory::GetForProfile(profile);
+      UserStyleSheetWatcherFactory::GetForProfile(profile).get();
   if (user_style_sheet_watcher) {
     web_prefs->user_style_sheet_enabled = true;
     web_prefs->user_style_sheet_location =
@@ -2041,7 +2061,8 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
   // Override the default of suppressing HW compositing for WebUI pages for the
   // file manager, which is implemented using WebUI but wants HW acceleration
   // for video decode & render.
-  if (url.spec() == chrome::kChromeUIFileManagerURL) {
+  if (url.SchemeIs(extensions::kExtensionScheme) &&
+      url.host() == kFileBrowserDomain) {
     web_prefs->accelerated_compositing_enabled = true;
     web_prefs->accelerated_2d_canvas_enabled = true;
   }
@@ -2154,13 +2175,41 @@ bool ChromeContentBrowserClient::SupportsBrowserPlugin(
 bool ChromeContentBrowserClient::AllowPepperSocketAPI(
     content::BrowserContext* browser_context,
     const GURL& url,
+    bool private_api,
     const content::SocketPermissionRequest& params) {
 #if defined(ENABLE_PLUGINS)
-  return IsExtensionOrSharedModuleWhitelisted(
-      Profile::FromBrowserContext(browser_context),
-      url,
-      allowed_socket_origins_,
-      switches::kAllowNaClSocketAPI);
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  const ExtensionSet* extension_set = NULL;
+  if (profile) {
+    extension_set = extensions::ExtensionSystem::Get(profile)->
+        extension_service()->extensions();
+  }
+
+  if (private_api) {
+    // Access to private socket APIs is controlled by the whitelist.
+    if (IsExtensionOrSharedModuleWhitelisted(url, extension_set,
+                                             allowed_socket_origins_)) {
+      return true;
+    }
+  } else {
+    // Access to public socket APIs is controlled by extension permissions.
+    if (url.is_valid() && url.SchemeIs(extensions::kExtensionScheme) &&
+        extension_set) {
+      const Extension* extension = extension_set->GetByID(url.host());
+      if (extension) {
+        extensions::SocketPermission::CheckParam check_params(
+            params.type, params.host, params.port);
+        if (extensions::PermissionsData::CheckAPIPermissionWithParam(
+                extension, extensions::APIPermission::kSocket, &check_params)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // Allow both public and private APIs if the command line says so.
+  return IsHostAllowedByCommandLine(url, extension_set,
+                                    switches::kAllowNaClSocketAPI);
 #else
   return false;
 #endif
@@ -2193,7 +2242,7 @@ void ChromeContentBrowserClient::GetAdditionalFileSystemMountPointProviders(
   additional_providers->push_back(new MediaFileSystemMountPointProvider(
       storage_partition_path,
       pool->GetSequencedTaskRunner(pool->GetNamedSequenceToken(
-          MediaFileSystemMountPointProvider::kMediaTaskRunnerName))));
+          MediaFileSystemMountPointProvider::kMediaTaskRunnerName)).get()));
 #endif
 }
 

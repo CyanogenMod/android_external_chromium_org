@@ -16,12 +16,14 @@
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/size_conversions.h"
+#include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 #include "ui/gfx/vector2d_f.h"
 #include "ui/gl/gl_bindings.h"
@@ -40,7 +42,6 @@
 using base::android::AttachCurrentThread;
 using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
-using content::Compositor;
 using content::ContentViewCore;
 
 namespace android_webview {
@@ -262,30 +263,69 @@ bool HardwareEnabled() {
  return CommandLine::ForCurrentProcess()->HasSwitch("testing-webview-gl-mode");
 }
 
+// Provides software rendering functions from the Android glue layer.
+// Allows preventing extra copies of data when rendering.
+AwDrawSWFunctionTable* g_sw_draw_functions = NULL;
+
+// Tells if the Skia library versions in Android and Chromium are compatible.
+// If they are then it's possible to pass Skia objects like SkPictures to the
+// Android glue layer via the SW rendering functions.
+// If they are not, then additional copies and rasterizations are required
+// as a fallback mechanism, which will have an important performance impact.
+bool g_is_skia_version_compatible = false;
+
 }  // namespace
+
+// static
+void BrowserViewRenderer::SetAwDrawSWFunctionTable(
+    AwDrawSWFunctionTable* table) {
+  g_sw_draw_functions = table;
+  g_is_skia_version_compatible =
+      g_sw_draw_functions->is_skia_version_compatible(&SkGraphics::GetVersion);
+  LOG_IF(WARNING, !g_is_skia_version_compatible)
+      << "Skia versions are not compatible, rendering performance will suffer.";
+}
+
+// static
+AwDrawSWFunctionTable* BrowserViewRenderer::GetAwDrawSWFunctionTable() {
+  return g_sw_draw_functions;
+}
+
+// static
+bool BrowserViewRenderer::IsSkiaVersionCompatible() {
+  DCHECK(g_sw_draw_functions);
+  return g_is_skia_version_compatible;
+}
 
 InProcessViewRenderer::InProcessViewRenderer(
     BrowserViewRenderer::Client* client,
-    JavaHelper* java_helper)
+    JavaHelper* java_helper,
+    content::WebContents* web_contents)
     : client_(client),
       java_helper_(java_helper),
-      web_contents_(NULL),
+      web_contents_(web_contents),
       compositor_(NULL),
       view_visible_(false),
       continuous_invalidate_(false),
-      continuous_invalidate_task_pending_(false),
+      block_invalidates_(false),
       width_(0),
       height_(0),
       attached_to_window_(false),
       hardware_initialized_(false),
       hardware_failed_(false),
-      egl_context_at_init_(NULL),
-      weak_factory_(this) {
+      last_egl_context_(NULL) {
+  CHECK(web_contents_);
+  web_contents_->SetUserData(kUserDataKey, new UserData(this));
+  content::SynchronousCompositor::SetClientForWebContents(web_contents_, this);
+  // Currently the logic in this class relies on |compositor_| remaining NULL
+  // until the DidInitializeCompositor() call, hence it is not set here.
 }
 
 InProcessViewRenderer::~InProcessViewRenderer() {
-  SetContents(NULL);
-  DCHECK(compositor_ == NULL);
+  CHECK(web_contents_);
+  content::SynchronousCompositor::SetClientForWebContents(web_contents_, NULL);
+  web_contents_->SetUserData(kUserDataKey, NULL);
+  DCHECK(web_contents_ == NULL);  // WebContentsGone should have been called.
 }
 
 // static
@@ -294,58 +334,52 @@ InProcessViewRenderer* InProcessViewRenderer::FromWebContents(
   return UserData::GetInstance(contents);
 }
 
-void InProcessViewRenderer::SetContents(
-    content::ContentViewCore* content_view_core) {
-  // First remove association from the prior ContentViewCore / WebContents.
-  if (web_contents_) {
-    content::SynchronousCompositor::SetClientForWebContents(web_contents_,
-                                                            NULL);
-    web_contents_->SetUserData(kUserDataKey, NULL);
-    DCHECK(!web_contents_);  // WebContentsGone should have been called.
-  }
-
-  if (!content_view_core)
-    return;
-
-  web_contents_ = content_view_core->GetWebContents();
-  web_contents_->SetUserData(kUserDataKey, new UserData(this));
-  content::SynchronousCompositor::SetClientForWebContents(web_contents_, this);
-  // Currently the logic in this class relies on |compositor_| remaining NULL
-  // until the DidInitializeCompositor() call, hence it is not set here.
-}
-
 void InProcessViewRenderer::WebContentsGone() {
   web_contents_ = NULL;
   compositor_ = NULL;
 }
 
-bool InProcessViewRenderer::PrepareDrawGL(int x, int y) {
-  // No harm in updating |hw_rendering_scroll_| even if we return false.
-  hw_rendering_scroll_ = gfx::Point(x, y);
-  return attached_to_window_ && compositor_ && !hardware_failed_ &&
-         HardwareEnabled();
+bool InProcessViewRenderer::OnDraw(jobject java_canvas,
+                                   bool is_hardware_canvas,
+                                   const gfx::Point& scroll,
+                                   const gfx::Rect& clip) {
+  scroll_at_start_of_frame_  = scroll;
+  if (is_hardware_canvas && attached_to_window_ && compositor_ &&
+      HardwareEnabled() && client_->RequestDrawGL(java_canvas)) {
+    // All set: we'll get a call on DrawGL when the time comes.
+    return true;
+  }
+  // Perform a software draw
+  block_invalidates_ = true;
+  bool result = DrawSWInternal(java_canvas, clip);
+  block_invalidates_ = false;
+  EnsureContinuousInvalidation(NULL);
+  return result;
 }
 
 void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   if (!HardwareEnabled())
     return;
 
+  TRACE_EVENT0("android_webview", "InProcessViewRenderer::DrawGL");
   DCHECK(view_visible_);
 
   // We need to watch if the current Android context has changed and enforce
   // a clean-up in the compositor.
   EGLContext current_context = eglGetCurrentContext();
   if (!current_context) {
-    LOG(WARNING) << "No current context attached. Skipping composite.";
+    TRACE_EVENT_INSTANT0(
+        "android_webview", "EarlyOut_NullEGLContext", TRACE_EVENT_SCOPE_THREAD);
     return;
   }
 
   GLStateRestore state_restore;
 
   if (attached_to_window_ && compositor_ && !hardware_initialized_) {
+    TRACE_EVENT0("android_webview", "InitializeHwDraw");
     hardware_failed_ = !compositor_->InitializeHwDraw();
     hardware_initialized_ = true;
-    egl_context_at_init_ = current_context;
+    last_egl_context_ = current_context;
 
     if (hardware_failed_)
       return;
@@ -354,19 +388,28 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   if (draw_info->mode == AwDrawGLInfo::kModeProcess)
     return;
 
-  if (egl_context_at_init_ != current_context) {
+  if (last_egl_context_ != current_context) {
     // TODO(boliu): Handle context lost
+    TRACE_EVENT_INSTANT0(
+        "android_webview", "EGLContextChanged", TRACE_EVENT_SCOPE_THREAD);
   }
+  last_egl_context_ = current_context;
 
   // TODO(boliu): Make sure this is not called before compositor is initialized
   // and GL is ready. Then make this a DCHECK.
-  if (!compositor_)
+  if (!compositor_) {
+    TRACE_EVENT_INSTANT0(
+        "android_webview", "EarlyOut_NoCompositor", TRACE_EVENT_SCOPE_THREAD);
     return;
+  }
+
 
   gfx::Transform transform;
   transform.matrix().setColMajorf(draw_info->transform);
-  transform.Translate(hw_rendering_scroll_.x(), hw_rendering_scroll_.y());
+  transform.Translate(scroll_at_start_of_frame_.x(),
+                      scroll_at_start_of_frame_.y());
   // TODO(joth): Check return value.
+  block_invalidates_ = true;
   compositor_->DemandDrawHw(
       gfx::Size(draw_info->width, draw_info->height),
       transform,
@@ -374,15 +417,9 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
                 draw_info->clip_top,
                 draw_info->clip_right - draw_info->clip_left,
                 draw_info->clip_bottom - draw_info->clip_top));
+  block_invalidates_ = false;
 
-  EnsureContinuousInvalidation();
-}
-
-bool InProcessViewRenderer::DrawSW(jobject java_canvas,
-                                   const gfx::Rect& clip) {
-  bool result = DrawSWInternal(java_canvas, clip);
-  EnsureContinuousInvalidation();
-  return result;
+  EnsureContinuousInvalidation(draw_info);
 }
 
 bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
@@ -390,8 +427,8 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
   TRACE_EVENT0("android_webview", "InProcessViewRenderer::DrawSW");
 
   if (clip.IsEmpty()) {
-    TRACE_EVENT_INSTANT0("android_webview", "Empty Clip",
-                         TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT0(
+        "android_webview", "EarlyOut_EmptyClip", TRACE_EVENT_SCOPE_THREAD);
     return true;
   }
 
@@ -402,19 +439,23 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
       sw_functions->access_pixels(env, java_canvas) : NULL;
   // Render into an auxiliary bitmap if pixel info is not available.
   if (pixels == NULL) {
-    TRACE_EVENT0("android_webview", "Render to Aux Bitmap");
+    TRACE_EVENT0("android_webview", "RenderToAuxBitmap");
     ScopedJavaLocalRef<jobject> jbitmap(java_helper_->CreateBitmap(
-        env, clip.width(), clip.height(), true));
+        env, clip.width(), clip.height()));
     if (!jbitmap.obj()) {
-      TRACE_EVENT_INSTANT0("android_webview", "Bitmap Alloc Fail",
+      TRACE_EVENT_INSTANT0("android_webview",
+                           "EarlyOut_BitmapAllocFail",
                            TRACE_EVENT_SCOPE_THREAD);
       return false;
     }
 
-    if (!RasterizeIntoBitmap(env, jbitmap, clip.x(), clip.y(),
+    if (!RasterizeIntoBitmap(env, jbitmap,
+                             clip.x() - scroll_at_start_of_frame_.x(),
+                             clip.y() - scroll_at_start_of_frame_.y(),
                              base::Bind(&InProcessViewRenderer::RenderSW,
                                         base::Unretained(this)))) {
-      TRACE_EVENT_INSTANT0("android_webview", "Rasterize Fail",
+      TRACE_EVENT_INSTANT0("android_webview",
+                           "EarlyOut_RasterizeFail",
                            TRACE_EVENT_SCOPE_THREAD);
       return false;
     }
@@ -441,14 +482,16 @@ bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
       matrix.set(i, pixels->matrix[i]);
     canvas.setMatrix(matrix);
 
-    SkRegion clip;
     if (pixels->clip_region_size) {
-      size_t bytes_read = clip.readFromMemory(pixels->clip_region);
+      SkRegion clip_region;
+      size_t bytes_read = clip_region.readFromMemory(pixels->clip_region);
       DCHECK_EQ(pixels->clip_region_size, bytes_read);
-      canvas.setClipRegion(clip);
+      canvas.setClipRegion(clip_region);
     } else {
-      clip.setRect(SkIRect::MakeWH(pixels->width, pixels->height));
+      canvas.clipRect(gfx::RectToSkRect(clip));
     }
+    canvas.translate(scroll_at_start_of_frame_.x(),
+                     scroll_at_start_of_frame_.y());
 
     succeeded = RenderSW(&canvas);
   }
@@ -492,7 +535,7 @@ InProcessViewRenderer::CapturePicture() {
   // to the bitmap drawn, and we don't want subsequent draws to corrupt any
   // previously returned pictures.
   ScopedJavaLocalRef<jobject> jbitmap(java_helper_->CreateBitmap(
-      env, picture->width(), picture->height(), false));
+      env, picture->width(), picture->height()));
   if (!jbitmap.obj())
     return ScopedJavaLocalRef<jobject>();
 
@@ -510,23 +553,45 @@ void InProcessViewRenderer::EnableOnNewPicture(bool enabled) {
 
 void InProcessViewRenderer::OnVisibilityChanged(bool view_visible,
                                                 bool window_visible) {
+  TRACE_EVENT_INSTANT2("android_webview",
+                       "InProcessViewRenderer::OnVisibilityChanged",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "view_visible",
+                       view_visible,
+                       "window_visible",
+                       window_visible);
   view_visible_ = window_visible && view_visible;
 }
 
 void InProcessViewRenderer::OnSizeChanged(int width, int height) {
+  TRACE_EVENT_INSTANT2("android_webview",
+                       "InProcessViewRenderer::OnSizeChanged",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "width",
+                       width,
+                       "height",
+                       height);
   width_ = width;
   height_ = height;
 }
 
 void InProcessViewRenderer::OnAttachedToWindow(int width, int height) {
+  TRACE_EVENT2("android_webview",
+               "InProcessViewRenderer::OnAttachedToWindow",
+               "width",
+               width,
+               "height",
+               height);
   attached_to_window_ = true;
   width_ = width;
   height_ = height;
   if (compositor_ && !hardware_initialized_)
-    client_->RequestProcessMode();
+    client_->RequestDrawGL(NULL);
 }
 
 void InProcessViewRenderer::OnDetachedFromWindow() {
+  TRACE_EVENT0("android_webview",
+               "InProcessViewRenderer::OnDetachedFromWindow");
   // TODO(joth): Release GL resources. crbug.com/231986.
   attached_to_window_ = false;
 }
@@ -545,17 +610,21 @@ gfx::Rect InProcessViewRenderer::GetScreenRect() {
 
 void InProcessViewRenderer::DidInitializeCompositor(
     content::SynchronousCompositor* compositor) {
+  TRACE_EVENT0("android_webview",
+               "InProcessViewRenderer::DidInitializeCompositor");
   DCHECK(compositor && compositor_ == NULL);
   compositor_ = compositor;
   hardware_initialized_ = false;
   hardware_failed_ = false;
 
   if (attached_to_window_)
-    client_->RequestProcessMode();
+    client_->RequestDrawGL(NULL);
 }
 
 void InProcessViewRenderer::DidDestroyCompositor(
     content::SynchronousCompositor* compositor) {
+  TRACE_EVENT0("android_webview",
+               "InProcessViewRenderer::DidDestroyCompositor");
   DCHECK(compositor_ == compositor);
   compositor_ = NULL;
 }
@@ -564,23 +633,39 @@ void InProcessViewRenderer::SetContinuousInvalidate(bool invalidate) {
   if (continuous_invalidate_ == invalidate)
     return;
 
+  TRACE_EVENT_INSTANT1("android_webview",
+                       "InProcessViewRenderer::SetContinuousInvalidate",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "invalidate",
+                       invalidate);
   continuous_invalidate_ = invalidate;
   // TODO(boliu): Handle if not attached to window case.
-  EnsureContinuousInvalidation();
+  EnsureContinuousInvalidation(NULL);
 }
 
-void InProcessViewRenderer::Invalidate() {
-  continuous_invalidate_task_pending_ = false;
-  if (continuous_invalidate_)
-    client_->Invalidate();
+void InProcessViewRenderer::SetTotalRootLayerScrollOffset(
+    gfx::Vector2dF new_value) {
+  // TODO(mkosiba): Plumb this all the way through to the view.
+  scroll_offset_ = new_value;
 }
 
-void InProcessViewRenderer::EnsureContinuousInvalidation() {
-  if (continuous_invalidate_ && !continuous_invalidate_task_pending_) {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-        base::Bind(&InProcessViewRenderer::Invalidate,
-                   weak_factory_.GetWeakPtr()));
-    continuous_invalidate_task_pending_ = true;
+gfx::Vector2dF InProcessViewRenderer::GetTotalRootLayerScrollOffset() {
+  return scroll_offset_;
+}
+
+void InProcessViewRenderer::EnsureContinuousInvalidation(
+    AwDrawGLInfo* draw_info) {
+  if (continuous_invalidate_ && !block_invalidates_) {
+    if (draw_info) {
+      draw_info->dirty_left = draw_info->clip_left;
+      draw_info->dirty_top = draw_info->clip_top;
+      draw_info->dirty_right = draw_info->clip_right;
+      draw_info->dirty_bottom = draw_info->clip_bottom;
+      draw_info->status_mask |= AwDrawGLInfo::kStatusMaskDraw;
+    } else {
+      client_->PostInvalidate();
+    }
+    block_invalidates_ = true;
   }
 }
 

@@ -64,12 +64,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Gets the next available routing id.
   virtual int GetNextRoutingID() = 0;
 
-  // Called on the UI thread to simulate a SwapOut_ACK message to the
-  // ResourceDispatcherHost.  Necessary for a cross-site request, in the case
-  // that the original RenderViewHost is not live and thus cannot run an
-  // unload handler.
-  virtual void SimulateSwapOutACK(const ViewMsg_SwapOut_Params& params) = 0;
-
   // Called to wait for the next UpdateRect message for the specified render
   // widget.  Returns true if successful, and the msg out-param will contain a
   // copy of the received UpdateRect message.
@@ -231,6 +225,12 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the RenderProcessHost given its ID.  Returns NULL if the ID does
   // not correspond to a live RenderProcessHost.
   static RenderProcessHost* FromID(int render_process_id);
+
+  // Returns whether the process-per-site model is in use (globally or just for
+  // the current site), in which case we should ensure there is only one
+  // RenderProcessHost per site for the entire browser context.
+  static bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
+                                      const GURL& url);
 
   // Returns true if the caller should attempt to use an existing
   // RenderProcessHost rather than creating a new one.

@@ -5,11 +5,17 @@
 #include "chrome/browser/profile_resetter/profile_resetter.h"
 
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_iterator.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -21,7 +27,6 @@ ProfileResetter::ProfileResetter(Profile* profile)
       pending_reset_flags_(0) {
   DCHECK(CalledOnValidThread());
   DCHECK(profile_);
-  DCHECK(template_url_service_);
   registrar_.Add(this, chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
                  content::Source<TemplateURLService>(template_url_service_));
 }
@@ -29,7 +34,6 @@ ProfileResetter::ProfileResetter(Profile* profile)
 ProfileResetter::~ProfileResetter() {}
 
 void ProfileResetter::Reset(ProfileResetter::ResettableFlags resettable_flags,
-                            ExtensionHandling extension_handling,
                             const base::Closure& callback) {
   DCHECK(CalledOnValidThread());
 
@@ -44,36 +48,25 @@ void ProfileResetter::Reset(ProfileResetter::ResettableFlags resettable_flags,
   // These flags are set to false by the individual reset functions.
   pending_reset_flags_ = resettable_flags;
 
+  struct {
+    Resettable flag;
+    void (ProfileResetter::*method)();
+  } flag2Method [] = {
+      { DEFAULT_SEARCH_ENGINE, &ProfileResetter::ResetDefaultSearchEngine },
+      { HOMEPAGE, &ProfileResetter::ResetHomepage },
+      { CONTENT_SETTINGS, &ProfileResetter::ResetContentSettings },
+      { COOKIES_AND_SITE_DATA, &ProfileResetter::ResetCookiesAndSiteData },
+      { EXTENSIONS, &ProfileResetter::ResetExtensions },
+      { STARTUP_PAGES, &ProfileResetter::ResetStartupPages },
+      { PINNED_TABS, &ProfileResetter::ResetPinnedTabs },
+  };
+
   ResettableFlags reset_triggered_for_flags = 0;
-
-  if (resettable_flags & DEFAULT_SEARCH_ENGINE) {
-    reset_triggered_for_flags |= DEFAULT_SEARCH_ENGINE;
-    ResetDefaultSearchEngine();
-  }
-
-  if (resettable_flags & HOMEPAGE) {
-    reset_triggered_for_flags |= HOMEPAGE;
-    ResetHomepage();
-  }
-
-  if (resettable_flags & CONTENT_SETTINGS) {
-    reset_triggered_for_flags |= CONTENT_SETTINGS;
-    ResetContentSettings();
-  }
-
-  if (resettable_flags & COOKIES_AND_SITE_DATA) {
-    reset_triggered_for_flags |= COOKIES_AND_SITE_DATA;
-    ResetCookiesAndSiteData();
-  }
-
-  if (resettable_flags & EXTENSIONS) {
-    reset_triggered_for_flags |= EXTENSIONS;
-    ResetExtensions(extension_handling);
-  }
-
-  if (resettable_flags & STARTUP_PAGE) {
-    reset_triggered_for_flags |= STARTUP_PAGE;
-    ResetStartPage();
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(flag2Method); ++i) {
+    if (resettable_flags & flag2Method[i].flag) {
+      reset_triggered_for_flags |= flag2Method[i].flag;
+      (this->*flag2Method[i].method)();
+    }
   }
 
   DCHECK_EQ(resettable_flags, reset_triggered_for_flags);
@@ -101,18 +94,23 @@ void ProfileResetter::MarkAsDone(Resettable resettable) {
 
 void ProfileResetter::ResetDefaultSearchEngine() {
   DCHECK(CalledOnValidThread());
+  DCHECK(template_url_service_);
 
   // If TemplateURLServiceFactory is ready we can clean it right now.
   // Otherwise, load it and continue from ProfileResetter::Observe.
   if (template_url_service_->loaded()) {
+    TemplateURLPrepopulateData::ClearPrepopulatedEnginesInPrefs(profile_);
+    template_url_service_->ResetNonExtensionURLs();
+
     // Reset Google search URL.
     PrefService* prefs = profile_->GetPrefs();
     DCHECK(prefs);
     prefs->ClearPref(prefs::kLastPromptedGoogleURL);
-    GoogleURLTracker::RequestServerCheck(profile_);
-
-    TemplateURLPrepopulateData::ClearPrepopulatedEnginesInPrefs(profile_);
-    template_url_service_->ResetNonExtensionURLs();
+    const TemplateURL* default_search_provider =
+        template_url_service_->GetDefaultSearchProvider();
+    if (default_search_provider &&
+        default_search_provider->url_ref().HasGoogleBaseURLs())
+      GoogleURLTracker::RequestServerCheck(profile_, true);
 
     MarkAsDone(DEFAULT_SEARCH_ENGINE);
   } else {
@@ -144,21 +142,40 @@ void ProfileResetter::ResetCookiesAndSiteData() {
   MarkAsDone(COOKIES_AND_SITE_DATA);
 }
 
-void ProfileResetter::ResetExtensions(ExtensionHandling extension_handling) {
+void ProfileResetter::ResetExtensions() {
   DCHECK(CalledOnValidThread());
-  NOTIMPLEMENTED();
-  // TODO(battre/vabr): Implement
+  ExtensionService* extension_service = profile_->GetExtensionService();
+  DCHECK(extension_service);
+  extension_service->DisableUserExtensions();
+
   MarkAsDone(EXTENSIONS);
 }
 
-void ProfileResetter::ResetStartPage() {
+void ProfileResetter::ResetStartupPages() {
   DCHECK(CalledOnValidThread());
   PrefService* prefs = profile_->GetPrefs();
   DCHECK(prefs);
   prefs->ClearPref(prefs::kRestoreOnStartup);
   prefs->ClearPref(prefs::kURLsToRestoreOnStartup);
   prefs->SetBoolean(prefs::kRestoreOnStartupMigrated, true);
-  MarkAsDone(STARTUP_PAGE);
+  MarkAsDone(STARTUP_PAGES);
+}
+
+void ProfileResetter::ResetPinnedTabs() {
+  // Unpin all the tabs.
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    if (it->is_type_tabbed() && it->profile() == profile_) {
+      TabStripModel* tab_model = it->tab_strip_model();
+      // Here we assume that indexof(any mini tab) < indexof(any normal tab).
+      // If we unpin the tab, it can be moved to the right. Thus traversing in
+      // reverse direction is correct.
+      for (int i = tab_model->count() - 1; i >= 0; --i) {
+        if (tab_model->IsTabPinned(i) && !tab_model->IsAppTab(i))
+          tab_model->SetTabPinned(i, false);
+      }
+    }
+  }
+  MarkAsDone(PINNED_TABS);
 }
 
 void ProfileResetter::Observe(int type,

@@ -30,8 +30,8 @@
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 
 #if defined(USE_OPENSSL)
 #include "third_party/libjingle/source/talk/base/ssladapter.h"
@@ -111,6 +111,7 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
       config.relay_server_port = turn_configurations[0].server.port();
       config.relay_username = turn_configurations[0].username;
       config.relay_password = turn_configurations[0].password;
+      config.relay_transport_type = turn_configurations[0].transport_type;
       // Use the turn server as the stun server.
       config.stun_server = config.relay_server;
       config.stun_server_port = config.relay_server_port;
@@ -282,7 +283,7 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
     source_data->SetVideoSource(
         CreateLocalVideoSource(source_data->device_info().session_id,
                                is_screencast,
-                               &native_video_constraints));
+                               &native_video_constraints).get());
     source_observer->AddSource(source_data->video_source());
   }
 
@@ -320,7 +321,7 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
 
     // Creates a LocalAudioSource object which holds audio options.
     source_data->SetLocalAudioSource(
-        CreateLocalAudioSource(&native_audio_constraints));
+        CreateLocalAudioSource(&native_audio_constraints).get());
     source_observer->AddSource(source_data->local_audio_source());
   }
 
@@ -408,16 +409,14 @@ bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
 
   std::string track_id = UTF16ToUTF8(track.id());
   if (source.type() == WebKit::WebMediaStreamSource::TypeAudio) {
-    // TODO(henrika,xians): Refactor how an audio track is created to harmonize
-    // with video tracks.
     scoped_refptr<webrtc::AudioTrackInterface> audio_track(
         CreateLocalAudioTrack(track_id, source_data->local_audio_source()));
     audio_track->set_enabled(track.isEnabled());
-    if (GetWebRtcAudioDevice()) {
-      WebRtcAudioCapturer* capturer = GetWebRtcAudioDevice()->capturer().get();
-      if (!capturer->is_recording())
-        capturer->Start();
-    }
+    // Start the audio track. This will hook the |audio_track| to the capturer
+    // as the sink of the audio, and only start the source of the capturer if
+    // it is the first audio track connecting to the capturer.
+    static_cast<WebRtcLocalAudioTrack*>(audio_track.get())->Start();
+
     return native_stream->AddTrack(audio_track.get());
   } else {
     scoped_refptr<webrtc::VideoTrackInterface> video_track(
@@ -539,7 +538,7 @@ MediaStreamDependencyFactory::CreatePeerConnection(
             socket_factory_.get(),
             web_frame);
   return pc_factory_->CreatePeerConnection(
-                          ice_servers, constraints, pa_factory.get(), observer)
+      ice_servers, constraints, pa_factory.get(), NULL, observer)
       .get();
 }
 
@@ -622,7 +621,7 @@ bool MediaStreamDependencyFactory::CreateWebAudioSource(
   // third_party/Libjingle.
   WebAudioConstraints webaudio_audio_constraints_all_false;
   source_data->SetLocalAudioSource(
-      CreateLocalAudioSource(&webaudio_audio_constraints_all_false));
+      CreateLocalAudioSource(&webaudio_audio_constraints_all_false).get());
   source->setExtraData(source_data);
 
   // Replace the default source with WebAudio as source instead.
@@ -691,12 +690,11 @@ void MediaStreamDependencyFactory::StopLocalAudioSource(
       description.extraData());
   if (extra_data && extra_data->is_local() && extra_data->stream().get() &&
       !extra_data->stream()->GetAudioTracks().empty()) {
-    if (GetWebRtcAudioDevice()) {
-      scoped_refptr<WebRtcAudioCapturer> capturer =
-          GetWebRtcAudioDevice()->capturer();
-      if (capturer.get())
-        capturer->Stop();
-    }
+    // Stop the audio track. This will unhook the audio track from the capturer
+    // and will shutdown the source of the capturer if it is the last audio
+    // track connecting to the capturer.
+    static_cast<WebRtcLocalAudioTrack*>(
+        extra_data->stream()->GetAudioTracks()[0].get())->Stop();
   }
 }
 

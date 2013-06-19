@@ -16,8 +16,11 @@
 
 namespace cc {
 
-bool PictureLayerTilingClient::TileHasText(Tile* tile) {
-  return tile->has_text();
+bool PictureLayerTilingClient::TileMayHaveLCDText(Tile* tile) {
+  RasterMode raster_mode = HIGH_QUALITY_RASTER_MODE;
+  if (!tile->IsReadyToDraw(&raster_mode))
+    return true;
+  return tile->has_text(raster_mode);
 }
 
 scoped_ptr<PictureLayerTiling> PictureLayerTiling::Create(
@@ -114,7 +117,7 @@ Region PictureLayerTiling::OpaqueRegionInContentRect(
 void PictureLayerTiling::DestroyAndRecreateTilesWithText() {
   std::vector<TileMapKey> new_tiles;
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
-    if (client_->TileHasText(it->second.get()))
+    if (client_->TileMayHaveLCDText(it->second.get()))
       new_tiles.push_back(it->first);
   }
 
@@ -499,7 +502,7 @@ size_t PictureLayerTiling::GPUMemoryUsageInBytes() const {
     const Tile* tile = it->second.get();
     for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
       amount += tile->tile_version(
-          static_cast<TileRasterMode>(mode)).GPUMemoryUsageInBytes();
+          static_cast<RasterMode>(mode)).GPUMemoryUsageInBytes();
     }
   }
   return amount;

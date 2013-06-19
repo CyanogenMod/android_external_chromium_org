@@ -6,8 +6,8 @@
 
 #include <string>
 
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/omnibox_focus_state.h"
@@ -18,9 +18,9 @@
 #include "googleurl/src/gurl.h"
 #include "grit/renderer_resources.h"
 #include "net/base/escape.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace {
@@ -70,6 +70,7 @@ SearchBox::SearchBox(content::RenderView* render_view)
       start_margin_(0),
       is_focused_(false),
       is_key_capture_enabled_(false),
+      is_input_in_progress_(false),
       display_instant_results_(false),
       omnibox_font_size_(0),
       autocomplete_results_cache_(kMaxInstantAutocompleteResultItemCacheSize),
@@ -242,6 +243,8 @@ bool SearchBox::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxSetDisplayInstantResults,
                         OnSetDisplayInstantResults)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxFocusChanged, OnFocusChanged)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxSetInputInProgress,
+                        OnSetInputInProgress)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxThemeChanged,
                         OnThemeChanged)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxFontInformation,
@@ -415,8 +418,28 @@ void SearchBox::OnFocusChanged(OmniboxFocusState new_focus_state,
   if (is_focused != is_focused_) {
     is_focused_ = is_focused;
     DVLOG(1) << render_view() << " OnFocusChange";
-    extensions_v8::SearchBoxExtension::DispatchFocusChange(
-        render_view()->GetWebView()->mainFrame());
+    if (render_view()->GetWebView() &&
+        render_view()->GetWebView()->mainFrame()) {
+      extensions_v8::SearchBoxExtension::DispatchFocusChange(
+          render_view()->GetWebView()->mainFrame());
+    }
+  }
+}
+
+void SearchBox::OnSetInputInProgress(bool is_input_in_progress) {
+  if (is_input_in_progress_ != is_input_in_progress) {
+    is_input_in_progress_ = is_input_in_progress;
+    DVLOG(1) << render_view() << " OnSetInputInProgress";
+    if (render_view()->GetWebView() &&
+        render_view()->GetWebView()->mainFrame()) {
+      if (is_input_in_progress_) {
+        extensions_v8::SearchBoxExtension::DispatchInputStart(
+            render_view()->GetWebView()->mainFrame());
+      } else {
+        extensions_v8::SearchBoxExtension::DispatchInputCancel(
+            render_view()->GetWebView()->mainFrame());
+      }
+    }
   }
 }
 

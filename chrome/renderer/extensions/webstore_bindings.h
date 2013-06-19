@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 
 namespace extensions {
 class ChromeV8Context;
@@ -25,7 +25,7 @@ class WebstoreBindings : public ChromeV8Extension,
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
-  v8::Handle<v8::Value> Install(const v8::Arguments& args);
+  void Install(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   void OnInlineWebstoreInstallResponse(
       int install_id, bool success, const std::string& error);

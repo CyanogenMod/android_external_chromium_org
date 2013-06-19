@@ -12,9 +12,10 @@
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
-#include "chrome/browser/google_apis/fake_drive_service.h"
+#include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/browser_thread.h"
 
 namespace drive {
 namespace file_system {
@@ -30,8 +31,12 @@ void OperationTestBase::LoggingObserver::OnDirectoryChangedByOperation(
   changed_paths_.insert(path);
 }
 
-OperationTestBase::OperationTestBase()
-    : ui_thread_(content::BrowserThread::UI, &message_loop_) {
+void OperationTestBase::LoggingObserver::OnCacheFileUploadNeededByOperation(
+    const std::string& resource_id) {
+  upload_needed_resource_ids_.insert(resource_id);
+}
+
+OperationTestBase::OperationTestBase() {
 }
 
 OperationTestBase::~OperationTestBase() {
@@ -59,24 +64,33 @@ void OperationTestBase::SetUp() {
                                                  blocking_task_runner_));
 
   FileError error = FILE_ERROR_FAILED;
-  metadata_->Initialize(
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadata::Initialize,
+                 base::Unretained(metadata_.get())),
       google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
   ASSERT_EQ(FILE_ERROR_OK, error);
 
   fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
   cache_.reset(new internal::FileCache(temp_dir_.path(),
-                                       blocking_task_runner_,
+                                       temp_dir_.path(),
+                                       blocking_task_runner_.get(),
                                        fake_free_disk_space_getter_.get()));
   bool success = false;
-  cache_->RequestInitialize(
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&internal::FileCache::Initialize,
+                 base::Unretained(cache_.get())),
       google_apis::test_util::CreateCopyResultCallback(&success));
   google_apis::test_util::RunBlockingPoolTask();
   ASSERT_TRUE(success);
 
   // Makes sure the FakeDriveService's content is loaded to the metadata_.
   internal::ChangeListLoader change_list_loader(
-      blocking_task_runner_, metadata_.get(), scheduler_.get());
+      blocking_task_runner_.get(), metadata_.get(), scheduler_.get());
 
   change_list_loader.LoadIfNeeded(
       DirectoryFetchInfo(),

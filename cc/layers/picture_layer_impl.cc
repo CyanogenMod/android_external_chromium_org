@@ -163,7 +163,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
          ++iter) {
       SkColor color;
       float width;
-      TileRasterMode raster_mode;
+      RasterMode raster_mode;
       if (*iter && iter->IsReadyToDraw(&raster_mode)) {
         ManagedTileState::TileVersion::Mode mode =
             iter->tile_version(raster_mode).mode();
@@ -209,7 +209,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
        iter;
        ++iter) {
     gfx::Rect geometry_rect = iter.geometry_rect();
-    TileRasterMode raster_mode;
+    RasterMode raster_mode;
     if (!*iter || !iter->IsReadyToDraw(&raster_mode)) {
       if (DrawCheckerboardForMissingTiles()) {
         // TODO(enne): Figure out how to show debug "invalidated checker" color
@@ -263,7 +263,11 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                      opaque_rect,
                      texture_rect,
                      iter.texture_size(),
-                     tile_version.contents_swizzled(),
+                     // TODO(reveman): This assumes the renderer will use
+                     // GL_RGBA as format of temporary resource. The need
+                     // to swizzle should instead be determined by the
+                     // renderer.
+                     !PlatformColor::SameComponentOrder(GL_RGBA),
                      iter->content_rect(),
                      iter->contents_scale(),
                      draw_direct_to_backbuffer,
@@ -477,7 +481,7 @@ const PictureLayerTiling* PictureLayerImpl::GetTwinTiling(
 }
 
 gfx::Size PictureLayerImpl::CalculateTileSize(
-    gfx::Size content_bounds) {
+    gfx::Size content_bounds) const {
   if (is_mask_) {
     int max_size = layer_tree_impl()->MaxTextureSize();
     return gfx::Size(
@@ -620,7 +624,7 @@ ResourceProvider::ResourceId PictureLayerImpl::ContentsResourceId() const {
        iter;
        ++iter) {
     // Mask resource not ready yet.
-    TileRasterMode raster_mode;
+    RasterMode raster_mode;
     if (!*iter || !iter->IsReadyToDraw(&raster_mode))
       return 0;
 
@@ -880,6 +884,16 @@ void PictureLayerImpl::CalculateRasterContentsScale(
         *raster_contents_scale, 1.f * ideal_page_scale_ * ideal_device_scale_);
   }
 
+  // If this layer would only create one tile at this content scale,
+  // don't create a low res tiling.
+  gfx::Size content_bounds =
+      gfx::ToCeiledSize(gfx::ScaleSize(bounds(), *raster_contents_scale));
+  gfx::Size tile_size = CalculateTileSize(content_bounds);
+  if (tile_size == content_bounds) {
+    *low_res_raster_contents_scale = *raster_contents_scale;
+    return;
+  }
+
   float low_res_factor =
       layer_tree_impl()->settings().low_res_contents_scale_factor;
   *low_res_raster_contents_scale = std::max(
@@ -906,27 +920,21 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
         std::max(twin->raster_contents_scale_, twin->ideal_contents_scale_));
   }
 
-  float low_res_factor =
-      layer_tree_impl()->settings().low_res_contents_scale_factor;
-
-  float min_acceptable_low_res_scale =
-      low_res_factor * min_acceptable_high_res_scale;
-  float max_acceptable_low_res_scale =
-      low_res_factor * max_acceptable_high_res_scale;
-
   std::vector<PictureLayerTiling*> to_remove;
   for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
     PictureLayerTiling* tiling = tilings_->tiling_at(i);
 
+    // Keep multiple high resolution tilings even if not used to help
+    // activate earlier at non-ideal resolutions.
     if (tiling->contents_scale() >= min_acceptable_high_res_scale &&
         tiling->contents_scale() <= max_acceptable_high_res_scale)
       continue;
 
-    if (tiling->contents_scale() >= min_acceptable_low_res_scale &&
-        tiling->contents_scale() <= max_acceptable_low_res_scale)
+    // Low resolution can't activate, so only keep one around.
+    if (tiling->resolution() == LOW_RESOLUTION)
       continue;
 
-    // Don't remove tilings that are being used and expected to stay around.
+    // Don't remove tilings that are being used (and thus would cause a flash.)
     if (std::find(used_tilings.begin(), used_tilings.end(), tiling) !=
         used_tilings.end())
       continue;

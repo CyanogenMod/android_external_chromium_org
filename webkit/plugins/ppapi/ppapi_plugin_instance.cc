@@ -11,7 +11,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_offset_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
@@ -53,20 +53,20 @@
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintScalingOption.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScopedUserGesture.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserGestureIndicator.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPrintParams.h"
+#include "third_party/WebKit/public/web/WebPrintScalingOption.h"
+#include "third_party/WebKit/public/web/WebScopedUserGesture.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/range/range.h"
@@ -425,7 +425,6 @@ PluginInstance::PluginInstance(
       fullscreen_container_(NULL),
       flash_fullscreen_(false),
       desired_fullscreen_state_(false),
-      message_channel_(NULL),
       sad_plugin_(NULL),
       input_event_mask_(0),
       filtered_input_event_mask_(0),
@@ -1772,7 +1771,7 @@ void PluginInstance::UpdateLayer() {
     return;
 
   gpu::Mailbox mailbox;
-  if (bound_graphics_3d_) {
+  if (bound_graphics_3d_.get()) {
     PluginDelegate::PlatformContext3D* context =
         bound_graphics_3d_->platform_context();
     context->GetBackingMailbox(&mailbox);

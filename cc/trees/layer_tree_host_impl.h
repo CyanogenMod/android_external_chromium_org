@@ -19,6 +19,7 @@
 #include "cc/input/top_controls_manager_client.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/render_pass_sink.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/render_pass.h"
@@ -54,9 +55,7 @@ class LayerTreeHostImplClient {
       scoped_refptr<ContextProvider> offscreen_context_provider) = 0;
   virtual void DidLoseOutputSurfaceOnImplThread() = 0;
   virtual void OnSwapBuffersCompleteOnImplThread() = 0;
-  virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
-                                        base::TimeDelta interval) = 0;
-  virtual void BeginFrameOnImplThread(base::TimeTicks frame_time) = 0;
+  virtual void BeginFrameOnImplThread(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
   virtual void OnHasPendingTreeStateChanged(bool has_pending_tree) = 0;
   virtual void SetNeedsRedrawOnImplThread() = 0;
@@ -131,7 +130,7 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void DidChangeTopControlsPosition() OVERRIDE;
   virtual bool HaveRootScrollLayer() const OVERRIDE;
 
-  void StartScrollbarAnimation(base::TimeTicks now);
+  void StartScrollbarAnimation();
 
   struct CC_EXPORT FrameData : public RenderPassSink {
     FrameData();
@@ -183,8 +182,6 @@ class CC_EXPORT LayerTreeHostImpl
   virtual float DeviceScaleFactor() const OVERRIDE;
   virtual const LayerTreeSettings& Settings() const OVERRIDE;
  public:
-  virtual void DidLoseOutputSurface() OVERRIDE;
-  virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE;
   virtual void SetFullRootLayerDamage() OVERRIDE;
   virtual void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy)
       OVERRIDE;
@@ -199,17 +196,18 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void DidInitializeVisibleTile() OVERRIDE;
   virtual bool ShouldForceTileUploadsRequiredForActivationToComplete() const
       OVERRIDE;
+  virtual void NotifyReadyToActivate() OVERRIDE;
 
   // OutputSurfaceClient implementation.
   virtual bool DeferredInitialize(
       scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void SetNeedsRedrawRect(gfx::Rect rect) OVERRIDE;
-  virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
-                                        base::TimeDelta interval) OVERRIDE;
-  virtual void BeginFrame(base::TimeTicks frame_time)
+  virtual void BeginFrame(const BeginFrameArgs& args)
       OVERRIDE;
   virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
                                           gfx::Rect viewport) OVERRIDE;
+  virtual void DidLoseOutputSurface() OVERRIDE;
+  virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE;
 
   // Called from LayerTreeImpl.
   void OnCanDrawStateChangedForTree();
@@ -243,7 +241,7 @@ class CC_EXPORT LayerTreeHostImpl
   const LayerTreeImpl* recycle_tree() const { return recycle_tree_.get(); }
   virtual void CreatePendingTree();
   void CheckForCompletedTileUploads();
-  virtual bool ActivatePendingTreeIfNeeded();
+  virtual void ActivatePendingTreeIfNeeded();
 
   // Shortcuts to layers on the active tree.
   LayerImpl* RootLayer() const;
@@ -370,6 +368,8 @@ class CC_EXPORT LayerTreeHostImpl
   base::TimeTicks CurrentFrameTimeTicks();
   base::Time CurrentFrameTime();
 
+  virtual base::TimeTicks CurrentPhysicalTimeTicks() const;
+
   scoped_ptr<base::Value> AsValue() const;
   scoped_ptr<base::Value> ActivationStateAsValue() const;
 
@@ -381,7 +381,7 @@ class CC_EXPORT LayerTreeHostImpl
       LayerTreeHostImplClient* client,
       Proxy* proxy,
       RenderingStatsInstrumentation* rendering_stats_instrumentation);
-  void ActivatePendingTree();
+  virtual void ActivatePendingTree();
 
   // Virtual for testing.
   virtual void AnimateLayers(base::TimeTicks monotonic_time,
@@ -437,6 +437,8 @@ class CC_EXPORT LayerTreeHostImpl
                           const LayerImpl* layer) const;
 
   static LayerImpl* GetNonCompositedContentLayerRecursive(LayerImpl* layer);
+
+  void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
 
   void StartScrollbarAnimationRecursive(LayerImpl* layer, base::TimeTicks time);
 

@@ -9,11 +9,11 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/nullable_string16.h"
+#include "base/strings/nullable_string16.h"
 #include "base/strings/string16.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/dom_storage/dom_storage_types.h"
-#include "webkit/storage/webkit_storage_export.h"
 
 namespace dom_storage {
 
@@ -25,7 +25,7 @@ class SessionStorageDatabase;
 // Container for a per-origin Map of key/value pairs potentially
 // backed by storage on disk and lazily commits changes to disk.
 // See class comments for DomStorageContext for a larger overview.
-class WEBKIT_STORAGE_EXPORT DomStorageArea
+class WEBKIT_STORAGE_BROWSER_EXPORT DomStorageArea
     : public base::RefCountedThreadSafe<DomStorageArea> {
 
  public:
@@ -52,10 +52,10 @@ class WEBKIT_STORAGE_EXPORT DomStorageArea
   void ExtractValues(ValuesMap* map);
 
   unsigned Length();
-  NullableString16 Key(unsigned index);
-  NullableString16 GetItem(const base::string16& key);
+  base::NullableString16 Key(unsigned index);
+  base::NullableString16 GetItem(const base::string16& key);
   bool SetItem(const base::string16& key, const base::string16& value,
-               NullableString16* old_value);
+               base::NullableString16* old_value);
   bool RemoveItem(const base::string16& key, base::string16* old_value);
   bool Clear();
   void FastClear();

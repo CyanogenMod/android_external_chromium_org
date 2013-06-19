@@ -26,7 +26,7 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/three_d_api_types.h"
 #include "net/base/load_states.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/vector2d.h"
@@ -146,7 +146,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Unsets the currently showing interstitial.
   void DetachInterstitialPage();
 
-#if defined(ENABLE_JAVA_BRIDGE)
+#if defined(OS_ANDROID)
   JavaBridgeDispatcherHostManager* java_bridge_dispatcher_host_manager() const {
     return java_bridge_dispatcher_host_manager_.get();
   }
@@ -228,6 +228,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual const string16& GetLoadStateHost() const OVERRIDE;
   virtual uint64 GetUploadSize() const OVERRIDE;
   virtual uint64 GetUploadPosition() const OVERRIDE;
+  virtual std::set<GURL> GetSitesInTab() const OVERRIDE;
   virtual const std::string& GetEncoding() const OVERRIDE;
   virtual bool DisplayedInsecureContent() const OVERRIDE;
   virtual void IncrementCapturerCount() OVERRIDE;
@@ -263,13 +264,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void SetOverrideEncoding(const std::string& encoding) OVERRIDE;
   virtual void ResetOverrideEncoding() OVERRIDE;
   virtual RendererPreferences* GetMutableRendererPrefs() OVERRIDE;
-  virtual void SetNewTabStartTime(const base::TimeTicks& time) OVERRIDE;
-  virtual base::TimeTicks GetNewTabStartTime() const OVERRIDE;
   virtual void Close() OVERRIDE;
-  virtual void OnCloseStarted() OVERRIDE;
-  virtual void OnCloseCanceled() OVERRIDE;
-  virtual void OnUnloadStarted() OVERRIDE;
-  virtual void OnUnloadDetachedStarted() OVERRIDE;
   virtual void SystemDragEnded() OVERRIDE;
   virtual void UserGestureDone() OVERRIDE;
   virtual void SetClosedByUserGesture(bool value) OVERRIDE;
@@ -437,9 +432,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void ShowCreatedWidget(int route_id,
                                  const gfx::Rect& initial_pos) OVERRIDE;
   virtual void ShowCreatedFullscreenWidget(int route_id) OVERRIDE;
-  virtual void ShowContextMenu(
-      const ContextMenuParams& params,
-      ContextMenuSourceType type) OVERRIDE;
+  virtual void ShowContextMenu(const ContextMenuParams& params) OVERRIDE;
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) OVERRIDE;
@@ -780,7 +773,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Manages creation and swapping of render views.
   RenderViewHostManager render_manager_;
 
-#if defined(ENABLE_JAVA_BRIDGE)
+#if defined(OS_ANDROID)
   // Manages injecting Java objects into all RenderViewHosts associated with
   // this WebContentsImpl.
   scoped_ptr<JavaBridgeDispatcherHostManager>
@@ -868,18 +861,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Settings that get passed to the renderer process.
   RendererPreferences renderer_preferences_;
-
-  // The time that we started to create the new tab page.
-  base::TimeTicks new_tab_start_time_;
-
-  // The time that we started to close this WebContents.
-  base::TimeTicks close_start_time_;
-
-  // The time when onbeforeunload ended.
-  base::TimeTicks before_unload_end_time_;
-
-  // The time when the tab was removed from view during close.
-  base::TimeTicks unload_detached_start_time_;
 
   // The time that this tab was last selected.
   base::TimeTicks last_selected_time_;

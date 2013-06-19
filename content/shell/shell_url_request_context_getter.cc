@@ -24,6 +24,7 @@
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
+#include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/default_server_bound_cert_store.h"
 #include "net/ssl/server_bound_cert_service.h"
@@ -76,7 +77,7 @@ ShellURLRequestContextGetter::ShellURLRequestContextGetter(
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
     proxy_config_service_.reset(
         net::ProxyService::CreateSystemProxyConfigService(
-            io_loop_->message_loop_proxy(), file_loop_));
+            io_loop_->message_loop_proxy().get(), file_loop_));
   }
 }
 
@@ -107,6 +108,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
         net::HostResolver::CreateDefaultResolver(NULL));
 
     storage_->set_cert_verifier(net::CertVerifier::CreateDefault());
+    storage_->set_transport_security_state(new net::TransportSecurityState);
     if (command_line.HasSwitch(switches::kDumpRenderTree)) {
       storage_->set_proxy_service(net::ProxyService::CreateDirect());
     } else {
@@ -126,15 +128,23 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     net::HttpCache::DefaultBackend* main_backend =
         new net::HttpCache::DefaultBackend(
             net::DISK_CACHE,
+#if defined(OS_ANDROID)
+            // TODO(rdsmith): Remove when default backend for Android is
+            // changed to simple cache.
+            net::CACHE_BACKEND_SIMPLE,
+#else
             net::CACHE_BACKEND_DEFAULT,
+#endif
             cache_path,
             0,
-            BrowserThread::GetMessageLoopProxyForThread(
-                BrowserThread::CACHE));
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)
+                .get());
 
     net::HttpNetworkSession::Params network_session_params;
     network_session_params.cert_verifier =
         url_request_context_->cert_verifier();
+    network_session_params.transport_security_state =
+        url_request_context_->transport_security_state();
     network_session_params.server_bound_cert_service =
         url_request_context_->server_bound_cert_service();
     network_session_params.proxy_service =

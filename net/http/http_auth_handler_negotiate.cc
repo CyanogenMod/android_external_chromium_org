@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/address_family.h"
 #include "net/base/net_errors.h"
@@ -27,8 +27,7 @@ HttpAuthHandlerNegotiate::Factory::Factory()
       max_token_length_(0),
       first_creation_(true),
 #endif
-      is_unsupported_(false),
-      auth_library_(NULL) {
+      is_unsupported_(false) {
 }
 
 HttpAuthHandlerNegotiate::Factory::~Factory() {

@@ -16,6 +16,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
+#include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -40,17 +41,14 @@
 #include "chrome/browser/chromeos/login/profile_auth_data.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/net/connectivity_state_helper.h"
-#include "chrome/browser/chromeos/net/connectivity_state_helper_observer.h"
-#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util_chromeos.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/managed_mode/managed_mode.h"
-#include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/net/preconnect.h"
+#include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
@@ -72,11 +70,8 @@
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
-#include "google_apis/gaia/gaia_constants.h"
-#include "google_apis/gaia/gaia_urls.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context.h"
@@ -87,10 +82,6 @@ using content::BrowserThread;
 namespace chromeos {
 
 namespace {
-
-// Affixes for Auth token received from ClientLogin request.
-const char kAuthPrefix[] = "Auth=";
-const char kAuthSuffix[] = "\n";
 
 #if defined(ENABLE_RLZ)
 // Flag file that disables RLZ tracking, when present.
@@ -108,7 +99,6 @@ class LoginUtilsImpl
     : public LoginUtils,
       public OAuthLoginManager::Delegate,
       public net::NetworkChangeNotifier::ConnectionTypeObserver,
-      public content::NotificationObserver,
       public base::SupportsWeakPtr<LoginUtilsImpl> {
  public:
   LoginUtilsImpl()
@@ -118,20 +108,8 @@ class LoginUtilsImpl
         delegate_(NULL),
         should_restore_auth_session_(false),
         session_restore_strategy_(
-            OAuthLoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN),
-        url_request_context_getter_(NULL) {
+            OAuthLoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN) {
     net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
-    // During tests, the browser_process may not be initialized yet causing
-    // this to fail.
-    // TODO(dzhioev): Disabled in tests for a while.
-    // TODO(dzhioev): Move prewarm out of LoginUtils.
-    if (g_browser_process &&
-        !CommandLine::ForCurrentProcess()->HasSwitch(::switches::kTestType)) {
-      registrar_.Add(
-          this,
-          chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-          content::Source<Profile>(ProfileHelper::GetSigninProfile()));
-    }
   }
 
   virtual ~LoginUtilsImpl() {
@@ -153,7 +131,6 @@ class LoginUtilsImpl
   virtual void SetFirstLoginPrefs(PrefService* prefs) OVERRIDE;
   virtual scoped_refptr<Authenticator> CreateAuthenticator(
       LoginStatusConsumer* consumer) OVERRIDE;
-  virtual void PrewarmAuthentication() OVERRIDE;
   virtual void RestoreAuthenticationSession(Profile* profile) OVERRIDE;
   virtual void StopBackgroundFetchers() OVERRIDE;
   virtual void InitRlzDelayed(Profile* user_profile) OVERRIDE;
@@ -166,11 +143,6 @@ class LoginUtilsImpl
   // net::NetworkChangeNotifier::ConnectionTypeObserver overrides.
   virtual void OnConnectionTypeChanged(
       net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
-
-  // content::NotificationObserver overrides.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   // Restarts OAuth session authentication check.
@@ -238,12 +210,6 @@ class LoginUtilsImpl
   // OAuth2 refresh token for session restore.
   std::string oauth2_refresh_token_;
 
-  content::NotificationRegistrar registrar_;
-
-  // This is set via a notification after the profile has initialized the
-  // getter.
-  net::URLRequestContextGetter* url_request_context_getter_;
-
   DISALLOW_COPY_AND_ASSIGN(LoginUtilsImpl);
 };
 
@@ -285,6 +251,21 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
     return;
   }
 
+  CommandLine user_flags(CommandLine::NO_PROGRAM);
+  about_flags::PrefServiceFlagsStorage flags_storage_(profile->GetPrefs());
+  about_flags::ConvertFlagsToSwitches(&flags_storage_, &user_flags);
+  if (!about_flags::AreSwitchesIdenticalToCurrentCommandLine(
+          user_flags, *CommandLine::ForCurrentProcess())) {
+    CommandLine::StringVector flags;
+    // argv[0] is the program name |CommandLine::NO_PROGRAM|.
+    flags.assign(user_flags.argv().begin() + 1, user_flags.argv().end());
+    VLOG(1) << "Restarting to apply per-session flags...";
+    DBusThreadManager::Get()->GetSessionManagerClient()->SetFlagsForUser(
+        UserManager::Get()->GetActiveUser()->email(), flags);
+    chrome::ExitCleanly();
+    return;
+  }
+
   if (login_host) {
     login_host->SetStatusAreaVisible(true);
     login_host->BeforeSessionStart();
@@ -297,9 +278,6 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
   int return_code;
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
-
-  // TODO(pastarmovj): Restart the browser and apply any flags set by the user.
-  // See: http://crosbug.com/39249
 
   browser_creator.LaunchBrowser(*CommandLine::ForCurrentProcess(),
                                 profile,
@@ -498,7 +476,7 @@ void LoginUtilsImpl::CompleteProfileCreate(Profile* user_profile) {
 
 void LoginUtilsImpl::RestoreAuthSession(Profile* user_profile,
                                         bool restore_from_auth_cookies) {
-  CHECK((authenticator_ && authenticator_->authentication_profile()) ||
+  CHECK((authenticator_.get() && authenticator_->authentication_profile()) ||
         !restore_from_auth_cookies);
   if (!login_manager_.get())
     return;
@@ -514,9 +492,9 @@ void LoginUtilsImpl::RestoreAuthSession(Profile* user_profile,
   // all other tokens and user_context.
   login_manager_->RestoreSession(
       user_profile,
-      authenticator_ && authenticator_->authentication_profile() ?
-          authenticator_->authentication_profile()->GetRequestContext() :
-          NULL,
+      authenticator_.get() && authenticator_->authentication_profile()
+          ? authenticator_->authentication_profile()->GetRequestContext()
+          : NULL,
       session_restore_strategy_,
       oauth2_refresh_token_,
       user_context_.auth_code);
@@ -722,100 +700,18 @@ scoped_refptr<Authenticator> LoginUtilsImpl::CreateAuthenticator(
     LoginStatusConsumer* consumer) {
   // Screen locker needs new Authenticator instance each time.
   if (ScreenLocker::default_screen_locker()) {
-    if (authenticator_)
+    if (authenticator_.get())
       authenticator_->SetConsumer(NULL);
     authenticator_ = NULL;
   }
 
-  if (authenticator_ == NULL) {
+  if (authenticator_.get() == NULL) {
     authenticator_ = new ParallelAuthenticator(consumer);
   } else {
     // TODO(nkostylev): Fix this hack by improving Authenticator dependencies.
     authenticator_->SetConsumer(consumer);
   }
   return authenticator_;
-}
-
-// We use a special class for this so that it can be safely leaked if we
-// never connect. At shutdown the order is not well defined, and it's possible
-// for the infrastructure needed to unregister might be unstable and crash.
-class WarmingObserver : public ConnectivityStateHelperObserver,
-                        public content::NotificationObserver {
- public:
-  WarmingObserver()
-      : url_request_context_getter_(NULL) {
-    ConnectivityStateHelper::Get()->AddNetworkManagerObserver(this);
-    // During tests, the browser_process may not be initialized yet causing
-    // this to fail.
-    if (g_browser_process) {
-      registrar_.Add(
-          this,
-          chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-          content::Source<Profile>(ProfileHelper::GetSigninProfile()));
-    }
-  }
-
-  virtual ~WarmingObserver() {}
-
-  // If we're now connected, prewarm the auth url.
-  virtual void NetworkManagerChanged() OVERRIDE {
-    ConnectivityStateHelper* csh = ConnectivityStateHelper::Get();
-    if (csh->IsConnected()) {
-      const int kConnectionsNeeded = 1;
-      GURL url(GaiaUrls::GetInstance()->client_login_url());
-      chrome_browser_net::PreconnectOnUIThread(
-          url,
-          url,
-          chrome_browser_net::UrlInfo::EARLY_LOAD_MOTIVATED,
-          kConnectionsNeeded,
-          url_request_context_getter_);
-      csh->RemoveNetworkManagerObserver(this);
-      delete this;
-    }
-  }
-
-  virtual void DefaultNetworkChanged() OVERRIDE {
-    NetworkManagerChanged();
-  }
-
-  // content::NotificationObserver overrides.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-  switch (type) {
-    case chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED: {
-      Profile* profile = content::Source<Profile>(source).ptr();
-      url_request_context_getter_ = profile->GetRequestContext();
-      registrar_.Remove(
-          this,
-          chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-          content::Source<Profile>(profile));
-
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
-}
- private:
-  net::URLRequestContextGetter* url_request_context_getter_;
-  content::NotificationRegistrar registrar_;
-};
-
-void LoginUtilsImpl::PrewarmAuthentication() {
-  ConnectivityStateHelper* csh = ConnectivityStateHelper::Get();
-  if (csh->IsConnected()) {
-    const int kConnectionsNeeded = 1;
-    GURL url(GaiaUrls::GetInstance()->client_login_url());
-    chrome_browser_net::PreconnectOnUIThread(
-        url,
-        url,
-        chrome_browser_net::UrlInfo::EARLY_LOAD_MOTIVATED,
-        kConnectionsNeeded,
-        url_request_context_getter_);
-  } else {
-    new WarmingObserver();
-  }
 }
 
 void LoginUtilsImpl::RestoreAuthenticationSession(Profile* user_profile) {
@@ -876,24 +772,6 @@ void LoginUtilsImpl::OnConnectionTypeChanged(
       Profile* user_profile = ProfileManager::GetDefaultProfile();
       RestoreAuthSession(user_profile, has_web_auth_cookies_);
     }
-  }
-}
-
-void LoginUtilsImpl::Observe(int type,
-                             const content::NotificationSource& source,
-                             const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED: {
-      Profile* profile = content::Source<Profile>(source).ptr();
-      url_request_context_getter_ = profile->GetRequestContext();
-      registrar_.Remove(
-          this,
-          chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-          content::Source<Profile>(profile));
-      break;
-    }
-    default:
-      NOTREACHED();
   }
 }
 

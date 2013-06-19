@@ -13,6 +13,7 @@ const int kNotificationButtonIconSize = 16;
 const int kNotificationIconSize = 80;
 // Same as kNotificationWidth.
 const int kNotificationPreferredImageSize = 360;
+const float kNotificationPreferredImageRatio = 1.5;
 const int kSettingsIconSize = 16;
 
 // Limits.
@@ -43,7 +44,8 @@ const SkColor kFocusBorderColor = SkColorSetRGB(64, 128, 250);
 // Limits.
 
 gfx::Size GetImageSizeForWidth(int width, const gfx::Size& image_size) {
-  const int kNotificationMaximumImageHeight = kNotificationWidth * 1.5;
+  const int kNotificationMaximumImageHeight =
+      kNotificationWidth * kNotificationPreferredImageRatio;
 
   gfx::Size size = image_size;
   if (width > 0 && !size.IsEmpty()) {
@@ -72,7 +74,7 @@ const int kMarginBetweenItems = 10;
 const SkColor kBackgroundLightColor = SkColorSetRGB(0xf1, 0xf1, 0xf1);
 const SkColor kBackgroundDarkColor = SkColorSetRGB(0xe7, 0xe7, 0xe7);
 const SkColor kShadowColor = SkColorSetARGB(0.3 * 255, 0, 0, 0);
-const SkColor kMessageCenterBackgroundColor = SkColorSetRGB(0xf1, 0xf1, 0xf1);
+const SkColor kMessageCenterBackgroundColor = SkColorSetRGB(0xee, 0xee, 0xee);
 const SkColor kFooterDelimiterColor = SkColorSetRGB(0xcc, 0xcc, 0xcc);
 const SkColor kFooterTextColor = SkColorSetRGB(0x7b, 0x7b, 0x7b);
 

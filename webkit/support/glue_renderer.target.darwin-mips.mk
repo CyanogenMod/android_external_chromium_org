@@ -12,9 +12,10 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,build_temp_gyp_googleurl_gyp)/googleurl.stamp \
-	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a
+	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -29,6 +30,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	webkit/renderer/cpp_bound_class.cc \
 	webkit/renderer/cpp_variant.cc \
+	webkit/renderer/cursor_utils.cc \
 	webkit/renderer/webpreferences_renderer.cc
 
 
@@ -75,6 +77,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -86,7 +89,6 @@ MY_DEFS := \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DENABLE_LANGUAGE_DETECTION=1' \
 	'-DWEBKIT_RENDERER_IMPLEMENTATION' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DSK_BUILD_NO_IMAGE_ENCODE' \
 	'-DSK_DEFERRED_CANVAS_USES_GPIPE=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
@@ -94,6 +96,8 @@ MY_DEFS := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_BUILD_FOR_ANDROID' \
+	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -115,9 +119,6 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH) \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/include/config \
@@ -131,9 +132,12 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
+	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -173,7 +177,8 @@ LOCAL_LDFLAGS := \
 
 
 LOCAL_STATIC_LIBRARIES := \
-	skia_skia_gyp
+	skia_skia_gyp \
+	ui_ui_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

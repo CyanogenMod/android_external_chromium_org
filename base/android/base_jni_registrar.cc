@@ -10,12 +10,13 @@
 #include "base/android/important_file_writer_android.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
+#include "base/android/memory_pressure_listener_android.h"
 #include "base/android/path_service_android.h"
 #include "base/android/path_utils.h"
 #include "base/android/thread_utils.h"
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
-#include "base/message_pump_android.h"
+#include "base/message_loop/message_pump_android.h"
 #include "base/power_monitor/power_monitor_android.h"
 
 #if defined(GOOGLE_TV)
@@ -34,6 +35,8 @@ static RegistrationMethod kBaseRegisteredMethods[] = {
   { "CpuFeatures", base::android::RegisterCpuFeatures },
   { "ImportantFileWriterAndroid",
     base::android::RegisterImportantFileWriterAndroid },
+  { "MemoryPressureListenerAndroid",
+      base::android::MemoryPressureListenerAndroid::Register },
   { "PathService", base::android::RegisterPathService },
   { "PathUtils", base::android::RegisterPathUtils },
   { "SystemMessageHandler", base::MessagePumpForUI::RegisterBindings },

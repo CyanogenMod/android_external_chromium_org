@@ -18,7 +18,7 @@
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_web_contents.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "webkit/common/webdropdata.h"
 
 namespace content {
@@ -101,7 +101,7 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   test_rvh()->SendShouldCloseACK(true);
   contents()->Stop();
   controller().Reload(false);
-  EXPECT_FALSE(test_rvh()->is_waiting_for_unload_ack_for_testing());
+  EXPECT_FALSE(test_rvh()->is_waiting_for_unload_ack());
 }
 
 // Ensure we do not grant bindings to a process shared with unprivileged views.
@@ -118,9 +118,6 @@ class MockDraggingRenderViewHostDelegateView
     : public RenderViewHostDelegateView {
  public:
   virtual ~MockDraggingRenderViewHostDelegateView() {}
-  virtual void ShowContextMenu(
-      const ContextMenuParams& params,
-      ContextMenuSourceType type) OVERRIDE {}
   virtual void ShowPopupMenu(const gfx::Rect& bounds,
                              int item_height,
                              double item_font_size,

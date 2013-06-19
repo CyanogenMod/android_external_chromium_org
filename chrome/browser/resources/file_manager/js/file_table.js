@@ -21,6 +21,14 @@ function FileTableColumnModel(tableColumns) {
 }
 
 /**
+ * The columns whose index is less than the constant are resizable.
+ * @const
+ * @type {number}
+ * @private
+ */
+FileTableColumnModel.RESIZABLE_LENGTH_ = 4;
+
+/**
  * Inherits from cr.ui.TableColumnModel.
  */
 FileTableColumnModel.prototype.__proto__ =
@@ -28,9 +36,9 @@ FileTableColumnModel.prototype.__proto__ =
 
 /**
  * Minimum width of column.
- * @private
  * @const
  * @type {number}
+ * @private
  */
 FileTableColumnModel.MIN_WIDTH_ = 10;
 
@@ -55,7 +63,7 @@ FileTableColumnModel.prototype.applyColumnPositions_ = function(newPos) {
     }
   }
   // Set the new width of columns
-  for (var i = 0; i < this.columns_.length - 1; i++) {
+  for (var i = 0; i < FileTableColumnModel.RESIZABLE_LENGTH_; i++) {
     this.columns_[i].width = newPos[i + 1] - newPos[i];
   }
 };
@@ -69,17 +77,21 @@ FileTableColumnModel.prototype.applyColumnPositions_ = function(newPos) {
  */
 FileTableColumnModel.prototype.normalizeWidths = function(contentWidth) {
   var totalWidth = 0;
+  var fixedWidth = 0;
   // Some columns have fixed width.
-  for (var i = 0; i < this.size - 1; i++) {
-    totalWidth += this.columns_[i].width;
+  for (var i = 0; i < this.columns_.length; i++) {
+    if (i < FileTableColumnModel.RESIZABLE_LENGTH_)
+      totalWidth += this.columns_[i].width;
+    else
+      fixedWidth += this.columns_[i].width;
   }
-  var newTotalWidth =
-      Math.max(contentWidth - this.columns_[this.size - 1].width, 0);
+  var newTotalWidth = Math.max(contentWidth - fixedWidth, 0);
   var positions = [0];
   var sum = 0;
-  for (var i = 0; i < this.size - 1; i++) {
+  for (var i = 0; i < FileTableColumnModel.RESIZABLE_LENGTH_; i++) {
     var column = this.columns_[i];
     sum += column.width;
+    // Faster alternative to Math.floor for non-negative numbers.
     positions[i + 1] = ~~(newTotalWidth * sum / totalWidth);
   }
   this.applyColumnPositions_(positions);
@@ -109,25 +121,25 @@ FileTableColumnModel.prototype.handleSplitterDragEnd = function() {
  */
 FileTableColumnModel.prototype.setWidthAndKeepTotal = function(
     columnIndex, columnWidth) {
-  if (columnIndex < 0 ||
-      columnIndex >= this.columns_.length - 1 ||
-      !this.columnPos_)
-    return;
-
   // Skip to resize 'selection' column
-  var nextColumn = this.columns_[columnIndex + 1];
-  if (nextColumn && nextColumn.id == 'selection')
+  if (columnIndex < 0 ||
+      columnIndex >= FileTableColumnModel.RESIZABLE_LENGTH_ ||
+      !this.columnPos_) {
     return;
+  }
+
   // Calculate new positions of column splitters.
   var newPosStart =
       this.columnPos_[columnIndex] + Math.max(columnWidth,
                                               FileTableColumnModel.MIN_WIDTH_);
   var newPos = [];
-  var posEnd = this.columnPos_[this.columns_.length - 1];
+  var posEnd = this.columnPos_[FileTableColumnModel.RESIZABLE_LENGTH_];
   for (var i = 0; i < columnIndex + 1; i++) {
     newPos[i] = this.columnPos_[i];
   }
-  for (var i = columnIndex + 1; i < this.columns_.length - 1; i++) {
+  for (var i = columnIndex + 1;
+       i < FileTableColumnModel.RESIZABLE_LENGTH_;
+       i++) {
     var posStart = this.columnPos_[columnIndex + 1];
     newPos[i] = (posEnd - newPosStart) *
                 (this.columnPos_[i] - posStart) /
@@ -137,7 +149,7 @@ FileTableColumnModel.prototype.setWidthAndKeepTotal = function(
     newPos[i] = ~~newPos[i];
   }
   newPos[columnIndex] = this.columnPos_[columnIndex];
-  newPos[this.columns_.length - 1] = posEnd;
+  newPos[FileTableColumnModel.RESIZABLE_LENGTH_] = posEnd;
   this.applyColumnPositions_(newPos);
 
   // Notifiy about resizing
@@ -227,42 +239,53 @@ FileTable.decorate = function(self, metadataCache, fullPage) {
   columns[3].defaultOrder = 'desc';
 
   var tableColumnModelClass;
-  if (util.platform.newUI()) {
-    tableColumnModelClass = FileTableColumnModel;
+  tableColumnModelClass = FileTableColumnModel;
+  if (!self.noCheckboxes) {
     columns.push(new cr.ui.table.TableColumn('selection',
                                              '',
                                              50, true));
     columns[4].renderFunction = self.renderSelection_.bind(self);
     columns[4].headerRenderFunction =
         self.renderSelectionColumnHeader_.bind(self);
-  } else {
-    tableColumnModelClass = cr.ui.table.TableColumnModel;
-    columns.push(new cr.ui.table.TableColumn('offline',
-                                             str('OFFLINE_COLUMN_LABEL'),
-                                             130));
-    columns[4].renderFunction = self.renderOffline_.bind(self);
-    columns[0].headerRenderFunction =
-        self.renderNameColumnHeader_.bind(self, columns[0].name);
+    columns[4].fixed = true;
   }
 
   var columnModel = Object.create(tableColumnModelClass.prototype, {
+    /**
+     * The number of columns.
+     * @type {number}
+     */
     size: {
       get: function() {
-        if (util.platform.newUI())
-          return this.totalSize;
-        return this.showOfflineColumn ? this.totalSize : this.totalSize - 1;
+        return this.totalSize;
       }
     },
 
+    /**
+     * The number of columns.
+     * @type {number}
+     */
     totalSize: {
       get: function() {
         return columns.length;
       }
     },
 
-    showOfflineColumn: {
-      writable: true,
-      value: false
+    /**
+     * Obtains a column by the specified horizontal positon.
+     * @param {number} x Horizontal position.
+     * @return {object} The object that contains column index, column width, and
+     *     hitPosition where the horizontal position is hit in the column.
+     */
+    getHitColumn: {
+      value: function(x) {
+        for (var i = 0; x >= this.columns_[i].width; i++) {
+          x -= this.columns_[i].width;
+        }
+        if (i >= this.columns_.length)
+          return null;
+        return {index: i, hitPosition: x, width: this.columns_[i].width};
+      }
     }
   });
 
@@ -272,15 +295,13 @@ FileTable.decorate = function(self, metadataCache, fullPage) {
   self.setRenderFunction(self.renderTableRow_.bind(self,
       self.getRenderFunction()));
 
-  if (util.platform.newUI()) {
-    self.scrollBar_ = MainPanelScrollBar();
-    self.scrollBar_.initialize(self, self.list);
-    // Keep focus on the file list when clicking on the header.
-    self.header.addEventListener('mousedown', function(e) {
-      self.list.focus();
-      e.preventDefault();
-    });
-  }
+  self.scrollBar_ = MainPanelScrollBar();
+  self.scrollBar_.initialize(self, self.list);
+  // Keep focus on the file list when clicking on the header.
+  self.header.addEventListener('mousedown', function(e) {
+    self.list.focus();
+    e.preventDefault();
+  });
 
   var handleSelectionChange = function() {
     var selectAll = self.querySelector('#select-all-checkbox');
@@ -320,17 +341,11 @@ FileTable.decorate = function(self, metadataCache, fullPage) {
       FileTableSplitter.decorate(splitters[i]);
     }
   };
-};
 
-/**
- * Shows or hides 'Avaliable offline' column.
- * @param {boolean} show True to show.
- */
-FileTable.prototype.showOfflineColumn = function(show) {
-  if (show != this.columnModel.showOfflineColumn) {
-    this.columnModel.showOfflineColumn = show;
-    this.redraw();
-  }
+  // Save the last selection. This is used by shouldStartDragSelection.
+  self.list.addEventListener('mousedown', function(e) {
+    this.lastSelection_ = this.selectionModel.selectedIndexes;
+  }.bind(self), true);
 };
 
 /**
@@ -347,6 +362,61 @@ FileTable.prototype.setDateTimeFormat = function(use12hourClock) {
         {year: 'numeric', month: 'short', day: 'numeric',
          hour: 'numeric', minute: 'numeric',
          hour12: use12hourClock});
+};
+
+/**
+ * Obtains if the drag selection should be start or not by referring the mouse
+ * event.
+ * @param {MouseEvent} event Drag start event.
+ * @return {boolean} True if the mouse is hit to the background of the list.
+ */
+FileTable.prototype.shouldStartDragSelection = function(event) {
+  // If the shift key is pressed, it should starts drag selection.
+  if (event.shiftKey)
+    return true;
+
+  // If the position values are negative, it points the out of list.
+  // It should start the drag selection.
+  var pos = DragSelector.getScrolledPosition(this.list, event);
+  if (!pos)
+    return false;
+  if (pos.x < 0 || pos.y < 0)
+    return true;
+
+  // If the item index is out of range, it should start the drag selection.
+  var itemHeight = this.list.measureItem().height;
+  // Faster alternative to Math.floor for non-negative numbers.
+  var itemIndex = ~~(pos.y / itemHeight);
+  if (itemIndex >= this.list.dataModel.length)
+    return true;
+
+  // If the pointed item is already selected, it should not start the drag
+  // selection.
+  if (this.lastSelection_.indexOf(itemIndex) != -1)
+    return false;
+
+  // If the horizontal value is not hit to column, it shoud start the drag
+  // selection.
+  var hitColumn = this.columnModel.getHitColumn(pos.x);
+  if (!hitColumn)
+    return true;
+
+  // Check if the point is on the column contents or not.
+  var item = this.list.getListItemByIndex(itemIndex);
+  switch (this.columnModel.columns_[hitColumn.index].id) {
+    case 'name':
+      var spanElement = item.querySelector('.filename-label span');
+      var spanRect = spanElement.getBoundingClientRect();
+      // The this.list.cachedBounds_ object is set by
+      // DragSelector.getScrolledPosition.
+      if (!this.list.cachedBounds)
+        return true;
+      var textRight =
+          spanRect.left - this.list.cachedBounds.left + spanRect.width;
+      return textRight <= hitColumn.hitPosition;
+    default:
+      return true;
+  }
 };
 
 /**
@@ -390,13 +460,6 @@ FileTable.prototype.setupCompareFunctions = function(dataModel) {
  */
 FileTable.prototype.renderName_ = function(entry, columnId, table) {
   var label = this.ownerDocument.createElement('div');
-  if (!util.platform.newUI()) {
-    if (this.selectionModel.multiple) {
-      var checkBox = this.ownerDocument.createElement('input');
-      filelist.decorateSelectionCheckbox(checkBox, entry, this.list);
-      label.appendChild(checkBox);
-    }
-  }
   label.appendChild(this.renderIconType_(entry, columnId, table));
   label.entry = entry;
   label.className = 'detail-name';
@@ -546,59 +609,6 @@ FileTable.prototype.updateFileMetadata = function(item, entry) {
   var props = this.metadataCache_.getCached(entry, 'filesystem');
   this.updateDate_(item.querySelector('.date'), props);
   this.updateSize_(item.querySelector('.size'), entry, props);
-};
-
-/**
- * Render the Available offline column of the detail table.
- *
- * @param {Entry} entry The Entry object to render.
- * @param {string} columnId The id of the column to be rendered.
- * @param {cr.ui.Table} table The table doing the rendering.
- * @return {HTMLDivElement} Created element.
- * @private
- */
-FileTable.prototype.renderOffline_ = function(entry, columnId, table) {
-  var div = this.ownerDocument.createElement('div');
-  div.className = 'offline';
-
-  if (entry.isDirectory)
-    return div;
-
-  var checkbox = this.ownerDocument.createElement('input');
-  filelist.decorateCheckbox(checkbox);
-  checkbox.classList.add('pin');
-
-  var command = this.ownerDocument.querySelector('command#toggle-pinned');
-  var onPinClick = function(event) {
-    command.canExecuteChange(checkbox);
-    command.execute(checkbox);
-    event.preventDefault();
-  };
-
-  checkbox.addEventListener('click', onPinClick);
-  checkbox.style.display = 'none';
-  checkbox.entry = entry;
-  div.appendChild(checkbox);
-
-  this.updateOffline_(
-      div, this.metadataCache_.getCached(entry, 'drive'));
-  return div;
-};
-
-/**
- * Sets up or updates the date cell.
- *
- * @param {HTMLDivElement} div The table cell.
- * @param {Object} drive Metadata.
- * @private
- */
-FileTable.prototype.updateOffline_ = function(div, drive) {
-  if (!drive) return;
-  if (drive.hosted) return;
-  var checkbox = div.querySelector('.pin');
-  if (!checkbox) return;
-  checkbox.style.display = '';
-  checkbox.checked = drive.pinned;
 };
 
 /**
@@ -810,9 +820,6 @@ FileTable.prototype.renderIconType_ = function(entry, columnId, table) {
  * @param {number} margin Margin to be set in px.
  */
 FileTable.prototype.setBottomMarginForPanel = function(margin) {
-  if (!util.platform.newUI())
-    return;
-
   this.list_.style.paddingBottom = margin + 'px';
   this.scrollBar_.setBottomMarginForPanel(margin);
 };
@@ -829,10 +836,8 @@ FileTable.prototype.relayout = function() {
  * @private
  */
 FileTable.prototype.relayoutImmediately_ = function() {
-  if (util.platform.newUI()) {
-    if (this.clientWidth > 0)
-      this.normalizeColumns();
-  }
+  if (this.clientWidth > 0)
+    this.normalizeColumns();
   this.redraw();
   cr.dispatchSimpleEvent(this.list, 'relayout');
 };

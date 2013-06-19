@@ -23,6 +23,7 @@
     '../webkit/storage_renderer.gyp:webkit_storage_renderer',
     '../webkit/storage_common.gyp:webkit_storage_common',
     '../webkit/support/webkit_support.gyp:glue',
+    '../webkit/support/webkit_support.gyp:glue_child',
     '../webkit/support/webkit_support.gyp:glue_common',
     '../webkit/support/webkit_support.gyp:glue_renderer',
     '../webkit/support/webkit_support.gyp:plugins',
@@ -173,6 +174,8 @@
     'renderer/media/video_capture_impl_manager.h',
     'renderer/media/video_capture_message_filter.cc',
     'renderer/media/video_capture_message_filter.h',
+    'renderer/media/webcontentdecryptionmodule_impl.cc',
+    'renderer/media/webcontentdecryptionmodule_impl.h',
     'renderer/media/webmediaplayer_proxy_impl_android.cc',
     'renderer/media/webmediaplayer_proxy_impl_android.h',
     'renderer/memory_benchmarking_extension.cc',
@@ -367,11 +370,21 @@
       ],
     }],
     ['OS=="android"', {
+      'sources!': [
+        'renderer/accessibility/renderer_accessibility_focus_only.cc'
+      ],
       'dependencies': [
         '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
       ],
       'includes': [
         '../build/android/cpufeatures.gypi',
+      ],
+    }, {
+      'sources!': [
+        'renderer/java/java_bridge_channel.cc',
+        'renderer/java/java_bridge_channel.h',
+        'renderer/java/java_bridge_dispatcher.cc',
+        'renderer/java/java_bridge_dispatcher.h',
       ],
     }],
     # TODO(jrg): remove the OS=="android" section?
@@ -477,18 +490,6 @@
       'sources!': [
         'renderer/render_widget_fullscreen_pepper.cc',
         'renderer/render_widget_fullscreen_pepper.h',
-      ],
-    }],
-    ['java_bridge==1', {
-      'defines': [
-        'ENABLE_JAVA_BRIDGE',
-      ],
-    }, {
-      'sources!': [
-        'renderer/java/java_bridge_channel.cc',
-        'renderer/java/java_bridge_channel.h',
-        'renderer/java/java_bridge_dispatcher.cc',
-        'renderer/java/java_bridge_dispatcher.h',
       ],
     }],
   ],

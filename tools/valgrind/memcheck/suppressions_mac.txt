@@ -119,7 +119,8 @@
    fun:_CFRuntimeCreateInstance
    fun:__CFArrayInit
    fun:CFArrayCreateMutableCopy
-   fun:_ZN8Security12KeychainCore5Trust8evaluateEv
+   ...
+   fun:_ZN8Security12KeychainCore5Trust8evaluate*
 }
 # See description of bug_20653a/b in suppressions.txt.
 {
@@ -2350,10 +2351,10 @@
    bug_244102
    Memcheck:Unaddressable
    ...
-   fun:_ZN5media12_GLOBAL__N_117ScreenCapturerMac10GlBlitFastERKN6webrtc12DesktopFrameERKNS2_13DesktopRegionE
-   fun:_ZN5media12_GLOBAL__N_117ScreenCapturerMac7CaptureERKN6webrtc13DesktopRegionE
-   fun:_ZN5media19ScreenCaptureDevice4Core9DoCaptureEv
-   fun:_ZN5media19ScreenCaptureDevice4Core7DoStartEv
+   fun:_ZN6webrtc12_GLOBAL__N_117ScreenCapturerMac10GlBlitFastERKNS_12DesktopFrameERKNS_13DesktopRegionE
+   fun:_ZN6webrtc12_GLOBAL__N_117ScreenCapturerMac7CaptureERKNS_13DesktopRegionE
+   fun:_ZN7content19ScreenCaptureDevice4Core9DoCaptureEv
+   fun:_ZN7content19ScreenCaptureDevice4Core7DoStartEv
 }
 {
    bug_244420

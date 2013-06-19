@@ -17,12 +17,11 @@
 #include "base/observer_list.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/storage/webkit_storage_export.h"
-
-class NullableString16;
+#include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace base {
 class FilePath;
+class NullableString16;
 class Time;
 }
 
@@ -59,7 +58,7 @@ struct SessionStorageUsageInfo;
 // Classes intended to be used by an embedder are DomStorageContext,
 // DomStorageHost, and DomStorageSession. The other classes are for
 // internal consumption.
-class WEBKIT_STORAGE_EXPORT DomStorageContext
+class WEBKIT_STORAGE_BROWSER_EXPORT DomStorageContext
     : public base::RefCountedThreadSafe<DomStorageContext> {
  public:
   // An interface for observing Local and Session Storage events on the
@@ -70,7 +69,7 @@ class WEBKIT_STORAGE_EXPORT DomStorageContext
         const DomStorageArea* area,
         const base::string16& key,
         const base::string16& new_value,
-        const NullableString16& old_value,  // may be null on initial insert
+        const base::NullableString16& old_value,  // may be null on initial insert
         const GURL& page_url) = 0;
     virtual void OnDomStorageItemRemoved(
         const DomStorageArea* area,
@@ -93,7 +92,9 @@ class WEBKIT_STORAGE_EXPORT DomStorageContext
 
   // Returns the directory path for localStorage, or an empty directory, if
   // there is no backing on disk.
-  const base::FilePath& localstorage_directory() { return localstorage_directory_; }
+  const base::FilePath& localstorage_directory() {
+    return localstorage_directory_;
+  }
 
   // Returns the directory path for sessionStorage, or an empty directory, if
   // there is no backing on disk.
@@ -133,7 +134,7 @@ class WEBKIT_STORAGE_EXPORT DomStorageContext
       const DomStorageArea* area,
       const base::string16& key,
       const base::string16& new_value,
-      const NullableString16& old_value,
+      const base::NullableString16& old_value,
       const GURL& page_url);
   void NotifyItemRemoved(
       const DomStorageArea* area,

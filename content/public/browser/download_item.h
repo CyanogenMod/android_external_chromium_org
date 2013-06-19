@@ -23,7 +23,7 @@
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/supports_user_data.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_interrupt_reasons.h"
@@ -174,20 +174,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // completed downloads, cancelled downloads, and interrupted downloads that
   // can't be resumed.
   virtual bool IsDone() const = 0;
-
-  //    Convenience routines for accessing GetState() results conceptually -----
-
-  // Returns true if the download is still receiving data.
-  virtual bool IsInProgress() const = 0;
-
-  // Returns true if the download has been cancelled or was interrupted.
-  virtual bool IsCancelled() const = 0;
-
-  // Returns true if the download was interrupted.
-  virtual bool IsInterrupted() const = 0;
-
-  // Returns true if we have all the data and know the final file name.
-  virtual bool IsComplete() const = 0;
 
   //    Origin State accessors -------------------------------------------------
 

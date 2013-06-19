@@ -59,14 +59,14 @@ class LocalFileSystemOperationTest
     change_observers_ = MockFileChangeObserver::CreateList(&change_observer_);
 
     base::FilePath base_dir = base_.path().AppendASCII("filesystem");
-    quota_manager_ = new quota::MockQuotaManager(
-        false /* is_incognito */, base_dir,
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current(),
-        NULL /* special storage policy */);
+    quota_manager_ =
+        new quota::MockQuotaManager(false /* is_incognito */,
+                                    base_dir,
+                                    base::MessageLoopProxy::current().get(),
+                                    base::MessageLoopProxy::current().get(),
+                                    NULL /* special storage policy */);
     quota_manager_proxy_ = new quota::MockQuotaManagerProxy(
-        quota_manager(),
-        base::MessageLoopProxy::current());
+        quota_manager(), base::MessageLoopProxy::current().get());
     sandbox_file_system_.SetUp(base_dir, quota_manager_proxy_.get());
     sandbox_file_system_.file_system_context()->sandbox_provider()->
         AddFileChangeObserver(sandbox_file_system_.type(),
@@ -200,10 +200,8 @@ class LocalFileSystemOperationTest
   }
 
   void DidGetMetadata(base::PlatformFileError status,
-                      const base::PlatformFileInfo& info,
-                      const base::FilePath& platform_path) {
+                      const base::PlatformFileInfo& info) {
     info_ = info;
-    path_ = platform_path;
     status_ = status;
   }
 
@@ -797,7 +795,6 @@ TEST_F(LocalFileSystemOperationTest, TestExistsAndMetadataSuccess) {
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(base::PLATFORM_FILE_OK, status());
   EXPECT_TRUE(info().is_directory);
-  EXPECT_EQ(base::FilePath(), path());
   ++read_access;
 
   operation_runner()->FileExists(file, RecordStatusCallback());
@@ -809,7 +806,6 @@ TEST_F(LocalFileSystemOperationTest, TestExistsAndMetadataSuccess) {
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(base::PLATFORM_FILE_OK, status());
   EXPECT_FALSE(info().is_directory);
-  EXPECT_EQ(PlatformPath("dir/file"), path());
   ++read_access;
 
   EXPECT_EQ(read_access,

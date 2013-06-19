@@ -77,6 +77,7 @@
 #include "chrome/browser/performance_monitor/performance_monitor.h"
 #include "chrome/browser/performance_monitor/startup_timer.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
+#include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
@@ -707,6 +708,9 @@ DLLEXPORT void __cdecl RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
 // content::BrowserMainParts implementation ------------------------------------
 
 void ChromeBrowserMainParts::PreEarlyInitialization() {
+#if defined(USE_X11)
+  SetBrowserX11ErrorHandlersPreEarlyInitialization();
+#endif
   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreEarlyInitialization");
   for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
     chrome_extra_parts_[i]->PreEarlyInitialization();
@@ -734,6 +738,9 @@ void ChromeBrowserMainParts::PostMainMessageLoopStart() {
   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PostMainMessageLoopStart");
   for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
     chrome_extra_parts_[i]->PostMainMessageLoopStart();
+#if defined(USE_X11)
+  SetBrowserX11ErrorHandlersPostMainMessageLoopStart();
+#endif
 }
 
 int ChromeBrowserMainParts::PreCreateThreads() {
@@ -834,7 +841,9 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
   {
     TRACE_EVENT0("startup",
         "ChromeBrowserMainParts::PreCreateThreadsImpl:ConvertFlags");
-    about_flags::ConvertFlagsToSwitches(local_state_,
+    about_flags::PrefServiceFlagsStorage flags_storage_(
+        g_browser_process->local_state());
+    about_flags::ConvertFlagsToSwitches(&flags_storage_,
                                         CommandLine::ForCurrentProcess());
   }
 
@@ -1197,10 +1206,6 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     }
   }
 #endif  // !defined(OS_ANDROID)
-
-#if defined(USE_X11)
-  SetBrowserX11ErrorHandlers();
-#endif
 
   // Desktop construction occurs here, (required before profile creation).
   PreProfileInit();

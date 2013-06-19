@@ -12,8 +12,8 @@
 #include "base/strings/string_util.h"
 #include "content/common/child_process_messages.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 using webkit_glue::CppArgumentList;
 using webkit_glue::CppVariant;
@@ -53,10 +53,10 @@ void ConvertLoadTimeToJSON(
     const base::TimeTicks& load_start_time,
     const base::TimeTicks& load_stop_time,
     std::string *result) {
-  DictionaryValue item;
+  base::DictionaryValue item;
 
   if (load_start_time.is_null()) {
-     item.Set("load_start_ms", Value::CreateNullValue());
+     item.Set("load_start_ms", base::Value::CreateNullValue());
   } else {
     // This code relies on an implementation detail of TimeTicks::Now() - that
     // its return value happens to coincide with the system uptime value in
@@ -65,7 +65,7 @@ void ConvertLoadTimeToJSON(
     item.SetDouble("load_start_ms", load_start_time.ToInternalValue() / 1000);
   }
   if (load_stop_time.is_null() || load_stop_time.is_null()) {
-    item.Set("load_duration_ms", Value::CreateNullValue());
+    item.Set("load_duration_ms", base::Value::CreateNullValue());
   } else {
     item.SetDouble("load_duration_ms",
         (load_stop_time - load_start_time).InMilliseconds());

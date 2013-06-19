@@ -20,11 +20,11 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/containers/hash_tables.h"
 #include "base/containers/mru_cache.h"
-#include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 
 namespace safe_browsing {

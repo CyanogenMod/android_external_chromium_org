@@ -6,7 +6,6 @@
 
 #include "ash/display/display_controller.h"
 #include "ash/launcher/launcher.h"
-#include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shelf/shelf_widget.h"
@@ -50,13 +49,16 @@ PanelWindowResizer*
 PanelWindowResizer::Create(WindowResizer* next_window_resizer,
                            aura::Window* window,
                            const gfx::Point& location,
-                           int window_component) {
-  Details details(window, location, window_component);
+                           int window_component,
+                           aura::client::WindowMoveSource source) {
+  Details details(window, location, window_component, source);
   return details.is_resizable ?
       new PanelWindowResizer(next_window_resizer, details) : NULL;
 }
 
 void PanelWindowResizer::Drag(const gfx::Point& location, int event_flags) {
+  last_location_ = location;
+  wm::ConvertPointToScreen(GetTarget()->parent(), &last_location_);
   bool destroyed = false;
   if (!did_move_or_resize_) {
     did_move_or_resize_ = true;
@@ -122,6 +124,10 @@ void PanelWindowResizer::RevertDrag() {
 
 aura::Window* PanelWindowResizer::GetTarget() {
   return next_window_resizer_->GetTarget();
+}
+
+const gfx::Point& PanelWindowResizer::GetInitialLocation() const {
+  return details_.initial_location_in_parent;
 }
 
 PanelWindowResizer::PanelWindowResizer(WindowResizer* next_window_resizer,
@@ -204,9 +210,9 @@ void PanelWindowResizer::FinishDragging() {
   if (GetTarget()->GetProperty(internal::kPanelAttachedKey) !=
       should_attach_) {
     GetTarget()->SetProperty(internal::kPanelAttachedKey, should_attach_);
-    GetTarget()->SetDefaultParentByRootWindow(
-        GetTarget()->GetRootWindow(),
-        GetTarget()->GetBoundsInScreen());
+    gfx::Rect near_last_location(last_location_, gfx::Size());
+    GetTarget()->SetDefaultParentByRootWindow(GetTarget()->GetRootWindow(),
+                                              near_last_location);
   }
   if (panel_container_)
     GetPanelLayoutManager(panel_container_)->FinishDragging();

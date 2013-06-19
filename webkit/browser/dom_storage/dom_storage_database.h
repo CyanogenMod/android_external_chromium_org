@@ -10,17 +10,17 @@
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/nullable_string16.h"
+#include "base/strings/nullable_string16.h"
 #include "base/strings/string16.h"
 #include "sql/connection.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/dom_storage/dom_storage_types.h"
-#include "webkit/storage/webkit_storage_export.h"
 
 namespace dom_storage {
 
 // Represents a SQLite based backing for DOM storage data. This
 // class is designed to be used on a single thread.
-class WEBKIT_STORAGE_EXPORT DomStorageDatabase {
+class WEBKIT_STORAGE_BROWSER_EXPORT DomStorageDatabase {
  public:
   static base::FilePath GetJournalFilePath(const base::FilePath& database_path);
 

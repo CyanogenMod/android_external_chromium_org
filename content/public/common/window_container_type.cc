@@ -4,10 +4,10 @@
 
 #include "content/public/common/window_container_type.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWindowFeatures.h"
+#include "third_party/WebKit/public/web/WebWindowFeatures.h"
 
 namespace {
 

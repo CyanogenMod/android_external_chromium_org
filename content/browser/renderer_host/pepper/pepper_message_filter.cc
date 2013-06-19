@@ -159,6 +159,13 @@ net::CertVerifier* PepperMessageFilter::GetCertVerifier() {
   return cert_verifier_.get();
 }
 
+net::TransportSecurityState* PepperMessageFilter::GetTransportSecurityState() {
+  if (!transport_security_state_)
+    transport_security_state_.reset(new net::TransportSecurityState);
+
+  return transport_security_state_.get();
+}
+
 uint32 PepperMessageFilter::AddAcceptedTCPSocket(
     int32 routing_id,
     uint32 plugin_dispatcher_id,
@@ -480,6 +487,7 @@ bool PepperMessageFilter::CanUseSocketAPIs(int32 render_id,
       RenderViewHostImpl::FromID(process_id_, render_id);
 
   return pepper_socket_utils::CanUseSocketAPIs(external_plugin,
+                                               true,
                                                params,
                                                render_view_host);
 }

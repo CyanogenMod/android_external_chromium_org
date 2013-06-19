@@ -10,37 +10,40 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "cc/base/cc_export.h"
+#include "cc/output/begin_frame_args.h"
+
+namespace base { class SingleThreadTaskRunner; }
 
 namespace cc {
 
-class Thread;
 class TimeSource;
+class FrameRateController;
 
 class CC_EXPORT FrameRateControllerClient {
- public:
-  // Throttled is true when we have a maximum number of frames pending.
-  virtual void BeginFrame(bool throttled) = 0;
-
  protected:
   virtual ~FrameRateControllerClient() {}
+
+ public:
+  // Throttled is true when we have a maximum number of frames pending.
+  virtual void FrameRateControllerTick(bool throttled,
+                                       const BeginFrameArgs& args) = 0;
 };
 
 class FrameRateControllerTimeSourceAdapter;
 
+// The FrameRateController is used in cases where we self-tick (i.e. BeginFrame
+// is not sent by a parent compositor.
 class CC_EXPORT FrameRateController {
  public:
-  enum {
-    DEFAULT_MAX_FRAMES_PENDING = 2
-  };
-
   explicit FrameRateController(scoped_refptr<TimeSource> timer);
   // Alternate form of FrameRateController with unthrottled frame-rate.
-  explicit FrameRateController(Thread* thread);
+  explicit FrameRateController(base::SingleThreadTaskRunner* task_runner);
   virtual ~FrameRateController();
 
   void SetClient(FrameRateControllerClient* client) { client_ = client; }
 
   void SetActive(bool active);
+  bool IsActive() { return active_; }
 
   // Use the following methods to adjust target frame rate.
   //
@@ -51,9 +54,9 @@ class CC_EXPORT FrameRateController {
   void DidSwapBuffers();
   void DidSwapBuffersComplete();
   void DidAbortAllPendingFrames();
-  void SetMaxFramesPending(int max_frames_pending);  // 0 for unlimited.
-  int MaxFramesPending() const { return max_frames_pending_; }
-  int NumFramesPendingForTesting() const { return num_frames_pending_; }
+  void SetMaxSwapsPending(int max_swaps_pending);  // 0 for unlimited.
+  int MaxSwapsPending() const { return max_swaps_pending_; }
+  int NumSwapsPendingForTesting() const { return num_frames_pending_; }
 
   // This returns null for unthrottled frame-rate.
   base::TimeTicks NextTickTime();
@@ -63,6 +66,7 @@ class CC_EXPORT FrameRateController {
 
   void SetTimebaseAndInterval(base::TimeTicks timebase,
                               base::TimeDelta interval);
+  void SetDeadlineAdjustment(base::TimeDelta delta);
 
  protected:
   friend class FrameRateControllerTimeSourceAdapter;
@@ -73,7 +77,9 @@ class CC_EXPORT FrameRateController {
 
   FrameRateControllerClient* client_;
   int num_frames_pending_;
-  int max_frames_pending_;
+  int max_swaps_pending_;
+  base::TimeDelta interval_;
+  base::TimeDelta deadline_adjustment_;
   scoped_refptr<TimeSource> time_source_;
   scoped_ptr<FrameRateControllerTimeSourceAdapter> time_source_client_adapter_;
   bool active_;
@@ -81,8 +87,9 @@ class CC_EXPORT FrameRateController {
   // Members for unthrottled frame-rate.
   bool is_time_source_throttling_;
   base::WeakPtrFactory<FrameRateController> weak_factory_;
-  Thread* thread_;
+  base::SingleThreadTaskRunner* task_runner_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(FrameRateController);
 };
 

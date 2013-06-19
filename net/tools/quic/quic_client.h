@@ -11,7 +11,7 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/crypto/crypto_handshake.h"
@@ -70,6 +70,9 @@ class QuicClient : public EpollCallbackInterface {
 
   // Wait for events until the stream with the given ID is closed.
   void WaitForStreamToClose(QuicStreamId id);
+
+  // Wait for events until the handshake is confirmed.
+  void WaitForCryptoHandshakeConfirmed();
 
   // Wait up to 50ms, and handle any events which occur.
   // Returns true if there are any outstanding requests.

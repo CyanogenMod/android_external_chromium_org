@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/values.h"
 #include "cc/layers/layer_impl.h"
 #include "ui/base/latency_info.h"
@@ -68,6 +68,7 @@ class CC_EXPORT LayerTreeImpl {
   bool PinchGestureActive() const;
   base::TimeTicks CurrentFrameTimeTicks() const;
   base::Time CurrentFrameTime() const;
+  base::TimeTicks CurrentPhysicalTimeTicks() const;
   void SetNeedsCommit();
 
   // Tree specific methods exposed to layer-impl tree.

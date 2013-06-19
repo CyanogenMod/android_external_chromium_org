@@ -122,6 +122,15 @@ enum {
 
     [window setHasShadow:YES];
     [window setContentView:[notificationController_ view]];
+
+    trackingArea_.reset(
+        [[CrTrackingArea alloc] initWithRect:NSZeroRect
+                                     options:NSTrackingInVisibleRect |
+                                             NSTrackingMouseEnteredAndExited |
+                                             NSTrackingActiveAlways
+                                       owner:self
+                                    userInfo:nil]);
+    [[window contentView] addTrackingArea:trackingArea_.get()];
   }
   return self;
 }
@@ -129,8 +138,11 @@ enum {
 - (void)close {
   if (boundsAnimation_) {
     [boundsAnimation_ stopAnimation];
+    [boundsAnimation_ setDelegate:nil];
     boundsAnimation_.reset();
   }
+  if (trackingArea_.get())
+    [[[self window] contentView] removeTrackingArea:trackingArea_.get()];
   [super close];
   [self performSelectorOnMainThread:@selector(release)
                          withObject:nil
@@ -170,8 +182,10 @@ enum {
 
 - (void)notificationSwipeEnded:(BOOL)ended complete:(BOOL)isComplete {
   swipeGestureEnded_ |= ended;
-  if (swipeGestureEnded_ && isComplete)
+  if (swipeGestureEnded_ && isComplete) {
     messageCenter_->RemoveNotification([self notificationID], /*by_user=*/true);
+    [popupCollection_ onPopupAnimationEnded:[self notificationID]];
+  }
 }
 
 - (void)animationDidEnd:(NSAnimation*)animation {
@@ -252,6 +266,14 @@ enum {
   [boundsAnimation_ setDuration:[popupCollection_ popupAnimationDuration]];
   [boundsAnimation_ setDelegate:self];
   [boundsAnimation_ startAnimation];
+}
+
+- (void)mouseEntered:(NSEvent*)event {
+  messageCenter_->PausePopupTimers();
+}
+
+- (void)mouseExited:(NSEvent*)event {
+  messageCenter_->RestartPopupTimers();
 }
 
 @end

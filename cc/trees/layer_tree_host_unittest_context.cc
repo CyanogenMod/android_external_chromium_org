@@ -1034,8 +1034,8 @@ class LayerTreeHostContextTestLayersNotified
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void TreeActivatedOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    LayerTreeHostContextTest::TreeActivatedOnThread(host_impl);
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    LayerTreeHostContextTest::DidActivateTreeOnThread(host_impl);
 
     FakeContentLayerImpl* root = static_cast<FakeContentLayerImpl*>(
         host_impl->active_tree()->root_layer());
@@ -1576,7 +1576,7 @@ class LayerTreeHostTestCannotCreateIfCannotCreateOutputSurface
                bool delegating_renderer,
                bool impl_side_painting) {
     scoped_ptr<base::Thread> impl_thread;
-    scoped_ptr<cc::Thread> impl_ccthread(NULL);
+    scoped_ptr<cc::Thread> impl_ccthread;
     if (threaded) {
       impl_thread.reset(new base::Thread("LayerTreeTest"));
       impl_ccthread = cc::ThreadImpl::CreateForDifferentThread(

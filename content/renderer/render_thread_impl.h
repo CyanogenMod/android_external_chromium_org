@@ -147,6 +147,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       int64 idle_notification_delay_in_ms) OVERRIDE;
   virtual void ToggleWebKitSharedTimer(bool suspend) OVERRIDE;
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
+  virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
@@ -158,7 +159,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // GpuChannelHostFactory implementation:
   virtual bool IsMainThread() OVERRIDE;
-  virtual bool IsIOThread() OVERRIDE;
   virtual base::MessageLoop* GetMainLoop() OVERRIDE;
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
   virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;

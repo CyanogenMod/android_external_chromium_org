@@ -10,7 +10,7 @@
 #include "base/callback_forward.h"
 #include "chrome/browser/google_apis/base_requests.h"
 #include "chrome/browser/google_apis/drive_api_url_generator.h"
-#include "chrome/browser/google_apis/drive_service_interface.h"
+#include "chrome/browser/google_apis/drive_common_callbacks.h"
 
 namespace net {
 class URLRequestContextGetter;

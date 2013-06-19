@@ -144,6 +144,13 @@ class WorkspaceManagerTest : public test::AshTestBase {
     return shelf_layout_manager()->window_overlaps_shelf();
   }
 
+  bool IsBackgroundVisible(aura::Window* window) {
+    RootWindowController* controller = RootWindowController::ForWindow(window);
+    aura::Window* background =
+        controller->GetContainer(kShellWindowId_DesktopBackgroundContainer);
+    return background->IsVisible();
+  }
+
   Workspace* FindBy(aura::Window* window) const {
     return manager_->FindBy(window);
   }
@@ -299,6 +306,46 @@ TEST_F(WorkspaceManagerTest, CloseLastWindowInWorkspace) {
   EXPECT_TRUE(w1->IsVisible());
 }
 
+TEST_F(WorkspaceManagerTest, BackgroundWithMaximizedWindow) {
+  scoped_ptr<Window> w1(CreateTestWindow());
+  scoped_ptr<Window> w2(CreateTestWindow());
+  scoped_ptr<Window> w3(CreateTestWindow());
+  w1->SetBounds(gfx::Rect(0, 0, 250, 251));
+  w1->Show();
+  w2->SetBounds(gfx::Rect(0, 0, 250, 251));
+  w2->Show();
+  w3->SetBounds(gfx::Rect(0, 0, 250, 251));
+  w3->Show();
+  wm::ActivateWindow(w1.get());
+  wm::ActivateWindow(w2.get());
+  wm::ActivateWindow(w3.get());
+  EXPECT_TRUE(IsBackgroundVisible(w1.get()));
+
+  w2->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
+  EXPECT_FALSE(IsBackgroundVisible(w1.get()));
+
+  w3->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
+  EXPECT_FALSE(IsBackgroundVisible(w1.get()));
+
+  w2->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
+  EXPECT_FALSE(IsBackgroundVisible(w1.get()));
+
+  w3->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
+  EXPECT_TRUE(IsBackgroundVisible(w1.get()));
+
+  w2->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
+  EXPECT_FALSE(IsBackgroundVisible(w1.get()));
+
+  w3->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
+  EXPECT_FALSE(IsBackgroundVisible(w1.get()));
+
+  w2.reset();
+  EXPECT_FALSE(IsBackgroundVisible(w1.get()));
+
+  w3.reset();
+  EXPECT_TRUE(IsBackgroundVisible(w1.get()));
+}
+
 // Assertions around adding a fullscreen window when empty.
 TEST_F(WorkspaceManagerTest, AddFullscreenWindowWhenEmpty) {
   scoped_ptr<Window> w1(CreateTestWindow());
@@ -309,9 +356,10 @@ TEST_F(WorkspaceManagerTest, AddFullscreenWindowWhenEmpty) {
 
   ASSERT_TRUE(w1->layer() != NULL);
   EXPECT_TRUE(w1->layer()->visible());
-  gfx::Rect fullscreen_area = w1->GetRootWindow()->bounds();
-  EXPECT_EQ(fullscreen_area.width(), w1->bounds().width());
-  EXPECT_EQ(fullscreen_area.height(), w1->bounds().height());
+  gfx::Rect work_area(
+      ScreenAsh::GetMaximizedWindowBoundsInParent(w1.get()));
+  EXPECT_EQ(work_area.width(), w1->bounds().width());
+  EXPECT_EQ(work_area.height(), w1->bounds().height());
 
   // Should be 2 workspaces (since we always keep the desktop).
   ASSERT_EQ("0 F1 active=1", StateString());
@@ -338,9 +386,10 @@ TEST_F(WorkspaceManagerTest, FullscreenWithNormalWindow) {
   EXPECT_EQ(w1.get(), workspaces()[0]->window()->children()[0]);
   EXPECT_EQ(w2.get(), workspaces()[1]->window()->children()[0]);
 
-  gfx::Rect fullscreen_area = w1->GetRootWindow()->bounds();
-  EXPECT_EQ(fullscreen_area.width(), w2->bounds().width());
-  EXPECT_EQ(fullscreen_area.height(), w2->bounds().height());
+  gfx::Rect work_area(
+      ScreenAsh::GetMaximizedWindowBoundsInParent(w1.get()));
+  EXPECT_EQ(work_area.width(), w2->bounds().width());
+  EXPECT_EQ(work_area.height(), w2->bounds().height());
 
   // Restore w2, which should then go back to one workspace.
   w2->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);

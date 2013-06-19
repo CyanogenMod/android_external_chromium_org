@@ -43,7 +43,6 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_quota_permission_context.cc \
 	android_webview/browser/aw_pref_store.cc \
 	android_webview/browser/aw_request_interceptor.cc \
-	android_webview/browser/browser_view_renderer_impl.cc \
 	android_webview/browser/find_helper.cc \
 	android_webview/browser/gpu_memory_buffer_impl.cc \
 	android_webview/browser/icon_helper.cc \
@@ -56,20 +55,17 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/net/input_stream_reader.cc \
 	android_webview/browser/renderer_host/aw_render_view_host_ext.cc \
 	android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.cc \
-	android_webview/browser/renderer_host/view_renderer_host.cc \
 	android_webview/common/android_webview_message_generator.cc \
 	android_webview/common/aw_content_client.cc \
 	android_webview/common/aw_hit_test_data.cc \
 	android_webview/common/aw_switches.cc \
 	android_webview/common/render_view_messages.cc \
-	android_webview/common/renderer_picture_map.cc \
 	android_webview/common/url_constants.cc \
 	android_webview/lib/aw_browser_dependency_factory_impl.cc \
 	android_webview/lib/main/aw_main_delegate.cc \
 	android_webview/renderer/aw_content_renderer_client.cc \
 	android_webview/renderer/aw_render_process_observer.cc \
-	android_webview/renderer/aw_render_view_ext.cc \
-	android_webview/renderer/view_renderer.cc
+	android_webview/renderer/aw_render_view_ext.cc
 
 
 # Flags passed to both C and C++ files.
@@ -110,6 +106,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

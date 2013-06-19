@@ -17,8 +17,8 @@
 const int kMarginWidth = 16;
 const int kEntryHeight = 38;
 const int kIconSize = 16;
-const int kIconTextPadding = 10;
-const int kCheckmarkIconPadding = 20;
+const int kIconTextPadding = 8;
+const int kCheckmarkIconPadding = 16;
 
 const int kIntrinsicCheckmarkPadding = 4;  // Padding already provided by Cocoa.
 const int kCorrectedCheckmarkPadding =
@@ -257,6 +257,13 @@ NotifierSettingsDelegate* ShowSettings(NotifierSettingsProvider* provider,
   [scrollView_ setDrawsBackground:NO];
   [scrollView_ setHasHorizontalScroller:NO];
   [scrollView_ setHasVerticalScroller:YES];
+
+  // Scroll to top.
+  NSPoint newScrollOrigin =
+      NSMakePoint(0.0,
+                  NSMaxY([[scrollView_ documentView] frame]) -
+                      NSHeight([[scrollView_ contentView] bounds]));
+  [[scrollView_ documentView] scrollPoint:newScrollOrigin];
 
   // Set final sizes.
   [[self view] setFrame:fullFrame];

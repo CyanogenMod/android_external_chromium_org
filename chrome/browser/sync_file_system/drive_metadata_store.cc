@@ -208,7 +208,7 @@ SyncStatusCode ReadContents(DBContents* contents) {
 
     if (key == kSyncRootDirectoryKey) {
       std::string resource_id = itr->value().ToString();
-      if (!IsDriveAPIEnabled())
+      if (IsDriveAPIDisabled())
         resource_id = drive::AddWapiFolderPrefix(resource_id);
       contents->sync_root_directory_resource_id = resource_id;
       continue;
@@ -223,7 +223,7 @@ SyncStatusCode ReadContents(DBContents* contents) {
       bool success = metadata.ParseFromString(itr->value().ToString());
       DCHECK(success);
 
-      if (!IsDriveAPIEnabled()) {
+      if (IsDriveAPIDisabled()) {
         metadata.set_resource_id(
             drive::AddWapiIdPrefix(metadata.resource_id(), metadata.type()));
       }
@@ -238,9 +238,9 @@ SyncStatusCode ReadContents(DBContents* contents) {
       GURL origin(RemovePrefix(key, kDriveIncrementalSyncOriginKeyPrefix));
       DCHECK(origin.is_valid());
 
-      std::string origin_resource_id = IsDriveAPIEnabled()
-          ? itr->value().ToString()
-          : drive::AddWapiFolderPrefix(itr->value().ToString());
+      std::string origin_resource_id = IsDriveAPIDisabled()
+          ? drive::AddWapiFolderPrefix(itr->value().ToString())
+          : itr->value().ToString();
 
       DCHECK(!ContainsKey(contents->incremental_sync_origins, origin));
       contents->incremental_sync_origins[origin] = origin_resource_id;
@@ -251,9 +251,9 @@ SyncStatusCode ReadContents(DBContents* contents) {
       GURL origin(RemovePrefix(key, kDriveDisabledOriginKeyPrefix));
       DCHECK(origin.is_valid());
 
-      std::string origin_resource_id = IsDriveAPIEnabled()
-          ? itr->value().ToString()
-          : drive::AddWapiFolderPrefix(itr->value().ToString());
+      std::string origin_resource_id = IsDriveAPIDisabled()
+          ? drive::AddWapiFolderPrefix(itr->value().ToString())
+          : itr->value().ToString();
 
       DCHECK(!ContainsKey(contents->disabled_origins, origin));
       contents->disabled_origins[origin] = origin_resource_id;
@@ -441,7 +441,7 @@ void DriveMetadataStore::UpdateEntry(
     result.first->second = metadata;
 
   std::string value;
-  if (!IsDriveAPIEnabled()) {
+  if (IsDriveAPIDisabled()) {
     DriveMetadata metadata_in_db(metadata);
     metadata_in_db.set_resource_id(
         drive::RemoveWapiIdPrefix(metadata.resource_id()));
@@ -646,11 +646,15 @@ void DriveMetadataStore::DidUpdateOrigin(
 void DriveMetadataStore::WriteToDB(scoped_ptr<leveldb::WriteBatch> batch,
                                    const SyncStatusCallback& callback) {
   base::PostTaskAndReplyWithResult(
-      file_task_runner_, FROM_HERE,
-      base::Bind(&leveldb::DB::Write, base::Unretained(db_.get()),
-                 leveldb::WriteOptions(), base::Owned(batch.release())),
+      file_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&leveldb::DB::Write,
+                 base::Unretained(db_.get()),
+                 leveldb::WriteOptions(),
+                 base::Owned(batch.release())),
       base::Bind(&DriveMetadataStore::UpdateDBStatusAndInvokeCallback,
-                 AsWeakPtr(), callback));
+                 AsWeakPtr(),
+                 callback));
 }
 
 void DriveMetadataStore::UpdateDBStatus(SyncStatusCode status) {
@@ -662,7 +666,7 @@ void DriveMetadataStore::UpdateDBStatus(SyncStatusCode status) {
     util::Log(logging::LOG_WARNING,
               FROM_HERE,
               "DriveMetadataStore turned to wrong state: %s",
-              SyncStatusCodeToString(status).c_str());
+              SyncStatusCodeToString(status));
     return;
   }
   db_status_ = SYNC_STATUS_OK;
@@ -781,9 +785,9 @@ void DriveMetadataStore::GetFileMetadataMap(
       const DriveMetadata& metadata = itr->second;
       const FileType type = DriveTypeToFileMetadataType(metadata.type());
       std::ostringstream details;
-      details << "resource_id=" << metadata.resource_id() << "\n"
-              << "md5_checksum=" << metadata.md5_checksum() << "\n"
-              << "to_be_fetched=" << metadata.to_be_fetched() << "\n";
+      details << "resource_id=" << metadata.resource_id() << ", "
+              << "md5_checksum=" << metadata.md5_checksum() << ", "
+              << "to_be_fetched=" << metadata.to_be_fetched();
       FileMetadata file_metadata(title, type, details.str());
       (*output_map)[origin][itr->first] = file_metadata;
     }

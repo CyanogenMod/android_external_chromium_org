@@ -9,7 +9,7 @@
 #include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/google_apis/fake_drive_service.h"
+#include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -22,7 +22,8 @@ class DownloadOperationTest : public OperationTestBase {
     OperationTestBase::SetUp();
 
     operation_.reset(new DownloadOperation(
-        blocking_task_runner(), observer(), scheduler(), metadata(), cache()));
+        blocking_task_runner(), observer(), scheduler(), metadata(), cache(),
+        temp_dir()));
   }
 
   scoped_ptr<DownloadOperation> operation_;
@@ -403,11 +404,17 @@ TEST_F(DownloadOperationTest, EnsureFileDownloadedByPath_DirtyCache) {
 
   // Store the file as a cache, marking it to be dirty.
   FileError error = FILE_ERROR_FAILED;
-  cache()->StoreLocallyModifiedOnUIThread(
+  cache()->StoreOnUIThread(
       src_entry.resource_id(),
       src_entry.file_specific_info().md5(),
       dirty_file,
       internal::FileCache::FILE_OPERATION_COPY,
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  google_apis::test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error);
+  cache()->MarkDirtyOnUIThread(
+      src_entry.resource_id(),
+      src_entry.file_specific_info().md5(),
       google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);

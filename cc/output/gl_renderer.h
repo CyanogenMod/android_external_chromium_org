@@ -95,9 +95,10 @@ class CC_EXPORT GLRenderer
   }
 
   void GetFramebufferPixelsAsync(gfx::Rect rect,
-                                 bool flipped_y,
                                  scoped_ptr<CopyOutputRequest> request);
-  bool GetFramebufferTexture(ScopedResource* resource, gfx::Rect device_rect);
+  void GetFramebufferTexture(unsigned texture_id,
+                             unsigned texture_format,
+                             gfx::Rect device_rect);
   void ReleaseRenderPassTextures();
 
   virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) OVERRIDE;
@@ -170,7 +171,8 @@ class CC_EXPORT GLRenderer
   void CopyTextureToFramebuffer(const DrawingFrame* frame,
                                 int texture_id,
                                 gfx::Rect rect,
-                                const gfx::Transform& draw_matrix);
+                                const gfx::Transform& draw_matrix,
+                                bool flip_vertically);
 
   // Check if quad needs antialiasing and if so, inflate the quad and
   // fill edge array for fragment shader.  local_quad is set to
@@ -197,20 +199,20 @@ class CC_EXPORT GLRenderer
       AsyncGetFramebufferPixelsCleanupCallback;
   void DoGetFramebufferPixels(
       uint8* pixels,
-      gfx::Rect rect,
-      bool flipped_y,
+      gfx::Rect window_rect,
       const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback);
   void FinishedReadback(
       const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
       unsigned source_buffer,
       uint8_t* dest_pixels,
-      gfx::Size size,
-      bool flipped_y);
-  void PassOnSkBitmap(
-      scoped_ptr<SkBitmap> bitmap,
-      scoped_ptr<SkAutoLockPixels> lock,
-      scoped_ptr<CopyOutputRequest> request,
-      bool success);
+      gfx::Size size);
+  void PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
+                      scoped_ptr<SkAutoLockPixels> lock,
+                      scoped_ptr<CopyOutputRequest> request,
+                      bool success);
+  void DeleteTextureReleaseCallback(unsigned texture_id,
+                                    unsigned sync_point,
+                                    bool lost_resource);
 
   void ReinitializeGrCanvas();
   void ReinitializeGLState();
@@ -265,17 +267,18 @@ class CC_EXPORT GLRenderer
                          FragmentShaderRGBATexAlpha> RenderPassProgram;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexAlphaMask> RenderPassMaskProgram;
-  typedef ProgramBinding<VertexShaderQuadTex, FragmentShaderRGBATexAlphaAA>
-      RenderPassProgramAA;
-  typedef ProgramBinding<VertexShaderQuadTex, FragmentShaderRGBATexAlphaMaskAA>
+  typedef ProgramBinding<VertexShaderQuadTexTransform,
+                         FragmentShaderRGBATexAlphaAA> RenderPassProgramAA;
+  typedef ProgramBinding<VertexShaderQuadTexTransform,
+                         FragmentShaderRGBATexAlphaMaskAA>
       RenderPassMaskProgramAA;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexColorMatrixAlpha>
       RenderPassColorMatrixProgram;
-  typedef ProgramBinding<VertexShaderQuadTex,
+  typedef ProgramBinding<VertexShaderQuadTexTransform,
                          FragmentShaderRGBATexAlphaMaskColorMatrixAA>
       RenderPassMaskColorMatrixProgramAA;
-  typedef ProgramBinding<VertexShaderQuadTex,
+  typedef ProgramBinding<VertexShaderQuadTexTransform,
                          FragmentShaderRGBATexAlphaColorMatrixAA>
       RenderPassColorMatrixProgramAA;
   typedef ProgramBinding<VertexShaderPosTexTransform,
@@ -431,6 +434,8 @@ class CC_EXPORT GLRenderer
 
   SkBitmap on_demand_tile_raster_bitmap_;
   ResourceProvider::ResourceId on_demand_tile_raster_resource_id_;
+
+  base::WeakPtrFactory<GLRenderer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GLRenderer);
 };

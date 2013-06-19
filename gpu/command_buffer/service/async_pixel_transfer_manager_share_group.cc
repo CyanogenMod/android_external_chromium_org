@@ -99,7 +99,7 @@ class TransferThread : public base::Thread {
       return;
     }
 
-    surface_ = gfx::GLSurface::CreateOffscreenGLSurface(false, gfx::Size(1, 1));
+    surface_ = gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1));
     if (!surface_.get()) {
       LOG(ERROR) << "Unable to create GLSurface";
       caller_wait->Signal();
@@ -131,7 +131,7 @@ base::LazyInstance<TransferThread>::Leaky
     g_transfer_thread = LAZY_INSTANCE_INITIALIZER;
 
 base::MessageLoopProxy* transfer_message_loop_proxy() {
-  return g_transfer_thread.Pointer()->message_loop_proxy();
+  return g_transfer_thread.Pointer()->message_loop_proxy().get();
 }
 
 SafeSharedMemoryPool* safe_shared_memory_pool() {
@@ -151,7 +151,6 @@ class TransferStateInternal
     define_params_ = define_params;
   }
 
-  // Implement AsyncPixelTransferState:
   bool TransferIsInProgress() {
     return !transfer_completion_.IsSignaled();
   }
@@ -183,15 +182,15 @@ class TransferStateInternal
     transfer_completion_.Wait();
   }
 
-  GLuint texture_id() { return texture_id_; }
-
   void SetBindCallback(base::Closure bind_callback) {
     bind_callback_ = bind_callback;
   }
 
-  void PerformAsyncTexImage2D(AsyncTexImage2DParams tex_params,
-                              AsyncMemoryParams mem_params,
-                              ScopedSafeSharedMemory* safe_shared_memory) {
+  void PerformAsyncTexImage2D(
+      AsyncTexImage2DParams tex_params,
+      AsyncMemoryParams mem_params,
+      ScopedSafeSharedMemory* safe_shared_memory,
+      scoped_refptr<AsyncPixelTransferUploadStats> texture_upload_stats) {
     base::AutoLock locked(upload_lock_);
     if (cancel_upload_flag_.IsSet())
       return;
@@ -203,6 +202,10 @@ class TransferStateInternal
                  "height",
                  tex_params.height);
     DCHECK_EQ(0, tex_params.level);
+
+    base::TimeTicks begin_time;
+    if (texture_upload_stats.get())
+      begin_time = base::TimeTicks::HighResNow();
 
     void* data =
         AsyncPixelTransferDelegate::GetAddress(safe_shared_memory, mem_params);
@@ -223,6 +226,11 @@ class TransferStateInternal
     }
 
     MarkAsCompleted();
+
+    if (texture_upload_stats.get()) {
+      texture_upload_stats->AddUpload(base::TimeTicks::HighResNow() -
+                                      begin_time);
+    }
   }
 
   void PerformAsyncTexSubImage2D(
@@ -301,94 +309,63 @@ class TransferStateInternal
 
 }  // namespace
 
-// ShareGroup needs thread-safe ref-counting, so this just wraps
-// an internal thread-safe ref-counted state object.
-class AsyncTransferStateImpl : public AsyncPixelTransferState {
- public:
-  AsyncTransferStateImpl(GLuint texture_id,
-                         const AsyncTexImage2DParams& define_params)
-      : internal_(new TransferStateInternal(texture_id, define_params)) {}
-
-  virtual bool TransferIsInProgress() OVERRIDE {
-      return internal_->TransferIsInProgress();
-  }
-
-  TransferStateInternal* internal() { return internal_.get(); }
-
- private:
-  virtual ~AsyncTransferStateImpl() {
-    TRACE_EVENT0("gpu", " ~AsyncTransferStateImpl");
-    base::AutoLock locked(*internal_->upload_lock());
-    internal_->cancel_upload_flag()->Set();
-  }
-
-  scoped_refptr<TransferStateInternal> internal_;
-};
-
-class AsyncPixelTransferDelegateShareGroup : public AsyncPixelTransferDelegate {
+class AsyncPixelTransferDelegateShareGroup
+    : public AsyncPixelTransferDelegate,
+      public base::SupportsWeakPtr<AsyncPixelTransferDelegateShareGroup> {
  public:
   AsyncPixelTransferDelegateShareGroup(
-      gfx::GLContext* context,
-      AsyncPixelTransferManagerShareGroup::SharedState* shared_state);
+      AsyncPixelTransferManagerShareGroup::SharedState* shared_state,
+      GLuint texture_id,
+      const AsyncTexImage2DParams& define_params);
   virtual ~AsyncPixelTransferDelegateShareGroup();
 
+  void BindTransfer() { state_->BindTransfer(); }
+
   // Implement AsyncPixelTransferDelegate:
-  virtual AsyncPixelTransferState* CreatePixelTransferState(
-      GLuint texture_id,
-      const AsyncTexImage2DParams& define_params) OVERRIDE;
   virtual void AsyncTexImage2D(
-      AsyncPixelTransferState* state,
       const AsyncTexImage2DParams& tex_params,
       const AsyncMemoryParams& mem_params,
       const base::Closure& bind_callback) OVERRIDE;
   virtual void AsyncTexSubImage2D(
-      AsyncPixelTransferState* state,
       const AsyncTexSubImage2DParams& tex_params,
       const AsyncMemoryParams& mem_params) OVERRIDE;
-  virtual void WaitForTransferCompletion(
-      AsyncPixelTransferState* state) OVERRIDE;
+  virtual bool TransferIsInProgress() OVERRIDE;
+  virtual void WaitForTransferCompletion() OVERRIDE;
 
  private:
   // A raw pointer is safe because the SharedState is owned by the Manager,
   // which owns this Delegate.
   AsyncPixelTransferManagerShareGroup::SharedState* shared_state_;
+  scoped_refptr<TransferStateInternal> state_;
 
   DISALLOW_COPY_AND_ASSIGN(AsyncPixelTransferDelegateShareGroup);
 };
 
 AsyncPixelTransferDelegateShareGroup::AsyncPixelTransferDelegateShareGroup(
-    gfx::GLContext* context,
-    AsyncPixelTransferManagerShareGroup::SharedState* shared_state)
-    : shared_state_(shared_state) {
-  g_transfer_thread.Pointer()->InitializeOnMainThread(context);
-}
+    AsyncPixelTransferManagerShareGroup::SharedState* shared_state,
+    GLuint texture_id,
+    const AsyncTexImage2DParams& define_params)
+    : shared_state_(shared_state),
+      state_(new TransferStateInternal(texture_id, define_params)) {}
 
 AsyncPixelTransferDelegateShareGroup::~AsyncPixelTransferDelegateShareGroup() {
+  TRACE_EVENT0("gpu", " ~AsyncPixelTransferDelegateShareGroup");
+  base::AutoLock locked(*state_->upload_lock());
+  state_->cancel_upload_flag()->Set();
 }
 
-AsyncPixelTransferState*
-    AsyncPixelTransferDelegateShareGroup::
-        CreatePixelTransferState(
-            GLuint texture_id,
-            const AsyncTexImage2DParams& define_params) {
-  return static_cast<AsyncPixelTransferState*>(
-      new AsyncTransferStateImpl(texture_id, define_params));
+bool AsyncPixelTransferDelegateShareGroup::TransferIsInProgress() {
+  return state_->TransferIsInProgress();
 }
 
-void AsyncPixelTransferDelegateShareGroup::WaitForTransferCompletion(
-      AsyncPixelTransferState* transfer_state) {
-  scoped_refptr<TransferStateInternal> state =
-      static_cast<AsyncTransferStateImpl*>(transfer_state)->internal();
-  DCHECK(state.get());
-  DCHECK(state->texture_id());
-
-  if (state->TransferIsInProgress()) {
+void AsyncPixelTransferDelegateShareGroup::WaitForTransferCompletion() {
+  if (state_->TransferIsInProgress()) {
 #if defined(OS_ANDROID) || defined(OS_LINUX)
     g_transfer_thread.Pointer()->SetPriority(base::kThreadPriority_Display);
 #endif
 
-    state->WaitForTransferCompletion();
-    DCHECK(!state->TransferIsInProgress());
+    state_->WaitForTransferCompletion();
+    DCHECK(!state_->TransferIsInProgress());
 
 #if defined(OS_ANDROID) || defined(OS_LINUX)
     g_transfer_thread.Pointer()->SetPriority(base::kThreadPriority_Background);
@@ -397,28 +374,23 @@ void AsyncPixelTransferDelegateShareGroup::WaitForTransferCompletion(
 }
 
 void AsyncPixelTransferDelegateShareGroup::AsyncTexImage2D(
-    AsyncPixelTransferState* transfer_state,
     const AsyncTexImage2DParams& tex_params,
     const AsyncMemoryParams& mem_params,
     const base::Closure& bind_callback) {
-  scoped_refptr<TransferStateInternal> state =
-      static_cast<AsyncTransferStateImpl*>(transfer_state)->internal();
   DCHECK(mem_params.shared_memory);
   DCHECK_LE(mem_params.shm_data_offset + mem_params.shm_data_size,
             mem_params.shm_size);
-  DCHECK(state.get());
-  DCHECK(state->texture_id());
-  DCHECK(!state->TransferIsInProgress());
+  DCHECK(!state_->TransferIsInProgress());
   DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), tex_params.target);
   DCHECK_EQ(tex_params.level, 0);
 
   // Mark the transfer in progress and save the late bind
   // callback, so we can notify the client when it is bound.
-  shared_state_->pending_allocations.push_back(transfer_state->AsWeakPtr());
-  state->SetBindCallback(bind_callback);
+  shared_state_->pending_allocations.push_back(AsWeakPtr());
+  state_->SetBindCallback(bind_callback);
 
   // Mark the transfer in progress.
-  state->MarkAsTransferIsInProgress();
+  state_->MarkAsTransferIsInProgress();
 
   // Duplicate the shared memory so there is no way we can get
   // a use-after-free of the raw pixels.
@@ -426,26 +398,22 @@ void AsyncPixelTransferDelegateShareGroup::AsyncTexImage2D(
       FROM_HERE,
       base::Bind(
           &TransferStateInternal::PerformAsyncTexImage2D,
-          state,
+          state_,
           tex_params,
           mem_params,
           base::Owned(new ScopedSafeSharedMemory(safe_shared_memory_pool(),
                                                  mem_params.shared_memory,
-                                                 mem_params.shm_size))));
+                                                 mem_params.shm_size)),
+          shared_state_->texture_upload_stats));
 }
 
 void AsyncPixelTransferDelegateShareGroup::AsyncTexSubImage2D(
-    AsyncPixelTransferState* transfer_state,
     const AsyncTexSubImage2DParams& tex_params,
     const AsyncMemoryParams& mem_params) {
   TRACE_EVENT2("gpu", "AsyncTexSubImage2D",
                "width", tex_params.width,
                "height", tex_params.height);
-  scoped_refptr<TransferStateInternal> state =
-      static_cast<AsyncTransferStateImpl*>(transfer_state)->internal();
-
-  DCHECK(state->texture_id());
-  DCHECK(!state->TransferIsInProgress());
+  DCHECK(!state_->TransferIsInProgress());
   DCHECK(mem_params.shared_memory);
   DCHECK_LE(mem_params.shm_data_offset + mem_params.shm_data_size,
             mem_params.shm_size);
@@ -453,7 +421,7 @@ void AsyncPixelTransferDelegateShareGroup::AsyncTexSubImage2D(
   DCHECK_EQ(tex_params.level, 0);
 
   // Mark the transfer in progress.
-  state->MarkAsTransferIsInProgress();
+  state_->MarkAsTransferIsInProgress();
 
   // Duplicate the shared memory so there are no way we can get
   // a use-after-free of the raw pixels.
@@ -461,7 +429,7 @@ void AsyncPixelTransferDelegateShareGroup::AsyncTexSubImage2D(
       FROM_HERE,
       base::Bind(
           &TransferStateInternal::PerformAsyncTexSubImage2D,
-          state,
+          state_,
           tex_params,
           mem_params,
           base::Owned(new ScopedSafeSharedMemory(safe_shared_memory_pool(),
@@ -477,9 +445,9 @@ AsyncPixelTransferManagerShareGroup::SharedState::SharedState()
 AsyncPixelTransferManagerShareGroup::SharedState::~SharedState() {}
 
 AsyncPixelTransferManagerShareGroup::AsyncPixelTransferManagerShareGroup(
-    gfx::GLContext* context)
-    : delegate_(new AsyncPixelTransferDelegateShareGroup(context,
-                                                         &shared_state_)) {}
+    gfx::GLContext* context) {
+  g_transfer_thread.Pointer()->InitializeOnMainThread(context);
+}
 
 AsyncPixelTransferManagerShareGroup::~AsyncPixelTransferManagerShareGroup() {}
 
@@ -491,11 +459,10 @@ void AsyncPixelTransferManagerShareGroup::BindCompletedAsyncTransfers() {
       shared_state_.pending_allocations.pop_front();
       continue;
     }
-    scoped_refptr<TransferStateInternal> state =
-        static_cast<AsyncTransferStateImpl*>
-            (shared_state_.pending_allocations.front().get())->internal();
+    AsyncPixelTransferDelegateShareGroup* delegate =
+        shared_state_.pending_allocations.front().get();
     // Terminate early, as all transfers finish in order, currently.
-    if (state->TransferIsInProgress())
+    if (delegate->TransferIsInProgress())
       break;
 
     if (!texture_binder)
@@ -503,7 +470,7 @@ void AsyncPixelTransferManagerShareGroup::BindCompletedAsyncTransfers() {
 
     // Used to set tex info from the gles2 cmd decoder once upload has
     // finished (it'll bind the texture and call a callback).
-    state->BindTransfer();
+    delegate->BindTransfer();
 
     shared_state_.pending_allocations.pop_front();
   }
@@ -547,8 +514,11 @@ bool AsyncPixelTransferManagerShareGroup::NeedsProcessMorePendingTransfers() {
 }
 
 AsyncPixelTransferDelegate*
-AsyncPixelTransferManagerShareGroup::GetAsyncPixelTransferDelegate() {
-  return delegate_.get();
+AsyncPixelTransferManagerShareGroup::CreatePixelTransferDelegateImpl(
+    gles2::TextureRef* ref,
+    const AsyncTexImage2DParams& define_params) {
+  return new AsyncPixelTransferDelegateShareGroup(
+      &shared_state_, ref->service_id(), define_params);
 }
 
 }  // namespace gpu

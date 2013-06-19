@@ -85,6 +85,7 @@ using ::testing::_;
 using content::BrowserThread;
 
 const char kTrue[] = "true";
+const char kFalse[] = "false";
 const char kDomain[] = "domain.com";
 const char kUsername[] = "user@domain.com";
 const char kMode[] = "enterprise";
@@ -92,6 +93,7 @@ const char kDeviceId[] = "100200300";
 const char kUsernameOtherDomain[] = "user@other.com";
 const char kAttributeOwned[] = "enterprise.owned";
 const char kAttributeOwner[] = "enterprise.user";
+const char kAttributeConsumerKiosk[] = "consumer.app_kiosk_enabled";
 const char kAttrEnterpriseDomain[] = "enterprise.domain";
 const char kAttrEnterpriseMode[] = "enterprise.mode";
 const char kAttrEnterpriseDeviceId[] = "enterprise.device_id";
@@ -169,7 +171,6 @@ class LoginUtilsTest : public testing::Test,
         mock_input_method_manager_(NULL),
         mock_async_method_caller_(NULL),
         connector_(NULL),
-        cryptohome_(NULL),
         prepared_profile_(NULL) {}
 
   virtual void SetUp() OVERRIDE {
@@ -254,6 +255,9 @@ class LoginUtilsTest : public testing::Test,
         .WillRepeatedly(Return(true));
     EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeOwned, _))
         .WillRepeatedly(DoAll(SetArgPointee<1>(kTrue),
+                              Return(true)));
+    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeConsumerKiosk, _))
+        .WillRepeatedly(DoAll(SetArgPointee<1>(kFalse),
                               Return(true)));
     EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeOwner, _))
         .WillRepeatedly(DoAll(SetArgPointee<1>(kUsername),
@@ -732,4 +736,4 @@ INSTANTIATE_TEST_CASE_P(
 
 }  // namespace
 
-}
+}  // namespace chromeos

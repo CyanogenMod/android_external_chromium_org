@@ -126,9 +126,22 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
     sandbox_binary = LINUX_SANDBOX_PATH;
 #endif
 
+  const bool want_setuid_sandbox =
+      !parsed_command_line.HasSwitch(switches::kNoSandbox) &&
+      !parsed_command_line.HasSwitch(switches::kDisableSetuidSandbox);
+
+  if (want_setuid_sandbox && !sandbox_binary) {
+    // TODO(jln): make this fatal (crbug.com/245376).
+    LOG(ERROR) << "Running without the SUID sandbox! See "
+        "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
+        "for more information on developing with the sandbox on.\n"
+        "This check will be made FATAL. Do it!";
+  }
+
   std::string sandbox_cmd;
-  if (sandbox_binary && !parsed_command_line.HasSwitch(switches::kNoSandbox))
+  if (want_setuid_sandbox && sandbox_binary) {
     sandbox_cmd = sandbox_binary;
+  }
 
   // Tickle the sandbox host and zygote host so they fork now.
   RenderSandboxHostLinux::GetInstance()->Init(sandbox_cmd);
@@ -811,7 +824,6 @@ void BrowserMainLoop::BrowserThreadsStarted() {
   // Initialize the GpuDataManager before we set up the MessageLoops because
   // otherwise we'll trigger the assertion about doing IO on the UI thread.
   GpuDataManagerImpl::GetInstance()->Initialize();
-#endif  // !OS_IOS
 
   {
     TRACE_EVENT0("startup",
@@ -819,7 +831,6 @@ void BrowserMainLoop::BrowserThreadsStarted() {
     speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl());
   }
 
-#if !defined(OS_IOS)
   // Alert the clipboard class to which threads are allowed to access the
   // clipboard:
   std::vector<base::PlatformThreadId> allowed_clipboard_threads;

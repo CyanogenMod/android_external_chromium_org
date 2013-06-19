@@ -15,7 +15,7 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/path_service.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/webkit_resources.h"
 #include "ui/base/resource/data_pack.h"
@@ -104,15 +104,14 @@ void AfterInitialize(bool unit_test_mode) {
   base::FilePath resources_pak_path;
   if (unit_test_mode) {
     PathService::Get(base::DIR_EXE, &resources_pak_path);
-    resources_pak_path = resources_pak_path.Append("DumpRenderTree.app")
+    resources_pak_path = resources_pak_path.Append("Content Shell.app")
         .Append("Contents")
+        .Append("Frameworks")
+        .Append("Content Shell Framework.framework")
         .Append("Resources")
-        .Append("DumpRenderTree.pak");
+        .Append("content_shell.pak");
   } else {
-    NSString* resource_path =
-        [base::mac::FrameworkBundle() pathForResource:@"DumpRenderTree"
-                                               ofType:@"pak"];
-    resources_pak_path = base::FilePath([resource_path fileSystemRepresentation]);
+    NOTREACHED();
   }
   if (!g_resource_data_pack->LoadFromPath(resources_pak_path)) {
     LOG(FATAL) << "failed to load DumpRenderTree.pak";

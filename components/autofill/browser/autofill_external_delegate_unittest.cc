@@ -10,11 +10,12 @@
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/browser/autofill_manager.h"
+#include "components/autofill/browser/test_autofill_driver.h"
 #include "components/autofill/browser/test_autofill_external_delegate.h"
 #include "components/autofill/browser/test_autofill_manager_delegate.h"
-#include "components/autofill/common/form_data.h"
-#include "components/autofill/common/form_field_data.h"
-#include "components/autofill/common/password_form_fill_data.h"
+#include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/password_form_fill_data.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
@@ -52,8 +53,9 @@ class MockAutofillManagerDelegate
  public:
   MockAutofillManagerDelegate() {}
 
-  MOCK_METHOD6(ShowAutofillPopup,
+  MOCK_METHOD7(ShowAutofillPopup,
                void(const gfx::RectF& element_bounds,
+                    base::i18n::TextDirection text_direction,
                     const std::vector<base::string16>& values,
                     const std::vector<base::string16>& labels,
                     const std::vector<base::string16>& icons,
@@ -68,11 +70,11 @@ class MockAutofillManagerDelegate
 
 class MockAutofillManager : public AutofillManager {
  public:
-  MockAutofillManager(content::WebContents* web_contents,
+  MockAutofillManager(AutofillDriver* driver,
                       MockAutofillManagerDelegate* delegate)
       // Force to use the constructor designated for unit test, but we don't
       // really need personal_data in this test so we pass a NULL pointer.
-      : AutofillManager(web_contents, delegate, NULL) {
+      : AutofillManager(driver, delegate, NULL) {
   }
   virtual ~MockAutofillManager() {}
 
@@ -93,8 +95,10 @@ class AutofillExternalDelegateUnitTest
  protected:
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
+    autofill_driver_.reset(new TestAutofillDriver(web_contents()));
     autofill_manager_.reset(
-        new MockAutofillManager(web_contents(), &manager_delegate_));
+        new MockAutofillManager(autofill_driver_.get(),
+                                &manager_delegate_));
     external_delegate_.reset(
         new testing::NiceMock<MockAutofillExternalDelegate>(
             web_contents(),
@@ -108,6 +112,7 @@ class AutofillExternalDelegateUnitTest
     // be destroyed at the destruction of the WebContents.
     autofill_manager_.reset();
     external_delegate_.reset();
+    autofill_driver_.reset();
     ChromeRenderViewHostTestHarness::TearDown();
   }
 
@@ -123,6 +128,7 @@ class AutofillExternalDelegateUnitTest
   }
 
   MockAutofillManagerDelegate manager_delegate_;
+  scoped_ptr<AutofillDriver> autofill_driver_;
   scoped_ptr<MockAutofillManager> autofill_manager_;
   scoped_ptr<testing::NiceMock<MockAutofillExternalDelegate> >
       external_delegate_;
@@ -135,7 +141,7 @@ TEST_F(AutofillExternalDelegateUnitTest, TestExternalDelegateVirtualCalls) {
   // The enums must be cast to ints to prevent compile errors on linux_rel.
   EXPECT_CALL(manager_delegate_,
               ShowAutofillPopup(
-                  _, _, _, _,
+                  _, _, _, _, _,
                   testing::ElementsAre(
                       kAutofillProfileId,
                       static_cast<int>(WebAutofillClient::MenuItemIDSeparator),
@@ -181,7 +187,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateDataList) {
   // The enums must be cast to ints to prevent compile errors on linux_rel.
   EXPECT_CALL(manager_delegate_,
               ShowAutofillPopup(
-                  _, _, _, _,
+                  _, _, _, _, _,
                   testing::ElementsAre(
                       static_cast<int>(
                           WebAutofillClient::MenuItemIDDataListEntry),
@@ -208,7 +214,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateDataList) {
   // The enum must be cast to an int to prevent compile errors on linux_rel.
   EXPECT_CALL(manager_delegate_,
               ShowAutofillPopup(
-                  _, _, _, _,
+                  _, _, _, _, _,
                   testing::ElementsAre(
                       static_cast<int>(
                           WebAutofillClient::MenuItemIDDataListEntry)),
@@ -232,7 +238,7 @@ TEST_F(AutofillExternalDelegateUnitTest, AutofillWarnings) {
   // The enums must be cast to ints to prevent compile errors on linux_rel.
   EXPECT_CALL(manager_delegate_,
               ShowAutofillPopup(
-                  _, _, _, _,
+                  _, _, _, _, _,
                   testing::ElementsAre(
                       static_cast<int>(
                           WebAutofillClient::MenuItemIDWarningMessage)),
@@ -283,7 +289,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateClearPreviewedForm) {
 // Test that the popup is hidden once we are done editing the autofill field.
 TEST_F(AutofillExternalDelegateUnitTest,
        ExternalDelegateHidePopupAfterEditing) {
-  EXPECT_CALL(manager_delegate_, ShowAutofillPopup(_, _, _, _, _, _));
+  EXPECT_CALL(manager_delegate_, ShowAutofillPopup(_, _, _, _, _, _, _));
   autofill::GenerateTestAutofillPopup(external_delegate_.get());
 
   EXPECT_CALL(manager_delegate_, HideAutofillPopup());
@@ -311,7 +317,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegatePasswordSuggestions) {
   // The enums must be cast to ints to prevent compile errors on linux_rel.
   EXPECT_CALL(manager_delegate_,
               ShowAutofillPopup(
-                  _, _, _, _,
+                  _, _, _, _, _,
                   testing::ElementsAre(
                       static_cast<int>(
                            WebAutofillClient::MenuItemIDPasswordEntry)),

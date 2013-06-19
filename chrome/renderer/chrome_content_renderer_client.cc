@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/child_process_logging.h"
@@ -26,6 +26,7 @@
 #include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 #include "chrome/common/external_ipc_fuzzer.h"
 #include "chrome/common/localized_error.h"
+#include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/benchmarking_extension.h"
@@ -79,15 +80,16 @@
 #include "grit/renderer_resources.h"
 #include "ipc/ipc_sync_channel.h"
 #include "net/base/net_errors.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
+#include "ppapi/shared_impl/ppapi_switches.h"
+#include "third_party/WebKit/public/web/WebCache.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -202,12 +204,23 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
   return false;
 }
 
+#if defined(ENABLE_PLUGINS)
+const char* kPredefinedAllowedFileHandleOrigins[] = {
+  "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see crbug.com/234789
+};
+#endif
+
 }  // namespace
 
 namespace chrome {
 
 ChromeContentRendererClient::ChromeContentRendererClient() {
   g_current_client = this;
+
+#if defined(ENABLE_PLUGINS)
+  for (size_t i = 0; i < arraysize(kPredefinedAllowedFileHandleOrigins); ++i)
+    allowed_file_handle_origins_.insert(kPredefinedAllowedFileHandleOrigins[i]);
+#endif
 }
 
 ChromeContentRendererClient::~ChromeContentRendererClient() {
@@ -558,47 +571,14 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         break;
       }
       case ChromeViewHostMsg_GetPluginInfo_Status::kAllowed: {
-        const char* kNaClMimeType = "application/x-nacl";
-        const bool is_nacl_mime_type = actual_mime_type == kNaClMimeType;
-        const bool is_nacl_plugin =
-            plugin.name ==
-            ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName);
-        bool is_nacl_unrestricted;
-        if (is_nacl_plugin) {
-          is_nacl_unrestricted = CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kEnableNaCl);
-        } else {
-          // If this is an external plugin that handles the NaCl mime type, we
-          // allow Native Client, so Native Client's integration tests work.
-          is_nacl_unrestricted = true;
-        }
-        if (is_nacl_plugin || is_nacl_mime_type) {
-          GURL manifest_url;
-          GURL app_url;
-          if (is_nacl_mime_type) {
-            // Normal NaCl embed. The app URL is the page URL.
-            manifest_url = url;
-            app_url = frame->top()->document().url();
-          } else {
-            // NaCl is being invoked as a content handler. Look up the NaCl
-            // module using the MIME type. The app URL is the manifest URL.
-            manifest_url = GetNaClContentHandlerURL(actual_mime_type, plugin);
-            app_url = manifest_url;
-          }
-          const Extension* extension =
-              g_current_client->extension_dispatcher_->extensions()->
-                  GetExtensionOrAppByURL(ExtensionURLInfo(manifest_url));
-          if (!IsNaClAllowed(manifest_url,
-                             app_url,
-                             is_nacl_unrestricted,
-                             extension,
-                             &params)) {
+        const char* kPnaclMimeType = "application/x-pnacl";
+        if (actual_mime_type == kPnaclMimeType) {
+          if (!CommandLine::ForCurrentProcess()->HasSwitch(
+                  switches::kEnablePnacl)) {
             frame->addMessageToConsole(
                 WebConsoleMessage(
                     WebConsoleMessage::LevelError,
-                    "Only unpacked extensions and apps installed from the "
-                    "Chrome Web Store can load NaCl modules without enabling "
-                    "Native Client in about:flags."));
+                    "Portable Native Client must be enabled in about:flags."));
             placeholder = PluginPlaceholder::CreateBlockedPlugin(
                 render_view, frame, params, plugin, identifier, group_name,
                 IDR_BLOCKED_PLUGIN_HTML,
@@ -607,7 +587,60 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
 #else
                 l10n_util::GetStringFUTF16(IDS_PLUGIN_BLOCKED, group_name));
 #endif
-            break;
+              break;
+          }
+        } else {
+          const char* kNaClMimeType = "application/x-nacl";
+          const bool is_nacl_mime_type = actual_mime_type == kNaClMimeType;
+          const bool is_nacl_plugin =
+              plugin.name ==
+              ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName);
+          bool is_nacl_unrestricted;
+          if (is_nacl_plugin) {
+            is_nacl_unrestricted = CommandLine::ForCurrentProcess()->HasSwitch(
+                switches::kEnableNaCl);
+          } else {
+            // If this is an external plugin that handles the NaCl mime type, we
+            // allow Native Client, so Native Client's integration tests work.
+            is_nacl_unrestricted = true;
+          }
+          if (is_nacl_plugin || is_nacl_mime_type) {
+            GURL manifest_url;
+            GURL app_url;
+            if (is_nacl_mime_type) {
+              // Normal NaCl embed. The app URL is the page URL.
+              manifest_url = url;
+              app_url = frame->top()->document().url();
+            } else {
+              // NaCl is being invoked as a content handler. Look up the NaCl
+              // module using the MIME type. The app URL is the manifest URL.
+              manifest_url = GetNaClContentHandlerURL(actual_mime_type, plugin);
+              app_url = manifest_url;
+            }
+            const Extension* extension =
+                g_current_client->extension_dispatcher_->extensions()->
+                    GetExtensionOrAppByURL(ExtensionURLInfo(manifest_url));
+            if (!IsNaClAllowed(manifest_url,
+                               app_url,
+                               is_nacl_unrestricted,
+                               extension,
+                               &params)) {
+              frame->addMessageToConsole(
+                  WebConsoleMessage(
+                      WebConsoleMessage::LevelError,
+                      "Only unpacked extensions and apps installed from the "
+                      "Chrome Web Store can load NaCl modules without enabling "
+                      "Native Client in about:flags."));
+              placeholder = PluginPlaceholder::CreateBlockedPlugin(
+                  render_view, frame, params, plugin, identifier, group_name,
+                  IDR_BLOCKED_PLUGIN_HTML,
+#if defined(OS_CHROMEOS)
+                  l10n_util::GetStringUTF16(IDS_NACL_PLUGIN_BLOCKED));
+#else
+                  l10n_util::GetStringFUTF16(IDS_PLUGIN_BLOCKED, group_name));
+#endif
+              break;
+            }
           }
         }
 
@@ -834,7 +867,7 @@ void ChromeContentRendererClient::GetNavigationErrorStrings(
   if (error_html) {
     // Use a local error page.
     int resource_id;
-    DictionaryValue error_strings;
+    base::DictionaryValue error_strings;
     if (extension && !extension->from_bookmark()) {
       LocalizedError::GetAppErrorStrings(error, failed_url, extension,
                                          &error_strings);
@@ -1179,6 +1212,23 @@ void ChromeContentRendererClient::RegisterPPAPIInterfaceFactories(
 #endif
 }
 
+bool ChromeContentRendererClient::IsPluginAllowedToCallRequestOSFileHandle(
+    WebKit::WebPluginContainer* container) const {
+#if defined(ENABLE_PLUGINS)
+  if (!container)
+    return false;
+  GURL url = container->element().document().baseURL();
+  const ExtensionSet* extension_set = extension_dispatcher_->extensions();
+
+  return IsExtensionOrSharedModuleWhitelisted(url, extension_set,
+                                              allowed_file_handle_origins_) ||
+         IsHostAllowedByCommandLine(url, extension_set,
+                                    switches::kAllowNaClFileHandleAPI);
+#else
+  return false;
+#endif
+}
+
 WebKit::WebSpeechSynthesizer*
 ChromeContentRendererClient::OverrideSpeechSynthesizer(
     WebKit::WebSpeechSynthesizerClient* client) {
@@ -1210,5 +1260,26 @@ bool ChromeContentRendererClient::AllowBrowserPlugin(
   return tag_name.equals(WebString::fromUTF8(kWebViewTagName)) ||
     tag_name.equals(WebString::fromUTF8(kAdViewTagName));
 }
+
+bool ChromeContentRendererClient::AllowPepperMediaStreamAPI(
+    const GURL& url) const {
+#if !defined(OS_ANDROID)
+  std::string host = url.host();
+  // Allow only the Hangouts app to use the MediaStream APIs. It's OK to check
+  // the whitelist in the renderer, since we're only preventing access until
+  // these APIs are public and stable.
+  if (url.SchemeIs(extensions::kExtensionScheme) &&
+      !host.compare("hpcogiolnobbkijnnkdahioejpdcdoph")) {
+    return true;
+  }
+  // Allow access for tests.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnablePepperTesting)) {
+    return true;
+  }
+#endif  // !defined(OS_ANDROID)
+  return false;
+}
+
 
 }  // namespace chrome

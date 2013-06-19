@@ -13,7 +13,7 @@
 #include "components/autofill/browser/autofill_popup_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "grit/webkit_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
+#include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/base/events/event.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/display.h"
@@ -72,7 +72,8 @@ WeakPtr<AutofillPopupControllerImpl> AutofillPopupControllerImpl::GetOrCreate(
     WeakPtr<AutofillPopupControllerImpl> previous,
     WeakPtr<AutofillPopupDelegate> delegate,
     gfx::NativeView container_view,
-    const gfx::RectF& element_bounds) {
+    const gfx::RectF& element_bounds,
+    base::i18n::TextDirection text_direction) {
   DCHECK(!previous.get() || previous->delegate_.get() == delegate.get());
 
   if (previous.get() && previous->container_view() == container_view &&
@@ -85,18 +86,21 @@ WeakPtr<AutofillPopupControllerImpl> AutofillPopupControllerImpl::GetOrCreate(
     previous->Hide();
 
   AutofillPopupControllerImpl* controller =
-      new AutofillPopupControllerImpl(delegate, container_view, element_bounds);
+      new AutofillPopupControllerImpl(
+          delegate, container_view, element_bounds, text_direction);
   return controller->GetWeakPtr();
 }
 
 AutofillPopupControllerImpl::AutofillPopupControllerImpl(
     base::WeakPtr<AutofillPopupDelegate> delegate,
     gfx::NativeView container_view,
-    const gfx::RectF& element_bounds)
+    const gfx::RectF& element_bounds,
+    base::i18n::TextDirection text_direction)
     : view_(NULL),
       delegate_(delegate),
       container_view_(container_view),
       element_bounds_(element_bounds),
+      text_direction_(text_direction),
       weak_ptr_factory_(this) {
   ClearState();
 #if !defined(OS_ANDROID)
@@ -266,6 +270,10 @@ bool AutofillPopupControllerImpl::CanDelete(size_t index) const {
       id == WebAutofillClient::MenuItemIDPasswordEntry;
 }
 
+bool AutofillPopupControllerImpl::IsWarning(size_t index) const {
+  return identifiers_[index] == WebAutofillClient::MenuItemIDWarningMessage;
+}
+
 gfx::Rect AutofillPopupControllerImpl::GetRowBounds(size_t index) {
   int top = 0;
   for (size_t i = 0; i < index; ++i) {
@@ -294,6 +302,10 @@ gfx::NativeView AutofillPopupControllerImpl::container_view() const {
 
 const gfx::RectF& AutofillPopupControllerImpl::element_bounds() const {
   return element_bounds_;
+}
+
+bool AutofillPopupControllerImpl::IsRTL() const {
+  return text_direction_ == base::i18n::RIGHT_TO_LEFT;
 }
 
 const std::vector<string16>& AutofillPopupControllerImpl::names() const {

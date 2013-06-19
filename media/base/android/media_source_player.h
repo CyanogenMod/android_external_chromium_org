@@ -46,12 +46,12 @@ class MediaDecoderJob {
   // finished successfully, presentation time, timestamp when the data is
   // rendered, whether decoder is reaching EOS.
   typedef base::Callback<void(DecodeStatus, const base::TimeDelta&,
-                              const base::Time&, bool)> DecoderCallback;
+                              const base::TimeTicks&, bool)> DecoderCallback;
 
   // Called by MediaSourcePlayer to decode some data.
   void Decode(
       const MediaPlayerHostMsg_ReadFromDemuxerAck_Params::AccessUnit& unit,
-      const base::Time& start_wallclock_time,
+      const base::TimeTicks& start_wallclock_time,
       const base::TimeDelta& start_presentation_timestamp,
       const MediaDecoderJob::DecoderCallback& callback);
 
@@ -59,7 +59,7 @@ class MediaDecoderJob {
   void Flush();
 
   struct Deleter {
-      inline void operator()(MediaDecoderJob* ptr) const { ptr->Release(); }
+    inline void operator()(MediaDecoderJob* ptr) const { ptr->Release(); }
   };
 
   // Causes this instance to be deleted on the thread it is bound to.
@@ -68,8 +68,12 @@ class MediaDecoderJob {
   // Called on the UI thread to indicate that one decode cycle has completed.
   void OnDecodeCompleted();
 
+  bool is_decoding() const { return is_decoding_; }
+
  protected:
-  MediaDecoderJob(base::Thread* thread, bool is_audio);
+  MediaDecoderJob(const scoped_refptr<base::MessageLoopProxy>& decoder_loop,
+                  MediaCodecBridge* media_codec_bridge,
+                  bool is_audio);
 
   // Release the output buffer and render it.
   void ReleaseOutputBuffer(
@@ -85,19 +89,19 @@ class MediaDecoderJob {
   // flushed at the beginning of this call.
   void DecodeInternal(
       const MediaPlayerHostMsg_ReadFromDemuxerAck_Params::AccessUnit& unit,
-      const base::Time& start_wallclock_time,
+      const base::TimeTicks& start_wallclock_time,
       const base::TimeDelta& start_presentation_timestamp,
       bool needs_flush,
       const MediaDecoderJob::DecoderCallback& callback);
 
+  // The UI message loop where callbacks should be dispatched.
+  scoped_refptr<base::MessageLoopProxy> ui_loop_;
+
+  // The message loop that decoder job runs on.
+  scoped_refptr<base::MessageLoopProxy> decoder_loop_;
+
   // The media codec bridge used for decoding.
   scoped_ptr<MediaCodecBridge> media_codec_bridge_;
-
-  // The message loop where callbacks should be dispatched.
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
-
-  // Thread the decode task runs on.
-  base::Thread* thread_;
 
   // Whether the decoder needs to be flushed.
   bool needs_flush_;
@@ -110,7 +114,7 @@ class MediaDecoderJob {
   base::WeakPtrFactory<MediaDecoderJob> weak_this_;
 
   // Whether the decoder is actively decoding data.
-  bool decoding_;
+  bool is_decoding_;
 };
 
 typedef scoped_ptr<MediaDecoderJob, MediaDecoderJob::Deleter>
@@ -154,11 +158,14 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   virtual void ReadFromDemuxerAck(
       const MediaPlayerHostMsg_ReadFromDemuxerAck_Params& params) OVERRIDE;
 
+  // Called when the demuxer has changed the duration.
+  virtual void DurationChanged(const base::TimeDelta& duration) OVERRIDE;
+
  private:
   // Update the timestamps for A/V sync scheduling.
   void UpdateTimestamps(
       const base::TimeDelta& presentation_timestamp,
-      const base::Time& wallclock_time);
+      const base::TimeTicks& wallclock_time);
 
   // Helper function for starting media playback.
   void StartInternal();
@@ -170,14 +177,14 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   void MediaDecoderCallback(
         bool is_audio, MediaDecoderJob::DecodeStatus decode_status,
         const base::TimeDelta& presentation_timestamp,
-        const base::Time& wallclock_time, bool end_of_stream);
+        const base::TimeTicks& wallclock_time, bool end_of_stream);
 
   // Handle pending events when all the decoder jobs finished.
   void ProcessPendingEvents();
 
-  // Helper method to create the decoder jobs.
-  void CreateVideoDecoderJob();
-  void CreateAudioDecoderJob();
+  // Helper method to configure the decoder jobs.
+  void ConfigureVideoDecoderJob();
+  void ConfigureAudioDecoderJob();
 
   // Flush the decoders and clean up all the data needs to be decoded.
   void ClearDecodingData();
@@ -190,6 +197,9 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   bool HasVideo();
   bool HasAudio();
 
+  // Determine seekability based on duration.
+  bool Seekable();
+
   enum PendingEventFlags {
     NO_EVENT_PENDING = 0,
     SEEK_EVENT_PENDING = 1 << 0,
@@ -198,9 +208,6 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   };
   // Pending event that the player needs to do.
   unsigned pending_event_;
-
-  // Number of active decoding tasks.
-  int active_decoding_tasks_;
 
   // ID to keep track of whether all the seek requests are acked.
   unsigned seek_request_id_;
@@ -213,7 +220,6 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   VideoCodec video_codec_;
   int num_channels_;
   int sampling_rate_;
-  bool seekable_;
   base::TimeDelta last_presentation_timestamp_;
   std::vector<uint8> audio_extra_data_;
   bool audio_finished_;
@@ -226,7 +232,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   // should be rendered.
   // TODO(qinmin): Need to fix the problem if audio/video lagged too far behind
   // due to network or decoding problem.
-  base::Time start_wallclock_time_;
+  base::TimeTicks start_wallclock_time_;
   base::TimeDelta start_presentation_timestamp_;
 
   // The surface object currently owned by the player.
@@ -252,6 +258,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   // Weak pointer passed to media decoder jobs for callbacks.
   base::WeakPtrFactory<MediaSourcePlayer> weak_this_;
 
+  friend class MediaSourcePlayerTest;
   DISALLOW_COPY_AND_ASSIGN(MediaSourcePlayer);
 };
 

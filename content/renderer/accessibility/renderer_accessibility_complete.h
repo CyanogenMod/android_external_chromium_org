@@ -7,12 +7,12 @@
 
 #include <vector>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/accessibility_node_data.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebAccessibilityNotification.h"
+#include "third_party/WebKit/public/web/WebAccessibilityNotification.h"
 
 namespace WebKit {
 class WebAccessibilityObject;

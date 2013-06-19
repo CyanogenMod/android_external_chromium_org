@@ -24,6 +24,7 @@ class GURL;
 struct LanguageDetectionDetails;
 struct PageTranslatedDetails;
 class PrefService;
+class Profile;
 struct ShortcutConfiguration;
 class TranslateAcceptLanguages;
 struct TranslateErrorDetails;
@@ -59,6 +60,10 @@ class TranslateManager : public content::NotificationObserver,
   // translate to and from.
   static void GetSupportedLanguages(std::vector<std::string>* languages);
 
+  // Returns the last-updated time when Chrome receives a language list from a
+  // Translate server. Returns null time if Chrome hasn't received any lists.
+  static base::Time GetSupportedLanguagesLastUpdated();
+
   // Returns the language code that can be used with the Translate method for a
   // specified |chrome_locale|.
   static std::string GetLanguageCode(const std::string& chrome_locale);
@@ -69,6 +74,9 @@ class TranslateManager : public content::NotificationObserver,
   // Returns true if |language| is supported by the translation server as a
   // alpha language.
   static bool IsAlphaLanguage(const std::string& language);
+
+  // Returns true if |language| is an Accept language for the user profile.
+  static bool IsAcceptLanguage(Profile* profile, const std::string& language);
 
   // Let the caller decide if and when we should fetch the language list from
   // the translate server. This is a NOOP if switches::kDisableTranslate is set

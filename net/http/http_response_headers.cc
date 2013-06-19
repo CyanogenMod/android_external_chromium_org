@@ -14,10 +14,10 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "net/base/escape.h"
@@ -1299,19 +1299,19 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
   return true;
 }
 
-Value* HttpResponseHeaders::NetLogCallback(
+base::Value* HttpResponseHeaders::NetLogCallback(
     NetLog::LogLevel /* log_level */) const {
-  DictionaryValue* dict = new DictionaryValue();
-  ListValue* headers = new ListValue();
-  headers->Append(new StringValue(GetStatusLine()));
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  base::ListValue* headers = new base::ListValue();
+  headers->Append(new base::StringValue(GetStatusLine()));
   void* iterator = NULL;
   std::string name;
   std::string value;
   while (EnumerateHeaderLines(&iterator, &name, &value)) {
     headers->Append(
-      new StringValue(base::StringPrintf("%s: %s",
-                                         name.c_str(),
-                                         value.c_str())));
+      new base::StringValue(base::StringPrintf("%s: %s",
+                                               name.c_str(),
+                                               value.c_str())));
   }
   dict->Set("headers", headers);
   return dict;

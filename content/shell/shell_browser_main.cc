@@ -26,6 +26,15 @@
 
 namespace {
 
+#if defined(OS_ANDROID)
+// Path to search for when translating a layout test path to an URL.
+const char kAndroidLayoutTestPath[] =
+    "/data/local/tmp/third_party/WebKit/LayoutTests/";
+
+// The base URL from which layout tests are being served on Android.
+const char kAndroidLayoutTestBase[] = "http://127.0.0.1:8000/all-tests/";
+#endif
+
 GURL GetURLForLayoutTest(const std::string& test_name,
                          base::FilePath* current_working_directory,
                          bool* enable_pixel_dumping,
@@ -50,6 +59,19 @@ GURL GetURLForLayoutTest(const std::string& test_name,
   }
   if (expected_pixel_hash)
     *expected_pixel_hash = pixel_hash;
+
+#if defined(OS_ANDROID)
+  // On Android, all passed tests will be paths to a local temporary directory.
+  // However, because we can't transfer all test files to the device, translate
+  // those paths to a local, forwarded URL so the host can serve them.
+  if (path_or_url.find(kAndroidLayoutTestPath) != std::string::npos) {
+    std::string test_location(kAndroidLayoutTestBase);
+    test_location.append(path_or_url.substr(strlen(kAndroidLayoutTestPath)));
+
+    return GURL(test_location);
+  }
+#endif
+
   GURL test_url(path_or_url);
   if (!(test_url.is_valid() && test_url.has_scheme())) {
     // We're outside of the message loop here, and this is a test.
@@ -97,10 +119,13 @@ bool GetNextTest(const CommandLine::StringVector& args,
 }  // namespace
 
 // Main routine for running as the Browser process.
-int ShellBrowserMain(const content::MainFunctionParams& parameters) {
+int ShellBrowserMain(const content::MainFunctionParams& parameters,
+                     scoped_ptr<content::BrowserMainRunner>& main_runner) {
   bool layout_test_mode =
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree);
   base::ScopedTempDir browser_context_path_for_layout_tests;
+
+  // TODO(beverloo): Create the FIFOs required for Android layout tests.
 
   if (layout_test_mode) {
     CHECK(browser_context_path_for_layout_tests.CreateUniqueTempDir());
@@ -110,10 +135,9 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters) {
         browser_context_path_for_layout_tests.path().MaybeAsASCII());
   }
 
-  scoped_ptr<content::BrowserMainRunner> main_runner_(
-      content::BrowserMainRunner::Create());
-
-  int exit_code = main_runner_->Initialize(parameters);
+  int exit_code = main_runner->Initialize(parameters);
+  DCHECK(exit_code < 0)
+      << "BrowserMainRunner::Initialize failed in ShellBrowserMain";
 
   if (exit_code >= 0)
     return exit_code;
@@ -122,9 +146,9 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters) {
         switches::kCheckLayoutTestSysDeps)) {
     base::MessageLoop::current()->PostTask(FROM_HERE,
                                            base::MessageLoop::QuitClosure());
-    main_runner_->Run();
+    main_runner->Run();
     content::Shell::CloseAllWindows();
-    main_runner_->Shutdown();
+    main_runner->Shutdown();
     return 0;
   }
 
@@ -165,7 +189,7 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters) {
       }
 
       ran_at_least_once = true;
-      main_runner_->Run();
+      main_runner->Run();
 
       if (!content::WebKitTestController::Get()->ResetAfterLayoutTest())
         break;
@@ -173,14 +197,17 @@ int ShellBrowserMain(const content::MainFunctionParams& parameters) {
     if (!ran_at_least_once) {
       base::MessageLoop::current()->PostTask(FROM_HERE,
                                              base::MessageLoop::QuitClosure());
-      main_runner_->Run();
+      main_runner->Run();
     }
     exit_code = 0;
-  } else {
-    exit_code = main_runner_->Run();
   }
 
-  main_runner_->Shutdown();
+#if !defined(OS_ANDROID)
+  if (!layout_test_mode)
+    exit_code = main_runner->Run();
+
+  main_runner->Shutdown();
+#endif
 
   return exit_code;
 }

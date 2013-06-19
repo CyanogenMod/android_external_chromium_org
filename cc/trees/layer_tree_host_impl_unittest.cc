@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "cc/base/math_util.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/delegated_renderer_layer_impl.h"
@@ -22,6 +22,7 @@
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/layers/tiled_layer_impl.h"
 #include "cc/layers/video_layer_impl.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/gl_renderer.h"
@@ -61,7 +62,7 @@ class LayerTreeHostImplTest : public testing::Test,
                               public LayerTreeHostImplClient {
  public:
   LayerTreeHostImplTest()
-      : proxy_(scoped_ptr<Thread>(NULL)),
+      : proxy_(scoped_ptr<Thread>()),
         always_impl_thread_(&proxy_),
         always_main_thread_blocked_(&proxy_),
         did_try_initialize_renderer_(false),
@@ -95,9 +96,7 @@ class LayerTreeHostImplTest : public testing::Test,
   }
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
-  virtual void OnVSyncParametersChanged(base::TimeTicks timebase,
-                                        base::TimeDelta interval) OVERRIDE {}
-  virtual void BeginFrameOnImplThread(base::TimeTicks frame_time)
+  virtual void BeginFrameOnImplThread(const BeginFrameArgs& args)
       OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE {
     on_can_draw_state_changed_called_ = true;
@@ -129,7 +128,7 @@ class LayerTreeHostImplTest : public testing::Test,
   virtual bool IsInsideDraw() OVERRIDE { return false; }
   virtual void RenewTreePriority() OVERRIDE {}
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
-      OVERRIDE {}
+      OVERRIDE { requested_scrollbar_animation_delay_ = delay; }
   virtual void DidActivatePendingTree() OVERRIDE {}
 
   void set_reduce_memory_result(bool reduce_memory_result) {
@@ -284,6 +283,7 @@ class LayerTreeHostImplTest : public testing::Test,
   bool did_request_redraw_;
   bool did_upload_visible_tile_;
   bool reduce_memory_result_;
+  base::TimeDelta requested_scrollbar_animation_delay_;
 };
 
 class TestWebGraphicsContext3DMakeCurrentFails
@@ -987,6 +987,130 @@ TEST_F(LayerTreeHostImplTest, PageScaleAnimationNoOp) {
     EXPECT_EQ(scroll_info->page_scale_delta, 1);
     ExpectNone(*scroll_info, scroll_layer->id());
   }
+}
+
+class LayerTreeHostImplOverridePhysicalTime : public LayerTreeHostImpl {
+ public:
+  LayerTreeHostImplOverridePhysicalTime(
+      const LayerTreeSettings& settings,
+      LayerTreeHostImplClient* client,
+      Proxy* proxy,
+      RenderingStatsInstrumentation* rendering_stats_instrumentation)
+      : LayerTreeHostImpl(settings,
+                          client,
+                          proxy,
+                          rendering_stats_instrumentation) {}
+
+
+  virtual base::TimeTicks CurrentPhysicalTimeTicks() const OVERRIDE {
+    return fake_current_physical_time_;
+  }
+
+  void SetCurrentPhysicalTimeTicksForTest(base::TimeTicks fake_now) {
+    fake_current_physical_time_ = fake_now;
+  }
+
+ private:
+  base::TimeTicks fake_current_physical_time_;
+};
+
+TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
+  LayerTreeSettings settings;
+  settings.use_linear_fade_scrollbar_animator = true;
+  settings.scrollbar_linear_fade_delay_ms = 20;
+  settings.scrollbar_linear_fade_length_ms = 20;
+
+  LayerTreeHostImplOverridePhysicalTime* host_impl_override_time =
+      new LayerTreeHostImplOverridePhysicalTime(
+          settings, this, &proxy_, &stats_instrumentation_);
+  host_impl_ = make_scoped_ptr<LayerTreeHostImpl>(host_impl_override_time);
+  host_impl_->InitializeRenderer(CreateOutputSurface());
+  host_impl_->SetViewportSize(gfx::Size(10, 10));
+
+  gfx::Size content_size(100, 100);
+  scoped_ptr<LayerImpl> root =
+      LayerImpl::Create(host_impl_->active_tree(), 1);
+  root->SetBounds(content_size);
+  root->SetContentBounds(content_size);
+
+  scoped_ptr<LayerImpl> scroll =
+      LayerImpl::Create(host_impl_->active_tree(), 2);
+  scroll->SetScrollable(true);
+  scroll->SetScrollOffset(gfx::Vector2d());
+  scroll->SetMaxScrollOffset(gfx::Vector2d(content_size.width(),
+                                           content_size.height()));
+  scroll->SetBounds(content_size);
+  scroll->SetContentBounds(content_size);
+
+  scoped_ptr<LayerImpl> contents =
+      LayerImpl::Create(host_impl_->active_tree(), 3);
+  contents->SetDrawsContent(true);
+  contents->SetBounds(content_size);
+  contents->SetContentBounds(content_size);
+
+  scoped_ptr<ScrollbarLayerImpl> scrollbar = ScrollbarLayerImpl::Create(
+      host_impl_->active_tree(),
+      4,
+      VERTICAL);
+  scroll->SetVerticalScrollbarLayer(scrollbar.get());
+
+  scroll->AddChild(contents.Pass());
+  root->AddChild(scroll.Pass());
+  root->AddChild(scrollbar.PassAs<LayerImpl>());
+
+  host_impl_->active_tree()->SetRootLayer(root.Pass());
+  host_impl_->active_tree()->DidBecomeActive();
+  InitializeRendererAndDrawFrame();
+
+  base::TimeTicks fake_now = base::TimeTicks::Now();
+  host_impl_override_time->SetCurrentPhysicalTimeTicksForTest(fake_now);
+
+  // If no scroll happened recently, StartScrollbarAnimation should have no
+  // effect.
+  host_impl_->StartScrollbarAnimation();
+  EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
+  EXPECT_FALSE(did_request_redraw_);
+
+  // After a scroll, a fade animation should be scheduled about 20ms from now.
+  host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel);
+  host_impl_->ScrollEnd();
+  host_impl_->StartScrollbarAnimation();
+  EXPECT_LT(base::TimeDelta::FromMilliseconds(19),
+            requested_scrollbar_animation_delay_);
+  EXPECT_FALSE(did_request_redraw_);
+  requested_scrollbar_animation_delay_ = base::TimeDelta();
+
+  // After the fade begins, we should start getting redraws instead of a
+  // scheduled animation.
+  fake_now += base::TimeDelta::FromMilliseconds(25);
+  host_impl_override_time->SetCurrentPhysicalTimeTicksForTest(fake_now);
+  host_impl_->StartScrollbarAnimation();
+  EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
+  EXPECT_TRUE(did_request_redraw_);
+  did_request_redraw_ = false;
+
+  // If no scroll happened recently, StartScrollbarAnimation should have no
+  // effect.
+  fake_now += base::TimeDelta::FromMilliseconds(25);
+  host_impl_override_time->SetCurrentPhysicalTimeTicksForTest(fake_now);
+  host_impl_->StartScrollbarAnimation();
+  EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
+  EXPECT_FALSE(did_request_redraw_);
+
+  // Setting the scroll offset outside a scroll should also cause the scrollbar
+  // to appear and to schedule a fade.
+  host_impl_->RootScrollLayer()->SetScrollOffset(gfx::Vector2d(5, 5));
+  host_impl_->StartScrollbarAnimation();
+  EXPECT_LT(base::TimeDelta::FromMilliseconds(19),
+            requested_scrollbar_animation_delay_);
+  EXPECT_FALSE(did_request_redraw_);
+  requested_scrollbar_animation_delay_ = base::TimeDelta();
+
+  // None of the above should have called CurrentFrameTimeTicks, so if we call
+  // it now we should get the current time.
+  fake_now += base::TimeDelta::FromMilliseconds(10);
+  host_impl_override_time->SetCurrentPhysicalTimeTicksForTest(fake_now);
+  EXPECT_EQ(fake_now, host_impl_->CurrentFrameTimeTicks());
 }
 
 TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
@@ -2813,11 +2937,19 @@ TEST_F(LayerTreeHostImplTest, ReshapeNotCalledUntilDraw) {
   reshape_tracker->clear_reshape_called();
 }
 
-class PartialSwapTrackerContext : public TestWebGraphicsContext3D {
+class SwapTrackerContext : public TestWebGraphicsContext3D {
  public:
+  SwapTrackerContext() : last_update_type_(NoUpdate) {}
+
+  virtual void prepareTexture() OVERRIDE {
+    update_rect_ = gfx::Rect(width_, height_);
+    last_update_type_ = PrepareTexture;
+  }
+
   virtual void postSubBufferCHROMIUM(int x, int y, int width, int height)
       OVERRIDE {
-    partial_swap_rect_ = gfx::Rect(x, y, width, height);
+    update_rect_ = gfx::Rect(x, y, width, height);
+    last_update_type_ = PostSubBuffer;
   }
 
   virtual WebKit::WebString getString(WebKit::WGC3Denum name) OVERRIDE {
@@ -2829,10 +2961,21 @@ class PartialSwapTrackerContext : public TestWebGraphicsContext3D {
     return WebKit::WebString();
   }
 
-  gfx::Rect partial_swap_rect() const { return partial_swap_rect_; }
+  gfx::Rect update_rect() const { return update_rect_; }
+
+  enum UpdateType {
+    NoUpdate = 0,
+    PrepareTexture,
+    PostSubBuffer
+  };
+
+  UpdateType last_update_type() {
+    return last_update_type_;
+  }
 
  private:
-  gfx::Rect partial_swap_rect_;
+  gfx::Rect update_rect_;
+  UpdateType last_update_type_;
 };
 
 // Make sure damage tracking propagates all the way to the graphics context,
@@ -2840,9 +2983,9 @@ class PartialSwapTrackerContext : public TestWebGraphicsContext3D {
 TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   scoped_ptr<OutputSurface> output_surface =
       FakeOutputSurface::Create3d(scoped_ptr<WebKit::WebGraphicsContext3D>(
-          new PartialSwapTrackerContext)).PassAs<OutputSurface>();
-  PartialSwapTrackerContext* partial_swap_tracker =
-      static_cast<PartialSwapTrackerContext*>(output_surface->context3d());
+          new SwapTrackerContext)).PassAs<OutputSurface>();
+  SwapTrackerContext* swap_tracker =
+      static_cast<SwapTrackerContext*>(output_surface->context3d());
 
   // This test creates its own LayerTreeHostImpl, so
   // that we can force partial swap enabled.
@@ -2879,13 +3022,14 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   layer_tree_host_impl->DrawLayers(&frame, base::TimeTicks::Now());
   layer_tree_host_impl->DidDrawAllLayers(frame);
   layer_tree_host_impl->SwapBuffers(frame);
-  gfx::Rect actual_swap_rect = partial_swap_tracker->partial_swap_rect();
+  gfx::Rect actual_swap_rect = swap_tracker->update_rect();
   gfx::Rect expected_swap_rect = gfx::Rect(0, 0, 500, 500);
   EXPECT_EQ(expected_swap_rect.x(), actual_swap_rect.x());
   EXPECT_EQ(expected_swap_rect.y(), actual_swap_rect.y());
   EXPECT_EQ(expected_swap_rect.width(), actual_swap_rect.width());
   EXPECT_EQ(expected_swap_rect.height(), actual_swap_rect.height());
-
+  EXPECT_EQ(swap_tracker->last_update_type(),
+            SwapTrackerContext::PrepareTexture);
   // Second frame, only the damaged area should get swapped. Damage should be
   // the union of old and new child rects.
   // expected damage rect: gfx::Rect(26, 28);
@@ -2896,12 +3040,14 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   layer_tree_host_impl->DrawLayers(&frame, base::TimeTicks::Now());
   host_impl_->DidDrawAllLayers(frame);
   layer_tree_host_impl->SwapBuffers(frame);
-  actual_swap_rect = partial_swap_tracker->partial_swap_rect();
+  actual_swap_rect = swap_tracker->update_rect();
   expected_swap_rect = gfx::Rect(0, 500-28, 26, 28);
   EXPECT_EQ(expected_swap_rect.x(), actual_swap_rect.x());
   EXPECT_EQ(expected_swap_rect.y(), actual_swap_rect.y());
   EXPECT_EQ(expected_swap_rect.width(), actual_swap_rect.width());
   EXPECT_EQ(expected_swap_rect.height(), actual_swap_rect.height());
+  EXPECT_EQ(swap_tracker->last_update_type(),
+            SwapTrackerContext::PostSubBuffer);
 
   // Make sure that partial swap is constrained to the viewport dimensions
   // expected damage rect: gfx::Rect(500, 500);
@@ -2914,12 +3060,14 @@ TEST_F(LayerTreeHostImplTest, PartialSwapReceivesDamageRect) {
   layer_tree_host_impl->DrawLayers(&frame, base::TimeTicks::Now());
   host_impl_->DidDrawAllLayers(frame);
   layer_tree_host_impl->SwapBuffers(frame);
-  actual_swap_rect = partial_swap_tracker->partial_swap_rect();
+  actual_swap_rect = swap_tracker->update_rect();
   expected_swap_rect = gfx::Rect(10, 10);
   EXPECT_EQ(expected_swap_rect.x(), actual_swap_rect.x());
   EXPECT_EQ(expected_swap_rect.y(), actual_swap_rect.y());
   EXPECT_EQ(expected_swap_rect.width(), actual_swap_rect.width());
   EXPECT_EQ(expected_swap_rect.height(), actual_swap_rect.height());
+  EXPECT_EQ(swap_tracker->last_update_type(),
+            SwapTrackerContext::PrepareTexture);
 }
 
 TEST_F(LayerTreeHostImplTest, RootLayerDoesntCreateExtraSurface) {

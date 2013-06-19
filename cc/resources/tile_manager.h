@@ -9,7 +9,7 @@
 #include <set>
 #include <vector>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
@@ -24,22 +24,12 @@ class ResourceProvider;
 class Tile;
 class TileVersion;
 
-// Low quality implies no lcd test;
-// high quality implies lcd text.
-// Note that the order of these matters, from "better" to "worse" in terms of
-// quality.
-enum TileRasterMode {
-  HIGH_QUALITY_RASTER_MODE = 0,
-  HIGH_QUALITY_NO_LCD_RASTER_MODE = 1,
-  LOW_QUALITY_RASTER_MODE = 2,
-  NUM_RASTER_MODES = 3
-};
-
 class CC_EXPORT TileManagerClient {
  public:
   virtual void DidInitializeVisibleTile() = 0;
   virtual bool
       ShouldForceTileUploadsRequiredForActivationToComplete() const = 0;
+  virtual void NotifyReadyToActivate() = 0;
 
  protected:
   virtual ~TileManagerClient() {}
@@ -70,10 +60,8 @@ scoped_ptr<base::Value> TileManagerBinPriorityAsValue(
 // should no longer have any memory assigned to them. Tile objects are "owned"
 // by layers; they automatically register with the manager when they are
 // created, and unregister from the manager when they are deleted.
-class CC_EXPORT TileManager {
+class CC_EXPORT TileManager : public RasterWorkerPoolClient {
  public:
-  typedef base::hash_set<uint32_t> PixelRefSet;
-
   static scoped_ptr<TileManager> Create(
       TileManagerClient* client,
       ResourceProvider* resource_provider,
@@ -111,82 +99,51 @@ class CC_EXPORT TileManager {
               scoped_ptr<RasterWorkerPool> raster_worker_pool,
               size_t num_raster_threads,
               bool use_color_estimator,
-              RenderingStatsInstrumentation* rendering_stats_instrumentation);
+              RenderingStatsInstrumentation* rendering_stats_instrumentation,
+              GLenum texture_format);
 
   // Methods called by Tile
   friend class Tile;
   void RegisterTile(Tile* tile);
   void UnregisterTile(Tile* tile);
 
+  // Overriden from RasterWorkerPoolClient:
+  virtual bool ShouldForceTasksRequiredForActivationToComplete() const
+      OVERRIDE;
+
   // Virtual for test
   virtual void ScheduleTasks();
 
  private:
-  // Data that is passed to raster tasks.
-  struct RasterTaskMetadata {
-      scoped_ptr<base::Value> AsValue() const;
-      bool is_tile_in_pending_tree_now_bin;
-      TileResolution tile_resolution;
-      int layer_id;
-      const void* tile_id;
-      int source_frame_number;
-      TileRasterMode raster_mode;
-  };
+  void OnImageDecodeTaskCompleted(
+      int layer_id,
+      skia::LazyPixelRef* pixel_ref,
+      bool was_canceled);
+  void OnRasterTaskCompleted(
+      scoped_refptr<Tile> tile,
+      scoped_ptr<ResourcePool::Resource> resource,
+      RasterMode raster_mode,
+      const PicturePileImpl::Analysis& analysis,
+      bool was_canceled);
 
   void AssignBinsToTiles();
   void SortTiles();
-  TileRasterMode DetermineRasterMode(const Tile* tile) const;
+  RasterMode DetermineRasterMode(const Tile* tile) const;
+  void CleanUpUnusedImageDecodeTasks();
   void AssignGpuMemoryToTiles();
-  void FreeResourceForTile(Tile* tile, TileRasterMode mode);
+  void FreeResourceForTile(Tile* tile, RasterMode mode);
   void FreeResourcesForTile(Tile* tile);
   void FreeUnusedResourcesForTile(Tile* tile);
   RasterWorkerPool::Task CreateImageDecodeTask(
       Tile* tile, skia::LazyPixelRef* pixel_ref);
-  void OnImageDecodeTaskCompleted(
-      scoped_refptr<Tile> tile,
-      uint32_t pixel_ref_id);
   RasterTaskMetadata GetRasterTaskMetadata(const Tile& tile) const;
-  RasterWorkerPool::RasterTask CreateRasterTask(
-      Tile* tile,
-      PixelRefSet* decoded_images);
-  void OnRasterTaskCompleted(
-      scoped_refptr<Tile> tile,
-      scoped_ptr<ResourcePool::Resource> resource,
-      PicturePileImpl::Analysis* analysis,
-      TileRasterMode raster_mode,
-      bool was_canceled);
+  RasterWorkerPool::RasterTask CreateRasterTask(Tile* tile);
   void DidFinishTileInitialization(Tile* tile);
   void DidTileTreeBinChange(Tile* tile,
                             TileManagerBin new_tree_bin,
                             WhichTree tree);
   scoped_ptr<Value> GetMemoryRequirementsAsValue() const;
   void AddRequiredTileForActivation(Tile* tile);
-
-  static void RunImageDecodeTask(
-      skia::LazyPixelRef* pixel_ref,
-      int layer_id,
-      RenderingStatsInstrumentation* stats_instrumentation);
-  static bool RunAnalyzeAndRasterTask(
-      const base::Callback<void(PicturePileImpl* picture_pile)>& analyze_task,
-      const RasterWorkerPool::RasterTask::Callback& raster_task,
-      SkDevice* device,
-      PicturePileImpl* picture_pile);
-  static void RunAnalyzeTask(
-      PicturePileImpl::Analysis* analysis,
-      gfx::Rect rect,
-      float contents_scale,
-      bool use_color_estimator,
-      const RasterTaskMetadata& metadata,
-      RenderingStatsInstrumentation* stats_instrumentation,
-      PicturePileImpl* picture_pile);
-  static bool RunRasterTask(
-      PicturePileImpl::Analysis* analysis,
-      gfx::Rect rect,
-      float contents_scale,
-      const RasterTaskMetadata& metadata,
-      RenderingStatsInstrumentation* stats_instrumentation,
-      SkDevice* device,
-      PicturePileImpl* picture_pile);
 
   TileManagerClient* client_;
   scoped_ptr<ResourcePool> resource_pool_;
@@ -199,9 +156,6 @@ class CC_EXPORT TileManager {
   typedef std::set<Tile*> TileSet;
   TileSet tiles_that_need_to_be_initialized_for_activation_;
 
-  typedef base::hash_map<uint32_t, RasterWorkerPool::Task> PixelRefMap;
-  PixelRefMap pending_decode_tasks_;
-
   bool ever_exceeded_memory_budget_;
   MemoryHistory::Entry memory_stats_from_last_assign_;
 
@@ -209,6 +163,12 @@ class CC_EXPORT TileManager {
 
   bool use_color_estimator_;
   bool did_initialize_visible_tile_;
+
+  GLenum texture_format_;
+
+  typedef base::hash_map<uint32_t, RasterWorkerPool::Task> PixelRefTaskMap;
+  typedef base::hash_map<int, PixelRefTaskMap> LayerPixelRefTaskMap;
+  LayerPixelRefTaskMap image_decode_tasks_;
 
   DISALLOW_COPY_AND_ASSIGN(TileManager);
 };

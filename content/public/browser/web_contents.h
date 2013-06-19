@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/process_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
@@ -247,6 +247,9 @@ class WebContents : public PageNavigator,
   virtual uint64 GetUploadSize() const = 0;
   virtual uint64 GetUploadPosition() const = 0;
 
+  // Returns a set of the site URLs currently committed in this tab.
+  virtual std::set<GURL> GetSitesInTab() const = 0;
+
   // Return the character encoding of the page.
   virtual const std::string& GetEncoding() const = 0;
 
@@ -358,30 +361,9 @@ class WebContents : public PageNavigator,
   // Returns the settings which get passed to the renderer.
   virtual content::RendererPreferences* GetMutableRendererPrefs() = 0;
 
-  // Set the time when we started to create the new tab page.  This time is
-  // from before we created this WebContents.
-  virtual void SetNewTabStartTime(const base::TimeTicks& time) = 0;
-  virtual base::TimeTicks GetNewTabStartTime() const = 0;
-
   // Tells the tab to close now. The tab will take care not to close until it's
   // out of nested message loops.
   virtual void Close() = 0;
-
-  // Notification that tab closing has started.  This can be called multiple
-  // times, subsequent calls are ignored.
-  virtual void OnCloseStarted() = 0;
-
-  // Notification that tab closing was cancelled. This can happen when a user
-  // cancels a window close via another tab's beforeunload dialog.
-  virtual void OnCloseCanceled() = 0;
-
-  // Set the time during close when unload is started. Normally, this is set
-  // after the beforeunload dialog. However, for a window close, it is set
-  // after all the beforeunload dialogs have finished.
-  virtual void OnUnloadStarted() = 0;
-
-  // Set the time during close when the tab is no longer visible.
-  virtual void OnUnloadDetachedStarted() = 0;
 
   // A render view-originated drag has ended. Informs the render view host and
   // WebContentsDelegate.

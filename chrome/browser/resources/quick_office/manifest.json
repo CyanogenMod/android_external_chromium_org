@@ -1,9 +1,9 @@
 {
-  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC7ctCVtjJUxR/gv6iYPkgLvhSG5j9IcbJEjqR1rbi1OvJOYQkAniDpYo46x9Ah68Fg4e0yTspvjABnB0N8YW+e7iOHhPWz7MfhRsM9AyXn8KvFwZ2BHvhXZVXBmk8wo/VkGZuw4RJWl/itpOCVwin7emaEboRQO6ETBXCVjmdYyQIDAQAB",
-
   "background": {
     "persistent": false,
-    "page": "views/background/backgroundPage.html"
+    "scripts": [
+      "scripts/background/register.js"
+    ]
   },
   "content_security_policy": "default-src 'self'; connect-src blob: chrome-extension:; style-src 'self' 'unsafe-inline' chrome-extension:; img-src 'self' blob: data:; frame-src chrome-extension:; script-src 'self'",
   "default_locale": "en",
@@ -26,6 +26,7 @@
     "128": "img/icon_128.png"
   },
   "incognito": "split",
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC7ctCVtjJUxR/gv6iYPkgLvhSG5j9IcbJEjqR1rbi1OvJOYQkAniDpYo46x9Ah68Fg4e0yTspvjABnB0N8YW+e7iOHhPWz7MfhRsM9AyXn8KvFwZ2BHvhXZVXBmk8wo/VkGZuw4RJWl/itpOCVwin7emaEboRQO6ETBXCVjmdYyQIDAQAB",
   "manifest_version": 2,
   "mime_types": [
     "application/msword",

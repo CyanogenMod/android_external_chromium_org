@@ -75,7 +75,7 @@ class NET_EXPORT_PRIVATE StrikeRegister {
   // valid index. Therefore this is our invalid index. It also has a one bit
   // in the LSB position because we tend to store indexes shifted up 8 bits
   // and this distinguishes kNil from (kExternalFlag | 0) << 8.
-  static const uint32  kNil;
+  static const uint32 kNil;
 
   // Our pointers from internal nodes can either point to an internal or
   // external node. We flag the 24th bit to mark a pointer as external.
@@ -114,6 +114,10 @@ class NET_EXPORT_PRIVATE StrikeRegister {
   //
   // Otherwise, it inserts |nonce| into the observed set and returns true.
   bool Insert(const uint8 nonce[32], const uint32 current_time);
+
+  // orbit returns a pointer to the 8-byte orbit value for this
+  // strike-register.
+  const uint8* orbit() const;
 
   // This is a debugging aid which checks the tree for sanity.
   void Validate();

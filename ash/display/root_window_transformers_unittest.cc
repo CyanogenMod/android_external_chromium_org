@@ -14,9 +14,11 @@
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/cursor_manager_test_api.h"
+#include "ash/test/mirror_window_test_api.h"
 #include "base/synchronization/waitable_event.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/root_window_transformer.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/base/events/event_handler.h"
@@ -26,7 +28,7 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace test {
+namespace internal {
 
 namespace {
 
@@ -117,30 +119,26 @@ float GetStoredUIScale(int64 id) {
 
 }  // namespace
 
-typedef test::AshTestBase AshRootWindowTransformerTest;
+typedef test::AshTestBase RootWindowTransformersTest;
 
 #if defined(OS_WIN)
-// On Win8 bots, the host window can't be resized and
-// SetTransform updates the window using the orignal host window
-// size.
+// TODO(scottmg): RootWindow doesn't get resized on Windows
+// Ash. http://crbug.com/247916.
 #define MAYBE_RotateAndMagnify DISABLED_RotateAndMagniy
-#define MAYBE_ScaleAndMagnify DISABLED_ScaleAndMagnify
 #define MAYBE_TouchScaleAndMagnify DISABLED_TouchScaleAndMagnify
 #define MAYBE_ConvertHostToRootCoords DISABLED_ConvertHostToRootCoords
 #else
 #define MAYBE_RotateAndMagnify RotateAndMagniy
-#define MAYBE_ScaleAndMagnify ScaleAndMagnify
 #define MAYBE_TouchScaleAndMagnify TouchScaleAndMagnify
 #define MAYBE_ConvertHostToRootCoords ConvertHostToRootCoords
 #endif
 
-TEST_F(AshRootWindowTransformerTest, MAYBE_RotateAndMagnify) {
+TEST_F(RootWindowTransformersTest, MAYBE_RotateAndMagnify) {
   DisplayController* display_controller =
       Shell::GetInstance()->display_controller();
   MagnificationController* magnifier =
       Shell::GetInstance()->magnification_controller();
-  internal::DisplayManager* display_manager =
-      Shell::GetInstance()->display_manager();
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
 
   TestEventHandler event_handler;
   Shell::GetInstance()->AddPreTargetHandler(&event_handler);
@@ -229,7 +227,10 @@ TEST_F(AshRootWindowTransformerTest, MAYBE_RotateAndMagnify) {
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
 
-TEST_F(AshRootWindowTransformerTest, MAYBE_ScaleAndMagnify) {
+TEST_F(RootWindowTransformersTest, ScaleAndMagnify) {
+  if (!SupportsMultipleDisplays())
+    return;
+
   TestEventHandler event_handler;
   Shell::GetInstance()->AddPreTargetHandler(&event_handler);
 
@@ -255,8 +256,7 @@ TEST_F(AshRootWindowTransformerTest, MAYBE_ScaleAndMagnify) {
   EXPECT_EQ("299,150", event_handler.GetLocationAndReset());
   magnifier->SetEnabled(false);
 
-  internal::DisplayManager* display_manager =
-      Shell::GetInstance()->display_manager();
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
   display_manager->SetDisplayUIScale(display1.id(), 1.25);
   display1 = Shell::GetScreen()->GetPrimaryDisplay();
   display2 = ScreenAsh::GetSecondaryDisplay();
@@ -272,7 +272,7 @@ TEST_F(AshRootWindowTransformerTest, MAYBE_ScaleAndMagnify) {
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
 
-TEST_F(AshRootWindowTransformerTest, MAYBE_TouchScaleAndMagnify) {
+TEST_F(RootWindowTransformersTest, MAYBE_TouchScaleAndMagnify) {
   TestEventHandler event_handler;
   Shell::GetInstance()->AddPreTargetHandler(&event_handler);
 
@@ -308,7 +308,7 @@ TEST_F(AshRootWindowTransformerTest, MAYBE_TouchScaleAndMagnify) {
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
 
-TEST_F(AshRootWindowTransformerTest, MAYBE_ConvertHostToRootCoords) {
+TEST_F(RootWindowTransformersTest, MAYBE_ConvertHostToRootCoords) {
   TestEventHandler event_handler;
   Shell::GetInstance()->AddPreTargetHandler(&event_handler);
   MagnificationController* magnifier =
@@ -392,6 +392,24 @@ TEST_F(AshRootWindowTransformerTest, MAYBE_ConvertHostToRootCoords) {
   EXPECT_FLOAT_EQ(1.0f, magnifier->GetScale());
 
   Shell::GetInstance()->RemovePreTargetHandler(&event_handler);
+}
+
+TEST_F(RootWindowTransformersTest, LetterBoxPillarBox) {
+  if (!SupportsMultipleDisplays())
+    return;
+  test::MirrorWindowTestApi test_api;
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  display_manager->SetSoftwareMirroring(true);
+  UpdateDisplay("400x200,500x500");
+  scoped_ptr<aura::RootWindowTransformer> transformer(
+      test_api.CreateCurrentRootWindowTransformer());
+  // Y margin must be margin is (500 - 500/400 * 200) / 2 = 125.
+  EXPECT_EQ("0,125,0,125", transformer->GetHostInsets().ToString());
+
+  UpdateDisplay("200x400,500x500");
+  // The aspect ratio is flipped, so X margin is now 125.
+  transformer = test_api.CreateCurrentRootWindowTransformer();
+  EXPECT_EQ("125,0,125,0", transformer->GetHostInsets().ToString());
 }
 
 }  // namespace test

@@ -10,8 +10,8 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/containers/hash_tables.h"
 #include "base/files/file_util_proxy.h"
-#include "base/hash_tables.h"
 #include "base/id_map.h"
 #include "base/platform_file.h"
 #include "base/shared_memory.h"
@@ -64,9 +64,8 @@ class FileAPIMessageFilter : public BrowserMessageFilter {
   // BrowserMessageFilter implementation.
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
-  virtual void OverrideThreadForMessage(
-      const IPC::Message& message,
-      BrowserThread::ID* thread) OVERRIDE;
+  virtual base::TaskRunner* OverrideTaskRunnerForMessage(
+      const IPC::Message& message) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok) OVERRIDE;
 
@@ -135,8 +134,7 @@ class FileAPIMessageFilter : public BrowserMessageFilter {
   void DidCancel(int request_id, base::PlatformFileError result);
   void DidGetMetadata(int request_id,
                       base::PlatformFileError result,
-                      const base::PlatformFileInfo& info,
-                      const base::FilePath& platform_path);
+                      const base::PlatformFileInfo& info);
   void DidReadDirectory(int request_id,
                         base::PlatformFileError result,
                         const std::vector<fileapi::DirectoryEntry>& entries,

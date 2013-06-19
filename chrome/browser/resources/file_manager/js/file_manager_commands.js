@@ -15,7 +15,7 @@ var CommandUtil = {};
  * @return {DirectoryEntry} Found root.
  */
 CommandUtil.getCommandRoot = function(event, list) {
-  if (util.platform.newUI() && list instanceof VolumeList) {
+  if (list instanceof VolumeList) {
     var result = list.dataModel.item(
                      list.getIndexOfListItem(event.target)) ||
                  list.selectedItem;
@@ -218,12 +218,7 @@ Commands.importCommand = {
     if (!root)
       return;
 
-    chrome.windows.getCurrent(undefined, function(window) {
-      chrome.windows.create(
-          { url: chrome.extension.getURL('photo_import.html') +
-                 '?' + window.id + '#' + PathUtil.getRootPath(root.fullPath),
-            type: 'popup' });
-    }.bind(this));
+    // TODO(mtomasz): Implement launching Photo Importer.
   },
   /**
    * @param {Event} event Command event.
@@ -322,9 +317,9 @@ Commands.renameFileCommand = {
 Commands.volumeHelpCommand = {
   execute: function() {
     if (fileManager.isOnDrive())
-      window.open(FileManager.GOOGLE_DRIVE_HELP, 'help');
+      chrome.tabs.create({ url: FileManager.GOOGLE_DRIVE_HELP });
     else
-      window.open(FileManager.FILES_APP_HELP, 'help');
+      chrome.tabs.create({ url: FileManager.FILES_APP_HELP });
   },
   canExecute: function(event, fileManager) {
     event.canExecute = true;
@@ -336,7 +331,7 @@ Commands.volumeHelpCommand = {
  */
 Commands.driveBuySpaceCommand = {
   execute: function() {
-    window.open(FileManager.GOOGLE_DRIVE_BUY_STORAGE, 'buy-more-space');
+    chrome.tabs.create({ url: FileManager.GOOGLE_DRIVE_BUY_STORAGE });
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
 };
@@ -366,7 +361,7 @@ Commands.driveReloadCommand = {
  */
 Commands.driveGoToDriveCommand = {
   execute: function() {
-    window.open(FileManager.GOOGLE_DRIVE_ROOT, 'drive-root');
+    chrome.tabs.create({ url: FileManager.GOOGLE_DRIVE_ROOT });
   },
   canExecute: CommandUtil.canExecuteVisibleOnDriveOnly
 };

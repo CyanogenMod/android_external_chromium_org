@@ -16,7 +16,7 @@
 namespace extensions {
 
 ExtensionSyncBundle::ExtensionSyncBundle(ExtensionService* extension_service)
-    : extension_service_(extension_service), sync_processor_(NULL) {}
+    : extension_service_(extension_service) {}
 
 ExtensionSyncBundle::~ExtensionSyncBundle() {}
 
@@ -144,7 +144,7 @@ void ExtensionSyncBundle::GetExtensionSyncDataListHelper(
     std::vector<ExtensionSyncData>* sync_data_list) const {
   for (ExtensionSet::const_iterator it = extensions.begin();
        it != extensions.end(); ++it) {
-    const Extension& extension = **it;
+    const Extension& extension = *it->get();
     // If we have pending extension data for this extension, then this
     // version is out of date.  We'll sync back the version we got from
     // sync.

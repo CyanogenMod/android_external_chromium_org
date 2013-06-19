@@ -8,14 +8,16 @@
 
 #include "apps/saved_files_service_factory.h"
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/value_conversions.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
+#include "content/public/browser/notification_service.h"
 
 namespace apps {
 

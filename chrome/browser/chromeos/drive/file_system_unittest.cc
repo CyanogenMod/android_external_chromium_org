@@ -12,22 +12,21 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/threading/sequenced_worker_pool.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/run_loop.h"
 #include "chrome/browser/chromeos/drive/change_list_loader.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/mock_directory_change_observer.h"
-#include "chrome/browser/chromeos/drive/mock_file_cache_observer.h"
+#include "chrome/browser/chromeos/drive/sync_client.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
+#include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/fake_drive_service.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -42,31 +41,27 @@ namespace {
 const int64 kLotsOfSpace = internal::kMinFreeSpace * 10;
 
 // Counts the number of invocation, and if it increased up to |expected_counter|
-// quits the current message loop.
+// quits the current message loop by calling |quit|.
 void AsyncInitializationCallback(
-    int* counter, int expected_counter, base::MessageLoop* message_loop,
+    int* counter, int expected_counter, const base::Closure& quit,
     FileError error, scoped_ptr<ResourceEntry> entry) {
   if (error != FILE_ERROR_OK || !entry) {
     // If we hit an error case, quit the message loop immediately.
     // Then the expectation in the test case can find it because the actual
     // value of |counter| is different from the expected one.
-    message_loop->Quit();
+    quit.Run();
     return;
   }
 
   (*counter)++;
   if (*counter >= expected_counter)
-    message_loop->Quit();
+    quit.Run();
 }
 
 }  // namespace
 
 class FileSystemTest : public testing::Test {
  protected:
-  FileSystemTest()
-      : ui_thread_(content::BrowserThread::UI, &message_loop_) {
-  }
-
   virtual void SetUp() OVERRIDE {
     profile_.reset(new TestingProfile);
 
@@ -82,48 +77,49 @@ class FileSystemTest : public testing::Test {
     scheduler_.reset(new JobScheduler(profile_.get(),
                                       fake_drive_service_.get()));
 
-    scoped_refptr<base::SequencedWorkerPool> pool =
-        content::BrowserThread::GetBlockingPool();
-    blocking_task_runner_ =
-        pool->GetSequencedTaskRunner(pool->GetSequenceToken());
+    ASSERT_TRUE(file_util::CreateDirectory(util::GetCacheRootPath(
+        profile_.get()).Append(util::kMetadataDirectory)));
+    ASSERT_TRUE(file_util::CreateDirectory(util::GetCacheRootPath(
+        profile_.get()).Append(util::kCacheFileDirectory)));
+    ASSERT_TRUE(file_util::CreateDirectory(util::GetCacheRootPath(
+        profile_.get()).Append(util::kTemporaryFileDirectory)));
 
-    cache_.reset(new internal::FileCache(util::GetCacheRootPath(profile_.get()),
-                                         blocking_task_runner_,
-                                         fake_free_disk_space_getter_.get()));
-
-    mock_cache_observer_.reset(new StrictMock<MockCacheObserver>);
-    cache_->AddObserver(mock_cache_observer_.get());
+    cache_.reset(new internal::FileCache(
+        util::GetCacheRootPath(profile_.get()).Append(util::kMetadataDirectory),
+        util::GetCacheRootPath(profile_.get()).Append(
+            util::kCacheFileDirectory),
+        base::MessageLoopProxy::current(),
+        fake_free_disk_space_getter_.get()));
 
     mock_directory_observer_.reset(new StrictMock<MockDirectoryChangeObserver>);
 
-    bool success = false;
-    cache_->RequestInitialize(
-        google_apis::test_util::CreateCopyResultCallback(&success));
-    google_apis::test_util::RunBlockingPoolTask();
-    ASSERT_TRUE(success);
+    ASSERT_TRUE(cache_->Initialize());
 
     SetUpResourceMetadataAndFileSystem();
   }
 
   void SetUpResourceMetadataAndFileSystem() {
     resource_metadata_.reset(new internal::ResourceMetadata(
-        cache_->GetCacheDirectoryPath(internal::FileCache::CACHE_TYPE_META),
-        blocking_task_runner_));
+        util::GetCacheRootPath(profile_.get()).Append(util::kMetadataDirectory),
+        base::MessageLoopProxy::current()));
 
-    file_system_.reset(new FileSystem(profile_.get(),
-                                      cache_.get(),
-                                      fake_drive_service_.get(),
-                                      scheduler_.get(),
-                                      resource_metadata_.get(),
-                                      blocking_task_runner_));
+    file_system_.reset(new FileSystem(
+        profile_.get(),
+        cache_.get(),
+        fake_drive_service_.get(),
+        scheduler_.get(),
+        resource_metadata_.get(),
+        base::MessageLoopProxy::current(),
+        util::GetCacheRootPath(profile_.get()).Append(
+            util::kTemporaryFileDirectory)));
     file_system_->AddObserver(mock_directory_observer_.get());
     file_system_->Initialize();
 
-    FileError error = FILE_ERROR_FAILED;
-    resource_metadata_->Initialize(
-        google_apis::test_util::CreateCopyResultCallback(&error));
-    google_apis::test_util::RunBlockingPoolTask();
-    ASSERT_EQ(FILE_ERROR_OK, error);
+    // Disable delaying so that the sync starts immediately.
+    file_system_->sync_client_for_testing()->set_delay_for_testing(
+        base::TimeDelta::FromSeconds(0));
+
+    ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->Initialize());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -188,18 +184,6 @@ class FileSystemTest : public testing::Test {
       return "";
   }
 
-  // Helper function to call GetCacheEntry from origin thread.
-  bool GetCacheEntryFromOriginThread(const std::string& resource_id,
-                                     const std::string& md5,
-                                     FileCacheEntry* cache_entry) {
-    bool result = false;
-    cache_->GetCacheEntryOnUIThread(
-        resource_id, md5,
-        google_apis::test_util::CreateCopyResultCallback(&result, cache_entry));
-    google_apis::test_util::RunBlockingPoolTask();
-    return result;
-  }
-
   // Flag for specifying the timestamp of the test filesystem cache.
   enum SetUpTestFileSystemParam {
     USE_OLD_TIMESTAMP,
@@ -219,32 +203,20 @@ class FileSystemTest : public testing::Test {
         fake_drive_service_->GetRootResourceId();
     scoped_ptr<internal::ResourceMetadata, test_util::DestroyHelperForTests>
         resource_metadata(new internal::ResourceMetadata(
-            cache_->GetCacheDirectoryPath(internal::FileCache::CACHE_TYPE_META),
-            blocking_task_runner_));
+            util::GetCacheRootPath(profile_.get()).Append(
+                util::kMetadataDirectory),
+            base::MessageLoopProxy::current()));
 
-    FileError error = FILE_ERROR_FAILED;
-    resource_metadata->Initialize(
-        google_apis::test_util::CreateCopyResultCallback(&error));
-    google_apis::test_util::RunBlockingPoolTask();
-    if (error != FILE_ERROR_OK)
+    if (resource_metadata->Initialize() != FILE_ERROR_OK)
       return false;
 
-    resource_metadata->SetLargestChangestampOnUIThread(
-        param == USE_SERVER_TIMESTAMP ? 654321 : 1,
-        google_apis::test_util::CreateCopyResultCallback(&error));
-    google_apis::test_util::RunBlockingPoolTask();
-    if (error != FILE_ERROR_OK)
+    const int64 changestamp = param == USE_SERVER_TIMESTAMP ? 654321 : 1;
+    if (resource_metadata->SetLargestChangestamp(changestamp) != FILE_ERROR_OK)
       return false;
-
-    // drive/root is already prepared by ResourceMetadata.
-    base::FilePath file_path;
 
     // drive/root
-    resource_metadata->AddEntryOnUIThread(
-        util::CreateMyDriveRootEntry(root_resource_id),
-        google_apis::test_util::CreateCopyResultCallback(&error, &file_path));
-    google_apis::test_util::RunBlockingPoolTask();
-    if (error != FILE_ERROR_OK)
+    if (resource_metadata->AddEntry(util::CreateMyDriveRootEntry(
+            root_resource_id)) != FILE_ERROR_OK)
       return false;
 
     // drive/root/File1
@@ -255,11 +227,7 @@ class FileSystemTest : public testing::Test {
     file1.mutable_file_specific_info()->set_md5("md5");
     file1.mutable_file_info()->set_is_directory(false);
     file1.mutable_file_info()->set_size(1048576);
-    resource_metadata->AddEntryOnUIThread(
-        file1,
-        google_apis::test_util::CreateCopyResultCallback(&error, &file_path));
-    google_apis::test_util::RunBlockingPoolTask();
-    if (error != FILE_ERROR_OK)
+    if (resource_metadata->AddEntry(file1) != FILE_ERROR_OK)
       return false;
 
     // drive/root/Dir1
@@ -268,11 +236,7 @@ class FileSystemTest : public testing::Test {
     dir1.set_resource_id("resource_id:Dir1");
     dir1.set_parent_resource_id(root_resource_id);
     dir1.mutable_file_info()->set_is_directory(true);
-    resource_metadata->AddEntryOnUIThread(
-        dir1,
-        google_apis::test_util::CreateCopyResultCallback(&error, &file_path));
-    google_apis::test_util::RunBlockingPoolTask();
-    if (error != FILE_ERROR_OK)
+    if (resource_metadata->AddEntry(dir1) != FILE_ERROR_OK)
       return false;
 
     // drive/root/Dir1/File2
@@ -283,11 +247,7 @@ class FileSystemTest : public testing::Test {
     file2.mutable_file_specific_info()->set_md5("md5");
     file2.mutable_file_info()->set_is_directory(false);
     file2.mutable_file_info()->set_size(555);
-    resource_metadata->AddEntryOnUIThread(
-        file2,
-        google_apis::test_util::CreateCopyResultCallback(&error, &file_path));
-    google_apis::test_util::RunBlockingPoolTask();
-    if (error != FILE_ERROR_OK)
+    if (resource_metadata->AddEntry(file2) != FILE_ERROR_OK)
       return false;
 
     // drive/root/Dir1/SubDir2
@@ -296,11 +256,7 @@ class FileSystemTest : public testing::Test {
     dir2.set_resource_id("resource_id:SubDir2");
     dir2.set_parent_resource_id(dir1.resource_id());
     dir2.mutable_file_info()->set_is_directory(true);
-    resource_metadata->AddEntryOnUIThread(
-        dir2,
-        google_apis::test_util::CreateCopyResultCallback(&error, &file_path));
-    google_apis::test_util::RunBlockingPoolTask();
-    if (error != FILE_ERROR_OK)
+    if (resource_metadata->AddEntry(dir2) != FILE_ERROR_OK)
       return false;
 
     // drive/root/Dir1/SubDir2/File3
@@ -311,11 +267,7 @@ class FileSystemTest : public testing::Test {
     file3.mutable_file_specific_info()->set_md5("md5");
     file3.mutable_file_info()->set_is_directory(false);
     file3.mutable_file_info()->set_size(12345);
-    resource_metadata->AddEntryOnUIThread(
-        file3,
-        google_apis::test_util::CreateCopyResultCallback(&error, &file_path));
-    google_apis::test_util::RunBlockingPoolTask();
-    if (error != FILE_ERROR_OK)
+    if (resource_metadata->AddEntry(file3) != FILE_ERROR_OK)
       return false;
 
     // Recreate resource metadata.
@@ -324,9 +276,7 @@ class FileSystemTest : public testing::Test {
     return true;
   }
 
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<TestingProfile> profile_;
 
   scoped_ptr<internal::FileCache, test_util::DestroyHelperForTests> cache_;
@@ -336,7 +286,6 @@ class FileSystemTest : public testing::Test {
   scoped_ptr<internal::ResourceMetadata, test_util::DestroyHelperForTests>
       resource_metadata_;
   scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
-  scoped_ptr<StrictMock<MockCacheObserver> > mock_cache_observer_;
   scoped_ptr<StrictMock<MockDirectoryChangeObserver> > mock_directory_observer_;
 };
 
@@ -345,15 +294,17 @@ TEST_F(FileSystemTest, DuplicatedAsyncInitialization) {
   EXPECT_CALL(*mock_directory_observer_, OnDirectoryChanged(
       Eq(base::FilePath(FILE_PATH_LITERAL("drive"))))).Times(1);
 
+  base::RunLoop loop;
+
   int counter = 0;
   const GetResourceEntryCallback& callback = base::Bind(
-      &AsyncInitializationCallback, &counter, 2, &message_loop_);
+      &AsyncInitializationCallback, &counter, 2, loop.QuitClosure());
 
   file_system_->GetResourceEntryByPath(
       base::FilePath(FILE_PATH_LITERAL("drive/root")), callback);
   file_system_->GetResourceEntryByPath(
       base::FilePath(FILE_PATH_LITERAL("drive/root")), callback);
-  message_loop_.Run();  // Wait to get our result
+  loop.Run();  // Wait to get our result
   EXPECT_EQ(2, counter);
 
   // Although GetResourceEntryByPath() was called twice, the resource list
@@ -663,6 +614,10 @@ TEST_F(FileSystemTest, CreateDirectoryByImplicitLoad) {
 }
 
 TEST_F(FileSystemTest, PinAndUnpin) {
+  // Pinned file gets synced and it results in entry state changes.
+  EXPECT_CALL(*mock_directory_observer_, OnDirectoryChanged(
+      Eq(base::FilePath(FILE_PATH_LITERAL("drive/root"))))).Times(AtLeast(1));
+
   ASSERT_TRUE(LoadFullResourceList());
 
   base::FilePath file_path(FILE_PATH_LITERAL("drive/root/File 1.txt"));
@@ -673,23 +628,57 @@ TEST_F(FileSystemTest, PinAndUnpin) {
 
   // Pin the file.
   FileError error = FILE_ERROR_FAILED;
-  EXPECT_CALL(*mock_cache_observer_,
-              OnCachePinned(entry->resource_id(),
-                            entry->file_specific_info().md5())).Times(1);
   file_system_->Pin(file_path,
                     google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
+  FileCacheEntry cache_entry;
+  EXPECT_TRUE(cache_->GetCacheEntry(
+      entry->resource_id(), std::string(), &cache_entry));
+  EXPECT_TRUE(cache_entry.is_pinned());
+  EXPECT_TRUE(cache_entry.is_present());
+
   // Unpin the file.
   error = FILE_ERROR_FAILED;
-  EXPECT_CALL(*mock_cache_observer_,
-              OnCacheUnpinned(entry->resource_id(),
-                              entry->file_specific_info().md5())).Times(1);
   file_system_->Unpin(file_path,
                       google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
+
+  EXPECT_TRUE(cache_->GetCacheEntry(
+      entry->resource_id(), std::string(), &cache_entry));
+  EXPECT_FALSE(cache_entry.is_pinned());
+}
+
+TEST_F(FileSystemTest, PinAndUnpin_NotSynced) {
+  ASSERT_TRUE(LoadFullResourceList());
+
+  base::FilePath file_path(FILE_PATH_LITERAL("drive/root/File 1.txt"));
+
+  // Get the file info.
+  scoped_ptr<ResourceEntry> entry(GetResourceEntryByPathSync(file_path));
+  ASSERT_TRUE(entry);
+
+  // Unpin the file just after pinning. File fetch should be cancelled.
+  FileError error_pin = FILE_ERROR_FAILED;
+  file_system_->Pin(
+      file_path,
+      google_apis::test_util::CreateCopyResultCallback(&error_pin));
+
+  FileError error_unpin = FILE_ERROR_FAILED;
+  file_system_->Unpin(
+      file_path,
+      google_apis::test_util::CreateCopyResultCallback(&error_unpin));
+
+  google_apis::test_util::RunBlockingPoolTask();
+  EXPECT_EQ(FILE_ERROR_OK, error_pin);
+  EXPECT_EQ(FILE_ERROR_OK, error_unpin);
+
+  // No cache file available because the sync was cancelled by Unpin().
+  FileCacheEntry cache_entry;
+  EXPECT_FALSE(cache_->GetCacheEntry(
+      entry->resource_id(), std::string(), &cache_entry));
 }
 
 TEST_F(FileSystemTest, GetAvailableSpace) {
@@ -725,16 +714,12 @@ TEST_F(FileSystemTest, OpenAndCloseFile) {
   // The transfered file is cached and the change of "offline available"
   // attribute is notified.
   EXPECT_CALL(*mock_directory_observer_, OnDirectoryChanged(
-      Eq(base::FilePath(FILE_PATH_LITERAL("drive/root"))))).Times(1);
+      Eq(base::FilePath(FILE_PATH_LITERAL("drive/root"))))).Times(AtLeast(1));
 
   const base::FilePath kFileInRoot(FILE_PATH_LITERAL("drive/root/File 1.txt"));
   scoped_ptr<ResourceEntry> entry(GetResourceEntryByPathSync(kFileInRoot));
   const std::string& file_resource_id = entry->resource_id();
   const std::string& md5 = entry->file_specific_info().md5();
-
-  // A dirty file is created on close.
-  EXPECT_CALL(*mock_cache_observer_, OnCacheCommitted(file_resource_id))
-      .Times(1);
 
   // Open kFileInRoot ("drive/root/File 1.txt").
   FileError error = FILE_ERROR_FAILED;
@@ -764,19 +749,19 @@ TEST_F(FileSystemTest, OpenAndCloseFile) {
   EXPECT_EQ(kExpectedContent, cache_file_data);
 
   FileCacheEntry cache_entry;
-  EXPECT_TRUE(GetCacheEntryFromOriginThread(file_resource_id, md5,
-                                            &cache_entry));
+  EXPECT_TRUE(cache_->GetCacheEntry(file_resource_id, md5, &cache_entry));
   EXPECT_TRUE(cache_entry.is_present());
   EXPECT_TRUE(cache_entry.is_dirty());
-  EXPECT_TRUE(cache_entry.is_persistent());
 
   base::FilePath cache_file_path;
-  cache_->GetFileOnUIThread(file_resource_id, md5,
-                            google_apis::test_util::CreateCopyResultCallback(
-                                &error, &cache_file_path));
-  google_apis::test_util::RunBlockingPoolTask();
-  EXPECT_EQ(FILE_ERROR_OK, error);
+  EXPECT_EQ(FILE_ERROR_OK,
+            cache_->GetFile(file_resource_id, md5, &cache_file_path));
   EXPECT_EQ(cache_file_path, opened_file_path);
+
+  // Write a new content.
+  const std::string kNewContent = kExpectedContent + kExpectedContent;
+  EXPECT_TRUE(google_apis::test_util::WriteStringToFile(cache_file_path,
+                                                        kNewContent));
 
   // Close kFileInRoot ("drive/root/File 1.txt").
   file_system_->CloseFile(
@@ -787,12 +772,17 @@ TEST_F(FileSystemTest, OpenAndCloseFile) {
   // Verify that the file was properly closed.
   EXPECT_EQ(FILE_ERROR_OK, error);
 
-  // Verify that the cache state was changed as expected.
-  EXPECT_TRUE(GetCacheEntryFromOriginThread(file_resource_id, md5,
-                                            &cache_entry));
-  EXPECT_TRUE(cache_entry.is_present());
-  EXPECT_TRUE(cache_entry.is_dirty());
-  EXPECT_TRUE(cache_entry.is_persistent());
+  // Verify that the file was synced as expected.
+  google_apis::GDataErrorCode gdata_error = google_apis::GDATA_FILE_ERROR;
+  scoped_ptr<google_apis::ResourceEntry> gdata_entry;
+  fake_drive_service_->GetResourceEntry(
+      file_resource_id,
+      google_apis::test_util::CreateCopyResultCallback(
+          &gdata_error, &gdata_entry));
+  google_apis::test_util::RunBlockingPoolTask();
+  EXPECT_EQ(gdata_error, google_apis::HTTP_SUCCESS);
+  ASSERT_TRUE(gdata_entry);
+  EXPECT_EQ(static_cast<int>(kNewContent.size()), gdata_entry->file_size());
 
   // Try to close the same file twice.
   file_system_->CloseFile(
@@ -812,17 +802,14 @@ TEST_F(FileSystemTest, MarkCacheFileAsMountedAndUnmounted) {
   ASSERT_TRUE(entry);
 
   // Write to cache.
-  FileError error = FILE_ERROR_FAILED;
-  cache_->StoreOnUIThread(
+  ASSERT_EQ(FILE_ERROR_OK, cache_->Store(
       entry->resource_id(),
       entry->file_specific_info().md5(),
       google_apis::test_util::GetTestFilePath("chromeos/gdata/root_feed.json"),
-      internal::FileCache::FILE_OPERATION_COPY,
-      google_apis::test_util::CreateCopyResultCallback(&error));
-  google_apis::test_util::RunBlockingPoolTask();
-  ASSERT_EQ(FILE_ERROR_OK, error);
+      internal::FileCache::FILE_OPERATION_COPY));
 
   // Test for mounting.
+  FileError error = FILE_ERROR_FAILED;
   base::FilePath file_path;
   file_system_->MarkCacheFileAsMounted(
       file_in_root,
@@ -830,16 +817,8 @@ TEST_F(FileSystemTest, MarkCacheFileAsMountedAndUnmounted) {
   google_apis::test_util::RunBlockingPoolTask();
   EXPECT_EQ(FILE_ERROR_OK, error);
 
-  bool success = false;
-  FileCacheEntry cache_entry;
-  cache_->GetCacheEntryOnUIThread(
-      entry->resource_id(),
-      entry->file_specific_info().md5(),
-      google_apis::test_util::CreateCopyResultCallback(&success, &cache_entry));
-  google_apis::test_util::RunBlockingPoolTask();
-
-  EXPECT_TRUE(success);
-  EXPECT_TRUE(cache_entry.is_mounted());
+  // Cannot remove a cache entry while it's being mounted.
+  EXPECT_EQ(FILE_ERROR_IN_USE, cache_->Remove(entry->resource_id()));
 
   // Test for unmounting.
   error = FILE_ERROR_FAILED;
@@ -847,18 +826,10 @@ TEST_F(FileSystemTest, MarkCacheFileAsMountedAndUnmounted) {
       file_path,
       google_apis::test_util::CreateCopyResultCallback(&error));
   google_apis::test_util::RunBlockingPoolTask();
-
   EXPECT_EQ(FILE_ERROR_OK, error);
 
-  success = false;
-  cache_->GetCacheEntryOnUIThread(
-      entry->resource_id(),
-      entry->file_specific_info().md5(),
-      google_apis::test_util::CreateCopyResultCallback(&success, &cache_entry));
-  google_apis::test_util::RunBlockingPoolTask();
-
-  EXPECT_TRUE(success);
-  EXPECT_FALSE(cache_entry.is_mounted());
+  // Now able to remove the cache entry.
+  EXPECT_EQ(FILE_ERROR_OK, cache_->Remove(entry->resource_id()));
 }
 
 }   // namespace drive

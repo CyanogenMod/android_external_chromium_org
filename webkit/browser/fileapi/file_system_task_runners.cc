@@ -11,7 +11,7 @@ namespace fileapi {
 
 FileSystemTaskRunners::FileSystemTaskRunners(
     base::SingleThreadTaskRunner* io_task_runner,
-    base::SingleThreadTaskRunner* file_task_runner)
+    base::SequencedTaskRunner* file_task_runner)
     : io_task_runner_(io_task_runner),
       file_task_runner_(file_task_runner) {
 }
@@ -19,9 +19,9 @@ FileSystemTaskRunners::FileSystemTaskRunners(
 // static
 scoped_ptr<FileSystemTaskRunners>
 FileSystemTaskRunners::CreateMockTaskRunners() {
-  return make_scoped_ptr(new FileSystemTaskRunners(
-      base::MessageLoopProxy::current(),
-      base::MessageLoopProxy::current()));
+  return make_scoped_ptr(
+      new FileSystemTaskRunners(base::MessageLoopProxy::current().get(),
+                                base::MessageLoopProxy::current().get()));
 }
 
 FileSystemTaskRunners::~FileSystemTaskRunners() {

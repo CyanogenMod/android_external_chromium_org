@@ -440,6 +440,11 @@ void ImmersiveModeControllerAsh::OnTopContainerBoundsChanged() {
   anchored_widget_manager_->MaybeRepositionAnchoredWidgets();
 }
 
+void ImmersiveModeControllerAsh::OnFindBarVisibleBoundsChanged(
+    const gfx::Rect& new_visible_bounds_in_screen) {
+  find_bar_visible_bounds_in_screen_ = new_visible_bounds_in_screen;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Observers:
 
@@ -456,14 +461,10 @@ void ImmersiveModeControllerAsh::OnMouseEvent(ui::MouseEvent* event) {
   if (!enabled_)
     return;
 
-  if (event->flags() & ui::EF_IS_SYNTHESIZED)
-    return;
-
-  // Handle ET_MOUSE_PRESSED and ET_MOUSE_RELEASED so that we get the updated
-  // mouse position ASAP once a nested message loop finishes running.
   if (event->type() != ui::ET_MOUSE_MOVED &&
       event->type() != ui::ET_MOUSE_PRESSED &&
-      event->type() != ui::ET_MOUSE_RELEASED) {
+      event->type() != ui::ET_MOUSE_RELEASED &&
+      event->type() != ui::ET_MOUSE_CAPTURE_CHANGED) {
     return;
   }
 
@@ -472,12 +473,18 @@ void ImmersiveModeControllerAsh::OnMouseEvent(ui::MouseEvent* event) {
   if (!views::Widget::GetWidgetForNativeWindow(native_window_)->IsActive())
     return;
 
-  // Mouse hover might trigger a reveal if the cursor pauses at the top of the
-  // screen for a while.
-  UpdateTopEdgeHoverTimer(event);
+  // Mouse hover should not initiate revealing the top-of-window views while
+  // a window has mouse capture.
+  if (aura::client::GetCaptureWindow(native_window_))
+    return;
 
-  // Pass along event for further handling.
-  UpdateLocatedEventRevealedLock(event);
+  if (IsRevealed())
+    UpdateLocatedEventRevealedLock(event);
+
+  // Trigger a reveal if the cursor pauses at the top of the screen for a
+  // while.
+  if (event->type() != ui::ET_MOUSE_CAPTURE_CHANGED)
+    UpdateTopEdgeHoverTimer(event);
 }
 
 void ImmersiveModeControllerAsh::OnTouchEvent(ui::TouchEvent* event) {
@@ -735,17 +742,13 @@ void ImmersiveModeControllerAsh::UpdateLocatedEventRevealedLock(
     return;
   }
 
-  DCHECK(!event || event->type() != ui::ET_MOUSE_DRAGGED);
-  if (!event) {
-    // If a window has capture, we may be in the middle of a drag. Delay
-    // updating the revealed lock till we get more specifics via OnMouseEvent()
-    // or OnTouchEvent();
-    if (aura::client::GetCaptureWindow(native_window_))
-      return;
-  }
+  // Ignore all events while a window has capture. This keeps the top-of-window
+  // views revealed during a drag.
+  if (aura::client::GetCaptureWindow(native_window_))
+    return;
 
   gfx::Point location_in_screen;
-  if (event) {
+  if (event && event->type() != ui::ET_MOUSE_CAPTURE_CHANGED) {
     location_in_screen = event->location();
     aura::Window* target = static_cast<aura::Window*>(event->target());
     aura::client::ScreenPositionClient* screen_position_client =
@@ -764,22 +767,29 @@ void ImmersiveModeControllerAsh::UpdateLocatedEventRevealedLock(
   }
 
   gfx::Rect hit_bounds_in_screen = top_container_->GetBoundsInScreen();
+  gfx::Rect find_bar_hit_bounds_in_screen = find_bar_visible_bounds_in_screen_;
 
-  // Allow the cursor to move slightly below the top container's bottom edge
-  // before sliding closed. This helps when the user is attempting to click on
-  // the bookmark bar and overshoots slightly.
+  // Allow the cursor to move slightly off the top-of-window views before
+  // sliding closed. This helps when the user is attempting to click on the
+  // bookmark bar and overshoots slightly.
   if (event && event->type() == ui::ET_MOUSE_MOVED) {
     const int kBoundsOffsetY = 8;
     hit_bounds_in_screen.Inset(0, 0, 0, -kBoundsOffsetY);
+    find_bar_hit_bounds_in_screen.Inset(0, 0, 0, -kBoundsOffsetY);
   }
 
-  if (hit_bounds_in_screen.Contains(location_in_screen))
+  if (hit_bounds_in_screen.Contains(location_in_screen) ||
+      find_bar_hit_bounds_in_screen.Contains(location_in_screen)) {
     AcquireLocatedEventRevealedLock();
-  else
+  } else {
     located_event_revealed_lock_.reset();
+  }
 }
 
 void ImmersiveModeControllerAsh::AcquireLocatedEventRevealedLock() {
+  // CAUTION: Acquiring the lock results in a reentrant call to
+  // AcquireLocatedEventRevealedLock() when
+  // |ImmersiveModeControllerAsh::animations_disabled_for_test_| is true.
   if (!located_event_revealed_lock_.get())
     located_event_revealed_lock_.reset(GetRevealedLock(ANIMATE_REVEAL_YES));
 }

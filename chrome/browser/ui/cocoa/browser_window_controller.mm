@@ -267,9 +267,13 @@ enum {
     NSWindow* window = [self window];
     windowShim_.reset(new BrowserWindowCocoa(browser, self));
 
+    // Eagerly enable core animation if requested.
     if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kUseCoreAnimation))
+            switches::kUseCoreAnimation) &&
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kUseCoreAnimation) != "lazy") {
       [[[self window] contentView] setWantsLayer:YES];
+    }
 
     // Set different minimum sizes on tabbed windows vs non-tabbed, e.g. popups.
     // This has to happen before -enforceMinWindowSize: is called further down.
@@ -572,6 +576,7 @@ enum {
 - (void)updateDevToolsForContents:(WebContents*)contents {
   [devToolsController_ updateDevToolsForWebContents:contents
                                         withProfile:browser_->profile()];
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 // Called when the user wants to close a window or from the shutdown process.
@@ -1634,8 +1639,6 @@ enum {
   // TODO(dmaclach): Instead of redrawing the whole window, views that care
   // about the active window state should be registering for notifications.
   [[self window] setViewsNeedDisplay:YES];
-  if (avatarButtonController_.get())
-    [avatarButtonController_ updateColors:[self themeProvider]];
 }
 
 - (ui::ThemeProvider*)themeProvider {
@@ -1737,8 +1740,6 @@ enum {
   // image to display based on the browser.
   avatarButtonController_.reset(
       [[AvatarButtonController alloc] initWithBrowser:browser_.get()]);
-  if ([avatarButtonController_ labelView])
-    [avatarButtonController_ updateColors:[self themeProvider]];
 
   NSView* view = [avatarButtonController_ view];
   [view setAutoresizingMask:NSViewMinXMargin | NSViewMinYMargin];
@@ -1949,6 +1950,19 @@ willAnimateFromState:(BookmarkBar::State)oldState
   return fullscreenExitBubbleController_.get();
 }
 
+- (NSRect)omniboxPopupAnchorRect {
+  // Start with toolbar rect.
+  NSView* toolbarView = [toolbarController_ view];
+  NSRect anchorRect = [toolbarView frame];
+
+  // Adjust to account for height and possible bookmark bar.
+  anchorRect.origin.y =
+      NSMaxY(anchorRect) - [toolbarController_ desiredHeightForCompression:0];
+
+  // Shift to window base coordinates.
+  return [[toolbarView superview] convertRect:anchorRect toView:nil];
+}
+
 - (void)commitInstant {
   if (BrowserInstantController* controller = browser_->instant_controller())
     controller->instant()->CommitIfPossible(INSTANT_COMMIT_FOCUS_LOST);
@@ -1989,6 +2003,16 @@ willAnimateFromState:(BookmarkBar::State)oldState
 }
 
 - (void)onFindBarVisibilityChanged {
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
+}
+
+- (void)onHistoryOverlayShown {
+  ++historyOverlayCount_;
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
+}
+
+- (void)onHistoryOverlayHidden {
+  --historyOverlayCount_;
   [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 

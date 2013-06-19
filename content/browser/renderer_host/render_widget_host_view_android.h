@@ -16,6 +16,8 @@
 #include "base/process.h"
 #include "cc/layers/delegated_renderer_layer_client.h"
 #include "cc/layers/texture_layer_client.h"
+#include "cc/output/begin_frame_args.h"
+#include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/renderer_host/ime_adapter_android.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -54,6 +56,7 @@ struct NativeWebKeyboardEvent;
 // -----------------------------------------------------------------------------
 class RenderWidgetHostViewAndroid
     : public RenderWidgetHostViewBase,
+      public BrowserAccessibilityDelegate,
       public cc::TextureLayerClient,
       public cc::DelegatedRendererLayerClient {
  public:
@@ -91,8 +94,8 @@ class RenderWidgetHostViewAndroid
   virtual float GetOverdrawBottomHeight() const OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    bool can_compose_inline) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
@@ -136,7 +139,7 @@ class RenderWidgetHostViewAndroid
   virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
-  virtual void ProcessAckedTouchEvent(const WebKit::WebTouchEvent& touch,
+  virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
   virtual void SetHasHorizontalScrollbar(
       bool has_horizontal_scrollbar) OVERRIDE;
@@ -162,6 +165,18 @@ class RenderWidgetHostViewAndroid
       bool scroll_down, int pixels_to_scroll, int mouse_event_x,
       int mouse_event_y) OVERRIDE;
 
+  // Implementation of BrowserAccessibilityDelegate:
+  virtual void SetAccessibilityFocus(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityScrollToMakeVisible(
+      int acc_obj_id, gfx::Rect subfocus) OVERRIDE;
+  virtual void AccessibilityScrollToPoint(
+      int acc_obj_id, gfx::Point point) OVERRIDE;
+  virtual void AccessibilitySetTextSelection(
+      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
+  virtual gfx::Point GetLastTouchEventLocation() const OVERRIDE;
+  virtual void FatalAccessibilityTreeError() OVERRIDE;
+
   // cc::TextureLayerClient implementation.
   virtual unsigned PrepareTexture(cc::ResourceUpdateQueue* queue) OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
@@ -178,8 +193,9 @@ class RenderWidgetHostViewAndroid
   void SendMouseEvent(const WebKit::WebMouseEvent& event);
   void SendMouseWheelEvent(const WebKit::WebMouseWheelEvent& event);
   void SendGestureEvent(const WebKit::WebGestureEvent& event);
-  void SendBeginFrame(base::TimeTicks frame_time);
+  void SendBeginFrame(const cc::BeginFrameArgs& args);
 
+  void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
   void OnProcessImeBatchStateAck(bool is_begin);
   void OnDidChangeBodyBackgroundColor(SkColor color);
   void OnStartContentIntent(const GURL& content_url);

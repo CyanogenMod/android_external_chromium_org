@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "components/autofill/browser/autofill_external_delegate.h"
+
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/browser/autocomplete_history_manager.h"
-#include "components/autofill/browser/autofill_external_delegate.h"
 #include "components/autofill/browser/autofill_manager.h"
-#include "components/autofill/common/autofill_messages.h"
+#include "components/autofill/core/common/autofill_messages.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/component_resources.h"
+#include "grit/component_strings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -24,20 +25,7 @@
 using content::RenderViewHost;
 using WebKit::WebAutofillClient;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(autofill::AutofillExternalDelegate);
-
 namespace autofill {
-
-void AutofillExternalDelegate::CreateForWebContentsAndManager(
-    content::WebContents* web_contents,
-    AutofillManager* autofill_manager) {
-  if (FromWebContents(web_contents))
-    return;
-
-  web_contents->SetUserData(
-      UserDataKey(),
-      new AutofillExternalDelegate(web_contents, autofill_manager));
-}
 
 AutofillExternalDelegate::AutofillExternalDelegate(
     content::WebContents* web_contents,
@@ -133,7 +121,13 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
   // Send to display.
   if (autofill_query_field_.is_focusable) {
     autofill_manager_->delegate()->ShowAutofillPopup(
-        element_bounds_, values, labels, icons, ids, GetWeakPtr());
+        element_bounds_,
+        autofill_query_field_.text_direction,
+        values,
+        labels,
+        icons,
+        ids,
+        GetWeakPtr());
   }
 }
 
@@ -153,7 +147,13 @@ void AutofillExternalDelegate::OnShowPasswordSuggestions(
   std::vector<int> password_ids(suggestions.size(),
                                 WebAutofillClient::MenuItemIDPasswordEntry);
   autofill_manager_->delegate()->ShowAutofillPopup(
-      element_bounds_, suggestions, empty, empty, password_ids, GetWeakPtr());
+      element_bounds_,
+      autofill_query_field_.text_direction,
+      suggestions,
+      empty,
+      empty,
+      password_ids,
+      GetWeakPtr());
 }
 
 void AutofillExternalDelegate::SetCurrentDataListValues(

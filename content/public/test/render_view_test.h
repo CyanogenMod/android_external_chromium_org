@@ -10,14 +10,14 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/test/mock_render_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/Platform.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 
 namespace WebKit {
 class WebHistoryItem;

@@ -30,16 +30,11 @@ MessageCenterTrayBridge::MessageCenterTrayBridge(
     message_center::MessageCenter* message_center)
     : message_center_(message_center),
       tray_(new message_center::MessageCenterTray(this, message_center)),
-      updates_pending_(false),
       weak_ptr_factory_(this) {
-  NSStatusBar* status_bar = [NSStatusBar systemStatusBar];
-  status_item_view_.reset(
-      [[MCStatusItemView alloc] initWithStatusItem:
-          [status_bar statusItemWithLength:NSVariableStatusItemLength]]);
-  [status_item_view_ setCallback:^{ tray_->ToggleMessageCenterBubble(); }];
 }
 
 MessageCenterTrayBridge::~MessageCenterTrayBridge() {
+  [status_item_view_ removeItem];
 }
 
 void MessageCenterTrayBridge::OnMessageCenterTrayChanged() {
@@ -49,10 +44,7 @@ void MessageCenterTrayBridge::OnMessageCenterTrayChanged() {
       base::Bind(&MessageCenterTrayBridge::UpdateStatusItem,
                  weak_ptr_factory_.GetWeakPtr()));
 
-  if (tray_->message_center_visible())
-    [tray_controller_ onMessageCenterTrayChanged];
-  else
-    updates_pending_ = true;
+  [tray_controller_ onMessageCenterTrayChanged];
 }
 
 bool MessageCenterTrayBridge::ShowPopups() {
@@ -71,32 +63,39 @@ void MessageCenterTrayBridge::UpdatePopups() {
 }
 
 bool MessageCenterTrayBridge::ShowMessageCenter() {
-  if (!tray_controller_) {
-    tray_controller_.reset(
-        [[MCTrayController alloc] initWithMessageCenterTray:tray_.get()]);
-  }
+  if (tray_controller_)
+    return false;
 
-  if (updates_pending_) {
-    [tray_controller_ onMessageCenterTrayChanged];
-    UpdateStatusItem();
-    updates_pending_ = false;
-  }
-
-  [status_item_view_ setHighlight:YES];
-  NSRect frame = [[status_item_view_ window] frame];
-  [tray_controller_ showTrayAtRightOf:NSMakePoint(NSMinX(frame),
-                                                  NSMinY(frame))
-                             atLeftOf:NSMakePoint(NSMaxX(frame),
-                                                  NSMinY(frame))];
+  // Post a task to open the window, because in
+  // MessageCenterTray::ShowMessageCenterBubble, the unread count gets set to
+  // 0 after it calls this delegate. In order show the window at the correct
+  // position after the unread count is updated, opening the window must be
+  // performed after the return of this method.
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&MessageCenterTrayBridge::OpenTrayWindow,
+                 weak_ptr_factory_.GetWeakPtr()));
   return true;
 }
 
 void MessageCenterTrayBridge::HideMessageCenter() {
   [status_item_view_ setHighlight:NO];
   [tray_controller_ close];
+  tray_controller_.autorelease();
 }
 
 void MessageCenterTrayBridge::UpdateStatusItem() {
+  // Only show the status item if there are notifications.
+  if (message_center_->NotificationCount() == 0) {
+    [status_item_view_ removeItem];
+    status_item_view_.reset();
+    return;
+  }
+
+  if (!status_item_view_) {
+    status_item_view_.reset([[MCStatusItemView alloc] init]);
+    [status_item_view_ setCallback:^{ tray_->ToggleMessageCenterBubble(); }];
+  }
+
   size_t unread_count = message_center_->UnreadNotificationCount();
   [status_item_view_ setUnreadCount:unread_count];
 
@@ -110,4 +109,19 @@ void MessageCenterTrayBridge::UpdateStatusItem() {
     [status_item_view_ setToolTip:
         l10n_util::GetNSStringF(IDS_MESSAGE_CENTER_TOOLTIP, product_name)];
   }
+}
+
+void MessageCenterTrayBridge::OpenTrayWindow() {
+  DCHECK(!tray_controller_);
+  tray_controller_.reset(
+      [[MCTrayController alloc] initWithMessageCenterTray:tray_.get()]);
+
+  UpdateStatusItem();
+
+  [status_item_view_ setHighlight:YES];
+  NSRect frame = [[status_item_view_ window] frame];
+  [tray_controller_ showTrayAtRightOf:NSMakePoint(NSMinX(frame),
+                                                  NSMinY(frame))
+                             atLeftOf:NSMakePoint(NSMaxX(frame),
+                                                  NSMinY(frame))];
 }

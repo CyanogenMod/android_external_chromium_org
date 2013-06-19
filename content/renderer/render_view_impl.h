@@ -27,6 +27,7 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/view_message_enums.h"
+#include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
@@ -43,18 +44,18 @@
 #include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/public/platform/WebFileSystem.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageSerializerClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebViewClient.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebIconURL.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebNavigationType.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebPageSerializerClient.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebViewClient.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/common/webpreferences.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
@@ -62,7 +63,7 @@
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebContentDetectionResult.h"
+#include "third_party/WebKit/public/web/WebContentDetectionResult.h"
 #endif
 
 #if defined(COMPILER_MSVC)
@@ -79,7 +80,6 @@ struct PP_NetAddress_Private;
 struct ViewMsg_Navigate_Params;
 struct ViewMsg_PostMessage_Params;
 struct ViewMsg_StopFinding_Params;
-struct ViewMsg_SwapOut_Params;
 struct WebDropData;
 
 namespace ui {
@@ -518,6 +518,7 @@ class CONTENT_EXPORT RenderViewImpl
   // date and time input fields using MULTIPLE_FIELDS_UI
   virtual bool openDateTimeChooser(const WebKit::WebDateTimeChooserParams&,
                                    WebKit::WebDateTimeChooserCompletion*);
+  virtual void didScrollWithKeyboard(const WebKit::WebSize& delta);
 #endif
 
   // WebKit::WebFrameClient implementation -------------------------------------
@@ -686,6 +687,7 @@ class CONTENT_EXPORT RenderViewImpl
       WebKit::WebFrame* targetFrame,
       WebKit::WebSecurityOrigin targetOrigin,
       WebKit::WebDOMMessageEvent event) OVERRIDE;
+  virtual WebKit::WebString acceptLanguages() OVERRIDE;
   virtual WebKit::WebString userAgentOverride(
       WebKit::WebFrame* frame,
       const WebKit::WebURL& url) OVERRIDE;
@@ -795,6 +797,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void DidHandleKeyEvent() OVERRIDE;
   virtual bool WillHandleMouseEvent(
       const WebKit::WebMouseEvent& event) OVERRIDE;
+  virtual bool WillHandleKeyEvent(
+      const WebKit::WebKeyboardEvent& event) OVERRIDE;
   virtual bool WillHandleGestureEvent(
       const WebKit::WebGestureEvent& event) OVERRIDE;
   virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) OVERRIDE;
@@ -856,7 +860,7 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, LastCommittedUpdateState);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnExtendSelectionAndDelete);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnHandleKeyboardEvent);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnImeStateChanged);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnImeTypeChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavStateChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetTextDirection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnUpdateWebPreferences);
@@ -961,7 +965,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnClearFocusedNode();
   void OnClosePage();
   void OnContextMenuClosed(const CustomContextMenuContext& custom_context);
-  void OnShowContextMenu();
+  void OnShowContextMenu(const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
   void OnCSSInsertRequest(const string16& frame_xpath,
                           const std::string& css);
@@ -1041,7 +1045,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnShouldClose();
   void OnStop();
   void OnStopFinding(StopFindAction action);
-  void OnSwapOut(const ViewMsg_SwapOut_Params& params);
+  void OnSwapOut();
   void OnThemeChanged();
   void OnUpdateTargetURLAck();
   void OnUpdateTimezone();
@@ -1358,6 +1362,12 @@ class CONTENT_EXPORT RenderViewImpl
   // much about leaks.
   IDMap<ContextMenuClient, IDMapExternalPointer> pending_context_menus_;
 
+#if defined(OS_ANDROID)
+  // Cache the old top controls state constraints. Used when updating
+  // current value only without altering the constraints.
+  cc::TopControlsState top_controls_constraints_;
+#endif
+
   // View ----------------------------------------------------------------------
 
   // Cache the preferred size of the page in order to prevent sending the IPC
@@ -1546,6 +1556,9 @@ class CONTENT_EXPORT RenderViewImpl
   // RenderViewImpl.
   scoped_ptr<RenderViewPepperHelper> pepper_helper_;
   scoped_ptr<StatsCollectionObserver> stats_collection_observer_;
+
+  ContextMenuSourceType context_menu_source_type_;
+  gfx::Point touch_editing_context_menu_location_;
 
   // ---------------------------------------------------------------------------
   // ADDING NEW DATA? Please see if it fits appropriately in one of the above

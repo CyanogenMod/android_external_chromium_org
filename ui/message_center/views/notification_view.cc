@@ -5,7 +5,7 @@
 #include "ui/message_center/views/notification_view.h"
 
 #include "base/command_line.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "ui/base/layout.h"
@@ -338,7 +338,8 @@ namespace message_center {
 // static
 MessageView* NotificationView::Create(const Notification& notification,
                                       MessageCenter* message_center,
-                                      bool expanded) {
+                                      bool expanded,
+                                      bool top_level) {
   // Use MessageSimpleView for simple notifications unless rich style
   // notifications are enabled. This preserves the appearance of notifications
   // created by existing code that uses webkitNotifications.
@@ -364,7 +365,19 @@ MessageView* NotificationView::Create(const Notification& notification,
   }
 
   // Currently all roads lead to the generic NotificationView.
-  return new NotificationView(notification, message_center, expanded);
+  MessageView* notification_view =
+      new NotificationView(notification, message_center, expanded);
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Don't create shadows for notification toasts on linux wih aura.
+  if (top_level)
+    return notification_view;
+#endif
+
+  if (IsRichNotificationEnabled())
+    notification_view->CreateShadowBorder();
+
+  return notification_view;
 }
 
 NotificationView::NotificationView(const Notification& notification,

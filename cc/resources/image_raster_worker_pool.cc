@@ -30,7 +30,9 @@ class ImageWorkerPoolTaskImpl : public internal::WorkerPoolTask {
 
   // Overridden from internal::WorkerPoolTask:
   virtual void RunOnThread(unsigned thread_index) OVERRIDE {
-    DCHECK(buffer_);
+    if (!buffer_)
+      return;
+
     SkBitmap bitmap;
     bitmap.setConfig(SkBitmap::kARGB_8888_Config,
                      task_->resource()->size().width(),
@@ -81,11 +83,11 @@ void ImageRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   for (RasterTask::Queue::TaskVector::const_iterator it =
            raster_tasks().begin();
        it != raster_tasks().end(); ++it) {
-    internal::RasterWorkerPoolTask* task = *it;
+    internal::RasterWorkerPoolTask* task = it->get();
 
     TaskMap::iterator image_it = image_tasks_.find(task);
     if (image_it != image_tasks_.end()) {
-      internal::WorkerPoolTask* image_task = image_it->second;
+      internal::WorkerPoolTask* image_task = image_it->second.get();
       tasks.push_back(image_task);
       continue;
     }
@@ -99,7 +101,7 @@ void ImageRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
 
     // TODO(reveman): Avoid having to make a copy of dependencies.
     internal::WorkerPoolTask::TaskVector dependencies = task->dependencies();
-    scoped_refptr<internal::WorkerPoolTask> image_task(
+    scoped_refptr<internal::WorkerPoolTask> new_image_task(
         new ImageWorkerPoolTaskImpl(
             task,
             &dependencies,
@@ -109,8 +111,8 @@ void ImageRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
                        base::Unretained(this),
                        make_scoped_refptr(task))));
 
-    image_tasks_[task] = image_task;
-    tasks.push_back(image_task);
+    image_tasks_[task] = new_image_task;
+    tasks.push_back(new_image_task);
   }
 
   if (tasks.empty()) {
@@ -128,7 +130,7 @@ void ImageRasterWorkerPool::OnRasterTaskCompleted(
   TRACE_EVENT1("cc", "ImageRasterWorkerPool::OnRasterTaskCompleted",
                "was_canceled", was_canceled);
 
-  DCHECK(image_tasks_.find(task) != image_tasks_.end());
+  DCHECK(image_tasks_.find(task.get()) != image_tasks_.end());
 
   // Balanced with MapImage() call in ScheduleTasks().
   resource_provider()->UnmapImage(task->resource()->id());
@@ -136,13 +138,11 @@ void ImageRasterWorkerPool::OnRasterTaskCompleted(
   // Bind image to resource.
   resource_provider()->BindImage(task->resource()->id());
 
-  if (!was_canceled)
-    task->DidRun();
-
+  task->DidRun(was_canceled);
   task->DidComplete();
   task->DispatchCompletionCallback();
 
-  image_tasks_.erase(task);
+  image_tasks_.erase(task.get());
 }
 
 }  // namespace cc

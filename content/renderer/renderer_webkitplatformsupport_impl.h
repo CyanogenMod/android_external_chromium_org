@@ -10,7 +10,7 @@
 #include "base/platform_file.h"
 #include "content/child/webkitplatformsupport_impl.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
+#include "third_party/WebKit/public/web/WebSharedWorkerRepository.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebIDBFactory.h"
 #include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
@@ -104,6 +104,9 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       double sample_rate, WebKit::WebAudioDevice::RenderCallback* callback,
       const WebKit::WebString& input_device_id);
 
+  virtual WebKit::WebContentDecryptionModule* createContentDecryptionModule(
+      const WebKit::WebString& key_system);
+
   virtual WebKit::WebBlobRegistry* blobRegistry();
   virtual void sampleGamepads(WebKit::WebGamepads&);
   virtual WebKit::WebString userAgent(const WebKit::WebURL& url);
@@ -120,6 +123,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual WebKit::WebGraphicsContext3DProvider*
       createSharedOffscreenGraphicsContext3DProvider();
   virtual WebKit::WebCompositorSupport* compositorSupport();
+  virtual WebKit::WebString convertIDNToUnicode(
+      const WebKit::WebString& host, const WebKit::WebString& languages);
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call

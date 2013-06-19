@@ -37,6 +37,7 @@ ASH_EXPORT extern const char kAshDisableSoftwareMirroring[];
 ASH_EXPORT extern const char kAshEnableAudioDeviceMenu[];
 ASH_EXPORT extern const char kAshEnableAdvancedGestures[];
 ASH_EXPORT extern const char kAshEnableBrightnessControl[];
+ASH_EXPORT extern const char kAshEnableDockedWindows[];
 #if defined(OS_LINUX)
 ASH_EXPORT extern const char kAshEnableMemoryMonitor[];
 #endif
@@ -46,10 +47,12 @@ ASH_EXPORT extern const char kAshEnableStickyEdges[];
 ASH_EXPORT extern const char kAshEnableTrayDragging[];
 ASH_EXPORT extern const char kAshEnableWorkspaceScrubbing[];
 ASH_EXPORT extern const char kAshForceMirrorMode[];
+ASH_EXPORT extern const char kAshHideNotificationsForFactory[];
 ASH_EXPORT extern const char kAshHostWindowBounds[];
 ASH_EXPORT extern const char kAshImmersiveHideTabIndicators[];
 ASH_EXPORT extern const char kAshSecondaryDisplayLayout[];
 ASH_EXPORT extern const char kAshTouchHud[];
+ASH_EXPORT extern const char kAshUseAlternateShelfLayout[];
 ASH_EXPORT extern const char kAshUseFirstDisplayAsInternal[];
 ASH_EXPORT extern const char kAuraLegacyPowerButton[];
 #if defined(OS_WIN)
@@ -62,6 +65,9 @@ ASH_EXPORT bool UseNewAudioHandler();
 
 // Returns true if we should show the audio device switching UI.
 ASH_EXPORT bool ShowAudioDeviceMenu();
+
+// Returns true if the alternate shelf layout should be used.
+ASH_EXPORT bool UseAlternateShelfLayout();
 
 }  // namespace switches
 }  // namespace ash

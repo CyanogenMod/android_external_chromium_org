@@ -10,12 +10,14 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/root_window_observer.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 
 namespace aura {
 class RootWindow;
+class RootWindowTransformer;
 class Window;
 }
 
@@ -35,7 +37,7 @@ class CursorWindowDelegate;
 // An object that copies the content of the primary root window to a
 // mirror window. This also draws a mouse cursor as the mouse cursor
 // is typically drawn by the window system.
-class MirrorWindowController : public aura::RootWindowObserver {
+class ASH_EXPORT MirrorWindowController : public aura::RootWindowObserver {
  public:
   MirrorWindowController();
   virtual ~MirrorWindowController();
@@ -58,13 +60,17 @@ class MirrorWindowController : public aura::RootWindowObserver {
   void SetMirroredCursorVisibility(bool visible);
 
   // aura::RootWindowObserver overrides:
-  virtual void OnRootWindowResized(const aura::RootWindow* root,
-                                   const gfx::Size& old_size) OVERRIDE;
+  virtual void OnRootWindowHostResized(const aura::RootWindow* root) OVERRIDE;
 
  private:
   friend class test::MirrorWindowTestApi;
 
+  // Creates a RootWindowTransformer for current display
+  // configuration.
+  scoped_ptr<aura::RootWindowTransformer> CreateRootWindowTransformer() const;
+
   int current_cursor_type_;
+  gfx::Display::Rotation current_cursor_rotation_;
   aura::Window* cursor_window_;  // owned by root window.
   scoped_ptr<aura::RootWindow> root_window_;
   scoped_ptr<CursorWindowDelegate> cursor_window_delegate_;

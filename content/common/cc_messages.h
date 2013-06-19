@@ -4,6 +4,7 @@
 //
 // IPC Messages sent between compositor instances.
 
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/quads/checkerboard_draw_quad.h"
@@ -212,6 +213,12 @@ IPC_STRUCT_TRAITS_BEGIN(cc::TransferableResource)
   IPC_STRUCT_TRAITS_MEMBER(mailbox)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(cc::BeginFrameArgs)
+  IPC_STRUCT_TRAITS_MEMBER(frame_time)
+  IPC_STRUCT_TRAITS_MEMBER(deadline)
+  IPC_STRUCT_TRAITS_MEMBER(interval)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(cc::CompositorFrameMetadata)
   IPC_STRUCT_TRAITS_MEMBER(device_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(root_scroll_offset)
@@ -230,6 +237,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::GLFrameData)
   IPC_STRUCT_TRAITS_MEMBER(mailbox)
   IPC_STRUCT_TRAITS_MEMBER(sync_point)
   IPC_STRUCT_TRAITS_MEMBER(size)
+  IPC_STRUCT_TRAITS_MEMBER(sub_buffer_rect)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::SoftwareFrameData)

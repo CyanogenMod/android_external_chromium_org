@@ -19,6 +19,7 @@ import os
 import sys
 
 from perf_tools import histogram_metric
+from perf_tools import memory_metrics
 from telemetry.core import util
 from telemetry.page import page_measurement
 
@@ -28,6 +29,16 @@ MEMORY_HISTOGRAMS = [
     {'name': 'V8.MemoryHeapSampleTotalUsed', 'units': 'kb'}]
 
 class PageCycler(page_measurement.PageMeasurement):
+  def __init__(self, *args, **kwargs):
+    super(PageCycler, self).__init__(*args, **kwargs)
+
+    with open(os.path.join(os.path.dirname(__file__),
+                           'page_cycler.js'), 'r') as f:
+      self._page_cycler_js = f.read()
+
+    self._memory_metrics = None
+    self._histograms = None
+
   def AddCommandLineOptions(self, parser):
     # The page cyclers should default to 10 iterations. In order to change the
     # default of an option, we must remove and re-add it.
@@ -36,29 +47,24 @@ class PageCycler(page_measurement.PageMeasurement):
     parser.remove_option('--pageset-repeat')
     parser.add_option(pageset_repeat_option)
 
-  def WillRunPageSet(self, tab, results):
-    # Avoid paying for a cross-renderer navigation on the first page on legacy
-    # page cyclers which use the filesystem.
-    if tab.browser.http_server:
-      tab.Navigate(tab.browser.http_server.UrlOf('nonexistent.html'))
+  def SetUpBrowser(self, browser):
+    self._memory_metrics = memory_metrics.MemoryMetrics()
+    self._memory_metrics.Start(browser)
 
-    with open(os.path.join(os.path.dirname(__file__),
-                           'page_cycler.js'), 'r') as f:
-      self.page_cycler_js = f.read()  # pylint: disable=W0201
-
-    # pylint: disable=W0201
-    self.start_commit_charge = tab.browser.memory_stats['SystemCommitCharge']
-
-    # pylint: disable=W0201
-    self.histograms = [histogram_metric.HistogramMetric(
+    self._histograms = [histogram_metric.HistogramMetric(
                            h, histogram_metric.RENDERER_HISTOGRAM)
                        for h in MEMORY_HISTOGRAMS]
 
+  def DidStartHTTPServer(self, tab):
+    # Avoid paying for a cross-renderer navigation on the first page on legacy
+    # page cyclers which use the filesystem.
+    tab.Navigate(tab.browser.http_server.UrlOf('nonexistent.html'))
+
   def WillNavigateToPage(self, page, tab):
-    page.script_to_evaluate_on_commit = self.page_cycler_js
+    page.script_to_evaluate_on_commit = self._page_cycler_js
 
   def DidNavigateToPage(self, page, tab):
-    for h in self.histograms:
+    for h in self._histograms:
       h.Start(page, tab)
 
   def CustomizeBrowserOptions(self, options):
@@ -73,44 +79,6 @@ class PageCycler(page_measurement.PageMeasurement):
     if sys.platform == 'darwin' and sys.argv[-1].endswith('/typical_25.json'):
       print 'typical_25 is currently disabled on mac. Skipping test.'
       sys.exit(0)
-
-  def MeasureMemory(self, tab, results):
-    memory = tab.browser.memory_stats
-    if not memory['Browser']:
-      return
-
-    metric = 'resident_set_size'
-    if sys.platform == 'win32':
-      metric = 'working_set'
-
-    def AddSummariesForProcessTypes(process_types_memory, process_type_trace):
-      def AddSummary(value_name_memory, value_name_trace):
-        if len(process_types_memory) > 1 and value_name_memory.endswith('Peak'):
-          return
-        values = []
-        for process_type_memory in process_types_memory:
-          if value_name_memory in memory[process_type_memory]:
-            values.append(memory[process_type_memory][value_name_memory])
-        if values:
-          results.AddSummary(value_name_trace + process_type_trace,
-                             'bytes', sum(values), data_type='unimportant')
-      AddSummary('VM', 'vm_final_size_')
-      AddSummary('WorkingSetSize', 'vm_%s_final_size_' % metric)
-      AddSummary('PrivateDirty', 'vm_private_dirty_final_')
-      AddSummary('ProportionalSetSize', 'vm_proportional_set_size_final_')
-      AddSummary('VMPeak', 'vm_peak_size_')
-      AddSummary('WorkingSetSizePeak', '%s_peak_size_' % metric)
-
-    AddSummariesForProcessTypes(['Browser'], 'browser')
-    AddSummariesForProcessTypes(['Renderer'], 'renderer')
-    AddSummariesForProcessTypes(['Gpu'], 'gpu')
-    AddSummariesForProcessTypes(['Browser', 'Renderer', 'Gpu'], 'total')
-
-    results.AddSummary('commit_charge', 'kb',
-                       memory['SystemCommitCharge'] - self.start_commit_charge,
-                       data_type='unimportant')
-    results.AddSummary('processes', 'count', memory['ProcessCount'],
-                       data_type='unimportant')
 
   def MeasureIO(self, tab, results):
     io_stats = tab.browser.io_stats
@@ -147,7 +115,7 @@ class PageCycler(page_measurement.PageMeasurement):
       return bool(tab.EvaluateJavaScript('__pc_load_time'))
     util.WaitFor(_IsDone, 60)
 
-    for h in self.histograms:
+    for h in self._histograms:
       h.GetValue(page, tab, results)
 
     results.Add('page_load_time', 'ms',
@@ -155,5 +123,5 @@ class PageCycler(page_measurement.PageMeasurement):
                 chart_name='times')
 
   def DidRunPageSet(self, tab, results):
-    self.MeasureMemory(tab, results)
+    self._memory_metrics.StopAndGetResults(tab.browser, results)
     self.MeasureIO(tab, results)

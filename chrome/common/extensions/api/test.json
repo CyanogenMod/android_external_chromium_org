@@ -19,6 +19,11 @@
                 "type": "object",
                 "name": "testConfig",
                 "properties": {
+                  "customArg": {
+                    "type": "string",
+                    "optional": true,
+                    "description": "Additional string argument to pass to test."
+                  },
                   "testServer": {
                     "type": "object",
                     "optional": true,
@@ -50,7 +55,6 @@
       },
       {
         "name": "notifyFail",
-        "unprivileged": true,
         "type": "function",
         "description": "Notifies the browser process that test code running in the extension failed.  This is only used for internal unit testing.",
         "parameters": [
@@ -59,7 +63,6 @@
       },
       {
         "name": "notifyPass",
-        "unprivileged": true,
         "type": "function",
         "description": "Notifies the browser process that test code running in the extension passed.  This is only used for internal unit testing.",
         "parameters": [
@@ -74,7 +77,6 @@
       },
       {
         "name": "log",
-        "unprivileged": true,
         "type": "function",
         "description": "Logs a message during internal unit testing.",
         "parameters": [
@@ -108,21 +110,18 @@
       {
         "name": "callbackAdded",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": []
       },
       {
         "name": "runNextTest",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": []
       },
       {
         "name": "fail",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {"type": "any", "name": "message", "optional": true}
@@ -131,7 +130,6 @@
       {
         "name": "succeed",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {"type": "any", "name": "message", "optional": true}
@@ -140,7 +138,6 @@
       {
         "name": "assertTrue",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {
@@ -156,7 +153,6 @@
       {
         "name": "assertFalse",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {
@@ -172,7 +168,6 @@
       {
         "name": "assertBool",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {
@@ -189,7 +184,6 @@
       {
         "name": "checkDeepEq",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "allowAmbiguousOptionalArguments": true,
         "parameters": [
@@ -201,7 +195,6 @@
       {
         "name": "assertEq",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "allowAmbiguousOptionalArguments": true,
         "parameters": [
@@ -214,14 +207,12 @@
       {
         "name": "assertNoLastError",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": []
       },
       {
         "name": "assertLastError",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {"type": "string", "name": "expectedError"}
@@ -230,7 +221,6 @@
       {
         "name": "callback",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {"type": "function", "name": "func", "optional": true},
@@ -240,7 +230,6 @@
       {
         "name": "listenOnce",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           // TODO(cduvall): Make this a $ref to events.Event.
@@ -251,7 +240,6 @@
       {
         "name": "listenForever",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           // TODO(cduvall): Make this a $ref to events.Event.
@@ -262,7 +250,6 @@
       {
         "name": "callbackPass",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {"type": "function", "name": "func", "optional": true}
@@ -271,7 +258,6 @@
       {
         "name": "callbackFail",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {"type": "string", "name": "expectedError"},
@@ -281,7 +267,6 @@
       {
         "name": "runTests",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": [
           {
@@ -294,7 +279,6 @@
       {
         "name": "getApiFeatures",
         "type": "function",
-        "unprivileged": true,
         "nocompile": true,
         "parameters": []
       },
@@ -316,7 +300,6 @@
       {
         "name": "onMessage",
         "type": "function",
-        "unprivileged": true,
         "description": "Used to test sending messages to extensions.",
         "parameters": [
           {

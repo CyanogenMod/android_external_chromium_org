@@ -41,6 +41,8 @@ DevToolsFrontendHost::~DevToolsFrontendHost() {
 
 void DevToolsFrontendHost::DispatchOnInspectorFrontend(
     const std::string& message) {
+  if (!web_contents())
+    return;
   RenderViewHostImpl* target_host =
       static_cast<RenderViewHostImpl*>(web_contents()->GetRenderViewHost());
   target_host->Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(
@@ -78,6 +80,19 @@ bool DevToolsFrontendHost::OnMessageReceived(
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+void DevToolsFrontendHost::RenderViewGone(
+    base::TerminationStatus status) {
+  switch(status) {
+    case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
+    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
+    case base::TERMINATION_STATUS_PROCESS_CRASHED:
+      DevToolsManager::GetInstance()->ClientHostClosing(this);
+      break;
+    default:
+      break;
+  }
 }
 
 void DevToolsFrontendHost::OnDispatchOnInspectorBackend(

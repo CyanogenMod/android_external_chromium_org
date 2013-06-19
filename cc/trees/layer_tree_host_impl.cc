@@ -14,6 +14,7 @@
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/animation/timing_function.h"
 #include "cc/base/math_util.h"
+#include "cc/base/thread.h"
 #include "cc/base/util.h"
 #include "cc/debug/debug_rect_history.h"
 #include "cc/debug/frame_rate_counter.h"
@@ -105,7 +106,16 @@ class LayerTreeHostImplTimeSourceAdapter : public TimeSourceClient {
           new DebugScopedSetImplThread(layer_tree_host_impl_->proxy()));
     }
 
-    layer_tree_host_impl_->ActivatePendingTreeIfNeeded();
+    // TODO(enne): This should probably happen post-animate.
+    if (layer_tree_host_impl_->pending_tree()) {
+      layer_tree_host_impl_->ActivatePendingTreeIfNeeded();
+
+      if (layer_tree_host_impl_->pending_tree()) {
+        layer_tree_host_impl_->pending_tree()->UpdateDrawProperties();
+        layer_tree_host_impl_->ManageTiles();
+      }
+    }
+
     layer_tree_host_impl_->Animate(
         layer_tree_host_impl_->CurrentFrameTimeTicks(),
         layer_tree_host_impl_->CurrentFrameTime());
@@ -766,7 +776,7 @@ void LayerTreeHostImpl::UpdateBackgroundAnimateTicking(
     time_source_client_adapter_ = LayerTreeHostImplTimeSourceAdapter::Create(
         this,
         DelayBasedTimeSource::Create(LowFrequencyAnimationInterval(),
-                                     proxy_->CurrentThread()));
+                                     proxy_->CurrentThread()->TaskRunner()));
   }
 
   time_source_client_adapter_->SetActive(enabled);
@@ -1007,6 +1017,11 @@ bool LayerTreeHostImpl::
          animation_registrar_->active_animation_controllers().empty();
 }
 
+void LayerTreeHostImpl::NotifyReadyToActivate() {
+  if (pending_tree_)
+    ActivatePendingTree();
+}
+
 bool LayerTreeHostImpl::ShouldClearRootRenderPass() const {
   return settings_.should_clear_root_render_pass;
 }
@@ -1057,13 +1072,8 @@ void LayerTreeHostImpl::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   client_->SetNeedsRedrawRectOnImplThread(damage_rect);
 }
 
-void LayerTreeHostImpl::OnVSyncParametersChanged(base::TimeTicks timebase,
-                                                 base::TimeDelta interval) {
-  client_->OnVSyncParametersChanged(timebase, interval);
-}
-
-void LayerTreeHostImpl::BeginFrame(base::TimeTicks frame_time) {
-  client_->BeginFrameOnImplThread(frame_time);
+void LayerTreeHostImpl::BeginFrame(const BeginFrameArgs& args) {
+  client_->BeginFrameOnImplThread(args);
 }
 
 void LayerTreeHostImpl::OnSwapBuffersComplete(
@@ -1088,6 +1098,7 @@ CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() const {
   metadata.root_layer_size = active_tree_->ScrollableSize();
   metadata.min_page_scale_factor = active_tree_->min_page_scale_factor();
   metadata.max_page_scale_factor = active_tree_->max_page_scale_factor();
+  metadata.latency_info = active_tree_->GetLatencyInfo();
   if (top_controls_manager_) {
     metadata.location_bar_offset =
         gfx::Vector2dF(0.f, top_controls_manager_->controls_top_offset());
@@ -1100,7 +1111,6 @@ CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() const {
     return metadata;
 
   metadata.root_scroll_offset = RootScrollLayer()->TotalScrollOffset();
-  metadata.latency_info = active_tree_->GetLatencyInfo();
 
   return metadata;
 }
@@ -1329,31 +1339,26 @@ void LayerTreeHostImpl::CheckForCompletedTileUploads() {
     tile_manager_->CheckForCompletedTileUploads();
 }
 
-bool LayerTreeHostImpl::ActivatePendingTreeIfNeeded() {
-  if (!pending_tree_)
-    return false;
-
+void LayerTreeHostImpl::ActivatePendingTreeIfNeeded() {
+  DCHECK(pending_tree_);
   CHECK(settings_.impl_side_painting);
 
-  // TODO(enne): This needs to be moved somewhere else (post-animate?)
-  pending_tree_->UpdateDrawProperties();
-  // Note: This will likely cause ManageTiles to be needed.  However,
-  // it is only out of date as far as the last commit or the last draw.
-  // For performance reasons, don't call ManageTiles again here.
+  // This call may activate the tree.
+  CheckForCompletedTileUploads();
+  if (!pending_tree_)
+    return;
+
+  // The tile manager is usually responsible for notifying activation.
+  // If there is no tile manager, then we need to manually activate.
+  if (!tile_manager_ || tile_manager_->AreTilesRequiredForActivationReady()) {
+    ActivatePendingTree();
+    return;
+  }
 
   TRACE_EVENT_ASYNC_STEP1(
     "cc",
     "PendingTree", pending_tree_.get(), "activate",
     "state", TracedValue::FromValue(ActivationStateAsValue().release()));
-
-  if (tile_manager_) {
-    tile_manager_->CheckForCompletedTileUploads();
-    if (!tile_manager_->AreTilesRequiredForActivationReady())
-      return false;
-  }
-
-  ActivatePendingTree();
-  return true;
 }
 
 void LayerTreeHostImpl::ActivatePendingTree() {
@@ -1504,6 +1509,25 @@ bool LayerTreeHostImpl::DoInitializeRenderer(
 
     resource_provider_ = resource_provider.Pass();
   }
+
+  // Setup BeginFrameEmulation if it's not supported natively
+  if (!settings_.begin_frame_scheduling_enabled) {
+    const base::TimeDelta display_refresh_interval =
+      base::TimeDelta::FromMicroseconds(
+          base::Time::kMicrosecondsPerSecond /
+          settings_.refresh_rate);
+
+    output_surface->InitializeBeginFrameEmulation(
+        proxy_->ImplThread() ? proxy_->ImplThread()->TaskRunner() : NULL,
+        settings_.throttle_frame_production,
+        display_refresh_interval);
+  }
+
+  int max_frames_pending =
+      output_surface->capabilities().max_frames_pending;
+  if (max_frames_pending <= 0)
+    max_frames_pending = OutputSurface::DEFAULT_MAX_FRAMES_PENDING;
+  output_surface->SetMaxFramesPending(max_frames_pending);
 
   output_surface_ = output_surface.Pass();
 
@@ -1927,7 +1951,7 @@ void LayerTreeHostImpl::ScrollEnd() {
   if (top_controls_manager_)
     top_controls_manager_->ScrollEnd();
   ClearCurrentlyScrollingLayer();
-  StartScrollbarAnimation(CurrentFrameTimeTicks());
+  StartScrollbarAnimation();
 }
 
 InputHandler::ScrollStatus LayerTreeHostImpl::FlingScrollBegin() {
@@ -2199,9 +2223,9 @@ void LayerTreeHostImpl::AnimateScrollbarsRecursive(LayerImpl* layer,
     AnimateScrollbarsRecursive(layer->children()[i], time);
 }
 
-void LayerTreeHostImpl::StartScrollbarAnimation(base::TimeTicks time) {
+void LayerTreeHostImpl::StartScrollbarAnimation() {
   TRACE_EVENT0("cc", "LayerTreeHostImpl::StartScrollbarAnimation");
-  StartScrollbarAnimationRecursive(RootLayer(), time);
+  StartScrollbarAnimationRecursive(RootLayer(), CurrentPhysicalTimeTicks());
 }
 
 void LayerTreeHostImpl::StartScrollbarAnimationRecursive(LayerImpl* layer,
@@ -2241,10 +2265,11 @@ void LayerTreeHostImpl::ResetCurrentFrameTimeForNextFrame() {
   current_frame_time_ = base::Time();
 }
 
-static void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) {
+void LayerTreeHostImpl::UpdateCurrentFrameTime(base::TimeTicks* ticks,
+                                               base::Time* now) const {
   if (ticks->is_null()) {
     DCHECK(now->is_null());
-    *ticks = base::TimeTicks::Now();
+    *ticks = CurrentPhysicalTimeTicks();
     *now = base::Time::Now();
   }
 }
@@ -2257,6 +2282,10 @@ base::TimeTicks LayerTreeHostImpl::CurrentFrameTimeTicks() {
 base::Time LayerTreeHostImpl::CurrentFrameTime() {
   UpdateCurrentFrameTime(&current_frame_timeticks_, &current_frame_time_);
   return current_frame_time_;
+}
+
+base::TimeTicks LayerTreeHostImpl::CurrentPhysicalTimeTicks() const {
+  return base::TimeTicks::Now();
 }
 
 scoped_ptr<base::Value> LayerTreeHostImpl::AsValue() const {

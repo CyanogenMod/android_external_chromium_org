@@ -13,7 +13,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/i18n/rtl.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -268,6 +268,10 @@ class UI_EXPORT RenderText {
   // The |range| should be valid, non-reversed, and within [0, text().length()].
   void SetStyle(TextStyle style, bool value);
   void ApplyStyle(TextStyle style, bool value, const ui::Range& range);
+
+  // Returns whether this style is enabled consistently across the entire
+  // RenderText.
+  bool GetStyle(TextStyle style) const;
 
   // Set the text directionality mode and get the text direction yielded.
   void SetDirectionalityMode(DirectionalityMode mode);

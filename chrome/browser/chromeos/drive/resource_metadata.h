@@ -120,8 +120,7 @@ class ResourceMetadata {
 
   // Initializes this object.
   // This method should be called before any other methods.
-  // Must be called on the UI thread.
-  void Initialize(const FileOperationCallback& callback);
+  FileError Initialize() WARN_UNUSED_RESULT;
 
   // Destroys this object.  This method posts a task to |blocking_task_runner_|
   // to safely delete this object.
@@ -252,9 +251,6 @@ class ResourceMetadata {
   // Note: Use Destroy() to delete this object.
   ~ResourceMetadata();
 
-  // Used to implement Initialize();
-  FileError InitializeOnBlockingPool() WARN_UNUSED_RESULT;
-
   // Sets up entries which should be present by default.
   bool SetUpDefaultEntries();
 
@@ -296,13 +292,8 @@ class ResourceMetadata {
       scoped_ptr<ResourceEntry> entry);
 
   // Searches for |file_path| synchronously.
-  scoped_ptr<ResourceEntry> FindEntryByPathSync(
-      const base::FilePath& file_path);
-
-  // Helper function to get a directory given |resource_id|. |resource_id| can
-  // not be empty. Returns NULL if it finds no corresponding entry, or the
-  // corresponding entry is not a directory.
-  scoped_ptr<ResourceEntry> GetDirectory(const std::string& resource_id);
+  bool FindEntryByPathSync(const base::FilePath& file_path,
+                           ResourceEntry* out_entry);
 
   // Puts an entry under its parent directory. Removes the child from the old
   // parent if there is. This method will also do name de-duplication to ensure

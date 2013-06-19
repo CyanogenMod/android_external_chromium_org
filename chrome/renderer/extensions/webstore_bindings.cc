@@ -4,18 +4,18 @@
 
 #include "chrome/renderer/extensions/webstore_bindings.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "content/public/renderer/render_view.h"
 #include "googleurl/src/gurl.h"
 #include "grit/renderer_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserGestureIndicator.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebNodeList.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "v8/include/v8.h"
 
 using WebKit::WebDocument;
@@ -61,16 +61,16 @@ WebstoreBindings::WebstoreBindings(Dispatcher* dispatcher,
                 base::Bind(&WebstoreBindings::Install, base::Unretained(this)));
 }
 
-v8::Handle<v8::Value> WebstoreBindings::Install(
-    const v8::Arguments& args) {
+void WebstoreBindings::Install(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   WebFrame* frame = WebFrame::frameForContext(context()->v8_context());
   if (!frame || !frame->view())
-    return v8::Undefined();
+    return;
 
   content::RenderView* render_view =
       content::RenderView::FromWebView(frame->view());
   if (!render_view)
-    return v8::Undefined();
+    return;
 
   std::string preferred_store_link_url;
   if (!args[0]->IsUndefined()) {
@@ -78,7 +78,7 @@ v8::Handle<v8::Value> WebstoreBindings::Install(
       preferred_store_link_url = std::string(*v8::String::Utf8Value(args[0]));
     } else {
       v8::ThrowException(v8::String::New(kPreferredStoreLinkUrlNotAString));
-      return v8::Undefined();
+      return;
     }
   }
 
@@ -87,18 +87,18 @@ v8::Handle<v8::Value> WebstoreBindings::Install(
   if (!GetWebstoreItemIdFromFrame(
       frame, preferred_store_link_url, &webstore_item_id, &error)) {
     v8::ThrowException(v8::String::New(error.c_str()));
-    return v8::Undefined();
+    return;
   }
 
   int install_id = g_next_install_id++;
   if (!args[1]->IsUndefined() && !args[1]->IsFunction()) {
     v8::ThrowException(v8::String::New(kSuccessCallbackNotAFunctionError));
-    return v8::Undefined();
+    return;
   }
 
   if (!args[2]->IsUndefined() && !args[2]->IsFunction()) {
     v8::ThrowException(v8::String::New(kFailureCallbackNotAFunctionError));
-    return v8::Undefined();
+    return;
   }
 
   Send(new ExtensionHostMsg_InlineWebstoreInstall(
@@ -108,7 +108,7 @@ v8::Handle<v8::Value> WebstoreBindings::Install(
       webstore_item_id,
       frame->document().url()));
 
-  return v8::Integer::New(install_id);
+  args.GetReturnValue().Set(static_cast<int32_t>(install_id));
 }
 
 // static

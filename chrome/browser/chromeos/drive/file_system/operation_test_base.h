@@ -8,11 +8,10 @@
 #include <set>
 
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class TestingProfile;
@@ -23,7 +22,7 @@ class SequencedTaskRunner;
 
 namespace google_apis {
 class FakeDriveService;
-}  // namespace googl_apis
+}  // namespace google_apis
 
 namespace drive {
 
@@ -51,14 +50,22 @@ class OperationTestBase : public testing::Test {
     // OperationObserver overrides.
     virtual void OnDirectoryChangedByOperation(
         const base::FilePath& path) OVERRIDE;
+    virtual void OnCacheFileUploadNeededByOperation(
+        const std::string& resource_id) OVERRIDE;
 
     // Gets the set of changed paths.
     const std::set<base::FilePath>& get_changed_paths() {
       return changed_paths_;
     }
 
+    // Gets the set of upload needed resource IDs.
+    const std::set<std::string>& upload_needed_resource_ids() const {
+      return upload_needed_resource_ids_;
+    }
+
    private:
     std::set<base::FilePath> changed_paths_;
+    std::set<std::string> upload_needed_resource_ids_;
   };
 
   OperationTestBase();
@@ -83,7 +90,7 @@ class OperationTestBase : public testing::Test {
   LoggingObserver* observer() { return &observer_; }
   JobScheduler* scheduler() { return scheduler_.get(); }
   base::SequencedTaskRunner* blocking_task_runner() {
-    return blocking_task_runner_;
+    return blocking_task_runner_.get();
   }
   internal::ResourceMetadata* metadata() { return metadata_.get(); }
   FakeFreeDiskSpaceGetter* fake_free_disk_space_getter() {
@@ -92,8 +99,7 @@ class OperationTestBase : public testing::Test {
   internal::FileCache* cache() { return cache_.get(); }
 
  private:
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
   scoped_ptr<TestingProfile> profile_;
   base::ScopedTempDir temp_dir_;

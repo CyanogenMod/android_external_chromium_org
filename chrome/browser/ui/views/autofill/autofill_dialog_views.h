@@ -46,7 +46,7 @@ class StyledLabel;
 class Textfield;
 class WebView;
 class Widget;
-}
+}  // namespace views
 
 namespace ui {
 class ComboboxModel;
@@ -67,7 +67,6 @@ class AutofillDialogViews : public AutofillDialogView,
                             public views::ButtonListener,
                             public views::TextfieldController,
                             public views::FocusChangeListener,
-                            public views::LinkListener,
                             public views::ComboboxListener,
                             public views::StyledLabelListener,
                             public ui::AcceleratorTarget {
@@ -81,6 +80,7 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void UpdateAccountChooser() OVERRIDE;
   virtual void UpdateButtonStrip() OVERRIDE;
   virtual void UpdateDetailArea() OVERRIDE;
+  virtual void UpdateForErrors() OVERRIDE;
   virtual void UpdateNotificationArea() OVERRIDE;
   virtual void UpdateSection(DialogSection section) OVERRIDE;
   virtual void FillSection(DialogSection section,
@@ -116,6 +116,7 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual views::Widget* GetWidget() OVERRIDE;
   virtual const views::Widget* GetWidget() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
+  virtual views::View* CreateOverlayView() OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
   virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
@@ -149,9 +150,6 @@ class AutofillDialogViews : public AutofillDialogView,
                                  views::View* focused_now) OVERRIDE;
   virtual void OnDidChangeFocus(views::View* focused_before,
                                 views::View* focused_now) OVERRIDE;
-
-  // views::LinkListener implementation:
-  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
   // views::ComboboxListener implementation:
   virtual void OnSelectedIndexChanged(views::Combobox* combobox) OVERRIDE;
@@ -372,9 +370,6 @@ class AutofillDialogViews : public AutofillDialogView,
                    AutofillDialogViews* autofill_dialog);
     virtual ~SuggestionView();
 
-    // Whether this section is editable or not.
-    void SetEditable(bool editable);
-
     // Sets the display text of the suggestion.
     void SetSuggestionText(const string16& text, gfx::Font::FontStyle style);
 
@@ -496,6 +491,10 @@ class AutofillDialogViews : public AutofillDialogView,
   // |validity_map_|.
   void ShowErrorBubbleForViewIfNecessary(views::View* view);
 
+  // Updates validity of the inputs in |section| with the new validity data.
+  void MarkInputsInvalid(DialogSection section,
+                         const ValidityData& validity_data);
+
   // Checks all manual inputs in |group| for validity. Decorates the invalid
   // ones and returns true if all were valid.
   bool ValidateGroup(const DetailsGroup& group, ValidationType type);
@@ -561,6 +560,9 @@ class AutofillDialogViews : public AutofillDialogView,
 
   // View to host details sections.
   views::View* details_container_;
+
+  // The view that completely overlays the dialog (used for the splash page).
+  views::View* overlay_view_;
 
   // The "Extra view" is on the same row as the dialog buttons.
   views::View* button_strip_extra_view_;

@@ -15,8 +15,8 @@
 #include "ui/gfx/screen.h"
 
 #if defined(OS_WIN)
-// TOD(mazda): UpdateDisplay does not work properly on Win.
-// Fix this and enable tests.
+// TODO(scottmg): RootWindow doesn't get resized immediately on Windows
+// Ash. http://crbug.com/247916.
 #define MAYBE_ConvertHostPointToScreen DISABLED_ConvertHostPointToScreen
 #define MAYBE_ConvertHostPointToScreenHiDPI DISABLED_ConvertHostPointToScreenHiDPI
 #define MAYBE_ConvertHostPointToScreenRotate DISABLED_ConvertHostPointToScreenRotate
@@ -47,7 +47,7 @@ internal::ScreenPositionController* GetScreenPositionController() {
 
 class ScreenPositionControllerTest : public test::AshTestBase {
  public:
-  ScreenPositionControllerTest() : window_(NULL) {}
+  ScreenPositionControllerTest() {}
   virtual ~ScreenPositionControllerTest() {}
 
   virtual void SetUp() OVERRIDE {

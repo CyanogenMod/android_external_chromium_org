@@ -32,7 +32,7 @@ class SimpleFeature : public Feature {
   // Unspecified values in the JSON are not modified in the object. This allows
   // us to implement inheritance by parsing one value after another. Returns
   // the error found, or an empty string on success.
-  virtual std::string Parse(const DictionaryValue* value);
+  virtual std::string Parse(const base::DictionaryValue* value);
 
   // Returns true if the feature contains the same values as another.
   bool Equals(const SimpleFeature& other) const;
@@ -111,6 +111,8 @@ class SimpleFeature : public Feature {
   int min_manifest_version_;
   int max_manifest_version_;
   chrome::VersionInfo::Channel channel_;
+  bool has_parent_;
+  bool channel_has_been_set_;
 
   FRIEND_TEST_ALL_PREFIXES(ExtensionSimpleFeatureTest, Context);
 };

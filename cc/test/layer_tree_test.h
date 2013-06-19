@@ -24,6 +24,7 @@ class LayerImpl;
 class LayerTreeHost;
 class LayerTreeHostClient;
 class LayerTreeHostImpl;
+class FakeOutputSurface;
 
 // Used by test stubs to notify the test when something interesting happens.
 class TestHooks : public WebKit::WebAnimationDelegate {
@@ -35,7 +36,8 @@ class TestHooks : public WebKit::WebAnimationDelegate {
 
   virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) {}
-  virtual void TreeActivatedOnThread(LayerTreeHostImpl* host_impl) {}
+  virtual void WillActivateTreeOnThread(LayerTreeHostImpl* host_impl) {}
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
                                            bool success) {}
   virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
@@ -159,6 +161,7 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   LayerTreeSettings settings_;
   scoped_ptr<LayerTreeHostClientForTesting> client_;
   scoped_ptr<LayerTreeHost> layer_tree_host_;
+  FakeOutputSurface* output_surface_;
 
   bool beginning_;
   bool end_when_begin_returns_;

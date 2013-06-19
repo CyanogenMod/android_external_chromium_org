@@ -125,24 +125,23 @@ PP_Resource ResourceCreationImpl::CreateGraphics3DRaw(
   return PPB_Graphics3D_Impl::CreateRaw(instance, share_context, attrib_list);
 }
 
+PP_Resource ResourceCreationImpl::CreateHostResolver(PP_Instance instance) {
+  return 0;  // Not supported in-process.
+}
+
 PP_Resource ResourceCreationImpl::CreateHostResolverPrivate(
     PP_Instance instance) {
   return 0;  // Not supported in-process.
 }
 
-PP_Resource ResourceCreationImpl::CreateImageData(PP_Instance instance,
-                                                  PP_ImageDataFormat format,
-                                                  const PP_Size* size,
-                                                  PP_Bool init_to_zero) {
-  return PPB_ImageData_Impl::CreatePlatform(instance, format, *size,
-                                            init_to_zero);
-}
-
-PP_Resource ResourceCreationImpl::CreateImageDataNaCl(PP_Instance instance,
-                                                      PP_ImageDataFormat format,
-                                                      const PP_Size* size,
-                                                      PP_Bool init_to_zero) {
-  return PPB_ImageData_Impl::CreateNaCl(instance, format, *size, init_to_zero);
+PP_Resource ResourceCreationImpl::CreateImageData(
+    PP_Instance instance,
+    ::ppapi::PPB_ImageData_Shared::ImageDataType type,
+    PP_ImageDataFormat format,
+    const PP_Size* size,
+    PP_Bool init_to_zero) {
+  return PPB_ImageData_Impl::Create(instance, type,
+                                    format, *size, init_to_zero);
 }
 
 PP_Resource ResourceCreationImpl::CreateIMEInputEvent(
@@ -204,6 +203,12 @@ PP_Resource ResourceCreationImpl::CreateNetAddressFromIPv6Address(
   return 0;  // Not supported in-process.
 }
 
+PP_Resource ResourceCreationImpl::CreateNetAddressFromNetAddressPrivate(
+    PP_Instance instance,
+    const PP_NetAddress_Private& private_addr) {
+  return 0;  // Not supported in-process.
+}
+
 PP_Resource ResourceCreationImpl::CreateTouchInputEvent(
     PP_Instance instance,
     PP_InputEvent_Type type,
@@ -243,8 +248,16 @@ PP_Resource ResourceCreationImpl::CreateTCPServerSocketPrivate(
   return PPB_TCPServerSocket_Private_Impl::CreateResource(instance);
 }
 
+PP_Resource ResourceCreationImpl::CreateTCPSocket(PP_Instance instance) {
+  return 0;  // Not supported in-process.
+}
+
 PP_Resource ResourceCreationImpl::CreateTCPSocketPrivate(PP_Instance instance) {
   return PPB_TCPSocket_Private_Impl::CreateResource(instance);
+}
+
+PP_Resource ResourceCreationImpl::CreateUDPSocket(PP_Instance instance) {
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateUDPSocketPrivate(PP_Instance instance) {

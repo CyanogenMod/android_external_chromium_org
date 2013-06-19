@@ -7,11 +7,18 @@
 
 #include <vector>
 
-#include "base/hash_tables.h"
-#include "cc/base/worker_pool.h"
+#include "base/containers/hash_tables.h"
+#include "cc/debug/rendering_stats_instrumentation.h"
+#include "cc/resources/picture_pile_impl.h"
 #include "cc/resources/resource_provider.h"
+#include "cc/resources/tile_priority.h"
+#include "cc/resources/worker_pool.h"
 
 class SkDevice;
+
+namespace skia {
+class LazyPixelRef;
+}
 
 namespace cc {
 class PicturePileImpl;
@@ -25,11 +32,15 @@ class CC_EXPORT RasterWorkerPoolTask
  public:
   typedef std::vector<scoped_refptr<RasterWorkerPoolTask> > TaskVector;
 
+  // Returns true if |device| was written to. False indicate that
+  // the content of |device| is undefined and the resource doesn't
+  // need to be initialized.
   virtual bool RunOnThread(SkDevice* device, unsigned thread_index) = 0;
   virtual void DispatchCompletionCallback() = 0;
 
-  void DidRun();
+  void DidRun(bool was_canceled);
   bool HasFinishedRunning() const;
+  bool WasCanceled() const;
   void DidComplete();
   bool HasCompleted() const;
 
@@ -48,6 +59,7 @@ class CC_EXPORT RasterWorkerPoolTask
  private:
   bool did_run_;
   bool did_complete_;
+  bool was_canceled_;
   const Resource* resource_;
   WorkerPoolTask::TaskVector dependencies_;
 };
@@ -67,15 +79,46 @@ template <> struct hash<cc::internal::RasterWorkerPoolTask*> {
 
 namespace cc {
 
+// Low quality implies no lcd test;
+// high quality implies lcd text.
+// Note that the order of these matters, from "better" to "worse" in terms of
+// quality.
+// TODO(vmpstr): Find a better place for this.
+enum RasterMode {
+  HIGH_QUALITY_RASTER_MODE = 0,
+  HIGH_QUALITY_NO_LCD_RASTER_MODE = 1,
+  LOW_QUALITY_RASTER_MODE = 2,
+  NUM_RASTER_MODES = 3
+};
+
+// Data that is passed to raster tasks.
+// TODO(vmpstr): Find a better place for this.
+struct RasterTaskMetadata {
+    scoped_ptr<base::Value> AsValue() const;
+    bool is_tile_in_pending_tree_now_bin;
+    TileResolution tile_resolution;
+    int layer_id;
+    const void* tile_id;
+    int source_frame_number;
+};
+
+class CC_EXPORT RasterWorkerPoolClient {
+ public:
+  virtual bool ShouldForceTasksRequiredForActivationToComplete() const = 0;
+
+ protected:
+  virtual ~RasterWorkerPoolClient() {}
+};
+
 // A worker thread pool that runs raster tasks.
 class CC_EXPORT RasterWorkerPool : public WorkerPool {
  public:
   class CC_EXPORT Task {
    public:
+    typedef base::Callback<void(bool was_canceled)> Reply;
+
     class CC_EXPORT Set {
      public:
-      typedef internal::WorkerPoolTask::TaskVector TaskVector;
-
       Set();
       ~Set();
 
@@ -83,12 +126,13 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
 
      private:
       friend class RasterWorkerPool;
+      friend class RasterWorkerPoolTest;
 
+      typedef internal::WorkerPoolTask::TaskVector TaskVector;
       TaskVector tasks_;
     };
 
     Task();
-    Task(const base::Closure& callback, const base::Closure& reply);
     ~Task();
 
     // Returns true if Task is null (doesn't refer to anything).
@@ -99,19 +143,17 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
 
    protected:
     friend class RasterWorkerPool;
+    friend class RasterWorkerPoolTest;
+
+    explicit Task(internal::WorkerPoolTask* internal);
 
     scoped_refptr<internal::WorkerPoolTask> internal_;
   };
 
   class CC_EXPORT RasterTask {
    public:
-    // Returns true if |device| was written to. False indicate that
-    // the content of |device| is undefined and the resource doesn't
-    // need to be initialized.
-    typedef base::Callback<bool(SkDevice* device,
-                                PicturePileImpl* picture_pile)> Callback;
-
-    typedef base::Callback<void(bool was_canceled)> Reply;
+    typedef base::Callback<void(const PicturePileImpl::Analysis& analysis,
+                                bool was_canceled)> Reply;
 
     class CC_EXPORT Queue {
      public:
@@ -120,24 +162,21 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
       Queue();
       ~Queue();
 
-      void Append(const RasterTask& task);
+      void Append(const RasterTask& task, bool required_for_activation);
 
      private:
       friend class RasterWorkerPool;
 
       TaskVector tasks_;
+      typedef base::hash_set<internal::RasterWorkerPoolTask*> TaskSet;
+      TaskSet tasks_required_for_activation_;
     };
 
     RasterTask();
-    RasterTask(PicturePileImpl* picture_pile,
-               const Resource* resource,
-               const Callback& callback,
-               const Reply& reply,
-               Task::Set* dependencies);
     ~RasterTask();
 
     // Returns true if Task is null (doesn't refer to anything).
-    bool is_null() const { return !internal_; }
+    bool is_null() const { return !internal_.get(); }
 
     // Returns the Task into an uninitialized state.
     void Reset();
@@ -145,11 +184,16 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
    protected:
     friend class PixelBufferRasterWorkerPool;
     friend class RasterWorkerPool;
+    friend class RasterWorkerPoolTest;
+
+    explicit RasterTask(internal::RasterWorkerPoolTask* internal);
 
     scoped_refptr<internal::RasterWorkerPoolTask> internal_;
   };
 
   virtual ~RasterWorkerPool();
+
+  void SetClient(RasterWorkerPoolClient* client);
 
   // Tells the worker pool to shutdown after canceling all previously
   // scheduled tasks. Reply callbacks are still guaranteed to run.
@@ -162,9 +206,24 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
   // even if they later get canceled by another call to ScheduleTasks().
   virtual void ScheduleTasks(RasterTask::Queue* queue) = 0;
 
-  // Tells the raster worker pool to force any pending uploads for
-  // |raster_task| to complete. Returns true when successful.
-  virtual bool ForceUploadToComplete(const RasterTask& raster_task);
+  // TODO(vmpstr): Try to elimiate some variables.
+  static RasterTask CreateRasterTask(
+      const Resource* resource,
+      PicturePileImpl* picture_pile,
+      gfx::Rect content_rect,
+      float contents_scale,
+      RasterMode raster_mode,
+      bool use_color_estimator,
+      const RasterTaskMetadata& metadata,
+      RenderingStatsInstrumentation* rendering_stats,
+      const RasterTask::Reply& reply,
+      Task::Set& dependencies);
+
+  static Task CreateImageDecodeTask(
+      skia::LazyPixelRef* pixel_ref,
+      int layer_id,
+      RenderingStatsInstrumentation* stats_instrumentation,
+      const Task::Reply& reply);
 
  protected:
   class RootTask {
@@ -189,15 +248,23 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
 
   void SetRasterTasks(RasterTask::Queue* queue);
   void ScheduleRasterTasks(const RootTask& root);
+  bool IsRasterTaskRequiredForActivation(
+      internal::RasterWorkerPoolTask* task) const;
 
+  RasterWorkerPoolClient* client() const { return client_; }
   ResourceProvider* resource_provider() const { return resource_provider_; }
   const RasterTask::Queue::TaskVector& raster_tasks() const {
     return raster_tasks_;
   }
 
  private:
+  RasterWorkerPoolClient* client_;
   ResourceProvider* resource_provider_;
   RasterTask::Queue::TaskVector raster_tasks_;
+  RasterTask::Queue::TaskSet raster_tasks_required_for_activation_;
+
+  // The root task that is a dependent of all other tasks.
+  scoped_refptr<internal::WorkerPoolTask> root_;
 };
 
 }  // namespace cc

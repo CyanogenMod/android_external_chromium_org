@@ -28,13 +28,13 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
+#include "content/child/appcache_dispatcher.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/child/fileapi/webfilesystem_callback_adapters.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/webmessageportchannel_impl.h"
-#include "content/common/appcache/appcache_dispatcher.h"
 #include "content/common/clipboard_messages.h"
 #include "content/common/database_messages.h"
 #include "content/common/drag_messages.h"
@@ -132,48 +132,48 @@
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebAccessibilityObject.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebColorName.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMMessageEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDateTimeChooserCompletion.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDateTimeChooserParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFileChooserParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormControlElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHelperPlugin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerAction.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageSerializer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginAction.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRange.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSearchableFormData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSerializedScriptValue.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSettings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageQuotaCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserGestureIndicator.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserMediaClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWindowFeatures.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/default/WebRenderTheme.h"
+#include "third_party/WebKit/public/web/WebAccessibilityObject.h"
+#include "third_party/WebKit/public/web/WebColorName.h"
+#include "third_party/WebKit/public/web/WebDOMEvent.h"
+#include "third_party/WebKit/public/web/WebDOMMessageEvent.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebDateTimeChooserCompletion.h"
+#include "third_party/WebKit/public/web/WebDateTimeChooserParams.h"
+#include "third_party/WebKit/public/web/WebDevToolsAgent.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFileChooserParams.h"
+#include "third_party/WebKit/public/web/WebFileSystemCallbacks.h"
+#include "third_party/WebKit/public/web/WebFindOptions.h"
+#include "third_party/WebKit/public/web/WebFormControlElement.h"
+#include "third_party/WebKit/public/web/WebFormElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebHelperPlugin.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebInputElement.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
+#include "third_party/WebKit/public/web/WebNavigationPolicy.h"
+#include "third_party/WebKit/public/web/WebNodeList.h"
+#include "third_party/WebKit/public/web/WebPageSerializer.h"
+#include "third_party/WebKit/public/web/WebPlugin.h"
+#include "third_party/WebKit/public/web/WebPluginAction.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPluginDocument.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebRange.h"
+#include "third_party/WebKit/public/web/WebScriptSource.h"
+#include "third_party/WebKit/public/web/WebSearchableFormData.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
+#include "third_party/WebKit/public/web/WebSettings.h"
+#include "third_party/WebKit/public/web/WebStorageQuotaCallbacks.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
+#include "third_party/WebKit/public/web/WebUserMediaClient.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/WebKit/public/web/WebWindowFeatures.h"
+#include "third_party/WebKit/public/web/default/WebRenderTheme.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebDragData.h"
 #include "third_party/WebKit/public/platform/WebFileSystemType.h"
@@ -227,7 +227,7 @@
 #include "content/renderer/android/phone_number_detector.h"
 #include "content/renderer/media/stream_texture_factory_impl_android.h"
 #include "content/renderer/media/webmediaplayer_proxy_impl_android.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHitTestResult.h"
+#include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "ui/gfx/rect_f.h"
@@ -767,6 +767,9 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       target_url_status_(TARGET_NONE),
       selection_text_offset_(0),
       selection_range_(ui::Range::InvalidRange()),
+#if defined(OS_ANDROID)
+      top_controls_constraints_(cc::BOTH),
+#endif
       cached_is_main_frame_pinned_to_left_(false),
       cached_is_main_frame_pinned_to_right_(false),
       cached_has_main_frame_horizontal_scrollbar_(false),
@@ -801,7 +804,8 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       decrement_shared_popup_at_destruction_(false),
       handling_select_range_(false),
       next_snapshot_id_(0),
-      allow_partial_swap_(params->allow_partial_swap) {
+      allow_partial_swap_(params->allow_partial_swap),
+      context_menu_source_type_(content::CONTEXT_MENU_SOURCE_MOUSE) {
 }
 
 void RenderViewImpl::Initialize(RenderViewImplParams* params) {
@@ -1236,7 +1240,7 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetHistoryLengthAndPrune,
                         OnSetHistoryLengthAndPrune)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableViewSourceMode, OnEnableViewSourceMode)
-#if defined(ENABLE_JAVA_BRIDGE)
+#if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(JavaBridgeMsg_Init, OnJavaBridgeInit)
 #endif
     IPC_MESSAGE_HANDLER(ViewMsg_SetAccessibilityMode, OnSetAccessibilityMode)
@@ -2306,7 +2310,10 @@ void RenderViewImpl::didChangeSelection(bool is_empty_selection) {
     selection_text_.clear();
 
   SyncSelectionIfRequired();
+  UpdateTextInputType();
+#if defined(OS_ANDROID)
   UpdateTextInputState(DO_NOT_SHOW_IME);
+#endif
 }
 
 void RenderViewImpl::didExecuteCommand(const WebString& command_name) {
@@ -2444,6 +2451,11 @@ bool RenderViewImpl::runModalBeforeUnloadDialog(
 void RenderViewImpl::showContextMenu(
     WebFrame* frame, const WebContextMenuData& data) {
   ContextMenuParams params = ContextMenuParamsBuilder::Build(data);
+  params.source_type = context_menu_source_type_;
+  if (context_menu_source_type_ == CONTEXT_MENU_SOURCE_TOUCH_EDIT_MENU) {
+    params.x = touch_editing_context_menu_location_.x();
+    params.y = touch_editing_context_menu_location_.y();
+  }
 
   // Plugins, e.g. PDF, don't currently update the render view when their
   // selected text changes, but the context menu params do contain the updated
@@ -2851,7 +2863,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 
   scoped_refptr<cc::ContextProvider> context_provider =
       RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
-  if (!context_provider) {
+  if (!context_provider.get()) {
     LOG(ERROR) << "Failed to get context3d for media player";
     return NULL;
   }
@@ -2864,6 +2876,7 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
       new webkit_media::WebMediaPlayerAndroid(
           frame,
           client,
+          AsWeakPtr(),
           media_player_manager_.get(),
           media_player_proxy_,
           new StreamTextureFactoryImpl(
@@ -4498,6 +4511,10 @@ void RenderViewImpl::willStartUsingPeerConnectionHandler(
 #endif
 }
 
+WebKit::WebString RenderViewImpl::acceptLanguages() {
+  return WebString::fromUTF8(renderer_preferences_.accept_languages);
+}
+
 WebKit::WebString RenderViewImpl::userAgentOverride(
     WebKit::WebFrame* frame,
     const WebKit::WebURL& url) {
@@ -5620,7 +5637,7 @@ void RenderViewImpl::OnShouldClose() {
                                        before_unload_end_time));
 }
 
-void RenderViewImpl::OnSwapOut(const ViewMsg_SwapOut_Params& params) {
+void RenderViewImpl::OnSwapOut() {
   // Only run unload if we're not swapped out yet, but send the ack either way.
   if (!is_swapped_out_) {
     // Swap this RenderView out so the tab can navigate to a page rendered by a
@@ -5653,8 +5670,7 @@ void RenderViewImpl::OnSwapOut(const ViewMsg_SwapOut_Params& params) {
     webview()->setVisibilityState(WebKit::WebPageVisibilityStateHidden, false);
   }
 
-  // Just echo back the params in the ACK.
-  Send(new ViewHostMsg_SwapOut_ACK(routing_id_, params));
+  Send(new ViewHostMsg_SwapOut_ACK(routing_id_));
 }
 
 void RenderViewImpl::NavigateToSwappedOutURL(WebKit::WebFrame* frame) {
@@ -5871,8 +5887,10 @@ void RenderViewImpl::OnSetAccessibilityMode(AccessibilityMode new_mode) {
   }
   if (accessibility_mode_ == AccessibilityModeComplete)
     renderer_accessibility_ = new RendererAccessibilityComplete(this);
+#if !defined(OS_ANDROID)
   else if (accessibility_mode_ == AccessibilityModeEditableTextOnly)
     renderer_accessibility_ = new RendererAccessibilityFocusOnly(this);
+#endif
 }
 
 void RenderViewImpl::OnSetActive(bool active) {
@@ -5933,6 +5951,7 @@ void RenderViewImpl::DidHandleKeyEvent() {
 }
 
 bool RenderViewImpl::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
+  context_menu_source_type_ = CONTEXT_MENU_SOURCE_MOUSE;
   possible_drag_event_info_.event_source =
       ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE;
   possible_drag_event_info_.event_location =
@@ -5944,8 +5963,14 @@ bool RenderViewImpl::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
   return mouse_lock_dispatcher_->WillHandleMouseEvent(event);
 }
 
+bool RenderViewImpl::WillHandleKeyEvent(const WebKit::WebKeyboardEvent& event) {
+  context_menu_source_type_ = CONTEXT_MENU_SOURCE_KEYBOARD;
+  return false;
+}
+
 bool RenderViewImpl::WillHandleGestureEvent(
     const WebKit::WebGestureEvent& event) {
+  context_menu_source_type_ = CONTEXT_MENU_SOURCE_TOUCH;
   possible_drag_event_info_.event_source =
       ui::DragDropTypes::DRAG_EVENT_SOURCE_TOUCH;
   possible_drag_event_info_.event_location =
@@ -6061,12 +6086,12 @@ void RenderViewImpl::OnSetFocus(bool enable) {
 }
 
 void RenderViewImpl::PpapiPluginFocusChanged() {
-  UpdateTextInputState(DO_NOT_SHOW_IME);
+  UpdateTextInputType();
   UpdateSelectionBounds();
 }
 
 void RenderViewImpl::PpapiPluginTextInputTypeChanged() {
-  UpdateTextInputState(DO_NOT_SHOW_IME);
+  UpdateTextInputType();
   if (renderer_accessibility_)
     renderer_accessibility_->FocusedNodeChanged(WebNode());
 }
@@ -6571,7 +6596,9 @@ void RenderViewImpl::OnContextMenuClosed(
   }
 }
 
-void RenderViewImpl::OnShowContextMenu() {
+void RenderViewImpl::OnShowContextMenu(const gfx::Point& location) {
+  context_menu_source_type_ = CONTEXT_MENU_SOURCE_TOUCH_EDIT_MENU;
+  touch_editing_context_menu_location_ = location;
   if (webview())
     webview()->showContextMenu();
 }
@@ -6585,7 +6612,7 @@ void RenderViewImpl::OnEnableViewSourceMode() {
   main_frame->enableViewSourceMode(true);
 }
 
-#if defined(ENABLE_JAVA_BRIDGE)
+#if defined(OS_ANDROID)
 void RenderViewImpl::OnJavaBridgeInit() {
   DCHECK(!java_bridge_dispatcher_);
   java_bridge_dispatcher_ = new JavaBridgeDispatcher(this);
@@ -6605,6 +6632,11 @@ void RenderViewImpl::OnDisownOpener() {
 bool RenderViewImpl::didTapMultipleTargets(
     const WebKit::WebGestureEvent& event,
     const WebVector<WebRect>& target_rects) {
+  // Never show a disambiguation popup when accessibility is enabled,
+  // as this interferes with "touch exploration".
+  if (accessibility_mode_ == AccessibilityModeComplete)
+    return false;
+
   gfx::Rect finger_rect(
       event.x - event.data.tap.width / 2, event.y - event.data.tap.height / 2,
       event.data.tap.width, event.data.tap.height);

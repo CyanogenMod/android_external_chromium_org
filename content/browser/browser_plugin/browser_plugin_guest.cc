@@ -43,7 +43,7 @@
 #include "content/public/common/result_codes.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/common/webdropdata.h"
@@ -73,7 +73,10 @@ class BrowserPluginGuest::PermissionRequest {
 class BrowserPluginGuest::DownloadRequest : public PermissionRequest {
  public:
   explicit DownloadRequest(base::Callback<void(bool)> callback)
-      : callback_(callback) {}
+      : callback_(callback) {
+    RecordAction(
+        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Download"));
+  }
   virtual void Respond(bool should_allow) OVERRIDE {
     callback_.Run(should_allow);
   }
@@ -91,7 +94,10 @@ class BrowserPluginGuest::GeolocationRequest : public PermissionRequest {
                      : callback_(callback),
                        bridge_id_(bridge_id),
                        guest_(guest),
-                       weak_ptr_factory_(weak_ptr_factory) {}
+                       weak_ptr_factory_(weak_ptr_factory) {
+    RecordAction(
+        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Geolocation"));
+  }
 
   virtual void Respond(bool should_allow) OVERRIDE {
     WebContents* web_contents = guest_->embedder_web_contents();
@@ -139,7 +145,10 @@ class BrowserPluginGuest::MediaRequest : public PermissionRequest {
                BrowserPluginGuest* guest)
                : request_(request),
                  callback_(callback),
-                 guest_(guest) {}
+                 guest_(guest) {
+    RecordAction(
+        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.Media"));
+  }
 
   virtual void Respond(bool should_allow) OVERRIDE {
     WebContentsImpl* web_contents = guest_->embedder_web_contents();
@@ -164,7 +173,10 @@ class BrowserPluginGuest::NewWindowRequest : public PermissionRequest {
  public:
   NewWindowRequest(int instance_id, BrowserPluginGuest* guest)
       : instance_id_(instance_id),
-        guest_(guest) {}
+        guest_(guest) {
+    RecordAction(
+        UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.NewWindow"));
+  }
 
   virtual void Respond(bool should_allow) OVERRIDE {
     int embedder_render_process_id =
@@ -442,6 +454,14 @@ void BrowserPluginGuest::Initialize(
     prefs.accelerated_compositing_enabled = false;
     GetWebContents()->GetRenderViewHost()->UpdateWebkitPreferences(prefs);
   }
+
+  // Enable input method for guest if it's enabled for the embedder.
+  if (static_cast<RenderViewHostImpl*>(
+      embedder_web_contents_->GetRenderViewHost())->input_method_active()) {
+    RenderViewHostImpl* guest_rvh = static_cast<RenderViewHostImpl*>(
+        GetWebContents()->GetRenderViewHost());
+    guest_rvh->SetInputMethodActive(true);
+  }
 }
 
 BrowserPluginGuest::~BrowserPluginGuest() {
@@ -561,18 +581,20 @@ void BrowserPluginGuest::CloseContents(WebContents* source) {
   SendMessageToEmbedder(new BrowserPluginMsg_Close(instance_id_));
 }
 
-bool BrowserPluginGuest::HandleContextMenu(
-    const ContextMenuParams& params) {
-  // TODO(fsamuel): We have a do nothing context menu handler for now until
+bool BrowserPluginGuest::HandleContextMenu(const ContextMenuParams& params) {
+  // TODO(fsamuel): We show the regular page context menu handler for now until
   // we implement the Apps Context Menu API for Browser Plugin (see
   // http://crbug.com/140315).
-  return true;
+  return false;  // Will be handled by WebContentsViewGuest.
 }
 
 void BrowserPluginGuest::HandleKeyboardEvent(
     WebContents* source,
     const NativeWebKeyboardEvent& event) {
   if (!attached())
+    return;
+
+  if (UnlockMouseIfNecessary(event))
     return;
 
   // Send the unhandled keyboard events back to the embedder to reprocess them.
@@ -730,6 +752,15 @@ void BrowserPluginGuest::RequestNewWindowPermission(
   SendMessageToEmbedder(new BrowserPluginMsg_RequestPermission(
       instance_id(), BrowserPluginPermissionTypeNewWindow,
       request_id, request_info));
+}
+
+bool BrowserPluginGuest::UnlockMouseIfNecessary(
+    const NativeWebKeyboardEvent& event) {
+  if (!mouse_locked_)
+    return false;
+
+  embedder_web_contents()->GotResponseToLockMouseRequest(false);
+  return true;
 }
 
 void BrowserPluginGuest::DidStartProvisionalLoadForFrame(
@@ -1173,8 +1204,9 @@ void BrowserPluginGuest::OnHandleInputEvent(
   }
 
   if (WebKit::WebInputEvent::isTouchEventType(event->type)) {
-    guest_rvh->ForwardTouchEvent(
-        *static_cast<const WebKit::WebTouchEvent*>(event));
+    guest_rvh->ForwardTouchEventWithLatencyInfo(
+        *static_cast<const WebKit::WebTouchEvent*>(event),
+        ui::LatencyInfo());
     return;
   }
 
@@ -1194,6 +1226,8 @@ void BrowserPluginGuest::OnLockMouse(bool user_gesture,
     Send(new ViewMsg_LockMouse_ACK(routing_id(), false));
     return;
   }
+  RecordAction(
+      UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.PointerLock"));
   pending_lock_request_ = true;
   int request_id = next_permission_request_id_++;
   base::DictionaryValue request_info;

@@ -12,6 +12,7 @@
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/renderer/extensions/module_system.h"
 #include "chrome/renderer/extensions/request_sender.h"
+#include "chrome/renderer/extensions/safe_builtins.h"
 #include "chrome/renderer/extensions/scoped_persistent.h"
 #include "v8/include/v8.h"
 
@@ -67,13 +68,23 @@ class ChromeV8Context : public RequestSender::Source {
 
   ModuleSystem* module_system() { return module_system_.get(); }
 
+  SafeBuiltins* safe_builtins() {
+    return &safe_builtins_;
+  }
+  const SafeBuiltins* safe_builtins() const {
+    return &safe_builtins_;
+  }
+
   // Returns the ID of the extension associated with this context, or empty
   // string if there is no such extension.
-  std::string GetExtensionID();
+  std::string GetExtensionID() const;
 
   // Returns the RenderView associated with this context. Can return NULL if the
   // context is in the process of being destroyed.
   content::RenderView* GetRenderView() const;
+
+  // Get the URL of this context's web frame.
+  GURL GetURL() const;
 
   // Runs |function| with appropriate scopes. Doesn't catch exceptions, callers
   // must do that if they want.
@@ -122,6 +133,9 @@ class ChromeV8Context : public RequestSender::Source {
 
   // Owns and structures the JS that is injected to set up extension bindings.
   scoped_ptr<ModuleSystem> module_system_;
+
+  // Contains safe copies of builtin objects like Function.prototype.
+  SafeBuiltins safe_builtins_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeV8Context);
 };

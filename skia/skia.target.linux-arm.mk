@@ -394,6 +394,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/image/SkImage_Gpu.cpp \
 	third_party/skia/src/image/SkSurface_Gpu.cpp \
 	third_party/skia/src/gpu/gl/SkGLContextHelper.cpp \
+	third_party/skia/src/core/SkUtilsArm.cpp \
 	third_party/skia/src/ports/SkFontHost_fontconfig.cpp
 
 
@@ -436,6 +437,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -461,6 +463,7 @@ MY_DEFS := \
 	'-DSK_GAMMA_APPLY_TO_A8' \
 	'-DSK_GAMMA_EXPONENT=1.4' \
 	'-DSK_GAMMA_CONTRAST=0.0' \
+	'-D__ARM_HAVE_OPTIONAL_NEON_SUPPORT' \
 	'-DHAVE_PTHREADS' \
 	'-DOS_ANDROID' \
 	'-DSK_BUILD_FOR_ANDROID' \
@@ -541,7 +544,8 @@ LOCAL_LDFLAGS := \
 	-Wl,--as-needed
 
 
-LOCAL_STATIC_LIBRARIES :=
+LOCAL_STATIC_LIBRARIES := \
+	cpufeatures
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

@@ -10,7 +10,7 @@
 #include "base/files/file_path.h"
 #include "base/process.h"
 #include "base/shared_memory.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/sync_socket.h"
 #include "base/values.h"
 #include "gpu/command_buffer/common/command_buffer.h"
@@ -45,7 +45,6 @@
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppp_flash_browser_operations.h"
-#include "ppapi/c/private/ppb_flash_drm.h"
 #include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
 #include "ppapi/proxy/ppapi_param_traits.h"
@@ -194,6 +193,15 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(ppapi::DirEntry)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(is_dir)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(ppapi::FileRef_CreateInfo)
+  IPC_STRUCT_TRAITS_MEMBER(file_system_type)
+  IPC_STRUCT_TRAITS_MEMBER(internal_path)
+  IPC_STRUCT_TRAITS_MEMBER(external_path)
+  IPC_STRUCT_TRAITS_MEMBER(display_name)
+  IPC_STRUCT_TRAITS_MEMBER(pending_host_resource_id)
+  IPC_STRUCT_TRAITS_MEMBER(file_system_plugin_resource)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(ppapi::FlashSiteSetting)
@@ -473,6 +481,8 @@ IPC_MESSAGE_ROUTED4(PpapiMsg_PPBAudio_NotifyAudioStreamCreated,
                     ppapi::proxy::SerializedHandle /* handle */)
 
 // PPB_FileRef.
+// TODO(teravest): Remove these messages when we've switched over to the "new"
+// proxy.
 IPC_MESSAGE_ROUTED3(
     PpapiMsg_PPBFileRef_CallbackComplete,
     ppapi::HostResource /* resource */,
@@ -807,6 +817,8 @@ IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBCore_ReleaseResource,
                     ppapi::HostResource)
 
 // PPB_FileRef.
+// TODO(teravest): Remove these messages when we've switched over to the "new"
+// proxy.
 IPC_SYNC_MESSAGE_ROUTED3_1(PpapiHostMsg_PPBFileRef_Create,
                            PP_Instance /* instance */,
                            PP_Resource /* file_system */,
@@ -881,21 +893,21 @@ IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBGraphics3D_InsertSyncPoint,
                            uint32 /* sync_point */)
 
 // PPB_ImageData.
-IPC_SYNC_MESSAGE_ROUTED4_3(PpapiHostMsg_PPBImageData_Create,
+IPC_SYNC_MESSAGE_ROUTED4_3(PpapiHostMsg_PPBImageData_CreatePlatform,
                            PP_Instance /* instance */,
                            int32 /* format */,
                            PP_Size /* size */,
                            PP_Bool /* init_to_zero */,
                            ppapi::HostResource /* result_resource */,
-                           std::string /* image_data_desc */,
+                           PP_ImageDataDesc /* image_data_desc */,
                            ppapi::proxy::ImageHandle /* result */)
-IPC_SYNC_MESSAGE_ROUTED4_3(PpapiHostMsg_PPBImageData_CreateNaCl,
+IPC_SYNC_MESSAGE_ROUTED4_3(PpapiHostMsg_PPBImageData_CreateSimple,
                            PP_Instance /* instance */,
                            int32 /* format */,
                            PP_Size /* size */,
                            PP_Bool /* init_to_zero */,
                            ppapi::HostResource /* result_resource */,
-                           std::string /* image_data_desc */,
+                           PP_ImageDataDesc /* image_data_desc */,
                            ppapi::proxy::SerializedHandle /* result */)
 
 // PPB_Instance.
@@ -1126,9 +1138,9 @@ IPC_SYNC_MESSAGE_ROUTED3_1(
 IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBTesting_GetLiveObjectsForInstance,
                            PP_Instance /* instance */,
                            uint32 /* result */)
-IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBTesting_SimulateInputEvent,
-                    PP_Instance /* instance */,
-                    ppapi::InputEventData /* input_event */)
+IPC_SYNC_MESSAGE_ROUTED2_0(PpapiHostMsg_PPBTesting_SimulateInputEvent,
+                           PP_Instance /* instance */,
+                           ppapi::InputEventData /* input_event */)
 IPC_SYNC_MESSAGE_ROUTED1_0(
     PpapiHostMsg_PPBTesting_SetMinimumArrayBufferSizeForShmem,
     uint32_t /* threshold */)
@@ -1401,6 +1413,57 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_RequestOSFileHandle)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileIO_RequestOSFileHandleReply)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileIO_GeneralReply)
 
+// FileRef
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileRef_CreateInternal,
+                     PP_Resource /* file_system */,
+                     std::string /* internal_path */)
+
+// Requests that the browser create a directory at the location indicated by
+// the FileRef.
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileRef_MakeDirectory,
+                     bool /* make_ancestors */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileRef_MakeDirectoryReply)
+
+// Requests that the browser update the last accessed and last modified times
+// at the location indicated by the FileRef.
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileRef_Touch,
+                     PP_Time /* last_accessed */,
+                     PP_Time /* last_modified */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileRef_TouchReply)
+
+// Requests that the browser delete a file or directory at the location
+// indicated by the FileRef.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileRef_Delete)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileRef_DeleteReply)
+
+// Requests that the browser rename a file or directory at the location
+// indicated by the FileRef.
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileRef_Rename,
+                     PP_Resource /* new_file_ref */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileRef_RenameReply)
+
+// Requests that the browser retrieve metadata information for a file or
+// directory at the location indicated by the FileRef.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileRef_Query)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileRef_QueryReply,
+                     PP_FileInfo /* file_info */)
+
+// Requests that the browser retrieve then entries in a directory at the
+// location indicated by the FileRef.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileRef_ReadDirectoryEntries)
+
+// FileRef_CreateInfo does not provide file type information, so two
+// corresponding vectors are returned.
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_FileRef_ReadDirectoryEntriesReply,
+                     std::vector<ppapi::FileRef_CreateInfo> /* files */,
+                     std::vector<PP_FileType> /* file_types */)
+
+// Requests that the browser reply with the absolute path to the indicated
+// file.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileRef_GetAbsolutePath)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileRef_GetAbsolutePathReply,
+                     std::string /* absolute_path */)
+
 // FileSystem
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileSystem_Create,
                      PP_FileSystemType /* type */)
@@ -1418,6 +1481,21 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_FlashDRM_GetDeviceID)
 // Reply for GetDeviceID which includes the device ID as a string.
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FlashDRM_GetDeviceIDReply,
                      std::string /* id */)
+
+// Requests the HMONITOR corresponding to the monitor on which the instance is
+// displayed.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_FlashDRM_GetHmonitor)
+// Reply message for GetHmonitor which contains the HMONITOR as an int64_t.
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FlashDRM_GetHmonitorReply,
+                     int64_t /* hmonitor */)
+
+// Requests the voucher file which is used to verify the integrity of the Flash
+// module. A PPB_FileRef resource will be created.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_FlashDRM_GetVoucherFile)
+// Reply message for GetVoucherFile which contains the CreateInfo for a
+// PPB_FileRef which points to the voucher file.
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FlashDRM_GetVoucherFileReply,
+                     ppapi::PPB_FileRef_CreateInfo /* file_info */)
 
 // Gamepad.
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_Gamepad_Create)
@@ -1854,15 +1932,13 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_PDF_SaveAs)
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_PDF_GetResourceImage,
                      PP_ResourceImage /* image_id */,
                      float /* scale */)
+
 // Reply for PpapiHostMsg_PDF_GetResourceImage containing the host resource id
 // of the image and a PP_ImageDataDesc which describes the image. Also carries
-// a shared memory handle pointing to the memory containg the image. On linux,
-// the handle is transmitted in this message as |fd|. This is due to the
-// unfortunate way that ImageHandles are defined for use with PPB_ImageData.
-IPC_MESSAGE_CONTROL3(PpapiPluginMsg_PDF_GetResourceImageReply,
+// a shared memory handle pointing to the memory containg the image.
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_PDF_GetResourceImageReply,
                      ppapi::HostResource /* resource_id */,
-                     PP_ImageDataDesc /* image_data_desc */,
-                     int /* fd */)
+                     PP_ImageDataDesc /* image_data_desc */)
 
 // VideoCapture_Dev, plugin -> host
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoCapture_Create)

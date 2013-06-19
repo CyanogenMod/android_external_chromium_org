@@ -115,14 +115,18 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
                                   public RemovableStorageObserver {
  public:
   class GalleryChangeObserver {
-   public:
-    // |extension_id| specifies the extension affected by this change.
-    // It is empty if the gallery change affects all extensions.
-    virtual void OnGalleryChanged(MediaGalleriesPreferences* pref,
-                                  const std::string& extension_id) {}
+    public:
+     // |extension_id| specifies the extension affected by this change.
+     // It is empty if the gallery change affects all extensions.
+     // If not empty, |pref_id| and |has_permission| are relevant
+     // and refer to a specific relationship.
+     virtual void OnGalleryChanged(MediaGalleriesPreferences* pref,
+                                   const std::string& extension_id,
+                                   MediaGalleryPrefId pref_id,
+                                   bool has_permission) = 0;
 
-   protected:
-    virtual ~GalleryChangeObserver();
+    protected:
+     virtual ~GalleryChangeObserver();
   };
 
   explicit MediaGalleriesPreferences(Profile* profile);
@@ -165,13 +169,6 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
                                 uint64 total_size_in_bytes,
                                 base::Time last_attach_time);
 
-  // Teaches the registry about a new gallery.
-  // Returns the gallery's pref id.
-  MediaGalleryPrefId AddGalleryWithName(const std::string& device_id,
-                                        const string16& display_name,
-                                        const base::FilePath& relative_path,
-                                        bool user_added);
-
   // Teach the registry about a user added registry simply from the path.
   // Returns the gallery's pref id.
   MediaGalleryPrefId AddGalleryByPath(const base::FilePath& path);
@@ -210,6 +207,17 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
   // Populates the default galleries if this is a fresh profile.
   void AddDefaultGalleriesIfFreshProfile();
 
+  // This is a hack - Some devices (iTunes, Picasa) are singletons in that only
+  // one instance of that type is supported at a time. As such, the device id
+  // should just be "itunes:" or "picasa:" but that would mean finding the
+  // location of the database file multiple times, which may be an async
+  // operation. Storing the location of the backing database in the device
+  // id allows that look up to be avoided. However, the cost is that if the
+  // database moves, the device id in preferences has to be updated.  This
+  // method searches for a gallery of the type passed in and updates its
+  // device id.  It returns true if the device id is up to date.
+  bool UpdateDeviceIDForSingletonType(const std::string& device_id);
+
   // Try to add an entry for the iTunes 'device'.
   void OnITunesDeviceID(const std::string& device_id);
 
@@ -221,7 +229,9 @@ class MediaGalleriesPreferences : public BrowserContextKeyedService,
   void InitFromPrefs(bool notify_observers);
 
   // Notifies |gallery_change_observers_| about changes in |known_galleries_|.
-  void NotifyChangeObservers(const std::string& extension_id);
+  void NotifyChangeObservers(const std::string& extension_id,
+                             MediaGalleryPrefId pref_id,
+                             bool has_permission);
 
   MediaGalleryPrefId AddGalleryInternal(const std::string& device_id,
                                         const string16& display_name,

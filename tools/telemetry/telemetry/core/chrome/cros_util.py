@@ -17,22 +17,35 @@ def _SigninUIState(oobe):
     }
   ''')
 
-def _WebContentsNotOobe(browser_backend):
-  """Returns true if we're still on the oobe login screen. As a side-effect,
-  clicks the ok button on the user image selection screen."""
-  oobe = browser_backend.misc_web_contents_backend.GetOobe()
-  if oobe is None:
-    return True
-  try:
-    oobe.EvaluateJavaScript("""
-        var ok = document.getElementById("ok-button");
-        if (ok) {
-          ok.click();
-        }
-    """)
-  except (exceptions.TabCrashException):
-    pass
-  return False
+def _IsCryptohomeMounted(cri):
+  """Returns True if a cryptohome vault is mounted at /home/chronos/user."""
+  return cri.FilesystemMountedAt('/home/chronos/user').startswith(
+      '/home/.shadow/')
+
+def _GetOobe(browser_backend):
+  return browser_backend.misc_web_contents_backend.GetOobe()
+
+def _HandleUserImageSelectionScreen(browser_backend):
+  """If we're stuck on the user image selection screen, we click the ok button.
+  TODO(achuith): Figure out a better way to bypass user image selection.
+  crbug.com/249182."""
+  oobe = _GetOobe(browser_backend)
+  if oobe:
+    try:
+      oobe.EvaluateJavaScript("""
+          var ok = document.getElementById("ok-button");
+          if (ok) {
+            ok.click();
+          }
+      """)
+    except (exceptions.TabCrashException):
+      pass
+
+def _IsLoggedIn(browser_backend, cri):
+  """Returns True if we're logged in (cryptohome has mounted), and the oobe has
+  been dismissed."""
+  _HandleUserImageSelectionScreen(browser_backend)
+  return _IsCryptohomeMounted(cri) and not _GetOobe(browser_backend)
 
 def _ClickBrowseAsGuest(oobe):
   """Click the Browse As Guest button on the account picker screen. This will
@@ -67,17 +80,17 @@ def WaitForGuestFsMounted(cri):
 
 def NavigateGuestLogin(browser_backend, cri):
   """Navigates through oobe login screen as guest"""
-  oobe = browser_backend.misc_web_contents_backend.GetOobe()
+  oobe = _GetOobe(browser_backend)
   assert oobe
   WaitForAccountPicker(oobe)
   _ClickBrowseAsGuest(oobe)
   WaitForGuestFsMounted(cri)
 
-def NavigateLogin(browser_backend):
+def NavigateLogin(browser_backend, cri):
   """Navigates through oobe login screen"""
   # Dismiss the user image selection screen.
   try:
-    util.WaitFor(lambda: _WebContentsNotOobe(browser_backend), 15)
+    util.WaitFor(lambda: _IsLoggedIn(browser_backend, cri), 15)
   except util.TimeoutException:
     raise exceptions.LoginException(
         'Timed out going through oobe screen. Make sure the custom auth '

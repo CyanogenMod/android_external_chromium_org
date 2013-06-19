@@ -22,12 +22,12 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/job_list.h"
 #include "chrome/browser/chromeos/drive/logging.h"
+#include "chrome/browser/drive/drive_notification_manager.h"
+#include "chrome/browser/drive/drive_notification_manager_factory.h"
+#include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/google_apis/auth_service.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_notification_manager.h"
-#include "chrome/browser/google_apis/drive_notification_manager_factory.h"
-#include "chrome/browser/google_apis/drive_service_interface.h"
 #include "chrome/browser/google_apis/drive_switches.h"
 #include "chrome/browser/google_apis/event_logger.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
@@ -766,8 +766,6 @@ void DriveInternalsWebUIHandler::UpdateCacheEntry(
   value.SetBoolean("is_present", cache_entry.is_present());
   value.SetBoolean("is_pinned", cache_entry.is_pinned());
   value.SetBoolean("is_dirty", cache_entry.is_dirty());
-  value.SetBoolean("is_mounted", cache_entry.is_mounted());
-  value.SetBoolean("is_persistent", cache_entry.is_persistent());
 
   web_ui()->CallJavascriptFunction("updateCacheContents", value);
 }

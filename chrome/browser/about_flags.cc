@@ -12,15 +12,13 @@
 
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
-#include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/flags_storage.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -40,6 +38,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/chromeos_switches.h"
+#include "third_party/cros_system_api/switches/chrome_switches.h"
 #endif
 
 using content::UserMetricsAction;
@@ -83,6 +82,39 @@ void AddOsStrings(unsigned bitmask, ListValue* list) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kBitsToOs); ++i)
     if (bitmask & kBitsToOs[i].bit)
       list->Append(new StringValue(kBitsToOs[i].name));
+}
+
+// Convert switch constants to proper CommandLine::StringType strings.
+CommandLine::StringType GetSwitchString(const std::string& flag) {
+  CommandLine cmd_line(CommandLine::NO_PROGRAM);
+  cmd_line.AppendSwitch(flag);
+  DCHECK(cmd_line.argv().size() == 2);
+  return cmd_line.argv()[1];
+}
+
+// Scoops flags from a command line.
+std::set<CommandLine::StringType> ExtractFlagsFromCommandLine(
+    const CommandLine& cmdline) {
+  std::set<CommandLine::StringType> flags;
+  // First do the ones between --flag-switches-begin and --flag-switches-end.
+  CommandLine::StringVector::const_iterator first =
+      std::find(cmdline.argv().begin(), cmdline.argv().end(),
+                GetSwitchString(switches::kFlagSwitchesBegin));
+  CommandLine::StringVector::const_iterator last =
+      std::find(cmdline.argv().begin(), cmdline.argv().end(),
+                GetSwitchString(switches::kFlagSwitchesEnd));
+  if (first != cmdline.argv().end() && last != cmdline.argv().end())
+    flags.insert(first + 1, last);
+#if defined(OS_CHROMEOS)
+  // Then add those between --policy-switches-begin and --policy-switches-end.
+  first = std::find(cmdline.argv().begin(), cmdline.argv().end(),
+                    GetSwitchString(chromeos::switches::kPolicySwitchesBegin));
+  last = std::find(cmdline.argv().begin(), cmdline.argv().end(),
+                   GetSwitchString(chromeos::switches::kPolicySwitchesEnd));
+  if (first != cmdline.argv().end() && last != cmdline.argv().end())
+    flags.insert(first + 1, last);
+#endif
+  return flags;
 }
 
 const Experiment::Choice
@@ -434,11 +466,11 @@ const Experiment kExperiments[] = {
 #endif
 #if defined(OS_ANDROID)
   {
-    "enable-webaudio",
-    IDS_FLAGS_ENABLE_WEBAUDIO_NAME,
-    IDS_FLAGS_ENABLE_WEBAUDIO_DESCRIPTION,
+    "disable-webaudio",
+    IDS_FLAGS_DISABLE_WEBAUDIO_NAME,
+    IDS_FLAGS_DISABLE_WEBAUDIO_DESCRIPTION,
     kOsAndroid,
-    SINGLE_VALUE_TYPE(switches::kEnableWebAudio)
+    SINGLE_VALUE_TYPE(switches::kDisableWebAudio)
   },
 #endif
   {
@@ -576,7 +608,7 @@ const Experiment kExperiments[] = {
     "enable-instant-extended-api",
     IDS_FLAGS_ENABLE_INSTANT_EXTENDED_API,
     IDS_FLAGS_ENABLE_INSTANT_EXTENDED_API_DESCRIPTION,
-    kOsDesktop,
+    kOsMac | kOsWin | kOsCrOS,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableInstantExtendedAPI,
                               switches::kDisableInstantExtendedAPI)
   },
@@ -584,7 +616,7 @@ const Experiment kExperiments[] = {
     "enable-local-first-load-ntp",
     IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP,
     IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP_DESCRIPTION,
-    kOsDesktop,
+    kOsMac | kOsWin | kOsCrOS,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableLocalFirstLoadNTP,
                               switches::kDisableLocalFirstLoadNTP)
   },
@@ -592,7 +624,7 @@ const Experiment kExperiments[] = {
     "enable-local-only-instant-extended-api",
     IDS_FLAGS_ENABLE_LOCAL_ONLY_INSTANT_EXTENDED_API,
     IDS_FLAGS_ENABLE_LOCAL_ONLY_INSTANT_EXTENDED_API_DESCRIPTION,
-    kOsDesktop,
+    kOsMac | kOsWin | kOsCrOS,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableLocalOnlyInstantExtendedAPI,
                               switches::kDisableLocalOnlyInstantExtendedAPI)
   },
@@ -736,14 +768,7 @@ const Experiment kExperiments[] = {
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableOpusPlayback)
   },
-  {
-    "enable-vp9-playback",
-    IDS_FLAGS_ENABLE_VP9_PLAYBACK_NAME,
-    IDS_FLAGS_ENABLE_VP9_PLAYBACK_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableVp9Playback)
-  },
-  {
+ {
     "enable-vp8-alpha-playback",
     IDS_FLAGS_ENABLE_VP8_ALPHA_PLAYBACK_NAME,
     IDS_FLAGS_ENABLE_VP8_ALPHA_PLAYBACK_DESCRIPTION,
@@ -908,18 +933,18 @@ const Experiment kExperiments[] = {
   },
 #if defined(OS_CHROMEOS)
   {
+      "ash-use-alt-shelf",
+      IDS_FLAGS_ALTERNATE_SHELF_LAYOUT_NAME,
+      IDS_FLAGS_ALTERNATE_SHELF_LAYOUT_DESCRIPTION,
+      kOsCrOS,
+      SINGLE_VALUE_TYPE(ash::switches::kAshUseAlternateShelfLayout)
+  },
+  {
     "enable-background-loader",
     IDS_ENABLE_BACKLOADER_NAME,
     IDS_ENABLE_BACKLOADER_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kEnableBackgroundLoader)
-  },
-  {
-    "enable-bezel-touch",
-    IDS_ENABLE_BEZEL_TOUCH_NAME,
-    IDS_ENABLE_BEZEL_TOUCH_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnableBezelTouch)
   },
   {
     "enable-screensaver-extension",
@@ -1054,18 +1079,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(ash::switches::kAshDisableNewLockAnimations),
   },
   {
-    "file-manager-legacy",
-    IDS_FLAGS_FILE_MANAGER_LEGACY_NAME,
-    IDS_FLAGS_FILE_MANAGER_LEGACY_DESCRIPTION,
+    "file-manager-no-checkboxes",
+    IDS_FLAGS_FILE_MANAGER_NO_CHECKBOXES_NAME,
+    IDS_FLAGS_FILE_MANAGER_NO_CHECKBOXES_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerLegacy),
-  },
-  {
-    "file-manager-legacy-ui",
-    IDS_FLAGS_FILE_MANAGER_LEGACY_UI_NAME,
-    IDS_FLAGS_FILE_MANAGER_LEGACY_UI_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerLegacyUI),
+    SINGLE_VALUE_TYPE(chromeos::switches::kFileManagerNoCheckboxes)
   },
   {
     "disable-app-mode",
@@ -1263,7 +1281,7 @@ const Experiment kExperiments[] = {
     "enable-interactive-autocomplete",
     IDS_FLAGS_ENABLE_INTERACTIVE_AUTOCOMPLETE_NAME,
     IDS_FLAGS_ENABLE_INTERACTIVE_AUTOCOMPLETE_DESCRIPTION,
-    kOsWin | kOsCrOS | kOsAndroid,
+    kOsWin | kOsCrOS | kOsAndroid | kOsMac,
     ENABLE_DISABLE_VALUE_TYPE(
         autofill::switches::kEnableInteractiveAutocomplete,
         autofill::switches::kDisableInteractiveAutocomplete)
@@ -1483,6 +1501,13 @@ const Experiment kExperiments[] = {
     kOsMac,
     SINGLE_VALUE_TYPE(switches::kEnableAppShims)
   },
+  {
+    "enable-simplified-fullscreen",
+    IDS_FLAGS_ENABLE_SIMPLIFIED_FULLSCREEN_NAME,
+    IDS_FLAGS_ENABLE_SIMPLIFIED_FULLSCREEN_DESCRIPTION,
+    kOsMac,
+    SINGLE_VALUE_TYPE(switches::kEnableSimplifiedFullscreen)
+  },
 #endif
 #if defined(OS_CHROMEOS) || defined(OS_WIN)
   {
@@ -1556,13 +1581,16 @@ size_t num_experiments = arraysize(kExperiments);
 class FlagsState {
  public:
   FlagsState() : needs_restart_(false) {}
-  void ConvertFlagsToSwitches(PrefService* prefs, CommandLine* command_line);
+  void ConvertFlagsToSwitches(FlagsStorage* flags_storage,
+                              CommandLine* command_line);
   bool IsRestartNeededToCommitChanges();
   void SetExperimentEnabled(
-      PrefService* prefs, const std::string& internal_name, bool enable);
+      FlagsStorage* flags_storage,
+      const std::string& internal_name,
+      bool enable);
   void RemoveFlagsSwitches(
       std::map<std::string, CommandLine::StringType>* switch_list);
-  void ResetAllFlags(PrefService* prefs);
+  void ResetAllFlags(FlagsStorage* flags_storage);
   void reset();
 
   // Returns the singleton instance of this class
@@ -1576,40 +1604,6 @@ class FlagsState {
 
   DISALLOW_COPY_AND_ASSIGN(FlagsState);
 };
-
-// Extracts the list of enabled lab experiments from preferences and stores them
-// in a set.
-void GetEnabledFlags(const PrefService* prefs, std::set<std::string>* result) {
-  const ListValue* enabled_experiments = prefs->GetList(
-      prefs::kEnabledLabsExperiments);
-  if (!enabled_experiments)
-    return;
-
-  for (ListValue::const_iterator it = enabled_experiments->begin();
-       it != enabled_experiments->end();
-       ++it) {
-    std::string experiment_name;
-    if (!(*it)->GetAsString(&experiment_name)) {
-      LOG(WARNING) << "Invalid entry in " << prefs::kEnabledLabsExperiments;
-      continue;
-    }
-    result->insert(experiment_name);
-  }
-}
-
-// Takes a set of enabled lab experiments
-void SetEnabledFlags(
-    PrefService* prefs, const std::set<std::string>& enabled_experiments) {
-  ListPrefUpdate update(prefs, prefs::kEnabledLabsExperiments);
-  ListValue* experiments_list = update.Get();
-
-  experiments_list->Clear();
-  for (std::set<std::string>::const_iterator it = enabled_experiments.begin();
-       it != enabled_experiments.end();
-       ++it) {
-    experiments_list->Append(new StringValue(*it));
-  }
-}
 
 // Adds the internal names for the specified experiment to |names|.
 void AddInternalName(const Experiment& e, std::set<std::string>* names) {
@@ -1654,15 +1648,14 @@ bool ValidateExperiment(const Experiment& e) {
 // Removes all experiments from prefs::kEnabledLabsExperiments that are
 // unknown, to prevent this list to become very long as experiments are added
 // and removed.
-void SanitizeList(PrefService* prefs) {
+void SanitizeList(FlagsStorage* flags_storage) {
   std::set<std::string> known_experiments;
   for (size_t i = 0; i < num_experiments; ++i) {
     DCHECK(ValidateExperiment(experiments[i]));
     AddInternalName(experiments[i], &known_experiments);
   }
 
-  std::set<std::string> enabled_experiments;
-  GetEnabledFlags(prefs, &enabled_experiments);
+  std::set<std::string> enabled_experiments = flags_storage->GetFlags();
 
   std::set<std::string> new_enabled_experiments;
   std::set_intersection(
@@ -1671,20 +1664,20 @@ void SanitizeList(PrefService* prefs) {
       std::inserter(new_enabled_experiments, new_enabled_experiments.begin()));
 
   if (new_enabled_experiments != enabled_experiments)
-    SetEnabledFlags(prefs, new_enabled_experiments);
+    flags_storage->SetFlags(new_enabled_experiments);
 }
 
 void GetSanitizedEnabledFlags(
-    PrefService* prefs, std::set<std::string>* result) {
-  SanitizeList(prefs);
-  GetEnabledFlags(prefs, result);
+    FlagsStorage* flags_storage, std::set<std::string>* result) {
+  SanitizeList(flags_storage);
+  *result = flags_storage->GetFlags();
 }
 
 // Variant of GetSanitizedEnabledFlags that also removes any flags that aren't
 // enabled on the current platform.
 void GetSanitizedEnabledFlagsForCurrentPlatform(
-    PrefService* prefs, std::set<std::string>* result) {
-  GetSanitizedEnabledFlags(prefs, result);
+    FlagsStorage* flags_storage, std::set<std::string>* result) {
+  GetSanitizedEnabledFlags(flags_storage, result);
 
   // Filter out any experiments that aren't enabled on the current platform.  We
   // don't remove these from prefs else syncing to a platform with a different
@@ -1754,16 +1747,32 @@ string16 Experiment::DescriptionForChoice(int index) const {
   return l10n_util::GetStringUTF16(description_id);
 }
 
-void ConvertFlagsToSwitches(PrefService* prefs, CommandLine* command_line) {
-  FlagsState::GetInstance()->ConvertFlagsToSwitches(prefs, command_line);
+void ConvertFlagsToSwitches(FlagsStorage* flags_storage,
+                            CommandLine* command_line) {
+  FlagsState::GetInstance()->ConvertFlagsToSwitches(flags_storage,
+                                                    command_line);
 }
 
-void GetFlagsExperimentsData(PrefService* prefs,
+bool AreSwitchesIdenticalToCurrentCommandLine(
+    const CommandLine& new_cmdline, const CommandLine& active_cmdline) {
+  std::set<CommandLine::StringType> new_flags =
+      ExtractFlagsFromCommandLine(new_cmdline);
+  std::set<CommandLine::StringType> active_flags =
+      ExtractFlagsFromCommandLine(active_cmdline);
+
+  // Needed because std::equal doesn't check if the 2nd set is empty.
+  if (new_flags.size() != active_flags.size())
+    return false;
+
+  return std::equal(new_flags.begin(), new_flags.end(), active_flags.begin());
+}
+
+void GetFlagsExperimentsData(FlagsStorage* flags_storage,
                              FlagAccess access,
                              base::ListValue* supported_experiments,
                              base::ListValue* unsupported_experiments) {
   std::set<std::string> enabled_experiments;
-  GetSanitizedEnabledFlags(prefs, &enabled_experiments);
+  GetSanitizedEnabledFlags(flags_storage, &enabled_experiments);
 
   int current_platform = GetCurrentPlatform();
 
@@ -1814,9 +1823,11 @@ bool IsRestartNeededToCommitChanges() {
   return FlagsState::GetInstance()->IsRestartNeededToCommitChanges();
 }
 
-void SetExperimentEnabled(
-    PrefService* prefs, const std::string& internal_name, bool enable) {
-  FlagsState::GetInstance()->SetExperimentEnabled(prefs, internal_name, enable);
+void SetExperimentEnabled(FlagsStorage* flags_storage,
+                          const std::string& internal_name,
+                          bool enable) {
+  FlagsState::GetInstance()->SetExperimentEnabled(flags_storage,
+                                                  internal_name, enable);
 }
 
 void RemoveFlagsSwitches(
@@ -1824,8 +1835,8 @@ void RemoveFlagsSwitches(
   FlagsState::GetInstance()->RemoveFlagsSwitches(switch_list);
 }
 
-void ResetAllFlags(PrefService* prefs) {
-  FlagsState::GetInstance()->ResetAllFlags(prefs);
+void ResetAllFlags(FlagsStorage* flags_storage) {
+  FlagsState::GetInstance()->ResetAllFlags(flags_storage);
 }
 
 int GetCurrentPlatform() {
@@ -1844,9 +1855,8 @@ int GetCurrentPlatform() {
 #endif
 }
 
-void RecordUMAStatistics(const PrefService* prefs) {
-  std::set<std::string> flags;
-  GetEnabledFlags(prefs, &flags);
+void RecordUMAStatistics(FlagsStorage* flags_storage) {
+  std::set<std::string> flags = flags_storage->GetFlags();
   for (std::set<std::string>::iterator it = flags.begin(); it != flags.end();
        ++it) {
     std::string action("AboutFlags_");
@@ -1877,13 +1887,14 @@ void SetFlagToSwitchMapping(const std::string& key,
 }
 
 void FlagsState::ConvertFlagsToSwitches(
-    PrefService* prefs, CommandLine* command_line) {
+    FlagsStorage* flags_storage, CommandLine* command_line) {
   if (command_line->HasSwitch(switches::kNoExperiments))
     return;
 
   std::set<std::string> enabled_experiments;
 
-  GetSanitizedEnabledFlagsForCurrentPlatform(prefs, &enabled_experiments);
+  GetSanitizedEnabledFlagsForCurrentPlatform(flags_storage,
+                                             &enabled_experiments);
 
   NameToSwitchAndValueMap name_to_switch_map;
   for (size_t i = 0; i < num_experiments; ++i) {
@@ -1941,8 +1952,9 @@ bool FlagsState::IsRestartNeededToCommitChanges() {
   return needs_restart_;
 }
 
-void FlagsState::SetExperimentEnabled(
-    PrefService* prefs, const std::string& internal_name, bool enable) {
+void FlagsState::SetExperimentEnabled(FlagsStorage* flags_storage,
+                                      const std::string& internal_name,
+                                      bool enable) {
   size_t at_index = internal_name.find(testing::kMultiSeparator);
   if (at_index != std::string::npos) {
     DCHECK(enable);
@@ -1950,20 +1962,20 @@ void FlagsState::SetExperimentEnabled(
     // currently selected choice.
     DCHECK_NE(at_index, 0u);
     const std::string experiment_name = internal_name.substr(0, at_index);
-    SetExperimentEnabled(prefs, experiment_name, false);
+    SetExperimentEnabled(flags_storage, experiment_name, false);
 
     // And enable the new choice, if it is not the default first choice.
     if (internal_name != experiment_name + "@0") {
       std::set<std::string> enabled_experiments;
-      GetSanitizedEnabledFlags(prefs, &enabled_experiments);
+      GetSanitizedEnabledFlags(flags_storage, &enabled_experiments);
       needs_restart_ |= enabled_experiments.insert(internal_name).second;
-      SetEnabledFlags(prefs, enabled_experiments);
+      flags_storage->SetFlags(enabled_experiments);
     }
     return;
   }
 
   std::set<std::string> enabled_experiments;
-  GetSanitizedEnabledFlags(prefs, &enabled_experiments);
+  GetSanitizedEnabledFlags(flags_storage, &enabled_experiments);
 
   const Experiment* e = NULL;
   for (size_t i = 0; i < num_experiments; ++i) {
@@ -1998,7 +2010,7 @@ void FlagsState::SetExperimentEnabled(
     }
   }
 
-  SetEnabledFlags(prefs, enabled_experiments);
+  flags_storage->SetFlags(enabled_experiments);
 }
 
 void FlagsState::RemoveFlagsSwitches(
@@ -2009,11 +2021,11 @@ void FlagsState::RemoveFlagsSwitches(
   }
 }
 
-void FlagsState::ResetAllFlags(PrefService* prefs) {
+void FlagsState::ResetAllFlags(FlagsStorage* flags_storage) {
   needs_restart_ = true;
 
   std::set<std::string> no_experiments;
-  SetEnabledFlags(prefs, no_experiments);
+  flags_storage->SetFlags(no_experiments);
 }
 
 void FlagsState::reset() {

@@ -112,7 +112,8 @@ void StressTheCache(int iteration) {
     return;
 
   disk_cache::BackendImpl* cache =
-      new disk_cache::BackendImpl(path, mask, cache_thread.message_loop_proxy(),
+      new disk_cache::BackendImpl(path, mask,
+                                  cache_thread.message_loop_proxy().get(),
                                   NULL);
   cache->SetMaxSize(cache_size);
   cache->SetFlags(disk_cache::kNoLoadProtection);
@@ -168,8 +169,8 @@ void StressTheCache(int iteration) {
     base::snprintf(buffer->data(), kSize,
                    "i: %d iter: %d, size: %d, truncate: %d     ", i, iteration,
                    size, truncate ? 1 : 0);
-    rv = entries[slot]
-        ->WriteData(0, 0, buffer.get(), size, cb.callback(), truncate);
+    rv = entries[slot]->WriteData(0, 0, buffer.get(), size, cb.callback(),
+                                  truncate);
     CHECK_EQ(size, cb.GetResult(rv));
 
     if (rand() % 100 > 80) {

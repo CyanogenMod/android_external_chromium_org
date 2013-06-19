@@ -4,7 +4,6 @@
 # found in the LICENSE file.
 
 import errno
-import hashlib
 import json
 import optparse
 import os
@@ -110,7 +109,10 @@ def ParseElfHeader(path):
   with open(path, 'rb') as f:
     header = f.read(elf_header_size)
 
-  header = struct.unpack(elf_header_format, header)
+  try:
+    header = struct.unpack(elf_header_format, header)
+  except struct.error:
+    raise Error("error parsing elf header: %s" % path)
   e_ident, _, e_machine = header[:3]
 
   elf_magic = '\x7fELF'
@@ -432,12 +434,8 @@ class NmfUtils(object):
     manifest = {}
     manifest[PROGRAM_KEY] = {}
     manifest[PROGRAM_KEY][PORTABLE_KEY] = {}
-    sha = hashlib.sha256()
-    with open(self.main_files[0], 'rb') as f:
-      sha.update(f.read())
     manifest[PROGRAM_KEY][PORTABLE_KEY][TRANSLATE_KEY] = {
       "url": os.path.basename(self.main_files[0]),
-      "sha256": sha.hexdigest()
     }
     self.manifest = manifest
 
@@ -725,7 +723,6 @@ def main(argv):
   return 0
 
 
-# Invoke this file directly for simple testing.
 if __name__ == '__main__':
   try:
     rtn = main(sys.argv[1:])

@@ -57,15 +57,14 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateGraphics3DRaw(PP_Instance instance,
                                           PP_Resource share_context,
                                           const int32_t* attrib_list) OVERRIDE;
+  virtual PP_Resource CreateHostResolver(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateImageData(PP_Instance instance,
-                                      PP_ImageDataFormat format,
-                                      const PP_Size* size,
-                                      PP_Bool init_to_zero) OVERRIDE;
-  virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
-                                          PP_ImageDataFormat format,
-                                          const PP_Size* size,
-                                          PP_Bool init_to_zero) OVERRIDE;
+  virtual PP_Resource CreateImageData(
+      PP_Instance instance,
+      ::ppapi::PPB_ImageData_Shared::ImageDataType type,
+      PP_ImageDataFormat format,
+      const PP_Size* size,
+      PP_Bool init_to_zero) OVERRIDE;
   virtual PP_Resource CreateIMEInputEvent(PP_Instance instance,
                                           PP_InputEvent_Type type,
                                           PP_TimeTicks time_stamp,
@@ -99,6 +98,9 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateNetAddressFromIPv6Address(
       PP_Instance instance,
       const PP_NetAddress_IPv6_Dev* ipv6_addr) OVERRIDE;
+  virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
+      PP_Instance instance,
+      const PP_NetAddress_Private& private_addr) OVERRIDE;
   virtual PP_Resource CreateTouchInputEvent(
       PP_Instance instance,
       PP_InputEvent_Type type,
@@ -116,7 +118,9 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateTalk(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPServerSocketPrivate(
       PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateTCPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateUDPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateVideoCapture(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateVideoDecoder(

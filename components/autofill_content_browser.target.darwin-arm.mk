@@ -19,7 +19,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_resources_gyp)/webkit_resources.stamp \
-	$(call intermediates-dir-for,GYP,components_component_resources_gyp)/component_resources.stamp
+	$(call intermediates-dir-for,GYP,components_component_strings_gyp)/component_strings.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -32,8 +32,14 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	components/autofill/content/browser/autocheckout/whitelist_manager.cc \
+	components/autofill/content/browser/autocheckout_manager.cc \
+	components/autofill/content/browser/autocheckout_page_meta_data.cc \
+	components/autofill/content/browser/autocheckout_request_manager.cc \
+	components/autofill/content/browser/autofill_driver_impl.cc \
 	components/autofill/content/browser/risk/fingerprint.cc \
 	components/autofill/content/browser/wallet/encryption_escrow_client.cc \
+	components/autofill/content/browser/wallet/form_field_error.cc \
 	components/autofill/content/browser/wallet/full_wallet.cc \
 	components/autofill/content/browser/wallet/instrument.cc \
 	components/autofill/content/browser/wallet/required_action.cc \
@@ -80,6 +86,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -161,7 +168,7 @@ LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber \
 	$(LOCAL_PATH)/third_party/libphonenumber/src \
 	$(gyp_shared_intermediate_dir)/webkit \
-	$(gyp_shared_intermediate_dir)/component_resources \
+	$(gyp_shared_intermediate_dir)/components/strings \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

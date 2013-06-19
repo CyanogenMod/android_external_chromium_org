@@ -17,7 +17,7 @@
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/media_stream_request.h"
 #include "net/base/load_states.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/base/window_open_disposition.h"
 
 class GURL;
@@ -90,11 +90,11 @@ class CONTENT_EXPORT RenderViewHostDelegate {
         bool proceed,
         const base::TimeTicks& proceed_time) = 0;
 
-    // Called by ResourceDispatcherHost when a response for a pending cross-site
-    // request is received.  The ResourceDispatcherHost will pause the response
-    // until the onunload handler of the previous renderer is run.
-    virtual void OnCrossSiteResponse(int new_render_process_host_id,
-                                     int new_request_id) = 0;
+    // The |pending_render_view_host| is ready to commit a page.  The delegate
+    // should ensure that the old RenderViewHost runs its unload handler first.
+    virtual void OnCrossSiteResponse(
+        RenderViewHost* pending_render_view_host,
+        const GlobalRequestID& global_request_id) = 0;
 
    protected:
     virtual ~RendererManagement() {}
@@ -404,8 +404,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
 
   // A context menu should be shown, to be built using the context information
   // provided in the supplied params.
-  virtual void ShowContextMenu(const ContextMenuParams& params,
-                               ContextMenuSourceType type) {}
+  virtual void ShowContextMenu(const ContextMenuParams& params) {}
 
   // The render view has requested access to media devices listed in
   // |request|, and the client should grant or deny that permission by

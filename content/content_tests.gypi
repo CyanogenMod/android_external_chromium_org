@@ -159,6 +159,7 @@
           ],
         }, {  # OS != "ios"
           'dependencies': [
+            'content_child',
             'content_ppapi_plugin',
             'content_utility',
             'content_worker',
@@ -356,6 +357,7 @@
         'browser/streams/stream_url_request_job_unittest.cc',
         'browser/system_message_window_win_unittest.cc',
         'browser/tracing/trace_subscriber_stdio_unittest.cc',
+        'browser/web_contents/aura/window_slider_unittest.cc',
         'browser/web_contents/navigation_controller_impl_unittest.cc',
         'browser/web_contents/navigation_entry_impl_unittest.cc',
         'browser/web_contents/render_view_host_manager_unittest.cc',
@@ -374,6 +376,7 @@
         'common/cc_messages_unittest.cc',
         'common/common_param_traits_unittest.cc',
         'common/gpu/gpu_memory_manager_unittest.cc',
+        'common/indexed_db/indexed_db_key_unittest.cc',
         'common/inter_process_time_ticks_converter_unittest.cc',
         'common/mac/attributed_string_coder_unittest.mm',
         'common/mac/font_descriptor_unittest.mm',
@@ -482,20 +485,22 @@
         '../webkit/browser/fileapi/syncable/syncable_file_system_util_unittest.cc',
         '../webkit/browser/fileapi/test_file_set.cc',
         '../webkit/browser/fileapi/test_file_set.h',
+        '../webkit/browser/fileapi/timed_task_helper_unittest.cc',
         '../webkit/browser/fileapi/transient_file_util_unittest.cc',
         '../webkit/browser/fileapi/upload_file_system_file_element_reader_unittest.cc',
         'test/run_all_unittests.cc',
+        '../webkit/child/touch_fling_gesture_curve_unittest.cc',
+        '../webkit/child/worker_task_runner_unittest.cc',
         '../webkit/common/blob/shareable_file_reference_unittest.cc',
         '../webkit/common/cursors/webcursor_unittest.cc',
         '../webkit/common/database/database_connections_unittest.cc',
+        '../webkit/common/database/database_identifier_unittest.cc',
         '../webkit/common/dom_storage/dom_storage_map_unittest.cc',
         '../webkit/common/fileapi/file_system_util_unittest.cc',
         '../webkit/glue/glue_serialize_unittest.cc',
         '../webkit/glue/multipart_response_delegate_unittest.cc',
         '../webkit/glue/resource_request_body_unittest.cc',
-        '../webkit/glue/touch_fling_gesture_curve_unittest.cc',
         '../webkit/glue/webkit_glue_unittest.cc',
-        '../webkit/glue/worker_task_runner_unittest.cc',
         '../webkit/mocks/mock_weburlloader.cc',
         '../webkit/mocks/mock_weburlloader.h',
         '../webkit/common/user_agent/user_agent_unittest.cc',
@@ -528,6 +533,7 @@
         '../webkit/renderer/media/buffered_resource_loader_unittest.cc',
         '../webkit/renderer/media/cache_util_unittest.cc',
         '../webkit/renderer/media/crypto/key_systems_unittest.cc',
+        '../webkit/renderer/media/media_info_loader_unittest.cc',
         '../webkit/renderer/media/test_response_generator.cc',
         '../webkit/renderer/media/test_response_generator.h',
         '../webkit/renderer/media/webaudiosourceprovider_impl_unittest.cc',
@@ -542,13 +548,13 @@
             ['exclude', '\\.(cc|mm)$'],
             ['include', '_ios\\.(cc|mm)$'],
             ['include', '^browser/notification_service_impl_unittest\\.cc$'],
-            ['include', '^browser/speech/.*_unittest\\.cc$'],
             ['include', '^browser/web_contents/navigation_entry_impl_unittest\\.cc$'],
             ['include', '^test/run_all_unittests\\.cc$'],
           ],
         }, {  # OS != "ios"
           'dependencies': [
             'content_browser',
+            'content_child',
             'content_gpu',
             'content_plugin',
             'content_renderer',
@@ -573,6 +579,7 @@
             '../webkit/storage_common.gyp:webkit_storage_common',
             '../webkit/storage_renderer.gyp:webkit_storage_renderer',
             '../webkit/support/webkit_support.gyp:glue',
+            '../webkit/support/webkit_support.gyp:glue_child',
             '../webkit/support/webkit_support.gyp:glue_common',
             '../webkit/support/webkit_support.gyp:glue_renderer',
             '../webkit/support/webkit_support.gyp:plugins',
@@ -611,6 +618,14 @@
             '../third_party/webrtc/modules/modules.gyp:video_capture_module',
             '../third_party/webrtc/voice_engine/voice_engine.gyp:voice_engine',
           ]
+        }],
+        ['enable_webrtc==1 and (OS=="linux" or OS=="mac" or OS=="win")', {
+          'sources': [
+            'browser/renderer_host/media/screen_capture_device_unittest.cc',
+          ],
+          'dependencies': [
+            '../third_party/webrtc/modules/modules.gyp:desktop_capture',
+          ],
         }],
         # TODO(jrg): remove the OS=="android" section?
         # http://crbug.com/113172
@@ -740,6 +755,7 @@
             '../ui/ui.gyp:shell_dialogs',
             '../ui/ui.gyp:ui',
             '../webkit/support/webkit_support.gyp:glue',
+            '../webkit/support/webkit_support.gyp:glue_child',
             '../webkit/support/webkit_support.gyp:glue_renderer',
           ],
           'include_dirs': [
@@ -789,6 +805,7 @@
             'browser/plugin_data_remover_impl_browsertest.cc',
             'browser/plugin_browsertest.cc',
             'browser/plugin_service_impl_browsertest.cc',
+            'browser/renderer_host/render_process_host_browsertest.cc',
             'browser/renderer_host/render_view_host_browsertest.cc',
             'browser/renderer_host/render_view_host_manager_browsertest.cc',
             'browser/renderer_host/render_widget_host_browsertest.cc',
@@ -825,6 +842,8 @@
             'renderer/render_widget_browsertest.cc',
             'renderer/resource_fetcher_browsertest.cc',
             'renderer/savable_resources_browsertest.cc',
+            'test/accessibility_browser_test_utils.cc',
+            'test/accessibility_browser_test_utils.h',
             'test/browser_test_message_pump_android.cc',
             'test/browser_test_message_pump_android.h',
             'test/content_browser_test.h',
@@ -898,9 +917,6 @@
               ],
             }],
             ['OS=="android"', {
-              'sources!': [
-                'browser/accessibility/dump_accessibility_tree_browsertest.cc',
-              ],
               'sources': [
                 'shell/android/browsertests_apk/content_browser_tests_android.cc',
               ],
@@ -1030,6 +1046,7 @@
                   ['exclude', '^common/gpu/media/video_decode_accelerator_unittest.cc'],
                 ],
                 'dependencies': [
+                  '../media/media.gyp:player_android',
                   '../testing/gmock.gyp:gmock',
                   '../testing/android/native_test.gyp:native_test_native_code',
                   '../gpu/gpu.gyp:gpu_unittest_utils',
@@ -1046,8 +1063,8 @@
               }],
               ['OS=="win"', {
                 'dependencies': [
-                  '../third_party/angle/src/build_angle.gyp:libEGL',
-                  '../third_party/angle/src/build_angle.gyp:libGLESv2',
+                  '<(angle_path)/src/build_angle.gyp:libEGL',
+                  '<(angle_path)/src/build_angle.gyp:libGLESv2',
                 ],
               }],
               ['(OS=="win" and win_use_allocator_shim==1) or '

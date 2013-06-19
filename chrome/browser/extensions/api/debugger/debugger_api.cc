@@ -277,7 +277,7 @@ base::Value* SerializePageInfo(RenderViewHost* rvh) {
   if (!web_contents)
     return NULL;
 
-  DevToolsAgentHost* agent_host = DevToolsAgentHost::GetOrCreateFor(rvh);
+  DevToolsAgentHost* agent_host = DevToolsAgentHost::GetOrCreateFor(rvh).get();
 
   base::DictionaryValue* dictionary = new base::DictionaryValue();
 
@@ -751,8 +751,8 @@ bool DebuggerGetTargetsFunction::RunImpl() {
       results_list->Append(value);
   }
 
-  BrowserThread::PostTaskAndReply(
-      BrowserThread::IO,
+  content::BrowserThread::PostTaskAndReply(
+      content::BrowserThread::IO,
       FROM_HERE,
       base::Bind(&DebuggerGetTargetsFunction::CollectWorkerInfo,
                  this,

@@ -10,7 +10,6 @@
 
 #include "base/allocator/allocator_extension.h"
 #include "base/bind.h"
-#include "base/memory/discardable_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
@@ -31,6 +30,9 @@
 #include "net/base/data_url.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebCookie.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebDiscardableMemory.h"
@@ -39,37 +41,23 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "ui/base/layout.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/common/user_agent/user_agent.h"
-#include "webkit/glue/fling_curve_configuration.h"
-#include "webkit/glue/touch_fling_gesture_curve.h"
-#include "webkit/glue/web_discardable_memory_impl.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/websocketstreamhandle_impl.h"
-#include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlloader_impl.h"
-#include "webkit/glue/worker_task_runner.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/webplugininfo.h"
 #include "webkit/renderer/media/audio_decoder.h"
 
-#if defined(OS_ANDROID)
-#include "webkit/glue/fling_animator_impl_android.h"
-#endif
-
 using WebKit::WebAudioBus;
 using WebKit::WebCookie;
 using WebKit::WebData;
-using WebKit::WebFallbackThemeEngine;
 using WebKit::WebLocalizedString;
 using WebKit::WebPluginListBuilder;
 using WebKit::WebString;
 using WebKit::WebSocketStreamHandle;
-using WebKit::WebThemeEngine;
 using WebKit::WebURL;
 using WebKit::WebURLError;
 using WebKit::WebURLLoader;
@@ -372,25 +360,9 @@ WebKitPlatformSupportImpl::WebKitPlatformSupportImpl()
       shared_timer_func_(NULL),
       shared_timer_fire_time_(0.0),
       shared_timer_fire_time_was_set_while_suspended_(false),
-      shared_timer_suspended_(0),
-      current_thread_slot_(&DestroyCurrentThread),
-      fling_curve_configuration_(new FlingCurveConfiguration) {}
+      shared_timer_suspended_(0) {}
 
 WebKitPlatformSupportImpl::~WebKitPlatformSupportImpl() {
-}
-
-void WebKitPlatformSupportImpl::SetFlingCurveParameters(
-    const std::vector<float>& new_touchpad,
-    const std::vector<float>& new_touchscreen) {
-  fling_curve_configuration_->SetCurveParameters(new_touchpad, new_touchscreen);
-}
-
-WebThemeEngine* WebKitPlatformSupportImpl::themeEngine() {
-  return &native_theme_engine_;
-}
-
-WebFallbackThemeEngine* WebKitPlatformSupportImpl::fallbackThemeEngine() {
-  return &fallback_theme_engine_;
 }
 
 WebURLLoader* WebKitPlatformSupportImpl::createURLLoader() {
@@ -833,26 +805,6 @@ void WebKitPlatformSupportImpl::callOnMainThread(
   main_loop_->PostTask(FROM_HERE, base::Bind(func, context));
 }
 
-WebKit::WebThread* WebKitPlatformSupportImpl::createThread(const char* name) {
-  return new WebThreadImpl(name);
-}
-
-WebKit::WebThread* WebKitPlatformSupportImpl::currentThread() {
-  WebThreadImplForMessageLoop* thread =
-      static_cast<WebThreadImplForMessageLoop*>(current_thread_slot_.Get());
-  if (thread)
-    return (thread);
-
-  scoped_refptr<base::MessageLoopProxy> message_loop =
-      base::MessageLoopProxy::current();
-  if (!message_loop.get())
-    return NULL;
-
-  thread = new WebThreadImplForMessageLoop(message_loop.get());
-  current_thread_slot_.Set(thread);
-  return thread;
-}
-
 base::PlatformFile WebKitPlatformSupportImpl::databaseOpenFile(
     const WebKit::WebString& vfs_file_name, int desired_flags) {
   return base::kInvalidPlatformFileValue;
@@ -965,54 +917,6 @@ void WebKitPlatformSupportImpl::ResumeSharedTimer() {
     setSharedTimerFireInterval(
         shared_timer_fire_time_ - monotonicallyIncreasingTime());
   }
-}
-
-// static
-void WebKitPlatformSupportImpl::DestroyCurrentThread(void* thread) {
-  WebThreadImplForMessageLoop* impl =
-      static_cast<WebThreadImplForMessageLoop*>(thread);
-  delete impl;
-}
-
-void WebKitPlatformSupportImpl::didStartWorkerRunLoop(
-    const WebKit::WebWorkerRunLoop& runLoop) {
-  WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
-  worker_task_runner->OnWorkerRunLoopStarted(runLoop);
-}
-
-void WebKitPlatformSupportImpl::didStopWorkerRunLoop(
-    const WebKit::WebWorkerRunLoop& runLoop) {
-  WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
-  worker_task_runner->OnWorkerRunLoopStopped(runLoop);
-}
-
-WebKit::WebGestureCurve* WebKitPlatformSupportImpl::createFlingAnimationCurve(
-    int device_source,
-    const WebKit::WebFloatPoint& velocity,
-    const WebKit::WebSize& cumulative_scroll) {
-
-#if defined(OS_ANDROID)
-  return FlingAnimatorImpl::CreateAndroidGestureCurve(velocity,
-                                                      cumulative_scroll);
-#endif
-
-  if (device_source == WebKit::WebGestureEvent::Touchscreen)
-    return fling_curve_configuration_->CreateForTouchScreen(velocity,
-                                                            cumulative_scroll);
-
-  return fling_curve_configuration_->CreateForTouchPad(velocity,
-                                                       cumulative_scroll);
-}
-
-WebKit::WebDiscardableMemory*
-    WebKitPlatformSupportImpl::allocateAndLockDiscardableMemory(size_t bytes) {
-  if (!base::DiscardableMemory::Supported())
-    return NULL;
-  scoped_ptr<WebDiscardableMemoryImpl> discardable(
-      new WebDiscardableMemoryImpl());
-  if (discardable->InitializeAndLock(bytes))
-    return discardable.release();
-  return NULL;
 }
 
 #if defined(OS_ANDROID)

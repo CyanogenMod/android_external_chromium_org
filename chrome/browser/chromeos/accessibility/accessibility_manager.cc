@@ -19,6 +19,7 @@
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -164,16 +165,13 @@ AccessibilityManager::AccessibilityManager()
       high_contrast_enabled_(false),
       spoken_feedback_notification_(ash::A11Y_NOTIFICATION_NONE) {
   notification_registrar_.Add(this,
+                              chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE,
+                              content::NotificationService::AllSources());
+  notification_registrar_.Add(this,
                               chrome::NOTIFICATION_SESSION_STARTED,
                               content::NotificationService::AllSources());
   notification_registrar_.Add(this,
-                              chrome::NOTIFICATION_PROFILE_CREATED,
-                              content::NotificationService::AllSources());
-  notification_registrar_.Add(this,
                               chrome::NOTIFICATION_PROFILE_DESTROYED,
-                              content::NotificationService::AllSources());
-  notification_registrar_.Add(this,
-                              chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE,
                               content::NotificationService::AllSources());
 }
 
@@ -390,12 +388,27 @@ void AccessibilityManager::UpdateHighContrastFromPref() {
 #endif
 }
 
+void AccessibilityManager::LocalePrefChanged() {
+  if (!profile_)
+    return;
+
+  if (!IsSpokenFeedbackEnabled())
+    return;
+
+  // If the system locale changes and spoken feedback is enabled,
+  // reload ChromeVox so that it switches its internal translations
+  // to the new language.
+  EnableSpokenFeedback(false, ash::A11Y_NOTIFICATION_NONE);
+  EnableSpokenFeedback(true, ash::A11Y_NOTIFICATION_NONE);
+}
+
 bool AccessibilityManager::IsHighContrastEnabled() {
   return high_contrast_enabled_;
 }
 
 void AccessibilityManager::SetProfile(Profile* profile) {
   pref_change_registrar_.reset();
+  local_state_pref_change_registrar_.reset();
 
   if (profile) {
     pref_change_registrar_.reset(new PrefChangeRegistrar);
@@ -411,6 +424,13 @@ void AccessibilityManager::SetProfile(Profile* profile) {
     pref_change_registrar_->Add(
         prefs::kHighContrastEnabled,
         base::Bind(&AccessibilityManager::UpdateHighContrastFromPref,
+                   base::Unretained(this)));
+
+    local_state_pref_change_registrar_.reset(new PrefChangeRegistrar);
+    local_state_pref_change_registrar_->Init(g_browser_process->local_state());
+    local_state_pref_change_registrar_->Add(
+        prefs::kApplicationLocale,
+        base::Bind(&AccessibilityManager::LocalePrefChanged,
                    base::Unretained(this)));
 
     content::BrowserAccessibilityState::GetInstance()->AddHistogramCallback(
@@ -444,6 +464,14 @@ void AccessibilityManager::UpdateChromeOSAccessibilityHistograms() {
                               type,
                               ash::kMaxMagnifierType + 1);
   }
+  if (profile_) {
+    const PrefService* const prefs = profile_->GetPrefs();
+    UMA_HISTOGRAM_BOOLEAN("Accessibility.CrosLargeCursor",
+                          prefs->GetBoolean(prefs::kLargeCursorEnabled));
+    UMA_HISTOGRAM_BOOLEAN(
+        "Accessibility.CrosAlwaysShowA11yMenu",
+        prefs->GetBoolean(prefs::kShouldAlwaysShowAccessibilityMenu));
+  }
 }
 
 void AccessibilityManager::Observe(
@@ -452,27 +480,18 @@ void AccessibilityManager::Observe(
     const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE:
-    case chrome::NOTIFICATION_SESSION_STARTED: {
-      Profile* profile = ProfileManager::GetDefaultProfile();
-      if (!profile->IsGuestSession())
-        SetProfile(profile);
+      // Update |profile_| when entering the login screen.
+      SetProfile(ProfileHelper::GetSigninProfile());
       break;
-    }
-    case chrome::NOTIFICATION_PROFILE_CREATED: {
-      Profile* profile = content::Source<Profile>(source).ptr();
-      if (profile->IsGuestSession() && !profile->IsOffTheRecord())
-        SetProfile(profile);
-
-      // On guest mode, 2 non-OTR profiles are created. We should use the
-      // first one, not second one.
-      notification_registrar_.Remove(
-          this,
-          chrome::NOTIFICATION_PROFILE_CREATED,
-          content::NotificationService::AllSources());
+    case chrome::NOTIFICATION_SESSION_STARTED:
+      // Update |profile_| when entering a session.
+      SetProfile(ProfileManager::GetDefaultProfile());
       break;
-    }
     case chrome::NOTIFICATION_PROFILE_DESTROYED: {
-      SetProfile(NULL);
+      // Update |profile_| when exiting a session or shutting down.
+      Profile* profile = content::Source<Profile>(source).ptr();
+      if (profile_ == profile)
+        SetProfile(NULL);
       break;
     }
   }

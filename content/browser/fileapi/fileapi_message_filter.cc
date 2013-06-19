@@ -11,6 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "base/sequenced_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -28,6 +29,7 @@
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/local_file_system_operation.h"
 #include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
@@ -128,11 +130,11 @@ void FileAPIMessageFilter::OnChannelClosing() {
   operations_.clear();
 }
 
-void FileAPIMessageFilter::OverrideThreadForMessage(
-    const IPC::Message& message,
-    BrowserThread::ID* thread) {
+base::TaskRunner* FileAPIMessageFilter::OverrideTaskRunnerForMessage(
+    const IPC::Message& message) {
   if (message.type() == FileSystemHostMsg_SyncGetPlatformPath::ID)
-    *thread = BrowserThread::FILE;
+    return context_->task_runners()->file_task_runner();
+  return NULL;
 }
 
 bool FileAPIMessageFilter::OnMessageReceived(
@@ -594,10 +596,9 @@ void FileAPIMessageFilter::DidFinish(int request_id,
 void FileAPIMessageFilter::DidGetMetadata(
     int request_id,
     base::PlatformFileError result,
-    const base::PlatformFileInfo& info,
-    const base::FilePath& platform_path) {
+    const base::PlatformFileInfo& info) {
   if (result == base::PLATFORM_FILE_OK)
-    Send(new FileSystemMsg_DidReadMetadata(request_id, info, platform_path));
+    Send(new FileSystemMsg_DidReadMetadata(request_id, info));
   else
     Send(new FileSystemMsg_DidFail(request_id, result));
   operations_.erase(request_id);

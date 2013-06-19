@@ -23,11 +23,15 @@
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/animation/animation_delegate.h"
+#include "ui/base/animation/multi_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/path.h"
+#include "ui/gfx/skia_util.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/checkbox.h"
@@ -124,6 +128,88 @@ void DrawArrow(gfx::Canvas* canvas, int tip_x, const SkColor& color) {
   canvas->ClipPath(arrow);
   canvas->DrawColor(color);
 }
+
+typedef ui::MultiAnimation::Part Part;
+typedef ui::MultiAnimation::Parts Parts;
+
+class OverlayView : public views::View,
+                    public ui::AnimationDelegate {
+ public:
+  OverlayView() {
+    SetLayoutManager(new views::FillLayout());
+
+    set_background(views::Background::CreateSolidBackground(GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_DialogBackground)));
+
+    Parts parts;
+    // For this part of the animation, simply show the splash image.
+    parts.push_back(Part(kSplashDisplayDurationMs, ui::Tween::ZERO));
+    // For this part of the animation, fade out the splash image.
+    parts.push_back(Part(kSplashFadeOutDurationMs, ui::Tween::EASE_IN));
+    // For this part of the animation, fade out |this| (fade in the dialog).
+    parts.push_back(Part(kSplashFadeInDialogDurationMs, ui::Tween::EASE_OUT));
+    fade_out_.reset(
+        new ui::MultiAnimation(parts,
+                               ui::MultiAnimation::GetDefaultTimerInterval()));
+    fade_out_->set_delegate(this);
+    fade_out_->set_continuous(false);
+    fade_out_->Start();
+  }
+
+  virtual ~OverlayView() {}
+
+  // ui::AnimationDelegate implementation:
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE {
+    DCHECK_EQ(animation, fade_out_.get());
+    if (fade_out_->current_part_index() != 0)
+      SchedulePaint();
+  }
+
+  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE {
+    DCHECK_EQ(animation, fade_out_.get());
+    SetVisible(false);
+  }
+
+  // views::View implementation:
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
+    // BubbleFrameView doesn't mask the window, it just draws the border via
+    // image assets. Match that rounding here.
+    static const SkScalar kCornerRadius = SkIntToScalar(2);
+    gfx::Rect rect =
+        GetWidget()->non_client_view()->frame_view()->GetLocalBounds();
+    rect.Inset(12, 12, 12, 12);
+    gfx::Path window_mask;
+    window_mask.addRoundRect(gfx::RectToSkRect(rect),
+                             kCornerRadius, kCornerRadius);
+    canvas->ClipPath(window_mask);
+
+    if (fade_out_->current_part_index() == 2) {
+      canvas->SaveLayerAlpha((1 - fade_out_->GetCurrentValue()) * 255);
+      views::View::OnPaint(canvas);
+      canvas->Restore();
+    } else {
+      views::View::OnPaint(canvas);
+    }
+  }
+
+  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE {
+    if (fade_out_->current_part_index() == 0) {
+      views::View::PaintChildren(canvas);
+    } else if (fade_out_->current_part_index() == 1) {
+      canvas->SaveLayerAlpha((1 - fade_out_->GetCurrentValue()) * 255);
+      views::View::PaintChildren(canvas);
+      canvas->Restore();
+    }
+  }
+
+ private:
+  // This MultiAnimation is used to first fade out the contents of the overlay,
+  // then fade out the background of the overlay (revealing the dialog behind
+  // the overlay). This avoids cross-fade.
+  scoped_ptr<ui::MultiAnimation> fade_out_;
+
+  DISALLOW_COPY_AND_ASSIGN(OverlayView);
+};
 
 // This class handles layout for the first row of a SuggestionView.
 // It exists to circumvent shortcomings of GridLayout and BoxLayout (namely that
@@ -461,6 +547,7 @@ void AutofillDialogViews::AccountChooser::OnMouseReleased(
                               NULL,
                               GetBoundsInScreen(),
                               views::MenuItemView::TOPRIGHT,
+                              ui::MENU_SOURCE_MOUSE,
                               0));
 }
 
@@ -710,8 +797,7 @@ AutofillDialogViews::SuggestionView::SuggestionView(
       icon_(new views::ImageView()),
       label_container_(new SectionRowView()),
       decorated_(
-          new DecoratedTextfield(string16(), string16(), autofill_dialog)),
-      edit_link_(new views::Link(edit_label)) {
+          new DecoratedTextfield(string16(), string16(), autofill_dialog)) {
   // Label and icon.
   label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label_->set_border(CreateLabelAlignmentBorder());
@@ -727,26 +813,10 @@ AutofillDialogViews::SuggestionView::SuggestionView(
   label_line_2_->SetVisible(false);
   AddChildView(label_line_2_);
 
-  // TODO(estade): The link needs to have a different color when hovered.
-  edit_link_->set_listener(autofill_dialog);
-  edit_link_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  edit_link_->SetUnderline(false);
-
-  // This container prevents the edit link from being horizontally stretched.
-  views::View* link_container = new views::View();
-  link_container->SetLayoutManager(
-      new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0));
-  link_container->AddChildView(edit_link_);
-  AddChildView(link_container);
-
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0));
 }
 
 AutofillDialogViews::SuggestionView::~SuggestionView() {}
-
-void AutofillDialogViews::SuggestionView::SetEditable(bool editable) {
-  edit_link_->SetVisible(editable);
-}
 
 void AutofillDialogViews::SuggestionView::SetSuggestionText(
     const string16& text,
@@ -814,6 +884,7 @@ AutofillDialogViews::AutofillDialogViews(AutofillDialogController* controller)
       main_container_(NULL),
       scrollable_area_(NULL),
       details_container_(NULL),
+      overlay_view_(NULL),
       button_strip_extra_view_(NULL),
       save_in_chrome_checkbox_(NULL),
       autocheckout_progress_bar_view_(NULL),
@@ -918,6 +989,10 @@ void AutofillDialogViews::UpdateButtonStrip() {
 void AutofillDialogViews::UpdateDetailArea() {
   details_container_->SetVisible(controller_->ShouldShowDetailArea());
   ContentsPreferredSizeChanged();
+}
+
+void AutofillDialogViews::UpdateForErrors() {
+  ValidateForm();
 }
 
 void AutofillDialogViews::UpdateNotificationArea() {
@@ -1159,6 +1234,19 @@ views::View* AutofillDialogViews::CreateFootnoteView() {
   return footnote_view_;
 }
 
+views::View* AutofillDialogViews::CreateOverlayView() {
+  gfx::Image splash_image = controller_->SplashPageImage();
+  if (splash_image.IsEmpty())
+    return NULL;
+
+  overlay_view_ = new OverlayView();
+  views::ImageView* image = new views::ImageView();
+  image->SetImage(splash_image.ToImageSkia());
+  overlay_view_->AddChildView(image);
+
+  return overlay_view_;
+}
+
 bool AutofillDialogViews::Cancel() {
   controller_->OnCancel();
   return true;
@@ -1213,6 +1301,7 @@ void AutofillDialogViews::ButtonPressed(views::Button* sender,
                               NULL,
                               bounds,
                               views::MenuItemView::TOPRIGHT,
+                              ui::GetMenuSourceTypeForEvent(event),
                               0));
   group->container->SetActive(false);
   group->suggested_button->SetState(state);
@@ -1266,17 +1355,6 @@ void AutofillDialogViews::OnDidChangeFocus(
   // Show an error bubble when the user focuses the input.
   if (focused_now)
     ShowErrorBubbleForViewIfNecessary(focused_now);
-}
-
-void AutofillDialogViews::LinkClicked(views::Link* source, int event_flags) {
-  // Edit links.
-  for (DetailGroupMap::iterator iter = detail_groups_.begin();
-       iter != detail_groups_.end(); ++iter) {
-    if (iter->second.suggested_info->Contains(source)) {
-      controller_->EditClickedForSection(iter->first);
-      return;
-    }
-  }
 }
 
 void AutofillDialogViews::OnSelectedIndexChanged(views::Combobox* combobox) {
@@ -1466,18 +1544,18 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
     float expand = input.expand_weight;
     column_set->AddColumn(views::GridLayout::FILL,
                           views::GridLayout::BASELINE,
-                          expand ? expand : 1,
+                          expand ? expand : 1.0,
                           views::GridLayout::USE_PREF,
                           0,
                           0);
 
     ui::ComboboxModel* input_model =
         controller_->ComboboxModelForAutofillType(input.type);
+    views::View* view_to_add = NULL;
     if (input_model) {
       views::Combobox* combobox = new views::Combobox(input_model);
       combobox->set_listener(this);
       comboboxes->insert(std::make_pair(&input, combobox));
-      layout->AddView(combobox);
 
       for (int i = 0; i < input_model->GetItemCount(); ++i) {
         if (input.initial_value == input_model->GetItemAt(i)) {
@@ -1485,6 +1563,7 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
           break;
         }
       }
+      view_to_add = combobox;
     } else {
       DecoratedTextfield* field = new DecoratedTextfield(
           input.initial_value,
@@ -1496,8 +1575,15 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
       field->textfield()->SetIcon(icon.AsImageSkia());
 
       textfields->insert(std::make_pair(&input, field));
-      layout->AddView(field);
+      view_to_add = field;
     }
+
+    // This is the same as AddView(view_to_add), except that 1 is used for the
+    // view's preferred width. Thus the width of the column completely depends
+    // on |expand|.
+    layout->AddView(view_to_add, 1, 1,
+                    views::GridLayout::FILL, views::GridLayout::BASELINE,
+                    1, 0);
   }
 
   return view;
@@ -1552,7 +1638,6 @@ void AutofillDialogViews::UpdateDetailsGroupState(const DetailsGroup& group) {
   group.suggested_info->SetSuggestionText(suggestion_state.text,
                                           suggestion_state.text_style);
   group.suggested_info->SetSuggestionIcon(suggestion_state.icon);
-  group.suggested_info->SetEditable(suggestion_state.editable);
 
   if (!suggestion_state.extra_text.empty()) {
     group.suggested_info->ShowTextfield(
@@ -1618,15 +1703,53 @@ void AutofillDialogViews::ShowErrorBubbleForViewIfNecessary(views::View* view) {
     error_bubble_.reset(new ErrorBubble(input, error_message->second));
 }
 
+void AutofillDialogViews::MarkInputsInvalid(DialogSection section,
+                                            const ValidityData& validity_data) {
+  DetailsGroup group = *GroupForSection(section);
+  DCHECK(group.container->visible());
+
+  typedef std::map<AutofillFieldType,
+      base::Callback<void(const base::string16&)> > FieldMap;
+  FieldMap field_map;
+
+  if (group.manual_input->visible()) {
+    for (TextfieldMap::const_iterator iter = group.textfields.begin();
+         iter != group.textfields.end(); ++iter) {
+      field_map[iter->first->type] = base::Bind(
+          &AutofillDialogViews::SetValidityForInput<DecoratedTextfield>,
+          base::Unretained(this),
+          iter->second);
+    }
+    for (ComboboxMap::const_iterator iter = group.comboboxes.begin();
+         iter != group.comboboxes.end(); ++iter) {
+      field_map[iter->first->type] = base::Bind(
+          &AutofillDialogViews::SetValidityForInput<views::Combobox>,
+          base::Unretained(this),
+          iter->second);
+    }
+  }
+
+  // Flag invalid fields, removing them from |field_map|.
+  for (ValidityData::const_iterator iter = validity_data.begin();
+       iter != validity_data.end(); ++iter) {
+    const string16& message = iter->second;
+    field_map[iter->first].Run(message);
+    field_map.erase(iter->first);
+  }
+
+  // The remaining fields in |field_map| are valid. Mark them as such.
+  for (FieldMap::iterator iter = field_map.begin(); iter != field_map.end();
+       ++iter) {
+    iter->second.Run(base::string16());
+  }
+}
+
 bool AutofillDialogViews::ValidateGroup(const DetailsGroup& group,
                                         ValidationType validation_type) {
   DCHECK(group.container->visible());
 
   scoped_ptr<DetailInput> cvc_input;
   DetailOutputMap detail_outputs;
-  typedef std::map<AutofillFieldType, base::Callback<void(const string16&)> >
-      FieldMap;
-  FieldMap field_map;
 
   if (group.manual_input->visible()) {
     for (TextfieldMap::const_iterator iter = group.textfields.begin();
@@ -1635,10 +1758,6 @@ bool AutofillDialogViews::ValidateGroup(const DetailsGroup& group,
         continue;
 
       detail_outputs[iter->first] = iter->second->textfield()->text();
-      field_map[iter->first->type] = base::Bind(
-          &AutofillDialogViews::SetValidityForInput<DecoratedTextfield>,
-          base::Unretained(this),
-          iter->second);
     }
     for (ComboboxMap::const_iterator iter = group.comboboxes.begin();
          iter != group.comboboxes.end(); ++iter) {
@@ -1649,10 +1768,6 @@ bool AutofillDialogViews::ValidateGroup(const DetailsGroup& group,
       string16 item =
           combobox->model()->GetItemAt(combobox->selected_index());
       detail_outputs[iter->first] = item;
-      field_map[iter->first->type] = base::Bind(
-          &AutofillDialogViews::SetValidityForInput<views::Combobox>,
-          base::Unretained(this),
-          iter->second);
     }
   } else if (group.section == SECTION_CC) {
     DecoratedTextfield* decorated_cvc =
@@ -1660,27 +1775,11 @@ bool AutofillDialogViews::ValidateGroup(const DetailsGroup& group,
     cvc_input.reset(new DetailInput);
     cvc_input->type = CREDIT_CARD_VERIFICATION_CODE;
     detail_outputs[cvc_input.get()] = decorated_cvc->textfield()->text();
-    field_map[cvc_input->type] = base::Bind(
-        &AutofillDialogViews::SetValidityForInput<DecoratedTextfield>,
-        base::Unretained(this),
-        decorated_cvc);
   }
 
-  ValidityData invalid_inputs;
-  invalid_inputs = controller_->InputsAreValid(detail_outputs, validation_type);
-  // Flag invalid fields, removing them from |field_map|.
-  for (ValidityData::const_iterator iter =
-           invalid_inputs.begin(); iter != invalid_inputs.end(); ++iter) {
-    const string16& message = iter->second;
-    field_map[iter->first].Run(message);
-    field_map.erase(iter->first);
-  }
-
-  // The remaining fields in |field_map| are valid. Mark them as such.
-  for (FieldMap::iterator iter = field_map.begin(); iter != field_map.end();
-       ++iter) {
-    iter->second.Run(string16());
-  }
+  ValidityData invalid_inputs = controller_->InputsAreValid(
+      group.section, detail_outputs, validation_type);
+  MarkInputsInvalid(group.section, invalid_inputs);
 
   return invalid_inputs.empty();
 }
@@ -1718,7 +1817,8 @@ void AutofillDialogViews::TextfieldEditedOrActivated(
        ++iter) {
     decorated = iter->second;
     if (decorated == ancestor) {
-      controller_->UserEditedOrActivatedInput(iter->first,
+      controller_->UserEditedOrActivatedInput(group->section,
+                                              iter->first,
                                               GetWidget()->GetNativeView(),
                                               textfield->GetBoundsInScreen(),
                                               textfield->text(),
@@ -1742,7 +1842,8 @@ void AutofillDialogViews::TextfieldEditedOrActivated(
   if (decorated->invalid() && was_edit) {
     SetValidityForInput<DecoratedTextfield>(
         decorated,
-        controller_->InputValidityMessage(type, textfield->text()));
+        controller_->InputValidityMessage(group->section, type,
+                                          textfield->text()));
 
     // If the field transitioned from invalid to valid, re-validate the group,
     // since inter-field checks become meaningful with valid fields.

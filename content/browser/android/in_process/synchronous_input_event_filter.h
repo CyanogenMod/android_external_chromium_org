@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/renderer/gpu/input_handler_manager_client.h"
+#include "ui/gfx/vector2d_f.h"
 
 namespace WebKit {
 class WebInputEvent;
@@ -32,8 +33,12 @@ class SynchronousInputEventFilter : public InputHandlerManagerClient {
 
   // InputHandlerManagerClient implementation.
   virtual void SetBoundHandler(const Handler& handler) OVERRIDE;
-  virtual void DidAddInputHandler(int routing_id) OVERRIDE {}
-  virtual void DidRemoveInputHandler(int routing_id) OVERRIDE {}
+  virtual void DidAddInputHandler(int routing_id,
+                                  cc::InputHandler* input_handler) OVERRIDE;
+  virtual void DidRemoveInputHandler(int routing_id) OVERRIDE;
+  virtual void DidOverscroll(int routing_id,
+                             gfx::Vector2dF accumulated_overscroll,
+                             gfx::Vector2dF current_fling_velocity) OVERRIDE {}
 
  private:
   void SetBoundHandlerOnUIThread(const Handler& handler);

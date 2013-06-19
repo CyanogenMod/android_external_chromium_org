@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 
 #include "base/bind.h"
+#include "base/file_util.h"
 #include "base/prefs/pref_service.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
@@ -21,12 +22,12 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_util.h"
+#include "chrome/browser/drive/drive_api_service.h"
+#include "chrome/browser/drive/drive_notification_manager.h"
+#include "chrome/browser/drive/drive_notification_manager_factory.h"
+#include "chrome/browser/drive/gdata_wapi_service.h"
 #include "chrome/browser/google_apis/auth_service.h"
-#include "chrome/browser/google_apis/drive_api_service.h"
 #include "chrome/browser/google_apis/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_notification_manager.h"
-#include "chrome/browser/google_apis/drive_notification_manager_factory.h"
-#include "chrome/browser/google_apis/gdata_wapi_service.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_version_info.h"
@@ -88,6 +89,42 @@ std::string GetDriveUserAgent() {
                             os_cpu_info.c_str());
 }
 
+// Initializes FileCache and ResourceMetadata.
+// Must be run on the same task runner used by |cache| and |resource_metadata|.
+FileError InitializeMetadata(const base::FilePath& cache_root_directory,
+                             internal::FileCache* cache,
+                             internal::ResourceMetadata* resource_metadata) {
+  if (!file_util::CreateDirectory(cache_root_directory.Append(
+          util::kMetadataDirectory)) ||
+      !file_util::CreateDirectory(cache_root_directory.Append(
+          util::kCacheFileDirectory)) ||
+      !file_util::CreateDirectory(cache_root_directory.Append(
+          util::kTemporaryFileDirectory))) {
+    LOG(WARNING) << "Failed to create directories.";
+    return FILE_ERROR_FAILED;
+  }
+
+  // Change permissions of cache file directory to u+rwx,og+x (711) in order to
+  // allow archive files in that directory to be mounted by cros-disks.
+  file_util::SetPosixFilePermissions(
+      cache_root_directory.Append(util::kCacheFileDirectory),
+      file_util::FILE_PERMISSION_USER_MASK |
+      file_util::FILE_PERMISSION_EXECUTE_BY_GROUP |
+      file_util::FILE_PERMISSION_EXECUTE_BY_OTHERS);
+
+  util::MigrateCacheFilesFromOldDirectories(cache_root_directory);
+
+  if (!cache->Initialize()) {
+    LOG(WARNING) << "Failed to initialize the cache.";
+    return FILE_ERROR_FAILED;
+  }
+
+  FileError error = resource_metadata->Initialize();
+  LOG_IF(WARNING, error != FILE_ERROR_OK)
+      << "Failed to initialize resource metadata. " << FileErrorToString(error);
+  return error;
+}
+
 }  // namespace
 
 DriveIntegrationService::DriveIntegrationService(
@@ -97,8 +134,11 @@ DriveIntegrationService::DriveIntegrationService(
     FileSystemInterface* test_file_system)
     : profile_(profile),
       drive_disabled_(false),
+      cache_root_directory_(!test_cache_root.empty() ?
+                            test_cache_root : util::GetCacheRootPath(profile)),
       weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
   base::SequencedWorkerPool* blocking_pool = BrowserThread::GetBlockingPool();
   blocking_task_runner_ = blocking_pool->GetSequencedTaskRunner(
       blocking_pool->GetSequenceToken());
@@ -118,25 +158,25 @@ DriveIntegrationService::DriveIntegrationService(
   }
   scheduler_.reset(new JobScheduler(profile_, drive_service_.get()));
   cache_.reset(new internal::FileCache(
-      !test_cache_root.empty() ? test_cache_root :
-      util::GetCacheRootPath(profile),
-      blocking_task_runner_,
+      cache_root_directory_.Append(util::kMetadataDirectory),
+      cache_root_directory_.Append(util::kCacheFileDirectory),
+      blocking_task_runner_.get(),
       NULL /* free_disk_space_getter */));
   drive_app_registry_.reset(new DriveAppRegistry(scheduler_.get()));
 
-  // We can call FileCache::GetCacheDirectoryPath safely even before the cache
-  // gets initialized.
   resource_metadata_.reset(new internal::ResourceMetadata(
-      cache_->GetCacheDirectoryPath(internal::FileCache::CACHE_TYPE_META),
+      cache_root_directory_.Append(util::kMetadataDirectory),
       blocking_task_runner_));
 
-  file_system_.reset(test_file_system ? test_file_system :
-                     new FileSystem(profile_,
-                                    cache_.get(),
-                                    drive_service_.get(),
-                                    scheduler_.get(),
-                                    resource_metadata_.get(),
-                                    blocking_task_runner_));
+  file_system_.reset(
+      test_file_system ? test_file_system : new FileSystem(
+          profile_,
+          cache_.get(),
+          drive_service_.get(),
+          scheduler_.get(),
+          resource_metadata_.get(),
+          blocking_task_runner_.get(),
+          cache_root_directory_.Append(util::kTemporaryFileDirectory)));
   file_write_helper_.reset(new FileWriteHelper(file_system()));
   download_handler_.reset(new DownloadHandler(file_write_helper(),
                                               file_system()));
@@ -152,8 +192,15 @@ void DriveIntegrationService::Initialize() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   drive_service_->Initialize(profile_);
   file_system_->Initialize();
-  cache_->RequestInitialize(
-      base::Bind(&DriveIntegrationService::InitializeAfterCacheInitialized,
+
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_,
+      FROM_HERE,
+      base::Bind(&InitializeMetadata,
+                 cache_root_directory_,
+                 cache_.get(),
+                 resource_metadata_.get()),
+      base::Bind(&DriveIntegrationService::InitializeAfterMetadataInitialized,
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
@@ -259,7 +306,7 @@ void DriveIntegrationService::AddDriveMountPoint() {
   bool success = mount_points->RegisterRemoteFileSystem(
       drive_mount_point.BaseName().AsUTF8Unsafe(),
       fileapi::kFileSystemTypeDrive,
-      file_system_proxy_,
+      file_system_proxy_.get(),
       drive_mount_point);
 
   if (success) {
@@ -283,34 +330,19 @@ void DriveIntegrationService::RemoveDriveMountPoint() {
 
   mount_points->RevokeFileSystem(
       util::GetDriveMountPointPath().BaseName().AsUTF8Unsafe());
-  if (file_system_proxy_) {
+  if (file_system_proxy_.get()) {
     file_system_proxy_->DetachFromFileSystem();
     file_system_proxy_ = NULL;
   }
   util::Log("Drive mount point is removed");
 }
 
-void DriveIntegrationService::InitializeAfterCacheInitialized(bool success) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (!success) {
-    LOG(WARNING) << "Failed to initialize the cache. Disabling Drive";
-    DisableDrive();
-    return;
-  }
-
-  resource_metadata_->Initialize(
-      base::Bind(
-          &DriveIntegrationService::InitializeAfterResourceMetadataInitialized,
-          weak_ptr_factory_.GetWeakPtr()));
-}
-
-void DriveIntegrationService::InitializeAfterResourceMetadataInitialized(
+void DriveIntegrationService::InitializeAfterMetadataInitialized(
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (error != FILE_ERROR_OK) {
-    LOG(WARNING) << "Failed to initialize resource metadata. Disabling Drive : "
+    LOG(WARNING) << "Failed to initialize. Disabling Drive : "
                  << FileErrorToString(error);
     DisableDrive();
     return;
@@ -321,8 +353,7 @@ void DriveIntegrationService::InitializeAfterResourceMetadataInitialized(
       BrowserContext::GetDownloadManager(profile_) : NULL;
   download_handler_->Initialize(
       download_manager,
-      cache_->GetCacheDirectoryPath(
-          internal::FileCache::CACHE_TYPE_TMP_DOWNLOADS));
+      cache_root_directory_.Append(util::kTemporaryFileDirectory));
 
   // Register for Google Drive invalidation notifications.
   google_apis::DriveNotificationManager* drive_notification_manager =

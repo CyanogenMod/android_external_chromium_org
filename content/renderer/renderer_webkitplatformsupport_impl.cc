@@ -31,6 +31,7 @@
 #include "content/renderer/hyphenator/hyphenator.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
+#include "content/renderer/media/webcontentdecryptionmodule_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/websharedworkerrepository_impl.h"
@@ -39,8 +40,9 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_hardware_config.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
+#include "net/base/net_util.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
@@ -628,7 +630,7 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
 }
 
 bool RendererWebKitPlatformSupportImpl::isThreadedCompositingEnabled() {
-  return !!RenderThreadImpl::current()->compositor_message_loop_proxy();
+  return !!RenderThreadImpl::current()->compositor_message_loop_proxy().get();
 }
 
 double RendererWebKitPlatformSupportImpl::audioHardwareSampleRate() {
@@ -727,6 +729,14 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
       static_cast<int>(sample_rate), 16, buffer_size);
 
   return new RendererWebAudioDeviceImpl(params, callback, session_id);
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebContentDecryptionModule*
+RendererWebKitPlatformSupportImpl::createContentDecryptionModule(
+    const WebKit::WebString& key_system) {
+  return WebContentDecryptionModuleImpl::Create(key_system);
 }
 
 //------------------------------------------------------------------------------
@@ -901,6 +911,14 @@ WebKit::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
 WebKit::WebCompositorSupport*
 RendererWebKitPlatformSupportImpl::compositorSupport() {
   return &compositor_support_;
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebString RendererWebKitPlatformSupportImpl::convertIDNToUnicode(
+    const WebKit::WebString& host,
+    const WebKit::WebString& languages) {
+  return net::IDNToUnicode(host.utf8(), languages.utf8());
 }
 
 }  // namespace content

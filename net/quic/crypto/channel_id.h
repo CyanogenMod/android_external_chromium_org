@@ -25,6 +25,10 @@ class NET_EXPORT_PRIVATE ChannelIDSigner {
                     base::StringPiece signed_data,
                     std::string* out_key,
                     std::string* out_signature) = 0;
+
+  // GetKeyForHostname returns the ChannelID key that |ChannelIDSigner| will use
+  // for the given hostname.
+  virtual std::string GetKeyForHostname(const std::string& hostname) = 0;
 };
 
 // ChannelIDVerifier verifies ChannelID signatures.
@@ -44,6 +48,15 @@ class NET_EXPORT_PRIVATE ChannelIDVerifier {
   static bool Verify(base::StringPiece key,
                      base::StringPiece signed_data,
                      base::StringPiece signature);
+
+  // FOR TESTING ONLY: VerifyRaw returns true iff |signature| is a valid
+  // signature of |signed_data| by |key|. |is_channel_id_signature| indicates
+  // whether |signature| is a ChannelID signature (with kContextStr prepended
+  // to the data to be signed).
+  static bool VerifyRaw(base::StringPiece key,
+                        base::StringPiece signed_data,
+                        base::StringPiece signature,
+                        bool is_channel_id_signature);
 };
 
 }  // namespace net

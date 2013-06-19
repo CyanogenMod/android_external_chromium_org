@@ -81,8 +81,10 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     LayerTreeHostImpl::CommitComplete();
     test_hooks_->CommitCompleteOnThread(this);
 
-    if (!settings().impl_side_painting)
-      test_hooks_->TreeActivatedOnThread(this);
+    if (!settings().impl_side_painting) {
+      test_hooks_->WillActivateTreeOnThread(this);
+      test_hooks_->DidActivateTreeOnThread(this);
+    }
   }
 
   virtual bool PrepareToDraw(FrameData* frame, gfx::Rect damage_rect) OVERRIDE {
@@ -109,17 +111,24 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     test_hooks_->SwapBuffersCompleteOnThread(this);
   }
 
-  virtual bool ActivatePendingTreeIfNeeded() OVERRIDE {
+  virtual void ActivatePendingTreeIfNeeded() OVERRIDE {
     if (!pending_tree())
-      return false;
+      return;
 
     if (!test_hooks_->CanActivatePendingTree(this))
-      return false;
+      return;
 
-    bool activated = LayerTreeHostImpl::ActivatePendingTreeIfNeeded();
-    if (activated)
-      test_hooks_->TreeActivatedOnThread(this);
-    return activated;
+    LayerTreeHostImpl::ActivatePendingTreeIfNeeded();
+  }
+
+  virtual void ActivatePendingTree() OVERRIDE {
+    if (!test_hooks_->CanActivatePendingTree(this))
+      return;
+
+    test_hooks_->WillActivateTreeOnThread(this);
+    LayerTreeHostImpl::ActivatePendingTree();
+    DCHECK(!pending_tree());
+    test_hooks_->DidActivateTreeOnThread(this);
   }
 
   virtual bool InitializeRenderer(scoped_ptr<OutputSurface> output_surface)
@@ -296,7 +305,6 @@ LayerTreeTest::LayerTreeTest()
       ended_(false),
       delegating_renderer_(false),
       timeout_seconds_(0),
-      impl_thread_(NULL),
       weak_factory_(this) {
   main_thread_weak_ptr_ = weak_factory_.GetWeakPtr();
 
@@ -377,7 +385,7 @@ void LayerTreeTest::PostSetVisibleToMainThread(bool visible) {
 void LayerTreeTest::DoBeginTest() {
   client_ = LayerTreeHostClientForTesting::Create(this);
 
-  scoped_ptr<cc::Thread> impl_ccthread(NULL);
+  scoped_ptr<cc::Thread> impl_ccthread;
   if (impl_thread_) {
     impl_ccthread = cc::ThreadImpl::CreateForDifferentThread(
         impl_thread_->message_loop_proxy());
@@ -581,9 +589,13 @@ void LayerTreeTest::RunTest(bool threaded,
 }
 
 scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface() {
+  scoped_ptr<FakeOutputSurface> output_surface;
   if (delegating_renderer_)
-    return FakeOutputSurface::CreateDelegating3d().PassAs<OutputSurface>();
-  return FakeOutputSurface::Create3d().PassAs<OutputSurface>();
+    output_surface = FakeOutputSurface::CreateDelegating3d();
+  else
+    output_surface = FakeOutputSurface::Create3d();
+  output_surface_ = output_surface.get();
+  return output_surface.PassAs<OutputSurface>();
 }
 
 scoped_refptr<cc::ContextProvider> LayerTreeTest::

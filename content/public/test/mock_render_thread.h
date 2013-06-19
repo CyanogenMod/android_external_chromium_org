@@ -6,10 +6,10 @@
 #define CONTENT_PUBLIC_TEST_MOCK_RENDER_THREAD_H_
 
 #include "base/shared_memory.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/public/renderer/render_thread.h"
 #include "ipc/ipc_test_sink.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
 
 struct ViewHostMsg_CreateWindow_Params;
 
@@ -69,6 +69,7 @@ class MockRenderThread : public RenderThread {
       int64 idle_notification_delay_in_ms) OVERRIDE;
   virtual void ToggleWebKitSharedTimer(bool suspend) OVERRIDE;
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
+  virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;

@@ -7,7 +7,6 @@
 #include "base/basictypes.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/browser/database/vfs_backend.h"
 
@@ -16,7 +15,7 @@ namespace webkit_database {
 const char DatabaseUtil::kJournalFileSuffix[] = "-journal";
 
 bool DatabaseUtil::CrackVfsFileName(const base::string16& vfs_file_name,
-                                    base::string16* origin_identifier,
+                                    std::string* origin_identifier,
                                     base::string16* database_name,
                                     base::string16* sqlite_suffix) {
   // 'vfs_file_name' is of the form <origin_identifier>/<db_name>#<suffix>.
@@ -33,8 +32,10 @@ bool DatabaseUtil::CrackVfsFileName(const base::string16& vfs_file_name,
     return false;
   }
 
-  if (origin_identifier)
-    *origin_identifier = vfs_file_name.substr(0, first_slash_index);
+  if (origin_identifier) {
+    *origin_identifier = UTF16ToASCII(
+        vfs_file_name.substr(0, first_slash_index));
+  }
   if (database_name) {
     *database_name = vfs_file_name.substr(
         first_slash_index + 1, last_pound_index - first_slash_index - 1);
@@ -48,7 +49,7 @@ bool DatabaseUtil::CrackVfsFileName(const base::string16& vfs_file_name,
 
 base::FilePath DatabaseUtil::GetFullFilePathForVfsFile(
     DatabaseTracker* db_tracker, const base::string16& vfs_file_name) {
-  base::string16 origin_identifier;
+  std::string origin_identifier;
   base::string16 database_name;
   base::string16 sqlite_suffix;
   if (!CrackVfsFileName(vfs_file_name, &origin_identifier,
@@ -71,15 +72,15 @@ base::FilePath DatabaseUtil::GetFullFilePathForVfsFile(
 }
 
 bool DatabaseUtil::IsValidOriginIdentifier(
-    const base::string16& origin_identifier) {
-  base::string16 dotdot = ASCIIToUTF16("..");
-  char16 forbidden[] = {'\\', '/', '\0'};
+    const std::string& origin_identifier) {
+  std::string dotdot = "..";
+  char forbidden[] = {'\\', '/', '\0'};
 
-  base::string16::size_type pos = origin_identifier.find(dotdot);
-  if (pos == base::string16::npos)
+  std::string::size_type pos = origin_identifier.find(dotdot);
+  if (pos == std::string::npos)
     pos = origin_identifier.find_first_of(forbidden, 0, arraysize(forbidden));
 
-  return pos == base::string16::npos;
+  return pos == std::string::npos;
 }
 
 }  // namespace webkit_database

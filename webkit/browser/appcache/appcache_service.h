@@ -14,8 +14,8 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "webkit/browser/appcache/appcache_storage.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
-#include "webkit/storage/webkit_storage_export.h"
 
 namespace net {
 class URLRequestContext;
@@ -34,11 +34,12 @@ class SpecialStoragePolicy;
 namespace appcache {
 
 class AppCacheBackendImpl;
+class AppCacheExecutableHandlerFactory;
 class AppCacheQuotaClient;
 class AppCachePolicy;
 
 // Refcounted container to avoid copying the collection in callbacks.
-struct WEBKIT_STORAGE_EXPORT AppCacheInfoCollection
+struct WEBKIT_STORAGE_BROWSER_EXPORT AppCacheInfoCollection
     : public base::RefCountedThreadSafe<AppCacheInfoCollection> {
   AppCacheInfoCollection();
 
@@ -52,7 +53,7 @@ struct WEBKIT_STORAGE_EXPORT AppCacheInfoCollection
 // Class that manages the application cache service. Sends notifications
 // to many frontends.  One instance per user-profile. Each instance has
 // exclusive access to its cache_directory on disk.
-class WEBKIT_STORAGE_EXPORT AppCacheService {
+class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheService {
  public:
   // If not using quota management, the proxy may be NULL.
   explicit AppCacheService(quota::QuotaManagerProxy* quota_manager_proxy);
@@ -117,6 +118,18 @@ class WEBKIT_STORAGE_EXPORT AppCacheService {
     appcache_policy_ = policy;
   }
 
+  // The factory may be null, in which case invocations of exe handlers
+  // will result in an error response.
+  // The service does NOT assume ownership of the factory, it is the callers
+  // responsibility to ensure that the pointer remains valid while set.
+  AppCacheExecutableHandlerFactory* handler_factory() const {
+    return handler_factory_;
+  }
+  void set_handler_factory(
+      AppCacheExecutableHandlerFactory* factory) {
+    handler_factory_ = factory;
+  }
+
   quota::SpecialStoragePolicy* special_storage_policy() const {
     return special_storage_policy_.get();
   }
@@ -161,6 +174,7 @@ class WEBKIT_STORAGE_EXPORT AppCacheService {
 
   AppCachePolicy* appcache_policy_;
   AppCacheQuotaClient* quota_client_;
+  AppCacheExecutableHandlerFactory* handler_factory_;
   scoped_ptr<AppCacheStorage> storage_;
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
   scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;

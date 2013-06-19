@@ -190,9 +190,9 @@ BrowserContextKeyedService* IdentityAPITestFactory(
   return new IdentityAPI(static_cast<Profile*>(profile));
 }
 
-// DO NOT USE THIS CLASS until finding a safe way to close the window.
-// Waits for a specific GURL to generate a NOTIFICATION_LOAD_STOP
-// event, and closes the window embedding the webcontents.
+// Waits for a specific GURL to generate a NOTIFICATION_LOAD_STOP event and
+// saves a pointer to the window embedding the WebContents, which can be later
+// closed.
 class WaitForGURLAndCloseWindow : public content::WindowedNotificationObserver {
  public:
   explicit WaitForGURLAndCloseWindow(GURL url)
@@ -211,15 +211,27 @@ class WaitForGURLAndCloseWindow : public content::WindowedNotificationObserver {
         web_auth_flow_controller->GetWebContents();
 
     if (web_contents->GetURL() == url_) {
-      web_contents->GetEmbedderWebContents()->Close();
+      // It is safe to keep the pointer here, because we know in a test, that
+      // the WebContents won't go away before CloseEmbedderWebContents is
+      // called. Don't copy this code to production.
+      embedder_web_contents_ = web_contents->GetEmbedderWebContents();
       // Condtionally invoke parent class so that Wait will not exit
       // until the target URL arrives.
       content::WindowedNotificationObserver::Observe(type, source, details);
     }
   }
 
+  // Closes the window embedding the WebContents. The action is separated from
+  // the Observe method to make sure the list of observers is not deleted,
+  // while some event is already being processed. (That causes ASAN failures.)
+  void CloseEmbedderWebContents() {
+    if (embedder_web_contents_)
+      embedder_web_contents_->Close();
+  }
+
  private:
   GURL url_;
+  content::WebContents* embedder_web_contents_;
 };
 
 }  // namespace
@@ -927,7 +939,7 @@ class RemoveCachedAuthTokenFunctionTest : public ExtensionBrowserTest {
   bool InvalidateDefaultToken() {
     scoped_refptr<IdentityRemoveCachedAuthTokenFunction> func(
         new IdentityRemoveCachedAuthTokenFunction);
-    func->set_extension(utils::CreateEmptyExtension(kExtensionId));
+    func->set_extension(utils::CreateEmptyExtension(kExtensionId).get());
     return utils::RunFunction(
         func.get(),
         std::string("[{\"token\": \"") + kAccessToken + "\"}]",
@@ -994,8 +1006,7 @@ class LaunchWebAuthFlowFunctionTest : public AsyncExtensionBrowserTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest,
-                       DISABLED_UserCloseWindow) {
+IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, UserCloseWindow) {
   net::SpawnedTestServer https_server(
       net::SpawnedTestServer::TYPE_HTTPS,
       net::SpawnedTestServer::kLocalhost,
@@ -1017,6 +1028,7 @@ IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest,
   RunFunctionAsync(function.get(), args);
 
   popup_observer.Wait();
+  popup_observer.CloseEmbedderWebContents();
 
   EXPECT_EQ(std::string(errors::kUserRejected), WaitForError(function.get()));
 }
@@ -1061,8 +1073,8 @@ IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, LoadFailed) {
 
   std::string args = "[{\"interactive\": true, \"url\": \"" +
       auth_url.spec() + "\"}]";
-  std::string error = utils::RunFunctionAndReturnError(function, args,
-                                                       browser());
+  std::string error =
+      utils::RunFunctionAndReturnError(function.get(), args, browser());
 
   EXPECT_EQ(std::string(errors::kPageLoadFailure), error);
 }

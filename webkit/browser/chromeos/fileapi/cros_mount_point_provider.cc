@@ -4,7 +4,6 @@
 
 #include "webkit/browser/chromeos/fileapi/cros_mount_point_provider.h"
 
-#include "base/chromeos/chromeos_version.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -31,7 +30,6 @@
 #include "webkit/browser/fileapi/isolated_file_util.h"
 #include "webkit/browser/fileapi/local_file_stream_writer.h"
 #include "webkit/browser/fileapi/local_file_system_operation.h"
-#include "webkit/glue/webkit_glue.h"
 
 namespace {
 

@@ -15,8 +15,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
-#include "cc/base/thread.h"
-#include "cc/base/thread_impl.h"
 #include "cc/output/output_surface.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
@@ -36,18 +34,18 @@
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "ipc/ipc_sync_message.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebHelperPlugin.h"
+#include "third_party/WebKit/public/web/WebPagePopup.h"
+#include "third_party/WebKit/public/web/WebPopupMenu.h"
+#include "third_party/WebKit/public/web/WebPopupMenuInfo.h"
+#include "third_party/WebKit/public/web/WebRange.h"
+#include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebPoint.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHelperPlugin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPagePopup.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenuInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRange.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/point.h"
@@ -56,11 +54,11 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/glue/cursor_utils.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
+#include "webkit/renderer/cursor_utils.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/synchronous_compositor_factory.h"
@@ -72,12 +70,13 @@
 #include "third_party/skia/include/core/SkPixelRef.h"
 #endif  // defined(OS_POSIX)
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 
 using WebKit::WebCompositionUnderline;
 using WebKit::WebCursorInfo;
 using WebKit::WebGestureEvent;
 using WebKit::WebInputEvent;
+using WebKit::WebKeyboardEvent;
 using WebKit::WebMouseEvent;
 using WebKit::WebNavigationPolicy;
 using WebKit::WebPagePopup;
@@ -180,7 +179,6 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       screen_info_(screen_info),
       device_scale_factor_(screen_info_.deviceScaleFactor),
       is_threaded_compositing_enabled_(false),
-      overscroll_notifications_enabled_(false),
       weak_ptr_factory_(this) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
@@ -190,9 +188,6 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
   is_threaded_compositing_enabled_ =
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableThreadedCompositing);
-  overscroll_notifications_enabled_ =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableOverscrollNotifications);
 }
 
 RenderWidget::~RenderWidget() {
@@ -573,7 +568,7 @@ void RenderWidget::OnUpdateRectAck() {
 bool RenderWidget::SupportsAsynchronousSwapBuffers() {
   // Contexts using the command buffer support asynchronous swapbuffers.
   // See RenderWidget::CreateOutputSurface().
-  if (RenderThreadImpl::current()->compositor_message_loop_proxy())
+  if (RenderThreadImpl::current()->compositor_message_loop_proxy().get())
     return false;
 
   return true;
@@ -764,6 +759,12 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
     TRACE_EVENT2("renderer", "HandleMouseMove",
                  "x", mouse_event.x, "y", mouse_event.y);
     prevent_default = WillHandleMouseEvent(mouse_event);
+  }
+
+  if (WebInputEvent::isKeyboardEventType(input_event->type)) {
+    const WebKeyboardEvent& key_event =
+        *static_cast<const WebKeyboardEvent*>(input_event);
+    prevent_default = WillHandleKeyEvent(key_event);
   }
 
   if (WebInputEvent::isGestureEventType(input_event->type)) {
@@ -1139,7 +1140,7 @@ void RenderWidget::DoDeferredUpdate() {
   // The following two can result in further layout and possibly
   // enable GPU acceleration so they need to be called before any painting
   // is done.
-  UpdateTextInputState(DO_NOT_SHOW_IME);
+  UpdateTextInputType();
   UpdateSelectionBounds();
 
   // Suppress painting if nothing is dirty.  This has to be done after updating
@@ -1513,12 +1514,15 @@ void RenderWidget::suppressCompositorScheduling(bool enable) {
 void RenderWidget::willBeginCompositorFrame() {
   TRACE_EVENT0("gpu", "RenderWidget::willBeginCompositorFrame");
 
-  DCHECK(RenderThreadImpl::current()->compositor_message_loop_proxy());
+  DCHECK(RenderThreadImpl::current()->compositor_message_loop_proxy().get());
 
   // The following two can result in further layout and possibly
   // enable GPU acceleration so they need to be called before any painting
   // is done.
+  UpdateTextInputType();
+#if defined(OS_ANDROID)
   UpdateTextInputState(DO_NOT_SHOW_IME);
+#endif
   UpdateSelectionBounds();
 
   WillInitiatePaint();
@@ -1573,7 +1577,7 @@ void RenderWidget::didCompleteSwapBuffers() {
 
 void RenderWidget::scheduleComposite() {
   TRACE_EVENT0("gpu", "RenderWidget::scheduleComposite");
-  if (RenderThreadImpl::current()->compositor_message_loop_proxy() &&
+  if (RenderThreadImpl::current()->compositor_message_loop_proxy().get() &&
       compositor_) {
     compositor_->setNeedsRedraw();
   } else {
@@ -2094,9 +2098,32 @@ void RenderWidget::FinishHandlingImeEvent() {
   // are ignored. These must explicitly be updated once finished handling the
   // ime event.
   UpdateSelectionBounds();
+#if defined(OS_ANDROID)
   UpdateTextInputState(DO_NOT_SHOW_IME);
+#endif
 }
 
+void RenderWidget::UpdateTextInputType() {
+  if (!input_method_is_active_)
+    return;
+
+  ui::TextInputType new_type = GetTextInputType();
+  if (IsDateTimeInput(new_type))
+    return;  // Not considered as a text input field in WebKit/Chromium.
+
+  bool new_can_compose_inline = CanComposeInline();
+
+  if (text_input_type_ != new_type
+      || can_compose_inline_ != new_can_compose_inline) {
+    Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
+                                              new_type,
+                                              new_can_compose_inline));
+    text_input_type_ = new_type;
+    can_compose_inline_ = new_can_compose_inline;
+  }
+}
+
+#if defined(OS_ANDROID)
 void RenderWidget::UpdateTextInputState(ShowIme show_ime) {
   if (handling_ime_event_)
     return;
@@ -2134,6 +2161,7 @@ void RenderWidget::UpdateTextInputState(ShowIme show_ime) {
     can_compose_inline_ = new_can_compose_inline;
   }
 }
+#endif
 
 void RenderWidget::GetSelectionBounds(gfx::Rect* focus, gfx::Rect* anchor) {
   WebRect focus_webrect;
@@ -2366,16 +2394,11 @@ void RenderWidget::BeginSmoothScroll(
   pending_smooth_scroll_gesture_ = callback;
 }
 
-void RenderWidget::DidOverscroll(gfx::Vector2dF accumulated_overscroll,
-                                 gfx::Vector2dF current_fling_velocity) {
-  if (overscroll_notifications_enabled_) {
-    Send(new ViewHostMsg_DidOverscroll(routing_id_,
-                                       accumulated_overscroll,
-                                       current_fling_velocity));
-  }
+bool RenderWidget::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
+  return false;
 }
 
-bool RenderWidget::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
+bool RenderWidget::WillHandleKeyEvent(const WebKit::WebKeyboardEvent& event) {
   return false;
 }
 

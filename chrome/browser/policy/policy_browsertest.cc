@@ -112,7 +112,7 @@
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/plugins/npapi/plugin_utils.h"
@@ -779,7 +779,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   LocationBar* location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "stuff to search for");
   OmniboxEditModel* model = location_bar->GetLocationEntry()->model();
-  EXPECT_TRUE(model->CurrentMatch().destination_url.is_valid());
+  EXPECT_TRUE(model->CurrentMatch(NULL).destination_url.is_valid());
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   GURL expected("http://search.example/search?q=stuff+to+search+for");
@@ -794,7 +794,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   EXPECT_FALSE(service->GetDefaultSearchProvider());
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "should not work");
   // This means that submitting won't trigger any action.
-  EXPECT_FALSE(model->CurrentMatch().destination_url.is_valid());
+  EXPECT_FALSE(model->CurrentMatch(NULL).destination_url.is_valid());
   EXPECT_EQ(GURL(content::kAboutBlankURL), web_contents->GetURL());
 }
 
@@ -817,7 +817,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "http://google.com/");
   OmniboxEditModel* model = location_bar->GetLocationEntry()->model();
   no_safesearch_observer.Wait();
-  EXPECT_TRUE(model->CurrentMatch().destination_url.is_valid());
+  EXPECT_TRUE(model->CurrentMatch(NULL).destination_url.is_valid());
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   GURL expected_without("http://google.com/");
@@ -845,7 +845,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ForceSafeSearch) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "http://google.com/");
   safesearch_observer.Wait();
   model = location_bar->GetLocationEntry()->model();
-  EXPECT_TRUE(model->CurrentMatch().destination_url.is_valid());
+  EXPECT_TRUE(model->CurrentMatch(NULL).destination_url.is_valid());
   web_contents = browser()->tab_strip_model()->GetActiveWebContents();
   std::string expected_url("http://google.com/?");
   expected_url += std::string(chrome::kSafeSearchSafeParameter) + "&" +
@@ -858,7 +858,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   MakeRequestFail make_request_fail("search.example");
 
   chrome::EnableInstantExtendedAPIForTesting();
-  browser()->toolbar_model()->SetSupportsExtractionOfURLLikeSearchTerms(true);
 
   // Verifies that a default search is made using the provider configured via
   // policy. Also checks that default search can be completely disabled.
@@ -918,8 +917,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   LocationBar* location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/?espv=1#q=foobar");
-  EXPECT_NE(ToolbarModel::NO_SEARCH_TERMS,
-            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_TRUE(
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
   EXPECT_EQ(ASCIIToUTF16("foobar"),
             location_bar->GetLocationEntry()->GetText());
 
@@ -928,8 +927,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   location_bar = browser()->window()->GetLocationBar();
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/?q=foobar");
-  EXPECT_EQ(ToolbarModel::NO_SEARCH_TERMS,
-            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_FALSE(
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
   EXPECT_EQ(ASCIIToUTF16("https://www.google.com/?q=foobar"),
             location_bar->GetLocationEntry()->GetText());
 
@@ -938,8 +937,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   chrome::FocusLocationBar(browser());
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?espv=1#q=banana");
-  EXPECT_NE(ToolbarModel::NO_SEARCH_TERMS,
-            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_TRUE(
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
   EXPECT_EQ(ASCIIToUTF16("banana"),
             location_bar->GetLocationEntry()->GetText());
 
@@ -948,8 +947,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   chrome::FocusLocationBar(browser());
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?q=tractor+parts&espv=1");
-  EXPECT_NE(ToolbarModel::NO_SEARCH_TERMS,
-            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_TRUE(
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
   EXPECT_EQ(ASCIIToUTF16("tractor parts"),
             location_bar->GetLocationEntry()->GetText());
 
@@ -957,8 +956,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ReplaceSearchTerms) {
   chrome::FocusLocationBar(browser());
   ui_test_utils::SendToOmniboxAndSubmit(location_bar,
       "https://www.google.com/search?q=tractor+parts&espv=1#q=foobar");
-  EXPECT_NE(ToolbarModel::NO_SEARCH_TERMS,
-            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_TRUE(
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
   EXPECT_EQ(ASCIIToUTF16("foobar"),
             location_bar->GetLocationEntry()->GetText());
 }
@@ -1018,7 +1017,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisabledPlugins) {
   const webkit::WebPluginInfo* flash = GetFlashPlugin(plugins);
   if (!flash)
     return;
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(browser()->profile());
+  PluginPrefs* plugin_prefs =
+      PluginPrefs::GetForProfile(browser()->profile()).get();
   EXPECT_TRUE(plugin_prefs->IsPluginEnabled(*flash));
   EXPECT_TRUE(SetPluginEnabled(plugin_prefs, flash, false));
   EXPECT_FALSE(plugin_prefs->IsPluginEnabled(*flash));
@@ -1048,7 +1048,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DisabledPluginsExceptions) {
   const webkit::WebPluginInfo* flash = GetFlashPlugin(plugins);
   if (!flash)
     return;
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(browser()->profile());
+  PluginPrefs* plugin_prefs =
+      PluginPrefs::GetForProfile(browser()->profile()).get();
   EXPECT_TRUE(plugin_prefs->IsPluginEnabled(*flash));
 
   // Disable all plugins.
@@ -1086,7 +1087,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, EnabledPlugins) {
   const webkit::WebPluginInfo* flash = GetFlashPlugin(plugins);
   if (!flash)
     return;
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(browser()->profile());
+  PluginPrefs* plugin_prefs =
+      PluginPrefs::GetForProfile(browser()->profile()).get();
   EXPECT_TRUE(plugin_prefs->IsPluginEnabled(*flash));
 
   // The user disables it and then a policy forces it to be enabled.
@@ -2279,26 +2281,32 @@ class MediaStreamDevicesControllerBrowserTest
 
   void FinishAudioTest() {
     content::MediaStreamRequest request(0, 0, request_url_.GetOrigin(),
-                                        content::MEDIA_OPEN_DEVICE, "fake_dev",
+                                        content::MEDIA_DEVICE_ACCESS,
+                                        "fake_dev",
                                         content::MEDIA_DEVICE_AUDIO_CAPTURE,
                                         content::MEDIA_NO_SERVICE);
+    // TODO(raymes): Test MEDIA_DEVICE_OPEN (Pepper) which grants both webcam
+    // and microphone permissions at the same time.
     MediaStreamDevicesController controller(
         browser()->tab_strip_model()->GetActiveWebContents(), request,
         base::Bind(&MediaStreamDevicesControllerBrowserTest::Accept, this));
-    controller.DismissInfoBarAndTakeActionOnSettings();
+    controller.Accept(false);
 
     base::MessageLoop::current()->QuitWhenIdle();
   }
 
   void FinishVideoTest() {
+    // TODO(raymes): Test MEDIA_DEVICE_OPEN (Pepper) which grants both webcam
+    // and microphone permissions at the same time.
     content::MediaStreamRequest request(0, 0, request_url_.GetOrigin(),
-                                        content::MEDIA_OPEN_DEVICE, "fake_dev",
+                                        content::MEDIA_DEVICE_ACCESS,
+                                        "fake_dev",
                                         content::MEDIA_NO_SERVICE,
                                         content::MEDIA_DEVICE_VIDEO_CAPTURE);
     MediaStreamDevicesController controller(
         browser()->tab_strip_model()->GetActiveWebContents(), request,
         base::Bind(&MediaStreamDevicesControllerBrowserTest::Accept, this));
-    controller.DismissInfoBarAndTakeActionOnSettings();
+    controller.Accept(false);
 
     base::MessageLoop::current()->QuitWhenIdle();
   }

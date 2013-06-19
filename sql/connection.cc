@@ -68,13 +68,32 @@ class ScopedWritableSchema {
 
 namespace sql {
 
+// static
+Connection::ErrorIgnorerCallback* Connection::current_ignorer_cb_ = NULL;
+
+// static
+bool Connection::ShouldIgnore(int error) {
+  if (!current_ignorer_cb_)
+    return false;
+  return current_ignorer_cb_->Run(error);
+}
+
+// static
+void Connection::SetErrorIgnorer(Connection::ErrorIgnorerCallback* cb) {
+  CHECK(current_ignorer_cb_ == NULL);
+  current_ignorer_cb_ = cb;
+}
+
+// static
+void Connection::ResetErrorIgnorer() {
+  CHECK(current_ignorer_cb_);
+  current_ignorer_cb_ = NULL;
+}
+
 bool StatementID::operator<(const StatementID& other) const {
   if (number_ != other.number_)
     return number_ < other.number_;
   return strcmp(str_, other.str_) < 0;
-}
-
-ErrorDelegate::~ErrorDelegate() {
 }
 
 Connection::StatementRef::StatementRef(Connection* connection,
@@ -122,8 +141,7 @@ Connection::Connection()
       transaction_nesting_(0),
       needs_rollback_(false),
       in_memory_(false),
-      poisoned_(false),
-      error_delegate_(NULL) {
+      poisoned_(false) {
 }
 
 Connection::~Connection() {
@@ -439,7 +457,8 @@ bool Connection::Execute(const char* sql) {
 
   // This needs to be a FATAL log because the error case of arriving here is
   // that there's a malformed SQL statement. This can arise in development if
-  // a change alters the schema but not all queries adjust.
+  // a change alters the schema but not all queries adjust.  This can happen
+  // in production if the schema is corrupted.
   if (error == SQLITE_ERROR)
     DLOG(FATAL) << "SQL Error in " << sql << ", " << GetErrorMessage();
   return error == SQLITE_OK;
@@ -664,11 +683,10 @@ bool Connection::OpenInternal(const std::string& file_name) {
   // assumptions about who might change things in the database.
   // http://crbug.com/56559
   if (exclusive_locking_) {
-    // TODO(shess): This should probably be a full CHECK().  Code
-    // which requests exclusive locking but doesn't get it is almost
-    // certain to be ill-tested.
-    if (!Execute("PRAGMA locking_mode=EXCLUSIVE"))
-      DLOG(FATAL) << "Could not set locking mode: " << GetErrorMessage();
+    // TODO(shess): This should probably be a failure.  Code which
+    // requests exclusive locking but doesn't get it is almost certain
+    // to be ill-tested.
+    ignore_result(Execute("PRAGMA locking_mode=EXCLUSIVE"));
   }
 
   // http://www.sqlite.org/pragma.html#pragma_journal_mode
@@ -693,19 +711,16 @@ bool Connection::OpenInternal(const std::string& file_name) {
     DCHECK_LE(page_size_, kSqliteMaxPageSize);
     const std::string sql =
         base::StringPrintf("PRAGMA page_size=%d", page_size_);
-    if (!ExecuteWithTimeout(sql.c_str(), kBusyTimeout))
-      DLOG(FATAL) << "Could not set page size: " << GetErrorMessage();
+    ignore_result(ExecuteWithTimeout(sql.c_str(), kBusyTimeout));
   }
 
   if (cache_size_ != 0) {
     const std::string sql =
         base::StringPrintf("PRAGMA cache_size=%d", cache_size_);
-    if (!ExecuteWithTimeout(sql.c_str(), kBusyTimeout))
-      DLOG(FATAL) << "Could not set cache size: " << GetErrorMessage();
+    ignore_result(ExecuteWithTimeout(sql.c_str(), kBusyTimeout));
   }
 
   if (!ExecuteWithTimeout("PRAGMA secure_delete=ON", kBusyTimeout)) {
-    DLOG(FATAL) << "Could not enable secure_delete: " << GetErrorMessage();
     Close();
     return false;
   }
@@ -764,13 +779,9 @@ int Connection::OnSqliteError(int err, sql::Statement *stmt) {
     return err;
   }
 
-  // TODO(shess): Remove |error_delegate_| once everything is
-  // converted to |error_callback_|.
-  if (error_delegate_.get())
-    return error_delegate_->OnError(err, this, stmt);
-
   // The default handling is to assert on debug and to ignore on release.
-  DLOG(FATAL) << GetErrorMessage();
+  if (!ShouldIgnore(err))
+    DLOG(FATAL) << GetErrorMessage();
   return err;
 }
 

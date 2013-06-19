@@ -51,10 +51,7 @@
 #include "content/public/common/result_codes.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
-#if defined(OS_WIN)
-#include "third_party/WebKit/Source/WebKit/chromium/public/win/WebScreenInfoFactory.h"
-#endif
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "ui/base/events/event.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/size_conversions.h"
@@ -165,6 +162,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       abort_get_backing_store_(false),
       view_being_painted_(false),
       ignore_input_events_(false),
+      input_method_active_(false),
       text_direction_updated_(false),
       text_direction_(WebKit::WebTextDirectionLeftToRight),
       text_direction_canceled_(false),
@@ -405,8 +403,8 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_HasTouchEventHandlers,
                         OnHasTouchEventHandlers)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
-                        OnTextInputStateChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputTypeChanged,
+                        OnTextInputTypeChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
                         OnImeCompositionRangeChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
@@ -583,6 +581,10 @@ void RenderWidgetHostImpl::Blur() {
   // request later.
   if (IsMouseLocked())
     view_->UnlockMouse();
+
+  // If there is a pending overscroll, then that should be cancelled.
+  if (overscroll_controller_)
+    overscroll_controller_->Cancel();
 
   Send(new InputMsg_SetFocus(routing_id_, false));
 }
@@ -1066,8 +1068,11 @@ void RenderWidgetHostImpl::ForwardGestureEvent(
 
   if (!IsInOverscrollGesture() &&
       !gesture_event_filter_->ShouldForward(
-          GestureEventWithLatencyInfo(gesture_event, latency_info)))
+          GestureEventWithLatencyInfo(gesture_event, latency_info))) {
+    if (overscroll_controller_.get())
+      overscroll_controller_->DiscardingGestureEvent(gesture_event);
     return;
+  }
 
   ForwardInputEvent(gesture_event, sizeof(WebGestureEvent),
                     latency_info, false);
@@ -1118,13 +1123,13 @@ void RenderWidgetHostImpl::ForwardMouseEventImmediately(
 }
 
 void RenderWidgetHostImpl::ForwardTouchEventImmediately(
-    const WebKit::WebTouchEvent& touch_event) {
+    const TouchEventWithLatencyInfo& touch_event) {
   TRACE_EVENT0("input", "RenderWidgetHostImpl::ForwardTouchEvent");
   if (ignore_input_events_ || process_->IgnoreInputEvents())
     return;
 
-  ForwardInputEvent(touch_event, sizeof(WebKit::WebTouchEvent),
-                    NewInputLatencyInfo(), false);
+  ForwardInputEvent(touch_event.event, sizeof(WebKit::WebTouchEvent),
+                    touch_event.latency, false);
 }
 
 void RenderWidgetHostImpl::ForwardGestureEventImmediately(
@@ -1224,7 +1229,7 @@ void RenderWidgetHostImpl::DisableResizeAckCheckForTesting() {
 
 ui::LatencyInfo RenderWidgetHostImpl::NewInputLatencyInfo() {
   ui::LatencyInfo info;
-  info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_COMPONENT,
+  info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_RWH_COMPONENT,
                         GetLatencyComponentId(),
                         ++last_input_number_);
   return info;
@@ -1280,8 +1285,6 @@ void RenderWidgetHostImpl::ForwardInputEvent(
     return;
   }
 
-  in_process_event_types_.push(input_event.type);
-
   // Transmit any pending wheel events on a non-wheel event. This ensures that
   // the renderer receives the final PhaseEnded wheel event, which is necessary
   // to terminate rubber-banding, for example.
@@ -1327,9 +1330,13 @@ void RenderWidgetHostImpl::ForwardInputEvent(
       TimeDelta::FromMilliseconds(hung_renderer_delay_ms_));
 }
 
-void RenderWidgetHostImpl::ForwardTouchEvent(
-    const WebKit::WebTouchEvent& touch_event) {
-  touch_event_queue_->QueueEvent(touch_event);
+void RenderWidgetHostImpl::ForwardTouchEventWithLatencyInfo(
+    const WebKit::WebTouchEvent& touch_event,
+    const ui::LatencyInfo& ui_latency) {
+  ui::LatencyInfo latency_info = NewInputLatencyInfo();
+  latency_info.MergeWith(ui_latency);
+  TouchEventWithLatencyInfo touch_with_latency(touch_event, latency_info);
+  touch_event_queue_->QueueEvent(touch_with_latency);
 }
 
 void RenderWidgetHostImpl::AddKeyboardListener(KeyboardListener* listener) {
@@ -1344,6 +1351,7 @@ void RenderWidgetHostImpl::RemoveKeyboardListener(
 }
 
 void RenderWidgetHostImpl::GetWebScreenInfo(WebKit::WebScreenInfo* result) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::GetWebScreenInfo");
   if (GetView())
     static_cast<RenderWidgetHostViewPort*>(GetView())->GetScreenInfo(result);
   else
@@ -1478,6 +1486,7 @@ void RenderWidgetHostImpl::NotifyTextDirection() {
 }
 
 void RenderWidgetHostImpl::SetInputMethodActive(bool activate) {
+  input_method_active_ = activate;
   Send(new ViewMsg_SetInputMethodActive(GetRoutingID(), activate));
 }
 
@@ -1907,10 +1916,6 @@ void RenderWidgetHostImpl::OnInputEventAck(
   TRACE_EVENT0("input", "RenderWidgetHostImpl::OnInputEventAck");
   bool processed = (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED);
 
-  if (!in_process_event_types_.empty() &&
-      in_process_event_types_.front() == event_type)
-    in_process_event_types_.pop();
-
   // Log the time delta for processing an input event.
   TimeDelta delta = TimeTicks::Now() - input_event_start_time_;
   UMA_HISTOGRAM_TIMES("MPArch.RWH_InputEventDelta", delta);
@@ -2047,10 +2052,10 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
   view_->UpdateCursor(cursor);
 }
 
-void RenderWidgetHostImpl::OnTextInputStateChanged(
-    const ViewHostMsg_TextInputState_Params& params) {
+void RenderWidgetHostImpl::OnTextInputTypeChanged(ui::TextInputType type,
+                                                  bool can_compose_inline) {
   if (view_)
-    view_->TextInputStateChanged(params);
+    view_->TextInputTypeChanged(type, can_compose_inline);
 }
 
 void RenderWidgetHostImpl::OnImeCompositionRangeChanged(
@@ -2436,6 +2441,12 @@ void RenderWidgetHostImpl::SelectAll() {
   Send(new InputMsg_SelectAll(GetRoutingID()));
   RecordAction(UserMetricsAction("SelectAll"));
 }
+
+void RenderWidgetHostImpl::Unselect() {
+  Send(new InputMsg_Unselect(GetRoutingID()));
+  RecordAction(UserMetricsAction("Unselect"));
+}
+
 bool RenderWidgetHostImpl::GotResponseToLockMouseRequest(bool allowed) {
   if (!allowed) {
     RejectMouseLockOrUnlockIfNecessary();
@@ -2517,7 +2528,7 @@ void RenderWidgetHostImpl::DetachDelegate() {
 void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
   ui::LatencyInfo::LatencyMap::const_iterator l =
       latency_info.latency_components.find(std::make_pair(
-          ui::INPUT_EVENT_LATENCY_COMPONENT, GetLatencyComponentId()));
+          ui::INPUT_EVENT_LATENCY_RWH_COMPONENT, GetLatencyComponentId()));
   if (l == latency_info.latency_components.end())
     return;
 
@@ -2538,7 +2549,7 @@ void RenderWidgetHostImpl::CompositorFrameDrawn(
            latency_info.latency_components.begin();
        b != latency_info.latency_components.end();
        ++b) {
-    if (b->first.first != ui::INPUT_EVENT_LATENCY_COMPONENT)
+    if (b->first.first != ui::INPUT_EVENT_LATENCY_RWH_COMPONENT)
       continue;
     // Matches with GetLatencyComponentId
     int routing_id = b->first.second & 0xffffffff;

@@ -21,6 +21,7 @@
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
@@ -360,6 +361,8 @@ class ReflectorImpl : public ImageTransportFactoryObserver,
   // Called when the output surface's size has changed.
   // This must be called on ImplThread.
   void OnReshape(gfx::Size size) {
+    if (texture_size_ == size)
+      return;
     texture_size_ = size;
     DCHECK(texture_id_);
     gl_helper_->ResizeTexture(texture_id_, size);
@@ -502,12 +505,13 @@ class BrowserCompositorOutputSurface
       else
         LOG(ERROR) << "Trouble parsing --" << switches::kUIMaxFramesPending;
     }
+    capabilities_.adjust_deadline_for_parent = false;
     DetachFromThread();
   }
 
   virtual ~BrowserCompositorOutputSurface() {
     DCHECK(CalledOnValidThread());
-    if (!client_)
+    if (!HasClient())
       return;
     output_surface_proxy_->RemoveSurface(surface_id_);
   }
@@ -526,8 +530,8 @@ class BrowserCompositorOutputSurface
   void OnUpdateVSyncParameters(
       base::TimeTicks timebase, base::TimeDelta interval) {
     DCHECK(CalledOnValidThread());
-    DCHECK(client_);
-    client_->OnVSyncParametersChanged(timebase, interval);
+    DCHECK(HasClient());
+    OnVSyncParametersChanged(timebase, interval);
     compositor_message_loop_->PostTask(
         FROM_HERE,
         base::Bind(&ui::Compositor::OnUpdateVSyncParameters,
@@ -552,10 +556,11 @@ class BrowserCompositorOutputSurface
     command_buffer_proxy->SetLatencyInfo(frame->metadata.latency_info);
 
     if (reflector_.get()) {
-      if (frame->gl_frame_data->partial_swap_allowed)
-        reflector_->OnPostSubBuffer(frame->gl_frame_data->sub_buffer_rect);
-      else
+      if (frame->gl_frame_data->sub_buffer_rect ==
+          gfx::Rect(frame->gl_frame_data->size))
         reflector_->OnSwapBuffers();
+      else
+        reflector_->OnPostSubBuffer(frame->gl_frame_data->sub_buffer_rect);
     }
 
     OutputSurface::SwapBuffers(frame);
@@ -641,7 +646,7 @@ class GpuProcessTransportFactory
         new BrowserCompositorOutputSurface(
             context,
             per_compositor_data_[compositor]->surface_id,
-            output_surface_proxy_,
+            output_surface_proxy_.get(),
             base::MessageLoopProxy::current(),
             compositor->AsWeakPtr());
     if (data->reflector.get()) {
@@ -661,8 +666,7 @@ class GpuProcessTransportFactory
       RemoveObserver(data->reflector.get());
 
     data->reflector = new ReflectorImpl(
-        source, target, output_surface_proxy_,
-        data->surface_id);
+        source, target, output_surface_proxy_.get(), data->surface_id);
     AddObserver(data->reflector.get());
     return data->reflector;
   }
@@ -715,8 +719,8 @@ class GpuProcessTransportFactory
 
   virtual scoped_refptr<ui::Texture> CreateTransportClient(
       float device_scale_factor) OVERRIDE {
-    if (!shared_contexts_main_thread_)
-        return NULL;
+    if (!shared_contexts_main_thread_.get())
+      return NULL;
     scoped_refptr<ImageTransportClientTexture> image(
         new ImageTransportClientTexture(
             shared_contexts_main_thread_->Context3d(),
@@ -728,8 +732,8 @@ class GpuProcessTransportFactory
       const gfx::Size& size,
       float device_scale_factor,
       unsigned int texture_id) OVERRIDE {
-    if (!shared_contexts_main_thread_)
-        return NULL;
+    if (!shared_contexts_main_thread_.get())
+      return NULL;
     scoped_refptr<OwnedTexture> image(new OwnedTexture(
         shared_contexts_main_thread_->Context3d(),
         size,
@@ -749,13 +753,13 @@ class GpuProcessTransportFactory
   }
 
   virtual uint32 InsertSyncPoint() OVERRIDE {
-    if (!shared_contexts_main_thread_)
+    if (!shared_contexts_main_thread_.get())
       return 0;
     return shared_contexts_main_thread_->Context3d()->insertSyncPoint();
   }
 
   virtual void WaitSyncPoint(uint32 sync_point) OVERRIDE {
-    if (!shared_contexts_main_thread_)
+    if (!shared_contexts_main_thread_.get())
       return;
     shared_contexts_main_thread_->Context3d()->waitSyncPoint(sync_point);
   }
@@ -885,10 +889,10 @@ class GpuProcessTransportFactory
 
   virtual scoped_refptr<cc::ContextProvider>
       OffscreenContextProviderForMainThread() OVERRIDE {
-    if (!shared_contexts_main_thread_ ||
+    if (!shared_contexts_main_thread_.get() ||
         shared_contexts_main_thread_->DestroyedOnMainThread()) {
       shared_contexts_main_thread_ = MainThreadContextProvider::Create(this);
-      if (shared_contexts_main_thread_ &&
+      if (shared_contexts_main_thread_.get() &&
           !shared_contexts_main_thread_->BindToCurrentThread())
         shared_contexts_main_thread_ = NULL;
     }
@@ -922,7 +926,7 @@ class GpuProcessTransportFactory
 
   virtual scoped_refptr<cc::ContextProvider>
       OffscreenContextProviderForCompositorThread() OVERRIDE {
-    if (!shared_contexts_compositor_thread_ ||
+    if (!shared_contexts_compositor_thread_.get() ||
         shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
       shared_contexts_compositor_thread_ =
           CompositorThreadContextProvider::Create(this);
@@ -933,7 +937,7 @@ class GpuProcessTransportFactory
   void CreateSharedContextLazy() {
     scoped_refptr<cc::ContextProvider> provider =
         OffscreenContextProviderForMainThread();
-    if (!provider) {
+    if (!provider.get()) {
       // If we can't recreate contexts, we won't be able to show the UI.
       // Better crash at this point.
       FatalGPUError("Failed to initialize UI shared context.");
@@ -974,6 +978,20 @@ void CompositorSwapClient::OnLostContext() {
   // Note: previous line destroyed this. Don't access members from now on.
 }
 
+class SoftwareOutputSurface : public cc::OutputSurface {
+ public:
+  explicit SoftwareOutputSurface(
+      scoped_ptr<cc::SoftwareOutputDevice> software_device)
+      : cc::OutputSurface(software_device.Pass()) {}
+
+  virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE {
+    ui::LatencyInfo latency_info = frame->metadata.latency_info;
+    latency_info.swap_timestamp = base::TimeTicks::HighResNow();
+    RenderWidgetHostImpl::CompositorFrameDrawn(latency_info);
+    cc::OutputSurface::SwapBuffers(frame);
+  }
+};
+
 class SoftwareContextFactory : public ui::ContextFactory {
  public:
   SoftwareContextFactory() {}
@@ -986,12 +1004,12 @@ class SoftwareContextFactory : public ui::ContextFactory {
 #if defined(OS_WIN)
     scoped_ptr<SoftwareOutputDeviceWin> software_device(
         new SoftwareOutputDeviceWin(compositor));
-    return new cc::OutputSurface(
+    return new SoftwareOutputSurface(
         software_device.PassAs<cc::SoftwareOutputDevice>());
 #elif defined(USE_X11)
     scoped_ptr<SoftwareOutputDeviceX11> software_device(
         new SoftwareOutputDeviceX11(compositor));
-    return new cc::OutputSurface(
+    return new SoftwareOutputSurface(
         software_device.PassAs<cc::SoftwareOutputDevice>());
 #else
     NOTIMPLEMENTED();

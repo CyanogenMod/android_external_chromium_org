@@ -28,6 +28,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	webkit/common/webdropdata.cc \
+	webkit/common/webmenuitem.cc \
 	webkit/common/webpreferences.cc \
 	webkit/glue/multipart_response_delegate.cc \
 	webkit/glue/weburlrequest_extradata_impl.cc \
@@ -75,6 +76,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \

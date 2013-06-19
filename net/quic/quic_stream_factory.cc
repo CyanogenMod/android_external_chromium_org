@@ -152,9 +152,7 @@ int QuicStreamFactory::Job::DoResolveHostComplete(int rv) {
 }
 
 QuicStreamRequest::QuicStreamRequest(QuicStreamFactory* factory)
-    : factory_(factory),
-      stream_(NULL){
-}
+    : factory_(factory) {}
 
 QuicStreamRequest::~QuicStreamRequest() {
   if (factory_ && !callback_.is_null())
@@ -299,7 +297,7 @@ scoped_ptr<QuicHttpStream> QuicStreamFactory::CreateIfSessionExists(
     const HostPortProxyPair& host_port_proxy_pair,
     const BoundNetLog& net_log) {
   if (!HasActiveSession(host_port_proxy_pair)) {
-    return scoped_ptr<QuicHttpStream>(NULL);
+    return scoped_ptr<QuicHttpStream>();
   }
 
   QuicClientSession* session = active_sessions_[host_port_proxy_pair];
@@ -377,8 +375,10 @@ QuicClientSession* QuicStreamFactory::CreateSession(
   socket->Connect(addr);
 
   QuicConnectionHelper* helper = new QuicConnectionHelper(
-      base::MessageLoop::current()->message_loop_proxy(),
-      clock_.get(), random_generator_, socket);
+      base::MessageLoop::current()->message_loop_proxy().get(),
+      clock_.get(),
+      random_generator_,
+      socket);
 
   QuicConnection* connection = new QuicConnection(guid, addr, helper, false);
 

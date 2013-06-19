@@ -72,13 +72,13 @@ MY_DEFS := \
 	'-DHAVE_SRTP' \
 	'-DHAVE_WEBRTC_VIDEO' \
 	'-DHAVE_WEBRTC_VOICE' \
-	'-DHAVE_YUV' \
 	'-DJSONCPP_RELATIVE_PATH' \
 	'-DLOGGING_INSIDE_LIBJINGLE' \
 	'-DNO_MAIN_THREAD_WRAPPING' \
 	'-DNO_SOUND_SYSTEM' \
 	'-DSRTP_RELATIVE_PATH' \
 	'-DUSE_WEBRTC_DEV_BRANCH' \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -113,6 +113,7 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/testing/gtest/include \
 	$(LOCAL_PATH)/third_party \
 	$(LOCAL_PATH)/third_party/libyuv/include \
+	$(LOCAL_PATH)/third_party/usrsctp \
 	$(LOCAL_PATH)/third_party/webrtc \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
 	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \

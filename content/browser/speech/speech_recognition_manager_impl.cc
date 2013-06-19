@@ -23,6 +23,10 @@
 #include "content/public/common/speech_recognition_result.h"
 #include "media/audio/audio_manager.h"
 
+#if defined(OS_ANDROID)
+#include "content/browser/speech/speech_recognizer_impl_android.h"
+#endif
+
 using base::Callback;
 
 namespace content {
@@ -141,10 +145,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
       !config.continuous,
       google_remote_engine);
 #else
-  // TODO(janx): Implement a SpeechRecognizerImplAndroid with a JNI interface
-  // forwarding calls to Android's platform speech recognition service (see
-  // crbug.com/222352).
-  session->recognizer = NULL;
+  session->recognizer = new SpeechRecognizerImplAndroid(this, session_id);
 #endif
   return session_id;
 }
@@ -178,11 +179,6 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
   if (!SessionExists(session_id))
     return;
 
-#if defined(OS_IOS)
-  // On iOS, voice search can only be initiated by clear user action and thus
-  // it is always allowed.
-  DCHECK(!ask_user && is_allowed);
-#else
   if (ask_user) {
     SessionsTable::iterator iter = sessions_.find(session_id);
     DCHECK(iter != sessions_.end());
@@ -198,7 +194,6 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
                 weak_factory_.GetWeakPtr(), session_id));
     return;
   }
-#endif  // defined(OS_IOS)
 
   if (is_allowed) {
     base::MessageLoop::current()->PostTask(
@@ -592,7 +587,7 @@ void SpeechRecognitionManagerImpl::ResetCapturingSessionId(
 }
 
 void SpeechRecognitionManagerImpl::SessionDelete(Session* session) {
-  DCHECK(session->recognizer == NULL || !session->recognizer->IsActive());
+  DCHECK(session->recognizer.get() == NULL || !session->recognizer->IsActive());
   if (primary_session_id_ == session->id)
     primary_session_id_ = kSessionIDInvalid;
   sessions_.erase(session->id);

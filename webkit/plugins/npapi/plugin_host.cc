@@ -8,14 +8,14 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/npapi/bindings/npruntime.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_implementation.h"
@@ -773,7 +773,7 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
     case NPNVpluginDrawingModel: {
       // return the drawing model that was negotiated when we initialized.
       scoped_refptr<PluginInstance> plugin(FindInstance(id));
-      if (!plugin) {
+      if (!plugin.get()) {
         NOTREACHED();
         return NPERR_INVALID_INSTANCE_ERROR;
       }

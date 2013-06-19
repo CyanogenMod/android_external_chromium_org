@@ -12,6 +12,7 @@
 #include "cc/output/copy_output_request.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/software_output_device.h"
+#include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/picture_draw_quad.h"
 #include "cc/quads/render_pass_draw_quad.h"
@@ -32,8 +33,14 @@ namespace cc {
 
 namespace {
 
-bool IsScaleAndTranslate(const SkMatrix& matrix) {
-  return SkScalarNearlyZero(matrix[SkMatrix::kMSkewX]) &&
+static inline bool IsScalarNearlyInteger(SkScalar scalar) {
+  return SkScalarNearlyZero(scalar - SkScalarRound(scalar));
+}
+
+bool IsScaleAndIntegerTranslate(const SkMatrix& matrix) {
+  return IsScalarNearlyInteger(matrix[SkMatrix::kMTransX]) &&
+         IsScalarNearlyInteger(matrix[SkMatrix::kMTransY]) &&
+         SkScalarNearlyZero(matrix[SkMatrix::kMSkewX]) &&
          SkScalarNearlyZero(matrix[SkMatrix::kMSkewY]) &&
          SkScalarNearlyZero(matrix[SkMatrix::kMPersp0]) &&
          SkScalarNearlyZero(matrix[SkMatrix::kMPersp1]) &&
@@ -140,8 +147,7 @@ bool SoftwareRenderer::BindFramebufferToTexture(
   InitializeViewport(frame,
                      target_rect,
                      gfx::Rect(target_rect.size()),
-                     target_rect.size(),
-                     false);
+                     target_rect.size());
   return true;
 }
 
@@ -208,7 +214,7 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
   current_canvas_->setMatrix(sk_device_matrix);
 
   current_paint_.reset();
-  if (!IsScaleAndTranslate(sk_device_matrix)) {
+  if (!IsScaleAndIntegerTranslate(sk_device_matrix)) {
     // TODO(danakj): Until we can enable AA only on exterior edges of the
     // layer, disable AA if any interior edges are present. crbug.com/248175
     bool all_four_edges_are_exterior = quad->IsTopEdge() &&
@@ -228,11 +234,17 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
   }
 
   switch (quad->material) {
+    case DrawQuad::CHECKERBOARD:
+      DrawCheckerboardQuad(frame, CheckerboardDrawQuad::MaterialCast(quad));
+      break;
     case DrawQuad::DEBUG_BORDER:
       DrawDebugBorderQuad(frame, DebugBorderDrawQuad::MaterialCast(quad));
       break;
     case DrawQuad::PICTURE_CONTENT:
       DrawPictureQuad(frame, PictureDrawQuad::MaterialCast(quad));
+      break;
+    case DrawQuad::RENDER_PASS:
+      DrawRenderPassQuad(frame, RenderPassDrawQuad::MaterialCast(quad));
       break;
     case DrawQuad::SOLID_COLOR:
       DrawSolidColorQuad(frame, SolidColorDrawQuad::MaterialCast(quad));
@@ -243,15 +255,24 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
     case DrawQuad::TILED_CONTENT:
       DrawTileQuad(frame, TileDrawQuad::MaterialCast(quad));
       break;
-    case DrawQuad::RENDER_PASS:
-      DrawRenderPassQuad(frame, RenderPassDrawQuad::MaterialCast(quad));
-      break;
-    default:
+    case DrawQuad::INVALID:
+    case DrawQuad::IO_SURFACE_CONTENT:
+    case DrawQuad::YUV_VIDEO_CONTENT:
+    case DrawQuad::STREAM_VIDEO_CONTENT:
       DrawUnsupportedQuad(frame, quad);
+      NOTREACHED();
       break;
   }
 
   current_canvas_->resetMatrix();
+}
+
+void SoftwareRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
+                                            const CheckerboardDrawQuad* quad) {
+  current_paint_.setColor(quad->color);
+  current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
+  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
+                            current_paint_);
 }
 
 void SoftwareRenderer::DrawDebugBorderQuad(const DrawingFrame* frame,

@@ -21,12 +21,14 @@
 #include "ppapi/c/private/pp_private_font_charset.h"
 #include "ppapi/c/private/ppb_network_monitor_private.h"
 #include "ppapi/shared_impl/api_id.h"
+#include "ppapi/shared_impl/ppb_image_data_shared.h"
 
 struct PP_Flash_Menu;
 struct PP_FontDescription_Dev;
 struct PP_BrowserFont_Trusted_Description;
 struct PP_NetAddress_IPv4_Dev;
 struct PP_NetAddress_IPv6_Dev;
+struct PP_NetAddress_Private;
 struct PP_Size;
 
 namespace ppapi {
@@ -128,28 +130,31 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateGraphics3DRaw(PP_Instance instance,
                                           PP_Resource share_context,
                                           const int32_t* attrib_list) = 0;
+  virtual PP_Resource CreateHostResolver(PP_Instance instance) = 0;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) = 0;
   virtual PP_Resource CreateImageData(PP_Instance instance,
+                                      PPB_ImageData_Shared::ImageDataType type,
                                       PP_ImageDataFormat format,
                                       const PP_Size* size,
                                       PP_Bool init_to_zero) = 0;
-  virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
-                                          PP_ImageDataFormat format,
-                                          const PP_Size* size,
-                                          PP_Bool init_to_zero) = 0;
   virtual PP_Resource CreateNetAddressFromIPv4Address(
       PP_Instance instance,
       const PP_NetAddress_IPv4_Dev* ipv4_addr) = 0;
   virtual PP_Resource CreateNetAddressFromIPv6Address(
       PP_Instance instance,
       const PP_NetAddress_IPv6_Dev* ipv6_addr) = 0;
+  virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
+      PP_Instance instance,
+      const PP_NetAddress_Private& private_addr) = 0;
   virtual PP_Resource CreateNetworkMonitor(
       PP_Instance instance,
       PPB_NetworkMonitor_Callback callback,
       void* user_data) = 0;
   virtual PP_Resource CreatePrinting(PP_Instance instance) = 0;
   virtual PP_Resource CreateTCPServerSocketPrivate(PP_Instance instance) = 0;
+  virtual PP_Resource CreateTCPSocket(PP_Instance instace) = 0;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instace) = 0;
+  virtual PP_Resource CreateUDPSocket(PP_Instance instace) = 0;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) = 0;
   virtual PP_Resource CreateX509CertificatePrivate(PP_Instance instance) = 0;

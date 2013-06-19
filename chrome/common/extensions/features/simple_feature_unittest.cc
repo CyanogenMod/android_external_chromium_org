@@ -357,7 +357,7 @@ TEST_F(ExtensionSimpleFeatureTest, ParseNull) {
 }
 
 TEST_F(ExtensionSimpleFeatureTest, ParseWhitelist) {
-  scoped_ptr<base::DictionaryValue> value(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
   base::ListValue* whitelist = new base::ListValue();
   whitelist->Append(new base::StringValue("foo"));
   whitelist->Append(new base::StringValue("bar"));
@@ -611,18 +611,6 @@ TEST_F(ExtensionSimpleFeatureTest, SupportedChannel) {
       IsAvailableInChannel("trunk", VersionInfo::CHANNEL_BETA));
   EXPECT_EQ(Feature::UNSUPPORTED_CHANNEL,
       IsAvailableInChannel("trunk", VersionInfo::CHANNEL_STABLE));
-
-  // Default supported channel (trunk).
-  EXPECT_EQ(Feature::IS_AVAILABLE,
-            IsAvailableInChannel(std::string(), VersionInfo::CHANNEL_UNKNOWN));
-  EXPECT_EQ(Feature::UNSUPPORTED_CHANNEL,
-            IsAvailableInChannel(std::string(), VersionInfo::CHANNEL_CANARY));
-  EXPECT_EQ(Feature::UNSUPPORTED_CHANNEL,
-            IsAvailableInChannel(std::string(), VersionInfo::CHANNEL_DEV));
-  EXPECT_EQ(Feature::UNSUPPORTED_CHANNEL,
-            IsAvailableInChannel(std::string(), VersionInfo::CHANNEL_BETA));
-  EXPECT_EQ(Feature::UNSUPPORTED_CHANNEL,
-            IsAvailableInChannel(std::string(), VersionInfo::CHANNEL_STABLE));
 }
 
 }  // namespace

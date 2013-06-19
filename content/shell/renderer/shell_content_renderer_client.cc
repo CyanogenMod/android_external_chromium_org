@@ -15,8 +15,8 @@
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/webkit_test_runner.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestInterfaces.h"
 #include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestProxy.h"
 #include "third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public/WebTestRunner.h"
@@ -88,6 +88,8 @@ void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
   test_runner->Reset();
   render_view->GetWebView()->setSpellCheckClient(
       test_runner->proxy()->spellCheckClient());
+  render_view->GetWebView()->setValidationMessageClient(
+      test_runner->proxy()->validationMessageClient());
   render_view->GetWebView()->setPermissionClient(
       ShellRenderProcessObserver::GetInstance()->test_interfaces()->testRunner()
           ->webPermissions());

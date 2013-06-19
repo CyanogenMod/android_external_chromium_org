@@ -187,6 +187,9 @@ const char kDisableSeccompFilterSandbox[]   = "disable-seccomp-filter-sandbox";
 // Disable session storage.
 const char kDisableSessionStorage[]         = "disable-session-storage";
 
+// Disable the setuid sandbox (Linux only).
+const char kDisableSetuidSandbox[]          = "disable-setuid-sandbox";
+
 // Enable shared workers. Functionality not yet complete.
 const char kDisableSharedWorkers[]          = "disable-shared-workers";
 
@@ -209,12 +212,10 @@ const char kDisableWebRTC[]                 = "disable-webrtc";
 // Enable the recognition part of the Web Speech API.
 const char kEnableSpeechRecognition[]       = "enable-speech-recognition";
 
-// Enable web audio API.
-const char kEnableWebAudio[]                = "enable-webaudio";
-#else
+#endif
+
 // Disable web audio API.
 const char kDisableWebAudio[]               = "disable-webaudio";
-#endif
 
 #if defined(ENABLE_WEBRTC)
 // Enables WebRTC AEC recordings.
@@ -223,6 +224,9 @@ const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
 // Enable WebRTC DataChannels SCTP wire protocol support.
 const char kEnableSCTPDataChannels[]        = "enable-sctp-data-channels";
 #endif
+
+// Enable WebRTC to open TCP server sockets.
+const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
 
 // Enables Web MIDI API.
 const char kEnableWebMIDI[]                 = "enable-web-midi";
@@ -317,6 +321,10 @@ const char kEnableDownloadResumption[]      = "enable-download-resumption";
 // Enables WebKit features that are in development.
 const char kEnableExperimentalWebKitFeatures[] =
     "enable-experimental-webkit-features";
+
+// Enables the CSS multicol implementation that uses the regions implementation.
+const char kEnableRegionBasedColumns[] =
+    "enable-region-based-columns";
 
 // Disables the threaded HTML parser in WebKit
 const char kDisableThreadedHTMLParser[]     = "disable-threaded-html-parser";
@@ -456,9 +464,6 @@ const char kEnableViewport[]                = "enable-viewport";
 // - Location platform support for Windows 7
 const char kExperimentalLocationFeatures[]  = "experimental-location-features";
 
-// Load NPAPI plugins from the specified directory.
-const char kExtraPluginDir[]                = "extra-plugin-dir";
-
 // If accelerated compositing is supported, always enter compositing mode for
 // the base layer even when compositing is not strictly required.
 const char kForceCompositingMode[]          = "force-compositing-mode";
@@ -526,8 +531,16 @@ const char kInProcessPlugins[]              = "in-process-plugins";
 // Specifies the flags passed to JS engine
 const char kJavaScriptFlags[]               = "js-flags";
 
+// Load NPAPI plugins from the specified directory.
+const char kExtraPluginDir[]                = "extra-plugin-dir";
+
 // Load an NPAPI plugin from the specified path.
 const char kLoadPlugin[]                    = "load-plugin";
+
+// Disable discovering third-party plug-ins. Effectively loading only
+// ones shipped with the browser plus third-party ones as specified by
+// --extra-plugin-dir and --load-plugin switches.
+const char kDisablePluginsDiscovery[]       = "disable-plugins-discovery";
 
 // Sets the minimum log level. Valid values are from 0 to 3:
 // INFO = 0, WARNING = 1, LOG_ERROR = 2, LOG_FATAL = 3.
@@ -778,9 +791,6 @@ const char kDisableGestureRequirementForMediaPlayback[] =
 // The telephony region (ISO country code) to use in phone number detection.
 const char kNetworkCountryIso[] = "network-country-iso";
 
-// Set to enable compatibility with legacy WebView synchronous APIs.
-const char kEnableWebViewSynchronousAPIs[] = "enable-webview-synchronous-apis";
-
 // Disable overscroll edge effects like those found in Android views.
 const char kDisableOverscrollEdgeEffect[] = "disable-overscroll-edge-effect";
 #endif
@@ -808,12 +818,6 @@ const char kDisableSoftwareRasterizer[]     = "disable-software-rasterizer";
 #if defined(USE_AURA)
 // Forces usage of the test compositor. Needed to run ui tests on bots.
 extern const char kTestCompositor[]         = "test-compositor";
-#endif
-
-#ifndef NDEBUG
-// Dumps dependency information about our browser context keyed services
-// into a dot file in the browser context directory.
-const char kDumpBrowserContextDependencyGraph[] = "dump-browser-context-graph";
 #endif
 
 // Sets the tile size used by composited layers.

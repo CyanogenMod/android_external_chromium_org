@@ -6,14 +6,14 @@
 // order relative to input events.
 // Multiply-included message file, hence no include guard.
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/edit_command.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/latency_info.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"

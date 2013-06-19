@@ -378,6 +378,7 @@ void Widget::Init(const InitParams& in_params) {
     // Create the ClientView, add it to the NonClientView and add the
     // NonClientView to the RootView. This will cause everything to be parented.
     non_client_view_->set_client_view(widget_delegate_->CreateClientView(this));
+    non_client_view_->SetOverlayView(widget_delegate_->CreateOverlayView());
     SetContentsView(non_client_view_);
     SetInitialBounds(params.bounds);
     if (params.show_state == ui::SHOW_STATE_MAXIMIZED)
@@ -779,6 +780,10 @@ void Widget::SetCursor(gfx::NativeCursor cursor) {
   native_widget_->SetCursor(cursor);
 }
 
+bool Widget::IsMouseEventsEnabled() const {
+  return native_widget_->IsMouseEventsEnabled();
+}
+
 void Widget::SetNativeWindowProperty(const char* name, void* value) {
   native_widget_->SetNativeWindowProperty(name, value);
 }
@@ -1119,6 +1124,9 @@ void Widget::OnKeyEvent(ui::KeyEvent* event) {
 }
 
 void Widget::OnMouseEvent(ui::MouseEvent* event) {
+  if (!IsMouseEventsEnabled())
+    return;
+
   ScopedEvent scoped(this, *event);
   View* root_view = GetRootView();
   switch (event->type()) {

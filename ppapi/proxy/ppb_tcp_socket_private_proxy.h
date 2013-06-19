@@ -22,7 +22,7 @@ namespace proxy {
 
 class PPB_TCPSocket_Private_Proxy : public InterfaceProxy {
  public:
-  PPB_TCPSocket_Private_Proxy(Dispatcher* dispatcher);
+  explicit PPB_TCPSocket_Private_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_TCPSocket_Private_Proxy();
 
   static PP_Resource CreateProxyResource(PP_Instance instance);

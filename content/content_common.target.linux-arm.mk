@@ -62,8 +62,6 @@ LOCAL_SRC_FILES := \
 	content/common/android/hash_set.cc \
 	content/common/android/surface_texture_peer.cc \
 	content/common/android/trace_event_binding.cc \
-	content/common/appcache/appcache_backend_proxy.cc \
-	content/common/appcache/appcache_dispatcher.cc \
 	content/common/browser_plugin/browser_plugin_constants.cc \
 	content/common/browser_rendering_stats.cc \
 	content/common/cc_messages.cc \
@@ -167,6 +165,7 @@ MY_CFLAGS_C :=
 
 MY_DEFS := \
 	'-DCONTENT_IMPLEMENTATION' \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -178,7 +177,6 @@ MY_DEFS := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DENABLE_LANGUAGE_DETECTION=1' \
-	'-DENABLE_JAVA_BRIDGE' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_BUILD_NO_IMAGE_ENCODE' \

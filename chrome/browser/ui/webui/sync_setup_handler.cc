@@ -113,38 +113,6 @@ ModelTypeNameMap GetSelectableTypeNameMap() {
 
 #if !defined(OS_CHROMEOS)
 // Signin logic not needed on ChromeOS
-static const char kDefaultSigninDomain[] = "gmail.com";
-bool GetAuthData(const std::string& json,
-                 std::string* username,
-                 std::string* password,
-                 std::string* captcha,
-                 std::string* otp,
-                 std::string* access_code) {
-  scoped_ptr<Value> parsed_value(base::JSONReader::Read(json));
-  if (!parsed_value.get() || !parsed_value->IsType(Value::TYPE_DICTIONARY))
-    return false;
-
-  DictionaryValue* result = static_cast<DictionaryValue*>(parsed_value.get());
-  if (!result->GetString("user", username) ||
-      !result->GetString("pass", password) ||
-      !result->GetString("captcha", captcha) ||
-      !result->GetString("otp", otp) ||
-      !result->GetString("accessCode", access_code)) {
-      return false;
-  }
-  return true;
-}
-
-string16 NormalizeUserName(const string16& user) {
-  if (user.find_first_of(ASCIIToUTF16("@")) != string16::npos)
-    return user;
-  return user + ASCIIToUTF16("@") + ASCIIToUTF16(kDefaultSigninDomain);
-}
-
-bool AreUserNamesEqual(const string16& user1, const string16& user2) {
-  return NormalizeUserName(user1) == NormalizeUserName(user2);
-}
-
 void BringTabToFront(WebContents* web_contents) {
   DCHECK(web_contents);
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
@@ -177,7 +145,7 @@ void CloseTab(content::WebContents* tab) {
 bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
   scoped_ptr<Value> parsed_value(base::JSONReader::Read(json));
   DictionaryValue* result;
-  if (!parsed_value.get() || !parsed_value->GetAsDictionary(&result)) {
+  if (!parsed_value || !parsed_value->GetAsDictionary(&result)) {
     DLOG(ERROR) << "GetConfiguration() not passed a Dictionary";
     return false;
   }
@@ -270,14 +238,7 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     content::WebUI* web_ui) {
   DCHECK(localized_strings);
 
-  localized_strings->SetString(
-      "invalidPasswordHelpURL", chrome::kInvalidPasswordHelpURL);
-  localized_strings->SetString(
-      "cannotAccessAccountURL", chrome::kCanNotAccessAccountURL);
   string16 product_name(GetStringUTF16(IDS_PRODUCT_NAME));
-  localized_strings->SetString(
-      "introduction",
-      GetStringFUTF16(IDS_SYNC_LOGIN_INTRODUCTION, product_name));
   localized_strings->SetString(
       "chooseDataTypesInstructions",
       GetStringFUTF16(IDS_SYNC_CHOOSE_DATATYPES_INSTRUCTIONS, product_name));
@@ -308,67 +269,20 @@ void SyncSetupHandler::GetStaticLocalizedValues(
   localized_strings->SetString("stopSyncingConfirm",
         l10n_util::GetStringUTF16(IDS_SYNC_STOP_SYNCING_CONFIRM_BUTTON_LABEL));
 
-  bool is_start_page = false;
-  if (web_ui) {
-    SyncPromoUI::Source source = SyncPromoUI::GetSourceForSyncPromoURL(
-        web_ui->GetWebContents()->GetURL());
-    is_start_page = source == SyncPromoUI::SOURCE_START_PAGE;
-  }
-  int title_id = is_start_page ? IDS_SYNC_PROMO_TITLE_SHORT :
-                                 IDS_SYNC_PROMO_TITLE_EXISTING_USER;
-  string16 short_product_name(GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
-  localized_strings->SetString(
-      "promoTitle", GetStringFUTF16(title_id, short_product_name));
-
   localized_strings->SetString(
       "syncEverythingHelpURL", chrome::kSyncEverythingLearnMoreURL);
   localized_strings->SetString(
       "syncErrorHelpURL", chrome::kSyncErrorsHelpURL);
-
-  std::string create_account_url = google_util::StringAppendGoogleLocaleParam(
-      chrome::kSyncCreateNewAccountURL);
-  string16 create_account = GetStringUTF16(IDS_SYNC_CREATE_ACCOUNT);
-  create_account= UTF8ToUTF16("<a id='create-account-link' target='_blank' "
-      "class='account-link' href='" + create_account_url + "'>") +
-      create_account + UTF8ToUTF16("</a>");
-  localized_strings->SetString("createAccountLinkHTML",
-      GetStringFUTF16(IDS_SYNC_CREATE_ACCOUNT_PREFIX, create_account));
-
-  string16 sync_benefits_url(
-      UTF8ToUTF16(google_util::StringAppendGoogleLocaleParam(
-          chrome::kSyncLearnMoreURL)));
-  localized_strings->SetString("promoLearnMoreURL", sync_benefits_url);
 
   static OptionsStringResource resources[] = {
     { "syncSetupConfigureTitle", IDS_SYNC_SETUP_CONFIGURE_TITLE },
     { "syncSetupSpinnerTitle", IDS_SYNC_SETUP_SPINNER_TITLE },
     { "syncSetupTimeoutTitle", IDS_SYNC_SETUP_TIME_OUT_TITLE },
     { "syncSetupTimeoutContent", IDS_SYNC_SETUP_TIME_OUT_CONTENT },
-    { "cannotBeBlank", IDS_SYNC_CANNOT_BE_BLANK },
-    { "emailLabel", IDS_SYNC_LOGIN_EMAIL_NEW_LINE },
-    { "passwordLabel", IDS_SYNC_LOGIN_PASSWORD_NEW_LINE },
-    { "invalidCredentials", IDS_SYNC_INVALID_USER_CREDENTIALS },
-    { "differentEmail", IDS_SYNC_DIFFERENT_EMAIL },
-    { "signin", IDS_SYNC_SIGNIN },
-    { "couldNotConnect", IDS_SYNC_LOGIN_COULD_NOT_CONNECT },
-    { "unrecoverableError", IDS_SYNC_UNRECOVERABLE_ERROR },
     { "errorLearnMore", IDS_LEARN_MORE },
-    { "unrecoverableErrorHelpURL", IDS_SYNC_UNRECOVERABLE_ERROR_HELP_URL },
-    { "cannotAccessAccount", IDS_SYNC_CANNOT_ACCESS_ACCOUNT },
     { "cancel", IDS_CANCEL },
     { "loginSuccess", IDS_SYNC_SUCCESS },
     { "settingUp", IDS_SYNC_LOGIN_SETTING_UP },
-    { "errorSigningIn", IDS_SYNC_ERROR_SIGNING_IN },
-    { "signinHeader", IDS_SYNC_PROMO_SIGNIN_HEADER},
-    { "captchaInstructions", IDS_SYNC_GAIA_CAPTCHA_INSTRUCTIONS },
-    { "invalidAccessCode", IDS_SYNC_INVALID_ACCESS_CODE_LABEL },
-    { "enterAccessCode", IDS_SYNC_ENTER_ACCESS_CODE_LABEL },
-    { "getAccessCodeHelp", IDS_SYNC_ACCESS_CODE_HELP_LABEL },
-    { "getAccessCodeURL", IDS_SYNC_GET_ACCESS_CODE_URL },
-    { "invalidOtp", IDS_SYNC_INVALID_OTP_LABEL },
-    { "enterOtp", IDS_SYNC_ENTER_OTP_LABEL },
-    { "getOtpHelp", IDS_SYNC_OTP_HELP_LABEL },
-    { "getOtpURL", IDS_SYNC_GET_OTP_URL },
     { "syncAllDataTypes", IDS_SYNC_EVERYTHING },
     { "chooseDataTypes", IDS_SYNC_CHOOSE_DATATYPES },
     { "syncNothing", IDS_SYNC_NOTHING },
@@ -411,7 +325,9 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "encryptedDataTypesTitle", IDS_SYNC_ENCRYPTION_DATA_TYPES_TITLE },
     { "encryptSensitiveOption", IDS_SYNC_ENCRYPT_SENSITIVE_DATA },
     { "encryptAllOption", IDS_SYNC_ENCRYPT_ALL_DATA },
-    { "aspWarningText", IDS_SYNC_ASP_PASSWORD_WARNING_TEXT },
+    // TODO(rogerta): browser/resource/sync_promo/sync_promo.html and related
+    // file may not be needed any more.  If not, then the following promo
+    // strings can also be removed.
     { "promoPageTitle", IDS_SYNC_PROMO_TAB_TITLE },
     { "promoSkipButton", IDS_SYNC_PROMO_SKIP_BUTTON },
     { "promoAdvanced", IDS_SYNC_PROMO_ADVANCED },
@@ -428,6 +344,9 @@ void SyncSetupHandler::GetStaticLocalizedValues(
 
 void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
                                             bool passphrase_failed) {
+  // Should never call this when we are not signed in.
+  DCHECK(!SigninManagerFactory::GetForProfile(
+      GetProfile())->GetAuthenticatedUsername().empty());
   ProfileSyncService* service = GetSyncService();
   DCHECK(service);
   if (!service->sync_initialized()) {
@@ -445,22 +364,21 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
     // (unrecoverable error?), don't bother displaying a spinner that will be
     // immediately closed because this leads to some ugly infinite UI loop (see
     // http://crbug.com/244769).
-    if (SigninTracker::GetSigninState(GetProfile(), NULL) !=
-        SigninTracker::WAITING_FOR_GAIA_VALIDATION) {
+    if (SyncStartupTracker::GetSyncServiceState(GetProfile()) !=
+        SyncStartupTracker::SYNC_STARTUP_ERROR) {
       DisplaySpinner();
     }
 
-    // To listen to the token available notifications, start SigninTracker.
-    signin_tracker_.reset(
-        new SigninTracker(GetProfile(),
-                          this,
-                          SigninTracker::SERVICES_INITIALIZING));
+    // Start SyncSetupTracker to wait for sync to initialize.
+    sync_startup_tracker_.reset(
+        new SyncStartupTracker(GetProfile(), this));
     return;
   }
 
-  // Should only be called if user is signed in, so no longer need our
-  // SigninTracker.
+  // Should only get here if user is signed in and sync is initialized, so no
+  // longer need a SigninTracker or SyncStartupTracker.
   signin_tracker_.reset();
+  sync_startup_tracker_.reset();
   configuring_sync_ = true;
   DCHECK(service->sync_initialized()) <<
       "Cannot configure sync until the sync backend is initialized";
@@ -562,11 +480,9 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   web_ui()->CallJavascriptFunction(
       "SyncSetupOverlay.showSyncSetupPage", page, args);
 
-  if (SyncPromoUI::UseWebBasedSigninFlow()) {
-    // Make sure the tab used for the Gaia sign in does not cover the settings
-    // tab.
-    FocusUI();
-  }
+  // Make sure the tab used for the Gaia sign in does not cover the settings
+  // tab.
+  FocusUI();
 }
 
 void SyncSetupHandler::ConfigureSyncDone() {
@@ -628,10 +544,6 @@ void SyncSetupHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("SyncSetupStopSyncing",
       base::Bind(&SyncSetupHandler::HandleStopSyncing,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "SyncSetupSubmitAuth",
-      base::Bind(&SyncSetupHandler::HandleSubmitAuth,
-                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback("SyncSetupStartSignIn",
       base::Bind(&SyncSetupHandler::HandleStartSignin,
                  base::Unretained(this)));
@@ -640,20 +552,14 @@ void SyncSetupHandler::RegisterMessages() {
 
 #if !defined(OS_CHROMEOS)
 void SyncSetupHandler::DisplayGaiaLogin(bool fatal_error) {
-  if (SyncPromoUI::UseWebBasedSigninFlow()) {
-    // Advanced options are no longer being configured if the login screen is
-    // visible. If the user exits the signin wizard after this without
-    // configuring sync, CloseSyncSetup() will ensure they are logged out.
-    configuring_sync_ = false;
+  DCHECK(!sync_startup_tracker_);
+  // Advanced options are no longer being configured if the login screen is
+  // visible. If the user exits the signin wizard after this without
+  // configuring sync, CloseSyncSetup() will ensure they are logged out.
+  configuring_sync_ = false;
 
-    DisplayGaiaLoginInNewTabOrWindow();
-    signin_tracker_.reset(
-        new SigninTracker(GetProfile(), this,
-                          SigninTracker::WAITING_FOR_GAIA_VALIDATION));
-  } else {
-    retry_on_signin_failure_ = true;
-    DisplayGaiaLoginWithErrorMessage(string16(), fatal_error);
-  }
+  DisplayGaiaLoginInNewTabOrWindow();
+  signin_tracker_.reset(new SigninTracker(GetProfile(), this));
 }
 
 void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
@@ -688,72 +594,6 @@ void SyncSetupHandler::DisplayGaiaLoginInNewTabOrWindow() {
                              content::PAGE_TRANSITION_AUTO_BOOKMARK, false));
   content::WebContentsObserver::Observe(active_gaia_signin_tab_);
 }
-
-void SyncSetupHandler::DisplayGaiaLoginWithErrorMessage(
-    const string16& error_message, bool fatal_error) {
-  // Advanced options are no longer being configured if the login screen is
-  // visible. If the user exits the signin wizard after this without
-  // configuring sync, CloseSyncSetup() will ensure they are logged out.
-  configuring_sync_ = false;
-
-  string16 local_error_message(error_message);
-
-  // Setup args for the GAIA login screen:
-  //   error_message: custom error message to display.
-  //   fatalError: fatal error message to display.
-  //   error: GoogleServiceAuthError from previous login attempt (0 if none).
-  //   user: The email the user most recently entered.
-  //   editable_user: Whether the username field should be editable.
-  //   captchaUrl: The captcha image to display to the user (empty if none).
-  std::string user, captcha;
-  int error;
-  bool editable_user;
-  if (!last_attempted_user_email_.empty()) {
-    // This is a repeat of a login attempt.
-    user = last_attempted_user_email_;
-    error = last_signin_error_.state();
-    captcha = last_signin_error_.captcha().image_url.spec();
-    editable_user = true;
-
-    if (local_error_message.empty())
-      local_error_message = UTF8ToUTF16(last_signin_error_.error_message());
-  } else {
-    // Fresh login attempt - lock in the authenticated username if there is
-    // one (don't let the user change it).
-    user = SigninManagerFactory::GetForProfile(GetProfile())->
-        GetAuthenticatedUsername();
-    error = 0;
-    editable_user = user.empty();
-  }
-  DictionaryValue args;
-  args.SetString("user", user);
-  args.SetInteger("error", error);
-
-  // If the error is two-factor, then ask for an OTP if the ClientOAuth flow
-  // is enasbled.  Otherwise ask for an ASP.  If the error is catptcha required,
-  // then we don't want to show username and password fields if ClientOAuth is
-  // being used, since those fields are ignored by the endpoint on challenges.
-  if (error == GoogleServiceAuthError::TWO_FACTOR)
-    args.SetBoolean("askForOtp", false);
-  else if (error == GoogleServiceAuthError::CAPTCHA_REQUIRED)
-    args.SetBoolean("hideEmailAndPassword", false);
-
-  // Tell the page the previous email address used for sync.  If the user
-  // enters a different email address, he will be shown a warning.
-  std::string last_email = GetProfile()->GetPrefs()->GetString(
-      prefs::kGoogleServicesLastUsername);
-  args.SetString("lastEmailAddress", last_email);
-
-  args.SetBoolean("editableUser", editable_user);
-  if (!local_error_message.empty())
-    args.SetString("errorMessage", local_error_message);
-  if (fatal_error)
-    args.SetBoolean("fatalError", true);
-  args.SetString("captchaUrl", captcha);
-  StringValue page("login");
-  web_ui()->CallJavascriptFunction(
-      "SyncSetupOverlay.showSyncSetupPage", page, args);
-}
 #endif
 
 bool SyncSetupHandler::PrepareSyncSetup() {
@@ -781,7 +621,7 @@ void SyncSetupHandler::DisplaySpinner() {
   DictionaryValue args;
 
   const int kTimeoutSec = 30;
-  DCHECK(!backend_start_timer_.get());
+  DCHECK(!backend_start_timer_);
   backend_start_timer_.reset(new base::OneShotTimer<SyncSetupHandler>());
   backend_start_timer_->Start(FROM_HERE,
                               base::TimeDelta::FromSeconds(kTimeoutSec),
@@ -794,11 +634,12 @@ void SyncSetupHandler::DisplaySpinner() {
 // TODO(kochi): Handle error conditions other than timeout.
 // http://crbug.com/128692
 void SyncSetupHandler::DisplayTimeout() {
+  DCHECK(!signin_tracker_);
   // Stop a timer to handle timeout in waiting for checking network connection.
   backend_start_timer_.reset();
 
-  // Do not listen to signin events.
-  signin_tracker_.reset();
+  // Do not listen to sync startup events.
+  sync_startup_tracker_.reset();
 
   StringValue page("timeout");
   DictionaryValue args;
@@ -810,115 +651,31 @@ void SyncSetupHandler::RecordSignin() {
   // By default, do nothing - subclasses can override.
 }
 
-void SyncSetupHandler::DisplayGaiaSuccessAndClose() {
-  RecordSignin();
-  web_ui()->CallJavascriptFunction("SyncSetupOverlay.showSuccessAndClose");
-}
-
-void SyncSetupHandler::DisplayGaiaSuccessAndSettingUp() {
-  RecordSignin();
-#if !defined(OS_CHROMEOS)
-  if (SyncPromoUI::UseWebBasedSigninFlow())
-    CloseGaiaSigninPage();
-#endif
-
-  web_ui()->CallJavascriptFunction("SyncSetupOverlay.showSuccessAndSettingUp");
-}
-
 void SyncSetupHandler::OnDidClosePage(const ListValue* args) {
   CloseSyncSetup();
 }
 
-#if !defined (OS_CHROMEOS)
-void SyncSetupHandler::HandleSubmitAuth(const ListValue* args) {
-  std::string json;
-  if (!args->GetString(0, &json)) {
-    NOTREACHED() << "Could not read JSON argument";
-    return;
-  }
+void SyncSetupHandler::SyncStartupFailed() {
+  // Stop a timer to handle timeout in waiting for checking network connection.
+  backend_start_timer_.reset();
 
-  if (json.empty())
-    return;
-
-  std::string username, password, captcha, otp, access_code;
-  if (!GetAuthData(json, &username, &password, &captcha, &otp, &access_code)) {
-    // The page sent us something that we didn't understand.
-    // This probably indicates a programming error.
-    NOTREACHED();
-    return;
-  }
-
-  string16 error_message;
-  if (!IsLoginAuthDataValid(username, &error_message)) {
-    DisplayGaiaLoginWithErrorMessage(error_message, false);
-    return;
-  }
-
-  // If one of password, captcha, otp and access_code is non-empty, then the
-  // others must be empty.  At least one should be non-empty.
-  DCHECK(password.empty() ||
-         (captcha.empty() && otp.empty() && access_code.empty()));
-  DCHECK(captcha.empty() ||
-         (password.empty() && otp.empty() && access_code.empty()));
-  DCHECK(otp.empty() ||
-         (captcha.empty() && password.empty() && access_code.empty()));
-  DCHECK(access_code.empty() ||
-         (captcha.empty() && password.empty() && otp.empty()));
-  DCHECK(!otp.empty() || !captcha.empty() || !password.empty() ||
-         !access_code.empty());
-
-  const std::string& solution = captcha.empty() ?
-      (otp.empty() ? EmptyString() : otp) : captcha;
-  TryLogin(username, password, solution, access_code);
+  // Just close the sync overlay (the idea is that the base settings page will
+  // display the current err
+  CloseOverlay();
 }
 
-void SyncSetupHandler::TryLogin(const std::string& username,
-                                const std::string& password,
-                                const std::string& solution,
-                                const std::string& access_code) {
-  DCHECK(IsActiveLogin());
-  // Make sure we are listening for signin traffic.
-  if (!signin_tracker_.get())
-    signin_tracker_.reset(new SigninTracker(GetProfile(), this));
-
-  last_attempted_user_email_ = username;
-
-  // User is trying to log in again so reset the cached error.
-  GoogleServiceAuthError current_error = last_signin_error_;
-  last_signin_error_ = GoogleServiceAuthError::AuthErrorNone();
-
-  SigninManager* signin = SigninManagerFactory::GetForProfile(GetProfile());
-
-  // If we're just being called to provide an ASP, then pass it to the
-  // SigninManager and wait for the next step.
-  if (!access_code.empty()) {
-    signin->ProvideSecondFactorAccessCode(access_code);
-    return;
-  }
-
-  // The user has submitted credentials, which indicates they don't want to
-  // suppress start up anymore. We do this before starting the signin process,
-  // so the ProfileSyncService knows to listen to the cached password.
+void SyncSetupHandler::SyncStartupCompleted() {
   ProfileSyncService* service = GetSyncService();
-  if (service)
-    service->UnsuppressAndStart();
+  DCHECK(service->sync_initialized());
 
-  // Kick off a sign-in through the signin manager.
-  signin->StartSignIn(username, password, current_error.captcha().token,
-                      solution);
-}
-#endif  // !defined (OS_CHROMEOS)
+  // Stop a timer to handle timeout in waiting for checking network connection.
+  backend_start_timer_.reset();
 
-void SyncSetupHandler::GaiaCredentialsValid() {
-  DCHECK(IsActiveLogin());
-
-  // Gaia credentials are valid - update the UI.
-  DisplayGaiaSuccessAndSettingUp();
+  DisplayConfigureSync(true, false);
 }
 
 void SyncSetupHandler::SigninFailed(const GoogleServiceAuthError& error) {
-  // Stop a timer to handle timeout in waiting for checking network connection.
-  backend_start_timer_.reset();
+  DCHECK(!backend_start_timer_);
 
 #if defined(OS_CHROMEOS)
   // TODO(peria): Show error dialog for prompting sign in and out on
@@ -926,24 +683,10 @@ void SyncSetupHandler::SigninFailed(const GoogleServiceAuthError& error) {
   CloseOverlay();
 #else
   last_signin_error_ = error;
-  if (SyncPromoUI::UseWebBasedSigninFlow()) {
-    // If using web-based sign in flow, don't show the gaia sign in page again
-    // since there is no way to show the user an error message. Terminate sync
-    // setup and close the overlay. If there is a sign in error, the user will
-    // see a badge in the menu and a re-auth link in the settings page.
-    CloseOverlay();
-  } else if (retry_on_signin_failure_) {
-    // Got a failed signin - this is either just a typical auth error, or a
-    // sync error (treat sync errors as "fatal errors" - i.e. non-auth errors).
-    // On ChromeOS, this condition can happen when auth token is invalid and
-    // cannot start sync backend.
-    ProfileSyncService* service = GetSyncService();
-    DisplayGaiaLogin(service && service->HasUnrecoverableError());
-  } else {
-    // TODO(rsimha): Clean up this if block once the non-webui code path is
-    // removed.
-    CloseOverlay();
-  }
+
+  // Don't show the gaia sign in page again since there is no way to show the
+  // user an error message.
+  CloseSyncSetup();
 #endif
 }
 
@@ -958,22 +701,27 @@ ProfileSyncService* SyncSetupHandler::GetSyncService() const {
 }
 
 void SyncSetupHandler::SigninSuccess() {
+  DCHECK(!backend_start_timer_);
   ProfileSyncService* service = GetSyncService();
-  DCHECK(!service || service->sync_initialized());
-  // Stop a timer to handle timeout in waiting for checking network connection.
-  backend_start_timer_.reset();
+
+#if !defined(OS_CHROMEOS)
+  CloseGaiaSigninPage();
+#endif
 
   // If we have signed in while sync is already setup, it must be due to some
   // kind of re-authentication flow. In that case, just close the signin dialog
   // rather than forcing the user to go through sync configuration.
-  if (!service || service->HasSyncSetupCompleted())
-    DisplayGaiaSuccessAndClose();
-  else
+  if (!service || service->HasSyncSetupCompleted()) {
+    RecordSignin();
+    CloseOverlay();
+  } else {
     DisplayConfigureSync(false, false);
+  }
 }
 
 void SyncSetupHandler::HandleConfigure(const ListValue* args) {
-  DCHECK(!signin_tracker_.get());
+  DCHECK(!signin_tracker_);
+  DCHECK(!sync_startup_tracker_);
   std::string json;
   if (!args->GetString(0, &json)) {
     NOTREACHED() << "Could not read JSON argument";
@@ -1104,8 +852,7 @@ void SyncSetupHandler::HandleShowErrorUI(const ListValue* args) {
 void SyncSetupHandler::HandleShowSetupUI(const ListValue* args) {
   SigninManagerBase* signin =
       SigninManagerFactory::GetForProfile(GetProfile());
-  if (SyncPromoUI::UseWebBasedSigninFlow() &&
-      signin->GetAuthenticatedUsername().empty()) {
+  if (signin->GetAuthenticatedUsername().empty()) {
     // For web-based signin, the signin page is not displayed in an overlay
     // on the settings page. So if we get here, it must be due to the user
     // cancelling signin (by reloading the sync settings page during initial
@@ -1156,6 +903,7 @@ void SyncSetupHandler::CloseSyncSetup() {
   // flag a signin failure.
   bool was_signing_in = (signin_tracker_.get() != NULL);
   signin_tracker_.reset();
+  sync_startup_tracker_.reset();
 
   // TODO(atwilson): Move UMA tracking of signin events out of sync module.
   ProfileSyncService* sync_service = GetSyncService();
@@ -1189,8 +937,7 @@ void SyncSetupHandler::CloseSyncSetup() {
 
 #if !defined(OS_CHROMEOS)
     // Let the various services know that we're no longer active.
-    if (SyncPromoUI::UseWebBasedSigninFlow())
-      CloseGaiaSigninPage();
+    CloseGaiaSigninPage();
 #endif
 
     GetLoginUIService()->LoginUIClosed(this);
@@ -1264,8 +1011,7 @@ void SyncSetupHandler::FocusUI() {
   DCHECK(IsActiveLogin());
 #if !defined(OS_CHROMEOS)
   // Bring the GAIA tab to the foreground if there is one.
-  if (SyncPromoUI::UseWebBasedSigninFlow() && signin_tracker_ &&
-      active_gaia_signin_tab_) {
+  if (signin_tracker_ && active_gaia_signin_tab_) {
     BringTabToFront(active_gaia_signin_tab_);
     return;
   }
@@ -1317,44 +1063,6 @@ void SyncSetupHandler::WebContentsDestroyed(
 }
 
 // Private member functions.
-
-// Used by HandleSubmitAuth.
-bool SyncSetupHandler::IsLoginAuthDataValid(const std::string& username,
-                                            string16* error_message) {
-  if (username.empty())
-    return true;
-
-  // Can be null during some unit tests.
-  if (!web_ui())
-    return true;
-
-  if (!SigninManagerFactory::GetForProfile(
-          GetProfile())->IsAllowedUsername(username)) {
-    *error_message = l10n_util::GetStringUTF16(IDS_SYNC_LOGIN_NAME_PROHIBITED);
-    return false;
-  }
-
-  // If running in a unit test, skip profile check.
-  if (!profile_manager_)
-    return true;
-
-  // Check if the username is already in use by another profile.
-  const ProfileInfoCache& cache = profile_manager_->GetProfileInfoCache();
-  size_t current_profile_index =
-      cache.GetIndexOfProfileWithPath(GetProfile()->GetPath());
-  string16 username_utf16 = UTF8ToUTF16(username);
-
-  for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i) {
-    if (i != current_profile_index && AreUserNamesEqual(
-        cache.GetUserNameOfProfileAtIndex(i), username_utf16)) {
-      *error_message = l10n_util::GetStringUTF16(
-          IDS_SYNC_USER_NAME_IN_USE_ERROR);
-      return false;
-    }
-  }
-
-  return true;
-}
 
 void SyncSetupHandler::CloseGaiaSigninPage() {
   if (active_gaia_signin_tab_) {

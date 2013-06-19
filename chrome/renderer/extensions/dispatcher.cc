@@ -9,19 +9,21 @@
 #include "base/debug/alias.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/api/extension_api.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/features/base_feature_provider.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
@@ -42,6 +44,7 @@
 #include "chrome/renderer/extensions/extension_custom_bindings.h"
 #include "chrome/renderer/extensions/extension_groups.h"
 #include "chrome/renderer/extensions/extension_helper.h"
+#include "chrome/renderer/extensions/feedback_private_custom_bindings.h"
 #include "chrome/renderer/extensions/file_browser_handler_custom_bindings.h"
 #include "chrome/renderer/extensions/file_browser_private_custom_bindings.h"
 #include "chrome/renderer/extensions/file_system_natives.h"
@@ -55,6 +58,7 @@
 #include "chrome/renderer/extensions/page_capture_custom_bindings.h"
 #include "chrome/renderer/extensions/request_sender.h"
 #include "chrome/renderer/extensions/runtime_custom_bindings.h"
+#include "chrome/renderer/extensions/safe_builtins.h"
 #include "chrome/renderer/extensions/send_request_natives.h"
 #include "chrome/renderer/extensions/set_icon_natives.h"
 #include "chrome/renderer/extensions/sync_file_system_custom_bindings.h"
@@ -73,12 +77,12 @@
 #include "grit/renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScopedUserGesture.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebScopedUserGesture.h"
+#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "v8/include/v8.h"
@@ -136,13 +140,14 @@ class TestFeaturesNativeHandler : public ObjectBackedNativeHandler {
   }
 
  private:
-  v8::Handle<v8::Value> GetAPIFeatures(const v8::Arguments& args) {
+  void GetAPIFeatures(const v8::FunctionCallbackInfo<v8::Value>& args) {
     base::Value* value = base::JSONReader::Read(
         ResourceBundle::GetSharedInstance().GetRawDataResource(
             IDR_EXTENSION_API_FEATURES).as_string());
     scoped_ptr<content::V8ValueConverter> converter(
         content::V8ValueConverter::create());
-    return converter->ToV8Value(value, context()->v8_context());
+    args.GetReturnValue().Set(
+        converter->ToV8Value(value, context()->v8_context()));
   }
 };
 
@@ -161,7 +166,7 @@ class V8ContextNativeHandler : public ObjectBackedNativeHandler {
   }
 
  private:
-  v8::Handle<v8::Value> GetAvailability(const v8::Arguments& args) {
+  void GetAvailability(const v8::FunctionCallbackInfo<v8::Value>& args) {
     CHECK_EQ(args.Length(), 1);
     std::string api_name = *v8::String::AsciiValue(args[0]->ToString());
     Feature::Availability availability = context_->GetAvailability(api_name);
@@ -171,17 +176,17 @@ class V8ContextNativeHandler : public ObjectBackedNativeHandler {
              v8::Boolean::New(availability.is_available()));
     ret->Set(v8::String::New("message"),
              v8::String::New(availability.message().c_str()));
-    return ret;
+    args.GetReturnValue().Set(ret);
   }
 
-  v8::Handle<v8::Value> GetModuleSystem(const v8::Arguments& args) {
+  void GetModuleSystem(const v8::FunctionCallbackInfo<v8::Value>& args) {
     CHECK_EQ(args.Length(), 1);
     CHECK(args[0]->IsObject());
     v8::Handle<v8::Context> v8_context =
         v8::Handle<v8::Object>::Cast(args[0])->CreationContext();
     ChromeV8Context* context = dispatcher_->v8_context_set().GetByV8Context(
         v8_context);
-    return context->module_system()->NewInstance();
+    args.GetReturnValue().Set(context->module_system()->NewInstance());
   }
 
   ChromeV8Context* context_;
@@ -196,8 +201,8 @@ class ChromeNativeHandler : public ObjectBackedNativeHandler {
         base::Bind(&ChromeNativeHandler::GetChrome, base::Unretained(this)));
   }
 
-  v8::Handle<v8::Value> GetChrome(const v8::Arguments& args) {
-    return GetOrCreateChrome(context());
+  void GetChrome(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(GetOrCreateChrome(context()));
   }
 };
 
@@ -210,16 +215,15 @@ class PrintNativeHandler : public ObjectBackedNativeHandler {
                    base::Unretained(this)));
   }
 
-  v8::Handle<v8::Value> Print(const v8::Arguments& args) {
+  void Print(const v8::FunctionCallbackInfo<v8::Value>& args) {
     if (args.Length() < 1)
-      return v8::Undefined();
+      return;
 
     std::vector<std::string> components;
     for (int i = 0; i < args.Length(); ++i)
       components.push_back(*v8::String::Utf8Value(args[i]->ToString()));
 
     LOG(ERROR) << JoinString(components, ',');
-    return v8::Undefined();
   }
 };
 
@@ -236,26 +240,26 @@ class LazyBackgroundPageNativeHandler : public ChromeV8Extension {
                    base::Unretained(this)));
   }
 
-  v8::Handle<v8::Value> IncrementKeepaliveCount(const v8::Arguments& args) {
+  void IncrementKeepaliveCount(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
     if (!context())
-      return v8::Undefined();
+      return;
     RenderView* render_view = context()->GetRenderView();
     if (IsContextLazyBackgroundPage(render_view, context()->extension())) {
       render_view->Send(new ExtensionHostMsg_IncrementLazyKeepaliveCount(
           render_view->GetRoutingID()));
     }
-    return v8::Undefined();
   }
 
-  v8::Handle<v8::Value> DecrementKeepaliveCount(const v8::Arguments& args) {
+  void DecrementKeepaliveCount(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
     if (!context())
-      return v8::Undefined();
+      return;
     RenderView* render_view = context()->GetRenderView();
     if (IsContextLazyBackgroundPage(render_view, context()->extension())) {
       render_view->Send(new ExtensionHostMsg_DecrementLazyKeepaliveCount(
           render_view->GetRoutingID()));
     }
-    return v8::Undefined();
   }
 
  private:
@@ -302,29 +306,28 @@ class ProcessInfoNativeHandler : public ChromeV8Extension {
                    base::Unretained(this)));
   }
 
-  v8::Handle<v8::Value> GetExtensionId(const v8::Arguments& args) {
-    return v8::String::New(extension_id_.c_str());
+  void GetExtensionId(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(v8::String::New(extension_id_.c_str()));
   }
 
-  v8::Handle<v8::Value> GetContextType(const v8::Arguments& args) {
-    return v8::String::New(context_type_.c_str());
+  void GetContextType(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(v8::String::New(context_type_.c_str()));
   }
 
-  v8::Handle<v8::Value> InIncognitoContext(const v8::Arguments& args) {
-    return v8::Boolean::New(is_incognito_context_);
+  void InIncognitoContext(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(is_incognito_context_);
   }
 
-  v8::Handle<v8::Value> GetManifestVersion(const v8::Arguments& args) {
-    return v8::Integer::New(manifest_version_);
+  void GetManifestVersion(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(static_cast<int32_t>(manifest_version_));
   }
 
-  v8::Handle<v8::Value> IsSendRequestDisabled(const v8::Arguments& args) {
+  void IsSendRequestDisabled(const v8::FunctionCallbackInfo<v8::Value>& args) {
     if (send_request_disabled_) {
-      return v8::String::New(
+      args.GetReturnValue().Set(v8::String::New(
           "sendRequest and onRequest are obsolete."
-          " Please use sendMessage and onMessage instead.");
+          " Please use sendMessage and onMessage instead."));
     }
-    return v8::Undefined();
   }
 
  private:
@@ -387,6 +390,8 @@ Dispatcher::Dispatcher()
         kInitialExtensionIdleHandlerDelayMs);
   }
 
+  RenderThread::Get()->RegisterExtension(SafeBuiltins::CreateV8Extension());
+
   user_script_slave_.reset(new UserScriptSlave(&extensions_));
   request_sender_.reset(new RequestSender(this));
   PopulateSourceMap();
@@ -406,6 +411,7 @@ bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ExtensionMsg_DispatchOnDisconnect,
                         OnDispatchOnDisconnect)
     IPC_MESSAGE_HANDLER(ExtensionMsg_SetFunctionNames, OnSetFunctionNames)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_SetSystemFont, OnSetSystemFont)
     IPC_MESSAGE_HANDLER(ExtensionMsg_Loaded, OnLoaded)
     IPC_MESSAGE_HANDLER(ExtensionMsg_Unloaded, OnUnloaded)
     IPC_MESSAGE_HANDLER(ExtensionMsg_SetScriptingWhitelist,
@@ -471,6 +477,12 @@ void Dispatcher::OnSetFunctionNames(
     function_names_.insert(names[i]);
 }
 
+void Dispatcher::OnSetSystemFont(const std::string& font_family,
+                                 const std::string& font_size) {
+  system_font_family_ = font_family;
+  system_font_size_ = font_size;
+}
+
 void Dispatcher::OnSetChannel(int channel) {
   Feature::SetCurrentChannel(
       static_cast<chrome::VersionInfo::Channel>(channel));
@@ -526,6 +538,10 @@ void Dispatcher::OnLoaded(
     }
     OnLoadedInternal(extension);
   }
+  // Update the available bindings for all contexts. These may have changed if
+  // an externally_connectable extension was loaded that can connect to an
+  // open webpage.
+  AddOrRemoveBindings("");
 }
 
 void Dispatcher::OnLoadedInternal(scoped_refptr<const Extension> extension) {
@@ -549,6 +565,11 @@ void Dispatcher::OnUnloaded(const std::string& id) {
        it != removed_contexts.end(); ++it) {
     request_sender_->InvalidateSource(*it);
   }
+
+  // Update the available bindings for the remaining contexts. These may have
+  // changed if an externally_connectable extension is unloaded and a webpage
+  // is no longer accessible.
+  AddOrRemoveBindings("");
 
   // Invalidates the messages map for the extension in case the extension is
   // reloaded with a new messages map.
@@ -620,26 +641,78 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateObject(
   return new_object;
 }
 
-void Dispatcher::AddOrRemoveBindings(ChromeV8Context* context) {
+void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
   v8::HandleScope handle_scope;
   v8::Context::Scope context_scope(context->v8_context());
 
-  std::set<std::string> apis =
-      ExtensionAPI::GetSharedInstance()->GetAllAPINames();
-  for (std::set<std::string>::iterator it = apis.begin();
-       it != apis.end(); ++it) {
-    const std::string& api_name = *it;
-    if (!context->IsAnyFeatureAvailableToContext(api_name)) {
-      DeregisterBinding(api_name, context);
-      continue;
+  // TODO(kalman): Make the bindings registration have zero overhead then run
+  // the same code regardless of context type.
+  switch (context->context_type()) {
+    case Feature::UNSPECIFIED_CONTEXT:
+    case Feature::WEB_PAGE_CONTEXT: {
+      // Web page context; it's too expensive to run the full bindings code.
+      // Hard-code that the app and webstore APIs are available...
+      RegisterBinding("app", context);
+      RegisterBinding("webstore", context);
+
+      // ... and that the runtime API might be available if any extension can
+      // connect to it.
+      bool runtime_is_available = false;
+      for (ExtensionSet::const_iterator it = extensions_.begin();
+           it != extensions_.end(); ++it) {
+        ExternallyConnectableInfo* info =
+            static_cast<ExternallyConnectableInfo*>((*it)->GetManifestData(
+                extension_manifest_keys::kExternallyConnectable));
+        if (info && info->matches.MatchesURL(context->GetURL())) {
+          runtime_is_available = true;
+          break;
+        }
+      }
+      if (runtime_is_available)
+        RegisterBinding("runtime", context);
+      else
+        DeregisterBinding("runtime", context);
+      break;
     }
 
-    Feature* feature =
-        BaseFeatureProvider::GetByName("api")->GetFeature(api_name);
-    if (feature && feature->IsInternal())
-      continue;
+    case Feature::BLESSED_EXTENSION_CONTEXT:
+    case Feature::UNBLESSED_EXTENSION_CONTEXT:
+    case Feature::CONTENT_SCRIPT_CONTEXT: {
+      // Extension context; iterate through all the APIs and bind the available
+      // ones.
+      FeatureProvider* feature_provider = BaseFeatureProvider::GetByName("api");
+      const std::vector<std::string>& apis =
+          feature_provider->GetAllFeatureNames();
+      for (std::vector<std::string>::const_iterator it = apis.begin();
+          it != apis.end(); ++it) {
+        const std::string& api_name = *it;
+        Feature* feature = feature_provider->GetFeature(api_name);
+        DCHECK(feature);
+        if (feature->IsInternal())
+          continue;
 
-    RegisterBinding(api_name, context);
+        // If this API name has parent features, then this must be a function or
+        // event, so we should not register.
+        bool parent_feature_available = false;
+        for (Feature* parent = feature_provider->GetParent(feature);
+             parent != NULL; parent = feature_provider->GetParent(parent)) {
+          if (context->IsAnyFeatureAvailableToContext(parent->name())) {
+            parent_feature_available = true;
+            break;
+          }
+        }
+        if (parent_feature_available)
+          continue;
+
+        if (!context->IsAnyFeatureAvailableToContext(api_name)) {
+          DeregisterBinding(api_name, context);
+          continue;
+        }
+
+        RegisterBinding(api_name, context);
+      }
+      break;
+    }
   }
 }
 
@@ -672,12 +745,13 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateBindObjectIfAvailable(
   //  If app is available and app.window is not, just install app.
   //  If app.window is available and app is not, delete app and install
   //  app.window on a new object so app does not have to be loaded.
+  FeatureProvider* feature_provider = BaseFeatureProvider::GetByName("api");
   std::string ancestor_name;
   bool only_ancestor_available = false;
 
   for (size_t i = 0; i < split.size() - 1; ++i) {
     ancestor_name += (i ? ".": "") + split[i];
-    if (!ancestor_name.empty() &&
+    if (feature_provider->GetFeature(ancestor_name) &&
         context->GetAvailability(ancestor_name).is_available() &&
         !context->GetAvailability(api_name).is_available()) {
       only_ancestor_available = true;
@@ -775,6 +849,9 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
   module_system->RegisterNativeHandler("sync_file_system",
       scoped_ptr<NativeHandler>(
           new SyncFileSystemCustomBindings(this, context)));
+  module_system->RegisterNativeHandler("feedback_private",
+      scoped_ptr<NativeHandler>(new FeedbackPrivateCustomBindings(
+          this, context)));
   module_system->RegisterNativeHandler("file_browser_handler",
       scoped_ptr<NativeHandler>(new FileBrowserHandlerCustomBindings(
           this, context)));
@@ -844,6 +921,8 @@ void Dispatcher::PopulateSourceMap() {
   source_map_.RegisterSource("experimental.offscreen",
                              IDR_EXPERIMENTAL_OFFSCREENTABS_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("extension", IDR_EXTENSION_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("feedbackPrivate",
+                             IDR_FEEDBACK_PRIVATE_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("fileBrowserHandler",
                              IDR_FILE_BROWSER_HANDLER_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("fileBrowserPrivate",
@@ -1005,25 +1084,7 @@ void Dispatcher::DidCreateScriptContext(
   if (!chrome.IsEmpty())
     module_system->SetLazyField(chrome, "Event", kEventModule, "Event");
 
-  // Loading JavaScript is expensive, so only run the full API bindings
-  // generation mechanisms in extension pages (NOT all web pages).
-  switch (context_type) {
-    case Feature::UNSPECIFIED_CONTEXT:
-    case Feature::WEB_PAGE_CONTEXT:
-      RegisterBinding("app", context);
-      RegisterBinding("runtime", context);  // for connect() and sendMessage()
-      RegisterBinding("webstore", context);
-      break;
-    case Feature::BLESSED_EXTENSION_CONTEXT:
-    case Feature::UNBLESSED_EXTENSION_CONTEXT:
-    case Feature::CONTENT_SCRIPT_CONTEXT:
-      // TODO(kalman): move this code back out of the switch and execute it
-      // regardless of |context_type|. ExtensionAPI knows how to return the
-      // correct APIs, however, until it doesn't have a 2MB overhead we can't
-      // load it in every process.
-      AddOrRemoveBindings(context);
-      break;
-  }
+  AddOrRemoveBindingsForContext(context);
 
   bool is_within_platform_app = IsWithinPlatformApp(frame);
   // Inject custom JS into the platform app context.
@@ -1106,10 +1167,15 @@ void Dispatcher::DidCreateDocumentElement(WebKit::WebFrame* frame) {
     // WebKit doesn't let us define an additional user agent stylesheet, so we
     // insert the default platform app stylesheet into all documents that are
     // loaded in each app.
+    std::string stylesheet =
+        ResourceBundle::GetSharedInstance().
+            GetRawDataResource(IDR_PLATFORM_APP_CSS).as_string();
+    ReplaceFirstSubstringAfterOffset(&stylesheet, 0,
+                                     "$FONTFAMILY", system_font_family_);
+    ReplaceFirstSubstringAfterOffset(&stylesheet, 0,
+                                     "$FONTSIZE", system_font_size_);
     frame->document().insertUserStyleSheet(
-        WebString::fromUTF8(ResourceBundle::GetSharedInstance().
-            GetRawDataResource(IDR_PLATFORM_APP_CSS)),
-        WebDocument::UserStyleUserLevel);
+        WebString::fromUTF8(stylesheet), WebDocument::UserStyleUserLevel);
   }
 
   content_watcher_->DidCreateDocumentElement(frame);
@@ -1195,6 +1261,14 @@ void Dispatcher::AddOrRemoveOriginPermissions(
   }
 }
 
+void Dispatcher::AddOrRemoveBindings(const std::string& extension_id) {
+  v8_context_set().ForEach(
+      extension_id,
+      NULL,  // all render views
+      base::Bind(&Dispatcher::AddOrRemoveBindingsForContext,
+                 base::Unretained(this)));
+}
+
 void Dispatcher::OnUpdatePermissions(int reason_id,
                                      const std::string& extension_id,
                                      const APIPermissionSet& apis,
@@ -1224,10 +1298,7 @@ void Dispatcher::OnUpdatePermissions(int reason_id,
 
   PermissionsData::SetActivePermissions(extension, new_active);
   AddOrRemoveOriginPermissions(reason, extension, explicit_hosts);
-  v8_context_set().ForEach(
-      extension_id,
-      NULL,
-      base::Bind(&Dispatcher::AddOrRemoveBindings, base::Unretained(this)));
+  AddOrRemoveBindings(extension->id());
 }
 
 void Dispatcher::OnUpdateTabSpecificPermissions(
@@ -1363,28 +1434,6 @@ bool Dispatcher::CheckContextAccessToExtensionAPI(
     return false;
   }
 
-  if (!context->extension()->HasAPIPermission(function_name)) {
-    static const char kMessage[] =
-        "You do not have permission to use '%s'. Be sure to declare"
-        " in your manifest what permissions you need.";
-    std::string error_msg = base::StringPrintf(kMessage, function_name.c_str());
-    APIActivityLogger::LogBlockedCall(context->extension()->id(),
-                                      function_name);
-    v8::ThrowException(
-        v8::Exception::Error(v8::String::New(error_msg.c_str())));
-    return false;
-  }
-
-  if (ExtensionAPI::GetSharedInstance()->IsPrivileged(function_name) &&
-      context->context_type() != Feature::BLESSED_EXTENSION_CONTEXT) {
-    static const char kMessage[] =
-        "%s can only be used in an extension process.";
-    std::string error_msg = base::StringPrintf(kMessage, function_name.c_str());
-    v8::ThrowException(
-        v8::Exception::Error(v8::String::New(error_msg.c_str())));
-    return false;
-  }
-
   // Theoretically we could end up with bindings being injected into sandboxed
   // frames, for example content scripts. Don't let them execute API functions.
   WebKit::WebFrame* frame = context->web_frame();
@@ -1399,7 +1448,13 @@ bool Dispatcher::CheckContextAccessToExtensionAPI(
     return false;
   }
 
-  return true;
+  Feature::Availability availability = context->GetAvailability(function_name);
+  if (!availability.is_available()) {
+    v8::ThrowException(v8::Exception::Error(
+        v8::String::New(availability.message().c_str())));
+  }
+
+  return availability.is_available();
 }
 
 void Dispatcher::DispatchEvent(const std::string& extension_id,

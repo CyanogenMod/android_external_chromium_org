@@ -14,9 +14,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "ipc/ipc_channel_proxy.h"
 
-AppShimHost::AppShimHost()
-    : channel_(NULL), profile_(NULL) {
-}
+AppShimHost::AppShimHost() : profile_(NULL) {}
 
 AppShimHost::~AppShimHost() {
   DCHECK(CalledOnValidThread());
@@ -28,9 +26,12 @@ AppShimHost::~AppShimHost() {
 void AppShimHost::ServeChannel(const IPC::ChannelHandle& handle) {
   DCHECK(CalledOnValidThread());
   DCHECK(!channel_.get());
-  channel_.reset(new IPC::ChannelProxy(handle, IPC::Channel::MODE_SERVER, this,
+  channel_.reset(new IPC::ChannelProxy(
+      handle,
+      IPC::Channel::MODE_SERVER,
+      this,
       content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::IO)));
+          content::BrowserThread::IO).get()));
 }
 
 Profile* AppShimHost::GetProfile() const {

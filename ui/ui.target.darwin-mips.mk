@@ -80,6 +80,7 @@ LOCAL_SRC_FILES := \
 	ui/base/ui_base_paths.cc \
 	ui/base/ui_base_switches.cc \
 	ui/base/ui_base_switches_util.cc \
+	ui/base/ui_base_types.cc \
 	ui/base/window_open_disposition.cc \
 	ui/gfx/android/device_display_info.cc \
 	ui/gfx/android/java_bitmap.cc \
@@ -142,6 +143,7 @@ LOCAL_SRC_FILES := \
 	ui/webui/jstemplate_builder.cc \
 	ui/webui/web_ui_util.cc \
 	ui/base/ime/composition_text.cc \
+	ui/base/ime/input_method_initializer.cc \
 	ui/base/ime/text_input_client.cc
 
 
@@ -183,6 +185,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

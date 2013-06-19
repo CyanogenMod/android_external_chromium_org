@@ -17,9 +17,9 @@
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScopedMicrotaskSuppression.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebScopedMicrotaskSuppression.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
 
 using content::V8ValueConverter;
@@ -33,7 +33,8 @@ ChromeV8Context::ChromeV8Context(v8::Handle<v8::Context> v8_context,
     : v8_context_(v8_context),
       web_frame_(web_frame),
       extension_(extension),
-      context_type_(context_type) {
+      context_type_(context_type),
+      safe_builtins_(this) {
   VLOG(1) << "Created context:\n"
           << "  extension id: " << GetExtensionID() << "\n"
           << "  frame:        " << web_frame_ << "\n"
@@ -55,7 +56,7 @@ void ChromeV8Context::Invalidate() {
   v8_context_.reset();
 }
 
-std::string ChromeV8Context::GetExtensionID() {
+std::string ChromeV8Context::GetExtensionID() const {
   return extension_.get() ? extension_->id() : std::string();
 }
 
@@ -64,6 +65,11 @@ content::RenderView* ChromeV8Context::GetRenderView() const {
     return content::RenderView::FromWebView(web_frame_->view());
   else
     return NULL;
+}
+
+GURL ChromeV8Context::GetURL() const {
+  return web_frame_ ?
+      UserScriptSlave::GetDataSourceURLForFrame(web_frame_) : GURL();
 }
 
 v8::Local<v8::Value> ChromeV8Context::CallFunction(
@@ -95,11 +101,10 @@ bool ChromeV8Context::IsAnyFeatureAvailableToContext(
 
 Feature::Availability ChromeV8Context::GetAvailability(
     const std::string& api_name) {
-  return ExtensionAPI::GetSharedInstance()->IsAvailable(
-      api_name,
-      extension_.get(),
-      context_type_,
-      UserScriptSlave::GetDataSourceURLForFrame(web_frame_));
+  return ExtensionAPI::GetSharedInstance()->IsAvailable(api_name,
+                                                        extension_.get(),
+                                                        context_type_,
+                                                        GetURL());
 }
 
 void ChromeV8Context::DispatchOnUnloadEvent() {

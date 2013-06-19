@@ -7,7 +7,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/base/dragdrop/drop_target_win.h"
 #include "webkit/common/webdropdata.h"
 
@@ -77,6 +77,9 @@ class CONTENT_EXPORT WebDragDest : public ui::DropTargetWin {
 
   // The data for the current drag, or NULL if |context_| is NULL.
   scoped_ptr<WebDropData> drop_data_;
+
+  // True if the drag has been canceled.
+  bool canceled_;
 
   DISALLOW_COPY_AND_ASSIGN(WebDragDest);
 };

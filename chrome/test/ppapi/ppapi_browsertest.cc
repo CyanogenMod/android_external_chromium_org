@@ -215,17 +215,9 @@ TEST_PPAPI_IN_PROCESS(Core)
 TEST_PPAPI_OUT_OF_PROCESS(Core)
 TEST_PPAPI_NACL(Core)
 
-#if defined(OS_CHROMEOS)
-#define MAYBE_InputEvent InputEvent
-#elif defined(OS_LINUX)
-// Times out on Linux. http://crbug.com/108859
-#define MAYBE_InputEvent DISABLED_InputEvent
-#elif defined(OS_MACOSX)
-// Flaky on Mac. http://crbug.com/109258
-#define MAYBE_InputEvent DISABLED_InputEvent
-#else
-#define MAYBE_InputEvent InputEvent
-#endif
+TEST_PPAPI_IN_PROCESS(InputEvent)
+TEST_PPAPI_OUT_OF_PROCESS(InputEvent)
+TEST_PPAPI_NACL(InputEvent)
 
 // Flaky on Linux and Windows. http://crbug.com/135403
 #if defined(OS_LINUX) || defined(OS_WIN)
@@ -234,15 +226,9 @@ TEST_PPAPI_NACL(Core)
 #define MAYBE_ImeInputEvent ImeInputEvent
 #endif
 
-TEST_PPAPI_IN_PROCESS(MAYBE_InputEvent)
-TEST_PPAPI_OUT_OF_PROCESS(MAYBE_InputEvent)
-// TODO(bbudge) Enable when input events are proxied correctly for NaCl.
-TEST_PPAPI_NACL(DISABLED_InputEvent)
-
 TEST_PPAPI_IN_PROCESS(MAYBE_ImeInputEvent)
 TEST_PPAPI_OUT_OF_PROCESS(MAYBE_ImeInputEvent)
-// TODO(kinaba) Enable when IME events are proxied correctly for NaCl.
-TEST_PPAPI_NACL(DISABLED_ImeInputEvent)
+TEST_PPAPI_NACL(MAYBE_ImeInputEvent)
 
 TEST_PPAPI_IN_PROCESS(Instance_ExecuteScript);
 TEST_PPAPI_OUT_OF_PROCESS(Instance_ExecuteScript)
@@ -300,12 +286,82 @@ TEST_PPAPI_OUT_OF_PROCESS(BrowserFont)
 TEST_PPAPI_IN_PROCESS(Buffer)
 TEST_PPAPI_OUT_OF_PROCESS(Buffer)
 
+// TCPSocket tests.
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, TCPSocket) {
+  RunTestViaHTTP(
+      LIST_TEST(TCPSocket_Connect)
+      LIST_TEST(TCPSocket_ReadWrite)
+      LIST_TEST(TCPSocket_SetOption)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, TCPSocket) {
+  RunTestViaHTTP(
+      LIST_TEST(TCPSocket_Connect)
+      LIST_TEST(TCPSocket_ReadWrite)
+      LIST_TEST(TCPSocket_SetOption)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(TCPSocket)) {
+  RunTestViaHTTP(
+      LIST_TEST(TCPSocket_Connect)
+      LIST_TEST(TCPSocket_ReadWrite)
+      LIST_TEST(TCPSocket_SetOption)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, TCPSocket) {
+  RunTestViaHTTP(
+      LIST_TEST(TCPSocket_Connect)
+      LIST_TEST(TCPSocket_ReadWrite)
+      LIST_TEST(TCPSocket_SetOption)
+  );
+}
+
 TEST_PPAPI_OUT_OF_PROCESS_WITH_SSL_SERVER(TCPSocketPrivate)
 TEST_PPAPI_IN_PROCESS_WITH_SSL_SERVER(TCPSocketPrivate)
 TEST_PPAPI_NACL_WITH_SSL_SERVER(TCPSocketPrivate)
 
 TEST_PPAPI_OUT_OF_PROCESS_WITH_SSL_SERVER(TCPSocketPrivateTrusted)
 TEST_PPAPI_IN_PROCESS_WITH_SSL_SERVER(TCPSocketPrivateTrusted)
+
+// UDPSocket tests.
+// UDPSocket_Broadcast is disabled for OSX because it requires root permissions
+// on OSX 10.7+.
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, UDPSocket) {
+  RunTestViaHTTP(
+      LIST_TEST(UDPSocket_ReadWrite)
+      LIST_TEST(UDPSocket_SetOption)
+#if !defined(OS_MACOSX)
+      LIST_TEST(UDPSocket_Broadcast)
+#endif
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, UDPSocket) {
+  RunTestViaHTTP(
+      LIST_TEST(UDPSocket_ReadWrite)
+      LIST_TEST(UDPSocket_SetOption)
+#if !defined(OS_MACOSX)
+      LIST_TEST(UDPSocket_Broadcast)
+#endif
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(UDPSocket)) {
+  RunTestViaHTTP(
+      LIST_TEST(UDPSocket_ReadWrite)
+      LIST_TEST(UDPSocket_SetOption)
+#if !defined(OS_MACOSX)
+      LIST_TEST(UDPSocket_Broadcast)
+#endif
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, UDPSocket) {
+  RunTestViaHTTP(
+      LIST_TEST(UDPSocket_ReadWrite)
+      LIST_TEST(UDPSocket_SetOption)
+#if !defined(OS_MACOSX)
+      LIST_TEST(UDPSocket_Broadcast)
+#endif
+  );
+}
 
 // UDPSocketPrivate tests.
 // UDPSocketPrivate_Broadcast is disabled for OSX because it requires
@@ -331,6 +387,36 @@ TEST_PPAPI_NACL_DISALLOWED_SOCKETS(UDPSocketPrivateDisallowed)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(TCPServerSocketPrivate)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(TCPServerSocketPrivate)
 TEST_PPAPI_NACL(TCPServerSocketPrivate)
+
+// HostResolver tests.
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, HostResolver) {
+  RunTestViaHTTP(
+      LIST_TEST(HostResolver_Empty)
+      LIST_TEST(HostResolver_Resolve)
+      LIST_TEST(HostResolver_ResolveIPv4)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, HostResolver) {
+  RunTestViaHTTP(
+      LIST_TEST(HostResolver_Empty)
+      LIST_TEST(HostResolver_Resolve)
+      LIST_TEST(HostResolver_ResolveIPv4)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(HostResolver)) {
+  RunTestViaHTTP(
+      LIST_TEST(HostResolver_Empty)
+      LIST_TEST(HostResolver_Resolve)
+      LIST_TEST(HostResolver_ResolveIPv4)
+  );
+}
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, HostResolver) {
+  RunTestViaHTTP(
+      LIST_TEST(HostResolver_Empty)
+      LIST_TEST(HostResolver_Resolve)
+      LIST_TEST(HostResolver_ResolveIPv4)
+  );
+}
 
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(HostResolverPrivate_Resolve)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(HostResolverPrivate_ResolveIPv4)
@@ -1350,10 +1436,16 @@ TEST_PPAPI_OUT_OF_PROCESS(FlashFile)
 TEST_PPAPI_OUT_OF_PROCESS(MAYBE_FlashFullscreen)
 
 TEST_PPAPI_OUT_OF_PROCESS(PDF)
-// Only implemented on Windows and ChromeOS currently.
+
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FlashDRM) {
+  RunTest(
 #if (defined(OS_WIN) && defined(ENABLE_RLZ)) || defined(OS_CHROMEOS)
-TEST_PPAPI_OUT_OF_PROCESS(FlashDRM)
+          // Only implemented on Windows and ChromeOS currently.
+          LIST_TEST(FlashDRM_GetDeviceID)
 #endif
+          LIST_TEST(FlashDRM_GetHmonitor)
+          LIST_TEST(FlashDRM_GetVoucherFile));
+}
 
 TEST_PPAPI_IN_PROCESS(TalkPrivate)
 TEST_PPAPI_OUT_OF_PROCESS(TalkPrivate)

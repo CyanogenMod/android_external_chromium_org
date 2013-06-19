@@ -245,10 +245,11 @@ TEST(PermissionsTest, CreateUnion) {
     PermissionsInfo::GetInstance()->GetByID(APIPermission::kSocket);
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(Value::CreateStringValue("udp-bind::8080"));
-    value->Append(Value::CreateStringValue("udp-send-to::8888"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(
+        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
+    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -290,9 +291,10 @@ TEST(PermissionsTest, CreateUnion) {
 
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(Value::CreateStringValue("udp-send-to::8899"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(
+        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -306,11 +308,12 @@ TEST(PermissionsTest, CreateUnion) {
 
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(Value::CreateStringValue("udp-bind::8080"));
-    value->Append(Value::CreateStringValue("udp-send-to::8888"));
-    value->Append(Value::CreateStringValue("udp-send-to::8899"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(
+        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
+    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -373,10 +376,11 @@ TEST(PermissionsTest, CreateIntersection) {
   apis1.insert(APIPermission::kBackground);
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(Value::CreateStringValue("udp-bind::8080"));
-    value->Append(Value::CreateStringValue("udp-send-to::8888"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(
+        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
+    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -410,10 +414,10 @@ TEST(PermissionsTest, CreateIntersection) {
   apis2.insert(APIPermission::kPlugin);
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("udp-bind::8080"));
-    value->Append(Value::CreateStringValue("udp-send-to::8888"));
-    value->Append(Value::CreateStringValue("udp-send-to::8899"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -423,9 +427,9 @@ TEST(PermissionsTest, CreateIntersection) {
   expected_apis.insert(APIPermission::kTab);
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("udp-bind::8080"));
-    value->Append(Value::CreateStringValue("udp-send-to::8888"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -487,10 +491,11 @@ TEST(PermissionsTest, CreateDifference) {
   apis1.insert(APIPermission::kBackground);
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(Value::CreateStringValue("udp-bind::8080"));
-    value->Append(Value::CreateStringValue("udp-send-to::8888"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(
+       base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
+    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -512,9 +517,10 @@ TEST(PermissionsTest, CreateDifference) {
   apis2.insert(APIPermission::kPlugin);
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(Value::CreateStringValue("udp-send-to::8899"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(
+        base::Value::CreateStringValue("tcp-connect:*.example.com:80"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8899"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -524,9 +530,9 @@ TEST(PermissionsTest, CreateDifference) {
   expected_apis.insert(APIPermission::kBackground);
   permission = permission_info->CreateAPIPermission();
   {
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("udp-bind::8080"));
-    value->Append(Value::CreateStringValue("udp-send-to::8888"));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->Append(base::Value::CreateStringValue("udp-bind::8080"));
+    value->Append(base::Value::CreateStringValue("udp-send-to::8888"));
     if (!permission->FromValue(value.get())) {
       NOTREACHED();
     }
@@ -677,7 +683,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kIdentity);
 
   // These are private.
-  skip.insert(APIPermission::kActivityLogPrivate);
   skip.insert(APIPermission::kAutoTestPrivate);
   skip.insert(APIPermission::kBookmarkManagerPrivate);
   skip.insert(APIPermission::kChromeosInfoPrivate);
@@ -688,6 +693,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kDownloadsInternal);
   skip.insert(APIPermission::kEchoPrivate);
   skip.insert(APIPermission::kEnterprisePlatformKeysPrivate);
+  skip.insert(APIPermission::kFeedbackPrivate);
   skip.insert(APIPermission::kFileBrowserHandlerInternal);
   skip.insert(APIPermission::kFileBrowserPrivate);
   skip.insert(APIPermission::kIdentityPrivate);
@@ -697,6 +703,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kMediaPlayerPrivate);
   skip.insert(APIPermission::kMetricsPrivate);
   skip.insert(APIPermission::kNetworkingPrivate);
+  skip.insert(APIPermission::kPreferencesPrivate);
   skip.insert(APIPermission::kRtcPrivate);
   skip.insert(APIPermission::kStreamsPrivate);
   skip.insert(APIPermission::kSystemPrivate);

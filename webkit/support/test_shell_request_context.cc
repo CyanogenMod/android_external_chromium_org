@@ -16,6 +16,7 @@
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
+#include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
@@ -27,7 +28,7 @@
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "third_party/WebKit/public/platform/Platform.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 #include "webkit/browser/blob/blob_storage_controller.h"
 #include "webkit/browser/blob/blob_url_request_job_factory.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -84,6 +85,7 @@ void TestShellRequestContext::Init(
 
   storage_.set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
   storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
+  storage_.set_transport_security_state(new net::TransportSecurityState);
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
       proxy_config_service.release(), 0, NULL));
   storage_.set_ssl_config_service(
@@ -96,12 +98,15 @@ void TestShellRequestContext::Init(
 
   net::HttpCache::DefaultBackend* backend = new net::HttpCache::DefaultBackend(
       cache_path.empty() ? net::MEMORY_CACHE : net::DISK_CACHE,
-      net::CACHE_BACKEND_DEFAULT, cache_path, 0,
-      SimpleResourceLoaderBridge::GetCacheThread());
+      net::CACHE_BACKEND_DEFAULT,
+      cache_path,
+      0,
+      SimpleResourceLoaderBridge::GetCacheThread().get());
 
   net::HttpNetworkSession::Params network_session_params;
   network_session_params.host_resolver = host_resolver();
   network_session_params.cert_verifier = cert_verifier();
+  network_session_params.transport_security_state = transport_security_state();
   network_session_params.server_bound_cert_service =
       server_bound_cert_service();
   network_session_params.proxy_service = proxy_service();
@@ -127,7 +132,7 @@ void TestShellRequestContext::Init(
       new webkit_blob::BlobProtocolHandler(
           blob_storage_controller_.get(),
           file_system_context_.get(),
-          SimpleResourceLoaderBridge::GetIoThread()));
+          SimpleResourceLoaderBridge::GetIoThread().get()));
   job_factory->SetProtocolHandler(
       "filesystem",
       fileapi::CreateFileSystemProtocolHandler(file_system_context_.get()));

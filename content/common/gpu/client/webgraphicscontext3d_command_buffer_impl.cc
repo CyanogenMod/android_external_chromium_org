@@ -303,7 +303,6 @@ bool WebGraphicsContext3DCommandBufferImpl::Initialize(
   host_ = factory_->EstablishGpuChannelSync(cause);
   if (!host_.get())
     return false;
-  DCHECK(host_->state() == GpuChannelHost::kConnected);
 
   command_buffer_size_ = command_buffer_size;
   start_transfer_buffer_size_ = start_transfer_buffer_size;
@@ -1465,7 +1464,7 @@ WGC3Denum WebGraphicsContext3DCommandBufferImpl::getGraphicsResetStatusARB() {
 bool WebGraphicsContext3DCommandBufferImpl::IsCommandBufferContextLost() {
   // If the channel shut down unexpectedly, let that supersede the
   // command buffer's state.
-  if (host_.get() && host_->state() == GpuChannelHost::kLost)
+  if (host_.get() && host_->IsLost())
     return true;
   gpu::CommandBuffer::State state = command_buffer_->GetLastState();
   return state.error == gpu::error::kLostContext;
@@ -1548,7 +1547,7 @@ void WebGraphicsContext3DCommandBufferImpl::signalSyncPoint(
 
 void WebGraphicsContext3DCommandBufferImpl::genMailboxCHROMIUM(
     WGC3Dbyte* name) {
-  std::vector<gpu::Mailbox> names(1);
+  std::vector<gpu::Mailbox> names;
   if (command_buffer_->GenerateMailboxNames(1, &names))
     memcpy(name, names[0].name, GL_MAILBOX_SIZE_CHROMIUM);
   else
@@ -1607,6 +1606,23 @@ DELEGATE_TO_GL_1(waitAsyncTexImage2DCHROMIUM, WaitAsyncTexImage2DCHROMIUM,
                  WGC3Denum)
 
 DELEGATE_TO_GL_2(drawBuffersEXT, DrawBuffersEXT, WGC3Dsizei, const WGC3Denum*)
+
+DELEGATE_TO_GL_4(drawArraysInstancedANGLE, DrawArraysInstancedANGLE, WGC3Denum,
+                 WGC3Dint, WGC3Dsizei, WGC3Dsizei)
+
+void WebGraphicsContext3DCommandBufferImpl::drawElementsInstancedANGLE(
+    WGC3Denum mode,
+    WGC3Dsizei count,
+    WGC3Denum type,
+    WGC3Dintptr offset,
+    WGC3Dsizei primcount) {
+  gl_->DrawElementsInstancedANGLE(
+      mode, count, type,
+      reinterpret_cast<void*>(static_cast<intptr_t>(offset)), primcount);
+}
+
+DELEGATE_TO_GL_2(vertexAttribDivisorANGLE, VertexAttribDivisorANGLE, WGC3Duint,
+                 WGC3Duint)
 
 GrGLInterface* WebGraphicsContext3DCommandBufferImpl::onCreateGrGLInterface() {
   return webkit::gpu::CreateCommandBufferSkiaGLBinding();

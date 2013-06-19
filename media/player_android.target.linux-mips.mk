@@ -11,6 +11,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,GYP,media_media_android_jni_headers_gyp)/media_android_jni_headers.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -25,6 +26,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
 	media/base/android/media_codec_bridge.cc \
+	media/base/android/media_drm_bridge.cc \
 	media/base/android/media_jni_registrar.cc \
 	media/base/android/media_player_android.cc \
 	media/base/android/media_player_bridge.cc \
@@ -71,6 +73,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -98,7 +101,13 @@ LOCAL_CFLAGS := $(MY_CFLAGS_C) $(MY_CFLAGS) $(MY_DEFS)
 LOCAL_C_INCLUDES := \
 	$(gyp_shared_intermediate_dir)/media \
 	$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target \
+	$(LOCAL_PATH)/third_party/khronos \
+	$(LOCAL_PATH)/gpu \
+	$(gyp_shared_intermediate_dir)/shim_headers/icui18n/target \
+	$(gyp_shared_intermediate_dir)/shim_headers/icuuc/target \
 	$(LOCAL_PATH) \
+	$(gyp_shared_intermediate_dir)/ui/gl \
+	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -135,7 +144,8 @@ LOCAL_LDFLAGS := \
 	-Wl,--as-needed
 
 
-LOCAL_STATIC_LIBRARIES :=
+LOCAL_STATIC_LIBRARIES := \
+	ui_gl_gl_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

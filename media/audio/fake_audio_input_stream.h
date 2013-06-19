@@ -5,7 +5,7 @@
 // A fake implementation of AudioInputStream, useful for testing purpose.
 
 #ifndef MEDIA_AUDIO_FAKE_AUDIO_INPUT_STREAM_H_
-#define MEDIA_AUDIO_FAKE_AUDIO_INOUT_STREAM_H_
+#define MEDIA_AUDIO_FAKE_AUDIO_INPUT_STREAM_H_
 
 #include <vector>
 
@@ -61,7 +61,7 @@ class MEDIA_EXPORT FakeAudioInputStream
   int buffer_size_;
   AudioParameters params_;
   base::Thread thread_;
-  base::Time last_callback_time_;
+  base::TimeTicks last_callback_time_;
   base::TimeDelta callback_interval_;
   int beep_duration_in_buffers_;
   int beep_generated_in_buffers_;

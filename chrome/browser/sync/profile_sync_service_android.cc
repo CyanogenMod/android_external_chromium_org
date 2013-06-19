@@ -29,6 +29,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "google/cacheinvalidation/types.pb.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -251,13 +252,13 @@ void ProfileSyncServiceAndroid::SignInSync(
   // happen normally if (for example) the user closes and reopens the sync
   // settings window quickly during initial startup.
   if (sync_service_->IsSyncEnabledAndLoggedIn() &&
-      sync_service_->IsSyncTokenAvailable() &&
+      sync_service_->IsOAuthRefreshTokenAvailable() &&
       sync_service_->HasSyncSetupCompleted()) {
     return;
   }
 
   if (!sync_service_->IsSyncEnabledAndLoggedIn() ||
-      !sync_service_->IsSyncTokenAvailable()) {
+      !sync_service_->IsOAuthRefreshTokenAvailable()) {
     // Set the currently-signed-in username, fetch an auth token if necessary,
     // and enable sync.
     std::string name = ConvertJavaStringToUTF8(env, username);
@@ -283,6 +284,12 @@ void ProfileSyncServiceAndroid::SignInSync(
       token_service->OnIssueAuthTokenSuccess(GaiaConstants::kSyncService,
                                              token);
     }
+
+    GoogleServiceSigninSuccessDetails details(name, std::string());
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
+        content::Source<Profile>(profile_),
+        content::Details<const GoogleServiceSigninSuccessDetails>(&details));
   }
 
   // Enable sync (if we don't have credentials yet, this will enable sync but

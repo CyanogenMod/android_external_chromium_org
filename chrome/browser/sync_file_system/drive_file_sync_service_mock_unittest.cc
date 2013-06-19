@@ -9,15 +9,16 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "chrome/browser/drive/drive_uploader.h"
+#include "chrome/browser/drive/mock_drive_service.h"
 #include "chrome/browser/extensions/test_extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/drive_uploader.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "chrome/browser/google_apis/mock_drive_service.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/browser/sync_file_system/drive/api_util.h"
+#include "chrome/browser/sync_file_system/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/drive_metadata_store.h"
 #include "chrome/browser/sync_file_system/file_status_observer.h"
 #include "chrome/browser/sync_file_system/mock_remote_change_processor.h"
@@ -131,6 +132,7 @@ ACTION(InvokeCompletionCallback) {
 ACTION_P(InvokeEntryActionCallback, error) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE, base::Bind(arg2, error));
+  return google_apis::CancelCallback();
 }
 
 // Invokes |arg0| as a GetDataCallback.
@@ -139,6 +141,7 @@ ACTION_P2(InvokeGetAboutResourceCallback0, error, result) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(arg0, error, base::Passed(&about_resource)));
+  return google_apis::CancelCallback();
 }
 
 // Invokes |arg1| as a GetResourceEntryCallback.
@@ -147,6 +150,7 @@ ACTION_P2(InvokeGetResourceEntryCallback1, error, result) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(arg1, error, base::Passed(&entry)));
+  return google_apis::CancelCallback();
 }
 
 // Invokes |arg2| as a GetResourceEntryCallback.
@@ -155,6 +159,7 @@ ACTION_P2(InvokeGetResourceEntryCallback2, error, result) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(arg2, error, base::Passed(&entry)));
+  return google_apis::CancelCallback();
 }
 
 // Invokes |arg1| as a GetResourceListCallback.
@@ -163,6 +168,7 @@ ACTION_P2(InvokeGetResourceListCallback1, error, result) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(arg1, error, base::Passed(&resource_list)));
+  return google_apis::CancelCallback();
 }
 
 // Invokes |arg2| as a GetResourceListCallback.
@@ -171,6 +177,7 @@ ACTION_P2(InvokeGetResourceListCallback2, error, result) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(arg2, error, base::Passed(&resource_list)));
+  return google_apis::CancelCallback();
 }
 
 ACTION(PrepareForRemoteChange_Busy) {
@@ -203,6 +210,7 @@ ACTION(PrepareForRemoteChange_NotModified) {
 ACTION(InvokeDidDownloadFile) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE, base::Bind(arg3, google_apis::HTTP_SUCCESS, arg1));
+  return google_apis::CancelCallback();
 }
 
 ACTION(InvokeDidApplyRemoteChange) {
@@ -260,6 +268,7 @@ class DriveFileSyncServiceMockTest : public testing::Test {
     AddTestExtension(extension_service_, FPL("example1"));
     AddTestExtension(extension_service_, FPL("example2"));
 
+    SetDisableDriveAPI(true);
     RegisterSyncableFileSystem();
 
     mock_drive_service_ = new NiceMock<google_apis::MockDriveService>;
@@ -277,12 +286,11 @@ class DriveFileSyncServiceMockTest : public testing::Test {
 
     api_util_ = drive::APIUtil::CreateForTesting(
         profile_.get(),
-        GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
         scoped_ptr<DriveServiceInterface>(mock_drive_service_),
         scoped_ptr<DriveUploaderInterface>()).Pass();
     ASSERT_TRUE(base_dir_.CreateUniqueTempDir());
     metadata_store_.reset(new DriveMetadataStore(
-        base_dir_.path(), base::MessageLoopProxy::current()));
+        base_dir_.path(), base::MessageLoopProxy::current().get()));
 
     bool done = false;
     metadata_store_->Initialize(base::Bind(&DidInitialize, &done));
@@ -305,7 +313,6 @@ class DriveFileSyncServiceMockTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     EXPECT_CALL(*mock_drive_service(), RemoveObserver(_));
-    EXPECT_CALL(*mock_drive_service(), CancelAll());
 
     if (sync_service_) {
       sync_service_.reset();
@@ -316,6 +323,7 @@ class DriveFileSyncServiceMockTest : public testing::Test {
     mock_drive_service_ = NULL;
 
     RevokeSyncableFileSystem();
+    SetDisableDriveAPI(false);
 
     extension_service_ = NULL;
     profile_.reset();
@@ -439,9 +447,7 @@ class DriveFileSyncServiceMockTest : public testing::Test {
       const GURL& origin,
       const google_apis::ResourceEntry& entry,
       int64 changestamp) {
-    return sync_service_->AppendRemoteChange(
-        origin, entry, changestamp,
-        RemoteChangeHandler::REMOTE_SYNC_TYPE_INCREMENTAL);
+    return sync_service_->AppendRemoteChange(origin, entry, changestamp);
   }
 
   bool AppendIncrementalRemoteChange(
@@ -454,8 +460,7 @@ class DriveFileSyncServiceMockTest : public testing::Test {
     return sync_service_->AppendRemoteChangeInternal(
         origin, path, is_deleted, resource_id,
         changestamp, remote_file_md5, base::Time(),
-        SYNC_FILE_TYPE_FILE,
-        RemoteChangeHandler::REMOTE_SYNC_TYPE_INCREMENTAL);
+        SYNC_FILE_TYPE_FILE);
   }
 
   // Mock setup helpers ------------------------------------------------------
@@ -549,22 +554,6 @@ class DriveFileSyncServiceMockTest : public testing::Test {
         .RetiresOnSaturation();
   }
 
-  void SetUpDriveServiceExpectCallsForAddNewDirectory(
-      const std::string& parent_directory,
-      const std::string& directory_name) {
-    scoped_ptr<Value> origin_directory_created_value(LoadJSONFile(
-        "chromeos/sync_file_system/origin_directory_created.json"));
-    scoped_ptr<google_apis::ResourceEntry> origin_directory_created
-        = google_apis::ResourceEntry::ExtractAndParse(
-            *origin_directory_created_value);
-    EXPECT_CALL(*mock_drive_service(),
-                AddNewDirectory(parent_directory, directory_name, _))
-        .WillOnce(InvokeGetResourceEntryCallback2(
-            google_apis::HTTP_SUCCESS,
-            base::Passed(&origin_directory_created)))
-        .RetiresOnSaturation();
-  }
-
   // End of mock setup helpers -----------------------------------------------
 
  private:
@@ -624,11 +613,6 @@ TEST_F(DriveFileSyncServiceMockTest, RegisterNewOrigin) {
       "chromeos/sync_file_system/origin_directory_not_found.json",
       drive::APIUtil::OriginToDirectoryTitle(kOrigin),
       kSyncRootResourceId);
-
-  // If the directory for the origin is missing, DriveFileSyncService should
-  // attempt to create it.
-  SetUpDriveServiceExpectCallsForAddNewDirectory(
-      kSyncRootResourceId, drive::APIUtil::OriginToDirectoryTitle(kOrigin));
 
   // Once the directory is created GetAboutResource should be called to get
   // the largest changestamp for the origin as a prepariation of the batch sync.

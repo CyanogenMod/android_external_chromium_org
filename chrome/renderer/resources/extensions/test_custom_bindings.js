@@ -8,8 +8,8 @@
 var binding = require('binding').Binding.create('test');
 
 var chrome = requireNative('chrome').GetChrome();
-var GetExtensionAPIDefinitions =
-    requireNative('apiDefinitions').GetExtensionAPIDefinitions;
+var GetExtensionAPIDefinitionsForTest =
+    requireNative('apiDefinitions').GetExtensionAPIDefinitionsForTest;
 var GetAvailability = requireNative('v8_context').GetAvailability;
 var GetAPIFeatures = requireNative('test_features').GetAPIFeatures;
 
@@ -55,10 +55,16 @@ binding.registerCustomHook(function(api) {
   apiFunctions.setHandleRequest('callbackAdded', function() {
     pendingCallbacks++;
 
-    var called = false;
+    var called = null;
     return function() {
-      chromeTest.assertFalse(called, 'callback has already been run');
-      called = true;
+      if (called != null) {
+        var redundantPrefix = 'Error\n';
+        chrome.test.fail(
+          'Callback has already been run. ' +
+          'First call:\n' + called.slice(redundantPrefix.length) + '\n' +
+          'Second call:\n' + new Error().stack.slice(redundantPrefix.length));
+      }
+      called = new Error().stack;
 
       pendingCallbacks--;
       if (pendingCallbacks == 0) {
@@ -290,9 +296,7 @@ binding.registerCustomHook(function(api) {
   });
 
   apiFunctions.setHandleRequest('getApiDefinitions', function() {
-    return GetExtensionAPIDefinitions().filter(function(api) {
-      return GetAvailability(api.namespace).is_available;
-    });
+    return GetExtensionAPIDefinitionsForTest();
   });
 
   apiFunctions.setHandleRequest('getApiFeatures', function() {

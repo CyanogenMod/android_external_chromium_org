@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/dns/mock_host_resolver.h"
 
@@ -126,14 +127,7 @@ IN_PROC_BROWSER_TEST_F(ActivityLogExtensionTest, MAYBE_DOMEndToEnd) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-#if defined(OS_WIN)
-// TODO(ataly): test flaky on windows. See Bug: crbug.com/245594
-#define MAYBE_ExtensionPrerender DISABLED_ExtensionPrerender
-#else
-#define MAYBE_ExtensionPrerender ExtensionPrerender
-#endif
-
-IN_PROC_BROWSER_TEST_F(ActivityLogExtensionTest, MAYBE_ExtensionPrerender) {
+IN_PROC_BROWSER_TEST_F(ActivityLogExtensionTest, ExtensionPrerender) {
   host_resolver()->AddRule("*", "127.0.0.1");
   StartTestServer();
   int port = test_server()->host_port_pair().port();
@@ -144,6 +138,7 @@ IN_PROC_BROWSER_TEST_F(ActivityLogExtensionTest, MAYBE_ExtensionPrerender) {
   ASSERT_TRUE(ext);
 
   ActivityLog* activity_log = ActivityLog::GetInstance(profile());
+  activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_FULLSTREAM);
   ASSERT_TRUE(activity_log);
 
   //Disable rate limiting in PrerenderManager
@@ -151,6 +146,9 @@ IN_PROC_BROWSER_TEST_F(ActivityLogExtensionTest, MAYBE_ExtensionPrerender) {
       prerender::PrerenderManagerFactory::GetForProfile(profile());
   ASSERT_TRUE(prerender_manager);
   prerender_manager->mutable_config().rate_limit_enabled = false;
+  // Increase maximum size of prerenderer, otherwise this test fails
+  // on Windows XP.
+  prerender_manager->mutable_config().max_bytes = 1000 * 1024 * 1024;
 
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();;

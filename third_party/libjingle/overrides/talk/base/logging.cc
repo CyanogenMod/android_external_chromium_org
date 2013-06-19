@@ -13,9 +13,11 @@
 #include "base/atomicops.h"
 #include "base/strings/string_util.h"
 #include "base/threading/platform_thread.h"
+#include "third_party/libjingle/source/talk/base/ipaddress.h"
 #include "third_party/libjingle/source/talk/base/stream.h"
 #include "third_party/libjingle/source/talk/base/stringencode.h"
 #include "third_party/libjingle/source/talk/base/stringutils.h"
+#include "third_party/libjingle/source/talk/base/timeutils.h"
 
 // From this file we can't use VLOG since it expands into usage of the __FILE__
 // macro (for correct filtering). The actual logging call from LOG_E is in
@@ -144,14 +146,28 @@ DiagnosticLogMessage::DiagnosticLogMessage(const char* file,
       line_(line),
       severity_(severity),
       log_to_chrome_(log_to_chrome) {
+#if !defined(ANDROID)
+  uint32 time = talk_base::TimeSince(LogStartTime());
+  print_stream_with_timestamp_ << "[" << std::setfill('0')
+                               << std::setw(3) << (time / 1000)
+                               << ":" << std::setw(3) << (time % 1000)
+                               << std::setfill(' ') << "] ";
+#endif
 }
 
 DiagnosticLogMessage::~DiagnosticLogMessage() {
   const std::string& str = print_stream_.str();
   if (log_to_chrome_)
     LOG_LAZY_STREAM_DIRECT(file_name_, line_, severity_) << str;
-  if (g_logging_delegate_function && severity_ <= LS_INFO)
-    g_logging_delegate_function(str);
+  if (g_logging_delegate_function && severity_ <= LS_INFO) {
+    print_stream_with_timestamp_ << str;
+    g_logging_delegate_function(print_stream_with_timestamp_.str());
+  }
+}
+
+uint32 DiagnosticLogMessage::LogStartTime() {
+  static const uint32 g_start = talk_base::Time();
+  return g_start;
 }
 
 // Note: this function is a copy from the overriden libjingle implementation.
@@ -283,6 +299,9 @@ void InitDiagnosticLoggingDelegateFunction(
 #endif
   CHECK(!g_logging_delegate_function);
   CHECK(delegate);
+#ifdef NDEBUG
+  IPAddress::set_strip_sensitive(true);
+#endif
   g_logging_delegate_function = delegate;
 }
 

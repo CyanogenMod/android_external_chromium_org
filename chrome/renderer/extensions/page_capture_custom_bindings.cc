@@ -9,7 +9,7 @@
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/public/renderer/render_view.h"
 #include "grit/renderer_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBlob.h"
+#include "third_party/WebKit/public/web/WebBlob.h"
 #include "v8/include/v8.h"
 
 namespace extensions {
@@ -26,19 +26,19 @@ PageCaptureCustomBindings::PageCaptureCustomBindings(
                  base::Unretained(this)));
 }
 
-v8::Handle<v8::Value> PageCaptureCustomBindings::CreateBlob(
-    const v8::Arguments& args) {
+void PageCaptureCustomBindings::CreateBlob(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK(args.Length() == 2);
   CHECK(args[0]->IsString());
   CHECK(args[1]->IsInt32());
   WebKit::WebString path(UTF8ToUTF16(*v8::String::Utf8Value(args[0])));
   WebKit::WebBlob blob =
       WebKit::WebBlob::createFromFile(path, args[1]->Int32Value());
-  return blob.toV8Value();
+  args.GetReturnValue().Set(blob.toV8Value());
 }
 
-v8::Handle<v8::Value> PageCaptureCustomBindings::SendResponseAck(
-    const v8::Arguments& args) {
+void PageCaptureCustomBindings::SendResponseAck(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK(args.Length() == 1);
   CHECK(args[0]->IsInt32());
 
@@ -47,7 +47,6 @@ v8::Handle<v8::Value> PageCaptureCustomBindings::SendResponseAck(
     render_view->Send(new ExtensionHostMsg_ResponseAck(
         render_view->GetRoutingID(), args[0]->Int32Value()));
   }
-  return v8::Undefined();
 }
 
 }  // namespace extensions

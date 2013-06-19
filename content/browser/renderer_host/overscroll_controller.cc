@@ -29,21 +29,29 @@ bool OverscrollController::WillDispatchEvent(
     const WebKit::WebInputEvent& event,
     const ui::LatencyInfo& latency_info) {
   if (scroll_state_ != STATE_UNKNOWN) {
-    if (event.type == WebKit::WebInputEvent::GestureScrollEnd) {
-      scroll_state_ = STATE_UNKNOWN;
-    } else if (event.type == WebKit::WebInputEvent::GestureFlingStart) {
-      // Start of a fling indicates the end of a scroll, both from touchpad and
-      // touchscreen. So it is not necessary to check |sourceDevice| of the
-      // event.
-      scroll_state_ = STATE_UNKNOWN;
-    } else if (event.type == WebKit::WebInputEvent::MouseWheel) {
-      const WebKit::WebMouseWheelEvent& wheel =
-          static_cast<const WebKit::WebMouseWheelEvent&>(event);
-      if (wheel.hasPreciseScrollingDeltas &&
-          (wheel.phase == WebKit::WebMouseWheelEvent::PhaseEnded ||
-           wheel.phase == WebKit::WebMouseWheelEvent::PhaseCancelled)) {
+    switch (event.type) {
+      case WebKit::WebInputEvent::GestureScrollEnd:
+      case WebKit::WebInputEvent::GestureFlingStart:
         scroll_state_ = STATE_UNKNOWN;
+        break;
+
+      case WebKit::WebInputEvent::MouseWheel: {
+        const WebKit::WebMouseWheelEvent& wheel =
+            static_cast<const WebKit::WebMouseWheelEvent&>(event);
+        if (!wheel.hasPreciseScrollingDeltas ||
+            wheel.phase == WebKit::WebMouseWheelEvent::PhaseEnded ||
+            wheel.phase == WebKit::WebMouseWheelEvent::PhaseCancelled) {
+          scroll_state_ = STATE_UNKNOWN;
+        }
+        break;
       }
+
+      default:
+        if (WebKit::WebInputEvent::isMouseEventType(event.type) ||
+            WebKit::WebInputEvent::isKeyboardEventType(event.type)) {
+          scroll_state_ = STATE_UNKNOWN;
+        }
+        break;
     }
   }
 
@@ -89,8 +97,10 @@ bool OverscrollController::WillDispatchEvent(
     ProcessEventForOverscroll(event);
 
     if (event.type == WebKit::WebInputEvent::TouchEnd ||
-        event.type == WebKit::WebInputEvent::TouchCancel)
+        event.type == WebKit::WebInputEvent::TouchCancel ||
+        event.type == WebKit::WebInputEvent::TouchMove) {
       return true;
+    }
     return false;
   }
 
@@ -113,8 +123,23 @@ void OverscrollController::ReceivedEventACK(const WebKit::WebInputEvent& event,
   ProcessEventForOverscroll(event);
 }
 
+void OverscrollController::DiscardingGestureEvent(
+    const WebKit::WebGestureEvent& gesture) {
+  if (scroll_state_ != STATE_UNKNOWN &&
+      (gesture.type == WebKit::WebInputEvent::GestureScrollEnd ||
+       gesture.type == WebKit::WebInputEvent::GestureFlingStart)) {
+    scroll_state_ = STATE_UNKNOWN;
+  }
+}
+
 void OverscrollController::Reset() {
   overscroll_mode_ = OVERSCROLL_NONE;
+  overscroll_delta_x_ = overscroll_delta_y_ = 0.f;
+  scroll_state_ = STATE_UNKNOWN;
+}
+
+void OverscrollController::Cancel() {
+  SetOverscrollMode(OVERSCROLL_NONE);
   overscroll_delta_x_ = overscroll_delta_y_ = 0.f;
   scroll_state_ = STATE_UNKNOWN;
 }
@@ -275,6 +300,12 @@ void OverscrollController::ProcessOverscroll(float delta_x, float delta_y) {
     new_mode = overscroll_delta_x_ > 0.f ? OVERSCROLL_EAST : OVERSCROLL_WEST;
   else if (fabs(overscroll_delta_y_) > fabs(overscroll_delta_x_) * kMinRatio)
     new_mode = overscroll_delta_y_ > 0.f ? OVERSCROLL_SOUTH : OVERSCROLL_NORTH;
+
+  // The vertical oversrcoll currently does not have any UX effects, which can
+  // be confusing to users. So disable vertical overscroll for now.
+  // (http://crbug.com/243551 and http://crbug.com/151356).
+  if (new_mode == OVERSCROLL_SOUTH || new_mode == OVERSCROLL_NORTH)
+    new_mode = OVERSCROLL_NONE;
 
   if (overscroll_mode_ == OVERSCROLL_NONE) {
     SetOverscrollMode(new_mode);

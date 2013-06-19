@@ -15,7 +15,7 @@
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/cc/cc.gyp:cc',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
+        '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink_minimal',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
         '<(DEPTH)/ui/ui.gyp:ui',
         '<(DEPTH)/webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
@@ -68,8 +68,8 @@
           # IDR_BITMAP_BRUSH_IMAGE.
           'dependencies': [
             '<(DEPTH)/ui/ui.gyp:ui_resources',
-            '<(DEPTH)/third_party/angle/src/build_angle.gyp:libEGL',
-            '<(DEPTH)/third_party/angle/src/build_angle.gyp:libGLESv2',
+            '<(angle_path)/src/build_angle.gyp:libEGL',
+            '<(angle_path)/src/build_angle.gyp:libGLESv2',
           ],
         }],
       ],

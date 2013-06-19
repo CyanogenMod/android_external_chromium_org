@@ -117,8 +117,11 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kProcessPerTab);
     command_line.AppendSwitch(switches::kEnableLogging);
     command_line.AppendSwitch(switches::kAllowFileAccessFromFiles);
+#if !defined(OS_ANDROID)
+    // OSMesa is not yet available for Android. http://crbug.com/248925
     command_line.AppendSwitchASCII(
         switches::kUseGL, gfx::kGLImplementationOSMesaName);
+#endif
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
     command_line.AppendSwitch(switches::kDisableGpuVsync);
     command_line.AppendSwitch(switches::kEnableExperimentalWebKitFeatures);
@@ -126,6 +129,13 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
     command_line.AppendSwitch(switches::kEnableGestureTapHighlight);
+    command_line.AppendSwitchASCII(switches::kForceDeviceScaleFactor, "1.0");
+#if defined(OS_ANDROID)
+    // Capturing pixel results does not yet work when implementation-side
+    // painting is enabled. See http://crbug.com/250777
+    command_line.AppendSwitch(cc::switches::kDisableImplSidePainting);
+#endif
+
     if (!command_line.HasSwitch(switches::kEnableThreadedCompositing))
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
     if (command_line.HasSwitch(switches::kEnableSoftwareCompositing))
@@ -153,16 +163,13 @@ int ShellMainDelegate::RunProcess(
     return -1;
 
 #if !defined(OS_ANDROID)
-  return ShellBrowserMain(main_function_params);
-#else
-  // If no process type is specified, we are creating the main browser process.
-  browser_runner_.reset(BrowserMainRunner::Create());
-  int exit_code = browser_runner_->Initialize(main_function_params);
-  DCHECK(exit_code < 0)
-      << "BrowserRunner::Initialize failed in ShellMainDelegate";
-
-  return exit_code;
+  // Android stores the BrowserMainRunner instance as a scoped member pointer
+  // on the ShellMainDelegate class because of different object lifetime.
+  scoped_ptr<BrowserMainRunner> browser_runner_;
 #endif
+
+  browser_runner_.reset(BrowserMainRunner::Create());
+  return ShellBrowserMain(main_function_params, browser_runner_);
 }
 
 void ShellMainDelegate::InitializeResourceBundle() {

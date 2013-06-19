@@ -39,8 +39,7 @@ const int64 kNoFileSize = -1;
 void HandleCheckFileResult(int64 expected_size,
                            const base::Callback<void(bool success)>& callback,
                            base::PlatformFileError result,
-                           const base::PlatformFileInfo& file_info,
-                           const base::FilePath& /*platform_path*/) {
+                           const base::PlatformFileInfo& file_info) {
   if (result == base::PLATFORM_FILE_OK) {
     if (!file_info.is_directory && expected_size != kNoFileSize &&
         file_info.size == expected_size) {
@@ -91,10 +90,9 @@ class MediaFileValidatorTest : public InProcessBrowserTest {
 
     ScopedVector<fileapi::FileSystemMountPointProvider> additional_providers;
     additional_providers.push_back(new fileapi::TestMountPointProvider(
-        base::MessageLoopProxy::current(), src_path));
-    additional_providers.push_back(
-        new MediaFileSystemMountPointProvider(
-            base, base::MessageLoopProxy::current()));
+        base::MessageLoopProxy::current().get(), src_path));
+    additional_providers.push_back(new MediaFileSystemMountPointProvider(
+        base, base::MessageLoopProxy::current().get()));
     file_system_context_ =
         fileapi::CreateFileSystemContextWithAdditionalProvidersForTesting(
             NULL, additional_providers.Pass(), base);

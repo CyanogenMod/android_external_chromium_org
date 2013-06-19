@@ -20,7 +20,7 @@
 #include "chrome/browser/task_manager/resource_provider.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "content/public/common/gpu_memory_stats.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
+#include "third_party/WebKit/public/web/WebCache.h"
 
 class PrefRegistrySimple;
 class TaskManagerModel;
@@ -341,6 +341,14 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     TASK_PENDING,  // An update task is pending.
     STOPPING       // A update task is pending and it should stop the update.
   };
+
+  // The delay between updates of the information (in ms).
+#if defined(OS_MACOSX)
+  // Match Activity Monitor's default refresh rate.
+  static const int kUpdateTimeMs = 2000;
+#else
+  static const int kUpdateTimeMs = 1000;
+#endif
 
   // Values cached per resource. Values are validated on demand. The is_XXX
   // members indicate if a value is valid.

@@ -76,6 +76,8 @@ const char* const kSrcManifestAttribute = "src";
 // MIME type because the "src" attribute is used to supply us with the resource
 // of that MIME type that we're supposed to display.
 const char* const kNaClManifestAttribute = "nacl";
+// The pseudo-ISA used to indicate portable native client.
+const char* const kPortableISA = "portable";
 // This is a pretty arbitrary limit on the byte size of the NaCl manfest file.
 // Note that the resulting string object has to have at least one byte extra
 // for the null termination character.
@@ -378,6 +380,7 @@ bool Plugin::LoadNaClModuleCommon(nacl::DescWrapper* wrapper,
                                   bool uses_irt,
                                   bool uses_ppapi,
                                   bool enable_dyncode_syscalls,
+                                  bool enable_exception_handling,
                                   ErrorInfo* error_info,
                                   pp::CompletionCallback init_done_cb,
                                   pp::CompletionCallback crash_cb) {
@@ -401,6 +404,7 @@ bool Plugin::LoadNaClModuleCommon(nacl::DescWrapper* wrapper,
                                  uses_ppapi,
                                  enable_dev_interfaces_,
                                  enable_dyncode_syscalls,
+                                 enable_exception_handling,
                                  crash_cb);
   PLUGIN_PRINTF(("Plugin::LoadNaClModuleCommon (service_runtime_started=%d)\n",
                  service_runtime_started));
@@ -413,6 +417,7 @@ bool Plugin::LoadNaClModuleCommon(nacl::DescWrapper* wrapper,
 bool Plugin::LoadNaClModule(nacl::DescWrapper* wrapper,
                             ErrorInfo* error_info,
                             bool enable_dyncode_syscalls,
+                            bool enable_exception_handling,
                             pp::CompletionCallback init_done_cb,
                             pp::CompletionCallback crash_cb) {
   // Before forking a new sel_ldr process, ensure that we do not leak
@@ -425,6 +430,7 @@ bool Plugin::LoadNaClModule(nacl::DescWrapper* wrapper,
                             true /* uses_irt */,
                             true /* uses_ppapi */,
                             enable_dyncode_syscalls,
+                            enable_exception_handling,
                             error_info, init_done_cb, crash_cb)) {
     return false;
   }
@@ -492,6 +498,7 @@ NaClSubprocess* Plugin::LoadHelperNaClModule(nacl::DescWrapper* wrapper,
                             false /* uses_irt */,
                             false /* uses_ppapi */,
                             false /* enable_dyncode_syscalls */,
+                            false /* enable_exception_handling */,
                             error_info,
                             pp::BlockUntilComplete(),
                             pp::BlockUntilComplete())) {
@@ -575,6 +582,7 @@ class ProgressEvent {
 };
 
 const char* const Plugin::kNaClMIMEType = "application/x-nacl";
+const char* const Plugin::kPnaclMIMEType = "application/x-pnacl";
 
 bool Plugin::NexeIsContentHandler() const {
   // Tests if the MIME type is not a NaCl MIME type.
@@ -582,7 +590,8 @@ bool Plugin::NexeIsContentHandler() const {
   // type handler rather than directly by an HTML document.
   return
       !mime_type().empty() &&
-      mime_type() != kNaClMIMEType;
+      mime_type() != kNaClMIMEType &&
+      mime_type() != kPnaclMIMEType;
 }
 
 
@@ -861,6 +870,7 @@ void Plugin::NexeFileDidOpen(int32_t pp_error) {
   bool was_successful = LoadNaClModule(
       wrapper.get(), &error_info,
       true, /* enable_dyncode_syscalls */
+      true, /* enable_exception_handling */
       callback_factory_.NewCallback(&Plugin::NexeFileDidOpenContinuation),
       callback_factory_.NewCallback(&Plugin::NexeDidCrash));
 
@@ -982,6 +992,7 @@ void Plugin::BitcodeDidTranslate(int32_t pp_error) {
   bool was_successful = LoadNaClModule(
       wrapper.get(), &error_info,
       false, /* enable_dyncode_syscalls */
+      false, /* enable_exception_handling */
       callback_factory_.NewCallback(&Plugin::BitcodeDidTranslateContinuation),
       callback_factory_.NewCallback(&Plugin::NexeDidCrash));
 
@@ -1252,13 +1263,11 @@ bool Plugin::SetManifestObject(const nacl::string& manifest_json,
     return false;
   // Determine whether lookups should use portable (i.e., pnacl versions)
   // rather than platform-specific files.
-  bool should_prefer_portable =
-      (getenv("NACL_PREFER_PORTABLE_IN_MANIFEST") != NULL);
+  bool is_pnacl = (mime_type() == kPnaclMIMEType);
   nacl::scoped_ptr<JsonManifest> json_manifest(
       new JsonManifest(url_util_,
                        manifest_base_url(),
-                       GetSandboxISA(),
-                       should_prefer_portable));
+                       (is_pnacl ? kPortableISA : GetSandboxISA())));
   if (!json_manifest->Init(manifest_json, error_info)) {
     return false;
   }

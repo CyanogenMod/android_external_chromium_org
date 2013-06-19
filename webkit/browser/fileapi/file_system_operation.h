@@ -15,11 +15,11 @@
 
 namespace base {
 class Time;
-}  // namespace base
+}
 
 namespace net {
-class URLRequestContext;
-}  // namespace net
+class URLRequest;
+}
 
 namespace webkit_blob {
 class ShareableFileReference;
@@ -30,6 +30,7 @@ class GURL;
 namespace fileapi {
 
 class FileSystemURL;
+class FileWriterDelegate;
 class LocalFileSystemOperation;
 
 // The interface class for FileSystemOperation implementations.
@@ -61,12 +62,10 @@ class FileSystemOperation {
   typedef base::Callback<void(base::PlatformFileError result)> StatusCallback;
 
   // Used for GetMetadata(). |result| is the return code of the operation,
-  // |file_info| is the obtained file info, and |platform_path| is the path
-  // of the file.
+  // |file_info| is the obtained file info.
   typedef base::Callback<
       void(base::PlatformFileError result,
-           const base::PlatformFileInfo& file_info,
-           const base::FilePath& platform_path)> GetMetadataCallback;
+           const base::PlatformFileInfo& file_info)> GetMetadataCallback;
 
   // Used for OpenFile(). |result| is the return code of the operation.
   // |on_close_callback| will be called after the file is closed in the child
@@ -171,13 +170,12 @@ class FileSystemOperation {
   virtual void Remove(const FileSystemURL& path, bool recursive,
                       const StatusCallback& callback) = 0;
 
-  // Writes contents of |blob_url| to |path| at |offset|.
-  // |url_request_context| is used to read contents in |blob_url|.
-  virtual void Write(const net::URLRequestContext* url_request_context,
-                     const FileSystemURL& path,
-                     const GURL& blob_url,
-                     int64 offset,
-                     const WriteCallback& callback) = 0;
+  // Writes the data read from |blob_request| using |writer_delegate|.
+  virtual void Write(
+    const FileSystemURL& url,
+    scoped_ptr<FileWriterDelegate> writer_delegate,
+    scoped_ptr<net::URLRequest> blob_request,
+    const WriteCallback& callback) = 0;
 
   // Truncates a file at |path| to |length|. If |length| is larger than
   // the original file size, the file will be extended, and the extended

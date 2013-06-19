@@ -191,8 +191,12 @@ bool FakeAPIUtil::IsAuthenticated() const { return true; }
 void FakeAPIUtil::DeleteFile(const std::string& resource_id,
                              const std::string& remote_file_md5,
                              const GDataErrorCallback& callback) {
-  google_apis::GDataErrorCode error = google_apis::HTTP_NOT_FOUND;
-  DCHECK(ContainsKey(remote_resources_, resource_id));
+  if (!ContainsKey(remote_resources_, resource_id)) {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE,
+        base::Bind(callback, google_apis::HTTP_NOT_FOUND));
+    return;
+  }
 
   const RemoteResource& deleted_directory = remote_resources_[resource_id];
   PushRemoteChange(deleted_directory.parent_resource_id,
@@ -203,14 +207,14 @@ void FakeAPIUtil::DeleteFile(const std::string& resource_id,
                    SYNC_FILE_TYPE_UNKNOWN,
                    true /* deleted */);
 
-  error = google_apis::HTTP_SUCCESS;
-  base::MessageLoopProxy::current()->PostTask(FROM_HERE,
-                                              base::Bind(callback, error));
+  base::MessageLoopProxy::current()->PostTask(
+      FROM_HERE,
+      base::Bind(callback, google_apis::HTTP_SUCCESS));
 }
 
 GURL FakeAPIUtil::ResourceIdToResourceLink(
     const std::string& resource_id) const {
-  return url_generator_.GenerateContentUrl(resource_id);
+  return url_generator_.GenerateEditUrl(resource_id);
 }
 
 void FakeAPIUtil::EnsureSyncRootIsNotInMyDrive(
@@ -238,8 +242,7 @@ scoped_ptr<google_apis::ResourceEntry> FakeAPIUtil::CreateResourceEntry(
   scoped_ptr<google_apis::Link> link(new google_apis::Link());
 
   link->set_type(google_apis::Link::LINK_PARENT);
-  link->set_href(
-      url_generator_.GenerateContentUrl(resource.parent_resource_id));
+  link->set_href(ResourceIdToResourceLink(resource.parent_resource_id));
   link->set_title(resource.parent_title);
   parent_links.push_back(link.release());
 

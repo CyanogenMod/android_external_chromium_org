@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "webkit/plugins/ppapi/host_array_buffer_var.h"
 #include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/host_var_tracker.h"
@@ -16,7 +16,7 @@
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npruntime.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
 
 using ppapi::NPObjectVar;
 using ppapi::PpapiGlobals;

@@ -133,11 +133,12 @@ class ObfuscatedFileUtilTest : public testing::Test {
     scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
         new quota::MockSpecialStoragePolicy();
 
-    quota_manager_ = new quota::QuotaManager(false /* is_incognito */,
-                                             data_dir_.path(),
-                                             base::MessageLoopProxy::current(),
-                                             base::MessageLoopProxy::current(),
-                                             storage_policy.get());
+    quota_manager_ =
+        new quota::QuotaManager(false /* is_incognito */,
+                                data_dir_.path(),
+                                base::MessageLoopProxy::current().get(),
+                                base::MessageLoopProxy::current().get(),
+                                storage_policy.get());
 
     // Every time we create a new sandbox_file_system helper,
     // it creates another context, which creates another path manager,
@@ -651,6 +652,10 @@ class ObfuscatedFileUtilTest : public testing::Test {
 
   FileSystemContext* file_system_context() {
     return sandbox_file_system_.file_system_context();
+  }
+
+  const base::FilePath& data_dir_path() const {
+    return data_dir_.path();
   }
 
  private:
@@ -2253,11 +2258,9 @@ TEST_F(ObfuscatedFileUtilTest, TestQuotaOnOpen) {
 }
 
 TEST_F(ObfuscatedFileUtilTest, MaybeDropDatabasesAliveCase) {
-  base::ScopedTempDir data_dir;
-  ASSERT_TRUE(data_dir.CreateUniqueTempDir());
   ObfuscatedFileUtil file_util(NULL,
-                               data_dir.path(),
-                               base::MessageLoopProxy::current());
+                               data_dir_path(),
+                               base::MessageLoopProxy::current().get());
   file_util.InitOriginDatabase(true /*create*/);
   ASSERT_TRUE(file_util.origin_database_ != NULL);
 
@@ -2273,11 +2276,9 @@ TEST_F(ObfuscatedFileUtilTest, MaybeDropDatabasesAlreadyDeletedCase) {
   // Run message loop after OFU is already deleted to make sure callback doesn't
   // cause a crash for use after free.
   {
-    base::ScopedTempDir data_dir;
-    ASSERT_TRUE(data_dir.CreateUniqueTempDir());
     ObfuscatedFileUtil file_util(NULL,
-                                 data_dir.path(),
-                                 base::MessageLoopProxy::current());
+                                 data_dir_path(),
+                                 base::MessageLoopProxy::current().get());
     file_util.InitOriginDatabase(true /*create*/);
     file_util.db_flush_delay_seconds_ = 0;
     file_util.MarkUsed();

@@ -443,10 +443,17 @@ IN_PROC_BROWSER_TEST_F(DevToolsExtensionTest,
   RunTest("waitForTestResultsInConsole", std::string());
 }
 
+// Disabled on Windows due to flakiness. http://crbug.com/183649
+#if defined(OS_WIN)
+#define MAYBE_TestDevToolsExtensionMessaging DISABLED_TestDevToolsExtensionMessaging
+#else
+#define MAYBE_TestDevToolsExtensionMessaging TestDevToolsExtensionMessaging
+#endif
+
 // Tests that chrome.devtools extension can communicate with background page
 // using extension messaging.
 IN_PROC_BROWSER_TEST_F(DevToolsExtensionTest,
-                       TestDevToolsExtensionMessaging) {
+                       MAYBE_TestDevToolsExtensionMessaging) {
   LoadExtension("devtools_messaging");
   RunTest("waitForTestResultsInConsole", std::string());
 }
@@ -622,14 +629,14 @@ IN_PROC_BROWSER_TEST_F(DevToolsAgentHostTest, TestAgentHostReleased) {
   ui_test_utils::NavigateToURL(browser(), GURL("about:blank"));
   RenderViewHost* rvh = browser()->tab_strip_model()->GetWebContentsAt(0)->
       GetRenderViewHost();
-  DevToolsAgentHost* agent_raw = DevToolsAgentHost::GetOrCreateFor(rvh);
+  DevToolsAgentHost* agent_raw = DevToolsAgentHost::GetOrCreateFor(rvh).get();
   const std::string agent_id = agent_raw->GetId();
   ASSERT_EQ(agent_raw, DevToolsAgentHost::GetForId(agent_id)) <<
       "DevToolsAgentHost cannot be found by id";
   browser()->tab_strip_model()->
       CloseWebContentsAt(0, TabStripModel::CLOSE_NONE);
-  ASSERT_FALSE(DevToolsAgentHost::GetForId(agent_id)) <<
-      "DevToolsAgentHost is not released when the tab is closed";
+  ASSERT_FALSE(DevToolsAgentHost::GetForId(agent_id).get())
+      << "DevToolsAgentHost is not released when the tab is closed";
 }
 
 class RemoteDebuggingTest: public ExtensionApiTest {

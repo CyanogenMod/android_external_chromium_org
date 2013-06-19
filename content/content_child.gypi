@@ -16,6 +16,12 @@
     '../base/base.gyp:base',
   ],
   'sources': [
+    'child/android/child_jni_registrar.cc',
+    'child/android/child_jni_registrar.h',
+    'child/appcache_backend_proxy.cc',
+    'child/appcache_backend_proxy.h',
+    'child/appcache_dispatcher.cc',
+    'child/appcache_dispatcher.h',
     'child/child_histogram_message_filter.cc',
     'child/child_histogram_message_filter.h',
     'child/child_process.cc',
@@ -64,6 +70,8 @@
     'child/request_extra_data.h',
     'child/resource_dispatcher.cc',
     'child/resource_dispatcher.h',
+    'child/runtime_features.cc',
+    'child/runtime_features.h',
     'child/socket_stream_dispatcher.cc',
     'child/socket_stream_dispatcher.h',
     'child/thread_safe_sender.cc',
@@ -78,6 +86,11 @@
     'child/webmessageportchannel_impl.h',
   ],
   'conditions': [
+    ['OS=="android"', {
+      'includes': [
+        '../build/android/cpufeatures.gypi',
+      ],
+    }],
     ['OS=="ios"', {
       'sources/': [
         # iOS only needs a small portion of content; exclude all the
@@ -89,7 +102,7 @@
         '../third_party/WebKit/public/blink.gyp:blink',
         '../third_party/npapi/npapi.gyp:npapi',
         '../webkit/base/webkit_base.gyp:webkit_base',
-        '../webkit/support/webkit_support.gyp:glue',
+        '../webkit/support/webkit_support.gyp:glue_child',
       ],
     }],
   ],

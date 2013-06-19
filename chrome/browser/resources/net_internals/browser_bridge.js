@@ -81,6 +81,11 @@ var BrowserBridge = (function() {
     this.pollableDataHelpers_.extensionInfo =
         new PollableDataHelper('onExtensionInfoChanged',
                                this.sendGetExtensionInfo.bind(this));
+    if (cr.isChromeOS) {
+      this.pollableDataHelpers_.systemLog =
+          new PollableDataHelper('onSystemLogChanged',
+                               this.getSystemLog.bind(this, 'syslog'));
+    }
 
     // Setting this to true will cause messages from the browser to be ignored,
     // and no messages will be sent to the browser, either.  Intended for use
@@ -186,8 +191,10 @@ var BrowserBridge = (function() {
       this.send('hstsQuery', [domain]);
     },
 
-    sendHSTSAdd: function(domain, include_subdomains, pins) {
-      this.send('hstsAdd', [domain, include_subdomains, pins]);
+    sendHSTSAdd: function(domain, sts_include_subdomains,
+                          pkp_include_subdomains, pins) {
+      this.send('hstsAdd', [domain, sts_include_subdomains,
+                            pkp_include_subdomains, pins]);
     },
 
     sendHSTSDelete: function(domain) {
@@ -422,6 +429,10 @@ var BrowserBridge = (function() {
 
     receivedExtensionInfo: function(extensionInfo) {
       this.pollableDataHelpers_.extensionInfo.update(extensionInfo);
+    },
+
+    getSystemLogCallback: function(systemLog) {
+      this.pollableDataHelpers_.systemLog.update(systemLog);
     },
 
     //--------------------------------------------------------------------------
@@ -692,6 +703,17 @@ var BrowserBridge = (function() {
      */
     addExtensionInfoObserver: function(observer, ignoreWhenUnchanged) {
       this.pollableDataHelpers_.extensionInfo.addObserver(
+          observer, ignoreWhenUnchanged);
+    },
+
+    /**
+     * Adds a listener of system log information. |observer| will be called
+     * back when data is received, through:
+     *
+     *   observer.onSystemLogChanged(systemLogInfo)
+     */
+    addSystemLogObserver: function(observer, ignoreWhenUnchanged) {
+      this.pollableDataHelpers_.systemLog.addObserver(
           observer, ignoreWhenUnchanged);
     },
 

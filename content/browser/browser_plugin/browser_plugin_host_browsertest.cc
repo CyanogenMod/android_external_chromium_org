@@ -33,7 +33,7 @@
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "webkit/common/webdropdata.h"
 
 using WebKit::WebInputEvent;
@@ -322,6 +322,8 @@ class BrowserPluginHostTest : public ContentBrowserTest {
         embedder_web_contents->GetRenderViewHost());
     // Focus the embedder.
     rvh->Focus();
+    // Activative IME.
+    rvh->SetInputMethodActive(true);
 
     // Allow the test to do some operations on the embedder before we perform
     // the first navigation of the guest.
@@ -857,7 +859,7 @@ scoped_ptr<net::test_server::HttpResponse> EmptyResponseHandler(
         new EmptyHttpResponse);
   }
 
-  return scoped_ptr<net::test_server::HttpResponse>(NULL);
+  return scoped_ptr<net::test_server::HttpResponse>();
 }
 
 // Handles |request| by serving a redirect response.
@@ -866,7 +868,7 @@ scoped_ptr<net::test_server::HttpResponse> RedirectResponseHandler(
     const GURL& redirect_target,
     const net::test_server::HttpRequest& request) {
   if (!StartsWithASCII(path, request.relative_url, true))
-    return scoped_ptr<net::test_server::HttpResponse>(NULL);
+    return scoped_ptr<net::test_server::HttpResponse>();
 
   scoped_ptr<net::test_server::BasicHttpResponse> http_response(
       new net::test_server::BasicHttpResponse);
@@ -1462,6 +1464,16 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, PartialAutosizeAttributes) {
     string16 actual_title = title_watcher.WaitAndGetTitle();
     EXPECT_EQ(expected_title, actual_title);
   }
+}
+
+// This test verifies that if IME is enabled in the embedder, it is also enabled
+// in the guest.
+IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, VerifyInputMethodActive) {
+  const char* kEmbedderURL = "/browser_plugin_embedder.html";
+  StartBrowserPluginTest(kEmbedderURL, kHTMLForGuest, true, std::string());
+  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
+      test_guest()->web_contents()->GetRenderViewHost());
+  EXPECT_TRUE(rvh->input_method_active());
 }
 
 }  // namespace content

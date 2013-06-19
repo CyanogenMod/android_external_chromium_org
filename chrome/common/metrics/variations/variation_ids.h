@@ -82,7 +82,10 @@ enum VariationID {
   UNIFORMITY_SESSION_RANDOMIZED_5_PERCENT_LIMIT =
       UNIFORMITY_SESSION_RANDOMIZED_5_PERCENT_BASE + 20,
 
-  UNIFORMITY_TRIALS_MAX = 3300158,
+  // Name: UMA-Dynamic-Uniformity-Trial
+  // Range: 3300159 - 3300165
+  UNIFORMITY_DYNAMIC_TRIAL_BASE = 3300159,
+  UNIFORMITY_DYNAMIC_TRIAL_LIMIT = UNIFORMITY_DYNAMIC_TRIAL_BASE + 6,
 
   // Some values reserved for unit and integration tests.
   TEST_VALUE_A = 3300200,
@@ -218,10 +221,14 @@ enum VariationID {
   OMNIBOX_STOP_TIMER_CONTROL = 3310263,
   OMNIBOX_STOP_TIMER_EXPERIMENT = 3310264,
 
+  // ShowAppLauncherPromo field trial
+  SHOW_APP_LAUNCHER_PROMO_UNTIL_DISMISSED = 3310366,
+  SHOW_APP_LAUNCHER_PROMO_RESET_PREF = 3310367,
+
   // NEXT ID: When adding new IDs, please add them above this section, starting
   // with the value of NEXT_ID, and updating NEXT_ID to (end of your reserved
   // range) + 1.
-  NEXT_ID = 3310366,
+  NEXT_ID = 3310368,
 
   // USABLE IDs END HERE.
   //

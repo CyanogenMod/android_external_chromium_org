@@ -6,7 +6,6 @@
   'targets': [
     {
       'target_name': 'ui_test_support',
-      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
@@ -17,8 +16,6 @@
         'base/test/cocoa_test_event_utils.mm',
         'base/test/ui_cocoa_test_helper.h',
         'base/test/ui_cocoa_test_helper.mm',
-        'base/test/dummy_input_method.cc',
-        'base/test/dummy_input_method.h',
         'base/test/ui_controls.h',
         'base/test/ui_controls_aura.cc',
         'base/test/ui_controls_gtk.cc',
@@ -32,8 +29,15 @@
       ],
       'conditions': [
         ['OS!="ios"', {
+          'type': 'static_library',
           'includes': [ 'base/ime/ime_test_support.gypi' ],
         }, {  # OS=="ios"
+          # None of the sources in this target are built on iOS, resulting in
+          # link errors when building targets that depend on this target
+          # because the static library isn't found. If this target is changed
+          # to have sources that are built on iOS, the target should be changed
+          # to be of type static_library on all platforms.
+          'type': 'none',
           # The cocoa files don't apply to iOS.
           'sources/': [['exclude', 'cocoa']],
         }],
@@ -136,11 +140,13 @@
         'base/clipboard/custom_data_helper_unittest.cc',
         'base/cocoa/base_view_unittest.mm',
         'base/cocoa/cocoa_event_utils_unittest.mm',
+        'base/cocoa/controls/hover_image_menu_button_unittest.mm',
         'base/cocoa/events_mac_unittest.mm',
         'base/cocoa/focus_tracker_unittest.mm',
         'base/cocoa/fullscreen_window_manager_unittest.mm',
         'base/cocoa/hover_image_button_unittest.mm',
         'base/cocoa/menu_controller_unittest.mm',
+        'base/cocoa/nsgraphics_context_additions_unittest.mm',
         'base/cocoa/tracking_area_unittest.mm',
         'base/events/event_dispatcher_unittest.cc',
         'base/events/event_unittest.cc',

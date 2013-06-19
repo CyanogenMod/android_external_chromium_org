@@ -25,6 +25,10 @@ bool InstantPage::supports_instant() const {
   return supports_instant_;
 }
 
+const std::string& InstantPage::instant_url() const {
+  return instant_url_;
+}
+
 bool InstantPage::IsLocal() const {
   return contents() &&
       (contents()->GetURL() == GURL(chrome::kChromeSearchLocalNtpUrl) ||
@@ -115,6 +119,11 @@ void InstantPage::SetDisplayInstantResults(bool display_instant_results) {
 void InstantPage::FocusChanged(OmniboxFocusState state,
                                OmniboxFocusChangeReason reason) {
   Send(new ChromeViewMsg_SearchBoxFocusChanged(routing_id(), state, reason));
+}
+
+void InstantPage::SetInputInProgress(bool input_in_progress) {
+  Send(new ChromeViewMsg_SearchBoxSetInputInProgress(
+      routing_id(), input_in_progress));
 }
 
 void InstantPage::SendMostVisitedItems(

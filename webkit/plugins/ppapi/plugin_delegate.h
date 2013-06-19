@@ -417,6 +417,7 @@ class PluginDelegate {
   // object.
   virtual PlatformVideoCapture* CreateVideoCapture(
       const std::string& device_id,
+      const GURL& document_url,
       PlatformVideoCaptureEventHandler* handler) = 0;
 
   // The caller will own the pointer returned from this.
@@ -442,6 +443,7 @@ class PluginDelegate {
   // to clean up the corresponding resources allocated during this call.
   virtual PlatformAudioInput* CreateAudioInput(
       const std::string& device_id,
+      const GURL& document_url,
       uint32_t sample_rate,
       uint32_t sample_count,
       PlatformAudioInputClient* client) = 0;
@@ -503,8 +505,7 @@ class PluginDelegate {
       const std::vector<fileapi::DirectoryEntry>& entries,
       bool has_more)> ReadDirectoryCallback;
   typedef base::Callback<void(
-      const base::PlatformFileInfo& file_info,
-      const base::FilePath& platform_path)> MetadataCallback;
+      const base::PlatformFileInfo& file_info)> MetadataCallback;
 
   virtual bool MakeDirectory(
       const GURL& path,

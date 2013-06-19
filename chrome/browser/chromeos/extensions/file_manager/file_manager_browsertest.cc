@@ -18,10 +18,10 @@
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/extensions/file_manager/drive_test_util.h"
+#include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/google_apis/fake_drive_service.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/test_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -409,8 +409,9 @@ INSTANTIATE_TEST_CASE_P(
                       // ASAN Tests (2).  TODO(mtomasz): crbug.com/243611.
                       // TestParameter(NOT_IN_GUEST_MODE, "galleryOpenDrive")));
 
+// Test is flaky, see http://crbug.com/247299
 INSTANTIATE_TEST_CASE_P(
-    KeyboardOpeartions,
+    DISABLED_KeyboardOpeartions,
     FileManagerBrowserSimpleTest,
     ::testing::Values(TestParameter(IN_GUEST_MODE, "keyboardDeleteDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE,
@@ -449,9 +450,8 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE,
                                     "transferFromOfflineToDrive")));
 
-// TODO (hirono): Fix this flakiness. crbug.com/247299
 INSTANTIATE_TEST_CASE_P(
-     DISABLED_HideSearchBox,
+     HideSearchBox,
      FileManagerBrowserSimpleTest,
      ::testing::Values(TestParameter(IN_GUEST_MODE, "hideSearchBox"),
                        TestParameter(NOT_IN_GUEST_MODE, "hideSearchBox")));

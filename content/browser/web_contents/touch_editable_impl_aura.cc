@@ -133,6 +133,24 @@ bool TouchEditableImplAura::HandleInputEvent(const ui::Event* event) {
     case ui::ET_GESTURE_LONG_PRESS:
       selection_gesture_in_process_ = true;
       break;
+    case ui::ET_GESTURE_SCROLL_BEGIN:
+      // If selection handles are currently visible, we want to get them back up
+      // when scrolling ends. So we set |handles_hidden_due_to_scroll_| so that
+      // we can re-start touch editing when we call |UpdateEditingController()|
+      // on scroll end gesture.
+      handles_hidden_due_to_scroll_ = false;
+      if (touch_selection_controller_)
+        handles_hidden_due_to_scroll_ = true;
+      EndTouchEditing();
+      break;
+    case ui::ET_GESTURE_SCROLL_END:
+      if (handles_hidden_due_to_scroll_ &&
+          (selection_anchor_rect_ != selection_focus_rect_ ||
+              text_input_type_ != ui::TEXT_INPUT_TYPE_NONE)) {
+        StartTouchEditing();
+        UpdateEditingController();
+      }
+      break;
     default:
       break;
   }
@@ -217,11 +235,13 @@ bool TouchEditableImplAura::DrawsHandles() {
   return false;
 }
 
-void TouchEditableImplAura::OpenContextMenu(const gfx::Point anchor) {
+void TouchEditableImplAura::OpenContextMenu(const gfx::Point& anchor) {
   if (!rwhva_)
     return;
+  gfx::Point point = anchor;
+  ConvertPointFromScreen(&point);
   RenderWidgetHost* host = rwhva_->GetRenderWidgetHost();
-  host->Send(new ViewMsg_ShowContextMenu(host->GetRoutingID()));
+  host->Send(new ViewMsg_ShowContextMenu(host->GetRoutingID(), point));
   EndTouchEditing();
 }
 
@@ -296,7 +316,8 @@ void TouchEditableImplAura::ExecuteCommand(int command_id, int event_flags) {
 TouchEditableImplAura::TouchEditableImplAura()
     : text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       rwhva_(NULL),
-      selection_gesture_in_process_(false) {
+      selection_gesture_in_process_(false),
+      handles_hidden_due_to_scroll_(false) {
 }
 
 void TouchEditableImplAura::Cleanup() {

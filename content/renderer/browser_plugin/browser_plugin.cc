@@ -23,20 +23,20 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/v8_value_converter_impl.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebDOMCustomEvent.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "third_party/WebKit/public/web/WebScriptSource.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMCustomEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/keycodes/keyboard_codes.h"
-#include "webkit/glue/cursor_utils.h"
 #include "webkit/plugins/sad_plugin.h"
+#include "webkit/renderer/cursor_utils.h"
 
 #if defined (OS_WIN)
 #include "base/sys_info.h"
@@ -441,7 +441,7 @@ void BrowserPlugin::OnAddMessageToConsole(
     int guest_instance_id, const base::DictionaryValue& message_info) {
   std::map<std::string, base::Value*> props;
   // Fill in the info provided by the browser.
-  for (DictionaryValue::Iterator iter(message_info); !iter.IsAtEnd();
+  for (base::DictionaryValue::Iterator iter(message_info); !iter.IsAtEnd();
            iter.Advance()) {
     props[iter.key()] = iter.value().DeepCopy();
   }
@@ -1028,8 +1028,8 @@ void BrowserPlugin::PersistRequestObject(
           std::make_pair(id, new_item));
   CHECK(result.second);  // Inserted in the map.
   AliveV8PermissionRequestItem* request_item = result.first->second;
-  weak_request.MakeWeak(
-      isolate, static_cast<void*>(request_item), WeakCallbackForPersistObject);
+  weak_request.MakeWeak(static_cast<void*>(request_item),
+                        WeakCallbackForPersistObject);
 }
 
 // static
@@ -1133,7 +1133,7 @@ void BrowserPlugin::RespondPermission(
   else
     browser_plugin_manager()->Send(
         new BrowserPluginHostMsg_RespondPermission(
-            render_view_->GetRoutingID(), guest_instance_id_, permission_type,
+            render_view_routing_id_, guest_instance_id_, permission_type,
             request_id, allow));
 }
 
@@ -1508,9 +1508,11 @@ bool BrowserPlugin::acceptsInputEvents() {
 
 bool BrowserPlugin::handleInputEvent(const WebKit::WebInputEvent& event,
                                      WebKit::WebCursorInfo& cursor_info) {
-  if (guest_crashed_ || !HasGuestInstanceID() ||
-      event.type == WebKit::WebInputEvent::ContextMenu)
+  if (guest_crashed_ || !HasGuestInstanceID())
     return false;
+
+  if (event.type == WebKit::WebInputEvent::ContextMenu)
+    return true;
 
   const WebKit::WebInputEvent* modified_event = &event;
   scoped_ptr<WebKit::WebTouchEvent> touch_event;

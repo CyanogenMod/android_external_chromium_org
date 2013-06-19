@@ -29,8 +29,8 @@ LOCAL_SRC_FILES := \
 	base/event_recorder_stubs.cc \
 	base/linux_util.cc \
 	base/md5.cc \
-	base/message_pump_android.cc \
-	base/message_pump_libevent.cc \
+	base/message_loop/message_pump_android.cc \
+	base/message_loop/message_pump_libevent.cc \
 	base/metrics/field_trial.cc \
 	base/posix/file_descriptor_shuffle.cc \
 	base/sync_socket_posix.cc \
@@ -44,6 +44,7 @@ LOCAL_SRC_FILES := \
 	base/android/base_jni_registrar.cc \
 	base/android/build_info.cc \
 	base/android/cpu_features.cc \
+	base/android/fifo_utils.cc \
 	base/android/important_file_writer_android.cc \
 	base/android/scoped_java_ref.cc \
 	base/android/jni_android.cc \
@@ -51,6 +52,7 @@ LOCAL_SRC_FILES := \
 	base/android/jni_helper.cc \
 	base/android/jni_registrar.cc \
 	base/android/jni_string.cc \
+	base/android/memory_pressure_listener_android.cc \
 	base/android/path_service_android.cc \
 	base/android/path_utils.cc \
 	base/at_exit.cc \
@@ -92,6 +94,7 @@ LOCAL_SRC_FILES := \
 	base/guid_posix.cc \
 	base/hash.cc \
 	base/hi_res_timer_manager_posix.cc \
+	base/ini_parser.cc \
 	base/json/json_file_value_serializer.cc \
 	base/json/json_parser.cc \
 	base/json/json_reader.cc \
@@ -104,17 +107,18 @@ LOCAL_SRC_FILES := \
 	base/memory/aligned_memory.cc \
 	base/memory/discardable_memory.cc \
 	base/memory/discardable_memory_android.cc \
+	base/memory/memory_pressure_listener.cc \
 	base/memory/ref_counted.cc \
 	base/memory/ref_counted_memory.cc \
 	base/memory/shared_memory_android.cc \
 	base/memory/shared_memory_posix.cc \
 	base/memory/singleton.cc \
 	base/memory/weak_ptr.cc \
+	base/message_loop/message_loop.cc \
 	base/message_loop/message_loop_proxy.cc \
 	base/message_loop/message_loop_proxy_impl.cc \
-	base/message_loop.cc \
-	base/message_pump.cc \
-	base/message_pump_default.cc \
+	base/message_loop/message_pump.cc \
+	base/message_loop/message_pump_default.cc \
 	base/metrics/sample_map.cc \
 	base/metrics/sample_vector.cc \
 	base/metrics/bucket_ranges.cc \
@@ -158,6 +162,7 @@ LOCAL_SRC_FILES := \
 	base/sequenced_task_runner.cc \
 	base/sha1_portable.cc \
 	base/strings/latin1_string_conversions.cc \
+	base/strings/nullable_string16.cc \
 	base/strings/string16.cc \
 	base/strings/string_number_conversions.cc \
 	base/strings/string_split.cc \
@@ -250,6 +255,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \

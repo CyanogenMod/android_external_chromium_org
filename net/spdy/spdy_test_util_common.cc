@@ -330,6 +330,7 @@ crypto::ECSignatureCreator* MockECSignatureCreatorFactory::Create(
 SpdySessionDependencies::SpdySessionDependencies(NextProto protocol)
     : host_resolver(new MockCachingHostResolver),
       cert_verifier(new MockCertVerifier),
+      transport_security_state(new TransportSecurityState),
       proxy_service(ProxyService::CreateDirect()),
       ssl_config_service(new SSLConfigServiceDefaults),
       socket_factory(new MockClientSocketFactory),
@@ -359,6 +360,7 @@ SpdySessionDependencies::SpdySessionDependencies(
     NextProto protocol, ProxyService* proxy_service)
     : host_resolver(new MockHostResolver),
       cert_verifier(new MockCertVerifier),
+      transport_security_state(new TransportSecurityState),
       proxy_service(proxy_service),
       ssl_config_service(new SSLConfigServiceDefaults),
       socket_factory(new MockClientSocketFactory),
@@ -410,6 +412,8 @@ net::HttpNetworkSession::Params SpdySessionDependencies::CreateSessionParams(
   net::HttpNetworkSession::Params params;
   params.host_resolver = session_deps->host_resolver.get();
   params.cert_verifier = session_deps->cert_verifier.get();
+  params.transport_security_state =
+      session_deps->transport_security_state.get();
   params.proxy_service = session_deps->proxy_service.get();
   params.ssl_config_service = session_deps->ssl_config_service.get();
   params.http_auth_handler_factory =
@@ -434,6 +438,7 @@ SpdyURLRequestContext::SpdyURLRequestContext(NextProto protocol)
 
   storage_.set_host_resolver(scoped_ptr<HostResolver>(new MockHostResolver));
   storage_.set_cert_verifier(new MockCertVerifier);
+  storage_.set_transport_security_state(new TransportSecurityState);
   storage_.set_proxy_service(ProxyService::CreateDirect());
   storage_.set_ssl_config_service(new SSLConfigServiceDefaults);
   storage_.set_http_auth_handler_factory(HttpAuthHandlerFactory::CreateDefault(
@@ -443,6 +448,7 @@ SpdyURLRequestContext::SpdyURLRequestContext(NextProto protocol)
   params.client_socket_factory = &socket_factory_;
   params.host_resolver = host_resolver();
   params.cert_verifier = cert_verifier();
+  params.transport_security_state = transport_security_state();
   params.proxy_service = proxy_service();
   params.ssl_config_service = ssl_config_service();
   params.http_auth_handler_factory = http_auth_handler_factory();
@@ -537,42 +543,35 @@ void SpdyTestUtil::AddUrlToHeaderBlock(base::StringPiece url,
   }
 }
 
-// TODO(akalin): Change the functions below to use
-// AddUrlToHeaderBlock().
-
 scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructGetHeaderBlock(
     base::StringPiece url) const {
-  std::string scheme, host, path;
-  ParseUrl(url.data(), &scheme, &host, &path);
-  const char* const headers[] = {
-    GetMethodKey(),  "GET",
-    GetPathKey(),    path.c_str(),
-    GetHostKey(),    host.c_str(),
-    GetSchemeKey(),  scheme.c_str(),
-    GetVersionKey(), "HTTP/1.1"
-  };
-  scoped_ptr<SpdyHeaderBlock> header_block(new SpdyHeaderBlock());
-  AppendToHeaderBlock(headers, arraysize(headers) / 2, header_block.get());
-  return header_block.Pass();
+  return ConstructHeaderBlock("GET", url, NULL);
+}
+
+scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructGetHeaderBlockForProxy(
+    base::StringPiece url) const {
+  scoped_ptr<SpdyHeaderBlock> headers(ConstructGetHeaderBlock(url));
+  if (is_spdy2())
+    (*headers)[GetPathKey()] = url.data();
+  return headers.Pass();
+}
+
+scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructHeadHeaderBlock(
+    base::StringPiece url,
+    int64 content_length) const {
+  return ConstructHeaderBlock("HEAD", url, &content_length);
 }
 
 scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructPostHeaderBlock(
     base::StringPiece url,
     int64 content_length) const {
-  std::string scheme, host, path;
-  ParseUrl(url.data(), &scheme, &host, &path);
-  std::string length_str = base::Int64ToString(content_length);
-  const char* const headers[] = {
-    GetMethodKey(),   "POST",
-    GetPathKey(),     path.c_str(),
-    GetHostKey(),     host.c_str(),
-    GetSchemeKey(),   scheme.c_str(),
-    GetVersionKey(),  "HTTP/1.1",
-    "content-length", length_str.c_str()
-  };
-  scoped_ptr<SpdyHeaderBlock> header_block(new SpdyHeaderBlock());
-  AppendToHeaderBlock(headers, arraysize(headers) / 2, header_block.get());
-  return header_block.Pass();
+  return ConstructHeaderBlock("POST", url, &content_length);
+}
+
+scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructPutHeaderBlock(
+    base::StringPiece url,
+    int64 content_length) const {
+  return ConstructHeaderBlock("PUT", url, &content_length);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyFrame(
@@ -1067,6 +1066,25 @@ const char* SpdyTestUtil::GetVersionKey() const {
 
 const char* SpdyTestUtil::GetPathKey() const {
   return is_spdy2() ? "url" : ":path";
+}
+
+scoped_ptr<SpdyHeaderBlock> SpdyTestUtil::ConstructHeaderBlock(
+    base::StringPiece method,
+    base::StringPiece url,
+    int64* content_length) const {
+  std::string scheme, host, path;
+  ParseUrl(url.data(), &scheme, &host, &path);
+  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
+  (*headers)[GetMethodKey()] = method.as_string();
+  (*headers)[GetPathKey()] = path.c_str();
+  (*headers)[GetHostKey()] = host.c_str();
+  (*headers)[GetSchemeKey()] = scheme.c_str();
+  (*headers)[GetVersionKey()] = "HTTP/1.1";
+  if (content_length) {
+    std::string length_str = base::Int64ToString(*content_length);
+    (*headers)["content-length"] = length_str;
+  }
+  return headers.Pass();
 }
 
 }  // namespace net

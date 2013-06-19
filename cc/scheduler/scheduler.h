@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "cc/base/cc_export.h"
-#include "cc/scheduler/frame_rate_controller.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/scheduler/scheduler_settings.h"
 #include "cc/scheduler/scheduler_state_machine.h"
 #include "cc/trees/layer_tree_host.h"
@@ -33,6 +33,7 @@ struct ScheduledActionDrawAndSwapResult {
 
 class SchedulerClient {
  public:
+  virtual void SetNeedsBeginFrameOnImplThread(bool enable) = 0;
   virtual void ScheduledActionSendBeginFrameToMainThread() = 0;
   virtual ScheduledActionDrawAndSwapResult
   ScheduledActionDrawAndSwapIfPossible() = 0;
@@ -44,19 +45,18 @@ class SchedulerClient {
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
   virtual void ScheduledActionAcquireLayerTexturesForMainThread() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
+  virtual base::TimeDelta DrawDurationEstimate() = 0;
 
  protected:
   virtual ~SchedulerClient() {}
 };
 
-class CC_EXPORT Scheduler : FrameRateControllerClient {
+class CC_EXPORT Scheduler {
  public:
   static scoped_ptr<Scheduler> Create(
       SchedulerClient* client,
-      scoped_ptr<FrameRateController> frame_rate_controller,
       const SchedulerSettings& scheduler_settings) {
-    return make_scoped_ptr(new Scheduler(
-        client, frame_rate_controller.Pass(), scheduler_settings));
+    return make_scoped_ptr(new Scheduler(client,  scheduler_settings));
   }
 
   virtual ~Scheduler();
@@ -86,12 +86,6 @@ class CC_EXPORT Scheduler : FrameRateControllerClient {
   void FinishCommit();
   void BeginFrameAbortedByMainThread();
 
-  void SetMaxFramesPending(int max);
-  int MaxFramesPending() const;
-  int NumFramesPendingForTesting() const;
-
-  void DidSwapBuffersComplete();
-
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();
   bool HasInitializedOutputSurface() const {
@@ -103,28 +97,34 @@ class CC_EXPORT Scheduler : FrameRateControllerClient {
 
   bool WillDrawIfNeeded() const;
 
-  void SetTimebaseAndInterval(base::TimeTicks timebase,
-                              base::TimeDelta interval);
-
   base::TimeTicks AnticipatedDrawTime();
 
   base::TimeTicks LastBeginFrameOnImplThreadTime();
 
-  // FrameRateControllerClient implementation
-  virtual void BeginFrame(bool throttled) OVERRIDE;
+  void BeginFrame(const BeginFrameArgs& args);
 
   std::string StateAsStringForTesting() { return state_machine_.ToString(); }
 
  private:
   Scheduler(SchedulerClient* client,
-            scoped_ptr<FrameRateController> frame_rate_controller,
             const SchedulerSettings& scheduler_settings);
 
+  void SetupNextBeginFrameIfNeeded();
+  void DrawAndSwapIfPossible();
+  void DrawAndSwapForced();
   void ProcessScheduledActions();
 
   const SchedulerSettings settings_;
   SchedulerClient* client_;
-  scoped_ptr<FrameRateController> frame_rate_controller_;
+
+  base::WeakPtrFactory<Scheduler> weak_factory_;
+  bool last_set_needs_begin_frame_;
+  bool has_pending_begin_frame_;
+  // TODO(brianderson): crbug.com/249806 : Remove safe_to_expect_begin_frame_
+  // workaround.
+  bool safe_to_expect_begin_frame_;
+  BeginFrameArgs last_begin_frame_args_;
+
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;
 

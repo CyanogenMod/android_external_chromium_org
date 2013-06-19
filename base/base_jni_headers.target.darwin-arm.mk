@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "base_base_gyp_base_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/base/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/base/ActivityStatus.java', 'android/java/src/org/chromium/base/BuildInfo.java', 'android/java/src/org/chromium/base/CpuFeatures.java', 'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java', 'android/java/src/org/chromium/base/PathService.java', 'android/java/src/org/chromium/base/PathUtils.java', 'android/java/src/org/chromium/base/PowerMonitor.java', 'android/java/src/org/chromium/base/SystemMessageHandler.java', 'android/java/src/org/chromium/base/ThreadUtils.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/base/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/base/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/base/ActivityStatus.java', 'android/java/src/org/chromium/base/BuildInfo.java', 'android/java/src/org/chromium/base/CpuFeatures.java', 'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java', 'android/java/src/org/chromium/base/MemoryPressureListener.java', 'android/java/src/org/chromium/base/PathService.java', 'android/java/src/org/chromium/base/PathUtils.java', 'android/java/src/org/chromium/base/PowerMonitor.java', 'android/java/src/org/chromium/base/SystemMessageHandler.java', 'android/java/src/org/chromium/base/ThreadUtils.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/base/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/base/jni/ActivityStatus_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/base/jni/ActivityStatus_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/base/jni/ActivityStatus_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -55,6 +55,16 @@ $(gyp_shared_intermediate_dir)/base/jni/ImportantFileWriterAndroid_jni.h: $(LOCA
 
 .PHONY: base_base_jni_headers_gyp_rule_trigger
 base_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/base/jni/ImportantFileWriterAndroid_jni.h
+
+$(gyp_shared_intermediate_dir)/base/jni/MemoryPressureListener_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/base/jni/MemoryPressureListener_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/base/jni/MemoryPressureListener_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/base/jni/MemoryPressureListener_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/base/jni/MemoryPressureListener_jni.h: $(LOCAL_PATH)/base/android/java/src/org/chromium/base/MemoryPressureListener.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/base/jni; cd $(gyp_local_path)/base; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/base/MemoryPressureListener.java --output_dir "$(gyp_shared_intermediate_dir)/base/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
+
+.PHONY: base_base_jni_headers_gyp_rule_trigger
+base_base_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/base/jni/MemoryPressureListener_jni.h
 
 $(gyp_shared_intermediate_dir)/base/jni/PathService_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/base/jni/PathService_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -113,6 +123,7 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/base/jni/BuildInfo_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/CpuFeatures_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/ImportantFileWriterAndroid_jni.h \
+	$(gyp_shared_intermediate_dir)/base/jni/MemoryPressureListener_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/PathService_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/PathUtils_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/PowerMonitor_jni.h \
@@ -127,6 +138,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/base/jni/BuildInfo_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/CpuFeatures_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/ImportantFileWriterAndroid_jni.h \
+	$(gyp_shared_intermediate_dir)/base/jni/MemoryPressureListener_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/PathService_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/PathUtils_jni.h \
 	$(gyp_shared_intermediate_dir)/base/jni/PowerMonitor_jni.h \
@@ -175,6 +187,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \

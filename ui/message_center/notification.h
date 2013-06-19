@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "ui/gfx/image/image.h"
@@ -49,16 +49,6 @@ class MESSAGE_CENTER_EXPORT RichNotificationData {
 
 class MESSAGE_CENTER_EXPORT Notification {
  public:
-  Notification(NotificationType type,
-               const std::string& id,
-               const string16& title,
-               const string16& message,
-               const gfx::Image& icon,
-               const string16& display_source,
-               const std::string& extension_id,
-               const DictionaryValue* optional_fields,  // May be NULL.
-               NotificationDelegate* delegate);         // May be NULL.
-
   Notification(NotificationType type,
                const std::string& id,
                const string16& title,
@@ -142,6 +132,10 @@ class MESSAGE_CENTER_EXPORT Notification {
     return optional_fields_;
   }
 
+  // Set the priority to SYSTEM. The system priority user needs to call this
+  // method explicitly, to avoid setting it accidentally.
+  void SetSystemPriority();
+
   // Delegate actions.
   void Display() const { delegate()->Display(); }
   void Error() const { delegate()->Error(); }
@@ -166,10 +160,6 @@ class MESSAGE_CENTER_EXPORT Notification {
   string16 display_source_;
 
  private:
-  // Unpacks the provided |optional_fields| and applies the values to override
-  // the notification's data members.
-  void ApplyOptionalFields(const DictionaryValue* optional_fields);
-
   std::string extension_id_;
   unsigned serial_number_;
   RichNotificationData optional_fields_;

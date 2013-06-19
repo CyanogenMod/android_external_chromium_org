@@ -4,7 +4,7 @@
 
 #include "ppapi/proxy/browser_font_resource_trusted.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
@@ -17,9 +17,9 @@
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFont.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFontDescription.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextRun.h"
+#include "third_party/WebKit/public/web/WebFont.h"
+#include "third_party/WebKit/public/web/WebFontDescription.h"
+#include "third_party/WebKit/public/web/WebTextRun.h"
 #include "third_party/icu/public/common/unicode/ubidi.h"
 #include "third_party/skia/include/core/SkRect.h"
 

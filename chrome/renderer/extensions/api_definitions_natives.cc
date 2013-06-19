@@ -6,26 +6,34 @@
 
 #include <algorithm>
 
-#include "chrome/common/extensions/api/extension_api.h"
-
-namespace {
-const char kInvalidExtensionNamespace[] = "Invalid extension namespace";
-}
+#include "chrome/common/extensions/features/base_feature_provider.h"
 
 namespace extensions {
 
 ApiDefinitionsNatives::ApiDefinitionsNatives(Dispatcher* dispatcher,
                                              ChromeV8Context* context)
     : ChromeV8Extension(dispatcher, context) {
-  RouteFunction("GetExtensionAPIDefinitions",
-                base::Bind(&ApiDefinitionsNatives::GetExtensionAPIDefinitions,
-                           base::Unretained(this)));
+  RouteFunction("GetExtensionAPIDefinitionsForTest",
+                base::Bind(
+                    &ApiDefinitionsNatives::GetExtensionAPIDefinitionsForTest,
+                    base::Unretained(this)));
 }
 
-v8::Handle<v8::Value> ApiDefinitionsNatives::GetExtensionAPIDefinitions(
-    const v8::Arguments& args) {
-  return dispatcher()->v8_schema_registry()->GetSchemas(
-      ExtensionAPI::GetSharedInstance()->GetAllAPINames());
+void ApiDefinitionsNatives::GetExtensionAPIDefinitionsForTest(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  std::vector<std::string> apis;
+  FeatureProvider* feature_provider = BaseFeatureProvider::GetByName("api");
+  const std::vector<std::string>& feature_names =
+      feature_provider->GetAllFeatureNames();
+  for (std::vector<std::string>::const_iterator i = feature_names.begin();
+       i != feature_names.end(); ++i) {
+    if (!feature_provider->GetParent(feature_provider->GetFeature(*i)) &&
+        context()->GetAvailability(*i).is_available()) {
+      apis.push_back(*i);
+    }
+  }
+  args.GetReturnValue().Set(
+    dispatcher()->v8_schema_registry()->GetSchemas(apis));
 }
 
 }  // namespace extensions

@@ -373,6 +373,10 @@
         'wm/custom_frame_view_ash.h',
         'wm/default_window_resizer.cc',
         'wm/default_window_resizer.h',
+        'wm/dock/docked_window_layout_manager.cc',
+        'wm/dock/docked_window_layout_manager.h',
+        'wm/dock/docked_window_resizer.cc',
+        'wm/dock/docked_window_resizer.h',
         'wm/drag_window_controller.cc',
         'wm/drag_window_controller.h',
         'wm/drag_window_resizer.cc',
@@ -432,6 +436,8 @@
         'wm/stacking_controller.h',
         'wm/status_area_layout_manager.cc',
         'wm/status_area_layout_manager.h',
+        'wm/sticky_keys.cc',
+        'wm/sticky_keys.h',
         'wm/system_background_controller.cc',
         'wm/system_background_controller.h',
         'wm/system_gesture_event_filter.cc',
@@ -518,6 +524,8 @@
         ['OS=="win"', {
           'sources/': [
             ['exclude', 'host/root_window_host_factory.cc'],
+            ['exclude', 'wm/sticky_keys.cc'],
+            ['exclude', 'wm/sticky_keys.h'],
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
@@ -698,6 +706,8 @@
         'wm/ash_native_cursor_manager_unittest.cc',
         'wm/base_layout_manager_unittest.cc',
         'wm/custom_frame_view_ash_unittest.cc',
+        'wm/dock/docked_window_layout_manager_unittest.cc',
+        'wm/dock/docked_window_resizer_unittest.cc',
         'wm/drag_window_resizer_unittest.cc',
         'wm/frame_painter_unittest.cc',
         'wm/lock_state_controller_impl2_unittest.cc',
@@ -707,6 +717,7 @@
         'wm/power_button_controller_unittest.cc',
         'wm/screen_dimmer_unittest.cc',
         'wm/stacking_controller_unittest.cc',
+        'wm/sticky_keys_unittest.cc',
         'wm/system_gesture_event_filter_unittest.cc',
         'wm/system_modal_container_layout_manager_unittest.cc',
         'wm/toplevel_window_event_handler_unittest.cc',
@@ -741,6 +752,7 @@
             ['exclude', 'ash_root_window_transformer_unittest.cc'],
             ['exclude', 'magnifier/magnification_controller_unittest.cc'],
             ['exclude', 'wm/workspace/workspace_window_resizer_unittest.cc'],
+            ['exclude', 'wm/sticky_keys_unittest.cc'],
           ],
           'sources': [
             '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_unscaled_resources.rc',

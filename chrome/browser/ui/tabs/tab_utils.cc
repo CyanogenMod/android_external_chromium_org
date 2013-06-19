@@ -33,8 +33,23 @@ bool ShouldShowRecordingIndicator(content::WebContents* contents) {
 
 bool IsPlayingAudio(content::WebContents* contents) {
   AudioStreamIndicator* audio_indicator =
-      MediaCaptureDevicesDispatcher::GetInstance()->GetAudioStreamIndicator();
+      MediaCaptureDevicesDispatcher::GetInstance()->GetAudioStreamIndicator()
+          .get();
   return audio_indicator->IsPlayingAudio(contents);
+}
+
+bool IsCapturingVideo(content::WebContents* contents) {
+  scoped_refptr<MediaStreamCaptureIndicator> indicator =
+      MediaCaptureDevicesDispatcher::GetInstance()->
+          GetMediaStreamCaptureIndicator();
+  return indicator->IsCapturingVideo(contents);
+}
+
+bool IsCapturingAudio(content::WebContents* contents) {
+  scoped_refptr<MediaStreamCaptureIndicator> indicator =
+      MediaCaptureDevicesDispatcher::GetInstance()->
+          GetMediaStreamCaptureIndicator();
+  return indicator->IsCapturingAudio(contents);
 }
 
 }  // namespace chrome

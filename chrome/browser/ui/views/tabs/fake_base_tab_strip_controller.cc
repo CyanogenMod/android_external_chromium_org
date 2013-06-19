@@ -79,8 +79,10 @@ void FakeBaseTabStripController::AddSelectionFromAnchorTo(int index) {
 void FakeBaseTabStripController::CloseTab(int index, CloseTabSource source) {
 }
 
-void FakeBaseTabStripController::ShowContextMenuForTab(Tab* tab,
-                                                       const gfx::Point& p) {
+void FakeBaseTabStripController::ShowContextMenuForTab(
+    Tab* tab,
+    const gfx::Point& p,
+    ui::MenuSourceType source_type) {
 }
 
 void FakeBaseTabStripController::UpdateLoadingAnimations() {
@@ -111,4 +113,10 @@ bool FakeBaseTabStripController::IsIncognito() {
 }
 
 void FakeBaseTabStripController::LayoutTypeMaybeChanged() {
+}
+
+void FakeBaseTabStripController::OnStartedDraggingTabs() {
+}
+
+void FakeBaseTabStripController::OnStoppedDraggingTabs() {
 }

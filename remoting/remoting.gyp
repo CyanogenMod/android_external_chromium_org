@@ -4,8 +4,6 @@
 
 {
   'variables': {
-    # TODO(dmaclach): can we pick this up some other way? Right now it's
-    # duplicated from chrome.gyp
     'chromium_code': 1,
 
     'variables': {
@@ -206,7 +204,6 @@
       'webapp/server_log_entry.js',
       'webapp/session_connector.js',
       'webapp/stats_accumulator.js',
-      'webapp/storage.js',
       'webapp/third_party_host_permissions.js',
       'webapp/xhr_proxy.js',
       'webapp/third_party_token_fetcher.js',
@@ -340,6 +337,7 @@
             'host/constants_mac.h',
             'host/continue_window.cc',
             'host/continue_window.h',
+            'host/continue_window_aura.cc',
             'host/continue_window_gtk.cc',
             'host/continue_window_mac.mm',
             'host/continue_window_win.cc',
@@ -351,6 +349,7 @@
             'host/desktop_session_connector.h',
             'host/desktop_session_proxy.cc',
             'host/desktop_session_proxy.h',
+            'host/disconnect_window_aura.cc',
             'host/disconnect_window_gtk.cc',
             'host/disconnect_window_mac.h',
             'host/disconnect_window_mac.mm',
@@ -460,6 +459,8 @@
             'host/video_scheduler.h',
             'host/vlog_net_log.cc',
             'host/vlog_net_log.h',
+            'host/win/com_security.cc',
+            'host/win/com_security.h',
             'host/win/launch_process_with_token.cc',
             'host/win/launch_process_with_token.h',
             'host/win/message_window.cc',
@@ -483,16 +484,15 @@
             'host/win/wts_terminal_observer.h',
           ],
           'conditions': [
-            ['toolkit_uses_gtk==1', {
+            ['OS=="linux"', {
               'dependencies': [
+                # Always use GTK on Linux, even for Aura builds.
+                #
+                # TODO(lambroslambrou): Once the DisconnectWindow and
+                # ContinueWindow classes have been implemented for Aura,
+                # remove this dependency.
                 '../build/linux/system.gyp:gtk',
               ],
-            }, {  # else toolkit_uses_gtk!=1
-              'sources!': [
-                '*_gtk.cc',
-              ],
-            }],
-            ['OS=="linux"', {
               'link_settings': {
                 'libraries': [
                   '-lX11',
@@ -504,6 +504,11 @@
                   '-lpam',
                 ],
               },
+            }, {  # else OS != "linux"
+              'sources!': [
+                'host/continue_window_aura.cc',
+                'host/disconnect_window_aura.cc',
+              ],
             }],
             ['OS=="mac"', {
               'sources': [
@@ -618,7 +623,7 @@
           'sources': [
             'host/setup/daemon_controller.h',
             'host/setup/daemon_controller_linux.cc',
-            'host/setup/daemon_controller_mac.cc',
+            'host/setup/daemon_controller_mac.mm',
             'host/setup/daemon_controller_win.cc',
             'host/setup/daemon_installer_win.cc',
             'host/setup/daemon_installer_win.h',
@@ -891,6 +896,22 @@
                       ],
                     },
                   ],
+                  'dependencies': [
+                    '../breakpad/breakpad.gyp:dump_syms',
+                  ],
+                  'postbuilds': [
+                    {
+                      'postbuild_name': 'Dump Symbols',
+                      'variables': {
+                        'dump_product_syms_path':
+                            'scripts/mac/dump_product_syms',
+                      },
+                      'action': [
+                        '<(dump_product_syms_path)',
+                        '<(version_full)',
+                      ],
+                    },  # end of postbuild 'dump_symbols'
+                  ],  # end of 'postbuilds'
                 }],  # mac_breakpad==1
               ],  # conditions
             }],  # OS=mac
@@ -1165,38 +1186,6 @@
           ],  # conditions
         },  # end of target 'remoting_host_prefpane'
       ],  # end of 'targets'
-      'conditions': [
-        ['mac_breakpad==1', {
-          'targets': [
-            {
-              'target_name': 'remoting_mac_symbols',
-              'type': 'none',
-              'dependencies': [
-                '../breakpad/breakpad.gyp:dump_syms',
-                'remoting_me2me_host',
-              ],
-              'actions': [
-                {
-                  'action_name': 'dump_symbols',
-                  'inputs': [
-                    '<(DEPTH)/remoting/scripts/mac/dump_product_syms',
-                    '<(PRODUCT_DIR)/dump_syms',
-                    '<(PRODUCT_DIR)/remoting_me2me_host.app',
-                  ],
-                  'outputs': [
-                    '<(PRODUCT_DIR)/remoting_me2me_host.app-<(version_full)-<(target_arch).breakpad',
-                  ],
-                  'action': [
-                    '<@(_inputs)',
-                    '<@(_outputs)',
-                  ],
-                  'message': 'Dumping breakpad symbols to <(_outputs)',
-                },  # end of action 'dump_symbols'
-              ],  # end of 'actions'
-            },  # end of target 'remoting_mac_symbols'
-          ],  # end of 'targets'
-        }],  # 'mac_breakpad==1'
-      ],  # end of 'conditions'
     }],  # 'OS=="mac"'
 
     ['OS=="win"', {
@@ -1971,8 +1960,8 @@
         'client/plugin/pepper_view.h',
         'client/plugin/pepper_util.cc',
         'client/plugin/pepper_util.h',
-        'client/plugin/pepper_xmpp_proxy.cc',
-        'client/plugin/pepper_xmpp_proxy.h',
+        'client/plugin/pepper_signal_strategy.cc',
+        'client/plugin/pepper_signal_strategy.h',
       ],
     },  # end of target 'remoting_client_plugin'
 
@@ -2441,12 +2430,9 @@
         'jingle_glue/chromium_socket_factory.h',
         'jingle_glue/iq_sender.cc',
         'jingle_glue/iq_sender.h',
-        'jingle_glue/javascript_signal_strategy.cc',
-        'jingle_glue/javascript_signal_strategy.h',
         'jingle_glue/jingle_info_request.cc',
         'jingle_glue/jingle_info_request.h',
         'jingle_glue/signal_strategy.h',
-        'jingle_glue/xmpp_proxy.h',
         'jingle_glue/xmpp_signal_strategy.cc',
         'jingle_glue/xmpp_signal_strategy.h',
       ],

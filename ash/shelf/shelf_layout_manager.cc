@@ -70,6 +70,11 @@ bool IsDraggingTrayEnabled() {
   return dragging_tray_allowed;
 }
 
+int GetPreferredShelfSize() {
+  return ash::switches::UseAlternateShelfLayout() ?
+      ShelfLayoutManager::kShelfSize : kLauncherPreferredSize;
+}
+
 }  // namespace
 
 // static
@@ -80,6 +85,9 @@ const int ShelfLayoutManager::kWorkspaceAreaAutoHideInset = 5;
 
 // static
 const int ShelfLayoutManager::kAutoHideSize = 3;
+
+// static
+const int ShelfLayoutManager::kShelfSize = 47;
 
 // ShelfLayoutManager::AutoHideEventFilter -------------------------------------
 
@@ -279,26 +287,12 @@ ShelfVisibilityState ShelfLayoutManager::CalculateShelfVisibility() {
   return SHELF_VISIBLE;
 }
 
-ShelfVisibilityState
-ShelfLayoutManager::CalculateShelfVisibilityWhileDragging() {
-  switch(auto_hide_behavior_) {
-    case SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS:
-    case SHELF_AUTO_HIDE_BEHAVIOR_NEVER:
-      return SHELF_AUTO_HIDE;
-    case SHELF_AUTO_HIDE_ALWAYS_HIDDEN:
-      return SHELF_HIDDEN;
-  }
-  return SHELF_VISIBLE;
-}
-
 void ShelfLayoutManager::UpdateVisibilityState() {
   if (Shell::GetInstance()->session_state_delegate()->IsScreenLocked()) {
     SetState(SHELF_VISIBLE);
-  } else if (gesture_drag_status_ == GESTURE_DRAG_COMPLETE_IN_PROGRESS) {
+  } else {
     // TODO(zelidrag): Verify shelf drag animation still shows on the device
     // when we are in SHELF_AUTO_HIDE_ALWAYS_HIDDEN.
-    SetState(CalculateShelfVisibilityWhileDragging());
-  } else {
     WorkspaceWindowState window_state(workspace_controller_->GetWindowState());
     switch (window_state) {
       case WORKSPACE_WINDOW_STATE_FULL_SCREEN:
@@ -447,23 +441,20 @@ void ShelfLayoutManager::CompleteGestureDrag(const ui::GestureEvent& gesture) {
   gesture_drag_auto_hide_state_ =
       gesture_drag_auto_hide_state_ == SHELF_AUTO_HIDE_SHOWN ?
       SHELF_AUTO_HIDE_HIDDEN : SHELF_AUTO_HIDE_SHOWN;
-  if (gesture_drag_auto_hide_state_ == SHELF_AUTO_HIDE_HIDDEN &&
-      auto_hide_behavior_ != SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS) {
-    gesture_drag_status_ = GESTURE_DRAG_NONE;
-    if (!FullscreenWithMinimalChrome()) {
-      SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
-    } else {
-      UpdateVisibilityState();
-    }
-  } else if (gesture_drag_auto_hide_state_ == SHELF_AUTO_HIDE_SHOWN &&
-             auto_hide_behavior_ != SHELF_AUTO_HIDE_BEHAVIOR_NEVER) {
-    gesture_drag_status_ = GESTURE_DRAG_NONE;
-    SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_NEVER);
-  } else {
-    gesture_drag_status_ = GESTURE_DRAG_COMPLETE_IN_PROGRESS;
+  ShelfAutoHideBehavior new_auto_hide_behavior =
+      gesture_drag_auto_hide_state_ == SHELF_AUTO_HIDE_SHOWN ?
+      SHELF_AUTO_HIDE_BEHAVIOR_NEVER : SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS;
+
+  // In fullscreen with minimal chrome, the auto hide behavior affects neither
+  // the visibility state nor the auto hide state. Set |gesture_drag_status_|
+  // to GESTURE_DRAG_COMPLETE_IN_PROGRESS to set the auto hide state to
+  // |gesture_drag_auto_hide_state_|.
+  gesture_drag_status_ = GESTURE_DRAG_COMPLETE_IN_PROGRESS;
+  if (auto_hide_behavior_ != new_auto_hide_behavior)
+    SetAutoHideBehavior(new_auto_hide_behavior);
+  else
     UpdateVisibilityState();
-    gesture_drag_status_ = GESTURE_DRAG_NONE;
-  }
+  gesture_drag_status_ = GESTURE_DRAG_NONE;
   LayoutShelf();
 }
 
@@ -659,9 +650,9 @@ void ShelfLayoutManager::GetShelfSize(int* width, int* height) {
   gfx::Size status_size(
       shelf_->status_area_widget()->GetWindowBoundsInScreen().size());
   if (IsHorizontalAlignment())
-    *height = kLauncherPreferredSize;
+    *height = GetPreferredShelfSize();
   else
-    *width = kLauncherPreferredSize;
+    *width = GetPreferredShelfSize();
 }
 
 void ShelfLayoutManager::AdjustBoundsBasedOnAlignment(int inset,
@@ -713,7 +704,7 @@ void ShelfLayoutManager::CalculateTargetBounds(
       gfx::Rect(available_bounds.x(), available_bounds.y(),
                     available_bounds.width(), shelf_height));
 
-  int status_inset = std::max(0, kLauncherPreferredSize -
+  int status_inset = std::max(0, GetPreferredShelfSize() -
       PrimaryAxisValue(status_size.height(), status_size.width()));
 
   target_bounds->status_bounds_in_shelf = SelectValueForShelfAlignment(
@@ -744,7 +735,7 @@ void ShelfLayoutManager::CalculateTargetBounds(
   }
 
   target_bounds->opacity =
-      (gesture_drag_status_ != GESTURE_DRAG_NONE ||
+      (gesture_drag_status_ == GESTURE_DRAG_IN_PROGRESS ||
        state.visibility_state == SHELF_VISIBLE ||
        state.visibility_state == SHELF_AUTO_HIDE) ? 1.0f : 0.0f;
 
@@ -780,7 +771,7 @@ void ShelfLayoutManager::UpdateTargetBoundsForGesture(
     // changed since then, e.g. because the tray-menu was shown because of the
     // drag), then allow the drag some resistance-free region at first to make
     // sure the shelf sticks with the finger until the shelf is visible.
-    resistance_free_region = kLauncherPreferredSize - kAutoHideSize;
+    resistance_free_region = GetPreferredShelfSize() - kAutoHideSize;
   }
 
   bool resist = SelectValueForShelfAlignment(
@@ -847,9 +838,9 @@ void ShelfLayoutManager::UpdateShelfBackground(
 }
 
 bool ShelfLayoutManager::GetLauncherPaintsBackground() const {
-  return gesture_drag_status_ != GESTURE_DRAG_NONE ||
+  return gesture_drag_status_ == GESTURE_DRAG_IN_PROGRESS ||
       (!state_.is_screen_locked && window_overlaps_shelf_) ||
-      (state_.visibility_state == SHELF_AUTO_HIDE) ;
+      (state_.visibility_state == SHELF_AUTO_HIDE);
 }
 
 void ShelfLayoutManager::UpdateAutoHideStateNow() {

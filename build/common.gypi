@@ -279,6 +279,11 @@
       # See https://sites.google.com/a/chromium.org/dev/developers/testing/addresssanitizer
       'asan%': 0,
 
+      # Enable building with LSan (Clang's -fsanitize=leak option).
+      # -fsanitize=leak only works with clang, but lsan=1 implies clang=1
+      # See https://sites.google.com/a/chromium.org/dev/developers/testing/leaksanitizer
+      'lsan%': 0,
+
       # Enable building with TSAN (Clang's -fsanitize=thread option).
       # -fsanitize=thread only works with clang, but tsan=1 implies clang=1
       # See http://clang.llvm.org/docs/ThreadSanitizer.html
@@ -616,8 +621,8 @@
           'use_system_libjpeg%': '<(android_webview_build)',
         }],
 
-        # Enable Settings App only on Windows.
-        ['enable_app_list==1 and OS=="win"', {
+        # Do not enable the Settings App on ChromeOS.
+        ['enable_app_list==1 and chromeos==0', {
           'enable_settings_app%': 1,
         }, {
           'enable_settings_app%': 0,
@@ -777,6 +782,7 @@
     'clang_use_chrome_plugins%': '<(clang_use_chrome_plugins)',
     'mac_want_real_dsym%': '<(mac_want_real_dsym)',
     'asan%': '<(asan)',
+    'lsan%': '<(lsan)',
     'msan%': '<(msan)',
     'tsan%': '<(tsan)',
     'tsan_blacklist%': '<(tsan_blacklist)',
@@ -1090,7 +1096,7 @@
       # platforms except Windows, Mac and iOS.
       # TODO(glider): set clang to 1 earlier for ASan and TSan builds so that
       # it takes effect here.
-      ['os_posix==1 and OS!="mac" and OS!="ios" and clang==0 and asan==0 and tsan==0 and msan==0', {
+      ['os_posix==1 and OS!="mac" and OS!="ios" and clang==0 and asan==0 and lsan==0 and tsan==0 and msan==0', {
         'gcc_version%': '<!(python <(DEPTH)/build/compiler_version.py)',
       }, {
         'gcc_version%': 0,
@@ -1141,8 +1147,8 @@
         'use_system_sqlite%': 1,
         'locales==': [
           'ar', 'ca', 'cs', 'da', 'de', 'el', 'en-GB', 'en-US', 'es', 'fi',
-          'fr', 'he', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nl', 'pl',
-          'pt', 'pt-PT', 'ro', 'ru', 'sk', 'sv', 'th', 'tr', 'uk', 'vi',
+          'fr', 'he', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nb', 'nl',
+          'pl', 'pt', 'pt-PT', 'ro', 'ru', 'sk', 'sv', 'th', 'tr', 'uk', 'vi',
           'zh-CN', 'zh-TW',
         ],
 
@@ -1578,6 +1584,9 @@
         # runtime is fully adopted. See http://crbug.com/242503.
         'mac_strip_release': 0,
       }],
+      ['lsan==1', {
+        'clang%': 1,
+      }],
       ['tsan==1', {
         'clang%': 1,
       }],
@@ -1700,6 +1709,12 @@
       }],
     ],
 
+
+    # The path to the ANGLE library. TODO(apatrick): This is to help
+    # transition to a new version of ANGLE at a new location. After the
+    # transition is complete, this can be removed.
+    'angle_path': '<(DEPTH)/third_party/angle_dx11',
+
     # List of default apps to install in new profiles.  The first list contains
     # the source files as found in svn.  The second list, used only for linux,
     # contains the destination location for each of the files.  When a crx
@@ -1811,6 +1826,11 @@
         }],
       ],
     },
+    'defines': [
+      # Set this to use the new DX11 version of ANGLE.
+      # TODO(apatrick): Remove this when the transition is complete.
+      'ANGLE_DX11',
+    ],
     'conditions': [
       ['(OS=="mac" or OS=="ios") and asan==1', {
         'dependencies': [
@@ -2057,7 +2077,10 @@
             'Profile': 'true',
           },
         },
-        'defines': ['ADDRESS_SANITIZER'],
+        'defines': [
+            'ADDRESS_SANITIZER',
+            'MEMORY_TOOL_REPLACES_ALLOCATOR',
+        ],
       }],  # asan==1 and OS=="win"
       ['coverage!=0', {
         'conditions': [
@@ -2579,6 +2602,7 @@
             ],
           }, {
             'defines': [
+              'MEMORY_TOOL_REPLACES_ALLOCATOR',
               'DYNAMIC_ANNOTATIONS_ENABLED=1',
               'WTF_USE_DYNAMIC_ANNOTATIONS=1',
             ],
@@ -3125,9 +3149,9 @@
               '-fcolor-diagnostics',
             ],
           }],
-          # Common options for AddressSanitizer, ThreadSanitizer and
-          # MemorySanitizer.
-          ['asan==1 or tsan==1 or msan==1', {
+          # Common options for AddressSanitizer, LeakSanitizer,
+          # ThreadSanitizer and MemorySanitizer.
+          ['asan==1 or lsan==1 or tsan==1 or msan==1', {
             'target_conditions': [
               ['_toolset=="target"', {
                 'cflags': [
@@ -3139,6 +3163,9 @@
                   # that some libraries aren't needed when they actually are,
                   # http://crbug.com/234010. As workaround, disable --as-needed.
                   '-Wl,--as-needed',
+                ],
+                'defines': [
+                  'MEMORY_TOOL_REPLACES_ALLOCATOR',
                 ],
               }],
               ['_toolset=="target" and OS=="linux"', {
@@ -3168,6 +3195,21 @@
               ['OS=="mac"', {
                 'cflags': [
                   '-mllvm -asan-globals=0',  # http://crbug.com/196561
+                ],
+              }],
+            ],
+          }],
+          ['lsan==1', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': [
+                  '-fsanitize=leak',
+                ],
+                'ldflags': [
+                  '-fsanitize=leak',
+                ],
+                'defines': [
+                  'LEAK_SANITIZER',
                 ],
               }],
             ],
@@ -3254,7 +3296,10 @@
           }],
           ['linux_use_heapchecker==1', {
             'variables': {'linux_use_tcmalloc%': 1},
-            'defines': ['USE_HEAPCHECKER'],
+            'defines': [
+                'USE_HEAPCHECKER',
+                'MEMORY_TOOL_REPLACES_ALLOCATOR',
+            ],
             'conditions': [
               ['component=="shared_library"', {
                 # See crbug.com/112389
@@ -3801,6 +3846,7 @@
             },
             'defines': [
               'ADDRESS_SANITIZER',
+              'MEMORY_TOOL_REPLACES_ALLOCATOR',
             ],
           }],
         ],
@@ -4381,6 +4427,7 @@
                   '/ignore:4199',
                   '/ignore:4221',
                   '/nxcompat',
+                  '/largeaddressaware',
                 ],
               },
             },

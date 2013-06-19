@@ -86,7 +86,7 @@ scoped_ptr<WebstoreInstaller::Approval> PendingApprovals::PopApproval(
       return scoped_ptr<WebstoreInstaller::Approval>(approval);
     }
   }
-  return scoped_ptr<WebstoreInstaller::Approval>(NULL);
+  return scoped_ptr<WebstoreInstaller::Approval>();
 }
 
 // Uniquely holds the profile and extension id of an install between the time we
@@ -426,6 +426,7 @@ void BeginInstallWithManifestFunction::OnWebstoreParseSuccess(
   SigninManagerBase* signin_manager =
       SigninManagerFactory::GetForProfile(profile());
   if (dummy_extension_->is_platform_app() &&
+      signin_manager &&
       signin_manager->GetAuthenticatedUsername().empty() &&
       signin_manager->AuthInProgress()) {
     signin_tracker_.reset(new SigninTracker(profile(), this));
@@ -462,8 +463,6 @@ void BeginInstallWithManifestFunction::OnWebstoreParseFailure(
   // Matches the AddRef in RunImpl().
   Release();
 }
-
-void BeginInstallWithManifestFunction::GaiaCredentialsValid() {}
 
 void BeginInstallWithManifestFunction::SigninFailed(
     const GoogleServiceAuthError& error) {

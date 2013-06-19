@@ -40,7 +40,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
@@ -468,7 +468,7 @@ class RequestProxy
                   ->blob_storage_controller(),
               static_cast<TestShellRequestContext*>(g_request_context)
                   ->file_system_context(),
-              base::MessageLoopProxy::current())));
+              base::MessageLoopProxy::current().get())));
     }
     SimpleAppCacheSystem::SetExtraRequestInfo(
         request_.get(), params->appcache_host_id, params->request_type);
@@ -478,8 +478,9 @@ class RequestProxy
       base::FilePath path;
       if (file_util::CreateTemporaryFile(&path)) {
         downloaded_file_ = ShareableFileReference::GetOrCreate(
-            path, ShareableFileReference::DELETE_ON_FINAL_RELEASE,
-            base::MessageLoopProxy::current());
+            path,
+            ShareableFileReference::DELETE_ON_FINAL_RELEASE,
+            base::MessageLoopProxy::current().get());
         file_stream_.reset(new net::FileStream(NULL));
         file_stream_->OpenSync(
             path, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_WRITE);

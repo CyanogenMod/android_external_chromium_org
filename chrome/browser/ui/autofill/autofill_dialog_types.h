@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "components/autofill/browser/autofill_metrics.h"
 #include "components/autofill/browser/field_types.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -19,6 +19,15 @@
 namespace autofill {
 
 class AutofillField;
+
+// The time (in milliseconds) to show the splash page when the dialog is first
+// started.
+extern int const kSplashDisplayDurationMs;
+// The time (in milliseconds) spend fading out the splash image.
+extern int const kSplashFadeOutDurationMs;
+// The time (in milliseconds) spend fading in the dialog (after the splash image
+// has been faded out).
+extern int const kSplashFadeInDialogDurationMs;
 
 // This struct describes a single input control for the imperative autocomplete
 // dialog.
@@ -142,15 +151,13 @@ struct SuggestionState {
                   gfx::Font::FontStyle text_style,
                   const gfx::Image& icon,
                   const string16& extra_text,
-                  const gfx::Image& extra_icon,
-                  bool editable);
+                  const gfx::Image& extra_icon);
   ~SuggestionState();
   string16 text;
   gfx::Font::FontStyle text_style;
   gfx::Image icon;
   string16 extra_text;
   gfx::Image extra_icon;
-  bool editable;
 };
 
 enum ValidationType {

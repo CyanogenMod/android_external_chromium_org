@@ -15,11 +15,11 @@
 #include "base/values.h"
 #include "components/autofill/browser/autofill_manager_delegate.h"
 #include "components/autofill/browser/autofill_metrics.h"
-#include "components/autofill/common/autocheckout_status.h"
 #include "components/autofill/content/browser/wallet/encryption_escrow_client.h"
 #include "components/autofill/content/browser/wallet/encryption_escrow_client_observer.h"
 #include "components/autofill/content/browser/wallet/full_wallet.h"
 #include "components/autofill/content/browser/wallet/wallet_items.h"
+#include "components/autofill/core/common/autocheckout_status.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "testing/gtest/include/gtest/gtest_prod.h"
@@ -79,8 +79,6 @@ class WalletClient
     // Errors to display to users.
     BUYER_ACCOUNT_ERROR,      // Risk deny, unsupported country, or account
                               // closed.
-    SPENDING_LIMIT_EXCEEDED,  // User needs make a cheaper transaction or not
-                              // use Online Wallet.
 
     // API errors.
     BAD_REQUEST,              // Request was very malformed or sent to the
@@ -92,6 +90,11 @@ class WalletClient
     // Server errors.
     INTERNAL_ERROR,           // Unknown server side error.
     SERVICE_UNAVAILABLE,      // Online Wallet is down.
+
+    // Other errors.
+    MALFORMED_RESPONSE,       // The response from Wallet was malformed.
+    NETWORK_ERROR,            // The response code of the server was something
+                              // other than a 200 or 400.
 
     UNKNOWN_ERROR,            // Catch all error type.
   };
@@ -270,7 +273,7 @@ class WalletClient
   virtual void OnDidEscrowCardVerificationNumber(
       const std::string& escrow_handle) OVERRIDE;
   virtual void OnDidMakeRequest() OVERRIDE;
-  virtual void OnNetworkError(int response_code) OVERRIDE;
+  virtual void OnNetworkError() OVERRIDE;
   virtual void OnMalformedResponse() OVERRIDE;
 
   // Logs an UMA metric for each of the |required_actions|.

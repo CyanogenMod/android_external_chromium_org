@@ -62,8 +62,9 @@
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
+
 #if defined(OS_MACOSX)
-#include "ui/surface/io_surface_support_mac.h"
+#include "ui/gl/io_surface_support_mac.h"
 #endif
 
 // TODO(zmo): we can't include "City.h" due to type def conflicts.
@@ -84,6 +85,12 @@ khronos_uint64_t CityHashForAngle(const char* name, unsigned int len) {
       CityHash64(name, static_cast<size_t>(len)));
 }
 #endif
+
+static bool PrecisionMeetsSpecForHighpFloat(GLint rangeMin,
+                                            GLint rangeMax,
+                                            GLint precision) {
+  return (rangeMin >= 62) && (rangeMax >= 62) && (precision >= 16);
+}
 
 static void GetShaderPrecisionFormatImpl(GLenum shader_type,
                                          GLenum precision_type,
@@ -120,6 +127,24 @@ static void GetShaderPrecisionFormatImpl(GLenum shader_type,
     // platforms.
     glGetShaderPrecisionFormat(shader_type, precision_type,
                                range, precision);
+
+    // TODO(brianderson): Make the following official workarounds.
+
+    // Some drivers have bugs where they report the ranges as a negative number.
+    // Taking the absolute value here shouldn't hurt because negative numbers
+    // aren't expected anyway.
+    range[0] = abs(range[0]);
+    range[1] = abs(range[1]);
+
+    // If the driver reports a precision for highp float that isn't actually
+    // highp, don't pretend like it's supported because shader compilation will
+    // fail anyway.
+    if (precision_type == GL_HIGH_FLOAT &&
+        !PrecisionMeetsSpecForHighpFloat(range[0], range[1], *precision)) {
+      range[0] = 0;
+      range[1] = 0;
+      *precision = 0;
+    }
   }
 }
 
@@ -575,8 +600,6 @@ class GLES2DecoderImpl : public GLES2Decoder {
 
   virtual void SetStreamTextureManager(StreamTextureManager* manager) OVERRIDE;
 
-  virtual AsyncPixelTransferDelegate*
-      GetAsyncPixelTransferDelegate() OVERRIDE;
   virtual AsyncPixelTransferManager*
       GetAsyncPixelTransferManager() OVERRIDE;
   virtual void ResetAsyncPixelTransferManagerForTest() OVERRIDE;
@@ -602,7 +625,9 @@ class GLES2DecoderImpl : public GLES2Decoder {
 
   // These check the state of the currently bound framebuffer or the
   // backbuffer if no framebuffer is bound.
-  bool BoundFramebufferHasColorAttachmentWithAlpha();
+  // If all_draw_buffers is false, only check with COLOR_ATTACHMENT0, otherwise
+  // check with all attached and enabled color attachments.
+  bool BoundFramebufferHasColorAttachmentWithAlpha(bool all_draw_buffers);
   bool BoundFramebufferHasDepthAttachment();
   bool BoundFramebufferHasStencilAttachment();
 
@@ -2511,9 +2536,8 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
   GLint precision = 0;
   GetShaderPrecisionFormatImpl(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT,
                                range, &precision);
-  resources.FragmentPrecisionHigh = ((range[0] >= 62) &&
-                                     (range[1] >= 62) &&
-                                     (precision >= 16));
+  resources.FragmentPrecisionHigh =
+      PrecisionMeetsSpecForHighpFloat(range[0], range[1], precision);
 #endif
 
   if (force_webgl_glsl_validation_) {
@@ -3048,11 +3072,6 @@ void GLES2DecoderImpl::SetStreamTextureManager(StreamTextureManager* manager) {
   stream_texture_manager_ = manager;
 }
 
-AsyncPixelTransferDelegate*
-    GLES2DecoderImpl::GetAsyncPixelTransferDelegate() {
-  return async_pixel_transfer_manager_->GetAsyncPixelTransferDelegate();
-}
-
 AsyncPixelTransferManager*
     GLES2DecoderImpl::GetAsyncPixelTransferManager() {
   return async_pixel_transfer_manager_.get();
@@ -3112,7 +3131,7 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
   state_.bound_draw_framebuffer = NULL;
   state_.bound_renderbuffer = NULL;
 
-  if (offscreen_saved_color_texture_info_) {
+  if (offscreen_saved_color_texture_info_.get()) {
     DCHECK(offscreen_target_color_texture_);
     DCHECK_EQ(offscreen_saved_color_texture_info_->service_id(),
               offscreen_saved_color_texture_->id());
@@ -3585,9 +3604,15 @@ void GLES2DecoderImpl::DoBindBuffer(GLenum target, GLuint client_id) {
   glBindBuffer(target, service_id);
 }
 
-bool GLES2DecoderImpl::BoundFramebufferHasColorAttachmentWithAlpha() {
-  return (GLES2Util::GetChannelsForFormat(
-      GetBoundDrawFrameBufferInternalFormat()) & 0x0008) != 0;
+bool GLES2DecoderImpl::BoundFramebufferHasColorAttachmentWithAlpha(
+    bool all_draw_buffers) {
+  Framebuffer* framebuffer =
+      GetFramebufferInfoForTarget(GL_DRAW_FRAMEBUFFER_EXT);
+  if (!all_draw_buffers || !framebuffer) {
+    return (GLES2Util::GetChannelsForFormat(
+        GetBoundDrawFrameBufferInternalFormat()) & 0x0008) != 0;
+  }
+  return framebuffer->HasAlphaMRT();
 }
 
 bool GLES2DecoderImpl::BoundFramebufferHasDepthAttachment() {
@@ -3620,7 +3645,7 @@ void GLES2DecoderImpl::ApplyDirtyState() {
     glColorMask(
         state_.color_mask_red, state_.color_mask_green, state_.color_mask_blue,
         state_.color_mask_alpha &&
-            BoundFramebufferHasColorAttachmentWithAlpha());
+            BoundFramebufferHasColorAttachmentWithAlpha(true));
     bool have_depth = BoundFramebufferHasDepthAttachment();
     glDepthMask(state_.depth_mask && have_depth);
     EnableDisable(GL_DEPTH_TEST, state_.enable_flags.depth_test && have_depth);
@@ -4062,7 +4087,7 @@ bool GLES2DecoderImpl::GetHelper(
       if (params) {
         GLint v = 0;
         glGetIntegerv(GL_ALPHA_BITS, &v);
-        params[0] = BoundFramebufferHasColorAttachmentWithAlpha() ? v : 0;
+        params[0] = BoundFramebufferHasColorAttachmentWithAlpha(false) ? v : 0;
       }
       return true;
     case GL_DEPTH_BITS:
@@ -5586,7 +5611,7 @@ bool GLES2DecoderImpl::SetBlackTextureForNonRenderableTextures() {
       if (texture_unit_index < state_.texture_units.size()) {
         TextureUnit& texture_unit = state_.texture_units[texture_unit_index];
         TextureRef* texture =
-            texture_unit.GetInfoForSamplerType(uniform_info->type);
+            texture_unit.GetInfoForSamplerType(uniform_info->type).get();
         if (!texture || !texture_manager()->CanRender(texture)) {
           textures_set = true;
           glActiveTexture(GL_TEXTURE0 + texture_unit_index);
@@ -5596,9 +5621,9 @@ bool GLES2DecoderImpl::SetBlackTextureForNonRenderableTextures() {
           LOCAL_RENDER_WARNING(
               std::string("texture bound to texture unit ") +
               base::IntToString(texture_unit_index) +
-              " is not renderable. It maybe non-power-of-2 and have "
-              " incompatible texture filtering or is not "
-              "'texture complete'");
+              " is not renderable. It maybe non-power-of-2 and have"
+              " incompatible texture filtering or is not"
+              " 'texture complete'");
         }
       }
       // else: should this be an error?
@@ -5658,7 +5683,7 @@ bool GLES2DecoderImpl::ClearUnclearedTextures() {
         if (texture_unit_index < state_.texture_units.size()) {
           TextureUnit& texture_unit = state_.texture_units[texture_unit_index];
           TextureRef* texture_ref =
-              texture_unit.GetInfoForSamplerType(uniform_info->type);
+              texture_unit.GetInfoForSamplerType(uniform_info->type).get();
           if (texture_ref && !texture_ref->texture()->SafeToRenderFrom()) {
             if (!texture_manager()->ClearRenderableLevels(this, texture_ref)) {
               return false;
@@ -7090,24 +7115,21 @@ error::Error GLES2DecoderImpl::HandleGetString(
           if (!derivatives_explicitly_enabled_) {
             size_t offset = extensions.find(kOESDerivativeExtension);
             if (std::string::npos != offset) {
-              extensions.replace(offset,
-                                 offset + arraysize(kOESDerivativeExtension),
+              extensions.replace(offset, arraysize(kOESDerivativeExtension),
                                  std::string());
             }
           }
           if (!frag_depth_explicitly_enabled_) {
             size_t offset = extensions.find(kEXTFragDepthExtension);
             if (std::string::npos != offset) {
-              extensions.replace(offset,
-                                 offset + arraysize(kEXTFragDepthExtension),
+              extensions.replace(offset, arraysize(kEXTFragDepthExtension),
                                  std::string());
             }
           }
           if (!draw_buffers_explicitly_enabled_) {
             size_t offset = extensions.find(kEXTDrawBuffersExtension);
             if (std::string::npos != offset) {
-              extensions.replace(offset,
-                                 offset + arraysize(kEXTDrawBuffersExtension),
+              extensions.replace(offset, arraysize(kEXTDrawBuffersExtension),
                                  std::string());
             }
           }
@@ -7770,16 +7792,22 @@ void GLES2DecoderImpl::DoTexImage2D(
   }
 
   if (!teximage2d_faster_than_texsubimage2d_ && level_is_same && pixels) {
-    glTexSubImage2D(target, level, 0, 0, width, height, format, type, pixels);
+    {
+      ScopedTextureUploadTimer timer(this);
+      glTexSubImage2D(target, level, 0, 0, width, height, format, type, pixels);
+    }
     texture_manager()->SetLevelCleared(texture_ref, target, level, true);
     tex_image_2d_failed_ = false;
     return;
   }
 
   LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glTexImage2D");
-  glTexImage2D(
-      target, level, internal_format, width, height, border, format, type,
-      pixels);
+  {
+    ScopedTextureUploadTimer timer(this);
+    glTexImage2D(
+        target, level, internal_format, width, height, border, format, type,
+        pixels);
+  }
   GLenum error = LOCAL_PEEK_GL_ERROR("glTexImage2D");
   if (error == GL_NO_ERROR) {
     texture_manager()->SetLevelInfo(
@@ -10181,13 +10209,12 @@ error::Error GLES2DecoderImpl::HandleAsyncTexImage2DCHROMIUM(
   // Set up the async state if needed, and make the texture
   // immutable so the async state stays valid. The level info
   // is set up lazily when the transfer completes.
-  AsyncPixelTransferState* state =
-      async_pixel_transfer_manager_->CreatePixelTransferState(texture_ref,
-                                                              tex_params);
+  AsyncPixelTransferDelegate* delegate =
+      async_pixel_transfer_manager_->CreatePixelTransferDelegate(texture_ref,
+                                                                 tex_params);
   texture->SetImmutable(true);
 
-  GetAsyncPixelTransferDelegate()->AsyncTexImage2D(
-      state,
+  delegate->AsyncTexImage2D(
       tex_params,
       mem_params,
       base::Bind(&TextureManager::SetLevelInfoFromParams,
@@ -10266,9 +10293,9 @@ error::Error GLES2DecoderImpl::HandleAsyncTexSubImage2DCHROMIUM(
                                               width, height, format, type};
   AsyncMemoryParams mem_params = {shared_memory, shm_size,
                                        shm_data_offset, shm_data_size};
-  AsyncPixelTransferState* state =
-      async_pixel_transfer_manager_->GetPixelTransferState(texture_ref);
-  if (!state) {
+  AsyncPixelTransferDelegate* delegate =
+      async_pixel_transfer_manager_->GetPixelTransferDelegate(texture_ref);
+  if (!delegate) {
     // TODO(epenner): We may want to enforce exclusive use
     // of async APIs in which case this should become an error,
     // (the texture should have been async defined).
@@ -10280,13 +10307,12 @@ error::Error GLES2DecoderImpl::HandleAsyncTexSubImage2DCHROMIUM(
                                          &define_params.internal_format);
     // Set up the async state if needed, and make the texture
     // immutable so the async state stays valid.
-    state = async_pixel_transfer_manager_->CreatePixelTransferState(
+    delegate = async_pixel_transfer_manager_->CreatePixelTransferDelegate(
         texture_ref, define_params);
     texture->SetImmutable(true);
   }
 
-  GetAsyncPixelTransferDelegate()->AsyncTexSubImage2D(
-      state, tex_params, mem_params);
+  delegate->AsyncTexSubImage2D(tex_params, mem_params);
   return error::kNoError;
 }
 
@@ -10307,15 +10333,15 @@ error::Error GLES2DecoderImpl::HandleWaitAsyncTexImage2DCHROMIUM(
           "glWaitAsyncTexImage2DCHROMIUM", "unknown texture");
     return error::kNoError;
   }
-  AsyncPixelTransferState* state =
-      async_pixel_transfer_manager_->GetPixelTransferState(texture_ref);
-  if (!state) {
+  AsyncPixelTransferDelegate* delegate =
+      async_pixel_transfer_manager_->GetPixelTransferDelegate(texture_ref);
+  if (!delegate) {
       LOCAL_SET_GL_ERROR(
           GL_INVALID_OPERATION,
           "glWaitAsyncTexImage2DCHROMIUM", "No async transfer started");
     return error::kNoError;
   }
-  GetAsyncPixelTransferDelegate()->WaitForTransferCompletion(state);
+  delegate->WaitForTransferCompletion();
   ProcessFinishedAsyncTransfers();
   return error::kNoError;
 }

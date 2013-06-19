@@ -28,6 +28,7 @@
 #include "ui/gfx/point3_f.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 #include "ui/native_theme/native_theme.h"
@@ -137,7 +138,7 @@ class PostEventDispatchHandler : public ui::EventHandler {
          event->type() == ui::ET_GESTURE_TWO_FINGER_TAP)) {
       gfx::Point location(event->location());
       View::ConvertPointToScreen(owner_, &location);
-      owner_->ShowContextMenu(location, true);
+      owner_->ShowContextMenu(location, ui::MENU_SOURCE_TOUCH);
       event->StopPropagation();
     }
   }
@@ -906,6 +907,23 @@ bool View::HitTestRect(const gfx::Rect& rect) const {
   return false;
 }
 
+bool View::IsMouseHovered() {
+  // If we haven't yet been placed in an onscreen view hierarchy, we can't be
+  // hovered.
+  if (!GetWidget())
+    return false;
+
+  // If mouse events are disabled, then the mouse cursor is invisible and
+  // is therefore not hovering over this button.
+  if (!GetWidget()->IsMouseEventsEnabled())
+    return false;
+
+  gfx::Point cursor_pos(gfx::Screen::GetScreenFor(
+      GetWidget()->GetNativeView())->GetCursorScreenPoint());
+  ConvertPointToTarget(NULL, this, &cursor_pos);
+  return HitTestPoint(cursor_pos);
+}
+
 bool View::OnMousePressed(const ui::MouseEvent& event) {
   return false;
 }
@@ -1148,11 +1166,12 @@ bool View::GetTooltipTextOrigin(const gfx::Point& p, gfx::Point* loc) const {
 
 // Context menus ---------------------------------------------------------------
 
-void View::ShowContextMenu(const gfx::Point& p, bool is_mouse_gesture) {
+void View::ShowContextMenu(const gfx::Point& p,
+                           ui::MenuSourceType source_type) {
   if (!context_menu_controller_)
     return;
 
-  context_menu_controller_->ShowContextMenuForView(this, p);
+  context_menu_controller_->ShowContextMenuForView(this, p, source_type);
 }
 
 // static
@@ -2117,7 +2136,7 @@ bool View::ProcessMousePressed(const ui::MouseEvent& event) {
     gfx::Point location(event.location());
     if (HitTestPoint(location)) {
       ConvertPointToScreen(this, &location);
-      ShowContextMenu(location, true);
+      ShowContextMenu(location, ui::MENU_SOURCE_MOUSE);
       return true;
     }
   }
@@ -2160,7 +2179,7 @@ void View::ProcessMouseReleased(const ui::MouseEvent& event) {
     OnMouseReleased(event);
     if (HitTestPoint(location)) {
       ConvertPointToScreen(this, &location);
-      ShowContextMenu(location, true);
+      ShowContextMenu(location, ui::MENU_SOURCE_MOUSE);
     }
   } else {
     OnMouseReleased(event);

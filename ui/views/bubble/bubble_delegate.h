@@ -113,9 +113,15 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   // after calling CreateBubble.
   void SetAlignment(BubbleBorder::BubbleAlignment alignment);
 
+  // Sets the bubble arrow paint type.
+  void SetArrowPaintType(BubbleBorder::ArrowPaintType paint_type);
+
  protected:
   // Get bubble bounds from the anchor rect and client view's preferred size.
   virtual gfx::Rect GetBubbleBounds();
+
+  // Returns the duration in milliseconds for the fade animation.
+  virtual int GetFadeDuration();
 
   // View overrides:
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;

@@ -7,7 +7,7 @@
 #include "base/i18n/rtl.h"
 #include "chrome/common/validation_message_messages.h"
 #include "content/public/renderer/render_view.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 ValidationMessageAgent::ValidationMessageAgent(content::RenderView* render_view)
     : content::RenderViewObserver(render_view)
@@ -18,7 +18,7 @@ ValidationMessageAgent::ValidationMessageAgent(content::RenderView* render_view)
 ValidationMessageAgent::~ValidationMessageAgent() {}
 
 void ValidationMessageAgent::showValidationMessage(
-    const WebKit::WebRect& anchor_in_screen,
+    const WebKit::WebRect& anchor_in_root_view,
     const WebKit::WebString& main_text,
     const WebKit::WebString& sub_text,
     WebKit::WebTextDirection hint) {
@@ -40,10 +40,16 @@ void ValidationMessageAgent::showValidationMessage(
   }
 
   Send(new ValidationMessageMsg_ShowValidationMessage(
-      routing_id(), anchor_in_screen, wrapped_main_text, wrapped_sub_text));
+      routing_id(), anchor_in_root_view, wrapped_main_text, wrapped_sub_text));
 }
 
 void ValidationMessageAgent::hideValidationMessage() {
   Send(new ValidationMessageMsg_HideValidationMessage());
+}
+
+void ValidationMessageAgent::moveValidationMessage(
+      const WebKit::WebRect& anchor_in_root_view) {
+  Send(new ValidationMessageMsg_MoveValidationMessage(
+      routing_id(), anchor_in_root_view));
 }
 

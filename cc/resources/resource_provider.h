@@ -12,7 +12,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "cc/base/cc_export.h"
@@ -290,7 +290,6 @@ class CC_EXPORT ResourceProvider {
   void BeginSetPixels(ResourceId id);
   void ForceSetPixelsToComplete(ResourceId id);
   bool DidSetPixelsComplete(ResourceId id);
-  void AbortSetPixels(ResourceId id);
 
   // Acquire and release an image. The image allows direct
   // manipulation of texture memory.

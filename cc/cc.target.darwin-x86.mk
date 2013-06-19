@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -44,7 +44,6 @@ LOCAL_SRC_FILES := \
 	cc/base/switches.cc \
 	cc/base/thread_impl.cc \
 	cc/base/tiling_data.cc \
-	cc/base/worker_pool.cc \
 	cc/debug/debug_colors.cc \
 	cc/debug/debug_rect_history.cc \
 	cc/debug/fake_web_graphics_context_3d.cc \
@@ -90,10 +89,12 @@ LOCAL_SRC_FILES := \
 	cc/layers/video_frame_provider_client_impl.cc \
 	cc/layers/video_layer.cc \
 	cc/layers/video_layer_impl.cc \
+	cc/output/begin_frame_args.cc \
 	cc/output/compositor_frame.cc \
 	cc/output/compositor_frame_ack.cc \
 	cc/output/compositor_frame_metadata.cc \
 	cc/output/copy_output_request.cc \
+	cc/output/copy_output_result.cc \
 	cc/output/delegated_frame_data.cc \
 	cc/output/delegating_renderer.cc \
 	cc/output/direct_renderer.cc \
@@ -162,6 +163,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/tile_priority.cc \
 	cc/resources/transferable_resource.cc \
 	cc/resources/video_resource_updater.cc \
+	cc/resources/worker_pool.cc \
 	cc/scheduler/delay_based_time_source.cc \
 	cc/scheduler/frame_rate_controller.cc \
 	cc/scheduler/rate_limiter.cc \
@@ -170,7 +172,6 @@ LOCAL_SRC_FILES := \
 	cc/scheduler/scheduler_settings.cc \
 	cc/scheduler/scheduler_state_machine.cc \
 	cc/scheduler/texture_uploader.cc \
-	cc/scheduler/vsync_time_source.cc \
 	cc/trees/damage_tracker.cc \
 	cc/trees/layer_sorter.cc \
 	cc/trees/layer_tree_host.cc \
@@ -224,6 +225,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -283,10 +285,6 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/third_party/WebKit \
-	$(LOCAL_PATH)/third_party/npapi \
-	$(LOCAL_PATH)/third_party/npapi/bindings \
-	$(LOCAL_PATH)/v8/include \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

@@ -44,8 +44,14 @@ void InputMethodBridge::OnFocus() {
 
 void InputMethodBridge::OnBlur() {
   ConfirmCompositionText();
+
   if (host_->GetTextInputClient() == this)
     host_->SetFocusedTextInputClient(NULL);
+}
+
+bool InputMethodBridge::OnUntranslatedIMEMessage(const base::NativeEvent& event,
+                                                 NativeEventResult* result) {
+  return host_->OnUntranslatedIMEMessage(event, result);
 }
 
 void InputMethodBridge::DispatchKeyEvent(const ui::KeyEvent& key) {
@@ -70,6 +76,10 @@ void InputMethodBridge::OnCaretBoundsChanged(View* view) {
 void InputMethodBridge::CancelComposition(View* view) {
   if (IsViewFocused(view))
     host_->CancelComposition(this);
+}
+
+void InputMethodBridge::OnInputLocaleChanged() {
+  return host_->OnInputLocaleChanged();
 }
 
 std::string InputMethodBridge::GetInputLocale() {
@@ -214,12 +224,21 @@ void InputMethodBridge::EnsureCaretInRect(const gfx::Rect& rect) {
 
 // Overridden from FocusChangeListener.
 void InputMethodBridge::OnWillChangeFocus(View* focused_before, View* focused) {
-  ConfirmCompositionText();
+  if (HasCompositionText()) {
+    ConfirmCompositionText();
+    CancelComposition(focused_before);
+  }
 }
 
 void InputMethodBridge::OnDidChangeFocus(View* focused_before, View* focused) {
-  OnTextInputTypeChanged(GetFocusedView());
-  OnCaretBoundsChanged(GetFocusedView());
+  DCHECK_EQ(GetFocusedView(), focused);
+  OnTextInputTypeChanged(focused);
+  OnCaretBoundsChanged(focused);
 }
+
+ui::InputMethod* InputMethodBridge::GetHostInputMethod() const {
+  return host_;
+}
+
 
 }  // namespace views

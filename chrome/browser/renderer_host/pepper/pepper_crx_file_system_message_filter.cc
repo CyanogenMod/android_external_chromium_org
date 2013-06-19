@@ -7,12 +7,13 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/pepper_permission_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/pepper_permission_util.h"
 #include "content/public/browser/browser_ppapi_host.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_view_host.h"
 #include "extensions/common/constants.h"
@@ -68,7 +69,8 @@ PepperCrxFileSystemMessageFilter::OverrideTaskRunnerForMessage(
     const IPC::Message& msg) {
   // In order to reach ExtensionSystem, we need to get ProfileManager first.
   // ProfileManager lives in UI thread, so we need to do this in UI thread.
-  return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
+  return content::BrowserThread::GetMessageLoopProxyForThread(
+      content::BrowserThread::UI);
 }
 
 int32_t PepperCrxFileSystemMessageFilter::OnResourceMessageReceived(
@@ -82,7 +84,7 @@ int32_t PepperCrxFileSystemMessageFilter::OnResourceMessageReceived(
 }
 
 Profile* PepperCrxFileSystemMessageFilter::GetProfile() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   return profile_manager->GetProfile(profile_directory_);
 }
@@ -115,14 +117,22 @@ std::string PepperCrxFileSystemMessageFilter::CreateIsolatedFileSystem(
 int32_t PepperCrxFileSystemMessageFilter::OnOpenFileSystem(
     ppapi::host::HostMessageContext* context) {
   Profile* profile = GetProfile();
-  if (!IsExtensionOrSharedModuleWhitelisted(profile,
-                                            document_url_,
-                                            allowed_crxfs_origins_,
-                                            switches::kAllowNaClCrxFsAPI)) {
+  const ExtensionSet* extension_set = NULL;
+  if (profile) {
+    extension_set = extensions::ExtensionSystem::Get(profile)->
+        extension_service()->extensions();
+  }
+  if (!IsExtensionOrSharedModuleWhitelisted(
+          document_url_, extension_set, allowed_crxfs_origins_) &&
+      !IsHostAllowedByCommandLine(
+          document_url_, extension_set, switches::kAllowNaClCrxFsAPI)) {
     LOG(ERROR) << "Host " << document_url_.host() << " cannot use CrxFs API.";
     return PP_ERROR_NOACCESS;
   }
 
+  // TODO(raymes): When we remove FileSystem from the renderer, we should create
+  // a pending PepperFileSystemBrowserHost here with the fsid and send the
+  // pending host ID back to the plugin.
   const std::string fsid = CreateIsolatedFileSystem(profile);
   if (fsid.empty()) {
     context->reply_msg =

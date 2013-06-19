@@ -61,7 +61,8 @@ SyncClient::SyncClient(base::SequencedTaskRunner* blocking_task_runner,
                        file_system::OperationObserver* observer,
                        JobScheduler* scheduler,
                        ResourceMetadata* metadata,
-                       FileCache* cache)
+                       FileCache* cache,
+                       const base::FilePath& temporary_file_directory)
     : metadata_(metadata),
       cache_(cache),
       download_operation_(new file_system::DownloadOperation(
@@ -69,7 +70,8 @@ SyncClient::SyncClient(base::SequencedTaskRunner* blocking_task_runner,
           observer,
           scheduler,
           metadata,
-          cache)),
+          cache,
+          temporary_file_directory)),
       update_operation_(new file_system::UpdateOperation(blocking_task_runner,
                                                          observer,
                                                          scheduler,
@@ -78,15 +80,10 @@ SyncClient::SyncClient(base::SequencedTaskRunner* blocking_task_runner,
       delay_(base::TimeDelta::FromSeconds(kDelaySeconds)),
       weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(cache);
-
-  cache_->AddObserver(this);
 }
 
 SyncClient::~SyncClient() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  cache_->RemoveObserver(this);
 }
 
 void SyncClient::StartProcessingBacklog() {
@@ -110,35 +107,20 @@ void SyncClient::StartCheckingExistingPinnedFiles() {
       base::Bind(&base::DoNothing));
 }
 
-std::vector<std::string> SyncClient::GetResourceIdsForTesting(
-    SyncType sync_type) const {
-  switch (sync_type) {
-    case FETCH:
-      return std::vector<std::string>(fetch_list_.begin(), fetch_list_.end());
-    case UPLOAD:
-      return std::vector<std::string>(upload_list_.begin(), upload_list_.end());
-  }
-  NOTREACHED();
-  return std::vector<std::string>();
-}
-
-void SyncClient::OnCachePinned(const std::string& resource_id,
-                               const std::string& md5) {
+void SyncClient::AddFetchTask(const std::string& resource_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   AddTaskToQueue(FETCH, resource_id);
 }
 
-void SyncClient::OnCacheUnpinned(const std::string& resource_id,
-                                 const std::string& md5) {
+void SyncClient::RemoveFetchTask(const std::string& resource_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // Remove the resource_id if it's in the queue. This can happen if the
-  // user cancels pinning before the file is fetched.
+  // TODO(kinaba): Cancel tasks in JobScheduler as well. crbug.com/248856
   pending_fetch_list_.erase(resource_id);
 }
 
-void SyncClient::OnCacheCommitted(const std::string& resource_id) {
+void SyncClient::AddUploadTask(const std::string& resource_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   AddTaskToQueue(UPLOAD, resource_id);
@@ -283,7 +265,6 @@ void SyncClient::OnRemove(const std::string& resource_id,
   // Before fetching, we should pin this file again, so that the fetched file
   // is downloaded properly to the persistent directory and marked pinned.
   cache_->PinOnUIThread(resource_id,
-                        std::string(),
                         base::Bind(&SyncClient::OnPinned,
                                    weak_ptr_factory_.GetWeakPtr(),
                                    resource_id));
@@ -319,7 +300,6 @@ void SyncClient::OnFetchFileComplete(const std::string& resource_id,
         // If user cancels download, unpin the file so that we do not sync the
         // file again.
         cache_->UnpinOnUIThread(resource_id,
-                                std::string(),
                                 base::Bind(&util::EmptyFileOperationCallback));
         break;
       case FILE_ERROR_NO_CONNECTION:

@@ -25,14 +25,15 @@
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "content/child/appcache_dispatcher.h"
 #include "content/child/child_histogram_message_filter.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/indexed_db/indexed_db_message_filter.h"
 #include "content/child/npobject_util.h"
 #include "content/child/plugin_messages.h"
 #include "content/child/resource_dispatcher.h"
+#include "content/child/runtime_features.h"
 #include "content/child/web_database_observer_impl.h"
-#include "content/common/appcache/appcache_dispatcher.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/database_messages.h"
 #include "content/common/db_message_filter.h"
@@ -81,23 +82,24 @@
 #include "media/base/media.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebColorName.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNetworkStateNotifier.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebColorName.h"
+#include "third_party/WebKit/public/web/WebDatabase.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebNetworkStateNotifier.h"
+#include "third_party/WebKit/public/web/WebPopupMenu.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/web/WebScriptController.h"
+#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/web/WebSharedWorkerRepository.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
 #include "v8/include/v8.h"
 #include "webkit/glue/webkit_glue.h"
+#include "webkit/child/worker_task_runner.h"
 #include "webkit/renderer/appcache/appcache_frontend_impl.h"
 
 #if defined(OS_WIN)
@@ -112,10 +114,6 @@
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
-#endif
-
-#if defined(ENABLE_WEBRTC)
-#include "third_party/webrtc/system_wrappers/interface/event_tracer.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -213,26 +211,6 @@ void AddHistogramSample(void* hist, int sample) {
   base::Histogram* histogram = static_cast<base::Histogram*>(hist);
   histogram->Add(sample);
 }
-
-#if defined(ENABLE_WEBRTC)
-const unsigned char* GetCategoryGroupEnabled(const char* category_group) {
-  return TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category_group);
-}
-
-void AddTraceEvent(char phase,
-                   const unsigned char* category_group_enabled,
-                   const char* name,
-                   unsigned long long id,
-                   int num_args,
-                   const char** arg_names,
-                   const unsigned char* arg_types,
-                   const unsigned long long* arg_values,
-                   unsigned char flags) {
-  TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_group_enabled, name, id,
-                                  num_args, arg_names, arg_types, arg_values,
-                                  NULL, flags);
-}
-#endif
 
 }  // namespace
 
@@ -371,12 +349,11 @@ void RenderThreadImpl::Init() {
   AddFilter(db_message_filter_.get());
 
 #if defined(ENABLE_WEBRTC)
-  webrtc::SetupEventTracer(&GetCategoryGroupEnabled, &AddTraceEvent);
-
   peer_connection_tracker_.reset(new PeerConnectionTracker());
   AddObserver(peer_connection_tracker_.get());
 
-  p2p_socket_dispatcher_ = new P2PSocketDispatcher(GetIOMessageLoopProxy());
+  p2p_socket_dispatcher_ =
+      new P2PSocketDispatcher(GetIOMessageLoopProxy().get());
   AddFilter(p2p_socket_dispatcher_.get());
 #endif  // defined(ENABLE_WEBRTC)
   vc_manager_ = new VideoCaptureImplManager();
@@ -458,7 +435,7 @@ void RenderThreadImpl::Shutdown() {
 
   compositor_thread_.reset();
   input_handler_manager_.reset();
-  if (input_event_filter_) {
+  if (input_event_filter_.get()) {
     RemoveFilter(input_event_filter_.get());
     input_event_filter_ = NULL;
   }
@@ -638,112 +615,6 @@ void RenderThreadImpl::WidgetRestored() {
   ScheduleIdleHandler(kLongIdleHandlerDelayMs);
 }
 
-static void AdjustRuntimeFeatureDefaultsForPlatform() {
-#if defined(OS_ANDROID) && !defined(GOOGLE_TV)
-  WebRuntimeFeatures::enableWebKitMediaSource(false);
-  WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
-  WebRuntimeFeatures::enableEncryptedMedia(false);
-#endif
-
-#if defined(OS_ANDROID)
-  WebRuntimeFeatures::enableWebAudio(false);
-  // Android does not support the Gamepad API.
-  WebRuntimeFeatures::enableGamepad(false);
-  // input[type=week] in Android is incomplete. crbug.com/135938
-  WebRuntimeFeatures::enableInputTypeWeek(false);
-  // Android does not have support for PagePopup
-  WebRuntimeFeatures::enablePagePopup(false);
-  // datalist on Android is not enabled
-  WebRuntimeFeatures::enableDataListElement(false);
-#endif
-}
-
-static void AdjustRuntimeFeaturesFromArgs(const CommandLine& command_line) {
-  if (command_line.HasSwitch(switches::kDisableDatabases))
-    WebRuntimeFeatures::enableDatabase(false);
-
-  if (command_line.HasSwitch(switches::kDisableApplicationCache))
-    WebRuntimeFeatures::enableApplicationCache(false);
-
-  if (command_line.HasSwitch(switches::kDisableDesktopNotifications))
-    WebRuntimeFeatures::enableNotifications(false);
-
-  if (command_line.HasSwitch(switches::kDisableLocalStorage))
-    WebRuntimeFeatures::enableLocalStorage(false);
-
-  if (command_line.HasSwitch(switches::kDisableSessionStorage))
-    WebRuntimeFeatures::enableSessionStorage(false);
-
-  if (command_line.HasSwitch(switches::kDisableGeolocation))
-    WebRuntimeFeatures::enableGeolocation(false);
-
-#if defined(OS_ANDROID) && !defined(GOOGLE_TV)
-  if (command_line.HasSwitch(switches::kEnableWebKitMediaSource))
-    WebRuntimeFeatures::enableWebKitMediaSource(true);
-#else
-  if (command_line.HasSwitch(switches::kDisableWebKitMediaSource))
-    WebRuntimeFeatures::enableWebKitMediaSource(false);
-#endif
-
-#if defined(OS_ANDROID)
-  if (command_line.HasSwitch(switches::kDisableWebRTC)) {
-    WebRuntimeFeatures::enableMediaStream(false);
-    WebRuntimeFeatures::enablePeerConnection(false);
-  }
-
-  if (!command_line.HasSwitch(switches::kEnableSpeechRecognition))
-    WebRuntimeFeatures::enableScriptedSpeech(false);
-
-  if (command_line.HasSwitch(switches::kEnableWebAudio)) {
-    bool enable_webaudio = true;
-#if defined(ARCH_CPU_ARMEL)
-    enable_webaudio =
-        ((android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0);
-#endif
-    WebRuntimeFeatures::enableWebAudio(enable_webaudio);
-  }
-#else
-  if (command_line.HasSwitch(switches::kDisableWebAudio))
-    WebRuntimeFeatures::enableWebAudio(false);
-#endif
-
-  if (command_line.HasSwitch(switches::kDisableFullScreen))
-    WebRuntimeFeatures::enableFullscreen(false);
-
-  if (command_line.HasSwitch(switches::kEnableEncryptedMedia))
-    WebRuntimeFeatures::enableEncryptedMedia(true);
-
-  if (command_line.HasSwitch(switches::kDisableLegacyEncryptedMedia))
-    WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
-
-  if (command_line.HasSwitch(switches::kEnableWebMIDI))
-    WebRuntimeFeatures::enableWebMIDI(true);
-
-  if (command_line.HasSwitch(switches::kEnableDeviceMotion))
-      WebRuntimeFeatures::enableDeviceMotion(true);
-
-  if (command_line.HasSwitch(switches::kDisableDeviceOrientation))
-    WebRuntimeFeatures::enableDeviceOrientation(false);
-
-  if (command_line.HasSwitch(switches::kDisableSpeechInput))
-    WebRuntimeFeatures::enableSpeechInput(false);
-
-  if (command_line.HasSwitch(switches::kDisableFileSystem))
-    WebRuntimeFeatures::enableFileSystem(false);
-
-  if (command_line.HasSwitch(switches::kDisableJavaScriptI18NAPI))
-    WebRuntimeFeatures::enableJavaScriptI18NAPI(false);
-
-  if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
-    WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
-
-  if (command_line.HasSwitch(switches::kEnableSpeechSynthesis))
-    WebRuntimeFeatures::enableSpeechSynthesis(true);
-
-  if (command_line.HasSwitch(switches::kEnableWebGLDraftExtensions))
-    WebRuntimeFeatures::enableWebGLDraftExtensions(true);
-}
-
 void RenderThreadImpl::EnsureWebKitInitialized() {
   if (webkit_platform_support_)
     return;
@@ -763,7 +634,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       compositor_message_loop_proxy_ =
           factory->GetCompositorMessageLoop();
 #endif
-    if (!compositor_message_loop_proxy_) {
+    if (!compositor_message_loop_proxy_.get()) {
       compositor_thread_.reset(new base::Thread("Compositor"));
       compositor_thread_->Start();
 #if defined(OS_ANDROID)
@@ -816,18 +687,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       new WebDatabaseObserverImpl(sync_message_filter()));
   WebKit::WebDatabase::setObserver(web_database_observer_impl_.get());
 
-  WebRuntimeFeatures::enableStableFeatures(true);
-
-  if (command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures))
-    WebRuntimeFeatures::enableExperimentalFeatures(true);
-
-  AdjustRuntimeFeatureDefaultsForPlatform();
-  AdjustRuntimeFeaturesFromArgs(command_line);
-
-  // Enabled by default for testing.
-  // TODO(urvang): Go back to using the command-line option after a few days.
-  // https://code.google.com/p/chromium/issues/detail?id=234437
-  WebRuntimeFeatures::enableWebPInAcceptHeader(true);
+  SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
 
   if (!media::IsMediaLibraryInitialized()) {
     WebRuntimeFeatures::enableMediaPlayer(false);
@@ -973,6 +833,11 @@ void RenderThreadImpl::UpdateHistograms(int sequence_number) {
   child_histogram_message_filter()->SendHistograms(sequence_number);
 }
 
+int RenderThreadImpl::PostTaskToAllWebWorkers(const base::Closure& closure) {
+  return webkit_glue::WorkerTaskRunner::Instance()->PostTaskToAllThreads(
+      closure);
+}
+
 bool RenderThreadImpl::ResolveProxy(const GURL& url, std::string* proxy_list) {
   bool result = false;
   Send(new ViewHostMsg_ResolveProxy(url, &result, proxy_list));
@@ -989,9 +854,9 @@ void RenderThreadImpl::OnGpuVDAContextLoss() {
   DCHECK(self);
   if (!self->gpu_vda_context3d_)
     return;
-  if (self->compositor_message_loop_proxy()) {
-    self->compositor_message_loop_proxy()->DeleteSoon(
-        FROM_HERE, self->gpu_vda_context3d_.release());
+  if (self->compositor_message_loop_proxy().get()) {
+    self->compositor_message_loop_proxy()
+        ->DeleteSoon(FROM_HERE, self->gpu_vda_context3d_.release());
   } else {
     self->gpu_vda_context3d_.reset();
   }
@@ -1122,11 +987,6 @@ bool RenderThreadImpl::IsMainThread() {
   return !!current();
 }
 
-bool RenderThreadImpl::IsIOThread() {
-  return base::MessageLoop::current() ==
-         ChildProcess::current()->io_message_loop();
-}
-
 base::MessageLoop* RenderThreadImpl::GetMainLoop() {
   return message_loop();
 }
@@ -1252,9 +1112,8 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
   if (gpu_channel_.get()) {
     // Do nothing if we already have a GPU channel or are already
     // establishing one.
-    if (gpu_channel_->state() == GpuChannelHost::kUnconnected ||
-        gpu_channel_->state() == GpuChannelHost::kConnected)
-      return GetGpuChannel();
+    if (!gpu_channel_->IsLost())
+      return gpu_channel_.get();
 
     // Recreate the channel if it has been lost.
     gpu_channel_ = NULL;
@@ -1273,18 +1132,13 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
 #endif
       channel_handle.name.empty()) {
     // Otherwise cancel the connection.
-    gpu_channel_ = NULL;
     return NULL;
   }
 
-  gpu_channel_ = new GpuChannelHost(this, 0, client_id);
-  gpu_channel_->set_gpu_info(gpu_info);
   GetContentClient()->SetGpuInfo(gpu_info);
-
-  // Connect to the GPU process if a channel name was received.
-  gpu_channel_->Connect(channel_handle);
-
-  return GetGpuChannel();
+  gpu_channel_ = GpuChannelHost::Create(
+      this, 0, client_id, gpu_info, channel_handle);
+  return gpu_channel_.get();
 }
 
 WebKit::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
@@ -1323,7 +1177,7 @@ GpuChannelHost* RenderThreadImpl::GetGpuChannel() {
   if (!gpu_channel_.get())
     return NULL;
 
-  if (gpu_channel_->state() != GpuChannelHost::kConnected)
+  if (gpu_channel_->IsLost())
     return NULL;
 
   return gpu_channel_.get();

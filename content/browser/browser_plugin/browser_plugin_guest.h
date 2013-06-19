@@ -37,9 +37,9 @@
 #include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragStatus.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragStatus.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/rect.h"
 #include "ui/surface/transport_dib.h"
 
@@ -135,6 +135,9 @@ class CONTENT_EXPORT BrowserPluginGuest
 
   BrowserPluginGuest* opener() const { return opener_.get(); }
 
+  // Returns whether the mouse pointer was unlocked.
+  bool UnlockMouseIfNecessary(const NativeWebKeyboardEvent& event);
+
   void UpdateVisibility();
 
   // NotificationObserver implementation.
@@ -169,7 +172,6 @@ class CONTENT_EXPORT BrowserPluginGuest
   virtual void RenderViewReady() OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-
 
   // WebContentsDelegate implementation.
 

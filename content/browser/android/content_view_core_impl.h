@@ -20,7 +20,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 
@@ -297,7 +297,7 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void AttachLayer(scoped_refptr<cc::Layer> layer);
   void RemoveLayer(scoped_refptr<cc::Layer> layer);
-  void SetVSyncNotificationEnabled(bool enabled);
+  void SetNeedsBeginFrame(bool enabled);
   void SetNeedsAnimate();
 
  private:
@@ -348,6 +348,10 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // Device scale factor.
   float dpi_scale_;
+
+  // Variables used to keep track of frame timestamps and deadlines.
+  base::TimeDelta vsync_interval_;
+  base::TimeDelta expected_browser_composite_time_;
 
   // The Android view that can be used to add and remove decoration layers
   // like AutofillPopup.

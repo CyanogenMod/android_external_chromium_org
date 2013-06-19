@@ -83,8 +83,7 @@ NativeTextfieldViews::NativeTextfieldViews(Textfield* parent)
       skip_input_method_cancel_composition_(false),
       initiating_drag_(false),
       cursor_timer_(this),
-      aggregated_clicks_(0),
-      touch_selection_controller_(NULL) {
+      aggregated_clicks_(0) {
   set_border(text_border_);
 
 #if defined(OS_CHROMEOS)
@@ -425,9 +424,9 @@ bool NativeTextfieldViews::DrawsHandles() {
   return false;
 }
 
-void NativeTextfieldViews::OpenContextMenu(const gfx::Point anchor) {
+void NativeTextfieldViews::OpenContextMenu(const gfx::Point& anchor) {
   touch_selection_controller_.reset();
-  ShowContextMenu(anchor, false);
+  ShowContextMenu(anchor, ui::MENU_SOURCE_TOUCH_EDIT_MENU);
 }
 
 gfx::NativeCursor NativeTextfieldViews::GetCursor(const ui::MouseEvent& event) {
@@ -445,11 +444,14 @@ gfx::NativeCursor NativeTextfieldViews::GetCursor(const ui::MouseEvent& event) {
 
 /////////////////////////////////////////////////////////////////
 // NativeTextfieldViews, ContextMenuController overrides:
-void NativeTextfieldViews::ShowContextMenuForView(View* source,
-                                                  const gfx::Point& point) {
+void NativeTextfieldViews::ShowContextMenuForView(
+    View* source,
+    const gfx::Point& point,
+    ui::MenuSourceType source_type) {
   UpdateContextMenu();
   if (context_menu_runner_->RunMenuAt(GetWidget(), NULL,
           gfx::Rect(point, gfx::Size()), views::MenuItemView::TOPLEFT,
+          source_type,
           MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
       MenuRunner::MENU_DELETED)
     return;
@@ -518,10 +520,10 @@ void NativeTextfieldViews::AppendText(const string16& text) {
   SchedulePaint();
 }
 
-void NativeTextfieldViews::ReplaceSelection(const string16& text) {
-  if (text.empty() && !model_->HasSelection())
+void NativeTextfieldViews::InsertOrReplaceText(const string16& text) {
+  if (text.empty())
     return;
-  model_->ReplaceText(text);
+  model_->InsertText(text);
   OnCaretBoundsChanged();
   SchedulePaint();
 }

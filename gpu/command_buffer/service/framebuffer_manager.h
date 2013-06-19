@@ -6,7 +6,7 @@
 #define GPU_COMMAND_BUFFER_SERVICE_FRAMEBUFFER_MANAGER_H_
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/gl_utils.h"
@@ -120,6 +120,9 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   GLenum GetDrawBuffer(GLenum draw_buffer) const;
 
   void SetDrawBuffers(GLsizei n, const GLenum* bufs);
+
+  // Return true if any draw buffers has an alpha channel.
+  bool HasAlphaMRT() const;
 
   static void ClearFramebufferCompleteComboMap();
 

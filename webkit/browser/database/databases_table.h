@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/strings/string16.h"
-#include "webkit/storage/webkit_storage_export.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace sql {
 class Connection;
@@ -16,34 +16,35 @@ class Connection;
 
 namespace webkit_database {
 
-struct WEBKIT_STORAGE_EXPORT_PRIVATE DatabaseDetails {
+struct WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE DatabaseDetails {
   DatabaseDetails();
   ~DatabaseDetails();
 
-  base::string16 origin_identifier;
+  std::string origin_identifier;
   base::string16 database_name;
   base::string16 description;
   int64 estimated_size;
 };
 
-class WEBKIT_STORAGE_EXPORT_PRIVATE DatabasesTable {
+class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE DatabasesTable {
  public:
   explicit DatabasesTable(sql::Connection* db) : db_(db) { }
 
   bool Init();
-  int64 GetDatabaseID(const base::string16& origin_identifier,
+  int64 GetDatabaseID(const std::string& origin_identifier,
                       const base::string16& database_name);
-  bool GetDatabaseDetails(const base::string16& origin_identifier,
+  bool GetDatabaseDetails(const std::string& origin_identifier,
                           const base::string16& database_name,
                           DatabaseDetails* details);
   bool InsertDatabaseDetails(const DatabaseDetails& details);
   bool UpdateDatabaseDetails(const DatabaseDetails& details);
-  bool DeleteDatabaseDetails(const base::string16& origin_identifier,
+  bool DeleteDatabaseDetails(const std::string& origin_identifier,
                              const base::string16& database_name);
-  bool GetAllOrigins(std::vector<base::string16>* origins);
-  bool GetAllDatabaseDetailsForOrigin(const base::string16& origin_identifier,
-                                      std::vector<DatabaseDetails>* details);
-  bool DeleteOrigin(const base::string16& origin_identifier);
+  bool GetAllOriginIdentifiers(std::vector<std::string>* origin_identifiers);
+  bool GetAllDatabaseDetailsForOriginIdentifier(
+      const std::string& origin_identifier,
+      std::vector<DatabaseDetails>* details);
+  bool DeleteOriginIdentifier(const std::string& origin_identifier);
  private:
   sql::Connection* db_;
 };

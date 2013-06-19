@@ -31,9 +31,9 @@
 #include "chrome/browser/chromeos/drive/remove_stale_cache_files.h"
 #include "chrome/browser/chromeos/drive/search_metadata.h"
 #include "chrome/browser/chromeos/drive/sync_client.h"
+#include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/drive_api_util.h"
-#include "chrome/browser/google_apis/drive_service_interface.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -75,7 +75,8 @@ FileSystem::FileSystem(
     google_apis::DriveServiceInterface* drive_service,
     JobScheduler* scheduler,
     internal::ResourceMetadata* resource_metadata,
-    base::SequencedTaskRunner* blocking_task_runner)
+    base::SequencedTaskRunner* blocking_task_runner,
+    const base::FilePath& temporary_file_directory)
     : profile_(profile),
       cache_(cache),
       drive_service_(drive_service),
@@ -84,6 +85,7 @@ FileSystem::FileSystem(
       last_update_check_error_(FILE_ERROR_OK),
       hide_hosted_docs_(false),
       blocking_task_runner_(blocking_task_runner),
+      temporary_file_directory_(temporary_file_directory),
       weak_ptr_factory_(this) {
   // Should be created from the file browser extension API on UI thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -101,27 +103,53 @@ void FileSystem::Initialize() {
   SetupChangeListLoader();
 
   file_system::OperationObserver* observer = this;
-  copy_operation_.reset(new file_system::CopyOperation(
-      blocking_task_runner_, observer, scheduler_, resource_metadata_, cache_,
-      drive_service_));
+  copy_operation_.reset(
+      new file_system::CopyOperation(blocking_task_runner_.get(),
+                                     observer,
+                                     scheduler_,
+                                     resource_metadata_,
+                                     cache_,
+                                     drive_service_,
+                                     temporary_file_directory_));
   create_directory_operation_.reset(new file_system::CreateDirectoryOperation(
-      blocking_task_runner_, observer, scheduler_, resource_metadata_));
-  create_file_operation_.reset(new file_system::CreateFileOperation(
-      blocking_task_runner_, observer, scheduler_, resource_metadata_, cache_));
-  move_operation_.reset(new file_system::MoveOperation(
-      observer, scheduler_, resource_metadata_));
-  remove_operation_.reset(new file_system::RemoveOperation(
-      blocking_task_runner_, observer, scheduler_, resource_metadata_, cache_));
+      blocking_task_runner_.get(), observer, scheduler_, resource_metadata_));
+  create_file_operation_.reset(
+      new file_system::CreateFileOperation(blocking_task_runner_.get(),
+                                           observer,
+                                           scheduler_,
+                                           resource_metadata_,
+                                           cache_));
+  move_operation_.reset(
+      new file_system::MoveOperation(observer, scheduler_, resource_metadata_));
+  remove_operation_.reset(
+      new file_system::RemoveOperation(blocking_task_runner_.get(),
+                                       observer,
+                                       scheduler_,
+                                       resource_metadata_,
+                                       cache_));
   touch_operation_.reset(new file_system::TouchOperation(
-      blocking_task_runner_, observer, scheduler_, resource_metadata_));
-  download_operation_.reset(new file_system::DownloadOperation(
-      blocking_task_runner_, observer, scheduler_, resource_metadata_, cache_));
-  update_operation_.reset(new file_system::UpdateOperation(
-      blocking_task_runner_, observer, scheduler_, resource_metadata_, cache_));
+      blocking_task_runner_.get(), observer, scheduler_, resource_metadata_));
+  download_operation_.reset(
+      new file_system::DownloadOperation(blocking_task_runner_.get(),
+                                         observer,
+                                         scheduler_,
+                                         resource_metadata_,
+                                         cache_,
+                                         temporary_file_directory_));
+  update_operation_.reset(
+      new file_system::UpdateOperation(blocking_task_runner_.get(),
+                                       observer,
+                                       scheduler_,
+                                       resource_metadata_,
+                                       cache_));
   search_operation_.reset(new file_system::SearchOperation(
-      blocking_task_runner_, scheduler_, resource_metadata_));
-  sync_client_.reset(new internal::SyncClient(
-      blocking_task_runner_, observer, scheduler_, resource_metadata_, cache_));
+      blocking_task_runner_.get(), scheduler_, resource_metadata_));
+  sync_client_.reset(new internal::SyncClient(blocking_task_runner_.get(),
+                                              observer,
+                                              scheduler_,
+                                              resource_metadata_,
+                                              cache_,
+                                              temporary_file_directory_));
 
   PrefService* pref_service = profile_->GetPrefs();
   hide_hosted_docs_ = pref_service->GetBoolean(prefs::kDisableDriveHostedFiles);
@@ -146,7 +174,7 @@ void FileSystem::ReloadAfterReset(FileError error) {
 
 void FileSystem::SetupChangeListLoader() {
   change_list_loader_.reset(new internal::ChangeListLoader(
-      blocking_task_runner_, resource_metadata_, scheduler_));
+      blocking_task_runner_.get(), resource_metadata_, scheduler_));
   change_list_loader_->AddObserver(this);
 }
 
@@ -344,7 +372,21 @@ void FileSystem::PinAfterGetResourceEntryByPath(
   DCHECK(entry);
 
   cache_->PinOnUIThread(entry->resource_id(),
-                        entry->file_specific_info().md5(), callback);
+                        base::Bind(&FileSystem::FinishPin,
+                                   weak_ptr_factory_.GetWeakPtr(),
+                                   callback,
+                                   entry->resource_id()));
+}
+
+void FileSystem::FinishPin(const FileOperationCallback& callback,
+                           const std::string& resource_id,
+                           FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (error == FILE_ERROR_OK)
+    sync_client_->AddFetchTask(resource_id);
+  callback.Run(error);
 }
 
 void FileSystem::Unpin(const base::FilePath& file_path,
@@ -377,7 +419,21 @@ void FileSystem::UnpinAfterGetResourceEntryByPath(
   DCHECK(entry);
 
   cache_->UnpinOnUIThread(entry->resource_id(),
-                          entry->file_specific_info().md5(), callback);
+                          base::Bind(&FileSystem::FinishUnpin,
+                                     weak_ptr_factory_.GetWeakPtr(),
+                                     callback,
+                                     entry->resource_id()));
+}
+
+void FileSystem::FinishUnpin(const FileOperationCallback& callback,
+                             const std::string& resource_id,
+                             FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (error == FILE_ERROR_OK)
+    sync_client_->RemoveFetchTask(resource_id);
+  callback.Run(error);
 }
 
 void FileSystem::GetFileByPath(const base::FilePath& file_path,
@@ -717,6 +773,11 @@ void FileSystem::OnDirectoryChangedByOperation(
   OnDirectoryChanged(directory_path);
 }
 
+void FileSystem::OnCacheFileUploadNeededByOperation(
+    const std::string& resource_id) {
+  sync_client_->AddUploadTask(resource_id);
+}
+
 void FileSystem::OnDirectoryChanged(const base::FilePath& directory_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -956,10 +1017,7 @@ void FileSystem::CloseFile(const base::FilePath& file_path,
       base::Bind(&FileSystem::CloseFileAfterGetResourceEntry,
                  weak_ptr_factory_.GetWeakPtr(),
                  file_path,
-                 base::Bind(&FileSystem::CloseFileFinalize,
-                            weak_ptr_factory_.GetWeakPtr(),
-                            file_path,
-                            callback)));
+                 callback));
 }
 
 void FileSystem::CloseFileAfterGetResourceEntry(
@@ -973,27 +1031,12 @@ void FileSystem::CloseFileAfterGetResourceEntry(
   if (entry.get() && !entry->has_file_specific_info())
     error = FILE_ERROR_NOT_FOUND;
 
-  if (error != FILE_ERROR_OK) {
-    callback.Run(error);
-    return;
-  }
-
-  // Step 2 of CloseFile: Commit the modification in cache. This will trigger
-  // background upload.
-  // TODO(benchan,kinaba): Call ClearDirtyInCache instead of CommitDirtyInCache
-  // if the file has not been modified. Come up with a way to detect the
-  // intactness effectively, or provide a method for user to declare it when
-  // calling CloseFile().
-  cache_->CommitDirtyOnUIThread(entry->resource_id(),
-                                entry->file_specific_info().md5(),
-                                callback);
-}
-
-void FileSystem::CloseFileFinalize(const base::FilePath& file_path,
-                                   const FileOperationCallback& callback,
-                                   FileError result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
+  // Step 2 of CloseFile: Trigger upload.
+  // TODO(benchan,kinaba): Call ClearDirtyInCache if the file has not been
+  // modified. Come up with a way to detect the intactness effectively, or
+  // provide a method for user to declare it when calling CloseFile().
+  if (error == FILE_ERROR_OK)
+    sync_client_->AddUploadTask(entry->resource_id());
 
   // Step 3 of CloseFile.
   // All the invocation of |callback| from operations initiated from CloseFile
@@ -1002,7 +1045,7 @@ void FileSystem::CloseFileFinalize(const base::FilePath& file_path,
   open_files_.erase(file_path);
 
   // Then invokes the user-supplied callback function.
-  callback.Run(result);
+  callback.Run(error);
 }
 
 void FileSystem::CheckLocalModificationAndRun(
@@ -1077,7 +1120,7 @@ void FileSystem::CheckLocalModificationAndRunAfterGetCacheFile(
   // If the cache is dirty, obtain the file info from the cache file itself.
   base::PlatformFileInfo* file_info = new base::PlatformFileInfo;
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
       base::Bind(&file_util::GetFileInfo,
                  local_cache_path,

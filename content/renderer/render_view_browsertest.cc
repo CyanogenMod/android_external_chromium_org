@@ -22,17 +22,16 @@
 #include "content/test/mock_keyboard.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebHTTPBody.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWindowFeatures.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/codec/jpeg_codec.h"
-#include "webkit/glue/web_io_operators.h"
 
 #if defined(OS_LINUX) && !defined(USE_AURA)
 #include "ui/base/gtk/event_synthesis_gtk.h"
@@ -425,32 +424,20 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   int initial_page_id = view()->GetPageId();
 
   // Respond to a swap out request.
-  ViewMsg_SwapOut_Params params;
-  params.closing_process_id = 10;
-  params.closing_route_id = 11;
-  params.new_render_process_host_id = 12;
-  params.new_request_id = 13;
-  view()->OnSwapOut(params);
+  view()->OnSwapOut();
 
   // Ensure the swap out commits synchronously.
   EXPECT_NE(initial_page_id, view()->GetPageId());
 
-  // Check for a valid OnSwapOutACK with echoed params.
+  // Check for a valid OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg);
-  ViewHostMsg_SwapOut_ACK::Param reply_params;
-  ViewHostMsg_SwapOut_ACK::Read(msg, &reply_params);
-  EXPECT_EQ(params.closing_process_id, reply_params.a.closing_process_id);
-  EXPECT_EQ(params.closing_route_id, reply_params.a.closing_route_id);
-  EXPECT_EQ(params.new_render_process_host_id,
-            reply_params.a.new_render_process_host_id);
-  EXPECT_EQ(params.new_request_id, reply_params.a.new_request_id);
 
   // It is possible to get another swap out request.  Ensure that we send
   // an ACK, even if we don't have to do anything else.
   render_thread_->sink().ClearMessages();
-  view()->OnSwapOut(params);
+  view()->OnSwapOut();
   const IPC::Message* msg2 = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg2);
@@ -505,12 +492,7 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   ProcessPendingMessages();
 
   // Respond to a swap out request.
-  ViewMsg_SwapOut_Params params;
-  params.closing_process_id = 10;
-  params.closing_route_id = 11;
-  params.new_render_process_host_id = 12;
-  params.new_request_id = 13;
-  view()->OnSwapOut(params);
+  view()->OnSwapOut();
 
   // Check for a OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
@@ -782,7 +764,7 @@ TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
 
 // Test that our IME backend sends a notification message when the input focus
 // changes.
-TEST_F(RenderViewImplTest, OnImeStateChanged) {
+TEST_F(RenderViewImplTest, OnImeTypeChanged) {
   // Enable our IME backend code.
   view()->OnSetInputMethodActive(true);
 
@@ -808,19 +790,15 @@ TEST_F(RenderViewImplTest, OnImeStateChanged) {
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to activate IMEs.
-    view()->UpdateTextInputState(RenderWidget::DO_NOT_SHOW_IME);
+    view()->UpdateTextInputType();
     const IPC::Message* msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
-    ViewHostMsg_TextInputStateChanged::Param params;
-    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
-    EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, params.a.type);
-    EXPECT_EQ(true, params.a.can_compose_inline);
-    EXPECT_EQ("some text", params.a.value);
-    EXPECT_EQ(0, params.a.selection_start);
-    EXPECT_EQ(9, params.a.selection_end);
-    EXPECT_EQ(-1, params.a.composition_start);
-    EXPECT_EQ(-1, params.a.composition_end);
+    EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
+    ui::TextInputType type;
+    bool can_compose_inline = false;
+    ViewHostMsg_TextInputTypeChanged::Read(msg, &type, &can_compose_inline);
+    EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, type);
+    EXPECT_EQ(true, can_compose_inline);
 
     // Move the input focus to the second <input> element, where we should
     // de-activate IMEs.
@@ -830,12 +808,12 @@ TEST_F(RenderViewImplTest, OnImeStateChanged) {
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to de-activate IMEs.
-    view()->UpdateTextInputState(RenderWidget::DO_NOT_SHOW_IME);
+    view()->UpdateTextInputType();
     msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
-    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
-    EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, params.a.type);
+    EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
+    ViewHostMsg_TextInputTypeChanged::Read(msg, &type, &can_compose_inline);
+    EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, type);
   }
 }
 
@@ -962,7 +940,7 @@ TEST_F(RenderViewImplTest, ImeComposition) {
 
     // Update the status of our IME back-end.
     // TODO(hbono): we should verify messages to be sent from the back-end.
-    view()->UpdateTextInputState(RenderWidget::DO_NOT_SHOW_IME);
+    view()->UpdateTextInputType();
     ProcessPendingMessages();
     render_thread_->sink().ClearMessages();
 

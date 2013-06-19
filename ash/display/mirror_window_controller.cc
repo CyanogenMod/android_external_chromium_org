@@ -29,6 +29,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace ash {
@@ -143,6 +144,7 @@ class CursorWindowDelegate : public aura::WindowDelegate {
 
 MirrorWindowController::MirrorWindowController()
     : current_cursor_type_(ui::kCursorNone),
+      current_cursor_rotation_(gfx::Display::ROTATE_0),
       cursor_window_(NULL),
       cursor_window_delegate_(new CursorWindowDelegate) {
 }
@@ -224,8 +226,6 @@ void MirrorWindowController::Close() {
   if (root_window_.get()) {
     ui::ContextFactory::GetInstance()->RemoveReflector(reflector_);
     reflector_ = NULL;
-    root_window_->RemoveRootWindowObserver(
-        Shell::GetInstance()->display_manager());
     NoneCaptureClient* capture_client = static_cast<NoneCaptureClient*>(
         aura::client::GetCaptureClient(root_window_.get()));
     delete capture_client;
@@ -251,11 +251,13 @@ void MirrorWindowController::UpdateCursorLocation() {
 }
 
 void MirrorWindowController::SetMirroredCursor(gfx::NativeCursor cursor) {
-  if (current_cursor_type_ == cursor.native_type())
+  const gfx::Display& display = Shell::GetScreen()->GetPrimaryDisplay();
+  if (current_cursor_type_ == cursor.native_type() &&
+      current_cursor_rotation_ == display.rotation())
     return;
   current_cursor_type_ = cursor.native_type();
+  current_cursor_rotation_ = display.rotation();
   int resource_id;
-  const gfx::Display& display = Shell::GetScreen()->GetPrimaryDisplay();
   bool success = ui::GetCursorDataFor(
       current_cursor_type_,
       display.device_scale_factor(),
@@ -265,7 +267,34 @@ void MirrorWindowController::SetMirroredCursor(gfx::NativeCursor cursor) {
     return;
   const gfx::ImageSkia* image =
       ResourceBundle::GetSharedInstance().GetImageSkiaNamed(resource_id);
-  cursor_window_delegate_->SetCursorImage(*image, display);
+  gfx::ImageSkia rotated = *image;
+  switch (current_cursor_rotation_) {
+    case gfx::Display::ROTATE_0:
+      break;
+    case gfx::Display::ROTATE_90:
+      rotated = gfx::ImageSkiaOperations::CreateRotatedImage(
+          *image, SkBitmapOperations::ROTATION_90_CW);
+      hot_point_.SetPoint(
+          rotated.width() - hot_point_.y(),
+          hot_point_.x());
+      break;
+    case gfx::Display::ROTATE_180:
+      rotated = gfx::ImageSkiaOperations::CreateRotatedImage(
+          *image, SkBitmapOperations::ROTATION_180_CW);
+      hot_point_.SetPoint(
+          rotated.height() - hot_point_.x(),
+          rotated.width() - hot_point_.y());
+      break;
+    case gfx::Display::ROTATE_270:
+      rotated = gfx::ImageSkiaOperations::CreateRotatedImage(
+          *image, SkBitmapOperations::ROTATION_270_CW);
+      hot_point_.SetPoint(
+          hot_point_.y(),
+          rotated.height() - hot_point_.x());
+      break;
+  }
+  cursor_window_delegate_->SetCursorImage(rotated, display);
+
   if (cursor_window_) {
     cursor_window_->SetBounds(gfx::Rect(cursor_window_delegate_->size()));
     cursor_window_->SchedulePaintInRect(
@@ -279,29 +308,32 @@ void MirrorWindowController::SetMirroredCursorVisibility(bool visible) {
     visible ? cursor_window_->Show() : cursor_window_->Hide();
 }
 
-void MirrorWindowController::OnRootWindowResized(
-    const aura::RootWindow* root,
-    const gfx::Size& old_size) {
+void MirrorWindowController::OnRootWindowHostResized(
+    const aura::RootWindow* root) {
   // Do not use |old_size| as it contains RootWindow's (but not host's) size,
   // and this parameter wil be removed soon.
   if (mirror_window_host_size_ == root->GetHostSize())
     return;
   mirror_window_host_size_ = root->GetHostSize();
   reflector_->OnMirroringCompositorResized();
+  root_window_->SetRootWindowTransformer(
+      CreateRootWindowTransformer().Pass());
+  UpdateCursorLocation();
+}
 
+
+scoped_ptr<aura::RootWindowTransformer>
+MirrorWindowController::CreateRootWindowTransformer() const {
   DisplayManager* display_manager = Shell::GetInstance()->display_manager();
   const DisplayInfo& mirror_display_info = display_manager->GetDisplayInfo(
       display_manager->mirrored_display().id());
   const DisplayInfo& source_display_info = display_manager->GetDisplayInfo(
       Shell::GetScreen()->GetPrimaryDisplay().id());
   DCHECK(display_manager->mirrored_display().is_valid());
-  scoped_ptr<aura::RootWindowTransformer> transformer(
+  return scoped_ptr<aura::RootWindowTransformer>(
       internal::CreateRootWindowTransformerForMirroredDisplay(
           source_display_info,
           mirror_display_info));
-  root_window_->SetRootWindowTransformer(transformer.Pass());
-
-  UpdateCursorLocation();
 }
 
 }  // namespace internal

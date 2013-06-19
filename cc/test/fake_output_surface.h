@@ -6,6 +6,7 @@
 #define CC_TEST_FAKE_OUTPUT_SURFACE_H_
 
 #include "base/time.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/software_output_device.h"
@@ -74,7 +75,6 @@ class FakeOutputSurface : public OutputSurface {
   bool needs_begin_frame() const {
     return needs_begin_frame_;
   }
-  void BeginFrame(base::TimeTicks frame_time);
 
   void set_forced_draw_to_software_device(bool forced) {
     forced_draw_to_software_device_ = forced;
@@ -95,10 +95,13 @@ class FakeOutputSurface : public OutputSurface {
       scoped_ptr<SoftwareOutputDevice> software_device,
       bool delegated_rendering);
 
+  void OnBeginFrame();
+
   CompositorFrame last_sent_frame_;
   size_t num_sent_frames_;
   bool needs_begin_frame_;
   bool forced_draw_to_software_device_;
+  base::WeakPtrFactory<FakeOutputSurface> fake_weak_ptr_factory_;
 };
 
 static inline scoped_ptr<cc::OutputSurface> CreateFakeOutputSurface() {

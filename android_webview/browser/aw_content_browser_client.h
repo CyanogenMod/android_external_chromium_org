@@ -21,7 +21,7 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
   // This is what AwContentBrowserClient::GetAcceptLangs uses.
   static std::string GetAcceptLangsImpl();
 
-  // Returns the one AwBrowserContext for this process.
+  // Deprecated: use AwBrowserContext::GetDefault() instead.
   static AwBrowserContext* GetAwBrowserContext();
 
   AwContentBrowserClient(JniDependencyFactory* native_factory);
@@ -140,6 +140,7 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
   virtual bool AllowPepperSocketAPI(
       content::BrowserContext* browser_context,
       const GURL& url,
+      bool private_api,
       const content::SocketPermissionRequest& params) OVERRIDE;
 
  private:

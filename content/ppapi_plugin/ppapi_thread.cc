@@ -12,7 +12,7 @@
 #include "base/metrics/histogram.h"
 #include "base/process_util.h"
 #include "base/rand_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
@@ -37,7 +37,7 @@
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/api_id.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 #include "ui/base/ui_base_switches.h"
 #include "webkit/plugins/plugin_switches.h"
 
@@ -101,6 +101,8 @@ PpapiThread::PpapiThread(const CommandLine& command_line, bool is_broker)
   // Register interfaces that expect messages from the browser process. Please
   // note that only those InterfaceProxy-based ones require registration.
   AddRoute(ppapi::API_ID_PPB_TCPSERVERSOCKET_PRIVATE,
+           &dispatcher_message_listener_);
+  AddRoute(ppapi::API_ID_PPB_TCPSOCKET,
            &dispatcher_message_listener_);
   AddRoute(ppapi::API_ID_PPB_TCPSOCKET_PRIVATE,
            &dispatcher_message_listener_);

@@ -50,8 +50,8 @@
 #include "ipc/ipc_test_sink.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "third_party/WebKit/public/web/WebContextMenuData.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/cld/languages/public/languages.h"
 
 using content::NavigationController;
@@ -624,12 +624,13 @@ TEST_F(TranslateManagerBrowserTest, FetchLanguagesFromTranslateServer) {
   std::vector<std::string> server_languages;
   // A list of languages to fake being returned by the translate server.
   server_languages.push_back("aa");
-  server_languages.push_back("bb");
+  server_languages.push_back("ak");
   server_languages.push_back("ab");
   server_languages.push_back("en-CA");
-  server_languages.push_back("zz");
-  server_languages.push_back("yy");
+  server_languages.push_back("zh");
+  server_languages.push_back("yi");
   server_languages.push_back("fr-FR");
+  server_languages.push_back("xx");
 
   // First, get the default languages list:
   std::vector<std::string> default_supported_languages;
@@ -658,18 +659,17 @@ TEST_F(TranslateManagerBrowserTest, FetchLanguagesFromTranslateServer) {
   SimulateSupportedLanguagesURLFetch(true, server_languages);
   current_supported_languages.clear();
   TranslateManager::GetSupportedLanguages(&current_supported_languages);
+  // "xx" can't be displayed in the Translate inforbar, so this is eliminated.
+  EXPECT_EQ(server_languages.size() - 1, current_supported_languages.size());
   // Not sure we need to guarantee the order of languages, so we find them.
-  EXPECT_EQ(server_languages.size(), current_supported_languages.size());
   for (size_t i = 0; i < server_languages.size(); ++i) {
+    if (server_languages[i] == "xx")
+      continue;
     EXPECT_NE(current_supported_languages.end(),
               std::find(current_supported_languages.begin(),
                         current_supported_languages.end(),
                         server_languages[i]));
   }
-
-  // Reset to original state.
-  TranslateManager::GetInstance()->FetchLanguageListFromTranslateServer(prefs);
-  SimulateSupportedLanguagesURLFetch(true, default_supported_languages);
 }
 
 std::string GetLanguageListString(
@@ -1090,11 +1090,12 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateLanguagePref) {
                 pref_callback_);
   TranslatePrefs translate_prefs(prefs);
   EXPECT_FALSE(translate_prefs.IsLanguageBlacklisted("fr"));
-  EXPECT_TRUE(translate_prefs.CanTranslate(prefs, "fr", url));
+  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateLanguageBlacklist);
   translate_prefs.BlacklistLanguage("fr");
   EXPECT_TRUE(translate_prefs.IsLanguageBlacklisted("fr"));
-  EXPECT_FALSE(translate_prefs.CanTranslate(prefs, "fr", url));
+  EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
+  EXPECT_FALSE(translate_prefs.CanTranslateLanguage(profile, "fr"));
 
   // Close the infobar.
   EXPECT_TRUE(CloseTranslateInfoBar());
@@ -1109,7 +1110,8 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateLanguagePref) {
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateLanguageBlacklist);
   translate_prefs.RemoveLanguageFromBlacklist("fr");
   EXPECT_FALSE(translate_prefs.IsLanguageBlacklisted("fr"));
-  EXPECT_TRUE(translate_prefs.CanTranslate(prefs, "fr", url));
+  EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(url.host()));
+  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
 
   // Navigate to a page in French.
   SimulateNavigation(url, "fr", true);
@@ -1137,11 +1139,11 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateSitePref) {
   registrar.Add(TranslatePrefs::kPrefTranslateSiteBlacklist, pref_callback_);
   TranslatePrefs translate_prefs(prefs);
   EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(host));
-  EXPECT_TRUE(translate_prefs.CanTranslate(prefs, "fr", url));
+  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateSiteBlacklist);
   translate_prefs.BlacklistSite(host);
   EXPECT_TRUE(translate_prefs.IsSiteBlacklisted(host));
-  EXPECT_FALSE(translate_prefs.CanTranslate(prefs, "fr", url));
+  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
 
   // Close the infobar.
   EXPECT_TRUE(CloseTranslateInfoBar());
@@ -1156,7 +1158,7 @@ TEST_F(TranslateManagerBrowserTest, NeverTranslateSitePref) {
   SetPrefObserverExpectation(TranslatePrefs::kPrefTranslateSiteBlacklist);
   translate_prefs.RemoveSiteFromBlacklist(host);
   EXPECT_FALSE(translate_prefs.IsSiteBlacklisted(host));
-  EXPECT_TRUE(translate_prefs.CanTranslate(prefs, "fr", url));
+  EXPECT_TRUE(translate_prefs.CanTranslateLanguage(profile, "fr"));
 
   // Navigate to a page in French.
   SimulateNavigation(url, "fr", true);

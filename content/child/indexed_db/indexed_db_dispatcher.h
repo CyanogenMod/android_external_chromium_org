@@ -10,14 +10,14 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/id_map.h"
-#include "base/nullable_string16.h"
+#include "base/strings/nullable_string16.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 #include "third_party/WebKit/public/platform/WebIDBCursor.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabase.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseCallbacks.h"
-#include "webkit/glue/worker_task_runner.h"
+#include "webkit/child/worker_task_runner.h"
 
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksSuccessCursorContinue_Params;
@@ -60,8 +60,9 @@ class CONTENT_EXPORT IndexedDBDispatcher
   void OnMessageReceived(const IPC::Message& msg);
   static bool Send(IPC::Message* msg);
 
-  void RequestIDBFactoryGetDatabaseNames(WebKit::WebIDBCallbacks* callbacks,
-                                         const string16& database_identifier);
+  void RequestIDBFactoryGetDatabaseNames(
+      WebKit::WebIDBCallbacks* callbacks,
+      const std::string& database_identifier);
 
   void RequestIDBFactoryOpen(
       const string16& name,
@@ -69,11 +70,11 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int64 transaction_id,
       WebKit::WebIDBCallbacks* callbacks,
       WebKit::WebIDBDatabaseCallbacks* database_callbacks,
-      const string16& database_identifier);
+      const std::string& database_identifier);
 
   void RequestIDBFactoryDeleteDatabase(const string16& name,
                                        WebKit::WebIDBCallbacks* callbacks,
-                                       const string16& database_identifier);
+                                       const std::string& database_identifier);
 
   void RequestIDBCursorAdvance(unsigned long count,
                                WebKit::WebIDBCallbacks* callbacks_ptr,

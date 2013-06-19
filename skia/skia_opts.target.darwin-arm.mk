@@ -40,6 +40,7 @@ MY_CFLAGS := \
 	-pipe \
 	-fPIC \
 	-fomit-frame-pointer \
+	-Wa,-mimplicit-it=always \
 	-Wno-format \
 	-fno-tree-sra \
 	-fuse-ld=gold \
@@ -68,6 +69,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -80,6 +82,7 @@ MY_DEFS := \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DENABLE_LANGUAGE_DETECTION=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
+	'-D__ARM_HAVE_OPTIONAL_NEON_SUPPORT' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \

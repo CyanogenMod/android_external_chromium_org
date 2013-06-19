@@ -80,14 +80,24 @@ string16 GetErrorString(const NetworkState* network_state) {
     return l10n_util::GetStringUTF16(
         IDS_CHROMEOS_NETWORK_ERROR_IPSEC_PSK_AUTH_FAILED);
   }
-  if (error == flimflam::kErrorIpsecCertAuthFailed) {
+  if (error == flimflam::kErrorIpsecCertAuthFailed ||
+      error == shill::kErrorEapAuthenticationFailed) {
     return l10n_util::GetStringUTF16(
-        IDS_CHROMEOS_NETWORK_ERROR_IPSEC_CERT_AUTH_FAILED);
+        IDS_CHROMEOS_NETWORK_ERROR_CERT_AUTH_FAILED);
+  }
+  if (error == shill::kErrorEapLocalTlsFailed) {
+    return l10n_util::GetStringUTF16(
+        IDS_CHROMEOS_NETWORK_ERROR_EAP_LOCAL_TLS_FAILED);
+  }
+  if (error == shill::kErrorEapRemoteTlsFailed) {
+    return l10n_util::GetStringUTF16(
+        IDS_CHROMEOS_NETWORK_ERROR_EAP_REMOTE_TLS_FAILED);
   }
   if (error == flimflam::kErrorPppAuthFailed) {
     return l10n_util::GetStringUTF16(
         IDS_CHROMEOS_NETWORK_ERROR_PPP_AUTH_FAILED);
   }
+
   if (StringToLowerASCII(error) ==
       StringToLowerASCII(std::string(flimflam::kUnknownString))) {
     return l10n_util::GetStringUTF16(IDS_CHROMEOS_NETWORK_ERROR_UNKNOWN);
@@ -103,14 +113,17 @@ namespace ash {
 NetworkStateNotifier::NetworkStateNotifier()
     : cellular_out_of_credits_(false) {
   if (NetworkHandler::IsInitialized()) {
-    NetworkHandler::Get()->network_state_handler()->AddObserver(this);
+    NetworkHandler::Get()->network_state_handler()->AddObserver(
+        this, FROM_HERE);
     InitializeNetworks();
   }
 }
 
 NetworkStateNotifier::~NetworkStateNotifier() {
-  if (NetworkHandler::IsInitialized())
-    NetworkHandler::Get()->network_state_handler()->RemoveObserver(this);
+  if (NetworkHandler::IsInitialized()) {
+    NetworkHandler::Get()->network_state_handler()->RemoveObserver(
+        this, FROM_HERE);
+  }
 }
 
 void NetworkStateNotifier::DefaultNetworkChanged(const NetworkState* network) {
@@ -236,12 +249,12 @@ void NetworkStateNotifier::ShowConnectError(const std::string& error_name,
 }
 
 void NetworkStateNotifier::InitializeNetworks() {
-  NetworkStateList network_list;
+  NetworkStateHandler::NetworkStateList network_list;
   NetworkHandler::Get()->network_state_handler()->GetNetworkList(&network_list);
   VLOG(1) << "NetworkStateNotifier:InitializeNetworks: "
           << network_list.size();
-  for (NetworkStateList::iterator iter = network_list.begin();
-       iter != network_list.end(); ++iter) {
+  for (NetworkStateHandler::NetworkStateList::iterator iter =
+           network_list.begin(); iter != network_list.end(); ++iter) {
     const NetworkState* network = *iter;
     VLOG(2) << " Network: " << network->path();
     cached_state_[network->path()] = network->connection_state();

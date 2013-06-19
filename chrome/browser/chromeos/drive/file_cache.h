@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_CHROMEOS_DRIVE_FILE_CACHE_H_
 #define CHROME_BROWSER_CHROMEOS_DRIVE_FILE_CACHE_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -12,7 +13,6 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/observer_list.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 
 class Profile;
@@ -42,7 +42,6 @@ typedef base::Callback<void(const std::string& resource_id,
 namespace internal {
 
 class FileCacheMetadata;
-class FileCacheObserver;
 
 // Callback for GetFileFromCache.
 typedef base::Callback<void(FileError error,
@@ -69,27 +68,14 @@ class FreeDiskSpaceGetterInterface {
 // GetCacheFilePath() for example), should be run with |blocking_task_runner|.
 class FileCache {
  public:
-  // Enum defining GCache subdirectory location.
-  // This indexes into |FileCache::cache_paths_| vector.
-  enum CacheSubDirectoryType {
-    CACHE_TYPE_META = 0,       // Resource metadata.
-    CACHE_TYPE_PERSISTENT,     // Files that are pinned or modified locally,
-                               // not evictable, hopefully.
-    CACHE_TYPE_TMP,            // Files that don't meet criteria to be in
-                               // persistent dir, and hence evictable.
-    CACHE_TYPE_TMP_DOWNLOADS,  // Downloaded files.
-    CACHE_TYPE_TMP_DOCUMENTS,  // Temporary JSON files for hosted documents.
-    NUM_CACHE_TYPES,           // This must be at the end.
-  };
-
   // Enum defining type of file operation e.g. copy or move, etc.
   enum FileOperationType {
     FILE_OPERATION_MOVE = 0,
     FILE_OPERATION_COPY,
   };
 
-  // |cache_root_path| specifies the root directory for the cache. Sub
-  // directories will be created under the root directory.
+  // |metadata_directory| stores the metadata and |cache_file_directory| stores
+  // cached files.
   //
   // |blocking_task_runner| is used to post a task to the blocking worker
   // pool for file operations. Must not be null.
@@ -98,30 +84,16 @@ class FileCache {
   // getter for testing. NULL must be passed for production code.
   //
   // Must be called on the UI thread.
-  FileCache(const base::FilePath& cache_root_path,
+  FileCache(const base::FilePath& metadata_directory,
+            const base::FilePath& cache_file_directory,
             base::SequencedTaskRunner* blocking_task_runner,
             FreeDiskSpaceGetterInterface* free_disk_space_getter);
-
-  // Returns the sub-directory under drive cache directory for the given sub
-  // directory type. Example:  <user_profile_dir>/GCache/v1/tmp
-  //
-  // Can be called on any thread.
-  base::FilePath GetCacheDirectoryPath(
-      CacheSubDirectoryType sub_dir_type) const;
 
   // Returns true if the given path is under drive cache directory, i.e.
   // <user_profile_dir>/GCache/v1
   //
   // Can be called on any thread.
   bool IsUnderFileCacheDirectory(const base::FilePath& path) const;
-
-  // Adds observer.
-  // Must be called on the UI thread.
-  void AddObserver(FileCacheObserver* observer);
-
-  // Removes observer.
-  // Must be called on the UI thread.
-  void RemoveObserver(FileCacheObserver* observer);
 
   // Gets the cache entry for file corresponding to |resource_id| and |md5|
   // and runs |callback| with true and the entry found if entry exists in cache
@@ -198,38 +170,25 @@ class FileCache {
                   const base::FilePath& source_path,
                   FileOperationType file_operation_type);
 
-  // Stores |source_path| to the cache and mark it as dirty, i.e., needs to be
-  // uploaded to the remove server for syncing.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void StoreLocallyModifiedOnUIThread(const std::string& resource_id,
-                                      const std::string& md5,
-                                      const base::FilePath& source_path,
-                                      FileOperationType file_operation_type,
-                                      const FileOperationCallback& callback);
-
   // Runs Pin() on |blocking_task_runner_|, and calls |callback| with the result
   // asynchronously.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void PinOnUIThread(const std::string& resource_id,
-                     const std::string& md5,
                      const FileOperationCallback& callback);
 
   // Pins the specified entry.
-  FileError Pin(const std::string& resource_id,
-                const std::string& md5);
+  FileError Pin(const std::string& resource_id);
 
   // Runs Unpin() on |blocking_task_runner_|, and calls |callback| with the
   // result asynchronously.
   // |callback| must not be null.
   // Must be called on the UI thread.
   void UnpinOnUIThread(const std::string& resource_id,
-                       const std::string& md5,
                        const FileOperationCallback& callback);
 
   // Unpins the specified entry.
-  FileError Unpin(const std::string& resource_id, const std::string& md5);
+  FileError Unpin(const std::string& resource_id);
 
   // Sets the state of the cache entry corresponding to |resource_id| as
   // mounted.
@@ -256,13 +215,6 @@ class FileCache {
   FileError MarkDirty(const std::string& resource_id,
                       const std::string& md5);
 
-  // Commits changes for the specified dirty entry.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void CommitDirtyOnUIThread(const std::string& resource_id,
-                             const std::string& md5,
-                             const FileOperationCallback& callback);
-
   // Clears dirty state of the specified entry.
   FileError ClearDirty(const std::string& resource_id,
                        const std::string& md5);
@@ -284,31 +236,13 @@ class FileCache {
   // Must be called on the UI thread.
   void ClearAllOnUIThread(const InitializeCacheCallback& callback);
 
-  // Utility method to call Initialize on UI thread. |callback| is called on
-  // UI thread when the initialization is complete.
-  // |callback| must not be null.
-  void RequestInitialize(const InitializeCacheCallback& callback);
+  // Initializes the cache. Returns true on success.
+  bool Initialize();
 
   // Destroys this cache. This function posts a task to the blocking task
   // runner to safely delete the object.
   // Must be called on the UI thread.
   void Destroy();
-
-  // Returns file paths for all the cache sub directories under
-  // |cache_root_path|.
-  static std::vector<base::FilePath> GetCachePaths(
-      const base::FilePath& cache_root_path);
-
-  // Creates cache directory and its sub-directories if they don't exist.
-  // TODO(glotov): take care of this when the setup and cleanup part is
-  // landed, noting that these directories need to be created for development
-  // in linux box and unittest. (http://crosbug.com/27577)
-  static bool CreateCacheDirectories(
-      const std::vector<base::FilePath>& paths_to_create);
-
-  // Returns the type of the sub directory where the cache file is stored.
-  static CacheSubDirectoryType GetSubDirectoryType(
-      const FileCacheEntry& cache_entry);
 
  private:
   friend class FileCacheTest;
@@ -318,7 +252,6 @@ class FileCache {
   enum CachedFileOrigin {
     CACHED_FILE_FROM_SERVER = 0,
     CACHED_FILE_LOCALLY_MODIFIED,
-    CACHED_FILE_MOUNTED,
   };
 
   ~FileCache();
@@ -328,16 +261,12 @@ class FileCache {
   // Can be called on any thread.
   base::FilePath GetCacheFilePath(const std::string& resource_id,
                                   const std::string& md5,
-                                  CacheSubDirectoryType sub_dir_type,
                                   CachedFileOrigin file_origin) const;
 
 
   // Checks whether the current thread is on the right sequenced worker pool
   // with the right sequence ID. If not, DCHECK will fail.
   void AssertOnSequencedWorkerPool();
-
-  // Initializes the cache. Returns true on success.
-  bool InitializeOnBlockingPool();
 
   // Destroys the cache on the blocking pool.
   void DestroyOnBlockingPool();
@@ -348,8 +277,7 @@ class FileCache {
   FileError StoreInternal(const std::string& resource_id,
                           const std::string& md5,
                           const base::FilePath& source_path,
-                          FileOperationType file_operation_type,
-                          CachedFileOrigin origin);
+                          FileOperationType file_operation_type);
 
   // Used to implement MarkAsMountedOnUIThread.
   FileError MarkAsMounted(const std::string& resource_id,
@@ -361,41 +289,22 @@ class FileCache {
   // Used to implement ClearAllOnUIThread.
   bool ClearAll();
 
-  // Runs callback and notifies the observers when file is pinned.
-  void OnPinned(const std::string& resource_id,
-                const std::string& md5,
-                const FileOperationCallback& callback,
-                FileError error);
-
-  // Runs callback and notifies the observers when file is unpinned.
-  void OnUnpinned(const std::string& resource_id,
-                  const std::string& md5,
-                  const FileOperationCallback& callback,
-                  FileError error);
-
-  // Runs callback and notifies the observers when file is committed.
-  void OnCommitDirty(const std::string& resource_id,
-                     const FileOperationCallback& callback,
-                     FileError error);
-
   // Returns true if we have sufficient space to store the given number of
   // bytes, while keeping kMinFreeSpace bytes on the disk.
   bool HasEnoughSpaceFor(int64 num_bytes, const base::FilePath& path);
 
-  // The root directory of the cache (i.e. <user_profile_dir>/GCache/v1).
-  const base::FilePath cache_root_path_;
-  // Paths for all subdirectories of GCache, one for each
-  // FileCache::CacheSubDirectoryType enum.
-  const std::vector<base::FilePath> cache_paths_;
+  const base::FilePath metadata_directory_;
+  const base::FilePath cache_file_directory_;
+
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
 
   // The cache state data. This member must be access only on the blocking pool.
   scoped_ptr<FileCacheMetadata> metadata_;
 
-  // List of observers, this member must be accessed on UI thread.
-  ObserverList<FileCacheObserver> observers_;
-
   FreeDiskSpaceGetterInterface* free_disk_space_getter_;  // Not owned.
+
+  // Resource IDs of files marked mounted.
+  std::set<std::string> mounted_files_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

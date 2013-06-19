@@ -16,7 +16,7 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/ranges.h"
 #include "media/base/text_track.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayer.h"
+#include "third_party/WebKit/public/web/WebMediaPlayer.h"
 
 namespace media {
 class ChunkDemuxer;
@@ -35,6 +35,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
  public:
   typedef base::Callback<void(WebKit::WebMediaPlayer::NetworkState)>
       UpdateNetworkStateCB;
+  typedef base::Callback<void(const base::TimeDelta&)> DurationChangeCB;
 
   // Helper class used by scoped_ptr to destroy an instance of
   // MediaSourceDelegate.
@@ -53,7 +54,8 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void InitializeMediaSource(
       WebKit::WebMediaSource* media_source,
       const media::NeedKeyCB& need_key_cb,
-      const UpdateNetworkStateCB& update_network_state_cb);
+      const UpdateNetworkStateCB& update_network_state_cb,
+      const DurationChangeCB& duration_change_cb);
 #if defined(GOOGLE_TV)
   void InitializeMediaStream(
       media::Demuxer* demuxer,
@@ -98,8 +100,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void OnDemuxerInitDone(media::PipelineStatus status);
   void OnDemuxerStopDone();
   void OnDemuxerOpened();
-  void OnNeedKey(const std::string& key_system,
-                 const std::string& type,
+  void OnNeedKey(const std::string& type,
                  const std::string& session_id,
                  scoped_ptr<uint8[]> init_data,
                  int init_data_size);
@@ -130,6 +131,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   scoped_refptr<media::MediaLog> media_log_;
   UpdateNetworkStateCB update_network_state_cb_;
+  DurationChangeCB duration_change_cb_;
 
   scoped_ptr<media::ChunkDemuxer> chunk_demuxer_;
   scoped_ptr<WebKit::WebMediaSource> media_source_;

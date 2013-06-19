@@ -49,6 +49,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_request_info.h"
+#include "content/public/browser/user_metrics.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/event_filtering_info.h"
 #include "extensions/common/url_pattern.h"
@@ -1173,6 +1174,8 @@ bool ExtensionWebRequestEventRouter::AddEventListener(
   listener.embedder_process_id = embedder_process_id;
   listener.embedder_routing_id = embedder_routing_id;
   listener.webview_instance_id = webview_instance_id;
+  if (listener.webview_instance_id)
+    RecordAction(content::UserMetricsAction("WebView.WebRequest.AddListener"));
 
   if (listeners_[profile][event_name].count(listener) != 0u) {
     // This is likely an abuse of the API by a malicious extension.
@@ -2251,7 +2254,7 @@ void SendExtensionWebRequestStatusToHost(content::RenderProcessHost* host) {
       profile->GetExtensionService()->extensions();
   for (ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
-    if (profile->GetExtensionService()->HasUsedWebRequest(*it)) {
+    if (profile->GetExtensionService()->HasUsedWebRequest(it->get())) {
       if ((*it)->name().find("Adblock Plus") != std::string::npos) {
         adblock_plus = true;
       } else if ((*it)->name().find("AdBlock") != std::string::npos) {

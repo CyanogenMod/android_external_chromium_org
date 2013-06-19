@@ -14,8 +14,10 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/ref_counted_delete_on_message_loop.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
 #include "components/webdata/common/web_data_service_base.h"
 #include "components/webdata/common/web_database.h"
@@ -45,15 +47,16 @@ class WebDataServiceConsumer;
 ////////////////////////////////////////////////////////////////////////////////
 
 class WEBDATA_EXPORT WebDatabaseService
-    : public base::RefCountedThreadSafe<
-          WebDatabaseService,
-          content::BrowserThread::DeleteOnUIThread> {
+    : public base::RefCountedDeleteOnMessageLoop<WebDatabaseService> {
  public:
   typedef base::Callback<scoped_ptr<WDTypedResult>(WebDatabase*)> ReadTask;
   typedef base::Callback<WebDatabase::State(WebDatabase*)> WriteTask;
 
   // Takes the path to the WebDatabase file.
-  explicit WebDatabaseService(const base::FilePath& path);
+  // WebDatabaseService lives on |ui_thread| and posts tasks to |db_thread|.
+  WebDatabaseService(const base::FilePath& path,
+                     const scoped_refptr<base::MessageLoopProxy>& ui_thread,
+                     const scoped_refptr<base::MessageLoopProxy>& db_thread);
 
   // Adds |table| as a WebDatabaseTable that will participate in
   // managing the database, transferring ownership. All calls to this
@@ -112,13 +115,9 @@ class WEBDATA_EXPORT WebDatabaseService
 
  private:
   class BackendDelegate;
-  friend struct content::BrowserThread::DeleteOnThread<
-      content::BrowserThread::UI>;
-  friend class base::DeleteHelper<WebDatabaseService>;
-  // We have to friend RCTS<> so WIN shared-lib build is happy (crbug/112250).
-  friend class base::RefCountedThreadSafe<WebDatabaseService,
-      content::BrowserThread::DeleteOnUIThread>;
   friend class BackendDelegate;
+  friend class base::RefCountedDeleteOnMessageLoop<WebDatabaseService>;
+  friend class base::DeleteHelper<WebDatabaseService>;
 
   virtual ~WebDatabaseService();
 
@@ -148,6 +147,8 @@ class WEBDATA_EXPORT WebDatabaseService
 
   // True if the WebDatabase has loaded.
   bool db_loaded_;
+
+  scoped_refptr<base::MessageLoopProxy> db_thread_;
 };
 
 #endif  // COMPONENTS_WEBDATA_COMMON_WEB_DATABASE_SERVICE_H_

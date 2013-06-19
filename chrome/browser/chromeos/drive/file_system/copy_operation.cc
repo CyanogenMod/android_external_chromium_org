@@ -37,6 +37,18 @@ FileError CopyLocalFileOnBlockingPool(
       FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
+// Stores a file to the cache and mark it dirty.
+FileError StoreAndMarkDirty(internal::FileCache* cache,
+                            const std::string& resource_id,
+                            const std::string& md5,
+                            const base::FilePath& local_file_path) {
+  FileError error = cache->Store(resource_id, md5, local_file_path,
+                                 internal::FileCache::FILE_OPERATION_COPY);
+  if (error != FILE_ERROR_OK)
+    return error;
+  return cache->MarkDirty(resource_id, md5);
+}
+
 }  // namespace
 
 CopyOperation::CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
@@ -44,7 +56,8 @@ CopyOperation::CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
                              JobScheduler* scheduler,
                              internal::ResourceMetadata* metadata,
                              internal::FileCache* cache,
-                             google_apis::DriveServiceInterface* drive_service)
+                             google_apis::DriveServiceInterface* drive_service,
+                             const base::FilePath& temporary_file_directory)
   : blocking_task_runner_(blocking_task_runner),
     observer_(observer),
     scheduler_(scheduler),
@@ -60,7 +73,8 @@ CopyOperation::CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
                                               observer,
                                               scheduler,
                                               metadata,
-                                              cache)),
+                                              cache,
+                                              temporary_file_directory)),
     move_operation_(new MoveOperation(observer, scheduler, metadata)),
     weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -121,11 +135,10 @@ void CopyOperation::OnGetFileCompleteForTransferFile(
   // copied to the actual destination path on the local file system using
   // CopyLocalFileOnBlockingPool.
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
-      base::Bind(&CopyLocalFileOnBlockingPool,
-                 local_file_path,
-                 local_dest_file_path),
+      base::Bind(
+          &CopyLocalFileOnBlockingPool, local_file_path, local_dest_file_path),
       callback);
 }
 
@@ -194,12 +207,28 @@ void CopyOperation::ScheduleTransferRegularFileAfterGetResourceEntry(
     return;
   }
 
-  cache_->StoreLocallyModifiedOnUIThread(
-      entry->resource_id(),
-      entry->file_specific_info().md5(),
-      local_file_path,
-      internal::FileCache::FILE_OPERATION_COPY,
-      callback);
+  ResourceEntry* entry_ptr = entry.get();
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&StoreAndMarkDirty,
+                 cache_,
+                 entry_ptr->resource_id(),
+                 entry_ptr->file_specific_info().md5(),
+                 local_file_path),
+      base::Bind(&CopyOperation::ScheduleTransferRegularFileAfterStore,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 base::Passed(&entry),
+                 callback));
+}
+
+void CopyOperation::ScheduleTransferRegularFileAfterStore(
+    scoped_ptr<ResourceEntry> entry,
+    const FileOperationCallback& callback,
+    FileError error) {
+  if (error == FILE_ERROR_OK)
+    observer_->OnCacheFileUploadNeededByOperation(entry->resource_id());
+  callback.Run(error);
 }
 
 void CopyOperation::CopyHostedDocumentToDirectory(
@@ -356,7 +385,7 @@ void CopyOperation::OnCopyResourceCompleted(
   // The copy on the server side is completed successfully. Update the local
   // metadata.
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
       base::Bind(&internal::ResourceMetadata::AddEntry,
                  base::Unretained(metadata_),
@@ -406,7 +435,7 @@ void CopyOperation::TransferFileFromLocalToRemoteAfterGetResourceEntry(
 
   if (util::HasGDocFileExtension(local_src_file_path)) {
     base::PostTaskAndReplyWithResult(
-        blocking_task_runner_,
+        blocking_task_runner_.get(),
         FROM_HERE,
         base::Bind(&util::ReadResourceIdFromGDocFile, local_src_file_path),
         base::Bind(&CopyOperation::TransferFileForResourceId,

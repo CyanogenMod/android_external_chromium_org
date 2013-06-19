@@ -164,7 +164,6 @@ struct NET_EXPORT_PRIVATE QuicCryptoNegotiatedParameters {
   std::string forward_secure_premaster_secret;
   CrypterPair initial_crypters;
   CrypterPair forward_secure_crypters;
-  std::string server_config_id;
   // Normalized SNI: converted to lower case and trailing '.' removed.
   std::string sni;
   std::string client_nonce;
@@ -356,6 +355,8 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   // ProofVerifier is set then the client will request a certificate chain from
   // the server.
   void SetProofVerifier(ProofVerifier* verifier);
+
+  ChannelIDSigner* channel_id_signer() const;
 
   // SetChannelIDSigner sets a ChannelIDSigner that will be called when the
   // server supports channel IDs to sign a message proving possession of the

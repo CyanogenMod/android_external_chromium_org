@@ -45,7 +45,7 @@
 #include "net/base/ip_endpoint.h"
 #include "net/server/http_server_request_info.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
+#include "third_party/WebKit/public/web/WebDevToolsAgent.h"
 #include "ui/base/layout.h"
 #include "webkit/common/user_agent/user_agent.h"
 #include "webkit/common/user_agent/user_agent_util.h"
@@ -85,7 +85,7 @@ class DevToolsDefaultBindingHandler
   }
 
   virtual DevToolsAgentHost* ForIdentifier(const std::string& id) OVERRIDE {
-    return DevToolsAgentHost::GetForId(id);
+    return DevToolsAgentHost::GetForId(id).get();
   }
 };
 
@@ -110,7 +110,7 @@ class DevToolsClientHostImpl : public DevToolsClientHost {
       return;
     is_closed_ = true;
 
-    DictionaryValue notification;
+    base::DictionaryValue notification;
     notification.SetString(
         devtools::Inspector::detached::kParamReason, detach_reason_);
     std::string response = DevToolsProtocol::CreateNotification(
@@ -575,7 +575,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
   return;
 }
 
-void DevToolsHttpHandlerImpl::CollectWorkerInfo(ListValue* target_list,
+void DevToolsHttpHandlerImpl::CollectWorkerInfo(base::ListValue* target_list,
                                                 std::string host) {
 
   std::vector<WorkerService::WorkerInfo> worker_info =
@@ -586,7 +586,7 @@ void DevToolsHttpHandlerImpl::CollectWorkerInfo(ListValue* target_list,
 }
 
 void DevToolsHttpHandlerImpl::SendTargetList(int connection_id,
-                                             ListValue* target_list) {
+                                             base::ListValue* target_list) {
   SendJson(connection_id, net::HTTP_OK, target_list, std::string());
   delete target_list;
   Release();  // Balanced OnJsonRequestUI.

@@ -5,6 +5,7 @@
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 
 #include "base/memory/singleton.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/common/gpu/client/gl_helper.h"
@@ -12,11 +13,13 @@
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
-#include "webkit/common/gpu/webgraphicscontext3d_in_process_impl.h"
+#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace content {
 
 namespace {
+
+using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
 
 static ImageTransportFactoryAndroid* g_factory = NULL;
 
@@ -43,20 +46,20 @@ class DirectGLImageTransportFactory : public ImageTransportFactoryAndroid {
   virtual GLHelper* GetGLHelper() OVERRIDE { return NULL; }
 
  private:
-  scoped_ptr<webkit::gpu::WebGraphicsContext3DInProcessImpl> context_;
+  scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context_;
 
   DISALLOW_COPY_AND_ASSIGN(DirectGLImageTransportFactory);
 };
 
 DirectGLImageTransportFactory::DirectGLImageTransportFactory() {
   WebKit::WebGraphicsContext3D::Attributes attrs;
-  attrs.shareResources = false;
+  attrs.shareResources = true;
   attrs.noAutomaticFlushes = true;
-  context_.reset(
-      webkit::gpu::WebGraphicsContext3DInProcessImpl::CreateForWindow(
-          attrs,
-          NULL,
-          NULL));
+  context_.reset(webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
+                     CreateViewContext(attrs, NULL));
+  if (context_->makeContextCurrent())
+    context_->pushGroupMarkerEXT(
+        base::StringPrintf("DirectGLImageTransportFactory-%p", this).c_str());
 }
 
 DirectGLImageTransportFactory::~DirectGLImageTransportFactory() {
@@ -101,6 +104,10 @@ CmdBufferImageTransportFactory::CmdBufferImageTransportFactory() {
       attrs,
       false,
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE);
+
+  if (context_->makeContextCurrent())
+    context_->pushGroupMarkerEXT(
+        base::StringPrintf("CmdBufferImageTransportFactory-%p", this).c_str());
 }
 
 CmdBufferImageTransportFactory::~CmdBufferImageTransportFactory() {

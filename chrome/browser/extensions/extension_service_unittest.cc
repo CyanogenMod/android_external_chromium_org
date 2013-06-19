@@ -104,9 +104,9 @@
 #include "sync/protocol/sync.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-#include "webkit/base/origin_url_conversions.h"
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/browser/quota/quota_manager.h"
+#include "webkit/common/database/database_identifier.h"
 #include "webkit/plugins/npapi/mock_plugin_list.h"
 
 #if defined(OS_CHROMEOS)
@@ -456,8 +456,7 @@ void ExtensionServiceTestBase::InitializeExtensionService(
   TestingProfile::Builder profile_builder;
   // Create a PrefService that only contains user defined preference values.
   PrefServiceMockBuilder builder;
-  builder.WithUserFilePrefs(
-      params.pref_file, loop_.message_loop_proxy());
+  builder.WithUserFilePrefs(params.pref_file, loop_.message_loop_proxy().get());
   scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
       new user_prefs::PrefRegistrySyncable);
   scoped_ptr<PrefServiceSyncable> prefs(builder.CreateSyncable(registry.get()));
@@ -479,7 +478,7 @@ void ExtensionServiceTestBase::InitializeExtensionService(
       CommandLine::ForCurrentProcess(),
       params.extensions_install_dir,
       params.autoupdate_enabled);
-  service_->SetFileTaskRunnerForTesting(loop_.message_loop_proxy());
+  service_->SetFileTaskRunnerForTesting(loop_.message_loop_proxy().get());
   service_->set_extensions_enabled(true);
   service_->set_show_extensions_prompts(false);
   service_->set_install_updates_when_idle_for_test(false);
@@ -1264,7 +1263,7 @@ TEST_F(ExtensionServiceTest, LoadAllExtensionsFromDirectorySuccess) {
 
   // We don't parse the plugins section on Chrome OS.
 #if defined(OS_CHROMEOS)
-  EXPECT_TRUE(!extensions::PluginInfo::HasPlugins(loaded_[1]));
+  EXPECT_TRUE(!extensions::PluginInfo::HasPlugins(loaded_[1].get()));
 #else
   ASSERT_TRUE(extensions::PluginInfo::HasPlugins(loaded_[1].get()));
   const std::vector<extensions::PluginInfo>* plugins =
@@ -1352,6 +1351,10 @@ TEST_F(ExtensionServiceTest, CleanupOnStartup) {
   }
 
   service_->Init();
+  // A delayed task to call GarbageCollectExtensions is posted by
+  // ExtensionService::Init. As the test won't wait for the delayed task to
+  // be called, call it manually instead.
+  service_->GarbageCollectExtensions();
   // Wait for GarbageCollectExtensions task to complete.
   loop_.RunUntilIdle();
 
@@ -1424,6 +1427,10 @@ TEST_F(ExtensionServiceTest, UpdateOnStartup) {
       "hpiknbiabeeppbpihjehijgoemciehgk/3")));
 
   service_->Init();
+  // A delayed task to call GarbageCollectExtensions is posted by
+  // ExtensionService::Init. As the test won't wait for the delayed task to
+  // be called, call it manually instead.
+  service_->GarbageCollectExtensions();
   // Wait for GarbageCollectExtensions task to complete.
   loop_.RunUntilIdle();
 
@@ -1880,7 +1887,7 @@ TEST_F(ExtensionServiceTest, GrantedAPIAndHostPermissions) {
   service_->ReloadExtensions();
 
   EXPECT_EQ(1u, service_->disabled_extensions()->size());
-  extension = *service_->disabled_extensions()->begin();
+  extension = service_->disabled_extensions()->begin()->get();
 
   ASSERT_TRUE(prefs->IsExtensionDisabled(extension_id));
   ASSERT_FALSE(service_->IsExtensionEnabled(extension_id));
@@ -1923,7 +1930,7 @@ TEST_F(ExtensionServiceTest, GrantedAPIAndHostPermissions) {
   service_->ReloadExtensions();
 
   EXPECT_EQ(1u, service_->disabled_extensions()->size());
-  extension = *service_->disabled_extensions()->begin();
+  extension = service_->disabled_extensions()->begin()->get();
 
   ASSERT_TRUE(prefs->IsExtensionDisabled(extension_id));
   ASSERT_FALSE(service_->IsExtensionEnabled(extension_id));
@@ -2198,7 +2205,7 @@ TEST_F(ExtensionServiceTest, LoadLocalizedTheme) {
   EXPECT_EQ(0u, GetErrors().size());
   ASSERT_EQ(1u, loaded_.size());
   EXPECT_EQ(1u, service_->extensions()->size());
-  const Extension* theme = *service_->extensions()->begin();
+  const Extension* theme = service_->extensions()->begin()->get();
   EXPECT_EQ("name", theme->name());
   EXPECT_EQ("description", theme->description());
 
@@ -3394,7 +3401,7 @@ TEST_F(ExtensionServiceTest, ManagementPolicyProhibitsLoadFromPrefs) {
   extensions::InstalledLoader(service_).Load(extension_info, false);
   EXPECT_EQ(1u, service_->extensions()->size());
 
-  const Extension* extension = *(service_->extensions()->begin());
+  const Extension* extension = (service_->extensions()->begin())->get();
   EXPECT_TRUE(service_->UninstallExtension(extension->id(), false, NULL));
   EXPECT_EQ(0u, service_->extensions()->size());
 
@@ -3885,7 +3892,7 @@ TEST_F(ExtensionServiceTest, ClearExtensionData) {
   const Extension* extension = InstallCRX(path, INSTALL_NEW);
   ASSERT_TRUE(extension);
   GURL ext_url(extension->url());
-  base::string16 origin_id = webkit_base::GetOriginIdentifierFromURL(ext_url);
+  std::string origin_id = webkit_database::GetIdentifierFromOrigin(ext_url);
 
   // Set a cookie for the extension.
   net::CookieMonster* cookie_monster =
@@ -3919,15 +3926,15 @@ TEST_F(ExtensionServiceTest, ClearExtensionData) {
   std::vector<webkit_database::OriginInfo> origins;
   db_tracker->GetAllOriginsInfo(&origins);
   EXPECT_EQ(1U, origins.size());
-  EXPECT_EQ(origin_id, origins[0].GetOrigin());
+  EXPECT_EQ(origin_id, origins[0].GetOriginIdentifier());
 
   // Create local storage. We only simulate this by creating the backing files.
   // Note: This test depends on details of how the dom_storage library
   // stores data in the host file system.
   base::FilePath lso_dir_path =
       profile_->GetPath().AppendASCII("Local Storage");
-  base::FilePath lso_file_path = lso_dir_path.AppendASCII(
-      UTF16ToUTF8(origin_id) + ".localstorage");
+  base::FilePath lso_file_path = lso_dir_path.AppendASCII(origin_id)
+      .AddExtension(FILE_PATH_LITERAL(".localstorage"));
   EXPECT_TRUE(file_util::CreateDirectory(lso_dir_path));
   EXPECT_EQ(0, file_util::WriteFile(lso_file_path, NULL, 0));
   EXPECT_TRUE(file_util::PathExists(lso_file_path));
@@ -3985,7 +3992,7 @@ TEST_F(ExtensionServiceTest, ClearAppData) {
       extensions::AppLaunchInfo::GetFullLaunchURL(extension).GetOrigin());
   EXPECT_TRUE(profile_->GetExtensionSpecialStoragePolicy()->
       IsStorageUnlimited(origin1));
-  base::string16 origin_id = webkit_base::GetOriginIdentifierFromURL(origin1);
+  std::string origin_id = webkit_database::GetIdentifierFromOrigin(origin1);
 
   // Install app2 from the same origin with unlimited storage.
   extension = PackAndInstallCRX(data_dir_.AppendASCII("app2"), INSTALL_NEW);
@@ -4034,15 +4041,15 @@ TEST_F(ExtensionServiceTest, ClearAppData) {
   std::vector<webkit_database::OriginInfo> origins;
   db_tracker->GetAllOriginsInfo(&origins);
   EXPECT_EQ(1U, origins.size());
-  EXPECT_EQ(origin_id, origins[0].GetOrigin());
+  EXPECT_EQ(origin_id, origins[0].GetOriginIdentifier());
 
   // Create local storage. We only simulate this by creating the backing files.
   // Note: This test depends on details of how the dom_storage library
   // stores data in the host file system.
   base::FilePath lso_dir_path =
       profile_->GetPath().AppendASCII("Local Storage");
-  base::FilePath lso_file_path = lso_dir_path.AppendASCII(
-      UTF16ToUTF8(origin_id) + ".localstorage");
+  base::FilePath lso_file_path = lso_dir_path.AppendASCII(origin_id)
+      .AddExtension(FILE_PATH_LITERAL(".localstorage"));
   EXPECT_TRUE(file_util::CreateDirectory(lso_dir_path));
   EXPECT_EQ(0, file_util::WriteFile(lso_file_path, NULL, 0));
   EXPECT_TRUE(file_util::PathExists(lso_file_path));
@@ -4460,7 +4467,7 @@ namespace {
    private:
     std::string old_locale_;
   };
-}
+}  // namespace
 
 TEST_F(ExtensionServiceTest, ExternalPrefProvider) {
   InitializeEmptyExtensionService();

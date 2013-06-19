@@ -12,12 +12,12 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorker.h"
+#include "third_party/WebKit/public/web/WebSharedWorker.h"
 
 // Singly-included section, not converted.
 #ifndef CONTENT_COMMON_WORKER_MESSAGES_H_

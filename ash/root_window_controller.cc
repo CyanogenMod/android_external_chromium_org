@@ -25,6 +25,7 @@
 #include "ash/touch/touch_observer_hud.h"
 #include "ash/wm/base_layout_manager.h"
 #include "ash/wm/boot_splash_screen.h"
+#include "ash/wm/dock/docked_window_layout_manager.h"
 #include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/root_window_layout_manager.h"
@@ -111,6 +112,7 @@ void ReparentAllWindows(aura::RootWindow* src, aura::RootWindow* dst) {
   // Set of windows to move.
   const int kContainerIdsToMove[] = {
     internal::kShellWindowId_DefaultContainer,
+    internal::kShellWindowId_DockedContainer,
     internal::kShellWindowId_PanelContainer,
     internal::kShellWindowId_AlwaysOnTopContainer,
     internal::kShellWindowId_SystemModalContainer,
@@ -166,7 +168,7 @@ namespace internal {
 RootWindowController::RootWindowController(aura::RootWindow* root_window)
     : root_window_(root_window),
       root_window_layout_(NULL),
-      shelf_(NULL),
+      docked_layout_manager_(NULL),
       panel_layout_manager_(NULL),
       touch_observer_hud_(NULL) {
   SetRootWindowController(root_window, this);
@@ -272,6 +274,15 @@ void RootWindowController::InitForPrimaryDisplay() {
   shelf_.reset(new ash::ShelfWidget(
       shelf_container, status_container, workspace_controller()));
 
+  // Create Docked windows layout manager
+  aura::Window* docked_container = GetContainer(
+      internal::kShellWindowId_DockedContainer);
+  docked_layout_manager_ =
+      new internal::DockedWindowLayoutManager(docked_container);
+  docked_container_handler_.reset(
+      new ToplevelWindowEventHandler(docked_container));
+  docked_container->SetLayoutManager(docked_layout_manager_);
+
   // Create Panel layout manager
   aura::Window* panel_container = GetContainer(
       internal::kShellWindowId_PanelContainer);
@@ -326,6 +337,8 @@ void RootWindowController::CreateSystemBackground(
 void RootWindowController::OnLauncherCreated() {
   if (panel_layout_manager_)
     panel_layout_manager_->SetLauncher(shelf_->launcher());
+  if (docked_layout_manager_)
+    docked_layout_manager_->SetLauncher(shelf_->launcher());
 }
 
 void RootWindowController::ShowLauncher() {
@@ -413,8 +426,8 @@ SystemTray* RootWindowController::GetSystemTray() {
   return shelf_->status_area_widget()->system_tray();
 }
 
-void RootWindowController::ShowContextMenu(
-    const gfx::Point& location_in_screen) {
+void RootWindowController::ShowContextMenu(const gfx::Point& location_in_screen,
+                                           ui::MenuSourceType source_type) {
   DCHECK(Shell::GetInstance()->delegate());
   scoped_ptr<ui::MenuModel> menu_model(
       Shell::GetInstance()->delegate()->CreateContextMenu(root_window()));
@@ -431,7 +444,8 @@ void RootWindowController::ShowContextMenu(
   views::MenuRunner menu_runner(menu_model.get());
   if (menu_runner.RunMenuAt(background->widget(),
           NULL, gfx::Rect(location_in_screen, gfx::Size()),
-          views::MenuItemView::TOPLEFT, views::MenuRunner::CONTEXT_MENU) ==
+          views::MenuItemView::TOPLEFT, source_type,
+          views::MenuRunner::CONTEXT_MENU) ==
       views::MenuRunner::MENU_DELETED) {
     return;
   }
@@ -536,6 +550,12 @@ void RootWindowController::CreateContainersInRootWindow(
   views::corewm::SetChildWindowVisibilityChangesAnimated(
       always_on_top_container);
   SetUsesScreenCoordinates(always_on_top_container);
+
+  aura::Window* docked_container = CreateContainer(
+      kShellWindowId_DockedContainer,
+      "DockedContainer",
+      non_lock_screen_containers);
+  SetUsesScreenCoordinates(docked_container);
 
   aura::Window* panel_container = CreateContainer(
       kShellWindowId_PanelContainer,

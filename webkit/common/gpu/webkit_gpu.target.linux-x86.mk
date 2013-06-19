@@ -12,7 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a
 
@@ -32,7 +32,6 @@ LOCAL_SRC_FILES := \
 	webkit/common/gpu/grcontext_for_webgraphicscontext3d.cc \
 	webkit/common/gpu/test_context_provider_factory.cc \
 	webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.cc \
-	webkit/common/gpu/webgraphicscontext3d_in_process_impl.cc \
 	webkit/common/gpu/webgraphicscontext3d_provider_impl.cc
 
 
@@ -77,6 +76,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -129,14 +129,10 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/skia/ext \
-	$(LOCAL_PATH)/third_party/WebKit \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
-	$(LOCAL_PATH)/third_party/npapi \
-	$(LOCAL_PATH)/third_party/npapi/bindings \
-	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
+	$(PWD)/external/icu4c/common \
+	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

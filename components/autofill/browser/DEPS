@@ -1,6 +1,7 @@
 include_rules = [
   "+components/webdata/common",
   "+content/public/browser",
+  "+content/public/common",
   "+crypto/random.h",
   "+google_apis/gaia",
   "+google_apis/google_api_keys.h",
@@ -9,15 +10,10 @@ include_rules = [
   "+sql",
   "+third_party/libjingle",
   "+third_party/libphonenumber",  # For phone number i18n.
+  # Allow inclusion of WebKit API files.
+  "+third_party/WebKit/public/platform",
+  "+third_party/WebKit/Source/WebKit/chromium",
   "+webkit/plugins/webplugininfo.h",
-
-  # TODO(joi): This is "ok" temporarily (it's just a header file with
-  # a large enum, and doesn't bring in any other dependencies on
-  # //chrome). The plan of record to get rid of this is to change
-  # Autofill and WebData to not use NotificationService, and instead
-  # use typed callback interfaces or allow registering base::Callback
-  # callbacks for each event.
-  "!chrome/common/chrome_notification_types.h",
 
   # TODO(akalin): Remove this dependency.
   "!sync/util/data_encryption_win.h",
@@ -49,11 +45,8 @@ specific_include_rules = {
     "!chrome/browser/webdata/web_data_service.h",
     "!chrome/browser/webdata/web_data_service_factory.h",
     "!chrome/browser/webdata/web_data_service_test_util.h",
-    "!chrome/common/chrome_constants.h",
     "!chrome/common/chrome_paths.h",
     "!chrome/common/pref_names.h",
-    "!chrome/common/render_messages.h",
-    "!chrome/common/url_constants.h",
     "!chrome/test/base",
   ],
 }

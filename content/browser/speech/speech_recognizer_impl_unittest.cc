@@ -57,7 +57,7 @@ class SpeechRecognizerImplTest : public SpeechRecognitionEventListener,
     recognizer_ = new SpeechRecognizerImpl(
         this, kTestingSessionId, kOneShotMode, sr_engine);
     audio_manager_.reset(new media::MockAudioManager(
-        base::MessageLoop::current()->message_loop_proxy()));
+        base::MessageLoop::current()->message_loop_proxy().get()));
     recognizer_->SetAudioManagerForTests(audio_manager_.get());
 
     int audio_packet_length_bytes =
@@ -484,7 +484,7 @@ TEST_F(SpeechRecognizerImplTest, SetInputVolumeCallback) {
   controller->event_handler()->OnData(controller, &audio_packet_[0],
                                       audio_packet_.size());
   base::MessageLoop::current()->RunUntilIdle();
-  EXPECT_FLOAT_EQ(0.89926866f, volume_);
+  EXPECT_NEAR(0.89926866f, volume_, 0.00001f);
   EXPECT_FLOAT_EQ(0.75071919f, noise_volume_);
 
   EXPECT_EQ(SPEECH_RECOGNITION_ERROR_NONE, error_);

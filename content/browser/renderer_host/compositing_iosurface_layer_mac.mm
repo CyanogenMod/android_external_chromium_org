@@ -22,13 +22,13 @@
     renderWidgetHostView_ = r;
 
     ScopedCAActionDisabler disabler;
+    [self setBackgroundColor:CGColorGetConstantColor(kCGColorWhite)];
     [self setAutoresizingMask:kCALayerWidthSizable | kCALayerHeightSizable];
     [self setContentsGravity:kCAGravityTopLeft];
     [self setFrame:NSRectToCGRect(
         [renderWidgetHostView_->cocoa_view() bounds])];
     [self setNeedsDisplay];
     [self updateScaleFactor];
-    [[renderWidgetHostView_->cocoa_view() layer] addSublayer:self];
   }
   return self;
 }
@@ -40,8 +40,10 @@
   if (!renderWidgetHostView_)
     return NO;
 
-  if (renderWidgetHostView_->compositing_iosurface_)
+  if (renderWidgetHostView_->compositing_iosurface_) {
     context_ = renderWidgetHostView_->compositing_iosurface_->context();
+    [context_->nsgl_context() clearDrawable];
+  }
 
   if (!context_) {
     context_ = content::CompositingIOSurfaceContext::Get(
@@ -111,13 +113,13 @@
   if ([self respondsToSelector:(@selector(contentsScale))])
     window_scale_factor = [self contentsScale];
 
-  renderWidgetHostView_->compositing_iosurface_->DrawIOSurface(
-    window_size,
-    window_scale_factor,
-    renderWidgetHostView_->frame_subscriber(),
-    true);
-
-  renderWidgetHostView_->AckPendingSwapBuffers();
+  if (!renderWidgetHostView_->compositing_iosurface_->DrawIOSurface(
+        window_size,
+        window_scale_factor,
+        renderWidgetHostView_->frame_subscriber(),
+        true)) {
+    renderWidgetHostView_->GotAcceleratedCompositingError();
+  }
 }
 
 @end

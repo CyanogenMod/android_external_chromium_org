@@ -12,6 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,build_temp_gyp_googleurl_gyp)/googleurl.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
@@ -30,8 +31,10 @@ LOCAL_SRC_FILES := \
 	webkit/common/blob/scoped_file.cc \
 	webkit/common/blob/shareable_file_reference.cc \
 	webkit/common/database/database_connections.cc \
+	webkit/common/database/database_identifier.cc \
 	webkit/common/dom_storage/dom_storage_map.cc \
 	webkit/common/dom_storage/dom_storage_types.cc \
+	webkit/common/fileapi/directory_entry.cc \
 	webkit/common/fileapi/file_system_util.cc \
 	webkit/common/quota/quota_status_code.cc
 
@@ -78,6 +81,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \
@@ -88,7 +92,7 @@ MY_DEFS := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DENABLE_LANGUAGE_DETECTION=1' \
-	'-DWEBKIT_COMMON_IMPLEMENTATION' \
+	'-DWEBKIT_STORAGE_COMMON_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_BUILD_NO_IMAGE_ENCODE' \
 	'-DSK_DEFERRED_CANVAS_USES_GPIPE=1' \

@@ -56,6 +56,80 @@
     },
 
     {
+      'target_name': 'glue_child',
+      'type': '<(component)',
+      'variables': { 'enable_wexit_time_destructors': 1, },
+      'defines': [
+        'WEBKIT_CHILD_IMPLEMENTATION',
+      ],
+      'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
+        '<(DEPTH)/ui/native_theme/native_theme.gyp:native_theme',
+        '<(DEPTH)/ui/ui.gyp:ui',
+
+        # TODO(scottmg): crbug.com/237249
+        'glue',
+      ],
+
+      'include_dirs': [
+        # For JNI generated header.
+        '<(SHARED_INTERMEDIATE_DIR)/webkit',
+      ],
+
+      'sources': [
+        '../child/fling_animator_impl_android.cc',
+        '../child/fling_animator_impl_android.h',
+        '../child/fling_curve_configuration.cc',
+        '../child/fling_curve_configuration.h',
+        '../child/touch_fling_gesture_curve.cc',
+        '../child/touch_fling_gesture_curve.h',
+        '../child/web_discardable_memory_impl.cc',
+        '../child/web_discardable_memory_impl.h',
+        '../child/webfallbackthemeengine_impl.cc',
+        '../child/webfallbackthemeengine_impl.h',
+        '../child/webkit_child_export.h',
+        '../child/webkitplatformsupport_child_impl.cc',
+        '../child/webkitplatformsupport_child_impl.h',
+        '../child/webthemeengine_impl_android.cc',
+        '../child/webthemeengine_impl_android.h',
+        '../child/webthemeengine_impl_default.cc',
+        '../child/webthemeengine_impl_default.h',
+        '../child/webthemeengine_impl_mac.cc',
+        '../child/webthemeengine_impl_mac.h',
+        '../child/webthemeengine_impl_win.cc',
+        '../child/webthemeengine_impl_win.h',
+        '../child/webthread_impl.cc',
+        '../child/webthread_impl.h',
+        '../child/worker_task_runner.cc',
+        '../child/worker_task_runner.h',
+      ],
+
+      'conditions': [
+        ['use_default_render_theme==0', {
+          'sources/': [
+            ['exclude', 'webthemeengine_impl_default.cc'],
+            ['exclude', 'webthemeengine_impl_default.h'],
+          ],
+        }],
+        ['OS=="mac"', {
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
+            ],
+          },
+        }],
+        ['OS=="android"', {
+          'dependencies': [
+            'overscroller_jni_headers',
+          ],
+        }],
+      ],
+    },
+
+    {
       'target_name': 'glue_common',
       'type': '<(component)',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -78,6 +152,8 @@
         '../common/webdropdata.cc',
         '../common/webdropdata.h',
         '../common/webkit_common_export.h',
+        '../common/webmenuitem.cc',
+        '../common/webmenuitem.h',
         '../common/webpreferences.cc',
         '../common/webpreferences.h',
         'multipart_response_delegate.cc',
@@ -128,9 +204,12 @@
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_i18n',
         '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
-        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+        '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
+        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+        '<(DEPTH)/ui/ui.gyp:ui',
         'glue_common',
+        'webkit_common',
       ],
 
       'sources': [
@@ -138,6 +217,8 @@
         '../renderer/cpp_bound_class.h',
         '../renderer/cpp_variant.cc',
         '../renderer/cpp_variant.h',
+        '../renderer/cursor_utils.cc',
+        '../renderer/cursor_utils.h',
         '../renderer/webkit_renderer_export.h',
         '../renderer/webpreferences_renderer.cc',
         '../renderer/webpreferences_renderer.h',
@@ -166,7 +247,6 @@
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
-        '<(DEPTH)/ui/native_theme/native_theme.gyp:native_theme',
         '<(DEPTH)/ui/ui.gyp:ui',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
         '<(DEPTH)/url/url.gyp:url_lib',
@@ -190,12 +270,6 @@
         '<(SHARED_INTERMEDIATE_DIR)/ui',
       ],
       'sources': [
-        'cursor_utils.cc',
-        'cursor_utils.h',
-        'fling_curve_configuration.cc',
-        'fling_curve_configuration.h',
-        'fling_animator_impl_android.cc',
-        'fling_animator_impl_android.h',
         'ftp_directory_listing_response_delegate.cc',
         'ftp_directory_listing_response_delegate.h',
         'glue_serialize_deprecated.cc',
@@ -215,16 +289,10 @@
         'scoped_clipboard_writer_glue.h',
         'simple_webmimeregistry_impl.cc',
         'simple_webmimeregistry_impl.h',
-        'touch_fling_gesture_curve.cc',
-        'touch_fling_gesture_curve.h',
-        'web_discardable_memory_impl.cc',
-        'web_discardable_memory_impl.h',
         'webclipboard_impl.cc',
         'webclipboard_impl.h',
         'webcookie.cc',
         'webcookie.h',
-        'webfallbackthemeengine_impl.cc',
-        'webfallbackthemeengine_impl.h',
         'webfileutilities_impl.cc',
         'webfileutilities_impl.h',
         'webkit_glue.cc',
@@ -232,47 +300,18 @@
         'webkit_glue_export.h',
         'webkitplatformsupport_impl.cc',
         'webkitplatformsupport_impl.h',
-        'webmenuitem.cc',
-        'webmenuitem.h',
-        'webmenurunner_mac.h',
-        'webmenurunner_mac.mm',
         'websocketstreamhandle_bridge.h',
         'websocketstreamhandle_delegate.h',
         'websocketstreamhandle_impl.cc',
         'websocketstreamhandle_impl.h',
-        'webthemeengine_impl_android.cc',
-        'webthemeengine_impl_android.h',
-        'webthemeengine_impl_default.cc',
-        'webthemeengine_impl_default.h',
-        'webthemeengine_impl_mac.cc',
-        'webthemeengine_impl_mac.h',
-        'webthemeengine_impl_win.cc',
-        'webthemeengine_impl_win.h',
-        'webthread_impl.h',
-        'webthread_impl.cc',
         'weburlloader_impl.cc',
         'weburlloader_impl.h',
-        'web_io_operators.cc',
-        'web_io_operators.h',
-        'worker_task_runner.cc',
-        'worker_task_runner.h',
       ],
       # When glue is a dependency, it needs to be a hard dependency.
       # Dependents may rely on files generated by this target or one of its
       # own hard dependencies.
       'hard_dependency': 1,
       'conditions': [
-        ['use_default_render_theme==0', {
-          'sources/': [
-            ['exclude', 'webthemeengine_impl_default.cc'],
-            ['exclude', 'webthemeengine_impl_default.h'],
-          ],
-        }, {  # else: use_default_render_theme==1
-          'sources/': [
-            ['exclude', 'webthemeengine_impl_win.cc'],
-            ['exclude', 'webthemeengine_impl_win.h'],
-          ],
-        }],
         ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:gtk',
@@ -284,25 +323,7 @@
             'libraries': [ '-lXcursor', ],
           },
         }],
-        ['OS!="mac"', {
-          'sources/': [['exclude', '_mac\\.(cc|mm)$']],
-          'sources!': [
-            'webthemeengine_impl_mac.cc',
-          ],
-        }, {  # else: OS=="mac"
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
-            ],
-          },
-        }],
-        ['OS!="win"', {
-          'sources/': [['exclude', '_win\\.cc$']],
-          'sources!': [
-            'webthemeengine_impl_win.cc',
-          ],
-        }, {  # else: OS=="win"
-          'sources/': [['exclude', '_posix\\.cc$']],
+        ['OS=="win"', {
           'include_dirs': [
             '<(DEPTH)/third_party/wtl/include',
           ],
@@ -320,12 +341,6 @@
             }],
           ],
         }],
-        ['OS=="android"', {
-          'dependencies': [
-            'overscroller_jni_headers',
-          ],
-        }],
-
       ],
     },
   ],

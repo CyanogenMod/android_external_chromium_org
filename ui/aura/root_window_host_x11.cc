@@ -19,8 +19,8 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop.h"
-#include "base/message_pump_aurax11.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_aurax11.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -42,7 +42,6 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
 #include "ui/base/x/device_list_cache_x.h"
-#include "ui/base/x/valuators.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"

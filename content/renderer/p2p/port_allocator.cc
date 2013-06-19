@@ -5,9 +5,11 @@
 #include "content/renderer/p2p/port_allocator.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "content/public/common/content_switches.h"
 #include "content/renderer/p2p/host_address_request.h"
 #include "jingle/glue/utils.h"
 #include "net/base/escape.h"
@@ -16,8 +18,8 @@
 #include "third_party/WebKit/public/platform/WebURLLoader.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
 
 using WebKit::WebString;
 using WebKit::WebURL;
@@ -76,7 +78,10 @@ P2PPortAllocator::P2PPortAllocator(
   set_flags(flags);
   // TODO(ronghuawu): crbug/138185 add ourselves to the firewall list in browser
   // process and then remove below line.
-  set_allow_tcp_listen(false);
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableWebRtcTcpServerSocket)) {
+    set_allow_tcp_listen(false);
+  }
 }
 
 P2PPortAllocator::~P2PPortAllocator() {
@@ -325,10 +330,20 @@ void P2PPortAllocatorSession::AddConfig() {
           allocator_->config_.relay_username,
           allocator_->config_.relay_password);
       turn_config.credentials = credentials;
-      // Using the stun resolved address if available for TURN.
-      turn_config.ports.push_back(cricket::ProtocolAddress(
-          stun_server_address_, cricket::PROTO_UDP));
-      config->AddRelay(turn_config);
+
+      cricket::ProtocolType protocol;
+      if (cricket::StringToProto(
+          allocator_->config_.relay_transport_type.c_str(), &protocol)) {
+        turn_config.ports.push_back(cricket::ProtocolAddress(
+            stun_server_address_, protocol));
+        config->AddRelay(turn_config);
+      } else {
+        DLOG(WARNING) << "Ignoring TURN server "
+                      << allocator_->config_.relay_server << ". "
+                      << "Reason= Incorrect "
+                      << allocator_->config_.relay_transport_type
+                      << " transport parameter.";
+      }
     }
   }
   ConfigReady(config);

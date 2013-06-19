@@ -28,16 +28,17 @@ class BrowserViewRenderer {
  public:
   class Client {
    public:
-    // Request DrawGL be called with AwDrawGLInfo::kModeProcess. The callback
+    // Request DrawGL be called. Passing null canvas implies the request
+    // will be of AwDrawGLInfo::kModeProcess type. The callback
     // may never be made, and the mode may be promoted to kModeDraw.
-    virtual void RequestProcessMode() = 0;
+    virtual bool RequestDrawGL(jobject canvas) = 0;
 
     // Called when a new Picture is available. Needs to be enabled
     // via the EnableOnNewPicture method.
     virtual void OnNewPicture() = 0;
 
     // Called to trigger view invalidations.
-    virtual void Invalidate() = 0;
+    virtual void PostInvalidate() = 0;
 
     // Called to get view's absolute location on the screen.
     virtual gfx::Point GetLocationOnScreen() = 0;
@@ -53,8 +54,7 @@ class BrowserViewRenderer {
     virtual base::android::ScopedJavaLocalRef<jobject> CreateBitmap(
         JNIEnv* env,
         int width,
-        int height,
-        bool cache_result) = 0;
+        int height) = 0;
 
     // Draws the provided Java Bitmap into the provided Java Canvas.
     virtual void DrawBitmapIntoCanvas(
@@ -73,19 +73,26 @@ class BrowserViewRenderer {
     virtual ~JavaHelper() {}
   };
 
+  // Global hookup methods.
   static void SetAwDrawSWFunctionTable(AwDrawSWFunctionTable* table);
   static AwDrawSWFunctionTable* GetAwDrawSWFunctionTable();
   static bool IsSkiaVersionCompatible();
 
-  // Content control methods.
-  virtual void SetContents(content::ContentViewCore* content_view_core) = 0;
+  // Rendering methods.
 
-  // Hardware rendering methods.
-  virtual bool PrepareDrawGL(int x, int y) = 0;
+  // Main handler for view drawing: performs a SW draw immediately, or sets up
+  // a subsequent GL Draw (via Client::RequestDrawGL) and returns true. A false
+  // return value indicates nothing was or will be drawn.
+  // |java_canvas| is the target of the draw. |is_hardware_canvas| indicates
+  // a GL Draw maybe possible on this canvas. |scroll| if the view's current
+  // scroll offset. |clip| is the canvas's clip bounds.
+  virtual bool OnDraw(jobject java_canvas,
+                      bool is_hardware_canvas,
+                      const gfx::Point& scroll,
+                      const gfx::Rect& clip) = 0;
+  // Called in response to a prior Client::RequestDrawGL() call. See
+  // AwDrawGLInfo documentation for more details of the contract.
   virtual void DrawGL(AwDrawGLInfo* draw_info) = 0;
-
-  // Software rendering methods.
-  virtual bool DrawSW(jobject java_canvas, const gfx::Rect& clip_bounds) = 0;
 
   // CapturePicture API methods.
   virtual base::android::ScopedJavaLocalRef<jobject> CapturePicture() = 0;

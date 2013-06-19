@@ -19,6 +19,7 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/activity_log_private/activity_log_private_api.h"
 #include "chrome/browser/extensions/api/alarms/alarm_manager.h"
+#include "chrome/browser/extensions/api/api_resource_manager.h"
 #include "chrome/browser/extensions/api/audio/audio_api.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_api_factory.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmarks_api.h"
@@ -27,25 +28,28 @@
 #include "chrome/browser/extensions/api/dial/dial_api_factory.h"
 #include "chrome/browser/extensions/api/discovery/suggested_links_registry_factory.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
+#include "chrome/browser/extensions/api/feedback_private/feedback_private_api.h"
 #include "chrome/browser/extensions/api/font_settings/font_settings_api.h"
 #include "chrome/browser/extensions/api/history/history_api.h"
 #include "chrome/browser/extensions/api/identity/identity_api.h"
 #include "chrome/browser/extensions/api/idle/idle_manager_factory.h"
 #include "chrome/browser/extensions/api/input/input.h"
 #include "chrome/browser/extensions/api/location/location_manager.h"
-#include "chrome/browser/extensions/api/managed_mode_private/managed_mode_private_api.h"
 #include "chrome/browser/extensions/api/management/management_api.h"
 #include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/api/processes/processes_api.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_api.h"
+#include "chrome/browser/extensions/api/serial/serial_connection.h"
 #include "chrome/browser/extensions/api/session_restore/session_restore_api.h"
+#include "chrome/browser/extensions/api/socket/socket.h"
 #include "chrome/browser/extensions/api/spellcheck/spellcheck_api.h"
 #include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
 #include "chrome/browser/extensions/api/system_info/system_info_api.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry_factory.h"
 #include "chrome/browser/extensions/api/tabs/tabs_windows_api.h"
+#include "chrome/browser/extensions/api/usb/usb_device_resource.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include "chrome/browser/extensions/extension_prefs_factory.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
@@ -86,6 +90,7 @@
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/tabs/pinned_tab_service_factory.h"
 #include "chrome/browser/ui/webui/ntp/ntp_resource_cache_factory.h"
+#include "chrome/browser/undo/undo_service_factory.h"
 #include "chrome/browser/user_style_sheet_watcher_factory.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 
@@ -159,6 +164,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   BackgroundContentsServiceFactory::GetInstance();
 #endif
   BookmarkModelFactory::GetInstance();
+  UndoServiceFactory::GetInstance();
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   captive_portal::CaptivePortalServiceFactory::GetInstance();
 #endif
@@ -186,6 +192,11 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ActivityLogFactory::GetInstance();
   extensions::ActivityLogAPI::GetFactoryInstance();
   extensions::AlarmManager::GetFactoryInstance();
+  extensions::ApiResourceManager<extensions::SerialConnection>::
+      GetFactoryInstance();
+  extensions::ApiResourceManager<extensions::Socket>::GetFactoryInstance();
+  extensions::ApiResourceManager<extensions::UsbDeviceResource>::
+      GetFactoryInstance();
   extensions::AudioAPI::GetFactoryInstance();
   extensions::BookmarksAPI::GetFactoryInstance();
   extensions::BluetoothAPIFactory::GetInstance();
@@ -196,6 +207,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ExtensionPrefsFactory::GetInstance();
   extensions::ExtensionSystemFactory::GetInstance();
   extensions::ExtensionWebUIOverrideRegistrar::GetFactoryInstance();
+  extensions::FeedbackPrivateAPI::GetFactoryInstance();
   extensions::FontSettingsAPI::GetFactoryInstance();
   extensions::HistoryAPI::GetFactoryInstance();
   extensions::IdentityAPI::GetFactoryInstance();
@@ -209,7 +221,6 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::InputMethodAPI::GetFactoryInstance();
 #endif
   extensions::LocationManager::GetFactoryInstance();
-  extensions::ManagedModeAPI::GetFactoryInstance();
   extensions::ManagementAPI::GetFactoryInstance();
   extensions::MediaGalleriesPrivateAPI::GetFactoryInstance();
 #if defined(OS_CHROMEOS)

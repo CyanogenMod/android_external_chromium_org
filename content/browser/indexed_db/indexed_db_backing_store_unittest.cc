@@ -12,8 +12,7 @@
 #include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/public/platform/WebData.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
 using WebKit::WebSecurityOrigin;
 using WebKit::WebIDBKey;
@@ -418,13 +417,13 @@ TEST(IndexedDBFactoryTest, RejectLongOrigins)
           std::string("http://" + origin + ":81/").c_str()));
   scoped_refptr<IndexedDBBackingStore> diskStore1 =
       factory->TestOpenBackingStore(too_long_origin, base_path);
-  EXPECT_FALSE(diskStore1);
+  EXPECT_FALSE(diskStore1.get());
 
   WebSecurityOrigin ok_origin =
       WebSecurityOrigin::createFromString("http://someorigin.com:82/");
   scoped_refptr<IndexedDBBackingStore> diskStore2 =
       factory->TestOpenBackingStore(ok_origin, base_path);
-  EXPECT_TRUE(diskStore2);
+  EXPECT_TRUE(diskStore2.get());
 }
 
 }  // namespace

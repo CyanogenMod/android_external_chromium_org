@@ -10,9 +10,9 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_builder.h"
-#include "components/autofill/browser/autocheckout/whitelist_manager.h"
 #include "components/autofill/browser/webdata/autofill_webdata_service.h"
-#include "components/autofill/common/autofill_pref_names.h"
+#include "components/autofill/content/browser/autocheckout/whitelist_manager.h"
+#include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/user_prefs/user_prefs.h"
 
 namespace {
@@ -109,6 +109,7 @@ void AwAutofillManagerDelegate::ShowRequestAutocompleteDialog(
 
 void AwAutofillManagerDelegate::ShowAutofillPopup(
     const gfx::RectF& element_bounds,
+    base::i18n::TextDirection text_direction,
     const std::vector<string16>& values,
     const std::vector<string16>& labels,
     const std::vector<string16>& icons,

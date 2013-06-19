@@ -14,8 +14,10 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 GYP_TARGET_DEPENDENCIES := \
 	$(TARGET_OUT_INTERMEDIATE_LIBRARIES)/libwebviewchromium.so \
 	$(call intermediates-dir-for,GYP,base_base_java_activity_state_gyp)/base_java_activity_state.stamp \
+	$(call intermediates-dir-for,GYP,base_base_java_memory_pressure_level_list_gyp)/base_java_memory_pressure_level_list.stamp \
 	$(call intermediates-dir-for,GYP,content_page_transition_types_java_gyp)/page_transition_types_java.stamp \
 	$(call intermediates-dir-for,GYP,content_result_codes_java_gyp)/result_codes_java.stamp \
+	$(call intermediates-dir-for,GYP,content_speech_recognition_error_java_gyp)/speech_recognition_error_java.stamp \
 	$(call intermediates-dir-for,GYP,net_certificate_mime_types_java_gyp)/certificate_mime_types_java.stamp \
 	$(call intermediates-dir-for,GYP,net_cert_verify_result_android_java_gyp)/cert_verify_result_android_java.stamp \
 	$(call intermediates-dir-for,GYP,net_net_errors_java_gyp)/net_errors_java.stamp \

@@ -33,6 +33,7 @@
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/developer_private.h"
 #include "chrome/common/extensions/background_info.h"
@@ -43,6 +44,7 @@
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -98,7 +100,7 @@ const Extension* GetExtensionByPath(const ExtensionSet* extensions,
   for (ExtensionSet::const_iterator iter = extensions->begin();
        iter != extensions->end(); ++iter) {
     if ((*iter)->path() == extension_path)
-      return *iter;
+      return iter->get();
   }
   return NULL;
 }
@@ -383,7 +385,7 @@ bool DeveloperPrivateGetItemsInfoFunction::RunImpl() {
 
   for (ExtensionSet::const_iterator iter = items.begin();
        iter != items.end(); ++iter) {
-    const Extension& item = **iter;
+    const Extension& item = *iter->get();
 
     // Don't show component extensions because they are only extensions as an
     // implementation detail of Chrome.
@@ -1120,10 +1122,16 @@ bool DeveloperPrivateGetStringsFunction::RunImpl() {
   SET_STRING("extensionsPermissionsHeading",
              IDS_EXTENSIONS_PERMISSIONS_HEADING);
   SET_STRING("extensionsPermissionsClose", IDS_EXTENSIONS_PERMISSIONS_CLOSE);
+  SET_STRING("extensionDisabled", IDS_EXTENSIONS_DISABLED);
+  SET_STRING("extensionSettingsShowLogsButton", IDS_EXTENSIONS_SHOW_LOGS);
+  SET_STRING("extensionSettingsMoreDetailsButton", IDS_EXTENSIONS_MORE_DETAILS);
+  SET_STRING("extensionSettingsVersion", IDS_EXTENSIONS_VERSION);
+  SET_STRING("extensionSettingsDelete", IDS_EXTENSIONS_DELETE);
+  SET_STRING("extensionSettingsPack", IDS_EXTENSIONS_PACK);
 
 // Pack Extension strings
   SET_STRING("packExtensionOverlay", IDS_EXTENSION_PACK_DIALOG_TITLE);
-  SET_STRING("packExtensionHeading", IDS_EXTENSION_PACK_DIALOG_HEADING);
+  SET_STRING("packExtensionHeading", IDS_EXTENSION_ADT_PACK_DIALOG_HEADING);
   SET_STRING("packExtensionCommit", IDS_EXTENSION_PACK_BUTTON);
   SET_STRING("ok",IDS_OK);
   SET_STRING("cancel",IDS_CANCEL);

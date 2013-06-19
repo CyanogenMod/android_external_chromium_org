@@ -27,15 +27,15 @@
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_byteorder.h"
 #include "base/threading/thread.h"
 #include "ui/base/events/event_utils.h"
 #include "ui/base/keycodes/keyboard_code_conversion_x.h"
 #include "ui/base/touch/touch_factory_x11.h"
-#include "ui/base/x/valuators.h"
+#include "ui/base/x/device_data_manager.h"
 #include "ui/base/x/x11_util_internal.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect.h"
@@ -520,8 +520,8 @@ int CoalescePendingMotionEvents(const XEvent* xev,
 
     if (next_event.type == GenericEvent &&
         next_event.xgeneric.evtype == event_type &&
-        !ui::GetScrollOffsets(&next_event, NULL, NULL, NULL, NULL, NULL) &&
-        !ui::GetFlingData(&next_event, NULL, NULL, NULL, NULL, NULL)) {
+        !ui::DeviceDataManager::GetInstance()->IsCMTGestureEvent(
+            &next_event)) {
       XIDeviceEvent* next_xievent =
           static_cast<XIDeviceEvent*>(next_event.xcookie.data);
       // Confirm that the motion event is targeted at the same window

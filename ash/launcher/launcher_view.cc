@@ -38,6 +38,7 @@
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/point.h"
 #include "ui/views/animation/bounds_animator.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
@@ -394,7 +395,7 @@ LauncherView::LauncherView(LauncherModel* model,
       last_hidden_index_(0),
       closing_event_time_(base::TimeDelta()),
       got_deleted_(NULL),
-      drag_and_drop_item_created_(false),
+      drag_and_drop_item_pinned_(false),
       drag_and_drop_launcher_id_(0) {
   DCHECK(model_);
   bounds_animator_.reset(new views::BoundsAnimator(this));
@@ -589,18 +590,20 @@ bool LauncherView::StartDrag(const std::string& app_id,
   // If the AppsGridView (which was dispatching this event) was opened by our
   // button, LauncherView dragging operations are locked and we have to unlock.
   CancelDrag(-1);
-  drag_and_drop_item_created_ = false;
+  drag_and_drop_item_pinned_ = false;
   drag_and_drop_app_id_ = app_id;
   drag_and_drop_launcher_id_ =
       delegate_->GetLauncherIDForAppID(drag_and_drop_app_id_);
-
-  if (!drag_and_drop_launcher_id_) {
+  // Check if the application is known and pinned - if not, we have to pin it so
+  // that we can re-arrange the launcher order accordingly. Note that items have
+  // to be pinned to give them the same (order) possibilities as a shortcut.
+  if (!drag_and_drop_launcher_id_ || !delegate_->IsAppPinned(app_id)) {
     delegate_->PinAppWithID(app_id);
     drag_and_drop_launcher_id_ =
         delegate_->GetLauncherIDForAppID(drag_and_drop_app_id_);
     if (!drag_and_drop_launcher_id_)
       return false;
-    drag_and_drop_item_created_ = true;
+    drag_and_drop_item_pinned_ = true;
   }
   views::View* drag_and_drop_view = view_model_->view_at(
       model_->ItemIndexByID(drag_and_drop_launcher_id_));
@@ -651,7 +654,7 @@ void LauncherView::EndDrag(bool cancel) {
       drag_and_drop_view, LauncherButtonHost::DRAG_AND_DROP, cancel);
 
   // Either destroy the temporarily created item - or - make the item visible.
-  if (drag_and_drop_item_created_ && cancel)
+  if (drag_and_drop_item_pinned_ && cancel)
     delegate_->UnpinAppsWithID(drag_and_drop_app_id_);
   else if (drag_and_drop_view)
     drag_and_drop_view->SetSize(pre_drag_and_drop_size_);
@@ -1495,14 +1498,14 @@ void LauncherView::ButtonPressed(views::Button* sender,
   }
 
   if (model_->items()[view_index].type != TYPE_APP_LIST)
-    ShowListMenuForView(model_->items()[view_index], sender, event.flags());
+    ShowListMenuForView(model_->items()[view_index], sender, event);
 }
 
 bool LauncherView::ShowListMenuForView(const LauncherItem& item,
                                        views::View* source,
-                                       int event_flags) {
+                                       const ui::Event& event) {
   scoped_ptr<ash::LauncherMenuModel> menu_model;
-  menu_model.reset(delegate_->CreateApplicationMenu(item, event_flags));
+  menu_model.reset(delegate_->CreateApplicationMenu(item, event.flags()));
 
   // Make sure we have a menu and it has at least two items in addition to the
   // application title and the 3 spacing separators.
@@ -1513,20 +1516,24 @@ bool LauncherView::ShowListMenuForView(const LauncherItem& item,
                new LauncherMenuModelAdapter(menu_model.get())),
            source,
            gfx::Point(),
-           false);
+           false,
+           ui::GetMenuSourceTypeForEvent(event));
   return true;
 }
 
 void LauncherView::ShowContextMenuForView(views::View* source,
-                                          const gfx::Point& point) {
+                                          const gfx::Point& point,
+                                          ui:: MenuSourceType source_type) {
   int view_index = view_model_->GetIndexOfView(source);
   if (view_index != -1 &&
       model_->items()[view_index].type == TYPE_APP_LIST) {
     view_index = -1;
   }
 
+  tooltip_->Close();
+
   if (view_index == -1) {
-    Shell::GetInstance()->ShowContextMenu(point);
+    Shell::GetInstance()->ShowContextMenu(point, source_type);
     return;
   }
   scoped_ptr<ui::MenuModel> menu_model(delegate_->CreateContextMenu(
@@ -1542,14 +1549,16 @@ void LauncherView::ShowContextMenuForView(views::View* source,
                new views::MenuModelAdapter(menu_model.get())),
            source,
            point,
-           true);
+           true,
+           source_type);
 }
 
 void LauncherView::ShowMenu(
     scoped_ptr<views::MenuModelAdapter> menu_model_adapter,
     views::View* source,
     const gfx::Point& click_point,
-    bool context_menu) {
+    bool context_menu,
+    ui::MenuSourceType source_type) {
   closing_event_time_ = base::TimeDelta();
   launcher_menu_runner_.reset(
       new views::MenuRunner(menu_model_adapter->CreateMenu()));
@@ -1565,6 +1574,14 @@ void LauncherView::ShowMenu(
     // Application lists use a bubble.
     ash::ShelfAlignment align = shelf->GetAlignment();
     anchor_point = source->GetBoundsInScreen();
+
+    // It is possible to invoke the menu while it is sliding into view. To cover
+    // that case, the screen coordinates are offsetted by the animation delta.
+    gfx::Vector2d offset =
+        source->GetWidget()->GetNativeWindow()->bounds().origin() -
+        source->GetWidget()->GetNativeWindow()->GetTargetBounds().origin();
+    anchor_point.set_x(anchor_point.x() - offset.x());
+    anchor_point.set_y(anchor_point.y() - offset.y());
 
     // Launcher items can have an asymmetrical border for spacing reasons.
     // Adjust anchor location for this.
@@ -1599,7 +1616,9 @@ void LauncherView::ShowMenu(
           NULL,
           anchor_point,
           menu_alignment,
-          views::MenuRunner::CONTEXT_MENU) == views::MenuRunner::MENU_DELETED) {
+          source_type,
+          context_menu ? views::MenuRunner::CONTEXT_MENU : 0) ==
+      views::MenuRunner::MENU_DELETED) {
     if (!got_deleted) {
       got_deleted_ = NULL;
       shelf->ForceUndimming(false);

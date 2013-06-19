@@ -9,15 +9,17 @@
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
-#include "base/timer.h"
-#include "webkit/storage/webkit_storage_export.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace fileapi {
 
-class WEBKIT_STORAGE_EXPORT_PRIVATE FileSystemUsageCache {
+class TimedTaskHelper;
+
+class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemUsageCache {
  public:
   explicit FileSystemUsageCache(base::SequencedTaskRunner* task_runner);
   ~FileSystemUsageCache();
@@ -89,7 +91,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE FileSystemUsageCache {
 
   bool CalledOnValidThread();
 
-  base::OneShotTimer<FileSystemUsageCache> timer_;
+  scoped_ptr<TimedTaskHelper> timer_;
   std::map<base::FilePath, base::PlatformFile> cache_files_;
   base::WeakPtrFactory<FileSystemUsageCache> weak_factory_;
 

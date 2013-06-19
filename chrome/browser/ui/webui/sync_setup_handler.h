@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "chrome/browser/signin/signin_tracker.h"
+#include "chrome/browser/sync/sync_startup_tracker.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -24,6 +25,7 @@ class WebContents;
 
 class SyncSetupHandler : public options::OptionsPageUIHandler,
                          public SigninTracker::Observer,
+                         public SyncStartupTracker::Observer,
 #if !defined(OS_CHROMEOS)
                          public content::WebContentsObserver,
 #endif
@@ -39,9 +41,12 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   virtual void RegisterMessages() OVERRIDE;
 
   // SigninTracker::Observer implementation.
-  virtual void GaiaCredentialsValid() OVERRIDE;
   virtual void SigninFailed(const GoogleServiceAuthError& error) OVERRIDE;
   virtual void SigninSuccess() OVERRIDE;
+
+  // SyncStartupTracker::Observer implementation;
+  virtual void SyncStartupCompleted() OVERRIDE;
+  virtual void SyncStartupFailed() OVERRIDE;
 
   // LoginUIService::LoginUI implementation.
   virtual void FocusUI() OVERRIDE;
@@ -72,6 +77,7 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   void CloseSyncSetup();
 
  protected:
+  friend class SyncSetupHandlerTest;
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest, DisplayBasicLogin);
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest,
                            DisplayConfigureWithBackendDisabledAndCancel);
@@ -125,6 +131,8 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   void HandleConfigure(const base::ListValue* args);
   void HandlePassphraseEntry(const base::ListValue* args);
   void HandlePassphraseCancel(const base::ListValue* args);
+  // TODO(atwilson): Not sure if HandleShowErrorUI() is still required.
+  // May be able to combine with HandleShowSetupUI().
   void HandleShowErrorUI(const base::ListValue* args);
   void HandleShowSetupUI(const base::ListValue* args);
   void HandleDoSignOutOnAuthError(const base::ListValue* args);
@@ -132,19 +140,6 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   void HandleStopSyncing(const base::ListValue* args);
   void HandleCloseTimeout(const base::ListValue* args);
 #if !defined(OS_CHROMEOS)
-  void HandleSubmitAuth(const base::ListValue* args);
-
-  // Returns true if the given login data is valid, false otherwise. If the
-  // login data is not valid then on return |error_message| will be set to  a
-  // localized error message. Note, |error_message| must not be NULL.
-  bool IsLoginAuthDataValid(const std::string& username,
-                            string16* error_message);
-
-  // Initiates a login via the signin manager.
-  void TryLogin(const std::string& username,
-                const std::string& password,
-                const std::string& captcha,
-                const std::string& access_code);
   // Displays the GAIA login form. If |fatal_error| is true, displays the fatal
   // error UI.
   void DisplayGaiaLogin(bool fatal_error);
@@ -152,24 +147,11 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   // When web-flow is enabled, displays the Gaia login form in a new tab.
   // This function is virtual so that tests can override.
   virtual void DisplayGaiaLoginInNewTabOrWindow();
-
-  // Displays the GAIA login form with a custom error message (used for errors
-  // like "email address already in use by another profile"). No message
-  // displayed if |error_message| is empty. Displays fatal error UI if
-  // |fatal_error| = true.
-  void DisplayGaiaLoginWithErrorMessage(const string16& error_message,
-                                        bool fatal_error);
 #endif
 
   // Helper routine that gets the Profile associated with this object (virtual
   // so tests can override).
   virtual Profile* GetProfile() const;
-
-  // Shows the GAIA login success page then exits.
-  void DisplayGaiaSuccessAndClose();
-
-  // Displays the GAIA login success page then transitions to sync setup.
-  void DisplayGaiaSuccessAndSettingUp();
 
   // A utility function to call before actually showing setup dialog. Makes sure
   // that a new dialog can be shown and sets flag that setup is in progress.
@@ -200,12 +182,15 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   void CloseGaiaSigninPage();
 #endif
 
+  // Helper object used to wait for the sync backend to startup.
+  scoped_ptr<SyncStartupTracker> sync_startup_tracker_;
+
   // The SigninTracker object used to determine when the user has fully signed
   // in (this requires waiting for various services to initialize and tracking
   // errors from multiple sources). Should only be non-null while the login UI
-  // is visible. Note, this object is also used on ChromeOS to track when the
-  // ProfileSyncService backend is done starting up when restarting sync after
-  // a dashboard clear.
+  // is visible.
+  // TODO(atwilson): Remove references to this on ChromeOS since it will always
+  // be null.
   scoped_ptr<SigninTracker> signin_tracker_;
 
   // Set to true whenever the sync configure UI is visible. This is used to tell

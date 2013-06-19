@@ -119,6 +119,11 @@ static void OnReadDone_EOSExpected(bool* called,
   *called = true;
 }
 
+static void OnSeekDone_OKExpected(bool* called, PipelineStatus status) {
+  EXPECT_EQ(status, PIPELINE_OK);
+  *called = true;
+}
+
 class ChunkDemuxerTest : public testing::Test {
  protected:
   enum CodecsIndex {
@@ -450,7 +455,8 @@ class ChunkDemuxerTest : public testing::Test {
     AppendData(bear1->GetData() + 72737, 28183);
     CheckExpectedRanges(kSourceId, "{ [0,2737) }");
 
-    return demuxer_->EndOfStream(PIPELINE_OK);
+    demuxer_->EndOfStream(PIPELINE_OK);
+    return true;
   }
 
   void ShutdownDemuxer() {
@@ -1237,7 +1243,7 @@ TEST_F(ChunkDemuxerTest, TestReadsAfterEndOfStream) {
 
   EXPECT_CALL(host_, SetDuration(
       base::TimeDelta::FromMilliseconds(kVideoBlockDuration)));
-  EXPECT_TRUE(demuxer_->EndOfStream(PIPELINE_OK));
+  demuxer_->EndOfStream(PIPELINE_OK);
 
   end_of_stream_helper_1.CheckIfReadDonesWereCalled(true);
 
@@ -1255,7 +1261,7 @@ TEST_F(ChunkDemuxerTest, TestEndOfStreamDuringCanceledSeek) {
 
   AppendCluster(0, 10);
   EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(138)));
-  EXPECT_TRUE(demuxer_->EndOfStream(PIPELINE_OK));
+  demuxer_->EndOfStream(PIPELINE_OK);
 
   // Start the first seek.
   demuxer_->StartWaitingForSeek();
@@ -1706,6 +1712,79 @@ TEST_F(ChunkDemuxerTest, TestSeekAudioAndVideoSources) {
   EXPECT_TRUE(video_read_done);
 }
 
+// Test that Seek() completes successfully when EndOfStream
+// is called before data is available for that seek point.
+// This scenario might be useful if seeking past the end of stream
+// of either audio or video (or both).
+TEST_F(ChunkDemuxerTest, TestEndOfStreamAfterPastEosSeek) {
+  ASSERT_TRUE(InitDemuxer(true, true));
+
+  scoped_ptr<Cluster> cluster_a1(
+      GenerateSingleStreamCluster(0, 120, kAudioTrackNum, 10));
+  scoped_ptr<Cluster> cluster_v1(
+      GenerateSingleStreamCluster(0, 100, kVideoTrackNum, 5));
+
+  AppendData(cluster_a1->data(), cluster_a1->size());
+  AppendData(cluster_v1->data(), cluster_v1->size());
+
+  // Seeking past the end of video.
+  // Note: audio data is available for that seek point.
+  bool seek_cb_was_called = false;
+  demuxer_->StartWaitingForSeek();
+  demuxer_->Seek(base::TimeDelta::FromMilliseconds(110),
+                 base::Bind(OnSeekDone_OKExpected, &seek_cb_was_called));
+  EXPECT_FALSE(seek_cb_was_called);
+
+  EXPECT_CALL(host_, SetDuration(
+      base::TimeDelta::FromMilliseconds(120)));
+  demuxer_->EndOfStream(PIPELINE_OK);
+  EXPECT_TRUE(seek_cb_was_called);
+
+  ShutdownDemuxer();
+}
+
+// Test that EndOfStream is ignored if coming during a pending seek
+// whose seek time is before some existing ranges.
+TEST_F(ChunkDemuxerTest, TestEndOfStreamDuringPendingSeek) {
+  ASSERT_TRUE(InitDemuxer(true, true));
+
+  scoped_ptr<Cluster> cluster_a1(
+      GenerateSingleStreamCluster(0, 120, kAudioTrackNum, 10));
+  scoped_ptr<Cluster> cluster_v1(
+      GenerateSingleStreamCluster(0, 100, kVideoTrackNum, 5));
+
+  scoped_ptr<Cluster> cluster_a2(
+      GenerateSingleStreamCluster(200, 300, kAudioTrackNum, 10));
+  scoped_ptr<Cluster> cluster_v2(
+      GenerateSingleStreamCluster(200, 300, kVideoTrackNum, 5));
+
+  AppendData(cluster_a1->data(), cluster_a1->size());
+  AppendData(cluster_v1->data(), cluster_v1->size());
+  AppendData(cluster_a2->data(), cluster_a2->size());
+  AppendData(cluster_v2->data(), cluster_v2->size());
+
+  bool seek_cb_was_called = false;
+  demuxer_->StartWaitingForSeek();
+  demuxer_->Seek(base::TimeDelta::FromMilliseconds(160),
+                 base::Bind(OnSeekDone_OKExpected, &seek_cb_was_called));
+  EXPECT_FALSE(seek_cb_was_called);
+
+  EXPECT_CALL(host_, SetDuration(
+      base::TimeDelta::FromMilliseconds(300)));
+  demuxer_->EndOfStream(PIPELINE_OK);
+  EXPECT_FALSE(seek_cb_was_called);
+
+  scoped_ptr<Cluster> cluster_a3(
+      GenerateSingleStreamCluster(140, 180, kAudioTrackNum, 10));
+  scoped_ptr<Cluster> cluster_v3(
+      GenerateSingleStreamCluster(140, 180, kVideoTrackNum, 5));
+  AppendData(cluster_a3->data(), cluster_a3->size());
+  AppendData(cluster_v3->data(), cluster_v3->size());
+  EXPECT_TRUE(seek_cb_was_called);
+
+  ShutdownDemuxer();
+}
+
 // Test ranges in an audio-only stream.
 TEST_F(ChunkDemuxerTest, GetBufferedRanges_AudioIdOnly) {
   EXPECT_CALL(*this, DemuxerOpened());
@@ -1992,60 +2071,6 @@ TEST_F(ChunkDemuxerTest, TestCodecIDsThatAreNotRFC6381Compliant) {
     if (result == ChunkDemuxer::kOk)
       demuxer_->RemoveId("source_id");
   }
-}
-
-TEST_F(ChunkDemuxerTest, TestEndOfStreamFailures) {
-  std::string audio_id = "audio";
-  std::string video_id = "video";
-
-  ASSERT_TRUE(InitDemuxerAudioAndVideoSources(audio_id, video_id));
-
-  scoped_ptr<Cluster> cluster_a1(
-      GenerateSingleStreamCluster(0, 35, kAudioTrackNum, 35));
-  scoped_ptr<Cluster> cluster_v1(
-      GenerateSingleStreamCluster(0, 10, kVideoTrackNum, 5));
-  scoped_ptr<Cluster> cluster_v2(
-      GenerateSingleStreamCluster(10, 25, kVideoTrackNum, 5));
-  scoped_ptr<Cluster> cluster_v3(
-      GenerateSingleStreamCluster(30, 50, kVideoTrackNum, 10));
-
-  AppendData(audio_id, cluster_a1->data(), cluster_a1->size());
-  AppendData(video_id, cluster_v1->data(), cluster_v1->size());
-  AppendData(video_id, cluster_v3->data(), cluster_v3->size());
-
-  CheckExpectedRanges(audio_id, "{ [0,35) }");
-  CheckExpectedRanges(video_id, "{ [0,10) [30,50) }");
-
-  // Make sure that end of stream fails because there is a gap between
-  // the current position(0) and the end of the appended data.
-  EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(50)));
-  ASSERT_FALSE(demuxer_->EndOfStream(PIPELINE_OK));
-
-  // Seek to an time that is inside the last ranges for both streams
-  // and verify that the EndOfStream() is successful.
-  demuxer_->StartWaitingForSeek();
-  demuxer_->Seek(base::TimeDelta::FromMilliseconds(30),
-                 NewExpectedStatusCB(PIPELINE_OK));
-
-  ASSERT_TRUE(demuxer_->EndOfStream(PIPELINE_OK));
-
-  // Append an zero length buffer to transition out of the end of stream state.
-  AppendData(NULL, 0);
-
-  // Seek back to 0 and verify that EndOfStream() fails again.
-  demuxer_->StartWaitingForSeek();
-  demuxer_->Seek(base::TimeDelta::FromMilliseconds(0),
-                 NewExpectedStatusCB(PIPELINE_OK));
-
-  ASSERT_FALSE(demuxer_->EndOfStream(PIPELINE_OK));
-
-  // Append the missing range and verify that EndOfStream() succeeds now.
-  AppendData(video_id, cluster_v2->data(), cluster_v2->size());
-
-  CheckExpectedRanges(audio_id, "{ [0,35) }");
-  CheckExpectedRanges(video_id, "{ [0,50) }");
-
-  ASSERT_TRUE(demuxer_->EndOfStream(PIPELINE_OK));
 }
 
 TEST_F(ChunkDemuxerTest, TestEndOfStreamStillSetAfterSeek) {
@@ -2470,6 +2495,67 @@ TEST_F(ChunkDemuxerTest, ReadAfterAudioDisabled) {
   message_loop_.RunUntilIdle();
 
   EXPECT_TRUE(audio_read_done);
+}
+
+// Verifies that signalling end of stream while stalled at a gap
+// boundary does not trigger end of stream buffers to be returned.
+TEST_F(ChunkDemuxerTest, TestEndOfStreamWhileWaitingForGapToBeFilled) {
+  ASSERT_TRUE(InitDemuxer(true, true));
+
+  AppendCluster(0, 10);
+  AppendCluster(300, 10);
+  CheckExpectedRanges(kSourceId, "{ [0,132) [300,432) }");
+
+
+  GenerateExpectedReads(0, 10);
+
+  bool audio_read_done = false;
+  bool video_read_done = false;
+  ReadAudio(base::Bind(&OnReadDone,
+                       base::TimeDelta::FromMilliseconds(138),
+                       &audio_read_done));
+  ReadVideo(base::Bind(&OnReadDone,
+                       base::TimeDelta::FromMilliseconds(138),
+                       &video_read_done));
+
+  // Verify that the reads didn't complete
+  EXPECT_FALSE(audio_read_done);
+  EXPECT_FALSE(video_read_done);
+
+  EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(438)));
+  demuxer_->EndOfStream(PIPELINE_OK);
+
+  // Verify that the reads still haven't completed.
+  EXPECT_FALSE(audio_read_done);
+  EXPECT_FALSE(video_read_done);
+
+  AppendCluster(138, 24);
+
+  CheckExpectedRanges(kSourceId, "{ [0,438) }");
+
+  // Verify that the reads have completed.
+  EXPECT_TRUE(audio_read_done);
+  EXPECT_TRUE(video_read_done);
+
+  // Read the rest of the buffers.
+  GenerateExpectedReads(161, 171, 22);
+
+  // Verify that reads block because the append cleared the end of stream state.
+  audio_read_done = false;
+  video_read_done = false;
+  ReadAudio(base::Bind(&OnReadDone_EOSExpected,
+                       &audio_read_done));
+  ReadVideo(base::Bind(&OnReadDone_EOSExpected,
+                       &video_read_done));
+
+  // Verify that the reads don't complete.
+  EXPECT_FALSE(audio_read_done);
+  EXPECT_FALSE(video_read_done);
+
+  demuxer_->EndOfStream(PIPELINE_OK);
+
+  EXPECT_TRUE(audio_read_done);
+  EXPECT_TRUE(video_read_done);
 }
 
 }  // namespace media

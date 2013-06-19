@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -78,7 +79,7 @@
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/layout.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/base/ui_base_switches.h"
@@ -94,10 +95,10 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/foundation_util.h"
-#include "ui/surface/io_surface_support_mac.h"
+#include "ui/gl/io_surface_support_mac.h"
 #endif
 
-#if defined(ENABLE_JAVA_BRIDGE)
+#if defined(OS_ANDROID)
 #include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
 #endif
 
@@ -396,23 +397,6 @@ WebContentsImpl::~WebContentsImpl() {
   }
 #endif
 
-  // OnCloseStarted isn't called in unit tests.
-  if (!close_start_time_.is_null()) {
-    base::TimeTicks now = base::TimeTicks::Now();
-    base::TimeDelta close_time = now - close_start_time_;
-    UMA_HISTOGRAM_TIMES("Tab.Close", close_time);
-
-    base::TimeTicks unload_start_time = close_start_time_;
-    base::TimeTicks unload_end_time = now;
-    if (!before_unload_end_time_.is_null())
-      unload_start_time = before_unload_end_time_;
-    if (!unload_detached_start_time_.is_null())
-      unload_end_time = unload_detached_start_time_;
-    base::TimeDelta unload_time = unload_end_time - unload_start_time;
-    UMA_HISTOGRAM_TIMES("Tab.Close.UnloadTime", unload_time);
-
-  }
-
   FOR_EACH_OBSERVER(WebContentsObserver,
                     observers_,
                     WebContentsImplDestroyed());
@@ -426,6 +410,7 @@ WebContentsImpl::~WebContentsImpl() {
 WebContentsImpl* WebContentsImpl::CreateWithOpener(
     const WebContents::CreateParams& params,
     WebContentsImpl* opener) {
+  TRACE_EVENT0("browser", "WebContentsImpl::CreateWithOpener");
   WebContentsImpl* new_contents = new WebContentsImpl(
       params.browser_context, opener);
 
@@ -458,6 +443,7 @@ BrowserPluginGuest* WebContentsImpl::CreateGuest(
 
 WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
                                                const GURL& url) {
+  TRACE_EVENT0("browser", "WebContentsImpl::GetWebkitPrefs");
   WebPreferences prefs;
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
@@ -482,13 +468,8 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
       !command_line.HasSwitch(switches::kDisableLocalStorage);
   prefs.databases_enabled =
       !command_line.HasSwitch(switches::kDisableDatabases);
-#if defined(OS_ANDROID)
-  prefs.webaudio_enabled =
-      command_line.HasSwitch(switches::kEnableWebAudio);
-#else
   prefs.webaudio_enabled =
       !command_line.HasSwitch(switches::kDisableWebAudio);
-#endif
 
   prefs.experimental_webgl_enabled =
       GpuProcessHost::gpu_enabled() &&
@@ -561,6 +542,8 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
       command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
   prefs.lazy_layout_enabled =
       command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures);
+  prefs.region_based_columns_enabled =
+      command_line.HasSwitch(switches::kEnableRegionBasedColumns);
   prefs.threaded_html_parser =
       !command_line.HasSwitch(switches::kDisableThreadedHTMLParser);
   prefs.experimental_websocket_enabled =
@@ -1031,6 +1014,31 @@ uint64 WebContentsImpl::GetUploadPosition() const {
   return upload_position_;
 }
 
+std::set<GURL> WebContentsImpl::GetSitesInTab() const {
+  BrowserContext* browser_context = GetBrowserContext();
+  std::set<GURL> sites;
+  if (!frame_tree_root_.get())
+    return sites;
+
+  // Iterates over the FrameTreeNodes to find each unique site URL that is
+  // currently committed.
+  FrameTreeNode* node = NULL;
+  std::queue<FrameTreeNode*> queue;
+  queue.push(frame_tree_root_.get());
+
+  while (!queue.empty()) {
+    node = queue.front();
+    queue.pop();
+    sites.insert(SiteInstance::GetSiteForURL(browser_context,
+                                             node->current_url()));
+
+    for (size_t i = 0; i < node->child_count(); ++i)
+      queue.push(node->child_at(i));
+  }
+
+  return sites;
+}
+
 const std::string& WebContentsImpl::GetEncoding() const {
   return encoding_;
 }
@@ -1210,11 +1218,14 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
         GetContentClient()->browser()->GetWebContentsViewDelegate(this);
 
     if (browser_plugin_guest_) {
+      // |render_view_host_delegate_view_| is a WebContentsView* and its
+      // lifetime is managed by its associated WebContentsImpl.
       WebContentsViewPort* platform_view = CreateWebContentsView(
           this, delegate, &render_view_host_delegate_view_);
 
       WebContentsViewGuest* rv = new WebContentsViewGuest(
-          this, browser_plugin_guest_.get(), platform_view);
+          this, browser_plugin_guest_.get(), platform_view,
+          render_view_host_delegate_view_);
       render_view_host_delegate_view_ = rv;
       view_.reset(rv);
     } else {
@@ -1236,7 +1247,7 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
   registrar_.Add(this,
                  NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
                  NotificationService::AllBrowserContextsAndSources());
-#if defined(ENABLE_JAVA_BRIDGE)
+#if defined(OS_ANDROID)
   java_bridge_dispatcher_host_manager_.reset(
       new JavaBridgeDispatcherHostManager(this));
 #endif
@@ -1335,6 +1346,11 @@ bool WebContentsImpl::PreHandleKeyboardEvent(
 }
 
 void WebContentsImpl::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
+  if (browser_plugin_embedder_ &&
+      browser_plugin_embedder_->HandleKeyboardEvent(event)) {
+    return;
+  }
+
   if (delegate_)
     delegate_->HandleKeyboardEvent(this, event);
 }
@@ -1662,14 +1678,12 @@ RenderWidgetHostView* WebContentsImpl::GetCreatedWidget(int route_id) {
   return widget_host_view;
 }
 
-void WebContentsImpl::ShowContextMenu(
-    const ContextMenuParams& params,
-    ContextMenuSourceType type) {
+void WebContentsImpl::ShowContextMenu(const ContextMenuParams& params) {
   // Allow WebContentsDelegates to handle the context menu operation first.
   if (delegate_ && delegate_->HandleContextMenu(params))
     return;
 
-  render_view_host_delegate_view_->ShowContextMenu(params, type);
+  render_view_host_delegate_view_->ShowContextMenu(params);
 }
 
 void WebContentsImpl::RequestMediaAccessPermission(
@@ -1683,7 +1697,7 @@ void WebContentsImpl::RequestMediaAccessPermission(
 
 void WebContentsImpl::DidSendScreenRects(RenderWidgetHostImpl* rwh) {
   if (browser_plugin_embedder_)
-    browser_plugin_embedder_->DidSendScreenRects(rwh);
+    browser_plugin_embedder_->DidSendScreenRects();
 }
 
 void WebContentsImpl::UpdatePreferredSize(const gfx::Size& pref_size) {
@@ -1745,6 +1759,8 @@ void WebContentsImpl::DetachInterstitialPage() {
 bool WebContentsImpl::NavigateToEntry(
     const NavigationEntryImpl& entry,
     NavigationController::ReloadType reload_type) {
+  TRACE_EVENT0("browser", "WebContentsImpl::NavigateToEntry");
+
   // The renderer will reject IPC messages with URLs longer than
   // this limit, so don't attempt to navigate with a longer URL.
   if (entry.GetURL().spec().size() > kMaxURLChars)
@@ -1921,36 +1937,8 @@ RendererPreferences* WebContentsImpl::GetMutableRendererPrefs() {
   return &renderer_preferences_;
 }
 
-void WebContentsImpl::SetNewTabStartTime(const base::TimeTicks& time) {
-  new_tab_start_time_ = time;
-}
-
-base::TimeTicks WebContentsImpl::GetNewTabStartTime() const {
-  return new_tab_start_time_;
-}
-
 void WebContentsImpl::Close() {
   Close(GetRenderViewHost());
-}
-
-void WebContentsImpl::OnCloseStarted() {
-  if (close_start_time_.is_null())
-    close_start_time_ = base::TimeTicks::Now();
-}
-
-void WebContentsImpl::OnCloseCanceled() {
-  close_start_time_ = base::TimeTicks();
-  before_unload_end_time_ = base::TimeTicks();
-  unload_detached_start_time_ = base::TimeTicks();
-}
-
-void WebContentsImpl::OnUnloadStarted() {
-  before_unload_end_time_ = base::TimeTicks::Now();
-}
-
-void WebContentsImpl::OnUnloadDetachedStarted() {
-  if (unload_detached_start_time_.is_null())
-    unload_detached_start_time_ = base::TimeTicks::Now();
 }
 
 void WebContentsImpl::DragSourceEndedAt(int client_x, int client_y,
@@ -2940,6 +2928,13 @@ void WebContentsImpl::DidNavigate(
   LoadCommittedDetails details;
   bool did_navigate = controller_.RendererDidNavigate(params, &details);
 
+  // For now, keep track of each frame's URL in its FrameTreeNode.  This lets
+  // us estimate our process count for implementing OOP iframes.
+  // TODO(creis): Remove this when we track which pages commit in each frame.
+  FrameTreeNode* node = FindFrameTreeNodeByID(params.frame_id);
+  if (node)
+    node->set_current_url(params.url);
+
   // Send notification about committed provisional loads. This notification is
   // different from the NAV_ENTRY_COMMITTED notification which doesn't include
   // the actual URL navigated to and isn't sent for AUTO_SUBFRAME navigations.
@@ -3070,6 +3065,9 @@ void WebContentsImpl::Close(RenderViewHost* rvh) {
 void WebContentsImpl::SwappedOut(RenderViewHost* rvh) {
   if (delegate_ && rvh == GetRenderViewHost())
     delegate_->SwappedOut(this);
+
+  // Allow the navigation to proceed.
+  render_manager_.SwappedOut(rvh);
 }
 
 void WebContentsImpl::RequestMove(const gfx::Rect& new_bounds) {
@@ -3465,9 +3463,11 @@ void WebContentsImpl::WorkerCrashed() {
 void WebContentsImpl::BeforeUnloadFiredFromRenderManager(
     bool proceed, const base::TimeTicks& proceed_time,
     bool* proceed_to_fire_unload) {
-  before_unload_end_time_ = proceed_time;
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
+                    BeforeUnloadFired(proceed_time));
   if (delegate_)
     delegate_->BeforeUnloadFired(this, proceed, proceed_to_fire_unload);
+  // Note: |this| can be deleted at this point.
 }
 
 void WebContentsImpl::RenderViewGoneFromRenderManager(
@@ -3566,6 +3566,7 @@ NavigationEntry*
 
 bool WebContentsImpl::CreateRenderViewForRenderManager(
     RenderViewHost* render_view_host, int opener_route_id) {
+  TRACE_EVENT0("browser", "WebContentsImpl::CreateRenderViewForRenderManager");
   // Can be NULL during tests.
   RenderWidgetHostView* rwh_view = view_->CreateViewForWidget(render_view_host);
 
@@ -3606,7 +3607,9 @@ void WebContentsImpl::OnDialogClosed(RenderViewHost* rvh,
     // spinning, since we forced it to start spinning in Navigate.
     DidStopLoading(rvh);
     controller_.DiscardNonCommittedEntries();
-    OnCloseCanceled();
+
+    FOR_EACH_OBSERVER(WebContentsObserver, observers_,
+                      BeforeUnloadDialogCancelled());
   }
   is_showing_before_unload_dialog_ = false;
   static_cast<RenderViewHostImpl*>(

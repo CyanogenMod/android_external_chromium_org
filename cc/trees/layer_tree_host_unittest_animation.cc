@@ -193,7 +193,7 @@ class LayerTreeHostAnimationTestCheckerboardDoesNotStarveDraws
     started_animating_ = true;
   }
 
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* tree_impl) OVERRIDE {
+  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     if (started_animating_)
       EndTest();
   }
@@ -205,7 +205,7 @@ class LayerTreeHostAnimationTestCheckerboardDoesNotStarveDraws
     return false;
   }
 
-  virtual void AfterTest() OVERRIDE {}
+  virtual void AfterTest() OVERRIDE { }
 
  private:
   bool started_animating_;
@@ -462,7 +462,7 @@ class LayerTreeHostAnimationTestDoNotSkipLayersWithAnimatedOpacity
     PostAddAnimationToMainThread(update_check_layer_.get());
   }
 
-  virtual void TreeActivatedOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     LayerAnimationController* controller_impl =
         host_impl->active_tree()->root_layer()->layer_animation_controller();
     Animation* animation_impl =

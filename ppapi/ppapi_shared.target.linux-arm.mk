@@ -33,6 +33,7 @@ LOCAL_SRC_FILES := \
 	ppapi/shared_impl/dictionary_var.cc \
 	ppapi/shared_impl/file_io_state_manager.cc \
 	ppapi/shared_impl/file_path.cc \
+	ppapi/shared_impl/file_ref_util.cc \
 	ppapi/shared_impl/file_type_conversion.cc \
 	ppapi/shared_impl/flash_clipboard_format_registry.cc \
 	ppapi/shared_impl/host_resource.cc \
@@ -69,6 +70,7 @@ LOCAL_SRC_FILES := \
 	ppapi/shared_impl/resource_tracker.cc \
 	ppapi/shared_impl/scoped_pp_resource.cc \
 	ppapi/shared_impl/scoped_pp_var.cc \
+	ppapi/shared_impl/tcp_socket_shared.cc \
 	ppapi/shared_impl/thread_aware_callback.cc \
 	ppapi/shared_impl/time_conversion.cc \
 	ppapi/shared_impl/tracked_callback.cc \
@@ -123,6 +125,7 @@ LOCAL_SRC_FILES := \
 	ppapi/thunk/ppb_graphics_2d_dev_thunk.cc \
 	ppapi/thunk/ppb_graphics_2d_thunk.cc \
 	ppapi/thunk/ppb_graphics_3d_thunk.cc \
+	ppapi/thunk/ppb_host_resolver_dev_thunk.cc \
 	ppapi/thunk/ppb_host_resolver_private_thunk.cc \
 	ppapi/thunk/ppb_image_data_thunk.cc \
 	ppapi/thunk/ppb_input_event_thunk.cc \
@@ -140,9 +143,11 @@ LOCAL_SRC_FILES := \
 	ppapi/thunk/ppb_scrollbar_thunk.cc \
 	ppapi/thunk/ppb_talk_private_thunk.cc \
 	ppapi/thunk/ppb_tcp_server_socket_private_thunk.cc \
+	ppapi/thunk/ppb_tcp_socket_dev_thunk.cc \
 	ppapi/thunk/ppb_tcp_socket_private_thunk.cc \
 	ppapi/thunk/ppb_text_input_thunk.cc \
 	ppapi/thunk/ppb_truetype_font_dev_thunk.cc \
+	ppapi/thunk/ppb_udp_socket_dev_thunk.cc \
 	ppapi/thunk/ppb_udp_socket_private_thunk.cc \
 	ppapi/thunk/ppb_url_loader_thunk.cc \
 	ppapi/thunk/ppb_url_loader_trusted_thunk.cc \
@@ -199,6 +204,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \

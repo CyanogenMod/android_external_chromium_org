@@ -380,10 +380,11 @@ void NewTabButton::OnMouseReleased(const ui::MouseEvent& event) {
     bool destroyed = false;
     destroyed_ = &destroyed;
     ui::ShowSystemMenuAtPoint(GetWidget()->GetNativeView(), point);
-    if (!destroyed_) {
-      SetState(views::CustomButton::STATE_NORMAL);
-      destroyed_ = NULL;
-    }
+    if (destroyed)
+      return;
+
+    destroyed_ = NULL;
+    SetState(views::CustomButton::STATE_NORMAL);
     return;
   }
   views::ImageButton::OnMouseReleased(event);
@@ -1020,8 +1021,10 @@ void TabStrip::CloseTab(Tab* tab, CloseTabSource source) {
     controller_->CloseTab(model_index, source);
 }
 
-void TabStrip::ShowContextMenuForTab(Tab* tab, const gfx::Point& p) {
-  controller_->ShowContextMenuForTab(tab, p);
+void TabStrip::ShowContextMenuForTab(Tab* tab,
+                                     const gfx::Point& p,
+                                     ui::MenuSourceType source_type) {
+  controller_->ShowContextMenuForTab(tab, p, source_type);
 }
 
 bool TabStrip::IsActiveTab(const Tab* tab) const {
@@ -1567,7 +1570,7 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
       Tab* tab = FindTabForEvent(local_point);
       if (tab) {
         ConvertPointToScreen(this, &local_point);
-        ShowContextMenuForTab(tab, local_point);
+        ShowContextMenuForTab(tab, local_point, ui::MENU_SOURCE_TOUCH);
       }
       break;
     }
@@ -1927,6 +1930,9 @@ void TabStrip::UpdateTabsClosingMap(int index, int delta) {
 }
 
 void TabStrip::StartedDraggingTabs(const std::vector<Tab*>& tabs) {
+  // Let the controller know that the user started dragging tabs.
+  controller()->OnStartedDraggingTabs();
+
   // Hide the new tab button immediately if we didn't originate the drag.
   if (!drag_controller_.get())
     newtab_button_->SetVisible(false);
@@ -1955,6 +1961,9 @@ void TabStrip::StartedDraggingTabs(const std::vector<Tab*>& tabs) {
 }
 
 void TabStrip::DraggedTabsDetached() {
+  // Let the controller know that the user is not dragging this tabstrip's tabs
+  // anymore.
+  controller()->OnStoppedDraggingTabs();
   newtab_button_->SetVisible(true);
 }
 
@@ -1962,6 +1971,9 @@ void TabStrip::StoppedDraggingTabs(const std::vector<Tab*>& tabs,
                                    const std::vector<int>& initial_positions,
                                    bool move_only,
                                    bool completed) {
+  // Let the controller know that the user stopped dragging tabs.
+  controller()->OnStoppedDraggingTabs();
+
   newtab_button_->SetVisible(true);
   if (move_only && touch_layout_.get()) {
     if (completed) {

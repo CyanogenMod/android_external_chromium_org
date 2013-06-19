@@ -7,7 +7,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/run_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/timer.h"
 #include "chrome/browser/ui/app_list/search/history.h"
@@ -126,9 +126,8 @@ class SearchHistoryTest : public testing::Test {
 
     // Replace |data_| with test params.
     history_->data_->RemoveObserver(history_.get());
-    history_->data_.reset(new HistoryData(history_->store_,
-                                          kMaxPrimary,
-                                          kMaxSecondary));
+    history_->data_.reset(
+        new HistoryData(history_->store_.get(), kMaxPrimary, kMaxSecondary));
     history_->data_->AddObserver(history_.get());
 
     HistoryDataLoadWaiter waiter(history_->data_.get());

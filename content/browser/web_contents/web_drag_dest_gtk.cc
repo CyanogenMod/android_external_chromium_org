@@ -13,10 +13,11 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/drag_utils_gtk.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_drag_dest_delegate.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/gtk/gtk_screen_util.h"
@@ -53,6 +54,7 @@ WebDragDestGtk::WebDragDestGtk(WebContents* web_contents, GtkWidget* widget)
       context_(NULL),
       data_requests_(0),
       delegate_(NULL),
+      canceled_(false),
       method_factory_(this) {
   gtk_drag_dest_set(widget, static_cast<GtkDestDefaults>(0),
                     NULL, 0,
@@ -143,6 +145,9 @@ gboolean WebDragDestGtk::OnDragMotion(GtkWidget* sender,
                         time);
     }
   } else if (data_requests_ == 0) {
+    if (canceled_)
+      return FALSE;
+
     GetRenderViewHost()->DragTargetDragOver(
         ui::ClientPoint(widget_),
         ui::ScreenPoint(widget_),
@@ -180,7 +185,7 @@ void WebDragDestGtk::OnDragDataReceived(
     if (target == ui::GetAtomForTarget(ui::TEXT_PLAIN)) {
       guchar* text = gtk_selection_data_get_text(data);
       if (text) {
-        drop_data_->text = NullableString16(
+        drop_data_->text = base::NullableString16(
             UTF8ToUTF16(std::string(reinterpret_cast<const char*>(text))),
             false);
         g_free(text);
@@ -204,7 +209,7 @@ void WebDragDestGtk::OnDragDataReceived(
             // This is a hack. Some file managers also populate text/plain with
             // a file URL when dragging files, so we clear it to avoid exposing
             // it to the web content.
-            drop_data_->text = NullableString16(true);
+            drop_data_->text = base::NullableString16();
           } else if (!drop_data_->url.is_valid()) {
             // Also set the first non-file URL as the URL content for the drop.
             drop_data_->url = url;
@@ -214,7 +219,7 @@ void WebDragDestGtk::OnDragDataReceived(
       }
     } else if (target == ui::GetAtomForTarget(ui::TEXT_HTML)) {
       // TODO(estade): Can the html have a non-UTF8 encoding?
-      drop_data_->html = NullableString16(
+      drop_data_->html = base::NullableString16(
           UTF8ToUTF16(std::string(reinterpret_cast<const char*>(raw_data),
                                   data_length)),
           false);
@@ -233,6 +238,20 @@ void WebDragDestGtk::OnDragDataReceived(
     } else if (target == ui::GetAtomForTarget(ui::CUSTOM_DATA)) {
       ui::ReadCustomDataIntoMap(
           raw_data, data_length, &drop_data_->custom_data);
+    }
+  }
+
+  if (data_requests_ == 0) {
+    // Give the delegate an opportunity to cancel the drag.
+    canceled_ = !web_contents_->GetDelegate()->CanDragEnter(
+        web_contents_,
+        *drop_data_,
+        GdkDragActionToWebDragOp(context->actions));
+    if (canceled_) {
+      drag_over_time_ = time;
+      UpdateDragStatus(WebDragOperationNone);
+      drop_data_.reset();
+      return;
     }
   }
 
@@ -273,6 +292,9 @@ void WebDragDestGtk::OnDragLeave(GtkWidget* sender, GdkDragContext* context,
   // Set |context_| to NULL to make sure we will recognize the next DragMotion
   // as an enter.
   context_ = NULL;
+
+  if (canceled_)
+    return;
 
   // Sometimes we get a drag-leave event before getting a drag-data-received
   // event. In that case, we don't want to bother the renderer with a

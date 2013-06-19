@@ -172,8 +172,8 @@ class RenderWidgetHostViewAura
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    bool can_compose_inline) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
@@ -221,7 +221,7 @@ class RenderWidgetHostViewAura
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual void GestureEventAck(int gesture_event_type) OVERRIDE;
   virtual void ProcessAckedTouchEvent(
-      const WebKit::WebTouchEvent& touch,
+      const TouchEventWithLatencyInfo& touch,
       InputEventAckState ack_result) OVERRIDE;
   virtual SmoothScrollGesture* CreateSmoothScrollGesture(
       bool scroll_down,
@@ -320,8 +320,8 @@ class RenderWidgetHostViewAura
                                aura::Window* lost_focus) OVERRIDE;
 
   // Overridden from aura::RootWindowObserver:
-  virtual void OnRootWindowMoved(const aura::RootWindow* root,
-                                 const gfx::Point& new_origin) OVERRIDE;
+  virtual void OnRootWindowHostMoved(const aura::RootWindow* root,
+                                     const gfx::Point& new_origin) OVERRIDE;
 
 #if defined(OS_WIN)
   // Sets the cutout rects from constrained windows. These are rectangles that
@@ -458,9 +458,10 @@ class RenderWidgetHostViewAura
   typedef base::Callback<void(bool, const scoped_refptr<ui::Texture>&)>
       BufferPresentedCallback;
 
-  // The common entry point for full buffer updates from renderer
+  // The common entry point for buffer updates from renderer
   // and GPU process.
-  void BuffersSwapped(const gfx::Size& size,
+  void BuffersSwapped(const gfx::Size& surface_size,
+                      const gfx::Rect& damage_rect,
                       float surface_scale_factor,
                       const std::string& mailbox_name,
                       const ui::LatencyInfo& latency_info,

@@ -16,6 +16,7 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/default_window_resizer.h"
+#include "ash/wm/dock/docked_window_resizer.h"
 #include "ash/wm/drag_window_resizer.h"
 #include "ash/wm/panels/panel_window_resizer.h"
 #include "ash/wm/property_util.h"
@@ -36,14 +37,27 @@
 
 namespace ash {
 
-scoped_ptr<WindowResizer> CreateWindowResizer(aura::Window* window,
-                                              const gfx::Point& point_in_parent,
-                                              int window_component) {
+scoped_ptr<WindowResizer> CreateWindowResizer(
+    aura::Window* window,
+    const gfx::Point& point_in_parent,
+    int window_component,
+    aura::client::WindowMoveSource source) {
   DCHECK(window);
   // No need to return a resizer when the window cannot get resized.
   if (!wm::CanResizeWindow(window) && window_component != HTCAPTION)
     return scoped_ptr<WindowResizer>();
 
+  // TODO(varkha): The chaining of window resizers causes some of the logic
+  // to be repeated and the logic flow difficult to control. With some windows
+  // classes using reparenting during drag operations it becomes challenging to
+  // implement proper transition from one resizer to another during or at the
+  // end of the drag. This also causes http://crbug.com/247085.
+  // It seems the only thing the panel or dock resizer needs to do is notify the
+  // layout manager when a docked window is being dragged. We should have a
+  // better way of doing this, perhaps by having a way of observing drags or
+  // having a generic drag window wrapper which informs a layout manager that a
+  // drag has started or stopped.
+  // It may be possible to refactor and eliminate chaining.
   WindowResizer* window_resizer = NULL;
   if (window->parent() &&
       window->parent()->id() == internal::kShellWindowId_WorkspaceContainer) {
@@ -56,18 +70,23 @@ scoped_ptr<WindowResizer> CreateWindowResizer(aura::Window* window,
         window,
         point_in_parent,
         window_component,
+        source,
         std::vector<aura::Window*>());
   } else if (wm::IsWindowNormal(window)) {
     window_resizer = DefaultWindowResizer::Create(
-        window, point_in_parent, window_component);
+        window, point_in_parent, window_component, source);
   }
   if (window_resizer) {
     window_resizer = internal::DragWindowResizer::Create(
-        window_resizer, window, point_in_parent, window_component);
+        window_resizer, window, point_in_parent, window_component, source);
   }
   if (window_resizer && window->type() == aura::client::WINDOW_TYPE_PANEL) {
     window_resizer = PanelWindowResizer::Create(
-        window_resizer, window, point_in_parent, window_component);
+        window_resizer, window, point_in_parent, window_component, source);
+  }
+  if (window_resizer) {
+    window_resizer = DockedWindowResizer::Create(
+        window_resizer, window, point_in_parent, window_component, source);
   }
   return make_scoped_ptr<WindowResizer>(window_resizer);
 }
@@ -79,6 +98,10 @@ namespace {
 // Distance in pixels that the cursor must move past an edge for a window
 // to move or resize beyond that edge.
 const int kStickyDistancePixels = 64;
+
+// Snapping distance used instead of WorkspaceWindowResizer::kScreenEdgeInset
+// when resizing a window using touchscreen.
+const int kScreenEdgeInsetForTouchResize = 32;
 
 // Returns true if the window should stick to the edge.
 bool ShouldStickToEdge(int distance_from_edge, int sticky_size) {
@@ -310,8 +333,9 @@ WorkspaceWindowResizer* WorkspaceWindowResizer::Create(
     aura::Window* window,
     const gfx::Point& location_in_parent,
     int window_component,
+    aura::client::WindowMoveSource source,
     const std::vector<aura::Window*>& attached_windows) {
-  Details details(window, location_in_parent, window_component);
+  Details details(window, location_in_parent, window_component, source);
   return details.is_resizable ?
       new WorkspaceWindowResizer(details, attached_windows) : NULL;
 }
@@ -326,6 +350,9 @@ void WorkspaceWindowResizer::Drag(const gfx::Point& location_in_parent,
   } else if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kAshEnableStickyEdges)) {
     sticky_size = kStickyDistancePixels;
+  } else if ((details_.bounds_change & kBoundsChange_Resizes) &&
+      details_.source == aura::client::WINDOW_MOVE_SOURCE_TOUCH) {
+    sticky_size = kScreenEdgeInsetForTouchResize;
   } else {
     sticky_size = kScreenEdgeInset;
   }
@@ -368,7 +395,7 @@ void WorkspaceWindowResizer::CompleteDrag(int event_flags) {
   if (!did_move_or_resize_ || details_.window_component != HTCAPTION)
     return;
 
-  // When the window is not in the normal show state, we do not snap thw window.
+  // When the window is not in the normal show state, we do not snap the window.
   // This happens when the user minimizes or maximizes the window by keyboard
   // shortcut while dragging it. If the window is the result of dragging a tab
   // out of a maximized window, it's already in the normal show state when this
@@ -422,6 +449,10 @@ void WorkspaceWindowResizer::RevertDrag() {
 
 aura::Window* WorkspaceWindowResizer::GetTarget() {
   return details_.window;
+}
+
+const gfx::Point& WorkspaceWindowResizer::GetInitialLocation() const {
+  return details_.initial_location_in_parent;
 }
 
 WorkspaceWindowResizer::WorkspaceWindowResizer(

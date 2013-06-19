@@ -73,7 +73,6 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "base/chromeos/chromeos_version.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -271,7 +270,7 @@ ProfileManager::ProfileManager(const base::FilePath& user_data_dir)
     : user_data_dir_(user_data_dir),
       logged_in_(false),
       will_import_(false),
-      profile_shortcut_manager_(NULL),
+
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
       browser_list_observer_(this),
 #endif

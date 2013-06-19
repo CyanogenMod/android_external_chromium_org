@@ -78,7 +78,7 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/webui/web_ui_util.h"
@@ -99,7 +99,6 @@
 
 #if defined(OS_CHROMEOS)
 #include "ash/magnifier/magnifier_constants.h"
-#include "base/chromeos/chromeos_version.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/extensions/wallpaper_manager_util.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -1411,7 +1410,7 @@ scoped_ptr<DictionaryValue> BrowserOptionsHandler::GetSyncStateDictionary() {
       "autoLoginVisible",
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAutologin) &&
       service && service->IsSyncEnabledAndLoggedIn() &&
-      service->IsSyncTokenAvailable());
+      service->IsOAuthRefreshTokenAvailable());
 
   return sync_status.Pass();
 }

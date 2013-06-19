@@ -47,6 +47,7 @@
   F(PPB_Gamepad_API) \
   F(PPB_Graphics2D_API) \
   F(PPB_Graphics3D_API) \
+  F(PPB_HostResolver_API) \
   F(PPB_HostResolver_Private_API) \
   F(PPB_ImageData_API) \
   F(PPB_InputEvent_API) \
@@ -63,7 +64,9 @@
   F(PPB_TrueTypeFont_API) \
   F(PPB_TrueTypeFont_Singleton_API) \
   F(PPB_TCPServerSocket_Private_API) \
+  F(PPB_TCPSocket_API) \
   F(PPB_TCPSocket_Private_API) \
+  F(PPB_UDPSocket_API) \
   F(PPB_UDPSocket_Private_API) \
   F(PPB_URLLoader_API) \
   F(PPB_URLRequestInfo_API) \

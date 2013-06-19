@@ -268,7 +268,7 @@ void SocketStream::RestartWithAuth(const AuthCredentials& credentials) {
       << "The current base::MessageLoop must be TYPE_IO";
   DCHECK(proxy_auth_controller_.get());
   if (!socket_.get()) {
-    LOG(ERROR) << "Socket is closed before restarting with auth.";
+    DVLOG(1) << "Socket is closed before restarting with auth.";
     return;
   }
 
@@ -626,7 +626,7 @@ int SocketStream::DoResolveProxy() {
 int SocketStream::DoResolveProxyComplete(int result) {
   pac_request_ = NULL;
   if (result != OK) {
-    LOG(ERROR) << "Failed to resolve proxy: " << result;
+    DVLOG(1) << "Failed to resolve proxy: " << result;
     if (delegate_)
       delegate_->OnError(this, result);
     proxy_info_.UseDirect();
@@ -989,6 +989,7 @@ int SocketStream::DoSecureProxyConnect() {
   DCHECK(factory_);
   SSLClientSocketContext ssl_context;
   ssl_context.cert_verifier = context_->cert_verifier();
+  ssl_context.transport_security_state = context_->transport_security_state();
   ssl_context.server_bound_cert_service = context_->server_bound_cert_service();
   socket_.reset(factory_->CreateSSLClientSocket(
       socket_.release(),
@@ -1042,6 +1043,7 @@ int SocketStream::DoSSLConnect() {
   DCHECK(factory_);
   SSLClientSocketContext ssl_context;
   ssl_context.cert_verifier = context_->cert_verifier();
+  ssl_context.transport_security_state = context_->transport_security_state();
   ssl_context.server_bound_cert_service = context_->server_bound_cert_service();
   socket_.reset(factory_->CreateSSLClientSocket(socket_.release(),
                                                 HostPortPair::FromURL(url_),

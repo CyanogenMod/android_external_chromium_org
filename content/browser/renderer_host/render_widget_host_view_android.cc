@@ -18,6 +18,7 @@
 #include "cc/layers/texture_layer.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
+#include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/android/overscroll_glow.h"
@@ -124,7 +125,7 @@ RenderWidgetHostViewAndroid::~RenderWidgetHostViewAndroid() {
         texture_id_in_layer_);
   }
 
-  if (texture_layer_)
+  if (texture_layer_.get())
     texture_layer_->ClearClient();
 }
 
@@ -140,6 +141,8 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
                         OnDidChangeBodyBackgroundColor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetNeedsBeginFrame,
                         OnSetNeedsBeginFrame)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
+                        OnTextInputStateChanged)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -296,8 +299,7 @@ void RenderWidgetHostViewAndroid::Focus() {
 }
 
 void RenderWidgetHostViewAndroid::Blur() {
-  host_->Send(new InputMsg_ExecuteEditCommand(
-      host_->GetRoutingID(), "Unselect", ""));
+  host_->ExecuteEditCommand("Unselect", "");
   host_->SetInputMethodActive(false);
   host_->Blur();
 
@@ -374,7 +376,17 @@ void RenderWidgetHostViewAndroid::SetIsLoading(bool is_loading) {
   // is TabContentsDelegate.
 }
 
-void RenderWidgetHostViewAndroid::TextInputStateChanged(
+void RenderWidgetHostViewAndroid::TextInputTypeChanged(
+    ui::TextInputType type,
+    bool can_compose_inline) {
+  // Unused on Android, which uses OnTextInputChanged instead.
+}
+
+int RenderWidgetHostViewAndroid::GetNativeImeAdapter() {
+  return reinterpret_cast<int>(&ime_adapter_android_);
+}
+
+void RenderWidgetHostViewAndroid::OnTextInputStateChanged(
     const ViewHostMsg_TextInputState_Params& params) {
   if (!IsShowing())
     return;
@@ -385,10 +397,6 @@ void RenderWidgetHostViewAndroid::TextInputStateChanged(
       params.value, params.selection_start, params.selection_end,
       params.composition_start, params.composition_end,
       params.show_ime_if_needed);
-}
-
-int RenderWidgetHostViewAndroid::GetNativeImeAdapter() {
-  return reinterpret_cast<int>(&ime_adapter_android_);
 }
 
 void RenderWidgetHostViewAndroid::OnProcessImeBatchStateAck(bool is_begin) {
@@ -407,16 +415,18 @@ void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
 }
 
 void RenderWidgetHostViewAndroid::SendBeginFrame(
-    base::TimeTicks frame_time) {
+    const cc::BeginFrameArgs& args) {
+  TRACE_EVENT0("cc", "RenderWidgetHostViewAndroid::SendBeginFrame");
   if (host_)
-    host_->Send(new ViewMsg_BeginFrame(host_->GetRoutingID(),
-                                       frame_time));
+    host_->Send(new ViewMsg_BeginFrame(host_->GetRoutingID(), args));
 }
 
 void RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame(
     bool enabled) {
+  TRACE_EVENT1("cc", "RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame",
+               "enabled", enabled);
   if (content_view_core_)
-    content_view_core_->SetVSyncNotificationEnabled(enabled);
+    content_view_core_->SetNeedsBeginFrame(enabled);
 }
 
 void RenderWidgetHostViewAndroid::OnStartContentIntent(
@@ -822,7 +832,7 @@ gfx::GLSurfaceHandle RenderWidgetHostViewAndroid::GetCompositingSurface() {
 }
 
 void RenderWidgetHostViewAndroid::ProcessAckedTouchEvent(
-    const WebKit::WebTouchEvent& touch_event, InputEventAckState ack_result) {
+    const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
   if (content_view_core_)
     content_view_core_->ConfirmTouchEvent(ack_result);
 }
@@ -856,6 +866,67 @@ InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
 
 void RenderWidgetHostViewAndroid::OnAccessibilityNotifications(
     const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+  if (!GetBrowserAccessibilityManager()) {
+    SetBrowserAccessibilityManager(
+        new BrowserAccessibilityManagerAndroid(
+            content_view_core_->GetJavaObject(),
+            BrowserAccessibilityManagerAndroid::GetEmptyDocument(),
+            this));
+  }
+  GetBrowserAccessibilityManager()->OnAccessibilityNotifications(params);
+}
+
+void RenderWidgetHostViewAndroid::SetAccessibilityFocus(int acc_obj_id) {
+  if (!host_)
+    return;
+
+  host_->AccessibilitySetFocus(acc_obj_id);
+}
+
+void RenderWidgetHostViewAndroid::AccessibilityDoDefaultAction(int acc_obj_id) {
+  if (!host_)
+    return;
+
+  host_->AccessibilityDoDefaultAction(acc_obj_id);
+}
+
+void RenderWidgetHostViewAndroid::AccessibilityScrollToMakeVisible(
+    int acc_obj_id, gfx::Rect subfocus) {
+  if (!host_)
+    return;
+
+  host_->AccessibilityScrollToMakeVisible(acc_obj_id, subfocus);
+}
+
+void RenderWidgetHostViewAndroid::AccessibilityScrollToPoint(
+    int acc_obj_id, gfx::Point point) {
+  if (!host_)
+    return;
+
+  host_->AccessibilityScrollToPoint(acc_obj_id, point);
+}
+
+void RenderWidgetHostViewAndroid::AccessibilitySetTextSelection(
+    int acc_obj_id, int start_offset, int end_offset) {
+  if (!host_)
+    return;
+
+  host_->AccessibilitySetTextSelection(
+      acc_obj_id, start_offset, end_offset);
+}
+
+gfx::Point RenderWidgetHostViewAndroid::GetLastTouchEventLocation() const {
+  NOTIMPLEMENTED();
+  // Only used on Win8
+  return gfx::Point();
+}
+
+void RenderWidgetHostViewAndroid::FatalAccessibilityTreeError() {
+  if (!host_)
+    return;
+
+  host_->FatalAccessibilityTreeError();
+  SetBrowserAccessibilityManager(NULL);
 }
 
 bool RenderWidgetHostViewAndroid::LockMouse() {
@@ -878,7 +949,7 @@ void RenderWidgetHostViewAndroid::SendKeyEvent(
 void RenderWidgetHostViewAndroid::SendTouchEvent(
     const WebKit::WebTouchEvent& event) {
   if (host_)
-    host_->ForwardTouchEvent(event);
+    host_->ForwardTouchEventWithLatencyInfo(event, ui::LatencyInfo());
 }
 
 

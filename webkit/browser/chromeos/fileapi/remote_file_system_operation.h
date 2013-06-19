@@ -53,10 +53,9 @@ class RemoteFileSystemOperation
                              const ReadDirectoryCallback& callback) OVERRIDE;
   virtual void Remove(const fileapi::FileSystemURL& url, bool recursive,
                       const StatusCallback& callback) OVERRIDE;
-  virtual void Write(const net::URLRequestContext* url_request_context,
-                     const fileapi::FileSystemURL& url,
-                     const GURL& blob_url,
-                     int64 offset,
+  virtual void Write(const fileapi::FileSystemURL& url,
+                     scoped_ptr<fileapi::FileWriterDelegate> writer_delegate,
+                     scoped_ptr<net::URLRequest> blob_request,
                      const WriteCallback& callback) OVERRIDE;
   virtual void Truncate(const fileapi::FileSystemURL& url, int64 length,
                         const StatusCallback& callback) OVERRIDE;
@@ -89,12 +88,10 @@ class RemoteFileSystemOperation
   // Generic callback that translates platform errors to WebKit error codes.
   void DidDirectoryExists(const StatusCallback& callback,
                           base::PlatformFileError rv,
-                          const base::PlatformFileInfo& file_info,
-                          const base::FilePath& unused);
+                          const base::PlatformFileInfo& file_info);
   void DidFileExists(const StatusCallback& callback,
                      base::PlatformFileError rv,
-                     const base::PlatformFileInfo& file_info,
-                     const base::FilePath& unused);
+                     const base::PlatformFileInfo& file_info);
   void DidWrite(const WriteCallback& write_callback,
                 base::PlatformFileError result,
                 int64 bytes,

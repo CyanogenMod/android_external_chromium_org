@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_TABS_TAB_STRIP_CONTROLLER_H_
 
 #include "chrome/browser/ui/views/tabs/tab_strip_types.h"
+#include "ui/base/ui_base_types.h"
 
 class GURL;
 class Tab;
@@ -66,7 +67,9 @@ class TabStripController {
   virtual void CloseTab(int index, CloseTabSource source) = 0;
 
   // Shows a context menu for the tab at the specified point in screen coords.
-  virtual void ShowContextMenuForTab(Tab* tab, const gfx::Point& p) = 0;
+  virtual void ShowContextMenuForTab(Tab* tab,
+                                     const gfx::Point& p,
+                                     ui::MenuSourceType source_type) = 0;
 
   // Updates the loading animations of all the tabs.
   virtual void UpdateLoadingAnimations() = 0;
@@ -95,6 +98,14 @@ class TabStripController {
 
   // Invoked if the layout type might have changed.
   virtual void LayoutTypeMaybeChanged() = 0;
+
+  // Notifies controller that the user started dragging this tabstrip's tabs.
+  virtual void OnStartedDraggingTabs() = 0;
+
+  // Notifies controller that the user stopped dragging this tabstrip's tabs.
+  // This is also called when the tabs that the user is dragging were detached
+  // from this tabstrip but the user is still dragging the tabs.
+  virtual void OnStoppedDraggingTabs() = 0;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TABS_TAB_STRIP_CONTROLLER_H_

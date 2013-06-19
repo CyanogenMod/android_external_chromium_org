@@ -70,6 +70,7 @@
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
 #include "chrome/test/ui/ui_test.h"
+#include "components/breakpad/common/breakpad_paths.h"
 #include "net/base/net_util.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "v8/include/v8-testing.h"
@@ -634,7 +635,7 @@ class PageLoadTest : public UITest {
       crash_dumps_dir_path_ = base::FilePath::FromUTF8Unsafe(
           alternate_minidump_location);
     } else {
-      PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dumps_dir_path_);
+      PathService::Get(breakpad::DIR_CRASH_DUMPS, &crash_dumps_dir_path_);
     }
 
     base::FileEnumerator enumerator(crash_dumps_dir_path_,
@@ -735,7 +736,7 @@ class PageLoadTest : public UITest {
     base::FilePath path = user_data_dir().Append(chrome::kLocalStateFilename);
     PrefServiceMockBuilder builder;
     builder.WithUserFilePrefs(
-        path, base::MessageLoop::current()->message_loop_proxy());
+        path, base::MessageLoop::current()->message_loop_proxy().get());
     return builder.Create(registry);
   }
 

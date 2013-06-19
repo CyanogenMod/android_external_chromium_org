@@ -367,10 +367,9 @@ willPositionSheet:(NSWindow*)sheet
     rightIndent += -[window fullScreenButtonOriginAdjustment].x;
   } else if ([self shouldShowAvatar]) {
     rightIndent += kAvatarTabStripShrink;
-    if ([avatarButtonController_ labelView]) {
-      rightIndent += NSWidth([[avatarButtonController_ labelView] frame]) +
-                     kAvatarRightOffset;
-    }
+    NSButton* labelButton = [avatarButtonController_ labelButtonView];
+    if (labelButton)
+      rightIndent += NSWidth([labelButton frame]) + kAvatarRightOffset;
   }
   [tabStripController_ setRightIndentForControls:rightIndent];
 
@@ -1020,14 +1019,15 @@ willPositionSheet:(NSWindow*)sheet
 }
 
 - (BOOL)shouldAllowOverlappingViews:(BOOL)inPresentationMode {
-  if (chrome::IsInstantExtendedAPIEnabled())
-    return YES;
-
   if (inPresentationMode)
     return YES;
 
   if (findBarCocoaController_ &&
-      ![[findBarCocoaController_ findBarView] isHidden])
+      ![[findBarCocoaController_ findBarView] isHidden]) {
+    return YES;
+  }
+
+  if (historyOverlayCount_)
     return YES;
 
   return NO;
@@ -1037,8 +1037,17 @@ willPositionSheet:(NSWindow*)sheet
   WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
   if (!contents)
     return;
-  contents->GetView()->SetAllowOverlappingViews(
-      [self shouldAllowOverlappingViews:inPresentationMode]);
+
+  BOOL allowOverlappingViews =
+      [self shouldAllowOverlappingViews:inPresentationMode];
+  contents->GetView()->SetAllowOverlappingViews(allowOverlappingViews);
+
+  DevToolsWindow* devToolsWindow =
+      DevToolsWindow::GetDockedInstanceForInspectedTab(contents);
+  if (devToolsWindow) {
+    devToolsWindow->web_contents()->GetView()->
+        SetAllowOverlappingViews(allowOverlappingViews);
+  }
 }
 
 - (void)updateInfoBarTipVisibility {

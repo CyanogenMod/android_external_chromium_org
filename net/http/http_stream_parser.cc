@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
@@ -16,8 +16,8 @@
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
-#include "net/socket/ssl_client_socket.h"
 #include "net/socket/client_socket_handle.h"
+#include "net/socket/ssl_client_socket.h"
 
 namespace {
 
@@ -56,11 +56,12 @@ bool HeadersContainMultipleCopiesOfField(
   return false;
 }
 
-Value* NetLogSendRequestBodyCallback(int length,
-                                     bool is_chunked,
-                                     bool did_merge,
-                                     net::NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
+base::Value* NetLogSendRequestBodyCallback(
+    int length,
+    bool is_chunked,
+    bool did_merge,
+    net::NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("length", length);
   dict->SetBoolean("is_chunked", is_chunked);
   dict->SetBoolean("did_merge", did_merge);
@@ -180,7 +181,6 @@ HttpStreamParser::HttpStreamParser(ClientSocketHandle* connection,
       response_header_start_offset_(-1),
       response_body_length_(-1),
       response_body_read_(0),
-      chunked_decoder_(NULL),
       user_read_buf_(NULL),
       user_read_buf_len_(0),
       connection_(connection),
@@ -544,12 +544,12 @@ int HttpStreamParser::DoReadHeadersComplete(int result) {
       // rather than empty HTTP/0.9 response.
       io_state_ = STATE_DONE;
       return ERR_EMPTY_RESPONSE;
-    } else if (request_->url.SchemeIs("https")) {
+    } else if (request_->url.SchemeIsSecure()) {
       // The connection was closed in the middle of the headers. For HTTPS we
       // don't parse partial headers. Return a different error code so that we
       // know that we shouldn't attempt to retry the request.
       io_state_ = STATE_DONE;
-      return ERR_HEADERS_TRUNCATED;
+      return ERR_RESPONSE_HEADERS_TRUNCATED;
     }
     // Parse things as well as we can and let the caller decide what to do.
     int end_offset;
@@ -897,7 +897,7 @@ bool HttpStreamParser::IsConnectionReusable() const {
 }
 
 void HttpStreamParser::GetSSLInfo(SSLInfo* ssl_info) {
-  if (request_->url.SchemeIs("https") && connection_->socket()) {
+  if (request_->url.SchemeIsSecure() && connection_->socket()) {
     SSLClientSocket* ssl_socket =
         static_cast<SSLClientSocket*>(connection_->socket());
     ssl_socket->GetSSLInfo(ssl_info);
@@ -906,7 +906,7 @@ void HttpStreamParser::GetSSLInfo(SSLInfo* ssl_info) {
 
 void HttpStreamParser::GetSSLCertRequestInfo(
     SSLCertRequestInfo* cert_request_info) {
-  if (request_->url.SchemeIs("https") && connection_->socket()) {
+  if (request_->url.SchemeIsSecure() && connection_->socket()) {
     SSLClientSocket* ssl_socket =
         static_cast<SSLClientSocket*>(connection_->socket());
     ssl_socket->GetSSLCertRequestInfo(cert_request_info);

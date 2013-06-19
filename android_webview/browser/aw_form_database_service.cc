@@ -28,7 +28,9 @@ AwFormDatabaseService::AwFormDatabaseService(const base::FilePath path)
       has_form_data_(false),
       completion_(false, false) {
 
-  web_database_ = new WebDatabaseService(path.Append(kWebDataFilename));
+  web_database_ = new WebDatabaseService(path.Append(kWebDataFilename),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB));
   web_database_->AddTable(
       scoped_ptr<WebDatabaseTable>(new autofill::AutofillTable(
           l10n_util::GetDefaultLocale())));
@@ -52,7 +54,7 @@ void AwFormDatabaseService::Shutdown() {
 
 void AwFormDatabaseService::CancelPendingQuery() {
   if (pending_query_handle_) {
-    if (autofill_data_)
+    if (autofill_data_.get())
       autofill_data_->CancelRequest(pending_query_handle_);
     pending_query_handle_ = 0;
   }

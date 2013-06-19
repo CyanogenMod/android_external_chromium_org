@@ -1403,7 +1403,7 @@ SECStatus SSLClientSocketNSS::Core::PlatformClientAuthHandler(
   return SECWouldBlock;
 #elif defined(OS_MACOSX)
   if (core->ssl_config_.send_client_cert) {
-    if (core->ssl_config_.client_cert) {
+    if (core->ssl_config_.client_cert.get()) {
       OSStatus os_error = noErr;
       SecIdentityRef identity = NULL;
       SecKeyRef private_key = NULL;
@@ -2935,6 +2935,9 @@ SSLClientSocketNSS::GetNextProto(std::string* proto,
 int SSLClientSocketNSS::Connect(const CompletionCallback& callback) {
   EnterFunction("");
   DCHECK(transport_.get());
+  // It is an error to create an SSLClientSocket whose context has no
+  // TransportSecurityState.
+  DCHECK(transport_security_state_);
   DCHECK_EQ(STATE_NONE, next_handshake_state_);
   DCHECK(user_connect_callback_.is_null());
   DCHECK(!callback.is_null());
@@ -3111,7 +3114,7 @@ int SSLClientSocketNSS::Init() {
 }
 
 void SSLClientSocketNSS::InitCore() {
-  core_ = new Core(base::ThreadTaskRunnerHandle::Get(),
+  core_ = new Core(base::ThreadTaskRunnerHandle::Get().get(),
                    nss_task_runner_.get(),
                    transport_.get(),
                    host_and_port_,
@@ -3419,7 +3422,7 @@ int SSLClientSocketNSS::DoVerifyCert(int result) {
       core_->state().server_cert.get(),
       host_and_port_.host(),
       flags,
-      SSLConfigService::GetCRLSet(),
+      SSLConfigService::GetCRLSet().get(),
       &server_cert_verify_result_,
       base::Bind(&SSLClientSocketNSS::OnHandshakeIOComplete,
                  base::Unretained(this)),

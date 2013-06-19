@@ -59,7 +59,7 @@ bool AutofillDataTypeController::StartModels() {
   DCHECK_EQ(MODEL_STARTING, state());
 
   autofill::AutofillWebDataService* web_data_service =
-      autofill::AutofillWebDataService::FromBrowserContext(profile());
+      autofill::AutofillWebDataService::FromBrowserContext(profile()).get();
 
   if (!web_data_service)
     return false;
@@ -107,7 +107,7 @@ void AutofillDataTypeController::UpdateAutofillCullingSettings(
     scoped_refptr<autofill::AutofillWebDataService> web_data_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
   AutocompleteSyncableService* service =
-      AutocompleteSyncableService::FromWebDataService(web_data_service);
+      AutocompleteSyncableService::FromWebDataService(web_data_service.get());
   if (!service) {
     DVLOG(1) << "Can't update culling, no AutocompleteSyncableService.";
     return;

@@ -20,7 +20,7 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/time.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/client/gl_helper_scaling.h"
@@ -32,7 +32,6 @@
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gl/gl_surface.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
-#include "webkit/common/gpu/webgraphicscontext3d_in_process_impl.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -45,6 +44,7 @@
 namespace content {
 
 using WebKit::WebGLId;
+using WebKit::WebGraphicsContext3D;
 
 content::GLHelper::ScalerQuality kQualities[] = {
   content::GLHelper::SCALER_QUALITY_BEST,
@@ -201,10 +201,10 @@ TEST_F(GLHelperTest, ScaleBenchmark) {
             context_->flush();
           }
           context_->finish();
+          end_time = base::TimeTicks::Now();
           if (iterations > 2000) {
             break;
           }
-          end_time = base::TimeTicks::Now();
           if ((end_time - start_time).InMillisecondsF() > 1000) {
             break;
           }

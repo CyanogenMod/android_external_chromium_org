@@ -32,7 +32,7 @@ const int kRootHeight = 600;
 
 class DragWindowResizerTest : public test::AshTestBase {
  public:
-  DragWindowResizerTest() : window_(NULL) {}
+  DragWindowResizerTest() {}
   virtual ~DragWindowResizerTest() {}
 
   virtual void SetUp() OVERRIDE {
@@ -94,10 +94,10 @@ class DragWindowResizerTest : public test::AshTestBase {
   }
 
  protected:
-  gfx::Point CalculateDragPoint(const DragWindowResizer& resizer,
+  gfx::Point CalculateDragPoint(const WindowResizer& resizer,
                                 int delta_x,
                                 int delta_y) const {
-    gfx::Point location = resizer.GetInitialLocationInParentForTest();
+    gfx::Point location = resizer.GetInitialLocation();
     location.set_x(location.x() + delta_x);
     location.set_y(location.y() + delta_y);
     return location;
@@ -107,12 +107,15 @@ class DragWindowResizerTest : public test::AshTestBase {
     return Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
   }
 
-  static DragWindowResizer* CreateDragWindowResizer(
+  static WindowResizer* CreateDragWindowResizer(
       aura::Window* window,
       const gfx::Point& point_in_parent,
       int window_component) {
-    return static_cast<DragWindowResizer*>(CreateWindowResizer(
-        window, point_in_parent, window_component).release());
+    return CreateWindowResizer(
+        window,
+        point_in_parent,
+        window_component,
+        aura::client::WINDOW_MOVE_SOURCE_MOUSE).release();
   }
 
   aura::test::TestWindowDelegate delegate_;
@@ -135,6 +138,9 @@ class DragWindowResizerTest : public test::AshTestBase {
 
 // Verifies a window can be moved from the primary display to another.
 TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplays) {
+  if (!SupportsMultipleDisplays())
+    return;
+
   // The secondary display is logically on the right, but on the system (e.g. X)
   // layer, it's below the primary one. See UpdateDisplay() in ash_test_base.cc.
   UpdateDisplay("800x600,800x600");
@@ -147,7 +153,7 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplays) {
   EXPECT_EQ(root_windows[0], window_->GetRootWindow());
   {
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     // Drag the pointer to the right. Once it reaches the right edge of the
@@ -165,7 +171,7 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplays) {
   EXPECT_EQ(root_windows[0], window_->GetRootWindow());
   {
     // Grab (0, 0) of the window and move the pointer to (790, 10).
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 790, 10), 0);
@@ -182,7 +188,7 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplays) {
   {
     // Grab the top-right edge of the window and move the pointer to (0, 10)
     // in the secondary root window's coordinates.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(49, 0), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 751, 10), ui::EF_CONTROL_DOWN);
@@ -197,6 +203,9 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplays) {
 
 // Verifies a window can be moved from the secondary display to primary.
 TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplaysRightToLeft) {
+  if (!SupportsMultipleDisplays())
+    return;
+
   UpdateDisplay("800x600,800x600");
   shelf_layout_manager()->LayoutShelf();
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
@@ -208,7 +217,7 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplaysRightToLeft) {
   EXPECT_EQ(root_windows[1], window_->GetRootWindow());
   {
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     // Move the mouse near the right edge, (798, 0), of the primary display.
@@ -221,6 +230,9 @@ TEST_F(DragWindowResizerTest, WindowDragWithMultiDisplaysRightToLeft) {
 
 // Verifies the drag window is shown correctly.
 TEST_F(DragWindowResizerTest, DragWindowController) {
+  if (!SupportsMultipleDisplays())
+    return;
+
   UpdateDisplay("800x600,800x600");
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
   ASSERT_EQ(2U, root_windows.size());
@@ -230,20 +242,22 @@ TEST_F(DragWindowResizerTest, DragWindowController) {
   EXPECT_EQ(root_windows[0], window_->GetRootWindow());
   EXPECT_FLOAT_EQ(1.0f, window_->layer()->opacity());
   {
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
-    EXPECT_FALSE(resizer->drag_window_controller_.get());
+    internal::DragWindowResizer* drag_resizer = DragWindowResizer::instance_;
+    ASSERT_TRUE(drag_resizer);
+    EXPECT_FALSE(drag_resizer->drag_window_controller_.get());
 
     // The pointer is inside the primary root. The drag window controller
     // should be NULL.
     resizer->Drag(CalculateDragPoint(*resizer, 10, 10), 0);
-    EXPECT_FALSE(resizer->drag_window_controller_.get());
+    EXPECT_FALSE(drag_resizer->drag_window_controller_.get());
 
     // The window spans both root windows.
     resizer->Drag(CalculateDragPoint(*resizer, 798, 10), 0);
     DragWindowController* controller =
-        resizer->drag_window_controller_.get();
+        drag_resizer->drag_window_controller_.get();
     ASSERT_TRUE(controller);
 
     ASSERT_TRUE(controller->drag_widget_);
@@ -263,7 +277,7 @@ TEST_F(DragWindowResizerTest, DragWindowController) {
 
     // Enter the pointer to the secondary display.
     resizer->Drag(CalculateDragPoint(*resizer, 800, 10), 0);
-    controller = resizer->drag_window_controller_.get();
+    controller = drag_resizer->drag_window_controller_.get();
     ASSERT_TRUE(controller);
     // |window_| should be transparent, and the drag window should be opaque.
     EXPECT_GT(1.0f, window_->layer()->opacity());
@@ -280,10 +294,12 @@ TEST_F(DragWindowResizerTest, DragWindowController) {
   EXPECT_EQ(root_windows[0], window_->GetRootWindow());
   EXPECT_FLOAT_EQ(1.0f, window_->layer()->opacity());
   {
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
-    EXPECT_FALSE(resizer->drag_window_controller_.get());
+    internal::DragWindowResizer* drag_resizer = DragWindowResizer::instance_;
+    ASSERT_TRUE(drag_resizer);
+    EXPECT_FALSE(drag_resizer->drag_window_controller_.get());
 
     resizer->Drag(CalculateDragPoint(*resizer, 0, 610), 0);
     resizer->RevertDrag();
@@ -303,7 +319,7 @@ TEST_F(DragWindowResizerTest, WarpMousePointer) {
   EXPECT_EQ(MouseCursorEventFilter::WARP_ALWAYS,
             event_filter->mouse_warp_mode_);
   {
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     // While dragging a window, warp should be allowed.
     EXPECT_EQ(MouseCursorEventFilter::WARP_DRAG,
@@ -314,7 +330,7 @@ TEST_F(DragWindowResizerTest, WarpMousePointer) {
             event_filter->mouse_warp_mode_);
 
   {
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     EXPECT_EQ(MouseCursorEventFilter::WARP_DRAG,
               event_filter->mouse_warp_mode_);
@@ -324,7 +340,7 @@ TEST_F(DragWindowResizerTest, WarpMousePointer) {
             event_filter->mouse_warp_mode_);
 
   {
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTRIGHT));
     // While resizing a window, warp should NOT be allowed.
     EXPECT_EQ(MouseCursorEventFilter::WARP_NONE,
@@ -335,7 +351,7 @@ TEST_F(DragWindowResizerTest, WarpMousePointer) {
             event_filter->mouse_warp_mode_);
 
   {
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTRIGHT));
     EXPECT_EQ(MouseCursorEventFilter::WARP_NONE,
               event_filter->mouse_warp_mode_);
@@ -348,6 +364,9 @@ TEST_F(DragWindowResizerTest, WarpMousePointer) {
 // Verifies cursor's device scale factor is updated whe a window is moved across
 // root windows with different device scale factors (http://crbug.com/154183).
 TEST_F(DragWindowResizerTest, CursorDeviceScaleFactor) {
+  if (!SupportsMultipleDisplays())
+    return;
+
   // The secondary display is logically on the right, but on the system (e.g. X)
   // layer, it's below the primary one. See UpdateDisplay() in ash_test_base.cc.
   UpdateDisplay("400x400,800x800*2");
@@ -366,7 +385,7 @@ TEST_F(DragWindowResizerTest, CursorDeviceScaleFactor) {
                                Shell::GetScreen()->GetPrimaryDisplay());
     EXPECT_EQ(root_windows[0], window_->GetRootWindow());
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     EXPECT_EQ(1.0f, cursor_test_api.GetDisplay().device_scale_factor());
     ASSERT_TRUE(resizer.get());
@@ -386,7 +405,7 @@ TEST_F(DragWindowResizerTest, CursorDeviceScaleFactor) {
         Shell::GetScreen()->GetDisplayNearestWindow(root_windows[1]));
     EXPECT_EQ(root_windows[1], window_->GetRootWindow());
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     EXPECT_EQ(2.0f, cursor_test_api.GetDisplay().device_scale_factor());
     ASSERT_TRUE(resizer.get());
@@ -401,6 +420,9 @@ TEST_F(DragWindowResizerTest, CursorDeviceScaleFactor) {
 
 // Verifies several kinds of windows can be moved across displays.
 TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
+  if (!SupportsMultipleDisplays())
+    return;
+
   // The secondary display is logically on the right, but on the system (e.g. X)
   // layer, it's below the primary one. See UpdateDisplay() in ash_test_base.cc.
   UpdateDisplay("400x400,400x400");
@@ -417,7 +439,7 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
     window->SetBoundsInScreen(gfx::Rect(0, 0, 50, 60),
                               Shell::GetScreen()->GetPrimaryDisplay());
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window, gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 399, 200), 0);
@@ -432,7 +454,7 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
     window->SetBoundsInScreen(gfx::Rect(0, 0, 50, 60),
                               Shell::GetScreen()->GetPrimaryDisplay());
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window, gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 399, 200), 0);
@@ -447,7 +469,7 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
     window->SetBoundsInScreen(gfx::Rect(0, 0, 50, 60),
                               Shell::GetScreen()->GetPrimaryDisplay());
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window, gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 399, 200), 0);
@@ -462,7 +484,7 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
     window->SetBoundsInScreen(gfx::Rect(0, 0, 50, 60),
                               Shell::GetScreen()->GetPrimaryDisplay());
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window, gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 399, 200), 0);
@@ -478,7 +500,7 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
     window->SetBoundsInScreen(gfx::Rect(0, 0, 50, 60),
                               Shell::GetScreen()->GetPrimaryDisplay());
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window, gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 399, 200), 0);
@@ -493,7 +515,7 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
     window->SetBoundsInScreen(gfx::Rect(0, 0, 50, 60),
                               Shell::GetScreen()->GetPrimaryDisplay());
     // Grab (0, 0) of the window.
-    scoped_ptr<DragWindowResizer> resizer(CreateDragWindowResizer(
+    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window, gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 399, 200), 0);

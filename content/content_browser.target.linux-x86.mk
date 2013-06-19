@@ -70,9 +70,12 @@ LOCAL_SRC_FILES := \
 	content/public/browser/web_ui_controller.cc \
 	content/public/browser/url_data_source.cc \
 	content/browser/accessibility/accessibility_tree_formatter.cc \
+	content/browser/accessibility/accessibility_tree_formatter_android.cc \
 	content/browser/accessibility/accessibility_ui.cc \
 	content/browser/accessibility/browser_accessibility.cc \
+	content/browser/accessibility/browser_accessibility_android.cc \
 	content/browser/accessibility/browser_accessibility_manager.cc \
+	content/browser/accessibility/browser_accessibility_manager_android.cc \
 	content/browser/accessibility/browser_accessibility_state_impl.cc \
 	content/browser/android/android_browser_process.cc \
 	content/browser/android/browser_jni_registrar.cc \
@@ -187,7 +190,7 @@ LOCAL_SRC_FILES := \
 	content/browser/geolocation/location_api_adapter_android.cc \
 	content/browser/geolocation/location_arbitrator_impl.cc \
 	content/browser/geolocation/location_provider_android.cc \
-	content/browser/geolocation/location_provider.cc \
+	content/browser/geolocation/location_provider_base.cc \
 	content/browser/geolocation/wifi_data_provider_common.cc \
 	content/browser/gpu/browser_gpu_channel_host_factory.cc \
 	content/browser/gpu/compositor_util.cc \
@@ -340,6 +343,7 @@ LOCAL_SRC_FILES := \
 	content/browser/site_instance_impl.cc \
 	content/browser/speech/speech_recognition_dispatcher_host.cc \
 	content/browser/speech/speech_recognition_manager_impl.cc \
+	content/browser/speech/speech_recognizer_impl_android.cc \
 	content/browser/ssl/ssl_cert_error_handler.cc \
 	content/browser/ssl/ssl_client_auth_handler.cc \
 	content/browser/ssl/ssl_error_handler.cc \
@@ -429,6 +433,7 @@ MY_CFLAGS_C :=
 
 MY_DEFS := \
 	'-DCONTENT_IMPLEMENTATION' \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -440,7 +445,6 @@ MY_DEFS := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DENABLE_LANGUAGE_DETECTION=1' \
-	'-DENABLE_JAVA_BRIDGE' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
@@ -498,13 +502,13 @@ LOCAL_C_INCLUDES := \
 	$(PWD)/external/icu4c/i18n \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(gyp_shared_intermediate_dir)/webkit \
+	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
+	$(LOCAL_PATH)/third_party/leveldatabase/src \
+	$(LOCAL_PATH)/third_party/leveldatabase \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(LOCAL_PATH)/third_party/npapi \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(LOCAL_PATH)/v8/include \
-	$(LOCAL_PATH)/third_party/leveldatabase/src/include \
-	$(LOCAL_PATH)/third_party/leveldatabase/src \
-	$(LOCAL_PATH)/third_party/leveldatabase \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

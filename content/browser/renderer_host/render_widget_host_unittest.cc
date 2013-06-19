@@ -189,8 +189,24 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
     return touch_event_queue_->GetQueueSize();
   }
 
+  bool ScrollStateIsContentScrolling() const {
+    return scroll_state() == OverscrollController::STATE_CONTENT_SCROLLING;
+  }
+
+  bool ScrollStateIsOverscrolling() const {
+    return scroll_state() == OverscrollController::STATE_OVERSCROLLING;
+  }
+
+  bool ScrollStateIsUnknown() const {
+    return scroll_state() == OverscrollController::STATE_UNKNOWN;
+  }
+
+  OverscrollController::ScrollState scroll_state() const {
+    return overscroll_controller_->scroll_state_;
+  }
+
   const WebTouchEvent& latest_event() const {
-    return touch_event_queue_->GetLatestEvent();
+    return touch_event_queue_->GetLatestEvent().event;
   }
 
   OverscrollMode overscroll_mode() const {
@@ -524,9 +540,9 @@ class TestView : public TestRenderWidgetHostView {
   virtual gfx::Rect GetViewBounds() const OVERRIDE {
     return bounds_;
   }
-  virtual void ProcessAckedTouchEvent(const WebTouchEvent& touch,
+  virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE {
-    acked_event_ = touch;
+    acked_event_ = touch.event;
     ++acked_event_count_;
   }
   virtual void UnhandledWheelEvent(const WebMouseWheelEvent& event) OVERRIDE {
@@ -789,7 +805,7 @@ class RenderWidgetHostTest : public testing::Test {
   // Sends a touch event (irrespective of whether the page has a touch-event
   // handler or not).
   void SendTouchEvent() {
-    host_->ForwardTouchEvent(touch_event_);
+    host_->ForwardTouchEventWithLatencyInfo(touch_event_, ui::LatencyInfo());
 
     // Mark all the points as stationary. And remove the points that have been
     // released.
@@ -3000,8 +3016,10 @@ TEST_F(RenderWidgetHostTest, AckedTouchEventState) {
     EXPECT_EQ(acks[i], view_->acked_event().type);
     ScopedVector<ui::TouchEvent> acked;
 
+    TouchEventWithLatencyInfo acked_event(view_->acked_event(),
+                                          ui::LatencyInfo());
     MakeUITouchEventsFromWebTouchEvents(
-        view_->acked_event(), &acked, coordinate_system);
+        acked_event, &acked, coordinate_system);
     bool success = EventListIsSubset(acked, expected_events);
     EXPECT_TRUE(success) << "Failed on step: " << i;
     if (!success)
@@ -3716,18 +3734,22 @@ TEST_F(RenderWidgetHostTest, OverscrollWithTouchEvents) {
   EXPECT_EQ(0U, host_->TouchEventQueueSize());
   process_->sink().ClearMessages();
 
-  // Try to send another touch event. Now that overscroll has started, the
-  // controller should consume the touch event, and the touch-event queue should
-  // remain empty.
+  // Send another touch event. The page should get the touch-move event, even
+  // though overscroll has started.
   MoveTouchPoint(0, 55, 5);
   SendTouchEvent();
-  EXPECT_EQ(0U, process_->sink().message_count());
-  EXPECT_EQ(0U, host_->TouchEventQueueSize());
+  EXPECT_EQ(1U, process_->sink().message_count());
+  EXPECT_EQ(1U, host_->TouchEventQueueSize());
   EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_mode());
   EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_delegate()->current_mode());
   EXPECT_EQ(65.f, host_->overscroll_delta_x());
   EXPECT_EQ(15.f, host_->overscroll_delegate()->delta_x());
   EXPECT_EQ(0.f, host_->overscroll_delegate()->delta_y());
+
+  SendInputEventACK(WebInputEvent::TouchMove,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(0U, host_->TouchEventQueueSize());
+  process_->sink().ClearMessages();
 
   SimulateGestureScrollUpdateEvent(-10, 0, 0);
   EXPECT_EQ(0U, process_->sink().message_count());
@@ -3740,6 +3762,12 @@ TEST_F(RenderWidgetHostTest, OverscrollWithTouchEvents) {
 
   MoveTouchPoint(0, 255, 5);
   SendTouchEvent();
+  EXPECT_EQ(1U, process_->sink().message_count());
+  EXPECT_EQ(1U, host_->TouchEventQueueSize());
+  process_->sink().ClearMessages();
+  SendInputEventACK(WebInputEvent::TouchMove,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+
   SimulateGestureScrollUpdateEvent(200, 0, 0);
   EXPECT_EQ(0U, process_->sink().message_count());
   EXPECT_EQ(0U, host_->TouchEventQueueSize());
@@ -3971,6 +3999,38 @@ TEST_F(RenderWidgetHostTest, UnhandledWheelEvent) {
   EXPECT_EQ(view_->unhandled_wheel_event().deltaY, -5);
 }
 
+// Tests that vertical scrolls are never consumed.
+// Should be removed with http://crbug.com/151356.
+TEST_F(RenderWidgetHostTest, VerticalOverscrollIsDisabled) {
+  host_->SetupForOverscrollControllerTest();
+  process_->sink().ClearMessages();
+  view_->set_bounds(gfx::Rect(0, 0, 400, 200));
+  view_->Show();
+
+  // Send some downwards wheel events. ACK them as not scrolling anything. Then
+  // send some upwards wheel events. Make sure these wheel events reach the
+  // renderer.
+  SimulateWheelEvent(0, 200, 0, true);
+  SimulateWheelEvent(0, 100, 0, true);
+  EXPECT_EQ(1U, process_->sink().message_count());
+  process_->sink().ClearMessages();
+
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(1U, process_->sink().message_count());
+  process_->sink().ClearMessages();
+
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(0U, process_->sink().message_count());
+  EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_mode());
+
+  SimulateWheelEvent(0, -20, 0, true);
+  EXPECT_EQ(1U, process_->sink().message_count());
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_CONSUMED);
+}
+
 // Tests that if a mouse-move event completes the overscroll gesture, future
 // move events do reach the renderer.
 TEST_F(RenderWidgetHostTest, OverscrollMouseMoveCompletion) {
@@ -4060,6 +4120,118 @@ TEST_F(RenderWidgetHostTest, OverscrollMouseMoveCompletion) {
 
   SendInputEventACK(WebInputEvent::MouseMove,
                     INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  process_->sink().ClearMessages();
+}
+
+// Tests that if a page scrolled, then the overscroll controller's states are
+// reset after the end of the scroll.
+TEST_F(RenderWidgetHostTest, OverscrollStateResetsAfterScroll) {
+  host_->SetupForOverscrollControllerTest();
+  host_->set_debounce_interval_time_ms(0);
+  process_->sink().ClearMessages();
+  view_->set_bounds(gfx::Rect(0, 0, 400, 200));
+  view_->Show();
+
+  SimulateWheelEvent(0, 5, 0, true);  // sent directly
+  SimulateWheelEvent(0, 30, 0, true);  // enqueued
+  SimulateWheelEvent(0, 40, 0, true);  // coalesced into previous event
+  SimulateWheelEvent(0, 10, 0, true);  // coalesced into previous event
+  EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_mode());
+  EXPECT_EQ(1U, process_->sink().message_count());
+  process_->sink().ClearMessages();
+
+  // The first wheel event is consumed. Dispatches the queued wheel event.
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_CONSUMED);
+  EXPECT_TRUE(host_->ScrollStateIsContentScrolling());
+  EXPECT_EQ(1U, process_->sink().message_count());
+  process_->sink().ClearMessages();
+
+  // The second wheel event is consumed.
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_CONSUMED);
+  EXPECT_TRUE(host_->ScrollStateIsContentScrolling());
+
+  // Touchpad scroll can end with a zero-velocity fling. But it is not
+  // dispatched, but it should still reset the overscroll controller state.
+  SimulateGestureFlingStartEvent(0.f, 0.f, WebGestureEvent::Touchpad);
+  EXPECT_TRUE(host_->ScrollStateIsUnknown());
+  EXPECT_EQ(0U, process_->sink().message_count());
+
+  SimulateWheelEvent(0, -5, 0, true);  // sent directly
+  SimulateWheelEvent(-60, -1, 0, true);  // enqueued
+  SimulateWheelEvent(-100, -3, 0, true);  // coalesced into previous event
+  EXPECT_EQ(1U, process_->sink().message_count());
+  EXPECT_TRUE(host_->ScrollStateIsUnknown());
+  process_->sink().ClearMessages();
+
+  // The first wheel scroll did not scroll content. Overscroll should not start
+  // yet, since enough hasn't been scrolled.
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_TRUE(host_->ScrollStateIsUnknown());
+  EXPECT_EQ(1U, process_->sink().message_count());
+  process_->sink().ClearMessages();
+
+  SendInputEventACK(WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(OVERSCROLL_WEST, host_->overscroll_mode());
+  EXPECT_TRUE(host_->ScrollStateIsOverscrolling());
+  EXPECT_EQ(0U, process_->sink().message_count());
+
+  SimulateGestureFlingStartEvent(0.f, 0.f, WebGestureEvent::Touchpad);
+  EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_mode());
+  EXPECT_EQ(OVERSCROLL_WEST, host_->overscroll_delegate()->completed_mode());
+  EXPECT_TRUE(host_->ScrollStateIsUnknown());
+  EXPECT_EQ(0U, process_->sink().message_count());
+  process_->sink().ClearMessages();
+}
+
+TEST_F(RenderWidgetHostTest, OverscrollResetsOnBlur) {
+  host_->SetupForOverscrollControllerTest();
+  process_->sink().ClearMessages();
+  view_->set_bounds(gfx::Rect(0, 0, 400, 200));
+  view_->Show();
+
+  // Start an overscroll with gesture scroll. In the middle of the scroll, blur
+  // the host.
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
+                       WebGestureEvent::Touchscreen);
+  SimulateGestureScrollUpdateEvent(300, -5, 0);
+  SendInputEventACK(WebInputEvent::GestureScrollBegin,
+                    INPUT_EVENT_ACK_STATE_CONSUMED);
+  SendInputEventACK(WebInputEvent::GestureScrollUpdate,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_mode());
+  EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_delegate()->current_mode());
+
+  host_->Blur();
+  EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_mode());
+  EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_delegate()->current_mode());
+  EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_delegate()->completed_mode());
+  EXPECT_EQ(0.f, host_->overscroll_delegate()->delta_x());
+  EXPECT_EQ(0.f, host_->overscroll_delegate()->delta_y());
+  process_->sink().ClearMessages();
+
+  SimulateGestureEvent(WebInputEvent::GestureScrollEnd,
+                       WebGestureEvent::Touchscreen);
+  EXPECT_EQ(0U, process_->sink().message_count());
+
+  // Start a scroll gesture again. This should correctly start the overscroll
+  // after the threshold.
+  SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
+                       WebGestureEvent::Touchscreen);
+  SimulateGestureScrollUpdateEvent(300, -5, 0);
+  SendInputEventACK(WebInputEvent::GestureScrollUpdate,
+                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_mode());
+  EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_delegate()->current_mode());
+  EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_delegate()->completed_mode());
+
+  SimulateGestureEvent(WebInputEvent::GestureScrollEnd,
+                       WebGestureEvent::Touchscreen);
+  EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_delegate()->current_mode());
+  EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_delegate()->completed_mode());
   process_->sink().ClearMessages();
 }
 

@@ -12,7 +12,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/base/origin_url_conversions.h"
+#include "webkit/common/database/database_identifier.h"
 
 namespace fileapi {
 
@@ -102,6 +102,23 @@ void VirtualPath::GetComponents(
   }
 }
 
+void VirtualPath::GetComponentsUTF8Unsafe(
+    const base::FilePath& path,
+    std::vector<std::string>* components) {
+  DCHECK(components);
+  if (!components)
+    return;
+  components->clear();
+
+  std::vector<base::FilePath::StringType> stringtype_components;
+  VirtualPath::GetComponents(path, &stringtype_components);
+  std::vector<base::FilePath::StringType>::const_iterator it;
+  for (it = stringtype_components.begin(); it != stringtype_components.end();
+       ++it) {
+    components->push_back(base::FilePath(*it).AsUTF8Unsafe());
+  }
+}
+
 base::FilePath::StringType VirtualPath::GetNormalizedFilePath(
     const base::FilePath& path) {
   base::FilePath::StringType normalized_path = path.value();
@@ -151,11 +168,11 @@ GURL GetFileSystemRootURI(const GURL& origin_url, FileSystemType type) {
 }
 
 std::string GetFileSystemName(const GURL& origin_url, FileSystemType type) {
-  base::string16 origin_identifier =
-      webkit_base::GetOriginIdentifierFromURL(origin_url);
+  std::string origin_identifier =
+      webkit_database::GetIdentifierFromOrigin(origin_url);
   std::string type_string = GetFileSystemTypeString(type);
   DCHECK(!type_string.empty());
-  return UTF16ToUTF8(origin_identifier) + ":" + type_string;
+  return origin_identifier + ":" + type_string;
 }
 
 FileSystemType QuotaStorageTypeToFileSystemType(

@@ -44,8 +44,7 @@ class DriveFileSyncServiceTest : public testing::Test {
       : ui_thread_(content::BrowserThread::UI, &message_loop_),
         file_thread_(content::BrowserThread::FILE, &message_loop_),
         fake_api_util_(NULL),
-        metadata_store_(NULL),
-        sync_service_(NULL) {}
+        metadata_store_(NULL) {}
 
   virtual void SetUp() OVERRIDE {
     RegisterSyncableFileSystem();
@@ -54,8 +53,7 @@ class DriveFileSyncServiceTest : public testing::Test {
     ASSERT_TRUE(scoped_base_dir_.CreateUniqueTempDir());
     base_dir_ = scoped_base_dir_.path();
     metadata_store_ = new DriveMetadataStore(
-        base_dir_,
-        base::MessageLoopProxy::current());
+        base_dir_, base::MessageLoopProxy::current().get());
     bool done = false;
     metadata_store_->Initialize(base::Bind(&DidInitialize, &done));
     message_loop_.RunUntilIdle();
@@ -181,6 +179,30 @@ TEST_F(DriveFileSyncServiceTest, UninstallOrigin) {
       origin_dir_resource_id)->second.deleted);
 }
 
+TEST_F(DriveFileSyncServiceTest, UninstallOriginWithoutOriginDirectory) {
+  // Not add fake app origin directory.
+  std::string origin_dir_resource_id = "uninstalledappresourceid";
+
+  // Add meta_data entry so GURL->resourse_id mapping is there.
+  const GURL origin_gurl("chrome-extension://uninstallme");
+  metadata_store()->AddIncrementalSyncOrigin(origin_gurl,
+                                             origin_dir_resource_id);
+
+  // Delete the origin directory (but not found).
+  bool done = false;
+  sync_service()->UninstallOrigin(
+      origin_gurl,
+      base::Bind(&ExpectEqStatus, &done, SYNC_STATUS_OK));
+  message_loop()->RunUntilIdle();
+  EXPECT_TRUE(done);
+
+  // Assert the App's origin folder does not exist.
+  const drive::FakeAPIUtil::RemoteResourceByResourceId& remote_resources =
+      fake_api_util()->remote_resources();
+  EXPECT_TRUE(remote_resources.find(origin_dir_resource_id) ==
+              remote_resources.end());
+}
+
 TEST_F(DriveFileSyncServiceTest, DisableOriginForTrackingChangesPendingOrigin) {
   // Disable a pending origin after DriveFileSystemService has already started.
   const GURL origin("chrome-extension://app");
@@ -219,7 +241,7 @@ TEST_F(DriveFileSyncServiceTest, EnableOriginForTrackingChanges) {
 
   // Re-enable the previously disabled origin. It initially goes to pending
   // status and then to enabled (incremental) again when NotifyTasksDone() in
-  // DriveFileSyncTaskManager invokes MaybeStartFetchChanges() and pending
+  // SyncTaskManager invokes MaybeStartFetchChanges() and pending
   // origins > 0.
   sync_service()->EnableOriginForTrackingChanges(origin,
                                                  base::Bind(&ExpectOkStatus));

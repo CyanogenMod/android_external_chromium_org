@@ -29,24 +29,15 @@ class RemoveStaleCacheFilesTest : public testing::Test {
     fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
 
     cache_.reset(new FileCache(temp_dir_.path(),
+                               temp_dir_.path(),
                                base::MessageLoopProxy::current(),
                                fake_free_disk_space_getter_.get()));
 
     resource_metadata_.reset(new ResourceMetadata(
-        cache_->GetCacheDirectoryPath(FileCache::CACHE_TYPE_META),
-        base::MessageLoopProxy::current()));
+        temp_dir_.path(), base::MessageLoopProxy::current()));
 
-    bool success = false;
-    cache_->RequestInitialize(
-        google_apis::test_util::CreateCopyResultCallback(&success));
-    base::RunLoop().RunUntilIdle();
-    ASSERT_TRUE(success);
-
-    FileError error = FILE_ERROR_FAILED;
-    resource_metadata_->Initialize(
-        google_apis::test_util::CreateCopyResultCallback(&error));
-    base::RunLoop().RunUntilIdle();
-    ASSERT_EQ(FILE_ERROR_OK, error);
+    ASSERT_TRUE(cache_->Initialize());
+    ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->Initialize());
   }
 
   content::TestBrowserThreadBundle thread_bundle_;

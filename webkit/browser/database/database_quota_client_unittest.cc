@@ -12,10 +12,10 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/base/origin_url_conversions.h"
 #include "webkit/browser/database/database_quota_client.h"
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/browser/database/database_util.h"
+#include "webkit/common/database/database_identifier.h"
 
 namespace webkit_database {
 
@@ -33,11 +33,11 @@ class MockDatabaseTracker : public DatabaseTracker {
         async_delete_(false) {}
 
   virtual bool GetOriginInfo(
-      const base::string16& origin_identifier,
+      const std::string& origin_identifier,
       OriginInfo* info) OVERRIDE {
     std::map<GURL, MockOriginInfo>::const_iterator found =
         mock_origin_infos_.find(
-            webkit_base::GetOriginURLFromIdentifier(origin_identifier));
+            webkit_database::GetOriginFromIdentifier(origin_identifier));
     if (found == mock_origin_infos_.end())
       return false;
     *info = OriginInfo(found->second);
@@ -45,12 +45,12 @@ class MockDatabaseTracker : public DatabaseTracker {
   }
 
   virtual bool GetAllOriginIdentifiers(
-      std::vector<base::string16>* origins_identifiers) OVERRIDE {
+      std::vector<std::string>* origins_identifiers) OVERRIDE {
     std::map<GURL, MockOriginInfo>::const_iterator iter;
     for (iter = mock_origin_infos_.begin();
          iter != mock_origin_infos_.end();
          ++iter) {
-      origins_identifiers->push_back(iter->second.GetOrigin());
+      origins_identifiers->push_back(iter->second.GetOriginIdentifier());
     }
     return true;
   }
@@ -67,7 +67,7 @@ class MockDatabaseTracker : public DatabaseTracker {
   }
 
   virtual int DeleteDataForOrigin(
-      const base::string16& origin_id,
+      const std::string& origin_identifier,
       const net::CompletionCallback& callback) OVERRIDE {
     ++delete_called_count_;
     if (async_delete()) {
@@ -86,7 +86,7 @@ class MockDatabaseTracker : public DatabaseTracker {
 
   void AddMockDatabase(const GURL& origin,  const char* name, int size) {
     MockOriginInfo& info = mock_origin_infos_[origin];
-    info.set_origin(webkit_base::GetOriginIdentifierFromURL(origin));
+    info.set_origin(webkit_database::GetIdentifierFromOrigin(origin));
     info.AddMockDatabase(ASCIIToUTF16(name), size);
   }
 
@@ -100,8 +100,8 @@ class MockDatabaseTracker : public DatabaseTracker {
  private:
   class MockOriginInfo : public OriginInfo {
    public:
-    void set_origin(const base::string16& origin_id) {
-      origin_ = origin_id;
+    void set_origin(const std::string& origin_identifier) {
+      origin_identifier_ = origin_identifier;
     }
 
     void AddMockDatabase(const base::string16& name, int size) {
@@ -210,9 +210,8 @@ class DatabaseQuotaClientTest : public testing::Test {
 
 
 TEST_F(DatabaseQuotaClientTest, GetOriginUsage) {
-  DatabaseQuotaClient client(
-      base::MessageLoopProxy::current(),
-      mock_tracker());
+  DatabaseQuotaClient client(base::MessageLoopProxy::current().get(),
+                             mock_tracker());
 
   EXPECT_EQ(0, GetOriginUsage(&client, kOriginA, kTemp));
   EXPECT_EQ(0, GetOriginUsage(&client, kOriginA, kPerm));
@@ -226,9 +225,8 @@ TEST_F(DatabaseQuotaClientTest, GetOriginUsage) {
 }
 
 TEST_F(DatabaseQuotaClientTest, GetOriginsForHost) {
-  DatabaseQuotaClient client(
-      base::MessageLoopProxy::current(),
-      mock_tracker());
+  DatabaseQuotaClient client(base::MessageLoopProxy::current().get(),
+                             mock_tracker());
 
   EXPECT_EQ(kOriginA.host(), kOriginB.host());
   EXPECT_NE(kOriginA.host(), kOriginOther.host());
@@ -252,9 +250,8 @@ TEST_F(DatabaseQuotaClientTest, GetOriginsForHost) {
 }
 
 TEST_F(DatabaseQuotaClientTest, GetOriginsForType) {
-  DatabaseQuotaClient client(
-      base::MessageLoopProxy::current(),
-      mock_tracker());
+  DatabaseQuotaClient client(base::MessageLoopProxy::current().get(),
+                             mock_tracker());
 
   EXPECT_TRUE(GetOriginsForType(&client, kTemp).empty());
   EXPECT_TRUE(GetOriginsForType(&client, kPerm).empty());
@@ -268,9 +265,8 @@ TEST_F(DatabaseQuotaClientTest, GetOriginsForType) {
 }
 
 TEST_F(DatabaseQuotaClientTest, DeleteOriginData) {
-  DatabaseQuotaClient client(
-      base::MessageLoopProxy::current(),
-      mock_tracker());
+  DatabaseQuotaClient client(base::MessageLoopProxy::current().get(),
+                             mock_tracker());
 
   // Perm deletions are short circuited in the Client and
   // should not reach the DatabaseTracker.

@@ -23,11 +23,11 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextInputInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWidgetClient.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "third_party/WebKit/public/web/WebTextInputInfo.h"
+#include "third_party/WebKit/public/web/WebWidgetClient.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
@@ -49,6 +49,7 @@ class SyncMessage;
 namespace WebKit {
 class WebGestureEvent;
 class WebInputEvent;
+class WebKeyboardEvent;
 class WebMouseEvent;
 class WebTouchEvent;
 struct WebPoint;
@@ -193,10 +194,6 @@ class CONTENT_EXPORT RenderWidget
                          int pixels_to_scroll,
                          int mouse_event_x,
                          int mouse_event_y);
-
-  // Notifies the host that root scroll layer has overscrolled.
-  void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
-                     gfx::Vector2dF current_fling_velocity);
 
   // Close the underlying WebWidget.
   virtual void Close();
@@ -409,9 +406,13 @@ class CONTENT_EXPORT RenderWidget
 
   // Checks if the text input state and compose inline mode have been changed.
   // If they are changed, the new value will be sent to the browser process.
+  void UpdateTextInputType();
+
+#if defined(OS_ANDROID)
   // |show_ime_if_needed| should be SHOW_IME_IF_NEEDED iff the update may cause
   // the ime to be displayed, e.g. after a tap on an input field on mobile.
   void UpdateTextInputState(ShowIme show_ime);
+#endif
 
   // Checks if the selection bounds have been changed. If they are changed,
   // the new value will be sent to the browser process.
@@ -469,6 +470,12 @@ class CONTENT_EXPORT RenderWidget
   // Returns true if no further handling is needed. In that case, the event
   // won't be sent to WebKit or trigger DidHandleMouseEvent().
   virtual bool WillHandleMouseEvent(const WebKit::WebMouseEvent& event);
+
+  // Called by OnHandleInputEvent() to notify subclasses that a key event is
+  // about to be handled.
+  // Returns true if no further handling is needed. In that case, the event
+  // won't be sent to WebKit or trigger DidHandleKeyEvent().
+  virtual bool WillHandleKeyEvent(const WebKit::WebKeyboardEvent& event);
 
   // Called by OnHandleInputEvent() to notify subclasses that a gesture event is
   // about to be handled.
@@ -695,9 +702,6 @@ class CONTENT_EXPORT RenderWidget
 
   // Specified whether the compositor will run in its own thread.
   bool is_threaded_compositing_enabled_;
-
-  // Specifies whether overscroll notifications are forwarded to the host.
-  bool overscroll_notifications_enabled_;
 
   // The last set of rendering stats received from the browser. This is only
   // received when using the --enable-gpu-benchmarking flag.

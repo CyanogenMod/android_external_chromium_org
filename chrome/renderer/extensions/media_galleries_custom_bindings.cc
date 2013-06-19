@@ -7,10 +7,10 @@
 #include <string>
 
 #include "base/files/file_path.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "v8/include/v8.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
@@ -29,21 +29,21 @@ MediaGalleriesCustomBindings::MediaGalleriesCustomBindings(
                  base::Unretained(this)));
 }
 
-v8::Handle<v8::Value> MediaGalleriesCustomBindings::GetMediaFileSystemObject(
-    const v8::Arguments& args) {
+void MediaGalleriesCustomBindings::GetMediaFileSystemObject(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (args.Length() != 1) {
     NOTREACHED();
-    return v8::Undefined();
+    return;
   }
   if (!args[0]->IsString()) {
     NOTREACHED();
-    return v8::Undefined();
+    return;
   }
 
   std::string fsid(*v8::String::Utf8Value(args[0]));
   if (fsid.empty()) {
     NOTREACHED();
-    return v8::Undefined();
+    return;
   }
 
   WebKit::WebFrame* webframe = WebKit::WebFrame::frameForCurrentContext();
@@ -52,21 +52,22 @@ v8::Handle<v8::Value> MediaGalleriesCustomBindings::GetMediaFileSystemObject(
   const std::string root_url =
       fileapi::GetIsolatedFileSystemRootURIString(
           origin, fsid, extension_misc::kMediaFileSystemPathPart);
-  return webframe->createFileSystem(WebKit::WebFileSystemTypeIsolated,
-                                    WebKit::WebString::fromUTF8(fs_name),
-                                    WebKit::WebString::fromUTF8(root_url));
+  args.GetReturnValue().Set(
+      webframe->createFileSystem(WebKit::WebFileSystemTypeIsolated,
+                                 WebKit::WebString::fromUTF8(fs_name),
+                                 WebKit::WebString::fromUTF8(root_url)));
 }
 
-v8::Handle<v8::Value> MediaGalleriesCustomBindings::ExtractEmbeddedThumbnails(
-    const v8::Arguments& args) {
+void MediaGalleriesCustomBindings::ExtractEmbeddedThumbnails(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (args.Length() != 1) {
     NOTREACHED() << "Bad arguments";
-    return v8::Undefined();
+    return;
   }
   // TODO(vandebo) Check that the object is a FileEntry.
 
   // TODO(vandebo) Create and return a Directory entry object.
-  return v8::Null();
+  args.GetReturnValue().SetNull();
 }
 
 }  // namespace extensions

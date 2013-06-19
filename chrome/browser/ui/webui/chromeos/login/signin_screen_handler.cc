@@ -338,7 +338,7 @@ SigninScreenHandler::SigninScreenHandler(
       last_network_state_(NetworkStateInformer::UNKNOWN),
       has_pending_auth_ui_(false),
       ignore_next_user_abort_frame_error_(false) {
-  DCHECK(network_state_informer_);
+  DCHECK(network_state_informer_.get());
   DCHECK(error_screen_actor_);
   network_state_informer_->AddObserver(this);
   CrosSettings::Get()->AddSettingsObserver(kAccountsPrefAllowNewUser, this);
@@ -434,6 +434,10 @@ void SigninScreenHandler::DeclareLocalizedValues(
   builder->Add("publicAccountEnter", IDS_LOGIN_PUBLIC_ACCOUNT_ENTER);
   builder->Add("publicAccountEnterAccessibleName",
                IDS_LOGIN_PUBLIC_ACCOUNT_ENTER_ACCESSIBLE_NAME);
+  builder->Add("removeManagedUserWarningText",
+               IDS_USER_IS_LOCALLY_MANAGED_REMOVE_WARNING);
+  builder->Add("removeManagedUserWarningButtonTitle",
+               IDS_USER_IS_LOCALLY_MANAGED_REMOVE_WARNING_BUTTON);
 
   if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
     builder->Add("demoLoginMessage", IDS_KIOSK_MODE_LOGIN_MESSAGE);
@@ -501,10 +505,6 @@ void SigninScreenHandler::UpdateUIState(UIState ui_state,
     case UI_STATE_ACCOUNT_PICKER:
       ui_state_ = UI_STATE_ACCOUNT_PICKER;
       ShowScreen(OobeUI::kScreenAccountPicker, params);
-      break;
-    case UI_STATE_LOCALLY_MANAGED_USER_CREATION:
-      ui_state_ = UI_STATE_LOCALLY_MANAGED_USER_CREATION;
-      ShowScreen(OobeUI::kScreenManagedUserCreationDialog, params);
       break;
     default:
       NOTREACHED();
@@ -773,6 +773,8 @@ void SigninScreenHandler::RegisterMessages() {
   AddCallback("removeUser", &SigninScreenHandler::HandleRemoveUser);
   AddCallback("toggleEnrollmentScreen",
               &SigninScreenHandler::HandleToggleEnrollmentScreen);
+  AddCallback("toggleKioskEnableScreen",
+              &SigninScreenHandler::HandleToggleKioskEnableScreen);
   AddCallback("toggleResetScreen",
               &SigninScreenHandler::HandleToggleResetScreen);
   AddCallback("launchHelpApp", &SigninScreenHandler::HandleLaunchHelpApp);
@@ -900,10 +902,6 @@ void SigninScreenHandler::ShowSigninScreenForCreds(
   test_user_ = username;
   test_pass_ = password;
   HandleShowAddUser(NULL);
-}
-
-void SigninScreenHandler::SetGaiaUrlForTesting(const GURL& gaia_url) {
-  gaia_url_for_test_ = gaia_url;
 }
 
 void SigninScreenHandler::OnCookiesCleared(base::Closure on_clear_callback) {
@@ -1052,9 +1050,11 @@ void SigninScreenHandler::LoadAuthExtension(
     params.Set("localizedStrings", localized_strings);
   }
 
-  const GURL gaia_url = gaia_url_for_test_.is_empty() ?
-      GaiaUrls::GetInstance()->gaia_url() :
-      gaia_url_for_test_;
+  const GURL gaia_url =
+      CommandLine::ForCurrentProcess()->HasSwitch(::switches::kGaiaUrl) ?
+          GURL(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                    ::switches::kGaiaUrl)) :
+          GaiaUrls::GetInstance()->gaia_url();
   params.SetString("gaiaUrl", gaia_url.spec());
 
   // Test automation data:
@@ -1197,6 +1197,13 @@ void SigninScreenHandler::HandleShowAddUser(const base::ListValue* args) {
 void SigninScreenHandler::HandleToggleEnrollmentScreen() {
   if (delegate_)
     delegate_->ShowEnterpriseEnrollmentScreen();
+}
+
+void SigninScreenHandler::HandleToggleKioskEnableScreen() {
+  if (delegate_ &&
+      !g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
+    delegate_->ShowKioskEnableScreen();
+  }
 }
 
 void SigninScreenHandler::HandleToggleResetScreen() {

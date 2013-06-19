@@ -18,6 +18,7 @@
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "ppapi/shared_impl/time_conversion.h"
 #include "ppapi/thunk/enter.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
@@ -171,7 +172,8 @@ int32_t PepperFileIOHost::OnHostMsgQuery(
     return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::GetFileInfoFromPlatformFile(
-          plugin_delegate_->GetFileThreadMessageLoopProxy(), file_,
+          plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+          file_,
           base::Bind(&PepperFileIOHost::ExecutePlatformQueryCallback,
                      weak_factory_.GetWeakPtr(),
                      context->MakeReplyMessageContext())))
@@ -209,8 +211,9 @@ int32_t PepperFileIOHost::OnHostMsgTouch(
   // TODO(nhiroki): fix a failure of FileIO.Touch for an external filesystem on
   // Mac and Linux due to sandbox restrictions (http://crbug.com/101128).
   if (!base::FileUtilProxy::Touch(
-          plugin_delegate_->GetFileThreadMessageLoopProxy(),
-          file_, PPTimeToTime(last_access_time),
+          plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+          file_,
+          PPTimeToTime(last_access_time),
           PPTimeToTime(last_modified_time),
           base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                      weak_factory_.GetWeakPtr(),
@@ -244,7 +247,9 @@ int32_t PepperFileIOHost::OnHostMsgRead(
     return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::Read(
-          plugin_delegate_->GetFileThreadMessageLoopProxy(), file_, offset,
+          plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+          file_,
+          offset,
           max_read_length,
           base::Bind(&PepperFileIOHost::ExecutePlatformReadCallback,
                      weak_factory_.GetWeakPtr(),
@@ -276,8 +281,11 @@ int32_t PepperFileIOHost::OnHostMsgWrite(
       return PP_ERROR_FAILED;
 
     if (!base::FileUtilProxy::Write(
-            plugin_delegate_->GetFileThreadMessageLoopProxy(), file_, offset,
-            buffer.c_str(), buffer.size(),
+            plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+            file_,
+            offset,
+            buffer.c_str(),
+            buffer.size(),
             base::Bind(&PepperFileIOHost::ExecutePlatformWriteCallback,
                        weak_factory_.GetWeakPtr(),
                        context->MakeReplyMessageContext())))
@@ -310,7 +318,9 @@ int32_t PepperFileIOHost::OnHostMsgSetLength(
     // TODO(nhiroki): fix a failure of FileIO.SetLength for an external
     // filesystem on Mac due to sandbox restrictions (http://crbug.com/156077).
     if (!base::FileUtilProxy::Truncate(
-            plugin_delegate_->GetFileThreadMessageLoopProxy(), file_, length,
+            plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+            file_,
+            length,
             base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                        weak_factory_.GetWeakPtr(),
                        context->MakeReplyMessageContext())))
@@ -332,7 +342,8 @@ int32_t PepperFileIOHost::OnHostMsgFlush(
     return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::Flush(
-          plugin_delegate_->GetFileThreadMessageLoopProxy(), file_,
+          plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
+          file_,
           base::Bind(&PepperFileIOHost::ExecutePlatformGeneralCallback,
                      weak_factory_.GetWeakPtr(),
                      context->MakeReplyMessageContext())))
@@ -346,7 +357,7 @@ int32_t PepperFileIOHost::OnHostMsgClose(
     ppapi::host::HostMessageContext* context) {
   if (file_ != base::kInvalidPlatformFileValue && plugin_delegate_) {
     base::FileUtilProxy::Close(
-        plugin_delegate_->GetFileThreadMessageLoopProxy(),
+        plugin_delegate_->GetFileThreadMessageLoopProxy().get(),
         file_,
         base::ResetAndReturn(&notify_close_file_callback_));
     file_ = base::kInvalidPlatformFileValue;
@@ -408,6 +419,11 @@ int32_t PepperFileIOHost::OnHostMsgRequestOSFileHandle(
 
   RendererPpapiHost* renderer_ppapi_host =
       RendererPpapiHost::GetForPPInstance(pp_instance());
+
+  // Whitelist to make it privately accessible.
+  if (!GetContentClient()->renderer()->IsPluginAllowedToCallRequestOSFileHandle(
+          renderer_ppapi_host->GetContainerForInstance(pp_instance())))
+    return PP_ERROR_NOACCESS;
 
   IPC::PlatformFileForTransit file =
       renderer_ppapi_host->ShareHandleWithRemote(file_, false);

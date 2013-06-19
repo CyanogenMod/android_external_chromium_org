@@ -13,8 +13,8 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
-#include "base/hash_tables.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -37,7 +37,6 @@ class SkBitmap;
 
 namespace base {
 class DictionaryValue;
-class ListValue;
 class Version;
 }
 

@@ -5,7 +5,7 @@
 #ifndef ANDROID_WEBVIEW_BROWSER_IN_PROCESS_IN_PROCESS_VIEW_RENDERER_H_
 #define ANDROID_WEBVIEW_BROWSER_IN_PROCESS_IN_PROCESS_VIEW_RENDERER_H_
 
-#include "android_webview/browser/browser_view_renderer_impl.h"
+#include "android_webview/browser/browser_view_renderer.h"
 
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/android/synchronous_compositor_client.h"
@@ -15,6 +15,9 @@ class SynchronousCompositor;
 class WebContents;
 }
 
+typedef void* EGLContext;
+class SkCanvas;
+
 namespace android_webview {
 
 // Provides RenderViewHost wrapper functionality for sending WebView-specific
@@ -23,19 +26,19 @@ class InProcessViewRenderer : public BrowserViewRenderer,
                               public content::SynchronousCompositorClient {
  public:
   InProcessViewRenderer(BrowserViewRenderer::Client* client,
-                        JavaHelper* java_helper);
+                        JavaHelper* java_helper,
+                        content::WebContents* web_contents);
   virtual ~InProcessViewRenderer();
 
   static InProcessViewRenderer* FromWebContents(
       content::WebContents* contents);
 
   // BrowserViewRenderer overrides
-  virtual void SetContents(
-      content::ContentViewCore* content_view_core) OVERRIDE;
-  virtual bool PrepareDrawGL(int x, int y) OVERRIDE;
+  virtual bool OnDraw(jobject java_canvas,
+                      bool is_hardware_canvas,
+                      const gfx::Point& scroll,
+                      const gfx::Rect& clip) OVERRIDE;
   virtual void DrawGL(AwDrawGLInfo* draw_info) OVERRIDE;
-  virtual bool DrawSW(jobject java_canvas,
-                      const gfx::Rect& clip_bounds) OVERRIDE;
   virtual base::android::ScopedJavaLocalRef<jobject> CapturePicture() OVERRIDE;
   virtual void EnableOnNewPicture(bool enabled) OVERRIDE;
   virtual void OnVisibilityChanged(
@@ -53,12 +56,13 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   virtual void DidDestroyCompositor(
       content::SynchronousCompositor* compositor) OVERRIDE;
   virtual void SetContinuousInvalidate(bool invalidate) OVERRIDE;
+  virtual void SetTotalRootLayerScrollOffset(gfx::Vector2dF new_value) OVERRIDE;
+  virtual gfx::Vector2dF GetTotalRootLayerScrollOffset() OVERRIDE;
 
   void WebContentsGone();
 
  private:
-  void Invalidate();
-  void EnsureContinuousInvalidation();
+  void EnsureContinuousInvalidation(AwDrawGLInfo* draw_info);
   bool DrawSWInternal(jobject java_canvas,
                       const gfx::Rect& clip_bounds);
   bool RenderSW(SkCanvas* canvas);
@@ -74,8 +78,10 @@ class InProcessViewRenderer : public BrowserViewRenderer,
   // When true, we should continuously invalidate and keep drawing, for example
   // to drive animation.
   bool continuous_invalidate_;
-  // True while an asynchronous invalidation task is pending.
-  bool continuous_invalidate_task_pending_;
+  // Used to block additional invalidates while one is already pending or before
+  // compositor draw which may switch continuous_invalidate on and off in the
+  // process.
+  bool block_invalidates_;
 
   int width_;
   int height_;
@@ -86,12 +92,12 @@ class InProcessViewRenderer : public BrowserViewRenderer,
 
   // Used only for detecting Android View System context changes.
   // Not to be used between draw calls.
-  EGLContext egl_context_at_init_;
+  EGLContext last_egl_context_;
 
-  // Last View scroll before hardware rendering is triggered.
-  gfx::Point hw_rendering_scroll_;
+  // Last View scroll when View.onDraw() was called.
+  gfx::Point scroll_at_start_of_frame_;
 
-  base::WeakPtrFactory<InProcessViewRenderer> weak_factory_;
+  gfx::Vector2dF scroll_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(InProcessViewRenderer);
 };

@@ -48,7 +48,6 @@
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/dom_storage/dom_storage_types.h"
 #include "webkit/common/quota/quota_types.h"
-#include "webkit/glue/webkit_glue.h"
 
 using content::BrowserThread;
 
@@ -627,8 +626,8 @@ class BrowsingDataRemoverTest : public testing::Test,
       quota_manager_ = new quota::MockQuotaManager(
           profile_->IsOffTheRecord(),
           profile_->GetPath(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB).get(),
           profile_->GetExtensionSpecialStoragePolicy());
     }
     return quota_manager_.get();

@@ -23,10 +23,10 @@
 #include "base/time.h"
 #include "base/timer.h"
 #include "build/build_config.h"
-#include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/smooth_scroll_gesture_controller.h"
 #include "content/common/browser_rendering_stats.h"
 #include "content/common/view_message_enums.h"
+#include "content/port/browser/event_with_latency_info.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/page_zoom.h"
@@ -113,6 +113,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void PasteAndMatchStyle() OVERRIDE;
   virtual void Delete() OVERRIDE;
   virtual void SelectAll() OVERRIDE;
+  virtual void Unselect() OVERRIDE;
   virtual void UpdateTextDirection(WebKit::WebTextDirection direction) OVERRIDE;
   virtual void NotifyTextDirection() OVERRIDE;
   virtual void Focus() OVERRIDE;
@@ -260,12 +261,15 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Forwards the given message to the renderer. These are called by the view
   // when it has received a message.
   void ForwardGestureEvent(const WebKit::WebGestureEvent& gesture_event);
-  virtual void ForwardTouchEvent(const WebKit::WebTouchEvent& touch_event);
+  virtual void ForwardTouchEventWithLatencyInfo(
+      const WebKit::WebTouchEvent& touch_event,
+      const ui::LatencyInfo& ui_latency);
 
   // Forwards the given event immediately to the renderer.
   void ForwardMouseEventImmediately(
       const MouseEventWithLatencyInfo& mouse_event);
-  void ForwardTouchEventImmediately(const WebKit::WebTouchEvent& touch_event);
+  void ForwardTouchEventImmediately(
+      const TouchEventWithLatencyInfo& touch_event);
   void ForwardGestureEventImmediately(
       const GestureEventWithLatencyInfo& gesture_event);
 
@@ -330,6 +334,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   bool ignore_input_events() const {
     return ignore_input_events_;
+  }
+
+  bool input_method_active() const {
+    return input_method_active_;
   }
 
   bool ShouldForwardTouchEvent() const;
@@ -432,6 +440,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // nothing if the compositor thread is enabled.
   // TODO(jbates) Once the compositor thread is always on, this can be removed.
   void AcknowledgeSwapBuffersToRenderer();
+
+  bool is_threaded_compositing_enabled() const {
+    return is_threaded_compositing_enabled_;
+  }
 
 #if defined(USE_AURA)
   // Called by the view when the parent changes. If a parent isn't available,
@@ -590,8 +602,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // This value indicates how long to wait before we consider a renderer hung.
   int hung_renderer_delay_ms_;
 
-  std::queue<WebKit::WebInputEvent::Type> in_process_event_types_;
-
  private:
   friend class MockRenderWidgetHost;
 
@@ -633,8 +643,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void OnBlur();
   void OnHasTouchEventHandlers(bool has_handlers);
   void OnSetCursor(const WebCursor& cursor);
-  void OnTextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params);
+  void OnTextInputTypeChanged(ui::TextInputType type, bool can_compose_inline);
   void OnImeCompositionRangeChanged(
       const ui::Range& range,
       const std::vector<gfx::Rect>& character_bounds);
@@ -870,6 +879,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
 
   // Set to true if we shouldn't send input events from the render widget.
   bool ignore_input_events_;
+
+  // Indicates whether IME is active.
+  bool input_method_active_;
 
   // Set when we update the text direction of the selected input element.
   bool text_direction_updated_;

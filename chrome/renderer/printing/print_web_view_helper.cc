@@ -13,8 +13,8 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/process_util.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/print_messages.h"
@@ -30,19 +30,19 @@
 #include "skia/ext/vector_platform_device_skia.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintScalingOption.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSettings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebViewClient.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
+#include "third_party/WebKit/public/web/WebPlugin.h"
+#include "third_party/WebKit/public/web/WebPluginDocument.h"
+#include "third_party/WebKit/public/web/WebPrintParams.h"
+#include "third_party/WebKit/public/web/WebPrintScalingOption.h"
+#include "third_party/WebKit/public/web/WebScriptSource.h"
+#include "third_party/WebKit/public/web/WebSettings.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "third_party/WebKit/public/web/WebViewClient.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/common/webpreferences.h"
@@ -337,7 +337,7 @@ MarginType GetMarginsForPdf(WebKit::WebFrame* frame,
     return PRINTABLE_AREA_MARGINS;
 }
 
-bool FitToPageEnabled(const DictionaryValue& job_settings) {
+bool FitToPageEnabled(const base::DictionaryValue& job_settings) {
   bool fit_to_paper_size = false;
   if (!job_settings.GetBoolean(kSettingFitToPageEnabled, &fit_to_paper_size)) {
     NOTREACHED();
@@ -436,7 +436,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
     int total_pages,
     float webkit_scale_factor,
     const PageSizeMargins& page_layout,
-    const DictionaryValue& header_footer_info,
+    const base::DictionaryValue& header_footer_info,
     const PrintMsg_Print_Params& params) {
   skia::VectorPlatformDeviceSkia* device =
       static_cast<skia::VectorPlatformDeviceSkia*>(canvas->getTopDevice());
@@ -904,7 +904,7 @@ void PrintWebViewHelper::GetPageSizeAndContentAreaFromPageLayout(
 }
 
 void PrintWebViewHelper::UpdateFrameMarginsCssInfo(
-    const DictionaryValue& settings) {
+    const base::DictionaryValue& settings) {
   int margins_type = 0;
   if (!settings.GetInteger(kSettingMarginsType, &margins_type))
     margins_type = DEFAULT_MARGINS;
@@ -912,7 +912,7 @@ void PrintWebViewHelper::UpdateFrameMarginsCssInfo(
 }
 
 bool PrintWebViewHelper::IsPrintToPdfRequested(
-    const DictionaryValue& job_settings) {
+    const base::DictionaryValue& job_settings) {
   bool print_to_pdf = false;
   if (!job_settings.GetBoolean(kSettingPrintToPDF, &print_to_pdf))
     NOTREACHED();
@@ -920,7 +920,7 @@ bool PrintWebViewHelper::IsPrintToPdfRequested(
 }
 
 WebKit::WebPrintScalingOption PrintWebViewHelper::GetPrintScalingOption(
-    bool source_is_html, const DictionaryValue& job_settings,
+    bool source_is_html, const base::DictionaryValue& job_settings,
     const PrintMsg_Print_Params& params) {
   DCHECK(!print_for_preview_);
 
@@ -941,7 +941,7 @@ WebKit::WebPrintScalingOption PrintWebViewHelper::GetPrintScalingOption(
   return WebKit::WebPrintScalingOptionFitToPrintableArea;
 }
 
-void PrintWebViewHelper::OnPrintPreview(const DictionaryValue& settings) {
+void PrintWebViewHelper::OnPrintPreview(const base::DictionaryValue& settings) {
   DCHECK(is_preview_enabled_);
   print_preview_context_.OnPrintPreview();
 
@@ -1445,10 +1445,10 @@ bool PrintWebViewHelper::CalculateNumberOfPages(WebKit::WebFrame* frame,
 bool PrintWebViewHelper::UpdatePrintSettings(
     WebKit::WebFrame* frame,
     const WebKit::WebNode& node,
-    const DictionaryValue& passed_job_settings) {
+    const base::DictionaryValue& passed_job_settings) {
   DCHECK(is_preview_enabled_);
-  const DictionaryValue* job_settings = &passed_job_settings;
-  DictionaryValue modified_job_settings;
+  const base::DictionaryValue* job_settings = &passed_job_settings;
+  base::DictionaryValue modified_job_settings;
   if (job_settings->empty()) {
     if (!print_for_preview_)
       print_preview_context_.set_error(PREVIEW_ERROR_BAD_SETTING);
@@ -1528,7 +1528,7 @@ bool PrintWebViewHelper::UpdatePrintSettings(
 
     // Header/Footer: Set |header_footer_info_|.
     if (settings.params.display_header_footer) {
-      header_footer_info_.reset(new DictionaryValue());
+      header_footer_info_.reset(new base::DictionaryValue());
       header_footer_info_->SetString(kSettingHeaderFooterDate,
                                      settings.params.date);
       header_footer_info_->SetString(kSettingHeaderFooterURL,

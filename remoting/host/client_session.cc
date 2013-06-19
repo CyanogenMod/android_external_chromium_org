@@ -181,8 +181,8 @@ void ClientSession::RequestPairing(
     protocol::PairingRegistry::Pairing pairing =
         pairing_registry_->CreatePairing(pairing_request.client_name());
     protocol::PairingResponse pairing_response;
-    pairing_response.set_client_id(pairing.client_id);
-    pairing_response.set_shared_secret(pairing.shared_secret);
+    pairing_response.set_client_id(pairing.client_id());
+    pairing_response.set_shared_secret(pairing.shared_secret());
     connection_->client_stub()->SetPairingResponse(pairing_response);
   }
 }
@@ -417,7 +417,7 @@ scoped_ptr<VideoEncoder> ClientSession::CreateVideoEncoder(
   }
 
   NOTIMPLEMENTED();
-  return scoped_ptr<VideoEncoder>(NULL);
+  return scoped_ptr<VideoEncoder>();
 }
 
 // static
@@ -434,7 +434,7 @@ scoped_ptr<AudioEncoder> ClientSession::CreateAudioEncoder(
   }
 
   NOTIMPLEMENTED();
-  return scoped_ptr<AudioEncoder>(NULL);
+  return scoped_ptr<AudioEncoder>();
 }
 
 }  // namespace remoting

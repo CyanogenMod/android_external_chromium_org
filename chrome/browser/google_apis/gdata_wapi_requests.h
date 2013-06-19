@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "chrome/browser/google_apis/base_requests.h"
-#include "chrome/browser/google_apis/drive_service_interface.h"
+#include "chrome/browser/google_apis/drive_common_callbacks.h"
 #include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
 
 namespace net {

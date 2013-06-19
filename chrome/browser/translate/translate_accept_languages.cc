@@ -14,13 +14,34 @@
 #include "chrome/browser/translate/translate_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/translate/translate_util.h"
 #include "content/public/browser/notification_source.h"
 #include "net/url_request/url_fetcher.h"
+#include "ui/base/l10n/l10n_util.h"
 
 TranslateAcceptLanguages::TranslateAcceptLanguages() {
 }
 
 TranslateAcceptLanguages::~TranslateAcceptLanguages() {
+}
+
+// static
+bool TranslateAcceptLanguages::CanBeAcceptLanguage(
+    const std::string& language) {
+  std::string accept_language = language;
+  TranslateUtil::ToChromeLanguageSynonym(&accept_language);
+
+  const std::string locale = g_browser_process->GetApplicationLocale();
+  std::vector<std::string> accept_language_codes;
+  l10n_util::GetAcceptLanguagesForLocale(locale, &accept_language_codes);
+
+  if (std::find(accept_language_codes.begin(),
+                accept_language_codes.end(),
+                accept_language) != accept_language_codes.end()) {
+    return true;
+  }
+
+  return false;
 }
 
 bool TranslateAcceptLanguages::IsAcceptLanguage(Profile* profile,
@@ -51,7 +72,9 @@ bool TranslateAcceptLanguages::IsAcceptLanguage(Profile* profile,
     iter = accept_languages_.find(pref_service);
   }
 
-  return iter->second.count(language) != 0;
+  std::string accept_language = language;
+  TranslateUtil::ToChromeLanguageSynonym(&accept_language);
+  return iter->second.count(accept_language) != 0;
 }
 
 void TranslateAcceptLanguages::InitAcceptLanguages(PrefService* prefs) {

@@ -11,6 +11,7 @@
 
 #include "base/callback.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
@@ -69,12 +70,8 @@
 #include "ui/snapshot/snapshot.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/common/webdropdata.h"
-#include "webkit/glue/webkit_glue.h"
 
-#if defined(OS_WIN)
-#include "base/win/windows_version.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/win/WebScreenInfoFactory.h"
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #elif defined(OS_ANDROID)
 #include "media/base/android/media_player_manager.h"
@@ -167,9 +164,7 @@ RenderViewHostImpl::RenderViewHostImpl(
       instance_(static_cast<SiteInstanceImpl*>(instance)),
       waiting_for_drag_context_response_(false),
       enabled_bindings_(0),
-      pending_request_id_(-1),
       navigations_suspended_(false),
-      suspended_nav_params_(NULL),
       has_accessed_initial_document_(false),
       is_swapped_out_(swapped_out),
       is_subframe_(false),
@@ -181,13 +176,9 @@ RenderViewHostImpl::RenderViewHostImpl(
       has_timed_out_on_unload_(false),
       unload_ack_is_for_cross_site_transition_(false),
       are_javascript_messages_suppressed_(false),
-      accessibility_layout_callback_(base::Bind(&base::DoNothing)),
-      accessibility_load_callback_(base::Bind(&base::DoNothing)),
-      accessibility_other_callback_(base::Bind(&base::DoNothing)),
       sudden_termination_allowed_(false),
       session_storage_namespace_(
           static_cast<SessionStorageNamespaceImpl*>(session_storage)),
-      save_accessibility_tree_for_testing_(false),
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING) {
   DCHECK(session_storage_namespace_.get());
   DCHECK(instance_.get());
@@ -234,6 +225,7 @@ bool RenderViewHostImpl::CreateRenderView(
     const string16& frame_name,
     int opener_route_id,
     int32 max_page_id) {
+  TRACE_EVENT0("renderer_host", "RenderViewHostImpl::CreateRenderView");
   DCHECK(!IsRenderViewLive()) << "Creating view twice";
 
   // The process may (if we're sharing a process with another host that already
@@ -304,6 +296,7 @@ void RenderViewHostImpl::SyncRendererPrefs() {
 }
 
 void RenderViewHostImpl::Navigate(const ViewMsg_Navigate_Params& params) {
+  TRACE_EVENT0("renderer_host", "RenderViewHostImpl::Navigate");
   // Browser plugin guests are not allowed to navigate outside web-safe schemes,
   // so do not grant them the ability to request additional URLs.
   if (!GetProcess()->IsGuest()) {
@@ -428,8 +421,7 @@ void RenderViewHostImpl::FirePageBeforeUnload(bool for_cross_site_transition) {
   }
 }
 
-void RenderViewHostImpl::SwapOut(int new_render_process_host_id,
-                                 int new_request_id) {
+void RenderViewHostImpl::SwapOut() {
   // This will be set back to false in OnSwapOutACK, just before we replace
   // this RVH with the pending RVH.
   is_waiting_for_unload_ack_ = true;
@@ -439,22 +431,20 @@ void RenderViewHostImpl::SwapOut(int new_render_process_host_id,
   increment_in_flight_event_count();
   StartHangMonitorTimeout(TimeDelta::FromMilliseconds(kUnloadTimeoutMS));
 
-  ViewMsg_SwapOut_Params params;
-  params.closing_process_id = GetProcess()->GetID();
-  params.closing_route_id = GetRoutingID();
-  params.new_render_process_host_id = new_render_process_host_id;
-  params.new_request_id = new_request_id;
   if (IsRenderViewLive()) {
-    Send(new ViewMsg_SwapOut(GetRoutingID(), params));
+    Send(new ViewMsg_SwapOut(GetRoutingID()));
   } else {
     // This RenderViewHost doesn't have a live renderer, so just skip the unload
-    // event.  We must notify the ResourceDispatcherHost on the IO thread,
-    // which we will do through the RenderProcessHost's widget helper.
-    GetProcess()->SimulateSwapOutACK(params);
+    // event.
+    OnSwappedOut(true);
   }
 }
 
-void RenderViewHostImpl::OnSwapOutACK(bool timed_out) {
+void RenderViewHostImpl::OnSwapOutACK() {
+  OnSwappedOut(false);
+}
+
+void RenderViewHostImpl::OnSwappedOut(bool timed_out) {
   // Stop the hang monitor now that the unload handler has finished.
   decrement_in_flight_event_count();
   StopHangMonitorTimeout();
@@ -558,15 +548,15 @@ void RenderViewHostImpl::ClosePageIgnoringUnloadEvents() {
   delegate_->Close(this);
 }
 
-void RenderViewHostImpl::SetHasPendingCrossSiteRequest(bool has_pending_request,
-                                                       int request_id) {
-  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
-      GetProcess()->GetID(), GetRoutingID(), has_pending_request);
-  pending_request_id_ = request_id;
+bool RenderViewHostImpl::HasPendingCrossSiteRequest() {
+  return CrossSiteRequestManager::GetInstance()->HasPendingCrossSiteRequest(
+      GetProcess()->GetID(), GetRoutingID());
 }
 
-int RenderViewHostImpl::GetPendingRequestId() {
-  return pending_request_id_;
+void RenderViewHostImpl::SetHasPendingCrossSiteRequest(
+    bool has_pending_request) {
+  CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
+      GetProcess()->GetID(), GetRoutingID(), has_pending_request);
 }
 
 #if defined(OS_ANDROID)
@@ -983,6 +973,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_AddMessageToConsole, OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShouldClose_ACK, OnShouldCloseACK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SwapOut_ACK, OnSwapOutACK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionChanged, OnSelectionChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionBoundsChanged,
                         OnSelectionBoundsChanged)
@@ -1354,15 +1345,7 @@ void RenderViewHostImpl::OnContextMenu(const ContextMenuParams& params) {
   FilterURL(policy, process, false, &validated_params.page_url);
   FilterURL(policy, process, true, &validated_params.frame_url);
 
-  ContextMenuSourceType type = CONTEXT_MENU_SOURCE_MOUSE;
-  if (!in_process_event_types_.empty()) {
-    WebKit::WebInputEvent::Type event_type = in_process_event_types_.front();
-    if (WebKit::WebInputEvent::isGestureEventType(event_type))
-      type = CONTEXT_MENU_SOURCE_TOUCH;
-    else if (WebKit::WebInputEvent::isKeyboardEventType(event_type))
-      type = CONTEXT_MENU_SOURCE_KEYBOARD;
-  }
-  delegate_->ShowContextMenu(validated_params, type);
+  delegate_->ShowContextMenu(validated_params);
 }
 
 void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
@@ -1802,19 +1785,9 @@ void RenderViewHostImpl::DisownOpener() {
   Send(new ViewMsg_DisownOpener(GetRoutingID()));
 }
 
-void RenderViewHostImpl::SetAccessibilityLayoutCompleteCallbackForTesting(
-    const base::Closure& callback) {
-  accessibility_layout_callback_ = callback;
-}
-
-void RenderViewHostImpl::SetAccessibilityLoadCompleteCallbackForTesting(
-    const base::Closure& callback) {
-  accessibility_load_callback_ = callback;
-}
-
-void RenderViewHostImpl::SetAccessibilityOtherCallbackForTesting(
-    const base::Closure& callback) {
-  accessibility_other_callback_ = callback;
+void RenderViewHostImpl::SetAccessibilityCallbackForTesting(
+    const base::Callback<void(AccessibilityNotification)>& callback) {
+  accessibility_testing_callback_ = callback;
 }
 
 void RenderViewHostImpl::UpdateWebkitPreferences(const WebPreferences& prefs) {
@@ -1912,26 +1885,23 @@ void RenderViewHostImpl::OnAccessibilityNotifications(
   if (view_ && !is_swapped_out_)
     view_->OnAccessibilityNotifications(params);
 
+  // Always send an ACK or the renderer can be in a bad state.
+  Send(new AccessibilityMsg_Notifications_ACK(GetRoutingID()));
+
+  // The rest of this code is just for testing; bail out if we're not
+  // in that mode.
+  if (accessibility_testing_callback_.is_null())
+    return;
+
   for (unsigned i = 0; i < params.size(); i++) {
     const AccessibilityHostMsg_NotificationParams& param = params[i];
     AccessibilityNotification src_type = param.notification_type;
-
-    if ((src_type == AccessibilityNotificationLayoutComplete ||
-         src_type == AccessibilityNotificationLoadComplete) &&
-        save_accessibility_tree_for_testing_) {
+    if (src_type == AccessibilityNotificationLayoutComplete ||
+        src_type == AccessibilityNotificationLoadComplete) {
       MakeAccessibilityNodeDataTree(param.nodes, &accessibility_tree_);
     }
-
-    if (src_type == AccessibilityNotificationLayoutComplete) {
-      accessibility_layout_callback_.Run();
-    } else if (src_type == AccessibilityNotificationLoadComplete) {
-      accessibility_load_callback_.Run();
-    } else {
-      accessibility_other_callback_.Run();
-    }
+    accessibility_testing_callback_.Run(src_type);
   }
-
-  Send(new AccessibilityMsg_Notifications_ACK(GetRoutingID()));
 }
 
 void RenderViewHostImpl::OnScriptEvalResponse(int id,

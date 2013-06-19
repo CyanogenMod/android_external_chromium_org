@@ -7,14 +7,15 @@
 
 #include "base/callback.h"
 #include "base/process_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "cc/output/compositor_frame.h"
 #include "content/common/content_export.h"
+#include "content/port/browser/event_with_latency_info.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "ipc/ipc_listener.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
 #include "ui/surface/transport_dib.h"
@@ -98,9 +99,9 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // Indicates whether the page has finished loading.
   virtual void SetIsLoading(bool is_loading) = 0;
 
-  // Updates the state of the input method attached to the view.
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) = 0;
+  // Updates the type of the input method attached to the view.
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    bool can_compose_inline) = 0;
 
   // Cancel the ongoing composition of the input method attached to the view.
   virtual void ImeCancelComposition() = 0;
@@ -258,7 +259,7 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // the GestureRecognizer until invocation of ProcessAckedTouchEvent releases
   // it to be consumed (when |ack_result| is NOT_CONSUMED OR NO_CONSUMER_EXISTS)
   // or ignored (when |ack_result| is CONSUMED).
-  virtual void ProcessAckedTouchEvent(const WebKit::WebTouchEvent& touch,
+  virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) = 0;
 
   // Asks the view to create a smooth scroll gesture that will be used to

@@ -24,8 +24,9 @@ DefaultWindowResizer::~DefaultWindowResizer() {
 DefaultWindowResizer*
 DefaultWindowResizer::Create(aura::Window* window,
                              const gfx::Point& location,
-                             int window_component) {
-  Details details(window, location, window_component);
+                             int window_component,
+                             aura::client::WindowMoveSource source) {
+  Details details(window, location, window_component, source);
   return details.is_resizable ? new DefaultWindowResizer(details) : NULL;
 }
 
@@ -54,6 +55,10 @@ void DefaultWindowResizer::RevertDrag() {
 
 aura::Window* DefaultWindowResizer::GetTarget() {
   return details_.window;
+}
+
+const gfx::Point& DefaultWindowResizer::GetInitialLocation() const {
+  return details_.initial_location_in_parent;
 }
 
 DefaultWindowResizer::DefaultWindowResizer(const Details& details)

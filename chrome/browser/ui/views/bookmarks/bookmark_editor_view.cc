@@ -18,6 +18,7 @@
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
+#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "components/user_prefs/user_prefs.h"
 #include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
@@ -64,7 +65,6 @@ BookmarkEditorView::BookmarkEditorView(
     BookmarkEditor::Configuration configuration)
     : profile_(profile),
       tree_view_(NULL),
-      new_folder_button_(NULL),
       url_label_(NULL),
       url_tf_(NULL),
       title_label_(NULL),
@@ -218,7 +218,7 @@ void BookmarkEditorView::ExecuteCommand(int command_id, int event_flags) {
 }
 
 void BookmarkEditorView::Show(gfx::NativeWindow parent) {
-  views::DialogDelegate::CreateDialogWidget(this, NULL, parent);
+  CreateBrowserModalDialogViews(this, parent);
   UserInputChanged();
   if (show_tree_ && bb_model_->loaded())
     ExpandAndSelect();
@@ -234,8 +234,10 @@ void BookmarkEditorView::Close() {
   GetWidget()->Close();
 }
 
-void BookmarkEditorView::ShowContextMenuForView(views::View* source,
-                                                const gfx::Point& point) {
+void BookmarkEditorView::ShowContextMenuForView(
+    views::View* source,
+    const gfx::Point& point,
+    ui::MenuSourceType source_type) {
   DCHECK_EQ(tree_view_, source);
   if (!tree_view_->GetSelectedNode())
     return;
@@ -247,6 +249,7 @@ void BookmarkEditorView::ShowContextMenuForView(views::View* source,
 
   if (context_menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(),
         NULL, gfx::Rect(point, gfx::Size()), views::MenuItemView::TOPRIGHT,
+        source_type,
         views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
         views::MenuRunner::MENU_DELETED)
     return;

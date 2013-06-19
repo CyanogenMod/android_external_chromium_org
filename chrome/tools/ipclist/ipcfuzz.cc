@@ -8,14 +8,14 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
 #include "base/pickle.h"
 #include "base/process_util.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/time.h"

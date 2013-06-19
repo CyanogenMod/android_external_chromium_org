@@ -216,7 +216,10 @@ bool ShouldAutoLaunchKioskApp(const CommandLine& command_line) {
 void OptionallyRunChromeOSLoginManager(const CommandLine& parsed_command_line,
                                        Profile* profile) {
   if (parsed_command_line.HasSwitch(switches::kLoginManager)) {
-    ShowLoginWizard(std::string());
+    const std::string first_screen =
+        parsed_command_line.HasSwitch(switches::kLoginScreen) ?
+            WizardController::kLoginScreenName : std::string();
+    ShowLoginWizard(first_screen);
 
     if (KioskModeSettings::Get()->IsKioskModeEnabled())
       InitializeKioskModeScreensaver();
@@ -382,8 +385,6 @@ ChromeBrowserMainPartsChromeos::~ChromeBrowserMainPartsChromeos() {
   if (KioskModeSettings::Get()->IsKioskModeEnabled())
     ShutdownKioskModeScreensaver();
 
-  dbus_services_.reset();
-
   // To be precise, logout (browser shutdown) is not yet done, but the
   // remaining work is negligible, hence we say LogoutDone here.
   BootTimesLoader::Get()->AddLogoutTimeMarker("LogoutDone", false);
@@ -459,6 +460,11 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopStart() {
 // Threads are initialized between MainMessageLoopStart and MainMessageLoopRun.
 // about_flags settings are applied in ChromeBrowserMainParts::PreCreateThreads.
 void ChromeBrowserMainPartsChromeos::PreMainMessageLoopRun() {
+  // Set the crypto thread after the IO thread has been created/started.
+  NetworkHandler::Get()->cert_loader()->SetCryptoTaskRunner(
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::IO));
+
   if (ash::switches::UseNewAudioHandler()) {
     CrasAudioHandler::Initialize(
         AudioDevicesPrefHandler::Create(g_browser_process->local_state()));
@@ -809,6 +815,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   power_button_observer_.reset();
   screensaver_controller_.reset();
   idle_action_warning_observer_.reset();
+  storage_monitor_.reset();
 
   // Delete ContactManager while |g_browser_process| is still alive.
   contact_manager_.reset();
@@ -838,7 +845,11 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
 }
 
 void ChromeBrowserMainPartsChromeos::PostDestroyThreads() {
+  // Destroy DBus services immediately after threads are stopped.
+  dbus_services_.reset();
+
   ChromeBrowserMainPartsLinux::PostDestroyThreads();
+
   // Destroy DeviceSettingsService after g_browser_process.
   DeviceSettingsService::Shutdown();
 }

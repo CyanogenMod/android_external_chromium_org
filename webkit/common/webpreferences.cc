@@ -7,10 +7,9 @@
 #include "base/basictypes.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSettings.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/icu/public/common/unicode/uchar.h"
-#include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebSettings;
 
@@ -87,6 +86,7 @@ WebPreferences::WebPreferences()
       css_shaders_enabled(false),
       css_grid_layout_enabled(false),
       lazy_layout_enabled(false),
+      region_based_columns_enabled(false),
       touch_enabled(false),
       device_supports_touch(false),
       device_supports_mouse(true),

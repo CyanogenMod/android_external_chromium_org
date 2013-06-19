@@ -112,7 +112,6 @@
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
@@ -121,6 +120,7 @@
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "components/breakpad/common/breakpad_paths.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/favicon_status.h"
@@ -142,7 +142,7 @@
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "net/cookies/cookie_store.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/ui_base_types.h"
@@ -1286,7 +1286,7 @@ void TestingAutomationProvider::GetBookmarksAsJSON(
   scoped_refptr<BookmarkStorage> storage(
       new BookmarkStorage(browser->profile(),
                           bookmark_model,
-                          browser->profile()->GetIOTaskRunner()));
+                          browser->profile()->GetIOTaskRunner().get()));
   if (!storage->SerializeData(&bookmarks_as_json)) {
     reply.SendError("Failed to serialize bookmarks");
     return;
@@ -2238,7 +2238,7 @@ void TestingAutomationProvider::GetBrowserInfo(
   properties->SetString("command_line_string",
       CommandLine::ForCurrentProcess()->GetCommandLineString());
   base::FilePath dumps_path;
-  PathService::Get(chrome::DIR_CRASH_DUMPS, &dumps_path);
+  PathService::Get(breakpad::DIR_CRASH_DUMPS, &dumps_path);
   properties->SetString("DIR_CRASH_DUMPS", dumps_path.value());
 #if defined(USE_AURA)
   properties->SetBoolean("aura", true);
@@ -2612,11 +2612,16 @@ void TestingAutomationProvider::PerformActionOnDownload(
     return;
   }
 
+  DownloadItem::DownloadState download_state = selected_item->GetState();
+
   // We need to be IN_PROGRESS for these actions.
   if ((action == "pause" || action == "resume" || action == "cancel") &&
-      !selected_item->IsInProgress()) {
+      download_state != DownloadItem::IN_PROGRESS) {
     AutomationJSONReply(this, reply_message)
-        .SendError("Selected DownloadItem is not in progress.");
+        .SendError(base::StringPrintf(
+            "Action '%s' called on download that is not in progress.",
+            action.c_str()));
+    return;
   }
 
   if (action == "open") {
@@ -2646,32 +2651,22 @@ void TestingAutomationProvider::PerformActionOnDownload(
         this, reply_message, false, browser->profile()->IsOffTheRecord()));
     selected_item->ValidateDangerousDownload();
   } else if (action == "pause") {
-    if (!selected_item->IsInProgress() || selected_item->IsPaused()) {
+    if (selected_item->IsPaused()) {
       // Action would be a no-op; respond right from here.  No-op implies
       // the test is poorly written or failing, so make it an error return.
-      if (!selected_item->IsInProgress()) {
-        AutomationJSONReply(this, reply_message)
-            .SendError("Action 'pause' called on download in termal state.");
-      } else {
-        AutomationJSONReply(this, reply_message)
-            .SendError("Action 'pause' called on already paused download.");
-      }
+      AutomationJSONReply(this, reply_message)
+          .SendError("Action 'pause' called on already paused download.");
     } else {
       selected_item->AddObserver(new AutomationProviderDownloadUpdatedObserver(
           this, reply_message, false, browser->profile()->IsOffTheRecord()));
       selected_item->Pause();
     }
   } else if (action == "resume") {
-    if (!selected_item->IsInProgress() || !selected_item->IsPaused()) {
+    if (!selected_item->IsPaused()) {
       // Action would be a no-op; respond right from here.  No-op implies
       // the test is poorly written or failing, so make it an error return.
-      if (!selected_item->IsInProgress()) {
-        AutomationJSONReply(this, reply_message)
-            .SendError("Action 'resume' called on download in termal state.");
-      } else {
-        AutomationJSONReply(this, reply_message)
-            .SendError("Action 'resume' called on unpaused download.");
-      }
+      AutomationJSONReply(this, reply_message)
+          .SendError("Action 'resume' called on unpaused download.");
     } else {
       selected_item->AddObserver(new AutomationProviderDownloadUpdatedObserver(
           this, reply_message, false, browser->profile()->IsOffTheRecord()));
@@ -3109,7 +3104,8 @@ void TestingAutomationProvider::GetPluginsInfoCallback(
     DictionaryValue* args,
     IPC::Message* reply_message,
     const std::vector<webkit::WebPluginInfo>& plugins) {
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(browser->profile());
+  PluginPrefs* plugin_prefs =
+      PluginPrefs::GetForProfile(browser->profile()).get();
   ListValue* items = new ListValue;
   for (std::vector<webkit::WebPluginInfo>::const_iterator it =
            plugins.begin();
@@ -3162,10 +3158,16 @@ void TestingAutomationProvider::EnablePlugin(Browser* browser,
     AutomationJSONReply(this, reply_message).SendError("path not specified.");
     return;
   }
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(browser->profile());
-  plugin_prefs->EnablePlugin(true, base::FilePath(path),
-      base::Bind(&DidEnablePlugin, AsWeakPtr(), reply_message,
-                 path, "Could not enable plugin for path %s."));
+  PluginPrefs* plugin_prefs =
+      PluginPrefs::GetForProfile(browser->profile()).get();
+  plugin_prefs->EnablePlugin(
+      true,
+      base::FilePath(path),
+      base::Bind(&DidEnablePlugin,
+                 AsWeakPtr(),
+                 reply_message,
+                 path,
+                 "Could not enable plugin for path %s."));
 }
 
 // Sample json input:
@@ -3179,10 +3181,16 @@ void TestingAutomationProvider::DisablePlugin(Browser* browser,
     AutomationJSONReply(this, reply_message).SendError("path not specified.");
     return;
   }
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(browser->profile());
-  plugin_prefs->EnablePlugin(false, base::FilePath(path),
-      base::Bind(&DidEnablePlugin, AsWeakPtr(), reply_message,
-                 path, "Could not disable plugin for path %s."));
+  PluginPrefs* plugin_prefs =
+      PluginPrefs::GetForProfile(browser->profile()).get();
+  plugin_prefs->EnablePlugin(
+      false,
+      base::FilePath(path),
+      base::Bind(&DidEnablePlugin,
+                 AsWeakPtr(),
+                 reply_message,
+                 path,
+                 "Could not disable plugin for path %s."));
 }
 
 // Sample json input:
@@ -3361,7 +3369,7 @@ void TestingAutomationProvider::AddSavedPassword(
 
   // Use IMPLICIT_ACCESS since new passwords aren't added in incognito mode.
   PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      browser->profile(), Profile::IMPLICIT_ACCESS);
+      browser->profile(), Profile::IMPLICIT_ACCESS).get();
 
   // The password store does not exist for an incognito window.
   if (password_store == NULL) {
@@ -3407,7 +3415,7 @@ void TestingAutomationProvider::RemoveSavedPassword(
 
   // Use EXPLICIT_ACCESS since passwords can be removed in incognito mode.
   PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      browser->profile(), Profile::EXPLICIT_ACCESS);
+      browser->profile(), Profile::EXPLICIT_ACCESS).get();
   if (password_store == NULL) {
     AutomationJSONReply(this, reply_message).SendError(
         "Unable to get password store.");
@@ -3433,7 +3441,7 @@ void TestingAutomationProvider::GetSavedPasswords(
   // Use EXPLICIT_ACCESS since saved passwords can be retrieved in
   // incognito mode.
   PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      browser->profile(), Profile::EXPLICIT_ACCESS);
+      browser->profile(), Profile::EXPLICIT_ACCESS).get();
 
   if (password_store == NULL) {
     AutomationJSONReply reply(this, reply_message);

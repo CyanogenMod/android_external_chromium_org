@@ -8,8 +8,8 @@
 #include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/connection_type_histograms.h"
@@ -42,11 +42,11 @@
 namespace net {
 
 // Returns parameters associated with the start of a HTTP stream job.
-Value* NetLogHttpStreamJobCallback(const GURL* original_url,
-                                   const GURL* url,
-                                   RequestPriority priority,
-                                   NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
+base::Value* NetLogHttpStreamJobCallback(const GURL* original_url,
+                                         const GURL* url,
+                                         RequestPriority priority,
+                                         NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("original_url", original_url->GetOrigin().spec());
   dict->SetString("url", url->GetOrigin().spec());
   dict->SetInteger("priority", priority);
@@ -55,12 +55,12 @@ Value* NetLogHttpStreamJobCallback(const GURL* original_url,
 
 // Returns parameters associated with the Proto (with NPN negotiation) of a HTTP
 // stream.
-Value* NetLogHttpStreamProtoCallback(
+base::Value* NetLogHttpStreamProtoCallback(
     const SSLClientSocket::NextProtoStatus status,
     const std::string* proto,
     const std::string* server_protos,
     NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
 
   dict->SetString("next_proto_status",
                   SSLClientSocket::NextProtoStatusToString(status));
@@ -391,8 +391,8 @@ int HttpStreamFactoryImpl::Job::OnHostResolution(
   // ClientSocketPoolManager will be destroyed in the same callback that
   // destroys the SpdySessionPool.
   bool has_session =
-      spdy_session_pool->GetIfExists(spdy_session_key, net_log) != NULL;
-  return has_session ? ERR_SPDY_SESSION_ALREADY_EXISTS  : OK;
+      spdy_session_pool->GetIfExists(spdy_session_key, net_log).get() != NULL;
+  return has_session ? ERR_SPDY_SESSION_ALREADY_EXISTS : OK;
 }
 
 void HttpStreamFactoryImpl::Job::OnIOComplete(int result) {

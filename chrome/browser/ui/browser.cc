@@ -183,7 +183,6 @@
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/point.h"
 #include "ui/shell_dialogs/selected_file_info.h"
-#include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_WIN)
@@ -1632,8 +1631,6 @@ void Browser::ConfirmAddSearchProvider(TemplateURL* template_url,
 
 void Browser::SetWebContentsBlocked(content::WebContents* web_contents,
                                     bool blocked) {
-  ChromeWebModalDialogManagerDelegate::SetWebContentsBlocked(web_contents,
-                                                             blocked);
   int index = tab_strip_model_->GetIndexOfWebContents(web_contents);
   if (index == TabStripModel::kNoTab) {
     NOTREACHED();

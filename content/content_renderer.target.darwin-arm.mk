@@ -44,7 +44,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/accessibility/accessibility_node_serializer.cc \
 	content/renderer/accessibility/renderer_accessibility.cc \
 	content/renderer/accessibility/renderer_accessibility_complete.cc \
-	content/renderer/accessibility/renderer_accessibility_focus_only.cc \
 	content/renderer/all_rendering_benchmarks.cc \
 	content/renderer/android/address_detector.cc \
 	content/renderer/android/content_detector.cc \
@@ -94,6 +93,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/video_capture_impl.cc \
 	content/renderer/media/video_capture_impl_manager.cc \
 	content/renderer/media/video_capture_message_filter.cc \
+	content/renderer/media/webcontentdecryptionmodule_impl.cc \
 	content/renderer/media/webmediaplayer_proxy_impl_android.cc \
 	content/renderer/memory_benchmarking_extension.cc \
 	content/renderer/mhtml_generator.cc \
@@ -185,6 +185,7 @@ MY_CFLAGS_C :=
 
 MY_DEFS := \
 	'-DCONTENT_IMPLEMENTATION' \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -196,7 +197,6 @@ MY_DEFS := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DENABLE_LANGUAGE_DETECTION=1' \
-	'-DENABLE_JAVA_BRIDGE' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_BUILD_NO_IMAGE_ENCODE' \
 	'-DSK_DEFERRED_CANVAS_USES_GPIPE=1' \

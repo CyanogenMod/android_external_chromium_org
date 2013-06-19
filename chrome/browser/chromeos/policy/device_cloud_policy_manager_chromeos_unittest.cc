@@ -77,7 +77,7 @@ class DeviceCloudPolicyManagerChromeOSTest
     request_context_getter_ = new net::TestURLRequestContextGetter(
         loop_.message_loop_proxy());
     TestingBrowserProcess::GetGlobal()->SetSystemRequestContext(
-        request_context_getter_);
+        request_context_getter_.get());
     TestingBrowserProcess::GetGlobal()->SetLocalState(&local_state_);
     chromeos::DeviceOAuth2TokenServiceFactory::Initialize();
     chromeos::CryptohomeLibrary::SetForTest(cryptohome_library_.get());
@@ -121,8 +121,9 @@ TEST_F(DeviceCloudPolicyManagerChromeOSTest, FreshDevice) {
   FlushDeviceSettings();
   EXPECT_TRUE(manager_.IsInitializationComplete(POLICY_DOMAIN_CHROME));
 
-  manager_.Connect(&local_state_, &device_management_service_,
-                   scoped_ptr<CloudPolicyClient::StatusProvider>(NULL));
+  manager_.Connect(&local_state_,
+                   &device_management_service_,
+                   scoped_ptr<CloudPolicyClient::StatusProvider>());
 
   PolicyBundle bundle;
   EXPECT_TRUE(manager_.policies().Equals(bundle));
@@ -150,8 +151,9 @@ TEST_F(DeviceCloudPolicyManagerChromeOSTest, EnrolledDevice) {
            Value::CreateBooleanValue(false));
   EXPECT_TRUE(manager_.policies().Equals(bundle));
 
-  manager_.Connect(&local_state_, &device_management_service_,
-                   scoped_ptr<CloudPolicyClient::StatusProvider>(NULL));
+  manager_.Connect(&local_state_,
+                   &device_management_service_,
+                   scoped_ptr<CloudPolicyClient::StatusProvider>());
   EXPECT_TRUE(manager_.policies().Equals(bundle));
 
   manager_.Shutdown();
@@ -166,8 +168,9 @@ TEST_F(DeviceCloudPolicyManagerChromeOSTest, ConsumerDevice) {
   PolicyBundle bundle;
   EXPECT_TRUE(manager_.policies().Equals(bundle));
 
-  manager_.Connect(&local_state_, &device_management_service_,
-                   scoped_ptr<CloudPolicyClient::StatusProvider>(NULL));
+  manager_.Connect(&local_state_,
+                   &device_management_service_,
+                   scoped_ptr<CloudPolicyClient::StatusProvider>());
   EXPECT_TRUE(manager_.policies().Equals(bundle));
 
   manager_.Shutdown();
@@ -219,8 +222,9 @@ class DeviceCloudPolicyManagerChromeOSEnrollmentTest
     PolicyBundle bundle;
     EXPECT_TRUE(manager_.policies().Equals(bundle));
 
-    manager_.Connect(&local_state_, &device_management_service_,
-                     scoped_ptr<CloudPolicyClient::StatusProvider>(NULL));
+    manager_.Connect(&local_state_,
+                     &device_management_service_,
+                     scoped_ptr<CloudPolicyClient::StatusProvider>());
   }
 
   void ExpectFailedEnrollment(EnrollmentStatus::Status status) {

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "components/autofill/common/autofill_switches.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
+#include "components/autofill/core/common/autofill_switches.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -36,7 +36,7 @@ TEST(WalletServiceUrl, CheckDefaultUrls) {
             "autocheckout/v1/saveToWallet",
             GetSaveToWalletUrl().spec());
   EXPECT_EQ("https://payments-form-dogfood.sandbox.google.com/online/v2/"
-            "passiveauth",
+            "passiveauth?isChromePayments=true",
             GetPassiveAuthUrl().spec());
   EXPECT_EQ("https://wallet-web.sandbox.google.com/online-secure/"
             "temporarydata/cvv?s7e=cvv",

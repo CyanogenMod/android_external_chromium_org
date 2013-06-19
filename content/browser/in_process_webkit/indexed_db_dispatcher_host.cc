@@ -29,8 +29,8 @@
 #include "third_party/WebKit/public/platform/WebIDBDatabaseError.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/base/origin_url_conversions.h"
 #include "webkit/browser/database/database_util.h"
+#include "webkit/common/database/database_identifier.h"
 
 using webkit_database::DatabaseUtil;
 using WebKit::WebIDBDatabaseError;
@@ -223,7 +223,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryGetDatabaseNames(
   Context()->GetIDBFactory()->getDatabaseNames(
       new IndexedDBCallbacks<std::vector<string16> >(
           this, params.ipc_thread_id, params.ipc_callbacks_id),
-      params.database_identifier,
+      WebKit::WebString::fromUTF8(params.database_identifier),
       webkit_base::FilePathToWebString(indexed_db_path));
 }
 
@@ -233,7 +233,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryOpen(
   base::FilePath indexed_db_path = indexed_db_context_->data_path();
 
   GURL origin_url =
-      webkit_base::GetOriginURLFromIdentifier(params.database_identifier);
+      webkit_database::GetOriginFromIdentifier(params.database_identifier);
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
 
@@ -253,7 +253,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryOpen(
                                             origin_url),
              new IndexedDBDatabaseCallbacks(
                  this, params.ipc_thread_id, params.ipc_database_callbacks_id),
-             params.database_identifier,
+             WebKit::WebString::fromUTF8(params.database_identifier),
              webkit_base::FilePathToWebString(indexed_db_path));
 }
 
@@ -266,7 +266,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryDeleteDatabase(
       ->deleteDatabase(params.name,
                        new IndexedDBCallbacks<std::vector<char> >(
                            this, params.ipc_thread_id, params.ipc_callbacks_id),
-                       params.database_identifier,
+                       WebKit::WebString::fromUTF8(params.database_identifier),
                        webkit_base::FilePathToWebString(indexed_db_path));
 }
 

@@ -38,6 +38,7 @@ LOCAL_SRC_FILES := \
 	webkit/renderer/media/crypto/key_systems.cc \
 	webkit/renderer/media/crypto/key_systems_info.cc \
 	webkit/renderer/media/crypto/proxy_decryptor.cc \
+	webkit/renderer/media/media_info_loader.cc \
 	webkit/renderer/media/media_stream_audio_renderer.cc \
 	webkit/renderer/media/simple_video_frame_provider.cc \
 	webkit/renderer/media/texttrack_impl.cc \
@@ -94,6 +95,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISABLE_NACL' \

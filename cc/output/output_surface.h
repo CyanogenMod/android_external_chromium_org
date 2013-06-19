@@ -12,18 +12,23 @@
 #include "cc/base/cc_export.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/software_output_device.h"
+#include "cc/scheduler/frame_rate_controller.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+
+namespace base { class SingleThreadTaskRunner; }
 
 namespace ui { struct LatencyInfo; }
 
 namespace gfx {
 class Rect;
 class Size;
+class Transform;
 }
 
 namespace cc {
 
 class CompositorFrame;
+class CompositorFrameAck;
 class OutputSurfaceClient;
 class OutputSurfaceCallbacks;
 
@@ -34,8 +39,12 @@ class OutputSurfaceCallbacks;
 //      From here on, it will only be used on the compositor thread.
 //   3. If the 3D context is lost, then the compositor will delete the output
 //      surface (on the compositor thread) and go back to step 1.
-class CC_EXPORT OutputSurface {
+class CC_EXPORT OutputSurface : public FrameRateControllerClient {
  public:
+  enum {
+    DEFAULT_MAX_FRAMES_PENDING = 2
+  };
+
   explicit OutputSurface(scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
 
   explicit OutputSurface(scoped_ptr<cc::SoftwareOutputDevice> software_device);
@@ -49,11 +58,14 @@ class CC_EXPORT OutputSurface {
     Capabilities()
         : delegated_rendering(false),
           max_frames_pending(0),
-          deferred_gl_initialization(false) {}
-
+          deferred_gl_initialization(false),
+          adjust_deadline_for_parent(true) {}
     bool delegated_rendering;
     int max_frames_pending;
     bool deferred_gl_initialization;
+    // This doesn't handle the <webview> case, but once BeginFrame is
+    // supported natively, we shouldn't need adjust_deadline_for_parent.
+    bool adjust_deadline_for_parent;
   };
 
   const Capabilities& capabilities() const {
@@ -83,6 +95,13 @@ class CC_EXPORT OutputSurface {
   // thread.
   virtual bool BindToClient(OutputSurfaceClient* client);
 
+  void InitializeBeginFrameEmulation(
+      base::SingleThreadTaskRunner* task_runner,
+      bool throttle_frame_production,
+      base::TimeDelta interval);
+
+  void SetMaxFramesPending(int max_frames_pending);
+
   virtual void EnsureBackbuffer();
   virtual void DiscardBackbuffer();
 
@@ -103,7 +122,7 @@ class CC_EXPORT OutputSurface {
   // Requests a BeginFrame notification from the output surface. The
   // notification will be delivered by calling
   // OutputSurfaceClient::BeginFrame until the callback is disabled.
-  virtual void SetNeedsBeginFrame(bool enable) {}
+  virtual void SetNeedsBeginFrame(bool enable);
 
  protected:
   // Synchronously initialize context3d and enter hardware mode.
@@ -116,7 +135,6 @@ class CC_EXPORT OutputSurface {
 
   void PostSwapBuffersComplete();
 
-  OutputSurfaceClient* client_;
   struct cc::OutputSurface::Capabilities capabilities_;
   scoped_ptr<OutputSurfaceCallbacks> callbacks_;
   scoped_ptr<WebKit::WebGraphicsContext3D> context3d_;
@@ -125,12 +143,35 @@ class CC_EXPORT OutputSurface {
   bool has_swap_buffers_complete_callback_;
   gfx::Size surface_size_;
   float device_scale_factor_;
+  base::WeakPtrFactory<OutputSurface> weak_ptr_factory_;
+
+  // The FrameRateController is deprecated.
+  // Platforms should move to native BeginFrames instead.
+  void OnVSyncParametersChanged(base::TimeTicks timebase,
+                                base::TimeDelta interval);
+  virtual void FrameRateControllerTick(bool throttled,
+                                       const BeginFrameArgs& args) OVERRIDE;
+  scoped_ptr<FrameRateController> frame_rate_controller_;
+  int max_frames_pending_;
+  int pending_swap_buffers_;
+  bool begin_frame_pending_;
+
+  // Forwarded to OutputSurfaceClient but threaded through OutputSurface
+  // first so OutputSurface has a chance to update the FrameRateController
+  bool HasClient() { return !!client_; }
+  void SetNeedsRedrawRect(gfx::Rect damage_rect);
+  void BeginFrame(const BeginFrameArgs& args);
+  void DidSwapBuffers();
+  void OnSwapBuffersComplete(const CompositorFrameAck* ack);
+  void DidLoseOutputSurface();
+  void SetExternalDrawConstraints(const gfx::Transform& transform,
+                                  gfx::Rect viewport);
 
  private:
-  void SetContext3D(scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
-  void SwapBuffersComplete();
+  OutputSurfaceClient* client_;
+  friend class OutputSurfaceCallbacks;
 
-  base::WeakPtrFactory<OutputSurface> weak_ptr_factory_;
+  void SetContext3D(scoped_ptr<WebKit::WebGraphicsContext3D> context3d);
 
   DISALLOW_COPY_AND_ASSIGN(OutputSurface);
 };

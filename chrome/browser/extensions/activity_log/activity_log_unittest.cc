@@ -76,6 +76,21 @@ class ActivityLogTest : public testing::Test {
     ASSERT_EQ(2, static_cast<int>(i->size()));
   }
 
+  static void RetrieveActions_LogAndFetchPathActions(
+      scoped_ptr<std::vector<scoped_refptr<Action> > > i) {
+    std::string args;
+    ASSERT_EQ(1U, i->size());
+    scoped_refptr<Action> last = i->front();
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableExtensionActivityLogTesting))
+      args = "Injected scripts () onto "
+              "http://www.google.com/foo?bar extra";
+    else
+      args = "Injected scripts () onto "
+              "http://www.google.com/foo extra";
+    ASSERT_EQ(args, last->PrintForDebug());
+  }
+
   static void Arguments_Missing(
       scoped_ptr<std::vector<scoped_refptr<Action> > > i) {
     scoped_refptr<Action> last = i->front();
@@ -200,11 +215,29 @@ TEST_F(ActivityLogTest, LogAndFetchActions) {
       base::Bind(ActivityLogTest::RetrieveActions_LogAndFetchActions));
 }
 
+TEST_F(ActivityLogTest, LogAndFetchPathActions) {
+  ActivityLog* activity_log = ActivityLog::GetInstance(profile_.get());
+  scoped_ptr<ListValue> args(new ListValue());
+  ASSERT_TRUE(activity_log->IsLogEnabled());
+
+  activity_log->LogDOMAction(kExtensionId,
+                             GURL("http://www.google.com/foo?bar"),
+                             string16(),
+                             std::string("document.write"),
+                             args.get(),
+                             DomActionType::INSERTED,
+                             std::string("extra"));
+  activity_log->GetActions(
+      kExtensionId,
+      0,
+      base::Bind(ActivityLogTest::RetrieveActions_LogAndFetchPathActions));
+}
+
 TEST_F(ActivityLogTest, LogWithoutArguments) {
   ActivityLog* activity_log = ActivityLog::GetInstance(profile_.get());
   activity_log->SetArgumentLoggingForTesting(false);
   ASSERT_TRUE(activity_log->IsLogEnabled());
-
+  activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_NOARGS);
   scoped_ptr<ListValue> args(new ListValue());
   args->Set(0, new base::StringValue("hello"));
   args->Set(1, new base::StringValue("world"));
@@ -216,6 +249,7 @@ TEST_F(ActivityLogTest, LogWithoutArguments) {
 
 TEST_F(ActivityLogTest, LogWithArguments) {
   ActivityLog* activity_log = ActivityLog::GetInstance(profile_.get());
+  activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_FULLSTREAM);
   ASSERT_TRUE(activity_log->IsLogEnabled());
 
   scoped_ptr<ListValue> args(new ListValue());
@@ -237,8 +271,9 @@ TEST_F(RenderViewActivityLogTest, LogPrerender) {
                        .Set("version", "1.0.0")
                        .Set("manifest_version", 2))
           .Build();
-  extension_service_->AddExtension(extension);
+  extension_service_->AddExtension(extension.get());
   ActivityLog* activity_log = ActivityLog::GetInstance(profile());
+  activity_log->SetDefaultPolicy(ActivityLogPolicy::POLICY_FULLSTREAM);
   ASSERT_TRUE(activity_log->IsLogEnabled());
   GURL url("http://www.google.com");
 

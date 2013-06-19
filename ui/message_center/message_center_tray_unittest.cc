@@ -66,7 +66,7 @@ class MessageCenterTrayTest : public testing::Test {
                          gfx::Image(),
                          ASCIIToUTF16("www.test.org"),
                          "" /* extension id */,
-                         NULL /* optional_fields */,
+                         message_center::RichNotificationData(),
                          NULL /* delegate */));
     message_center_->AddNotification(notification.Pass());
   }
@@ -151,6 +151,38 @@ TEST_F(MessageCenterTrayTest, MessageCenterClosesPopups) {
   message_center_tray_->HideMessageCenterBubble();
 
   ASSERT_FALSE(message_center_tray_->popups_visible());
+  ASSERT_FALSE(message_center_tray_->message_center_visible());
+}
+
+TEST_F(MessageCenterTrayTest, MessageCenterReopenPopupsForSystemPriority) {
+  ASSERT_FALSE(message_center_tray_->popups_visible());
+  ASSERT_FALSE(message_center_tray_->message_center_visible());
+
+  scoped_ptr<Notification> notification(
+      new Notification(message_center::NOTIFICATION_TYPE_SIMPLE,
+                       "MessageCenterReopnPopupsForSystemPriority",
+                       ASCIIToUTF16("Test Web Notification"),
+                       ASCIIToUTF16("Notification message body."),
+                       gfx::Image(),
+                       ASCIIToUTF16("www.test.org"),
+                       "" /* extension id */,
+                       message_center::RichNotificationData(),
+                       NULL /* delegate */));
+  notification->SetSystemPriority();
+  message_center_->AddNotification(notification.Pass());
+
+  ASSERT_TRUE(message_center_tray_->popups_visible());
+  ASSERT_FALSE(message_center_tray_->message_center_visible());
+
+  bool shown = message_center_tray_->ShowMessageCenterBubble();
+  EXPECT_TRUE(shown);
+
+  ASSERT_FALSE(message_center_tray_->popups_visible());
+  ASSERT_TRUE(message_center_tray_->message_center_visible());
+
+  message_center_tray_->HideMessageCenterBubble();
+
+  ASSERT_TRUE(message_center_tray_->popups_visible());
   ASSERT_FALSE(message_center_tray_->message_center_visible());
 }
 

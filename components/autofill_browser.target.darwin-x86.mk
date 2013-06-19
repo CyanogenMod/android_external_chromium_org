@@ -18,7 +18,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_support_webkit_resources_gyp)/webkit_resources.stamp \
-	$(call intermediates-dir-for,GYP,components_component_resources_gyp)/component_resources.stamp
+	$(call intermediates-dir-for,GYP,components_component_strings_gyp)/component_strings.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -37,10 +37,6 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 LOCAL_SRC_FILES := \
 	components/autofill/browser/address.cc \
 	components/autofill/browser/address_field.cc \
-	components/autofill/browser/autocheckout/whitelist_manager.cc \
-	components/autofill/browser/autocheckout_manager.cc \
-	components/autofill/browser/autocheckout_page_meta_data.cc \
-	components/autofill/browser/autocheckout_request_manager.cc \
 	components/autofill/browser/autocomplete_history_manager.cc \
 	components/autofill/browser/autofill_country.cc \
 	components/autofill/browser/autofill_data_model.cc \
@@ -116,6 +112,7 @@ MY_CFLAGS := \
 MY_CFLAGS_C :=
 
 MY_DEFS := \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -196,7 +193,7 @@ LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/third_party/protobuf \
 	$(LOCAL_PATH)/third_party/protobuf/src \
 	$(gyp_shared_intermediate_dir)/webkit \
-	$(gyp_shared_intermediate_dir)/component_resources \
+	$(gyp_shared_intermediate_dir)/components/strings \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

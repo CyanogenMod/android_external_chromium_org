@@ -12,6 +12,7 @@
 #include "content/renderer/media/audio_input_message_filter.h"
 #include "content/renderer/pepper/pepper_plugin_delegate_impl.h"
 #include "content/renderer/render_thread_impl.h"
+#include "googleurl/src/gurl.h"
 #include "media/audio/audio_manager_base.h"
 
 namespace content {
@@ -20,13 +21,14 @@ namespace content {
 PepperPlatformAudioInputImpl* PepperPlatformAudioInputImpl::Create(
     const base::WeakPtr<PepperPluginDelegateImpl>& plugin_delegate,
     const std::string& device_id,
+    const GURL& document_url,
     int sample_rate,
     int frames_per_buffer,
     webkit::ppapi::PluginDelegate::PlatformAudioInputClient* client) {
   scoped_refptr<PepperPlatformAudioInputImpl> audio_input(
       new PepperPlatformAudioInputImpl());
-  if (audio_input->Initialize(plugin_delegate, device_id, sample_rate,
-                              frames_per_buffer, client)) {
+  if (audio_input->Initialize(plugin_delegate, device_id, document_url,
+                              sample_rate, frames_per_buffer, client)) {
     // Balanced by Release invoked in
     // PepperPlatformAudioInputImpl::ShutDownOnIOThread().
     audio_input->AddRef();
@@ -82,7 +84,8 @@ void PepperPlatformAudioInputImpl::OnStreamCreated(
   // TODO(yzshen): Make use of circular buffer scheme. crbug.com/181449.
   DCHECK_EQ(1, total_segments);
 
-  if (base::MessageLoopProxy::current() != main_message_loop_proxy_.get()) {
+  if (base::MessageLoopProxy::current().get() !=
+      main_message_loop_proxy_.get()) {
     // If shutdown has occurred, |client_| will be NULL and the handles will be
     // cleaned up on the main thread.
     main_message_loop_proxy_->PostTask(
@@ -125,12 +128,14 @@ PepperPlatformAudioInputImpl::~PepperPlatformAudioInputImpl() {
 
 PepperPlatformAudioInputImpl::PepperPlatformAudioInputImpl()
     : client_(NULL),
-      main_message_loop_proxy_(base::MessageLoopProxy::current()) {
+      main_message_loop_proxy_(base::MessageLoopProxy::current()),
+      create_stream_sent_(false) {
 }
 
 bool PepperPlatformAudioInputImpl::Initialize(
     const base::WeakPtr<PepperPluginDelegateImpl>& plugin_delegate,
     const std::string& device_id,
+    const GURL& document_url,
     int sample_rate,
     int frames_per_buffer,
     webkit::ppapi::PluginDelegate::PlatformAudioInputClient* client) {
@@ -154,6 +159,7 @@ bool PepperPlatformAudioInputImpl::Initialize(
   plugin_delegate_->OpenDevice(
       PP_DEVICETYPE_DEV_AUDIOCAPTURE,
       device_id.empty() ? media::AudioManagerBase::kDefaultDeviceId : device_id,
+      document_url,
       base::Bind(&PepperPlatformAudioInputImpl::OnDeviceOpened, this));
 
   return true;
@@ -167,6 +173,7 @@ void PepperPlatformAudioInputImpl::InitializeOnIOThread(int session_id) {
     return;
 
   // We will be notified by OnStreamCreated().
+  create_stream_sent_ = true;
   ipc_->CreateStream(this, session_id, params_, false, 1);
 }
 
@@ -183,10 +190,10 @@ void PepperPlatformAudioInputImpl::StopCaptureOnIOThread() {
       BelongsToCurrentThread());
 
   // TODO(yzshen): We cannot re-start capturing if the stream is closed.
-  if (ipc_) {
+  if (ipc_ && create_stream_sent_) {
     ipc_->CloseStream();
-    ipc_.reset();
   }
+  ipc_.reset();
 }
 
 void PepperPlatformAudioInputImpl::ShutDownOnIOThread() {

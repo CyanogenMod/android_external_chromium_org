@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 
 namespace ui {
 struct LatencyInfo;
@@ -50,6 +50,10 @@ class OverscrollController {
   // overscroll gesture status as appropriate.
   void ReceivedEventACK(const WebKit::WebInputEvent& event, bool processed);
 
+  // This must be called when a gesture event is filtered out and not sent to
+  // the renderer.
+  void DiscardingGestureEvent(const WebKit::WebGestureEvent& event);
+
   OverscrollMode overscroll_mode() const { return overscroll_mode_; }
 
   void set_delegate(OverscrollControllerDelegate* delegate) {
@@ -58,6 +62,10 @@ class OverscrollController {
 
   // Resets internal states.
   void Reset();
+
+  // Cancels any in-progress overscroll (and calls OnOverscrollModeChange on the
+  // delegate if necessary), and resets internal states.
+  void Cancel();
 
  private:
   friend class MockRenderWidgetHost;

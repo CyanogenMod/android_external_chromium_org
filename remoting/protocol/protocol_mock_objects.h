@@ -16,6 +16,7 @@
 #include "remoting/protocol/connection_to_client.h"
 #include "remoting/protocol/host_stub.h"
 #include "remoting/protocol/input_stub.h"
+#include "remoting/protocol/pairing_registry.h"
 #include "remoting/protocol/session.h"
 #include "remoting/protocol/session_manager.h"
 #include "remoting/protocol/transport.h"
@@ -186,21 +187,47 @@ class MockSessionManager : public SessionManager {
       Authenticator* authenticator,
       CandidateSessionConfig* config));
   MOCK_METHOD0(Close, void());
-  MOCK_METHOD1(set_authenticator_factory_ptr, void(AuthenticatorFactory*));
+  MOCK_METHOD1(set_authenticator_factory_ptr,
+               void(AuthenticatorFactory* factory));
   virtual scoped_ptr<Session> Connect(
       const std::string& host_jid,
       scoped_ptr<Authenticator> authenticator,
       scoped_ptr<CandidateSessionConfig> config) {
     return scoped_ptr<Session>(ConnectPtr(
         host_jid, authenticator.get(), config.get()));
-  };
+  }
   virtual void set_authenticator_factory(
       scoped_ptr<AuthenticatorFactory> authenticator_factory) {
     set_authenticator_factory_ptr(authenticator_factory.release());
-  };
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockSessionManager);
+};
+
+// Simple delegate that caches information on paired clients in memory.
+class MockPairingRegistryDelegate : public PairingRegistry::Delegate {
+ public:
+  MockPairingRegistryDelegate();
+  virtual ~MockPairingRegistryDelegate();
+
+  const PairingRegistry::PairedClients& paired_clients() const {
+    return paired_clients_;
+  }
+
+  // PairingRegistry::Delegate implementation.
+  virtual void AddPairing(
+      const PairingRegistry::Pairing& new_paired_client,
+      const PairingRegistry::AddPairingCallback& callback) OVERRIDE;
+  virtual void GetPairing(
+      const std::string& client_id,
+      const PairingRegistry::GetPairingCallback& callback) OVERRIDE;
+
+  void RunCallback();
+
+ private:
+  base::Closure saved_callback_;
+  PairingRegistry::PairedClients paired_clients_;
 };
 
 }  // namespace protocol

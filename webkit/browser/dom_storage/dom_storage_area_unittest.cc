@@ -46,7 +46,7 @@ class DomStorageAreaTest : public testing::Test {
     EXPECT_TRUE(area->HasUncommittedChanges());
     // Make additional change and verify that a new commit batch
     // is created for that change.
-    NullableString16 old_value;
+    base::NullableString16 old_value;
     EXPECT_TRUE(area->SetItem(kKey2, kValue2, &old_value));
     EXPECT_TRUE(area->commit_batch_.get());
     EXPECT_EQ(1, area->commit_batches_in_flight_);
@@ -75,7 +75,7 @@ TEST_F(DomStorageAreaTest, DomStorageAreaBasics) {
   scoped_refptr<DomStorageArea> area(
       new DomStorageArea(1, std::string(), kOrigin, NULL, NULL));
   base::string16 old_value;
-  NullableString16 old_nullable_value;
+  base::NullableString16 old_nullable_value;
   scoped_refptr<DomStorageArea> copy;
 
   // We don't focus on the underlying DomStorageMap functionality
@@ -147,7 +147,7 @@ TEST_F(DomStorageAreaTest, BackingDatabaseOpened) {
     EXPECT_EQ(NULL, area->backing_.get());
     EXPECT_TRUE(area->is_initial_import_done_);
 
-    NullableString16 old_value;
+    base::NullableString16 old_value;
     EXPECT_TRUE(area->SetItem(kKey, kValue, &old_value));
     ASSERT_TRUE(old_value.is_null());
 
@@ -158,10 +158,10 @@ TEST_F(DomStorageAreaTest, BackingDatabaseOpened) {
 
   // This should set up a DomStorageArea that is correctly backed to disk.
   {
-    scoped_refptr<DomStorageArea> area(
-        new DomStorageArea(kOrigin,
-            temp_dir.path(),
-            new MockDomStorageTaskRunner(base::MessageLoopProxy::current())));
+    scoped_refptr<DomStorageArea> area(new DomStorageArea(
+        kOrigin,
+        temp_dir.path(),
+        new MockDomStorageTaskRunner(base::MessageLoopProxy::current().get())));
 
     EXPECT_TRUE(area->backing_.get());
     DomStorageDatabase* database = static_cast<LocalStorageDatabaseAdapter*>(
@@ -176,7 +176,7 @@ TEST_F(DomStorageAreaTest, BackingDatabaseOpened) {
     area->backing_.reset(new LocalStorageDatabaseAdapter());
 
     // Need to write something to ensure that the database is created.
-    NullableString16 old_value;
+    base::NullableString16 old_value;
     EXPECT_TRUE(area->SetItem(kKey, kValue, &old_value));
     ASSERT_TRUE(old_value.is_null());
     EXPECT_TRUE(area->is_initial_import_done_);
@@ -205,10 +205,10 @@ TEST_F(DomStorageAreaTest, CommitTasks) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
-  scoped_refptr<DomStorageArea> area(
-      new DomStorageArea(kOrigin,
-          temp_dir.path(),
-          new MockDomStorageTaskRunner(base::MessageLoopProxy::current())));
+  scoped_refptr<DomStorageArea> area(new DomStorageArea(
+      kOrigin,
+      temp_dir.path(),
+      new MockDomStorageTaskRunner(base::MessageLoopProxy::current().get())));
   // Inject an in-memory db to speed up the test.
   area->backing_.reset(new LocalStorageDatabaseAdapter());
 
@@ -219,7 +219,7 @@ TEST_F(DomStorageAreaTest, CommitTasks) {
   EXPECT_TRUE(area->is_initial_import_done_);
 
   ValuesMap values;
-  NullableString16 old_value;
+  base::NullableString16 old_value;
 
   // See that changes are batched up.
   EXPECT_FALSE(area->commit_batch_.get());
@@ -283,10 +283,10 @@ TEST_F(DomStorageAreaTest, CommitTasks) {
 TEST_F(DomStorageAreaTest, CommitChangesAtShutdown) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  scoped_refptr<DomStorageArea> area(
-      new DomStorageArea(kOrigin,
-          temp_dir.path(),
-          new MockDomStorageTaskRunner(base::MessageLoopProxy::current())));
+  scoped_refptr<DomStorageArea> area(new DomStorageArea(
+      kOrigin,
+      temp_dir.path(),
+      new MockDomStorageTaskRunner(base::MessageLoopProxy::current().get())));
 
   // Inject an in-memory db to speed up the test and also to verify
   // the final changes are commited in it's dtor.
@@ -294,7 +294,7 @@ TEST_F(DomStorageAreaTest, CommitChangesAtShutdown) {
       new VerifyChangesCommittedDatabase());
 
   ValuesMap values;
-  NullableString16 old_value;
+  base::NullableString16 old_value;
   EXPECT_TRUE(area->SetItem(kKey, kValue, &old_value));
   EXPECT_TRUE(area->HasUncommittedChanges());
   area->backing_->ReadAllValues(&values);
@@ -310,10 +310,10 @@ TEST_F(DomStorageAreaTest, CommitChangesAtShutdown) {
 TEST_F(DomStorageAreaTest, DeleteOrigin) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  scoped_refptr<DomStorageArea> area(
-      new DomStorageArea(kOrigin,
-          temp_dir.path(),
-          new MockDomStorageTaskRunner(base::MessageLoopProxy::current())));
+  scoped_refptr<DomStorageArea> area(new DomStorageArea(
+      kOrigin,
+      temp_dir.path(),
+      new MockDomStorageTaskRunner(base::MessageLoopProxy::current().get())));
 
   // This test puts files on disk.
   base::FilePath db_file_path = static_cast<LocalStorageDatabaseAdapter*>(
@@ -326,7 +326,7 @@ TEST_F(DomStorageAreaTest, DeleteOrigin) {
   EXPECT_FALSE(file_util::PathExists(db_file_path));
 
   // Commit something in the database and then delete.
-  NullableString16 old_value;
+  base::NullableString16 old_value;
   area->SetItem(kKey, kValue, &old_value);
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(file_util::PathExists(db_file_path));
@@ -371,10 +371,10 @@ TEST_F(DomStorageAreaTest, DeleteOrigin) {
 TEST_F(DomStorageAreaTest, PurgeMemory) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  scoped_refptr<DomStorageArea> area(
-      new DomStorageArea(kOrigin,
-          temp_dir.path(),
-          new MockDomStorageTaskRunner(base::MessageLoopProxy::current())));
+  scoped_refptr<DomStorageArea> area(new DomStorageArea(
+      kOrigin,
+      temp_dir.path(),
+      new MockDomStorageTaskRunner(base::MessageLoopProxy::current().get())));
 
   // Inject an in-memory db to speed up the test.
   area->backing_.reset(new LocalStorageDatabaseAdapter());
@@ -395,7 +395,7 @@ TEST_F(DomStorageAreaTest, PurgeMemory) {
   EXPECT_EQ(original_map, area->map_.get());
 
   // Should not do anything when commits are pending.
-  NullableString16 old_value;
+  base::NullableString16 old_value;
   area->SetItem(kKey, kValue, &old_value);
   EXPECT_TRUE(area->is_initial_import_done_);
   EXPECT_TRUE(area->HasUncommittedChanges());

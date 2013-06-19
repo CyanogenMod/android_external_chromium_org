@@ -745,6 +745,8 @@ const char kLanguageXkbAutoRepeatInterval[] =
 
 // A boolean pref which determines whether the large cursor feature is enabled.
 const char kLargeCursorEnabled[] = "settings.a11y.large_cursor_enabled";
+// A boolean pref which determines whether the sticky keys feature is enabled.
+const char kStickyKeysEnabled[] = "settings.a11y.sticky_keys_enabled";
 // A boolean pref which determines whether spoken feedback is enabled.
 const char kSpokenFeedbackEnabled[] = "settings.accessibility";
 // A boolean pref which determines whether high conrast is enabled.
@@ -865,10 +867,15 @@ const char kPowerUseVideoActivity[] = "power.use_video_activity";
 // screen-related power management (including locking)?
 const char kPowerAllowScreenWakeLocks[] = "power.allow_screen_wake_locks";
 
-// Amount by which the idle delay should be scaled while the system is in
-// presentation mode.  Values are limited to a minimum of 1.0.
+// DEPRECATED: This is replaced by kPowerPresentationScreenDimDelayFactor
+// and has no effect.
 const char kPowerPresentationIdleDelayFactor[] =
     "power.presentation_idle_delay_factor";
+
+// Amount by which the screen-dim delay should be scaled while the system
+// is in presentation mode. Values are limited to a minimum of 1.0.
+const char kPowerPresentationScreenDimDelayFactor[] =
+    "power.presentation_screen_dim_delay_factor";
 
 // Amount by which the screen-dim delay should be scaled when user activity is
 // observed while the screen is dimmed or soon after the screen has been turned
@@ -1109,7 +1116,8 @@ const char kDefaultZoomLevel[] = "profile.default_zoom_level";
 // be displayed at the default zoom level.
 const char kPerHostZoomLevels[] = "profile.per_host_zoom_levels";
 
-const char kAutofillDialogAutofillDefault[] = "autofill.data_model_default";
+// The number of times the dialog has been shown (all time).
+const char kAutofillDialogShowCount[] = "autofill.show_count";
 
 // Whether a user has ever paid with Wallet via the autofill dialog.
 const char kAutofillDialogHasPaidWithWallet[] = "autofill.has_paid_with_wallet";
@@ -1118,6 +1126,10 @@ const char kAutofillDialogHasPaidWithWallet[] = "autofill.has_paid_with_wallet";
 // the autofill dialog's account chooser and set explicitly on dialog submission
 // (but not cancel). If this isn't set, the dialog assumes it's the first run.
 const char kAutofillDialogPayWithoutWallet[] = "autofill.pay_without_wallet";
+
+// A dictionary that tracks the default data model to use for each section of
+// the dialog.
+const char kAutofillDialogAutofillDefault[] = "autofill.data_model_default";
 
 // Modifying bookmarks is completely disabled when this is set to false.
 const char kEditBookmarksEnabled[] = "bookmarks.editing_enabled";
@@ -1130,8 +1142,14 @@ const char kPinnedTabs[] = "pinned_tabs";
 #endif
 
 #if defined(OS_ANDROID)
-// Boolean that controls the enabled-state of Geolocation.
+// Boolean that controls the enabled-state of Geolocation in content.
 const char kGeolocationEnabled[] = "geolocation.enabled";
+#endif
+
+#if defined(ENABLE_GOOGLE_NOW)
+// Boolean that is true when Google services can use the user's location.
+const char kGoogleGeolocationAccessEnabled[] =
+    "googlegeolocationaccess.enabled";
 #endif
 
 // The default audio capture device used by the Media content setting.
@@ -1333,18 +1351,6 @@ const char kProfileMetrics[] = "user_experience_metrics.profiles";
 // path kProfileMetrics. The individual metrics are placed under the path
 // kProfileMetrics.kProfilePrefix<hashed-profile-id>.
 const char kProfilePrefix[] = "profile-";
-
-// Reset Profile Data dialog preferences
-const char kResetDefaultSearchEngine[] =
-    "browser.reset_profile_settings.default_search_engine";
-const char kResetHomepage[] = "browser.reset_profile_settings.homepage";
-const char kResetContentSettings[] =
-    "browser.reset_profile_settings.content_settings";
-const char kResetCookiesAndSiteData[] =
-    "browser.reset_profile_settings.cookies_and_site_data";
-const char kResetExtensions[] = "browser.reset_profile_settings.extensions";
-const char kResetExtensionsHandling[] =
-    "browser.reset_profile_settings.extensions_handling";
 
 // True if the previous run of the program exited cleanly.
 const char kStabilityExitedCleanly[] =

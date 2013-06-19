@@ -5,7 +5,7 @@
 #ifndef UI_MESSAGE_CENTER_VIEWS_MESSAGE_VIEW_H_
 #define UI_MESSAGE_CENTER_VIEWS_MESSAGE_VIEW_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/insets.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/notification.h"
@@ -39,6 +39,9 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
 
   // Returns the insets for the shadow it will have for rich notification.
   static gfx::Insets GetShadowInsets();
+
+  // Creates a shadow around the notification.
+  void CreateShadowBorder();
 
   bool IsCloseButtonFocused();
   void RequestFocusOnCloseButton();

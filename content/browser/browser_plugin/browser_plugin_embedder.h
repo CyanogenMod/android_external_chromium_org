@@ -19,7 +19,7 @@
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
 
 struct BrowserPluginHostMsg_Attach_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
@@ -35,6 +35,7 @@ class BrowserPluginGuestManager;
 class BrowserPluginHostFactory;
 class RenderWidgetHostImpl;
 class WebContentsImpl;
+struct NativeWebKeyboardEvent;
 
 class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
  public:
@@ -51,7 +52,13 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
       const WebContents::GetRenderViewHostCallback& callback);
 
   // Called when embedder's |rwh| has sent screen rects to renderer.
-  void DidSendScreenRects(RenderWidgetHostImpl* rwh);
+  void DidSendScreenRects();
+
+  // Called when embedder's WebContentsImpl has unhandled keyboard input.
+  // Returns whether the BrowserPlugin has handled the keyboard event.
+  // Currently we are only interested in checking for the escape key to
+  // unlock hte guest's pointer lock.
+  bool HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
 
   // Overrides factory for testing. Default (NULL) value indicates regular
   // (non-test) environment.

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/hash_pair.h"
@@ -32,13 +32,13 @@ class CC_EXPORT PictureLayerTilingClient {
     gfx::Rect content_rect) = 0;
   virtual void UpdatePile(Tile* tile) = 0;
   virtual gfx::Size CalculateTileSize(
-    gfx::Size content_bounds) = 0;
+    gfx::Size content_bounds) const = 0;
   virtual const Region* GetInvalidation() = 0;
   virtual const PictureLayerTiling* GetTwinTiling(
       const PictureLayerTiling* tiling) = 0;
 
   // This is on the client so tests can override behaviour.
-  virtual bool TileHasText(Tile* tile);
+  virtual bool TileMayHaveLCDText(Tile* tile);
 
  protected:
   virtual ~PictureLayerTilingClient() {}

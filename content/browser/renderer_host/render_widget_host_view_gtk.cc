@@ -37,10 +37,9 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/gtk/WebInputEventFactory.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/x11/WebScreenInfoFactory.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebScreenInfo.h"
+#include "third_party/WebKit/public/web/gtk/WebInputEventFactory.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/text/text_elider.h"
@@ -836,9 +835,9 @@ void RenderWidgetHostViewGtk::SetIsLoading(bool is_loading) {
     ShowCurrentCursor();
 }
 
-void RenderWidgetHostViewGtk::TextInputStateChanged(
-    const ViewHostMsg_TextInputState_Params& params) {
-  im_context_->UpdateInputMethodState(params.type, params.can_compose_inline);
+void RenderWidgetHostViewGtk::TextInputTypeChanged(ui::TextInputType type,
+                                                   bool can_compose_inline) {
+  im_context_->UpdateInputMethodState(type, can_compose_inline);
 }
 
 void RenderWidgetHostViewGtk::ImeCancelComposition() {

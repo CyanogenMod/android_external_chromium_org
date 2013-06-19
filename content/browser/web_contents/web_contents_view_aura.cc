@@ -31,7 +31,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_view_delegate.h"
 #include "content/public/browser/web_drag_dest_delegate.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/drag_drop_delegate.h"
@@ -262,7 +262,7 @@ void PrepareWebDropData(WebDropData* drop_data,
   string16 plain_text;
   data.GetString(&plain_text);
   if (!plain_text.empty())
-    drop_data->text = NullableString16(plain_text, false);
+    drop_data->text = base::NullableString16(plain_text, false);
 
   GURL url;
   string16 url_title;
@@ -276,7 +276,7 @@ void PrepareWebDropData(WebDropData* drop_data,
   GURL html_base_url;
   data.GetHtml(&html, &html_base_url);
   if (!html.empty())
-    drop_data->html = NullableString16(html, false);
+    drop_data->html = base::NullableString16(html, false);
   if (html_base_url.is_valid())
     drop_data->html_base_url = html_base_url;
 
@@ -497,8 +497,8 @@ class WebContentsViewAura::WindowObserver
   }
 
   // Overridden RootWindowObserver:
-  virtual void OnRootWindowMoved(const aura::RootWindow* root,
-                                 const gfx::Point& new_origin) OVERRIDE {
+  virtual void OnRootWindowHostMoved(const aura::RootWindow* root,
+                                     const gfx::Point& new_origin) OVERRIDE {
     // This is for the desktop case (i.e. Aura desktop).
     SendScreenRects();
   }
@@ -720,7 +720,7 @@ void WebContentsViewAura::PrepareOverscrollWindow() {
   overscroll_window_->SetBounds(bounds);
   overscroll_window_->Show();
 
-  overscroll_shadow_.reset(new ShadowLayerDelegate(animate_window));
+  overscroll_shadow_.reset(new ShadowLayerDelegate(animate_window->layer()));
 }
 
 void WebContentsViewAura::PrepareContentWindowForOverscroll() {
@@ -1054,11 +1054,9 @@ void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
 ////////////////////////////////////////////////////////////////////////////////
 // WebContentsViewAura, RenderViewHostDelegateView implementation:
 
-void WebContentsViewAura::ShowContextMenu(
-    const ContextMenuParams& params,
-    ContextMenuSourceType type) {
+void WebContentsViewAura::ShowContextMenu(const ContextMenuParams& params) {
   if (delegate_)
-    delegate_->ShowContextMenu(params, type);
+    delegate_->ShowContextMenu(params);
   if (touch_editable_)
     touch_editable_->EndTouchEditing();
 

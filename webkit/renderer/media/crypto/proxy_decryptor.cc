@@ -12,8 +12,8 @@
 
 #if defined(ENABLE_PEPPER_CDMS)
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerClient.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebMediaPlayerClient.h"
 #include "webkit/renderer/media/crypto/ppapi_decryptor.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppapi_webplugin_impl.h"
@@ -37,17 +37,17 @@ static scoped_refptr<webkit::ppapi::PluginInstance> CreateHelperPlugin(
   if (!web_plugin)
     return NULL;
 
-  DCHECK(!web_plugin->isPlaceholder());  // Prevented by WebKit.
+  DCHECK(!web_plugin->isPlaceholder());  // Prevented by Blink.
   // Only Pepper plugins are supported, so it must be a ppapi object.
   webkit::ppapi::WebPluginImpl* ppapi_plugin =
       static_cast<webkit::ppapi::WebPluginImpl*>(web_plugin);
   return ppapi_plugin->instance();
 }
 
-static void DestroyHelperPlugin(
-    WebKit::WebMediaPlayerClient* web_media_player_client) {
-  web_media_player_client->closeHelperPlugin();
+void ProxyDecryptor::DestroyHelperPlugin() {
+  web_media_player_client_->closeHelperPlugin();
 }
+
 #endif  // defined(ENABLE_PEPPER_CDMS)
 
 ProxyDecryptor::ProxyDecryptor(
@@ -59,7 +59,6 @@ ProxyDecryptor::ProxyDecryptor(
     const media::NeedKeyCB& need_key_cb)
     : web_media_player_client_(web_media_player_client),
       web_frame_(web_frame),
-      did_create_helper_plugin_(false),
       key_added_cb_(key_added_cb),
       key_error_cb_(key_error_cb),
       key_message_cb_(key_message_cb),
@@ -73,13 +72,6 @@ ProxyDecryptor::~ProxyDecryptor() {
     base::AutoLock auto_lock(lock_);
     decryptor_.reset();
   }
-
-#if defined(ENABLE_PEPPER_CDMS)
-  if (did_create_helper_plugin_)
-    DestroyHelperPlugin(web_media_player_client_);
-#endif
-
-  web_media_player_client_ = NULL;  // We should be done using it now.
 }
 
 // TODO(xhwang): Support multiple decryptor notification request (e.g. from
@@ -107,27 +99,25 @@ void ProxyDecryptor::SetDecryptorReadyCB(
   decryptor_ready_cb_ = decryptor_ready_cb;
 }
 
-bool ProxyDecryptor::GenerateKeyRequest(const std::string& key_system,
-                                        const std::string& type,
-                                        const uint8* init_data,
-                                        int init_data_length) {
-  // We do not support run-time switching of decryptors. GenerateKeyRequest()
-  // only creates a new decryptor when |decryptor_| is not initialized.
-  DVLOG(1) << "GenerateKeyRequest: key_system = " << key_system;
+bool ProxyDecryptor::InitializeCDM(const std::string& key_system) {
+  DVLOG(1) << "InitializeCDM: key_system = " << key_system;
 
   base::AutoLock auto_lock(lock_);
 
-  if (!decryptor_) {
-    decryptor_ = CreateDecryptor(key_system);
-    if (!decryptor_) {
-      key_error_cb_.Run(
-          key_system, std::string(), media::MediaKeys::kClientError, 0);
-      return false;
-    }
-  }
+  DCHECK(!decryptor_);
+  decryptor_ = CreateDecryptor(key_system);
+
+  return decryptor_ != NULL;
+}
+
+
+bool ProxyDecryptor::GenerateKeyRequest(const std::string& type,
+                                        const uint8* init_data,
+                                        int init_data_length) {
+  DCHECK(decryptor_);
 
   if (!decryptor_->GetMediaKeys()->GenerateKeyRequest(
-      key_system, type, init_data, init_data_length)) {
+      type, init_data, init_data_length)) {
     decryptor_.reset();
     return false;
   }
@@ -138,8 +128,7 @@ bool ProxyDecryptor::GenerateKeyRequest(const std::string& key_system,
   return true;
 }
 
-void ProxyDecryptor::AddKey(const std::string& key_system,
-                            const uint8* key,
+void ProxyDecryptor::AddKey(const uint8* key,
                             int key_length,
                             const uint8* init_data,
                             int init_data_length,
@@ -148,15 +137,14 @@ void ProxyDecryptor::AddKey(const std::string& key_system,
 
   // WebMediaPlayerImpl ensures GenerateKeyRequest() has been called.
   decryptor_->GetMediaKeys()->AddKey(
-      key_system, key, key_length, init_data, init_data_length, session_id);
+      key, key_length, init_data, init_data_length, session_id);
 }
 
-void ProxyDecryptor::CancelKeyRequest(const std::string& key_system,
-                                      const std::string& session_id) {
+void ProxyDecryptor::CancelKeyRequest(const std::string& session_id) {
   DVLOG(1) << "CancelKeyRequest()";
 
   // WebMediaPlayerImpl ensures GenerateKeyRequest() has been called.
-  decryptor_->GetMediaKeys()->CancelKeyRequest(key_system, session_id);
+  decryptor_->GetMediaKeys()->CancelKeyRequest(session_id);
 }
 
 #if defined(ENABLE_PEPPER_CDMS)
@@ -169,18 +157,26 @@ scoped_ptr<media::Decryptor> ProxyDecryptor::CreatePpapiDecryptor(
   DCHECK(!plugin_type.empty());
   const scoped_refptr<webkit::ppapi::PluginInstance>& plugin_instance =
       CreateHelperPlugin(plugin_type, web_media_player_client_, web_frame_);
-  did_create_helper_plugin_ = plugin_instance.get() != NULL;
-  if (!did_create_helper_plugin_) {
+  if (!plugin_instance.get()) {
     DVLOG(1) << "ProxyDecryptor: plugin instance creation failed.";
     return scoped_ptr<media::Decryptor>();
   }
 
-  return scoped_ptr<media::Decryptor>(new PpapiDecryptor(
+  scoped_ptr<webkit_media::PpapiDecryptor> decryptor = PpapiDecryptor::Create(
+      key_system,
       plugin_instance,
       base::Bind(&ProxyDecryptor::KeyAdded, weak_ptr_factory_.GetWeakPtr()),
       base::Bind(&ProxyDecryptor::KeyError, weak_ptr_factory_.GetWeakPtr()),
       base::Bind(&ProxyDecryptor::KeyMessage, weak_ptr_factory_.GetWeakPtr()),
-      base::Bind(&ProxyDecryptor::NeedKey, weak_ptr_factory_.GetWeakPtr())));
+      base::Bind(&ProxyDecryptor::NeedKey, weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&ProxyDecryptor::DestroyHelperPlugin,
+                 weak_ptr_factory_.GetWeakPtr()));
+
+  if (!decryptor)
+    DestroyHelperPlugin();
+  // Else the new object will call destroy_plugin_cb to destroy Helper Plugin.
+
+  return scoped_ptr<media::Decryptor>(decryptor.Pass());
 }
 #endif  // defined(ENABLE_PEPPER_CDMS)
 
@@ -203,32 +199,27 @@ scoped_ptr<media::Decryptor> ProxyDecryptor::CreateDecryptor(
 #endif  // defined(ENABLE_PEPPER_CDMS)
 }
 
-void ProxyDecryptor::KeyAdded(const std::string& key_system,
-                              const std::string& session_id) {
-  key_added_cb_.Run(key_system, session_id);
+void ProxyDecryptor::KeyAdded(const std::string& session_id) {
+  key_added_cb_.Run(session_id);
 }
 
-void ProxyDecryptor::KeyError(const std::string& key_system,
-                              const std::string& session_id,
+void ProxyDecryptor::KeyError(const std::string& session_id,
                               media::MediaKeys::KeyError error_code,
                               int system_code) {
-  key_error_cb_.Run(key_system, session_id, error_code, system_code);
+  key_error_cb_.Run(session_id, error_code, system_code);
 }
 
-void ProxyDecryptor::KeyMessage(const std::string& key_system,
-                                const std::string& session_id,
+void ProxyDecryptor::KeyMessage(const std::string& session_id,
                                 const std::string& message,
                                 const std::string& default_url) {
-  key_message_cb_.Run(key_system, session_id, message, default_url);
+  key_message_cb_.Run(session_id, message, default_url);
 }
 
-void ProxyDecryptor::NeedKey(const std::string& key_system,
-                             const std::string& session_id,
+void ProxyDecryptor::NeedKey(const std::string& session_id,
                              const std::string& type,
                              scoped_ptr<uint8[]> init_data,
                              int init_data_size) {
-  need_key_cb_.Run(key_system, session_id, type,
-                   init_data.Pass(), init_data_size);
+  need_key_cb_.Run(session_id, type, init_data.Pass(), init_data_size);
 }
 
 }  // namespace webkit_media

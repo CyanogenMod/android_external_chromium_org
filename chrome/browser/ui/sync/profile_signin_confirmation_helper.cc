@@ -78,7 +78,7 @@ bool HasSyncedExtensions(Profile* profile) {
       // The webstore is synced so that it stays put on the new tab
       // page, but since it's installed by default we don't want to
       // consider it when determining if the profile is dirty.
-      if (extensions::sync_helper::IsSyncable(*iter) &&
+      if (extensions::sync_helper::IsSyncable(iter->get()) &&
           (*iter)->id() != extension_misc::kWebStoreAppId) {
         VLOG(1) << "ProfileSigninConfirmationHelper: "
                 << "profile contains a synced extension: " << (*iter)->id();
@@ -207,11 +207,7 @@ SkColor GetSigninConfirmationPromptBarColor(SkAlpha alpha) {
   static const SkColor kBackgroundColor =
       ui::NativeTheme::instance()->GetSystemColor(
           ui::NativeTheme::kColorId_DialogBackground);
-  unsigned char background_luminance =
-      color_utils::GetLuminanceForColor(kBackgroundColor);
-  const SkColor blend_color =
-      background_luminance < 128 ? SK_ColorWHITE : SK_ColorBLACK;
-  return color_utils::AlphaBlend(blend_color, kBackgroundColor, alpha);
+  return color_utils::BlendTowardOppositeLuminance(kBackgroundColor, alpha);
 }
 
 bool HasBeenShutdown(Profile* profile) {

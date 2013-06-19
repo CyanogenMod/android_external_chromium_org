@@ -7,12 +7,15 @@
 #include <iterator>
 
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/search_provider.h"
+#include "chrome/browser/content_settings/content_settings_provider.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_tab_helper.h"
@@ -30,6 +33,8 @@
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/content_settings_types.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/sessions/serialized_navigation_entry.h"
 #include "content/public/browser/navigation_entry.h"
@@ -320,6 +325,14 @@ bool InstantController::Update(const AutocompleteMatch& match,
       verbatim, user_input_in_progress, omnibox_popup_is_open, escape_pressed,
       is_keyword_search));
 
+  // Store the current |last_omnibox_text_| and update |last_omnibox_text_|
+  // upfront with the contents of |full_text|. Even if we do an early return,
+  // |last_omnibox_text_| will be updated.
+  string16 previous_omnibox_text = last_omnibox_text_;
+  last_omnibox_text_ = full_text;
+  last_match_was_search_ = AutocompleteMatch::IsSearchType(match.type) &&
+                           !user_text.empty();
+
   // TODO(dhollowa): Complete keyword match UI.  For now just hide suggestions.
   // http://crbug.com/153932.  Note, this early escape is happens prior to the
   // DCHECKs below because |user_text| and |full_text| have different semantics
@@ -365,9 +378,6 @@ bool InstantController::Update(const AutocompleteMatch& match,
   // query is sent to the overlay, the mode is set to "allow" further below.
   if (!extended_enabled())
     search_mode_.mode = SearchMode::MODE_DEFAULT;
-
-  last_match_was_search_ = AutocompleteMatch::IsSearchType(match.type) &&
-                           !user_text.empty();
 
   // In non extended mode, Instant is disabled for URLs and keyword mode.
   if (!extended_enabled() &&
@@ -440,7 +450,6 @@ bool InstantController::Update(const AutocompleteMatch& match,
         // Enter, we'll send the correct query to instant_tab_->Submit(). If the
         // partial text is not a query (|last_match_was_search_| is false), we
         // won't Submit(), so no need to worry about that.
-        last_omnibox_text_ = full_text;
         last_user_text_ = user_text;
         last_suggestion_ = InstantSuggestion();
       }
@@ -472,21 +481,22 @@ bool InstantController::Update(const AutocompleteMatch& match,
   bool reused_suggestion = false;
   if (last_suggestion_.behavior == INSTANT_COMPLETE_NEVER &&
       !last_omnibox_text_has_inline_autocompletion_) {
-    if (StartsWith(last_omnibox_text_, full_text, false)) {
+    if (StartsWith(previous_omnibox_text, full_text, false))  {
       // The user is backspacing away characters.
-      last_suggestion_.text.insert(0, last_omnibox_text_, full_text.size(),
-          last_omnibox_text_.size() - full_text.size());
+      last_suggestion_.text.insert(0, previous_omnibox_text, full_text.size(),
+          previous_omnibox_text.size() - full_text.size());
       reused_suggestion = true;
-    } else if (StartsWith(full_text, last_omnibox_text_, false)) {
+    } else if (StartsWith(full_text, previous_omnibox_text, false)) {
       // The user is typing forward. Normalize any added characters.
       reused_suggestion = NormalizeAndStripPrefix(&last_suggestion_.text,
-          string16(full_text, last_omnibox_text_.size()));
+          string16(full_text, previous_omnibox_text.size()));
     }
   }
   if (!reused_suggestion)
     last_suggestion_ = InstantSuggestion();
 
-  last_omnibox_text_ = full_text;
+  // TODO(kmadhusu): Investigate whether it's possible to update
+  // |last_user_text_| at the beginning of this function.
   last_user_text_ = user_text;
 
   if (!extended_enabled()) {
@@ -540,7 +550,7 @@ bool InstantController::WillFetchCompletions() const {
 scoped_ptr<content::WebContents> InstantController::ReleaseNTPContents() {
   if (!extended_enabled() || !browser_->profile() ||
       browser_->profile()->IsOffTheRecord())
-    return scoped_ptr<content::WebContents>(NULL);
+    return scoped_ptr<content::WebContents>();
 
   LOG_INSTANT_DEBUG_EVENT(this, "ReleaseNTPContents");
 
@@ -976,8 +986,15 @@ void InstantController::OmniboxFocusChanged(
   if (extended_enabled()) {
     if (overlay_)
       overlay_->FocusChanged(omnibox_focus_state_, reason);
-    if (instant_tab_)
+
+    if (instant_tab_) {
       instant_tab_->FocusChanged(omnibox_focus_state_, reason);
+      // Don't send oninputstart/oninputend updates in response to focus changes
+      // if there's a navigation in progress. This prevents Chrome from sending
+      // a spurious oninputend when the user accepts a match in the omnibox.
+      if (instant_tab_->contents()->GetController().GetPendingEntry() == NULL)
+        instant_tab_->SetInputInProgress(IsInputInProgress());
+    }
   }
 
   if (state == OMNIBOX_FOCUS_VISIBLE && old_focus_state == OMNIBOX_FOCUS_NONE) {
@@ -1008,6 +1025,9 @@ void InstantController::SearchModeChanged(const SearchMode& old_mode,
     HideOverlay();
 
   ResetInstantTab();
+
+  if (instant_tab_ && old_mode.is_ntp() != new_mode.is_ntp())
+    instant_tab_->SetInputInProgress(IsInputInProgress());
 }
 
 void InstantController::ActiveTabChanged() {
@@ -1573,25 +1593,25 @@ void InstantController::ReloadStaleNTP() {
 }
 
 bool InstantController::ShouldSwitchToLocalNTP() const {
-  if (!ntp_)
+  if (!ntp())
+    return true;
+
+  // Assume users with Javascript disabled do not want the online experience.
+  if (!IsJavascriptEnabled())
     return true;
 
   // Already a local page. Not calling IsLocal() because we want to distinguish
   // between the Google-specific and generic local NTP.
-  if (extended_enabled() && ntp_->instant_url() == GetLocalInstantURL())
+  if (extended_enabled() && ntp()->instant_url() == GetLocalInstantURL())
     return false;
 
   if (PageIsCurrent(ntp()))
     return false;
 
-  // TODO(shishir): This is not completely reliable. Find a better way to detect
-  // startup time.
-  const bool in_startup = !browser_->GetActiveWebContents();
-
   // The preloaded NTP does not support instant yet. If we're not in startup,
   // always fall back to the local NTP. If we are in startup, use the local NTP
   // (unless the finch flag to use the remote NTP is set).
-  return !(in_startup && chrome::ShouldPreferRemoteNTPOnStartup());
+  return !(InStartup() && chrome::ShouldPreferRemoteNTPOnStartup());
 }
 
 void InstantController::ResetOverlay(const std::string& instant_url) {
@@ -1615,6 +1635,10 @@ InstantController::ShouldSwitchToLocalOverlay() const {
 
   if (!overlay())
     return DetermineFallbackReason(NULL, std::string());
+
+  // Assume users with Javascript disabled do not want the online experience.
+  if (!IsJavascriptEnabled())
+    return INSTANT_FALLBACK_JAVASCRIPT_DISABLED;
 
   if (overlay()->IsLocal())
     return INSTANT_FALLBACK_NONE;
@@ -1655,7 +1679,13 @@ void InstantController::UpdateInfoForInstantTab() {
     UpdateMostVisitedItems();
     instant_tab_->FocusChanged(omnibox_focus_state_,
                                omnibox_focus_change_reason_);
+    instant_tab_->SetInputInProgress(IsInputInProgress());
   }
+}
+
+bool InstantController::IsInputInProgress() const {
+  return !search_mode_.is_ntp() &&
+      omnibox_focus_state_ == OMNIBOX_FOCUS_VISIBLE;
 }
 
 void InstantController::HideOverlay() {
@@ -1852,4 +1882,28 @@ void InstantController::PopulateInstantAutocompleteResultFromMatch(
       << result->provider << " " << result->destination_url << " '"
       << result->description << "' '" << result->search_query << "' "
       << result->transition <<  " " << result->autocomplete_match_index;
+}
+
+bool InstantController::IsJavascriptEnabled() const {
+  GURL instant_url(GetInstantURL());
+  GURL origin(instant_url.GetOrigin());
+  ContentSetting js_setting = profile()->GetHostContentSettingsMap()->
+      GetContentSetting(origin, origin, CONTENT_SETTINGS_TYPE_JAVASCRIPT,
+                        NO_RESOURCE_IDENTIFIER);
+  // Javascript can be disabled either in content settings or via a WebKit
+  // preference, so check both. Disabling it through the Settings page affects
+  // content settings. I'm not sure how to disable the WebKit preference, but
+  // it's theoretically possible some users have it off.
+  bool js_content_enabled =
+      js_setting == CONTENT_SETTING_DEFAULT ||
+      js_setting == CONTENT_SETTING_ALLOW;
+  bool js_webkit_enabled = profile()->GetPrefs()->GetBoolean(
+      prefs::kWebKitJavascriptEnabled);
+  return js_content_enabled && js_webkit_enabled;
+}
+
+bool InstantController::InStartup() const {
+  // TODO(shishir): This is not completely reliable. Find a better way to detect
+  // startup time.
+  return !browser_->GetActiveWebContents();
 }

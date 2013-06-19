@@ -11,10 +11,10 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/timer.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
@@ -76,8 +76,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void EnableSendQueue() OVERRIDE;
   virtual bool Init() OVERRIDE;
   virtual int GetNextRoutingID() OVERRIDE;
-  virtual void SimulateSwapOutACK(const ViewMsg_SwapOut_Params& params)
-      OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
                                       IPC::Message* msg) OVERRIDE;
@@ -128,6 +126,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched() OVERRIDE;
 
+  // Tells the ResourceDispatcherHost to resume a deferred navigation without
+  // transferring it to a new renderer process.
+  void ResumeDeferredNavigation(const GlobalRequestID& request_id);
+
   // Call this function when it is evident that the child process is actively
   // performing some operation, for example if we just received an IPC message.
   void mark_child_process_activity_time() {
@@ -155,12 +157,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   static bool IsSuitableHost(RenderProcessHost* host,
                              BrowserContext* browser_context,
                              const GURL& site_url);
-
-  // Returns whether the process-per-site model is in use (globally or just for
-  // the current site), in which case we should ensure there is only one
-  // RenderProcessHost per site for the entire browser context.
-  static bool ShouldUseProcessPerSite(BrowserContext* browser_context,
-                                      const GURL& url);
 
   // Returns an existing RenderProcessHost for |url| in |browser_context|,
   // if one exists.  Otherwise a new RenderProcessHost should be created and
@@ -309,15 +305,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Records the last time we regarded the child process active.
   base::TimeTicks child_process_activity_time_;
-
-#if defined(OS_ANDROID)
-  // Android WebView needs to use a SyncChannel to block the browser process
-  // for synchronous find-in-page API support. In that case the shutdown event
-  // makes no sense as the Android port doesn't shutdown, but gets killed.
-  // SyncChannel still expects a shutdown event, so create a dummy one that
-  // will never will be signaled.
-  base::WaitableEvent dummy_shutdown_event_;
-#endif
 
   // Indicates whether this is a RenderProcessHost that has permission to embed
   // Browser Plugins.

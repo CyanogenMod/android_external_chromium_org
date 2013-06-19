@@ -7,15 +7,14 @@
 #include <map>
 #include <string>
 
-#include "net/base/mime_util.h"
-#include "net/base/platform_mime_util.h"
-
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "net/base/mime_util.h"
+#include "net/base/platform_mime_util.h"
 
 using std::string;
 
@@ -306,6 +305,7 @@ static const char* const common_media_codecs[] = {
 #endif
   "vorbis",
   "vp8",
+  "vp9",
   "1"  // WAVE_FORMAT_PCM.
 };
 
@@ -411,7 +411,7 @@ struct MediaFormatStrict {
 };
 
 static const MediaFormatStrict format_codec_mappings[] = {
-  { "video/webm", "vorbis,vp8,vp8.0" },
+  { "video/webm", "vorbis,vp8,vp8.0,vp9,vp9.0" },
   { "audio/webm", "vorbis" },
   { "audio/wav", "1" }
 };

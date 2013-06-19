@@ -9,7 +9,7 @@
 #include "base/time.h"
 #include "components/autofill/browser/autofill_type.h"
 #include "components/autofill/browser/form_structure.h"
-#include "components/autofill/common/form_data.h"
+#include "components/autofill/core/common/form_data.h"
 
 namespace autofill {
 
@@ -443,6 +443,10 @@ void AutofillMetrics::LogAutocheckoutDuration(
     AutocheckoutCompletionStatus status) const {
   std::string suffix;
   switch (status) {
+    case AUTOCHECKOUT_CANCELLED:
+      suffix = "Cancelled";
+      break;
+
     case AUTOCHECKOUT_FAILED:
       suffix = "Failed";
       break;

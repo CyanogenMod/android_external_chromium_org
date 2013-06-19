@@ -37,10 +37,10 @@
 #include "ipc/ipc_channel_handle.h"
 #include "net/base/mime_util.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/platform/WebDragData.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/gfx/blit.h"
@@ -920,12 +920,10 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   if (!render_view_)
     return;
 
-  ViewHostMsg_TextInputState_Params params;
-  params.type = static_cast<ui::TextInputType>(input_type);
-  params.can_compose_inline = true;
-  render_view_->Send(new ViewHostMsg_TextInputStateChanged(
+  render_view_->Send(new ViewHostMsg_TextInputTypeChanged(
       render_view_->routing_id(),
-      params));
+      static_cast<ui::TextInputType>(input_type),
+      true));
 
   ViewHostMsg_SelectionBounds_Params bounds_params;
   bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;

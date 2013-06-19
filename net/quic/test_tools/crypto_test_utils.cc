@@ -4,6 +4,7 @@
 
 #include "net/quic/test_tools/crypto_test_utils.h"
 
+#include "net/quic/crypto/channel_id.h"
 #include "net/quic/crypto/common_cert_set.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_server_config.h"
@@ -190,6 +191,12 @@ int CryptoTestUtils::HandshakeWithFakeClient(
   CommunicateHandshakeMessages(client_conn, &client, server_conn, server);
 
   CompareClientAndServerKeys(&client, server);
+
+  if (options.channel_id_enabled) {
+    EXPECT_EQ(crypto_config.channel_id_signer()->GetKeyForHostname(
+                  "test.example.com"),
+              server->crypto_negotiated_params().channel_id);
+  }
 
   return client.num_sent_client_hellos();
 }
@@ -444,6 +451,19 @@ CryptoHandshakeMessage CryptoTestUtils::BuildMessage(const char* message_tag,
       break;
     }
 
+    if (tagstr[0] == '$') {
+      // Special value.
+      const char* const special = tagstr + 1;
+      if (strcmp(special, "padding") == 0) {
+        const int min_bytes = va_arg(ap, int);
+        msg.set_minimum_size(min_bytes);
+      } else {
+        CHECK(false) << "Unknown special value: " << special;
+      }
+
+      continue;
+    }
+
     const QuicTag tag = ParseTag(tagstr);
     const char* valuestr = va_arg(ap, const char*);
 
@@ -471,7 +491,14 @@ CryptoHandshakeMessage CryptoTestUtils::BuildMessage(const char* message_tag,
     msg.SetStringPiece(tag, valuestr);
   }
 
-  return msg;
+  // The CryptoHandshakeMessage needs to be serialized and parsed to ensure
+  // that any padding is included.
+  scoped_ptr<QuicData> bytes(CryptoFramer::ConstructHandshakeMessage(msg));
+  scoped_ptr<CryptoHandshakeMessage> parsed(
+      CryptoFramer::ParseMessage(bytes->AsStringPiece()));
+  CHECK(parsed.get());
+
+  return *parsed;
 }
 
 }  // namespace test

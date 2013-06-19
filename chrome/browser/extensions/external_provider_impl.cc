@@ -63,22 +63,20 @@ const char ExternalProviderImpl::kIsBookmarkApp[] = "is_bookmark_app";
 const char ExternalProviderImpl::kIsFromWebstore[] = "is_from_webstore";
 const char ExternalProviderImpl::kKeepIfPresent[] = "keep_if_present";
 
-ExternalProviderImpl::ExternalProviderImpl(
-    VisitorInterface* service,
-    ExternalLoader* loader,
-    Profile* profile,
-    Manifest::Location crx_location,
-    Manifest::Location download_location,
-    int creation_flags)
-  : crx_location_(crx_location),
-    download_location_(download_location),
-    service_(service),
-    prefs_(NULL),
-    ready_(false),
-    loader_(loader),
-    profile_(profile),
-    creation_flags_(creation_flags),
-    auto_acknowledge_(false) {
+ExternalProviderImpl::ExternalProviderImpl(VisitorInterface* service,
+                                           ExternalLoader* loader,
+                                           Profile* profile,
+                                           Manifest::Location crx_location,
+                                           Manifest::Location download_location,
+                                           int creation_flags)
+    : crx_location_(crx_location),
+      download_location_(download_location),
+      service_(service),
+      ready_(false),
+      loader_(loader),
+      profile_(profile),
+      creation_flags_(creation_flags),
+      auto_acknowledge_(false) {
   loader_->Init(this);
 }
 
@@ -381,7 +379,7 @@ void ExternalProviderImpl::CreateExternalProviders(
   is_chromeos_demo_session =
       user_manager && user_manager->IsLoggedInAsDemoUser() &&
       g_browser_process->browser_policy_connector()->GetDeviceMode() ==
-          policy::DEVICE_MODE_KIOSK;
+          policy::DEVICE_MODE_RETAIL_KIOSK;
   bundled_extension_creation_flags = Extension::FROM_WEBSTORE |
       Extension::WAS_INSTALLED_BY_DEFAULT;
 #endif

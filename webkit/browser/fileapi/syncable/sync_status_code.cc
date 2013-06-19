@@ -9,7 +9,7 @@
 
 namespace sync_file_system {
 
-std::string SyncStatusCodeToString(SyncStatusCode status) {
+const char* SyncStatusCodeToString(SyncStatusCode status) {
   switch (status) {
     case SYNC_STATUS_OK:
       return "OK.";
@@ -84,6 +84,8 @@ std::string SyncStatusCodeToString(SyncStatusCode status) {
       return "Sync: file not modified.";
     case SYNC_STATUS_SYNC_DISABLED:
       return "Sync: sync is disabled.";
+    case SYNC_STATUS_ACCESS_FORBIDDEN:
+      return "Sync: service access forbidden.";
   }
   NOTREACHED();
   return "Unknown error.";

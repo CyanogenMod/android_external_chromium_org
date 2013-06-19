@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
-#include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -21,6 +21,7 @@
 
 namespace base {
 class SingleThreadTaskRunner;
+class TaskRunner;
 }
 
 namespace disk_cache {
@@ -47,6 +48,8 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   virtual ~SimpleBackendImpl();
 
   SimpleIndex* index() { return index_.get(); }
+
+  base::TaskRunner* worker_pool() { return worker_pool_.get(); }
 
   // Must run on IO Thread.
   int Init(const CompletionCallback& completion_callback);
@@ -117,6 +120,7 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   const base::FilePath path_;
   scoped_ptr<SimpleIndex> index_;
   const scoped_refptr<base::SingleThreadTaskRunner> cache_thread_;
+  scoped_refptr<base::TaskRunner> worker_pool_;
 
   int orig_max_size_;
 

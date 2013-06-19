@@ -13,7 +13,11 @@
 #include "base/memory/weak_ptr.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/storage/webkit_storage_export.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
+
+namespace net {
+class URLRequestContext;
+}
 
 namespace fileapi {
 
@@ -33,7 +37,7 @@ class FileSystemContext;
 // by filesystems which implement LocalFileSystemOperation.
 // If they are called on other filesystems
 // base::PLATFORM_FILE_ERROR_INVALID_OPERATION is returned via callback.
-class WEBKIT_STORAGE_EXPORT FileSystemOperationRunner
+class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
     : public base::SupportsWeakPtr<FileSystemOperationRunner> {
  public:
   typedef FileSystemOperation::GetMetadataCallback GetMetadataCallback;
@@ -233,8 +237,7 @@ class WEBKIT_STORAGE_EXPORT FileSystemOperationRunner
   void DidGetMetadata(OperationID id,
                       const GetMetadataCallback& callback,
                       base::PlatformFileError rv,
-                      const base::PlatformFileInfo& file_info,
-                      const base::FilePath& platform_path);
+                      const base::PlatformFileInfo& file_info);
   void DidReadDirectory(OperationID id,
                         const ReadDirectoryCallback& callback,
                         base::PlatformFileError rv,

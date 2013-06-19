@@ -14,15 +14,16 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_counters.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/version.h"
 #include "base/win/iat_patch_function.h"
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/base/win/dpi.h"
 #include "ui/base/win/hwnd_util.h"
 #include "webkit/common/cursors/webcursor.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
@@ -826,13 +827,15 @@ bool WebPluginDelegateImpl::CreateDummyWindowForActivation() {
 }
 
 bool WebPluginDelegateImpl::WindowedReposition(
-    const gfx::Rect& window_rect,
-    const gfx::Rect& clip_rect) {
+    const gfx::Rect& window_rect_in_dip,
+    const gfx::Rect& clip_rect_in_dip) {
   if (!windowed_handle_) {
     NOTREACHED();
     return false;
   }
 
+  gfx::Rect window_rect = ui::win::DIPToScreenRect(window_rect_in_dip);
+  gfx::Rect clip_rect = ui::win::DIPToScreenRect(clip_rect_in_dip);
   if (window_rect_ == window_rect && clip_rect_ == clip_rect)
     return false;
 
@@ -1024,7 +1027,6 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
     // only synchronously calling RedrawWindow once at a time.
     if (old_message != custom_msg)
       flags |= RDW_UPDATENOW;
-
     RECT rect = invalid_rect.ToRECT();
     RedrawWindow(hwnd, &rect, NULL, flags);
     result = FALSE;

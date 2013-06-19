@@ -60,7 +60,7 @@
 #include "net/http/http_cache.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
+#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 #include "ui/gfx/color_profile.h"
 #include "webkit/glue/webcookie.h"
 #include "webkit/glue/webkit_glue.h"
@@ -435,6 +435,11 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
   // Windows monitor profile must be read from a file.
   if (message.type() == ViewHostMsg_GetMonitorColorProfile::ID)
     return BrowserThread::GetBlockingPool();
+#endif
+#if defined(OS_MACOSX)
+  // OSX CoreAudio calls must all happen on the main thread.
+  if (message.type() == ViewHostMsg_GetAudioHardwareConfig::ID)
+    return BrowserMainLoop::GetAudioManager()->GetMessageLoop();
 #endif
   return NULL;
 }

@@ -12,17 +12,16 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/drive/drive_api_service.h"
+#include "chrome/browser/drive/drive_uploader.h"
+#include "chrome/browser/drive/gdata_wapi_service.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/drive_api_service.h"
-#include "chrome/browser/google_apis/drive_uploader.h"
-#include "chrome/browser/google_apis/gdata_wapi_service.h"
-#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
+#include "chrome/browser/google_apis/drive_api_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/common/extensions/extension.h"
 #include "extensions/common/constants.h"
-#include "net/base/escape.h"
 #include "net/base/mime_util.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
 
@@ -44,6 +43,8 @@ const char kMimeTypeOctetStream[] = "application/octet-stream";
 const base::FilePath::CharType kDummyDrivePath[] =
     FILE_PATH_LITERAL("/dummy/drive/path");
 
+const char kFakeServerBaseUrl[] = "https://fake_server/";
+
 void EmptyGDataErrorCodeCallback(google_apis::GDataErrorCode error) {}
 
 bool HasParentLinkTo(const ScopedVector<google_apis::Link>& links,
@@ -55,10 +56,8 @@ bool HasParentLinkTo(const ScopedVector<google_apis::Link>& links,
        itr != links.end(); ++itr) {
     if ((*itr)->type() == google_apis::Link::LINK_PARENT) {
       has_parent = true;
-      std::string resource_id =
-          net::UnescapeURLComponent((*itr)->href().ExtractFileName(),
-                                    net::UnescapeRule::URL_SPECIAL_CHARS);
-      if (resource_id == parent_resource_id)
+      if (google_apis::drive::util::ExtractResourceIdFromUrl((*itr)->href()) ==
+          parent_resource_id)
         return true;
     }
   }
@@ -137,15 +136,15 @@ APIUtil::APIUtil(Profile* profile)
       drive_api_url_generator_(
           GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction)),
       upload_next_key_(0) {
-  if (IsDriveAPIEnabled()) {
-    drive_service_.reset(new google_apis::DriveAPIService(
-        profile->GetRequestContext(),
-        GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction),
-        std::string() /* custom_user_agent */));
-  } else {
+  if (IsDriveAPIDisabled()) {
     drive_service_.reset(new google_apis::GDataWapiService(
         profile->GetRequestContext(),
         GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
+        std::string() /* custom_user_agent */));
+  } else {
+    drive_service_.reset(new google_apis::DriveAPIService(
+        profile->GetRequestContext(),
+        GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction),
         std::string() /* custom_user_agent */));
   }
 
@@ -158,11 +157,13 @@ APIUtil::APIUtil(Profile* profile)
 
 scoped_ptr<APIUtil> APIUtil::CreateForTesting(
     Profile* profile,
-    const GURL& base_url,
     scoped_ptr<google_apis::DriveServiceInterface> drive_service,
     scoped_ptr<google_apis::DriveUploaderInterface> drive_uploader) {
   return make_scoped_ptr(new APIUtil(
-      profile, base_url, drive_service.Pass(), drive_uploader.Pass()));
+      profile,
+      GURL(kFakeServerBaseUrl),
+      drive_service.Pass(),
+      drive_uploader.Pass()));
 }
 
 APIUtil::APIUtil(Profile* profile,
@@ -184,7 +185,6 @@ APIUtil::~APIUtil() {
   DCHECK(CalledOnValidThread());
   net::NetworkChangeNotifier::RemoveConnectionTypeObserver(this);
   drive_service_->RemoveObserver(this);
-  drive_service_->CancelAll();
 }
 
 void APIUtil::AddObserver(APIUtilObserver* observer) {
@@ -199,7 +199,7 @@ void APIUtil::RemoveObserver(APIUtilObserver* observer) {
 
 void APIUtil::GetDriveRootResourceId(const GDataErrorCallback& callback) {
   DCHECK(CalledOnValidThread());
-  DCHECK(IsDriveAPIEnabled());
+  DCHECK(!IsDriveAPIDisabled());
   DVLOG(2) << "Getting resource id for Drive root";
 
   drive_service_->GetAboutResource(
@@ -231,7 +231,7 @@ void APIUtil::GetDriveDirectoryForSyncRoot(const ResourceIdCallback& callback) {
   if (GetRootResourceId().empty()) {
     GetDriveRootResourceId(
         base::Bind(&APIUtil::DidGetDriveRootResourceIdForGetSyncRoot,
-                                      AsWeakPtr(), callback));
+                   AsWeakPtr(), callback));
     return;
   }
 
@@ -293,6 +293,7 @@ void APIUtil::DidGetDirectory(const std::string& parent_resource_id,
   ParentType parent_type = PARENT_TYPE_DIRECTORY;
   if (parent_resource_id.empty()) {
     resource_id = GetRootResourceId();
+    DCHECK(!resource_id.empty());
     parent_type = PARENT_TYPE_ROOT_OR_EMPTY;
   } else {
     resource_id = parent_resource_id;
@@ -571,8 +572,9 @@ void APIUtil::DeleteFile(const std::string& resource_id,
 }
 
 GURL APIUtil::ResourceIdToResourceLink(const std::string& resource_id) const {
-  return IsDriveAPIEnabled() ? drive_api_url_generator_.GetFileUrl(resource_id)
-                             : wapi_url_generator_.GenerateEditUrl(resource_id);
+  return IsDriveAPIDisabled()
+      ? wapi_url_generator_.GenerateEditUrl(resource_id)
+      : drive_api_url_generator_.GetFileUrl(resource_id);
 }
 
 void APIUtil::EnsureSyncRootIsNotInMyDrive(
@@ -597,8 +599,16 @@ void APIUtil::DidGetDriveRootResourceIdForEnsureSyncRoot(
     const std::string& sync_root_resource_id,
     google_apis::GDataErrorCode error) {
   DCHECK(CalledOnValidThread());
-  // We don't have to check |error| since we can continue to process regardless
-  // of it.
+
+  if (error != google_apis::HTTP_SUCCESS) {
+    DVLOG(2) << "Error on ensuring the sync root directory is not in"
+             << " 'My Drive': " << error;
+    // Give up ensuring the sync root directory is not in 'My Drive'. This will
+    // be retried at some point.
+    return;
+  }
+
+  DCHECK(!GetRootResourceId().empty());
   EnsureSyncRootIsNotInMyDrive(sync_root_resource_id);
 }
 
@@ -935,6 +945,7 @@ void APIUtil::DidListEntriesToEnsureUniqueness(
   ParentType parent_type = PARENT_TYPE_DIRECTORY;
   if (parent_resource_id.empty()) {
     resource_id = GetRootResourceId();
+    DCHECK(!resource_id.empty());
     parent_type = PARENT_TYPE_ROOT_OR_EMPTY;
   } else {
     resource_id = parent_resource_id;
@@ -1057,11 +1068,9 @@ void APIUtil::CancelAllUploads(google_apis::GDataErrorCode error) {
 }
 
 std::string APIUtil::GetRootResourceId() const {
-  if (IsDriveAPIEnabled()) {
-    DCHECK(!root_resource_id_.empty());
-    return root_resource_id_;
-  }
-  return drive_service_->GetRootResourceId();
+  if (IsDriveAPIDisabled())
+    return drive_service_->GetRootResourceId();
+  return root_resource_id_;
 }
 
 }  // namespace drive

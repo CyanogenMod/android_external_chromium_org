@@ -19,10 +19,10 @@
 #include "components/autofill/browser/autofill_metrics.h"
 #include "components/autofill/browser/test_personal_data_manager.h"
 #include "components/autofill/browser/validation.h"
-#include "components/autofill/common/autofill_switches.h"
-#include "components/autofill/common/form_data.h"
-#include "components/autofill/common/form_field_data.h"
 #include "components/autofill/content/browser/wallet/wallet_test_util.h"
+#include "components/autofill/core/common/autofill_switches.h"
+#include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/form_field_data.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -101,14 +101,16 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   }
 
   virtual string16 InputValidityMessage(
+      DialogSection section,
       AutofillFieldType type,
-      const string16& value) const OVERRIDE {
+      const string16& value) OVERRIDE {
     return string16();
   }
 
   virtual ValidityData InputsAreValid(
+      DialogSection section,
       const DetailOutputMap& inputs,
-      ValidationType validation_type) const OVERRIDE {
+      ValidationType validation_type) OVERRIDE {
     return ValidityData();
   }
 
@@ -260,6 +262,11 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutSuccess) {
 
   EXPECT_EQ(AutofillMetrics::AUTOCHECKOUT_SUCCEEDED,
             metric_logger().autocheckout_status());
+
+  // Ensure closing the dialog doesn't fire any new metrics.
+  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
+            metric_logger().dialog_dismissal_action());
+  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
 }
 
 // Test Autocheckout failure metric.
@@ -277,11 +284,36 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutError) {
 
   EXPECT_EQ(AutofillMetrics::AUTOCHECKOUT_FAILED,
             metric_logger().autocheckout_status());
+
+  // Ensure closing the dialog doesn't fire any new metrics.
+  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
+            metric_logger().dialog_dismissal_action());
+  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
+}
+
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutCancelled) {
+  InitializeControllerOfType(DIALOG_TYPE_AUTOCHECKOUT);
+  controller()->view()->GetTestableView()->SubmitForTesting();
+
+  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
+            metric_logger().dialog_dismissal_action());
+  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
+
+  controller()->view()->GetTestableView()->CancelForTesting();
+  RunMessageLoop();
+
+  EXPECT_EQ(AutofillMetrics::AUTOCHECKOUT_CANCELLED,
+            metric_logger().autocheckout_status());
+
+  // Ensure closing the dialog doesn't fire any new metrics.
+  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
+            metric_logger().dialog_dismissal_action());
+  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
 }
 
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-  controller()->DisableWallet();
+  controller()->DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
 
   AutofillProfile full_profile(test::GetFullProfile());
   controller()->GetTestingManager()->AddTestingProfile(&full_profile);
@@ -359,7 +391,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
 // expected when Autofill is used to fill text inputs.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillComboboxFromAutofill) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-  controller()->DisableWallet();
+  controller()->DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
 
   CreditCard card1;
   test::SetCreditCardInfo(&card1, "JJ Smith", "4111111111111111", "12", "2018");
@@ -483,7 +515,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, WalletCreditCardDisabled) {
 // Ensure that expired cards trigger invalid suggestions.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, ExpiredCard) {
   InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-  controller()->DisableWallet();
+  controller()->DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
 
   CreditCard verified_card(test::GetCreditCard());
   verified_card.set_origin("Chrome settings");

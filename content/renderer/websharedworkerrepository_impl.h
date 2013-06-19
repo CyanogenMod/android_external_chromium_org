@@ -5,9 +5,8 @@
 #ifndef CONTENT_RENDERER_WEBSHAREDWORKERREPOSITORY_IMPL_H_
 #define CONTENT_RENDERER_WEBSHAREDWORKERREPOSITORY_IMPL_H_
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
-
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
+#include "third_party/WebKit/public/web/WebSharedWorkerRepository.h"
 
 namespace WebKit {
 class WebSharedWorker;

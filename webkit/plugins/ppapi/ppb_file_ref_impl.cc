@@ -6,7 +6,7 @@
 
 #include "base/files/file_util_proxy.h"
 #include "base/platform_file.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
@@ -155,8 +155,7 @@ void DidReadMetadata(
     scoped_refptr< ::ppapi::TrackedCallback> callback,
     linked_ptr<PP_FileInfo> info,
     PP_FileSystemType file_system_type,
-    const base::PlatformFileInfo& file_info,
-    const base::FilePath& unused) {
+    const base::PlatformFileInfo& file_info) {
   if (!TrackedCallback::IsPending(callback))
     return;
 

@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/json/json_file_value_serializer.h"
@@ -102,6 +103,19 @@ std::string ReadStringFromGDocFile(const base::FilePath& file_path,
   }
 
   return result;
+}
+
+// Moves all files under |directory_from| to |directory_to|.
+void MoveAllFilesFromDirectory(const base::FilePath& directory_from,
+                               const base::FilePath& directory_to) {
+  base::FileEnumerator enumerator(directory_from, false,  // not recursive
+                                  base::FileEnumerator::FILES);
+  for (base::FilePath file_from = enumerator.Next(); !file_from.empty();
+       file_from = enumerator.Next()) {
+    const base::FilePath file_to = directory_to.Append(file_from.BaseName());
+    if (!file_util::PathExists(file_to))  // Do not overwrite existing files.
+      file_util::Move(file_from, file_to);
+  }
 }
 
 }  // namespace
@@ -277,37 +291,42 @@ std::string NormalizeFileName(const std::string& input) {
 
 void ParseCacheFilePath(const base::FilePath& path,
                         std::string* resource_id,
-                        std::string* md5,
-                        std::string* extra_extension) {
+                        std::string* md5) {
   DCHECK(resource_id);
   DCHECK(md5);
-  DCHECK(extra_extension);
 
-  // Extract up to two extensions from the right.
+  // Extract up to one extension from the right.
   base::FilePath base_name = path.BaseName();
-  const int kNumExtensionsToExtract = 2;
-  std::vector<base::FilePath::StringType> extensions;
-  for (int i = 0; i < kNumExtensionsToExtract; ++i) {
-    base::FilePath::StringType extension = base_name.Extension();
-    if (!extension.empty()) {
-      // base::FilePath::Extension returns ".", so strip it.
-      extension = UnescapeCacheFileName(extension.substr(1));
-      base_name = base_name.RemoveExtension();
-      extensions.push_back(extension);
-    } else {
-      break;
-    }
+  base::FilePath::StringType extension = base_name.Extension();
+  if (!extension.empty()) {
+    // base::FilePath::Extension returns ".", so strip it.
+    extension = UnescapeCacheFileName(extension.substr(1));
+    base_name = base_name.RemoveExtension();
   }
 
   // The base_name here is already stripped of extensions in the loop above.
   *resource_id = UnescapeCacheFileName(base_name.value());
+  *md5 = extension;
+}
 
-  // Assign the extracted extensions to md5 and extra_extension.
-  int extension_count = extensions.size();
-  *md5 = (extension_count > 0) ? extensions[extension_count - 1] :
-                                 std::string();
-  *extra_extension = (extension_count > 1) ? extensions[extension_count - 2] :
-                                             std::string();
+void MigrateCacheFilesFromOldDirectories(
+    const base::FilePath& cache_root_directory) {
+  const base::FilePath persistent_directory =
+      cache_root_directory.AppendASCII("persistent");
+  const base::FilePath tmp_directory =
+      cache_root_directory.AppendASCII("tmp");
+  if (!file_util::PathExists(persistent_directory))
+    return;
+
+  const base::FilePath cache_file_directory =
+      cache_root_directory.Append(kCacheFileDirectory);
+
+  // Move all files inside "persistent" to "files".
+  MoveAllFilesFromDirectory(persistent_directory, cache_file_directory);
+  file_util::Delete(persistent_directory,  true /* recursive */);
+
+  // Move all files inside "tmp" to "files".
+  MoveAllFilesFromDirectory(tmp_directory, cache_file_directory);
 }
 
 void PrepareWritableFileAndRun(Profile* profile,

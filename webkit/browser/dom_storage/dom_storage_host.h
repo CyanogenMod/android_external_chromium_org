@@ -8,10 +8,10 @@
 #include <map>
 
 #include "base/memory/ref_counted.h"
-#include "base/nullable_string16.h"
+#include "base/strings/nullable_string16.h"
 #include "base/strings/string16.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/dom_storage/dom_storage_types.h"
-#include "webkit/storage/webkit_storage_export.h"
 
 class GURL;
 
@@ -27,7 +27,7 @@ class DomStorageArea;
 // This class is single threaded, and performs blocking file reads/writes,
 // so it shouldn't be used on chrome's IO thread.
 // See class comments for DomStorageContext for a larger overview.
-class WEBKIT_STORAGE_EXPORT DomStorageHost {
+class WEBKIT_STORAGE_BROWSER_EXPORT DomStorageHost {
  public:
   explicit DomStorageHost(DomStorageContext* context);
   ~DomStorageHost();
@@ -37,11 +37,12 @@ class WEBKIT_STORAGE_EXPORT DomStorageHost {
   void CloseStorageArea(int connection_id);
   bool ExtractAreaValues(int connection_id, ValuesMap* map);
   unsigned GetAreaLength(int connection_id);
-  NullableString16 GetAreaKey(int connection_id, unsigned index);
-  NullableString16 GetAreaItem(int connection_id, const base::string16& key);
+  base::NullableString16 GetAreaKey(int connection_id, unsigned index);
+  base::NullableString16 GetAreaItem(int connection_id,
+                                     const base::string16& key);
   bool SetAreaItem(int connection_id, const base::string16& key,
                    const base::string16& value, const GURL& page_url,
-                   NullableString16* old_value);
+                   base::NullableString16* old_value);
   bool RemoveAreaItem(int connection_id, const base::string16& key,
                   const GURL& page_url,
                   base::string16* old_value);

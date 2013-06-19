@@ -155,8 +155,17 @@ bool ContentRendererClient::HandleSetCookieRequest(
   return false;
 }
 
+bool ContentRendererClient::IsPluginAllowedToCallRequestOSFileHandle(
+    WebKit::WebPluginContainer* container) const {
+  return false;
+}
+
 bool ContentRendererClient::AllowBrowserPlugin(
     WebKit::WebPluginContainer* container) const {
+  return false;
+}
+
+bool ContentRendererClient::AllowPepperMediaStreamAPI(const GURL& url) const {
   return false;
 }
 

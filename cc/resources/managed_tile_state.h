@@ -38,15 +38,9 @@ class CC_EXPORT ManagedTileState {
 
       ResourceProvider::ResourceId get_resource_id() const {
         DCHECK(mode_ == RESOURCE_MODE);
+        DCHECK(resource_);
 
-        // We have to have a resource ID here.
-        DCHECK(resource_id_);
-        // If we have a resource, it implies IDs are equal.
-        DCHECK(!resource_ || (resource_id_ == resource_->id()));
-        // If we don't have a resource, it implies that we're in forced upload.
-        DCHECK(resource_ || (resource_id_ && forced_upload_));
-
-        return resource_id_;
+        return resource_->id();
       }
 
       SkColor get_solid_color() const {
@@ -56,7 +50,8 @@ class CC_EXPORT ManagedTileState {
       }
 
       bool contents_swizzled() const {
-        return !PlatformColor::SameComponentOrder(resource_format_);
+        DCHECK(resource_);
+        return !PlatformColor::SameComponentOrder(resource_->format());
       }
 
       bool requires_resource() const {
@@ -68,11 +63,10 @@ class CC_EXPORT ManagedTileState {
 
       void SetResourceForTesting(scoped_ptr<ResourcePool::Resource> resource) {
         resource_ = resource.Pass();
-        resource_id_ = resource_->id();
       }
 
-      scoped_ptr<ResourcePool::Resource>& GetResourceForTesting() {
-        return resource_;
+      const ResourcePool::Resource* GetResourceForTesting() const {
+        return resource_.get();
       }
 
     private:
@@ -87,27 +81,22 @@ class CC_EXPORT ManagedTileState {
       void set_solid_color(const SkColor& color) {
         mode_ = SOLID_COLOR_MODE;
         solid_color_ = color;
-        resource_id_ = 0;
+      }
+
+      void set_has_text(bool has_text) {
+        has_text_ = has_text;
       }
 
       void set_rasterize_on_demand() {
         mode_ = PICTURE_PILE_MODE;
-        resource_id_ = 0;
       }
 
       Mode mode_;
       SkColor solid_color_;
-
-      // TODO(reveman): Eliminate the need for both |resource_id_|
-      // and |resource| by re-factoring the "force upload"
-      // mechanism. crbug.com/245767
-      ResourceProvider::ResourceId resource_id_;
+      bool has_text_;
       scoped_ptr<ResourcePool::Resource> resource_;
-      GLenum resource_format_;
-      bool forced_upload_;
       RasterWorkerPool::RasterTask raster_task_;
   };
-
 
   ManagedTileState();
   ~ManagedTileState();
@@ -116,10 +105,7 @@ class CC_EXPORT ManagedTileState {
 
   // Persisted state: valid all the time.
   TileVersion tile_versions[NUM_RASTER_MODES];
-  TileRasterMode raster_mode;
-
-  bool picture_pile_analyzed;
-  PicturePileImpl::Analysis picture_pile_analysis;
+  RasterMode raster_mode;
 
   // Ephemeral state, valid only during TileManager::ManageTiles.
   bool is_in_never_bin_on_both_trees() const {

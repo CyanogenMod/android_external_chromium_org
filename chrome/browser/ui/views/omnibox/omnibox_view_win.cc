@@ -1182,9 +1182,8 @@ bool OmniboxViewWin::IsCommandIdEnabled(int command_id) const {
       return !!CanCopy();
     case IDC_COPY_URL:
       return !!CanCopy() &&
-             !model()->user_input_in_progress() &&
-             (toolbar_model()->GetSearchTermsType() !=
-                 ToolbarModel::NO_SEARCH_TERMS);
+          !model()->user_input_in_progress() &&
+          toolbar_model()->WouldReplaceSearchURLWithSearchTerms();
     case IDC_PASTE:
       return !!CanPaste();
     case IDS_PASTE_AND_GO:
@@ -1422,7 +1421,7 @@ void OmniboxViewWin::OnContextMenu(HWND window, const CPoint& point) {
 
   ignore_result(context_menu_runner_->RunMenuAt(native_view_host_->GetWidget(),
       NULL, gfx::Rect(location, gfx::Size()), views::MenuItemView::TOPLEFT,
-      views::MenuRunner::HAS_MNEMONICS));
+      ui::MENU_SOURCE_MOUSE, views::MenuRunner::HAS_MNEMONICS));
 }
 
 void OmniboxViewWin::OnCopy() {

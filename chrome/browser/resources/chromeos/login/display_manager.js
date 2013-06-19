@@ -11,20 +11,20 @@
 /** @const */ var SCREEN_OOBE_EULA = 'eula';
 /** @const */ var SCREEN_OOBE_UPDATE = 'update';
 /** @const */ var SCREEN_OOBE_ENROLLMENT = 'oauth-enrollment';
+/** @const */ var SCREEN_OOBE_KIOSK_ENABLE = 'kiosk-enable';
 /** @const */ var SCREEN_GAIA_SIGNIN = 'gaia-signin';
 /** @const */ var SCREEN_ACCOUNT_PICKER = 'account-picker';
 /** @const */ var SCREEN_ERROR_MESSAGE = 'error-message';
 /** @const */ var SCREEN_USER_IMAGE_PICKER = 'user-image';
 /** @const */ var SCREEN_TPM_ERROR = 'tpm-error-message';
 /** @const */ var SCREEN_PASSWORD_CHANGED = 'password-changed';
-/** @const */ var SCREEN_CREATE_MANAGED_USER_DIALOG =
-    'managed-user-creation-dialog';
 /** @const */ var SCREEN_CREATE_MANAGED_USER_FLOW =
-    'managed-user-creation-flow';
+    'managed-user-creation';
 
 /* Accelerator identifiers. Must be kept in sync with webui_login_view.cc. */
 /** @const */ var ACCELERATOR_CANCEL = 'cancel';
 /** @const */ var ACCELERATOR_ENROLLMENT = 'enrollment';
+/** @const */ var ACCELERATOR_KIOSK_ENABLE = 'kiosk_enable';
 /** @const */ var ACCELERATOR_VERSION = 'version';
 /** @const */ var ACCELERATOR_RESET = 'reset';
 /** @const */ var ACCELERATOR_LEFT = 'left';
@@ -100,12 +100,6 @@ cr.define('cr.ui.login', function() {
     forceKeyboardFlow_: false,
 
     /**
-     * List of parameters to showScreen calls.
-     * @type {array}
-     */
-    screenParametersHistory_: [],
-
-    /**
      * Gets current screen element.
      * @type {HTMLElement}
      */
@@ -164,6 +158,12 @@ cr.define('cr.ui.login', function() {
           // This accelerator is also used to manually cancel auto-enrollment.
           if (this.currentScreen.cancelAutoEnrollment)
             this.currentScreen.cancelAutoEnrollment();
+        }
+      } else if (name == ACCELERATOR_KIOSK_ENABLE) {
+        var currentStepId = this.screens_[this.currentStep_];
+        if (currentStepId == SCREEN_GAIA_SIGNIN ||
+            currentStepId == SCREEN_ACCOUNT_PICKER) {
+          chrome.send('toggleKioskEnableScreen');
         }
       } else if (name == ACCELERATOR_VERSION) {
         if (this.allowToggleVersion_)
@@ -359,13 +359,6 @@ cr.define('cr.ui.login', function() {
     showScreen: function(screen) {
       var screenId = screen.id;
 
-      // As for now, support "back" only for create managed user screen.
-      if (screenId != SCREEN_CREATE_MANAGED_USER_DIALOG) {
-        this.screenParametersHistory_ = [];
-      }
-
-      this.screenParametersHistory_.push(screen);
-
       // Make sure the screen is decorated.
       this.preloadScreen(screen);
 
@@ -386,16 +379,6 @@ cr.define('cr.ui.login', function() {
       var index = this.getScreenIndex_(screenId);
       if (index >= 0)
         this.toggleStep_(index, data);
-    },
-
-    /**
-     * Shows the previous screen of workflow.
-     */
-    goBack: function() {
-      if (this.screenParametersHistory_.length >= 2) {
-        this.screenParametersHistory_.pop();
-        this.showScreen(this.screenParametersHistory_.pop());
-      }
     },
 
     /**

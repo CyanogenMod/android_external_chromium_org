@@ -5,15 +5,15 @@
 #ifndef WEBKIT_BROWSER_APPCACHE_APPCACHE_BACKEND_IMPL_H_
 #define WEBKIT_BROWSER_APPCACHE_APPCACHE_BACKEND_IMPL_H_
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "webkit/browser/appcache/appcache_host.h"
-#include "webkit/storage/webkit_storage_export.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace appcache {
 
 class AppCacheService;
 
-class WEBKIT_STORAGE_EXPORT AppCacheBackendImpl {
+class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheBackendImpl {
  public:
   AppCacheBackendImpl();
   ~AppCacheBackendImpl();

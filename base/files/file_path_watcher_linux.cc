@@ -17,9 +17,9 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/containers/hash_tables.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -370,7 +370,7 @@ bool FilePathWatcherImpl::Watch(const FilePath& path,
     return false;
   }
 
-  set_message_loop(base::MessageLoopProxy::current());
+  set_message_loop(base::MessageLoopProxy::current().get());
   callback_ = callback;
   target_ = path;
   MessageLoop::current()->AddDestructionObserver(this);

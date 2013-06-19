@@ -6,7 +6,7 @@
 #define CHROME_RENDERER_VALIDATION_MESSAGE_AGENT_H_
 
 #include "content/public/renderer/render_view_observer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebValidationMessageClient.h"
+#include "third_party/WebKit/public/web/WebValidationMessageClient.h"
 
 namespace content {
 class RenderView;
@@ -22,11 +22,13 @@ class ValidationMessageAgent : public content::RenderViewObserver,
 
  private:
   // WebValidationMessageClient functions:
-  virtual void showValidationMessage(const WebKit::WebRect& anchor_in_screen,
+  virtual void showValidationMessage(const WebKit::WebRect& anchor_in_root_view,
                                      const WebKit::WebString& main_text,
                                      const WebKit::WebString& sub_text,
                                      WebKit::WebTextDirection hint) OVERRIDE;
   virtual void hideValidationMessage() OVERRIDE;
+  virtual void moveValidationMessage(
+      const WebKit::WebRect& anchor_in_root_view);
 
   DISALLOW_COPY_AND_ASSIGN(ValidationMessageAgent);
 };

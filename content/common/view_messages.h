@@ -7,7 +7,8 @@
 
 #include "base/process.h"
 #include "base/shared_memory.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "content/common/browser_rendering_stats.h"
@@ -19,6 +20,7 @@
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/context_menu_params.h"
+#include "content/public/common/context_menu_source_type.h"
 #include "content/public/common/favicon_url.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/frame_navigate_params.h"
@@ -36,15 +38,15 @@
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_log_event.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebFindOptions.h"
+#include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
+#include "third_party/WebKit/public/web/WebPluginAction.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebScreenInfo.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerAction.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginAction.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
@@ -54,8 +56,8 @@
 #include "ui/gfx/vector2d.h"
 #include "ui/gfx/vector2d_f.h"
 #include "ui/shell_dialogs/selected_file_info.h"
+#include "webkit/common/webmenuitem.h"
 #include "webkit/glue/webcookie.h"
-#include "webkit/glue/webmenuitem.h"
 #include "webkit/plugins/npapi/webplugin.h"
 
 #if defined(OS_MACOSX)
@@ -76,6 +78,7 @@ IPC_ENUM_TRAITS(WebKit::WebPopupType)
 IPC_ENUM_TRAITS(WebKit::WebTextDirection)
 IPC_ENUM_TRAITS(WebMenuItem::Type)
 IPC_ENUM_TRAITS(WindowContainerType)
+IPC_ENUM_TRAITS(content::ContextMenuSourceType)
 IPC_ENUM_TRAITS(content::FaviconURL::IconType)
 IPC_ENUM_TRAITS(content::FileChooserParams::Mode)
 IPC_ENUM_TRAITS(content::JavaScriptMessageType)
@@ -184,6 +187,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(referrer_policy)
   IPC_STRUCT_TRAITS_MEMBER(custom_context)
   IPC_STRUCT_TRAITS_MEMBER(custom_items)
+  IPC_STRUCT_TRAITS_MEMBER(source_type)
 #if defined(OS_ANDROID)
   IPC_STRUCT_TRAITS_MEMBER(selection_start)
   IPC_STRUCT_TRAITS_MEMBER(selection_end)
@@ -257,6 +261,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(enable_do_not_track)
   IPC_STRUCT_TRAITS_MEMBER(default_zoom_level)
   IPC_STRUCT_TRAITS_MEMBER(user_agent_override)
+  IPC_STRUCT_TRAITS_MEMBER(accept_languages)
   IPC_STRUCT_TRAITS_MEMBER(report_frame_name_changes)
   IPC_STRUCT_TRAITS_MEMBER(touchpad_fling_profile)
   IPC_STRUCT_TRAITS_MEMBER(touchscreen_fling_profile)
@@ -718,29 +723,6 @@ IPC_STRUCT_BEGIN(ViewMsg_PostMessage_Params)
   IPC_STRUCT_MEMBER(string16, target_origin)
 IPC_STRUCT_END()
 
-IPC_STRUCT_BEGIN(ViewMsg_SwapOut_Params)
-  // The identifier of the RenderProcessHost for the currently closing view.
-  //
-  // These first two parameters are technically redundant since they are
-  // needed only when processing the ACK message, and the processor
-  // theoretically knows both the process and route ID. However, this is
-  // difficult to figure out with our current implementation, so this
-  // information is duplicated here.
-  IPC_STRUCT_MEMBER(int, closing_process_id)
-
-  // The route identifier for the currently closing RenderView.
-  IPC_STRUCT_MEMBER(int, closing_route_id)
-
-  // The identifier of the RenderProcessHost for the new view attempting to
-  // replace the closing one above.
-  IPC_STRUCT_MEMBER(int, new_render_process_host_id)
-
-  // The identifier of the *request* the new view made that is causing the
-  // cross-site transition. This is *not* a route_id, but the request that we
-  // will resume once the ACK from the closing view has been received.
-  IPC_STRUCT_MEMBER(int, new_request_id)
-IPC_STRUCT_END()
-
 // Messages sent from the browser to the renderer.
 
 // Tells the renderer to cancel an opened date/time dialog.
@@ -900,7 +882,9 @@ IPC_MESSAGE_ROUTED1(ViewMsg_ContextMenuClosed,
                     content::CustomContextMenuContext /* custom_context */)
 
 // Sent to inform the renderer to invoke a context menu.
-IPC_MESSAGE_ROUTED0(ViewMsg_ShowContextMenu)
+// The parameter specifies the location in the render view's coordinates.
+IPC_MESSAGE_ROUTED1(ViewMsg_ShowContextMenu,
+                    gfx::Point /* location where menu should be shown */)
 
 // Tells the renderer to perform the specified navigation, interrupting any
 // existing navigation.
@@ -1124,12 +1108,9 @@ IPC_MESSAGE_ROUTED0(ViewMsg_CantFocus)
 IPC_MESSAGE_ROUTED0(ViewMsg_ShouldClose)
 
 // Instructs the renderer to swap out for a cross-site transition, including
-// running the unload event handler. See the struct above for more details.
-//
-// Expects a SwapOut_ACK message when finished, where the parameters are
-// echoed back.
-IPC_MESSAGE_ROUTED1(ViewMsg_SwapOut,
-                    ViewMsg_SwapOut_Params)
+// running the unload event handler. Expects a SwapOut_ACK message when
+// finished.
+IPC_MESSAGE_ROUTED0(ViewMsg_SwapOut)
 
 // Instructs the renderer to close the current page, including running the
 // onunload event handler.
@@ -1303,7 +1284,7 @@ IPC_MESSAGE_ROUTED0(ViewMsg_ShowImeIfNeeded)
 
 // Sent by the browser when the renderer should generate a new frame.
 IPC_MESSAGE_ROUTED1(ViewMsg_BeginFrame,
-                    base::TimeTicks /* frame_time */)
+                    cc::BeginFrameArgs /* args */)
 
 #elif defined(OS_MACOSX)
 // Let the RenderView know its window has changed visibility.
@@ -1494,9 +1475,8 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_ShouldClose_ACK,
                     base::TimeTicks /* before_unload_end_time */)
 
 // Indicates that the current renderer has swapped out, after a SwapOut
-// message. The parameters are just echoed from the SwapOut request.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SwapOut_ACK,
-                    ViewMsg_SwapOut_Params)
+// message.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_SwapOut_ACK)
 
 // Indicates that the current page has been closed, after a ClosePage
 // message.
@@ -1970,6 +1950,10 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_TakeFocus,
 // Required for opening a date/time dialog
 IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenDateTimeDialog,
                     ViewHostMsg_DateTimeDialogValue_Params /* value */)
+
+IPC_MESSAGE_ROUTED2(ViewHostMsg_TextInputTypeChanged,
+                    ui::TextInputType /* TextInputType of the focused node */,
+                    bool /* can_compose_inline in the focused node */)
 
 // Required for updating text input state.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_TextInputStateChanged,

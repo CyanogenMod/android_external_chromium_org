@@ -26,7 +26,7 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/zlib/google/zip.h"
 #include "webkit/base/file_path_string_conversions.h"
-#include "webkit/base/origin_url_conversions.h"
+#include "webkit/common/database/database_identifier.h"
 
 namespace content {
 
@@ -127,7 +127,7 @@ void IndexedDBInternalsUI::OnOriginsReady(
   for (std::vector<IndexedDBInfo>::const_iterator iter = origins->begin();
        iter != origins->end();
        ++iter) {
-    base::DictionaryValue* info = new DictionaryValue;
+    base::DictionaryValue* info = new base::DictionaryValue;
     info->SetString("url", iter->origin_.spec());
     info->SetDouble("size", iter->size_);
     info->SetDouble("last_modified", iter->last_modified_.ToJsTime());
@@ -205,12 +205,10 @@ void IndexedDBInternalsUI::DownloadOriginDataOnWebkitThread(
   // has completed.
   base::FilePath temp_path = temp_dir.Take();
 
-  base::string16 origin_id =
-      webkit_base::GetOriginIdentifierFromURL(origin_url);
-  base::FilePath::StringType zip_name =
-      webkit_base::WebStringToFilePathString(origin_id);
+  std::string origin_id =
+      webkit_database::GetIdentifierFromOrigin(origin_url);
   base::FilePath zip_path =
-      temp_path.Append(zip_name).AddExtension(FILE_PATH_LITERAL("zip"));
+      temp_path.AppendASCII(origin_id).AddExtension(FILE_PATH_LITERAL("zip"));
 
   // This happens on the "webkit" thread (which is really just the IndexedDB
   // thread) as a simple way to avoid another script reopening the origin

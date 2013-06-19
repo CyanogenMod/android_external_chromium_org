@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
+#include "third_party/WebKit/public/web/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
 #include "third_party/WebKit/public/platform/WebFileSystem.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -38,11 +38,9 @@ void FileStatusCallbackAdapter(
 
 void ReadMetadataCallbackAdapter(
     WebKit::WebFileSystemCallbacks* callbacks,
-    const base::PlatformFileInfo& file_info,
-    const base::FilePath& platform_path) {
+    const base::PlatformFileInfo& file_info) {
   WebFileInfo web_file_info;
   webkit_glue::PlatformFileInfoToWebFileInfo(file_info, &web_file_info);
-  web_file_info.platformPath = webkit_base::FilePathToWebString(platform_path);
   callbacks->didReadMetadata(web_file_info);
 }
 

@@ -12,12 +12,11 @@
 #include "base/strings/string16.h"
 #include "components/autofill/browser/autofill_popup_delegate.h"
 #include "components/autofill/browser/password_autofill_manager.h"
-#include "components/autofill/common/form_data.h"
-#include "components/autofill/common/form_field_data.h"
-#include "components/autofill/common/password_form_fill_data.h"
+#include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/password_form_fill_data.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/web_contents_user_data.h"
 #include "ui/gfx/rect.h"
 
 namespace gfx {
@@ -25,6 +24,7 @@ class Rect;
 }
 
 namespace content {
+class RenderViewHost;
 class WebContents;
 }
 
@@ -38,15 +38,14 @@ class AutofillManager;
 
 // Delegate for in-browser Autocomplete and Autofill display and selection.
 class AutofillExternalDelegate
-    : public content::WebContentsUserData<AutofillExternalDelegate>,
-      public content::NotificationObserver,
+    : public content::NotificationObserver,
       public AutofillPopupDelegate {
  public:
-  // Creates an AutofillExternalDelegate and attaches it to the specified
-  // contents; the second argument is an AutofillManager managing Autofill for
-  // that WebContents.
-  static void CreateForWebContentsAndManager(content::WebContents* web_contents,
-                                             AutofillManager* autofill_manager);
+  // Creates an AutofillExternalDelegate for the specified contents; the second
+  // argument is an AutofillManager managing Autofill for that WebContents.
+  AutofillExternalDelegate(content::WebContents* web_contents,
+                           AutofillManager* autofill_manager);
+  virtual ~AutofillExternalDelegate();
 
   // AutofillPopupDelegate implementation.
   virtual void OnPopupShown(content::KeyboardListener* listener) OVERRIDE;
@@ -106,11 +105,6 @@ class AutofillExternalDelegate
       const PasswordFormFillData& fill_data);
 
  protected:
-  friend class content::WebContentsUserData<AutofillExternalDelegate>;
-  AutofillExternalDelegate(content::WebContents* web_contents,
-                           AutofillManager* autofill_manager);
-  virtual ~AutofillExternalDelegate();
-
   content::WebContents* web_contents() { return web_contents_; }
 
   base::WeakPtr<AutofillExternalDelegate> GetWeakPtr();

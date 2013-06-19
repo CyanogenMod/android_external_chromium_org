@@ -6,7 +6,7 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -89,16 +89,13 @@ class HttpProxyClientSocketPoolSpdy2Test : public TestWithHttpParam {
         session_(CreateNetworkSession()),
         http_proxy_histograms_("HttpProxyUnitTest"),
         spdy_util_(kProtoSPDY2),
-        ssl_data_(NULL),
-        data_(NULL),
         pool_(kMaxSockets,
               kMaxSocketsPerGroup,
               &http_proxy_histograms_,
               NULL,
               &transport_socket_pool_,
               &ssl_socket_pool_,
-              NULL) {
-  }
+              NULL) {}
 
   virtual ~HttpProxyClientSocketPoolSpdy2Test() {
   }
@@ -483,7 +480,7 @@ TEST_P(HttpProxyClientSocketPoolSpdy2Test, TunnelUnexpectedClose) {
     // returns ERR_CONNECTION_CLOSED in this case.
     EXPECT_EQ(ERR_CONNECTION_CLOSED, callback_.WaitForResult());
   } else {
-    EXPECT_EQ(ERR_HEADERS_TRUNCATED, callback_.WaitForResult());
+    EXPECT_EQ(ERR_RESPONSE_HEADERS_TRUNCATED, callback_.WaitForResult());
   }
   EXPECT_FALSE(handle_.is_initialized());
   EXPECT_FALSE(handle_.socket());

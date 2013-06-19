@@ -12,13 +12,14 @@ include_rules = [
   "+grit",  # For generated headers
   "+skia",
   "+third_party/angle",
+  "+third_party/angle_dx11",
   "+third_party/hyphen",
   "+third_party/leveldatabase",
   "+third_party/skia",
   "+third_party/sqlite",
   "+third_party/tcmalloc",
   "+third_party/WebKit/public/platform",
-  "+third_party/WebKit/Source/WebKit/chromium",
+  "+third_party/WebKit/public/web",
   "+v8",
 
   # For databases/

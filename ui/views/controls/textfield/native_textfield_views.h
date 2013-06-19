@@ -89,11 +89,12 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
   virtual void ConvertPointToScreen(gfx::Point* point) OVERRIDE;
   virtual void ConvertPointFromScreen(gfx::Point* point) OVERRIDE;
   virtual bool DrawsHandles() OVERRIDE;
-  virtual void OpenContextMenu(const gfx::Point anchor) OVERRIDE;
+  virtual void OpenContextMenu(const gfx::Point& anchor) OVERRIDE;
 
   // ContextMenuController overrides:
   virtual void ShowContextMenuForView(View* source,
-                                      const gfx::Point& point) OVERRIDE;
+                                      const gfx::Point& point,
+                                      ui::MenuSourceType source_type) OVERRIDE;
 
   // Overridden from DragController:
   virtual void WriteDragDataForView(View* sender,
@@ -109,7 +110,7 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
   virtual string16 GetText() const OVERRIDE;
   virtual void UpdateText() OVERRIDE;
   virtual void AppendText(const string16& text) OVERRIDE;
-  virtual void ReplaceSelection(const string16& text) OVERRIDE;
+  virtual void InsertOrReplaceText(const string16& text) OVERRIDE;
   virtual base::i18n::TextDirection GetTextDirection() const OVERRIDE;
   virtual string16 GetSelectedText() const OVERRIDE;
   virtual void SelectAll(bool reversed) OVERRIDE;

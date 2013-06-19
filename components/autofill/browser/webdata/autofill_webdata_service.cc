@@ -14,7 +14,7 @@
 #include "components/autofill/browser/webdata/autofill_table.h"
 #include "components/autofill/browser/webdata/autofill_webdata_backend_impl.h"
 #include "components/autofill/browser/webdata/autofill_webdata_service_observer.h"
-#include "components/autofill/common/form_field_data.h"
+#include "components/autofill/core/common/form_field_data.h"
 #include "components/webdata/common/web_data_service_backend.h"
 #include "components/webdata/common/web_database_service.h"
 
@@ -27,7 +27,8 @@ namespace autofill {
 AutofillWebDataService::AutofillWebDataService(
     scoped_refptr<WebDatabaseService> wdbs,
     const ProfileErrorCallback& callback)
-    : WebDataServiceBase(wdbs, callback),
+    : WebDataServiceBase(wdbs, callback,
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)),
       weak_ptr_factory_(this),
       autofill_backend_(NULL) {
 
@@ -41,8 +42,8 @@ AutofillWebDataService::AutofillWebDataService(
 }
 
 AutofillWebDataService::AutofillWebDataService()
-    : WebDataServiceBase(NULL,
-                         WebDataServiceBase::ProfileErrorCallback()),
+    : WebDataServiceBase(NULL, WebDataServiceBase::ProfileErrorCallback(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)),
       weak_ptr_factory_(this),
       autofill_backend_(new AutofillWebDataBackendImpl(NULL, base::Closure())) {
 }

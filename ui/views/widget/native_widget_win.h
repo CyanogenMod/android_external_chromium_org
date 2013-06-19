@@ -136,6 +136,7 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
                             ui::DragDropTypes::DragEventSource source) OVERRIDE;
   virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
   virtual void SetCursor(gfx::NativeCursor cursor) OVERRIDE;
+  virtual bool IsMouseEventsEnabled() const OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual gfx::Rect GetWorkAreaBoundsInScreen() const OVERRIDE;
   virtual void SetInactiveRenderingDisabled(bool value) OVERRIDE;
@@ -145,6 +146,9 @@ class VIEWS_EXPORT NativeWidgetWin : public internal::NativeWidgetPrivate,
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
+
+  // Overridden from NativeWidget:
+  virtual ui::EventHandler* GetEventHandler() OVERRIDE;
 
  protected:
   // Deletes this window as it is destroyed, override to provide different

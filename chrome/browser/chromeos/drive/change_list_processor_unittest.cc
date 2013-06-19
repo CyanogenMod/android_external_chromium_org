@@ -5,8 +5,7 @@
 #include "chrome/browser/chromeos/drive/change_list_processor.h"
 
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
-#include "base/threading/sequenced_worker_pool.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -15,7 +14,7 @@
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/test_util.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
@@ -40,29 +39,15 @@ struct EntryExpectation {
 
 class ChangeListProcessorTest : public testing::Test {
  protected:
-  ChangeListProcessorTest()
-      : ui_thread_(content::BrowserThread::UI, &message_loop_) {
-  }
-
   virtual void SetUp() OVERRIDE {
-    scoped_refptr<base::SequencedWorkerPool> pool =
-        content::BrowserThread::GetBlockingPool();
-    blocking_task_runner_ =
-        pool->GetSequencedTaskRunner(pool->GetSequenceToken());
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    metadata_.reset(new internal::ResourceMetadata(temp_dir_.path(),
-                                                   blocking_task_runner_));
-
-    FileError error = FILE_ERROR_FAILED;
-    metadata_->Initialize(
-        google_apis::test_util::CreateCopyResultCallback(&error));
-    google_apis::test_util::RunBlockingPoolTask();
-    ASSERT_EQ(FILE_ERROR_OK, error);
+    metadata_.reset(new internal::ResourceMetadata(
+        temp_dir_.path(), base::MessageLoopProxy::current()));
+    ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
   }
 
   virtual void TearDown() OVERRIDE {
     metadata_.reset();
-    blocking_task_runner_ = NULL;
   }
 
   // Parses a json file at |test_data_path| relative to Chrome test directory
@@ -85,70 +70,33 @@ class ChangeListProcessorTest : public testing::Test {
     about_resource->set_root_folder_id("fake_root");
 
     ChangeListProcessor processor(metadata_.get());
-    blocking_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&ChangeListProcessor::Apply,
-                   base::Unretained(&processor),
-                   base::Passed(&about_resource),
-                   base::Passed(&changes),
-                   false));  // is_delta_update
-    google_apis::test_util::RunBlockingPoolTask();
+    processor.Apply(about_resource.Pass(),
+                    changes.Pass(),
+                    false /* is_delta_update */);
   }
 
   // Applies the |changes| to |metadata_| as a delta update. Delta changelists
   // should contain their changestamp in themselves.
   std::set<base::FilePath> ApplyChangeList(ScopedVector<ChangeList> changes) {
-    scoped_ptr<google_apis::AboutResource> null_about_resource;
-
     ChangeListProcessor processor(metadata_.get());
-    blocking_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&ChangeListProcessor::Apply,
-                   base::Unretained(&processor),
-                   base::Passed(&null_about_resource),
-                   base::Passed(&changes),
-                   true));  // is_delta_update
-    google_apis::test_util::RunBlockingPoolTask();
+    processor.Apply(scoped_ptr<google_apis::AboutResource>(),
+                    changes.Pass(),
+                    true /* is_delta_update */);
     return processor.changed_dirs();
   }
 
   // Gets the resource entry for the path from |metadata_| synchronously.
   // Returns null if the entry does not exist.
   scoped_ptr<ResourceEntry> GetResourceEntry(const std::string& path) {
-    FileError error = FILE_ERROR_FAILED;
     scoped_ptr<ResourceEntry> entry(new ResourceEntry);
-    base::PostTaskAndReplyWithResult(
-        blocking_task_runner_,
-        FROM_HERE,
-        base::Bind(&internal::ResourceMetadata::GetResourceEntryByPath,
-                   base::Unretained(metadata_.get()),
-                   base::FilePath::FromUTF8Unsafe(path),
-                   entry.get()),
-        base::Bind(google_apis::test_util::CreateCopyResultCallback(&error)));
-    google_apis::test_util::RunBlockingPoolTask();
+    FileError error = metadata_->GetResourceEntryByPath(
+        base::FilePath::FromUTF8Unsafe(path), entry.get());
     if (error != FILE_ERROR_OK)
       entry.reset();
     return entry.Pass();
   }
 
-  // Gets the largest changestamp stored in |metadata_|.
-  int64 GetChangestamp() {
-    int64 changestamp = -1;
-    base::PostTaskAndReplyWithResult(
-        blocking_task_runner_,
-        FROM_HERE,
-        base::Bind(&internal::ResourceMetadata::GetLargestChangestamp,
-                   base::Unretained(metadata_.get())),
-        base::Bind(google_apis::test_util::CreateCopyResultCallback(
-            &changestamp)));
-    google_apis::test_util::RunBlockingPoolTask();
-    return changestamp;
-  }
-
- private:
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+  content::TestBrowserThreadBundle thread_bundle_;
   base::ScopedTempDir temp_dir_;
   scoped_ptr<internal::ResourceMetadata, test_util::DestroyHelperForTests>
       metadata_;
@@ -206,7 +154,7 @@ TEST_F(ChangeListProcessorTest, ApplyFullResourceList) {
               entry->file_info().is_directory() ? DIRECTORY : FILE);
   }
 
-  EXPECT_EQ(kBaseResourceListChangestamp, GetChangestamp());
+  EXPECT_EQ(kBaseResourceListChangestamp, metadata_->GetLargestChangestamp());
 }
 
 TEST_F(ChangeListProcessorTest, DeltaFileAddedInNewDirectory) {
@@ -237,7 +185,8 @@ TEST_F(ChangeListProcessorTest, DeltaFileAddedInNewDirectory) {
   std::set<base::FilePath> changed_dirs =
       ApplyChangeList(ParseChangeList(kTestJson));
 
-  EXPECT_EQ(16730, GetChangestamp());  // the value is written in kTestJson.
+  // The value is written in kTestJson.
+  EXPECT_EQ(16730, metadata_->GetLargestChangestamp());
   EXPECT_TRUE(GetResourceEntry("drive/root/New Directory"));
   EXPECT_TRUE(GetResourceEntry(
       "drive/root/New Directory/File in new dir.gdoc"));
@@ -271,7 +220,8 @@ TEST_F(ChangeListProcessorTest, DeltaDirMovedFromRootToDirectory) {
   std::set<base::FilePath> changed_dirs =
       ApplyChangeList(ParseChangeList(kTestJson));
 
-  EXPECT_EQ(16809, GetChangestamp());  // the value is written in kTestJson.
+  // The value is written in kTestJson.
+  EXPECT_EQ(16809, metadata_->GetLargestChangestamp());
   EXPECT_FALSE(GetResourceEntry("drive/root/Directory 1"));
   EXPECT_TRUE(GetResourceEntry(
       "drive/root/Directory 2 excludeDir-test/Directory 1"));
@@ -312,7 +262,8 @@ TEST_F(ChangeListProcessorTest, DeltaFileMovedFromDirectoryToRoot) {
   std::set<base::FilePath> changed_dirs =
       ApplyChangeList(ParseChangeList(kTestJson));
 
-  EXPECT_EQ(16815, GetChangestamp());  // the value is written in kTestJson.
+  // The value is written in kTestJson.
+  EXPECT_EQ(16815, metadata_->GetLargestChangestamp());
   EXPECT_FALSE(GetResourceEntry(
       "drive/root/Directory 1/SubDirectory File 1.txt"));
   EXPECT_TRUE(GetResourceEntry("drive/root/SubDirectory File 1.txt"));
@@ -348,7 +299,8 @@ TEST_F(ChangeListProcessorTest, DeltaFileRenamedInDirectory) {
   std::set<base::FilePath> changed_dirs =
       ApplyChangeList(ParseChangeList(kTestJson));
 
-  EXPECT_EQ(16767, GetChangestamp());  // the value is written in kTestJson.
+  // The value is written in kTestJson.
+  EXPECT_EQ(16767, metadata_->GetLargestChangestamp());
   EXPECT_FALSE(GetResourceEntry(
       "drive/root/Directory 1/SubDirectory File 1.txt"));
   EXPECT_TRUE(GetResourceEntry(
@@ -385,7 +337,7 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileInRoot) {
   ApplyFullResourceList(ParseChangeList(kBaseResourceListFile));
   std::set<base::FilePath> changed_dirs =
       ApplyChangeList(ParseChangeList(kTestJsonAdd));
-  EXPECT_EQ(16683, GetChangestamp());
+  EXPECT_EQ(16683, metadata_->GetLargestChangestamp());
   EXPECT_TRUE(GetResourceEntry("drive/root/Added file.gdoc"));
   EXPECT_EQ(1U, changed_dirs.size());
   EXPECT_TRUE(changed_dirs.count(
@@ -403,7 +355,7 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileInRoot) {
 
   // Apply.
   changed_dirs = ApplyChangeList(ParseChangeList(kTestJsonDelete));
-  EXPECT_EQ(16687, GetChangestamp());
+  EXPECT_EQ(16687, metadata_->GetLargestChangestamp());
   EXPECT_FALSE(GetResourceEntry("drive/root/Added file.gdoc"));
   EXPECT_EQ(1U, changed_dirs.size());
   EXPECT_TRUE(changed_dirs.count(
@@ -436,7 +388,7 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileFromExistingDirectory) {
   ApplyFullResourceList(ParseChangeList(kBaseResourceListFile));
   std::set<base::FilePath> changed_dirs =
       ApplyChangeList(ParseChangeList(kTestJsonAdd));
-  EXPECT_EQ(16730, GetChangestamp());
+  EXPECT_EQ(16730, metadata_->GetLargestChangestamp());
   EXPECT_TRUE(GetResourceEntry("drive/root/Directory 1/Added file.gdoc"));
 
   EXPECT_EQ(2U, changed_dirs.size());
@@ -457,7 +409,7 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileFromExistingDirectory) {
 
   // Apply.
   changed_dirs = ApplyChangeList(ParseChangeList(kTestJsonDelete));
-  EXPECT_EQ(16770, GetChangestamp());
+  EXPECT_EQ(16770, metadata_->GetLargestChangestamp());
   EXPECT_FALSE(GetResourceEntry("drive/root/Directory 1/Added file.gdoc"));
 
   EXPECT_EQ(1U, changed_dirs.size());
@@ -493,7 +445,8 @@ TEST_F(ChangeListProcessorTest, DeltaAddFileToNewButDeletedDirectory) {
   std::set<base::FilePath> changed_dirs =
       ApplyChangeList(ParseChangeList(kTestJson));
 
-  EXPECT_EQ(16730, GetChangestamp());  // the value is written in kTestJson.
+  // The value is written in kTestJson.
+  EXPECT_EQ(16730, metadata_->GetLargestChangestamp());
   EXPECT_FALSE(GetResourceEntry("drive/root/New Directory/new_pdf_file.pdf"));
 
   EXPECT_TRUE(changed_dirs.empty());

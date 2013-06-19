@@ -6,12 +6,13 @@
 #define CHROME_RENDERER_EXTENSIONS_V8_SCHEMA_REGISTRY_H_
 
 #include <map>
-#include <set>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/renderer/extensions/scoped_persistent.h"
+#include "chrome/renderer/extensions/unsafe_persistent.h"
 #include "v8/include/v8.h"
 
 namespace extensions {
@@ -28,7 +29,7 @@ class V8SchemaRegistry {
   scoped_ptr<NativeHandler> AsNativeHandler();
 
   // Returns a v8::Array with all the schemas for the APIs in |apis|.
-  v8::Handle<v8::Array> GetSchemas(const std::set<std::string>& apis);
+  v8::Handle<v8::Array> GetSchemas(const std::vector<std::string>& apis);
 
   // Returns a v8::Object for the schema for |api|, possibly from the cache.
   v8::Handle<v8::Object> GetSchema(const std::string& api);
@@ -36,10 +37,15 @@ class V8SchemaRegistry {
  private:
   // Gets the separate context that backs the registry, creating a new one if
   // if necessary.
-  v8::Handle<v8::Context> GetOrCreateContext();
+  v8::Handle<v8::Context> GetOrCreateContext(v8::Isolate* isolate);
 
   // Cache of schemas.
-  typedef std::map<std::string, v8::Persistent<v8::Object> > SchemaCache;
+  //
+  // Storing UnsafePersistents is safe here, because the corresponding
+  // Persistent handle is created in GetSchema(), and it keeps the data pointed
+  // by the UnsafePersistent alive. It's not made weak or disposed, and nobody
+  // else has access to it. The Persistent is then disposed in the dtor.
+  typedef std::map<std::string, UnsafePersistent<v8::Object> > SchemaCache;
   SchemaCache schema_cache_;
 
   // Single per-instance v8::Context to create v8::Values.

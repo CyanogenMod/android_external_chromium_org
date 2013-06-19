@@ -12,7 +12,6 @@ namespace cc {
 
 ManagedTileState::ManagedTileState()
     : raster_mode(LOW_QUALITY_RASTER_MODE),
-      picture_pile_analyzed(false),
       gpu_memmgr_stats_bin(NEVER_BIN),
       resolution(NON_IDEAL_RESOLUTION),
       required_for_activation(false),
@@ -26,9 +25,7 @@ ManagedTileState::ManagedTileState()
 
 ManagedTileState::TileVersion::TileVersion()
     : mode_(RESOURCE_MODE),
-      resource_id_(0),
-      resource_format_(GL_RGBA),
-      forced_upload_(false) {
+      has_text_(false) {
 }
 
 ManagedTileState::TileVersion::~TileVersion() {
@@ -38,7 +35,7 @@ ManagedTileState::TileVersion::~TileVersion() {
 bool ManagedTileState::TileVersion::IsReadyToDraw() const {
   switch (mode_) {
     case RESOURCE_MODE:
-      return resource_id_ && (resource_ || forced_upload_);
+      return !!resource_;
     case SOLID_COLOR_MODE:
     case PICTURE_PILE_MODE:
       return true;
@@ -71,11 +68,13 @@ scoped_ptr<base::Value> ManagedTileState::AsValue() const {
   state->Set("distance_to_visible_in_pixels",
       MathUtil::AsValueSafely(distance_to_visible_in_pixels).release());
   state->SetBoolean("required_for_activation", required_for_activation);
-  state->SetBoolean("is_picture_pile_analyzed", picture_pile_analyzed);
-  state->SetBoolean("is_solid_color", picture_pile_analysis.is_solid_color);
-  state->SetBoolean("is_transparent",
-                    picture_pile_analysis.is_solid_color &&
-                    !SkColorGetA(picture_pile_analysis.solid_color));
+  state->SetBoolean(
+      "is_solid_color",
+      tile_versions[raster_mode].mode_ == TileVersion::SOLID_COLOR_MODE);
+  state->SetBoolean(
+      "is_transparent",
+      tile_versions[raster_mode].mode_ == TileVersion::SOLID_COLOR_MODE &&
+          !SkColorGetA(tile_versions[raster_mode].solid_color_));
   return state.PassAs<base::Value>();
 }
 

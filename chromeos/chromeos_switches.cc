@@ -121,12 +121,8 @@ const char kEnterpriseEnrollmentInitialModulus[] =
 const char kEnterpriseEnrollmentModulusLimit[] =
     "enterprise-enrollment-modulus-limit";
 
-// Loads the File Manager as an extension instead of a platform app.
-// This flag is obsolete. Remove it, once Files.app v2 is stable.
-const char kFileManagerLegacy[]             = "file-manager-legacy";
-
-// Loads the File Manager with the legacy UI.
-const char kFileManagerLegacyUI[]           = "file-manager-legacy-ui";
+// Hides the selecting checkboxes in the Files.app.
+const char kFileManagerNoCheckboxes[]       = "file-manager-no-checkboxes";
 
 // Passed to Chrome on first boot. Not passed on restart after sign out.
 const char kFirstBoot[]                     = "first-boot";
@@ -148,6 +144,9 @@ const char kHasChromeOSDiamondKey[]         = "has-chromeos-diamond-key";
 
 // Path for the screensaver used in Kiosk mode
 const char kKioskModeScreensaverPath[]      = "kiosk-mode-screensaver-path";
+
+// Allows override of oobe for testing - goes directly to the login screen.
+const char kLoginScreen[]                   = "login-screen";
 
 // Enables Chrome-as-a-login-manager behavior.
 const char kLoginManager[]                  = "login-manager";

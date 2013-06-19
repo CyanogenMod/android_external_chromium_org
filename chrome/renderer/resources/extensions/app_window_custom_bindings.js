@@ -72,8 +72,8 @@ appWindow.registerCustomHook(function(bindingsAPI) {
 
   apiFunctions.setHandleRequest('current', function() {
     if (!currentAppWindow) {
-      console.error('chrome.app.window.current() is null -- window not ' +
-                    'created with chrome.app.window.create()');
+      console.error('The JavaScript context calling ' +
+                    'chrome.app.window.current() has no associated AppWindow.');
       return null;
     }
     return currentAppWindow;
@@ -85,12 +85,11 @@ appWindow.registerCustomHook(function(bindingsAPI) {
     var currentWindowInternal =
         Binding.create('app.currentWindowInternal').generate();
     var AppWindow = function() {};
-    forEach(currentWindowInternal, function(fn) {
-      AppWindow.prototype[fn] =
-          currentWindowInternal[fn];
+    forEach(currentWindowInternal, function(key, value) {
+      AppWindow.prototype[key] = value;
     });
-    AppWindow.prototype.moveTo = window.moveTo.bind(window);
-    AppWindow.prototype.resizeTo = window.resizeTo.bind(window);
+    AppWindow.prototype.moveTo = $Function.bind(window.moveTo, window);
+    AppWindow.prototype.resizeTo = $Function.bind(window.resizeTo, window);
     AppWindow.prototype.contentWindow = window;
     AppWindow.prototype.onClosed = new Event();
     AppWindow.prototype.close = function() {

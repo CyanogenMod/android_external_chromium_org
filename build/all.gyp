@@ -146,7 +146,7 @@
             '../courgette/courgette.gyp:*',
             '../rlz/rlz.gyp:*',
             '../sandbox/sandbox.gyp:*',
-            '../third_party/angle/src/build_angle.gyp:*',
+            '<(angle_path)/src/build_angle.gyp:*',
             '../third_party/bsdiff/bsdiff.gyp:*',
             '../third_party/bspatch/bspatch.gyp:*',
             '../third_party/gles2_book/gles2_book.gyp:*',
@@ -353,6 +353,7 @@
             '../chrome/chrome.gyp:performance_browser_tests',
             '../chrome/chrome.gyp:performance_ui_tests',
             '../content/content.gyp:content_browsertests',
+            '../content/content.gyp:content_gl_tests',
             '../gpu/gpu.gyp:gl_tests',
           ],
           'conditions': [
@@ -369,6 +370,7 @@
           'dependencies': [
             '../chrome/chrome.gyp:gpu_tests',
             '../content/content.gyp:content_browsertests',
+            '../content/content.gyp:content_gl_tests',
             '../gpu/gpu.gyp:gl_tests',
           ],
           'conditions': [

@@ -5,15 +5,15 @@
 #ifndef WEBKIT_SUPPORT_SIMPLE_DATABASE_SYSTEM_H_
 #define WEBKIT_SUPPORT_SIMPLE_DATABASE_SYSTEM_H_
 
+#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/platform_file.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabaseObserver.h"
+#include "third_party/WebKit/public/web/WebDatabaseObserver.h"
 #include "webkit/browser/database/database_tracker.h"
 #include "webkit/common/database/database_connections.h"
 
@@ -44,7 +44,7 @@ class SimpleDatabaseSystem : public webkit_database::DatabaseTracker::Observer,
   int DeleteFile(const base::string16& vfs_file_name, bool sync_dir);
   uint32 GetFileAttributes(const base::string16& vfs_file_name);
   int64 GetFileSize(const base::string16& vfs_file_name);
-  int64 GetSpaceAvailable(const base::string16& origin_identifier);
+  int64 GetSpaceAvailable(const std::string& origin_identifier);
 
   // For use by testRunner, called on the main thread.
   void ClearAllDatabases();
@@ -52,21 +52,21 @@ class SimpleDatabaseSystem : public webkit_database::DatabaseTracker::Observer,
 
  private:
   // Used by our WebDatabaseObserver impl, only called on the db_thread
-  void DatabaseOpened(const base::string16& origin_identifier,
+  void DatabaseOpened(const std::string& origin_identifier,
                       const base::string16& database_name,
                       const base::string16& description,
                       int64 estimated_size);
-  void DatabaseModified(const base::string16& origin_identifier,
+  void DatabaseModified(const std::string& origin_identifier,
                         const base::string16& database_name);
-  void DatabaseClosed(const base::string16& origin_identifier,
+  void DatabaseClosed(const std::string& origin_identifier,
                       const base::string16& database_name);
 
   // DatabaseTracker::Observer implementation
-  virtual void OnDatabaseSizeChanged(const base::string16& origin_identifier,
+  virtual void OnDatabaseSizeChanged(const std::string& origin_identifier,
                                      const base::string16& database_name,
                                      int64 database_size) OVERRIDE;
   virtual void OnDatabaseScheduledForDeletion(
-      const base::string16& origin_identifier,
+      const std::string& origin_identifier,
       const base::string16& database_name) OVERRIDE;
 
   // Used by our public SQLite VFS methods, only called on the db_thread.
@@ -78,7 +78,7 @@ class SimpleDatabaseSystem : public webkit_database::DatabaseTracker::Observer,
                             uint32* result, base::WaitableEvent* done_event);
   void VfsGetFileSize(const base::string16& vfs_file_name,
                       int64* result, base::WaitableEvent* done_event);
-  void VfsGetSpaceAvailable(const base::string16& origin_identifier,
+  void VfsGetSpaceAvailable(const std::string& origin_identifier,
                             int64* result, base::WaitableEvent* done_event);
 
   base::FilePath GetFullFilePathForVfsFile(const base::string16& vfs_file_name);

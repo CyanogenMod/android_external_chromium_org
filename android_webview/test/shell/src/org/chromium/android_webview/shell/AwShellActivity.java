@@ -39,6 +39,7 @@ import org.chromium.content.browser.LoadUrlParams;
 public class AwShellActivity extends Activity {
     private final static String PREFERENCES_NAME = "AwShellPrefs";
     private final static String INITIAL_URL = "about:blank";
+    private AwBrowserContext mBrowserContext;
     private AwTestContainerView mAwTestContainerView;
     private EditText mUrlTextView;
     private ImageButton mPrevButton;
@@ -83,9 +84,10 @@ public class AwShellActivity extends Activity {
 
         SharedPreferences sharedPreferences =
             getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE);
-        AwBrowserContext browserContext = new AwBrowserContext(sharedPreferences);
-
-        testContainerView.initialize(new AwContents(browserContext, testContainerView,
+        if (mBrowserContext == null) {
+            mBrowserContext = new AwBrowserContext(sharedPreferences);
+        }
+        testContainerView.initialize(new AwContents(mBrowserContext, testContainerView,
                 testContainerView.getInternalAccessDelegate(),
                 awContentsClient, false));
         testContainerView.getAwContents().getSettings().setJavaScriptEnabled(true);

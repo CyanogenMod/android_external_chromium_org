@@ -48,9 +48,6 @@ class CONTENT_EXPORT IndexedDBContextImpl
   // The indexed db directory.
   static const base::FilePath::CharType kIndexedDBDirectory[];
 
-  // The indexed db file extension.
-  static const base::FilePath::CharType kIndexedDBExtension[];
-
   // Disables the exit-time deletion of session-only data.
   void SetForceKeepSessionState() { force_keep_session_state_ = true; }
 
@@ -60,8 +57,8 @@ class CONTENT_EXPORT IndexedDBContextImpl
   virtual int64 GetOriginDiskUsage(const GURL& origin_url) OVERRIDE;
   virtual base::Time GetOriginLastModified(const GURL& origin_url) OVERRIDE;
   virtual void DeleteForOrigin(const GURL& origin_url) OVERRIDE;
-  virtual base::FilePath GetFilePathForTesting(const string16& origin_id) const
-      OVERRIDE;
+  virtual base::FilePath GetFilePathForTesting(
+      const std::string& origin_id) const OVERRIDE;
 
   // Methods called by IndexedDBDispatcherHost for quota support.
   void ConnectionOpened(const GURL& origin_url, WebIDBDatabaseImpl* db);
@@ -98,7 +95,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
   typedef std::map<GURL, int64> OriginToSizeMap;
   class IndexedDBGetUsageAndQuotaCallback;
 
-  base::FilePath GetIndexedDBFilePath(const string16& origin_id) const;
+  base::FilePath GetIndexedDBFilePath(const std::string& origin_id) const;
   int64 ReadUsageFromDisk(const GURL& origin_url) const;
   void EnsureDiskUsageCacheInitialized(const GURL& origin_url);
   void QueryDiskAndUpdateQuotaUsage(const GURL& origin_url);

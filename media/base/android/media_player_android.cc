@@ -54,12 +54,12 @@ void MediaPlayerAndroid::OnMediaMetadataChanged(
 
 void MediaPlayerAndroid::RequestMediaResourcesFromManager() {
   if (manager_)
-    manager_->RequestMediaResources(this);
+    manager_->RequestMediaResources(player_id_);
 }
 
 void MediaPlayerAndroid::ReleaseMediaResourcesFromManager() {
   if (manager_)
-    manager_->ReleaseMediaResources(this);
+    manager_->ReleaseMediaResources(player_id_);
 }
 
 void MediaPlayerAndroid::DemuxerReady(
@@ -73,6 +73,10 @@ void MediaPlayerAndroid::ReadFromDemuxerAck(
 }
 
 void MediaPlayerAndroid::OnSeekRequestAck(unsigned seek_request_id) {
+  NOTREACHED() << "Unexpected ipc received";
+}
+
+void MediaPlayerAndroid::DurationChanged(const base::TimeDelta& duration) {
   NOTREACHED() << "Unexpected ipc received";
 }
 

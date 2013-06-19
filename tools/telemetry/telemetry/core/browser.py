@@ -119,8 +119,6 @@ class Browser(object):
           result[child_process_type_key][k] += v
         else:
           result[child_process_type_key][k] = v
-    if result['Gpu']['ProcessCount'] > 1:
-      raise Exception('Found %d Gpu processes' % result['Gpu']['ProcessCount'])
     for v in result.itervalues():
       if v['ProcessCount'] > 1:
         for k in v.keys():
@@ -244,24 +242,27 @@ class Browser(object):
     return self._http_server
 
   def SetHTTPServerDirectories(self, paths):
+    """Returns True if the HTTP server was started, False otherwise."""
     if not isinstance(paths, list):
       paths = [paths]
     paths = [os.path.abspath(p) for p in paths]
 
     if paths and self._http_server and self._http_server.paths == paths:
-      return
+      return False
 
     if self._http_server:
       self._http_server.Close()
       self._http_server = None
 
     if not paths:
-      return
+      return False
 
     self._http_server = temporary_http_server.TemporaryHTTPServer(
       self._browser_backend, paths)
 
-  def SetReplayArchivePath(self, archive_path):
+    return True
+
+  def SetReplayArchivePath(self, archive_path, append_to_existing_wpr=False):
     if self._wpr_server:
       self._wpr_server.Close()
       self._wpr_server = None
@@ -280,6 +281,7 @@ class Browser(object):
         self._browser_backend,
         archive_path,
         use_record_mode,
+        append_to_existing_wpr,
         self._browser_backend.WEBPAGEREPLAY_HOST,
         self._browser_backend.webpagereplay_local_http_port,
         self._browser_backend.webpagereplay_local_https_port,

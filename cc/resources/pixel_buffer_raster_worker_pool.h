@@ -28,26 +28,28 @@ class CC_EXPORT PixelBufferRasterWorkerPool : public RasterWorkerPool {
 
   // Overridden from RasterWorkerPool:
   virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE;
-  virtual bool ForceUploadToComplete(const RasterTask& raster_task) OVERRIDE;
 
  private:
   PixelBufferRasterWorkerPool(ResourceProvider* resource_provider,
                               size_t num_threads);
 
-  void CheckForCompletedRasterTasks();
+  void FlushUploads();
+  void CheckForCompletedUploads();
   void ScheduleCheckForCompletedRasterTasks();
+  void CheckForCompletedRasterTasks();
   void ScheduleMoreTasks();
   void OnRasterTaskCompleted(
       scoped_refptr<internal::RasterWorkerPoolTask> task,
       bool was_canceled,
       bool needs_upload);
-  void AbortPendingUploads();
   void DidCompleteRasterTask(internal::RasterWorkerPoolTask* task);
   void OnRasterFinished(int64 schedule_more_tasks_count);
 
   static void RunRasterFinishedTask(
       scoped_refptr<base::MessageLoopProxy> origin_loop,
       const base::Closure& on_raster_finished_callback);
+
+  bool shutdown_;
 
   TaskMap pixel_buffer_tasks_;
 

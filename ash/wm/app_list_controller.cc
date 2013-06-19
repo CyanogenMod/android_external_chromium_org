@@ -4,6 +4,7 @@
 
 #include "ash/wm/app_list_controller.h"
 
+#include "ash/ash_switches.h"
 #include "ash/launcher/launcher.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_layout_manager.h"
@@ -127,6 +128,8 @@ void AppListController::SetVisible(bool visible, aura::Window* window) {
         gfx::Point(),
         GetBubbleArrow(container),
         true /* border_accepts_events */);
+    if (ash::switches::UseAlternateShelfLayout())
+      view->SetArrowPaintType(views::BubbleBorder::PAINT_NONE);
     SetView(view);
   }
 }
@@ -157,7 +160,7 @@ void AppListController::SetView(app_list::AppListView* view) {
   widget->AddObserver(this);
   Shell::GetInstance()->AddPreTargetHandler(this);
   Launcher::ForWindow(widget->GetNativeWindow())->AddIconObserver(this);
-  widget->GetNativeView()->GetRootWindow()->AddRootWindowObserver(this);
+  widget->GetNativeView()->GetRootWindow()->AddObserver(this);
   aura::client::GetFocusClient(widget->GetNativeView())->AddObserver(this);
 
   view_->ShowWhenReady();
@@ -172,7 +175,7 @@ void AppListController::ResetView() {
   GetLayer(widget)->GetAnimator()->RemoveObserver(this);
   Shell::GetInstance()->RemovePreTargetHandler(this);
   Launcher::ForWindow(widget->GetNativeWindow())->RemoveIconObserver(this);
-  widget->GetNativeView()->GetRootWindow()->RemoveRootWindowObserver(this);
+  widget->GetNativeView()->GetRootWindow()->RemoveObserver(this);
   aura::client::GetFocusClient(widget->GetNativeView())->RemoveObserver(this);
   view_ = NULL;
 }
@@ -264,9 +267,10 @@ void AppListController::OnWindowFocused(aura::Window* gained_focus,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// AppListController,  aura::RootWindowObserver implementation:
-void AppListController::OnRootWindowResized(const aura::RootWindow* root,
-                                            const gfx::Size& old_size) {
+// AppListController,  aura::WindowObserver implementation:
+void AppListController::OnWindowBoundsChanged(aura::Window* root,
+                                              const gfx::Rect& old_bounds,
+                                              const gfx::Rect& new_bounds) {
   UpdateBounds();
 }
 

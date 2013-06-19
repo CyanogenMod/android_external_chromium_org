@@ -100,6 +100,7 @@
     'public/common/url_utils.h',
     'public/common/zygote_fork_delegate_linux.h',
     'common/accessibility_messages.h',
+    'common/accessibility_notification.h',
     'common/accessibility_node_data.cc',
     'common/accessibility_node_data.h',
     'common/all_messages.h',
@@ -119,10 +120,6 @@
     'common/android/surface_texture_peer.h',
     'common/android/trace_event_binding.cc',
     'common/android/trace_event_binding.h',
-    'common/appcache/appcache_backend_proxy.cc',
-    'common/appcache/appcache_backend_proxy.h',
-    'common/appcache/appcache_dispatcher.cc',
-    'common/appcache/appcache_dispatcher.h',
     'common/appcache_messages.h',
     'common/browser_plugin/browser_plugin_constants.cc',
     'common/browser_plugin/browser_plugin_constants.h',
@@ -292,6 +289,7 @@
     'common/quota_messages.h',
     'common/resource_messages.cc',
     'common/resource_messages.h',
+    'common/sandbox_init_linux.cc',
     'common/sandbox_init_mac.cc',
     'common/sandbox_init_mac.h',
     'common/sandbox_init_win.cc',
@@ -326,6 +324,8 @@
     'common/utility_messages.h',
     'common/view_messages.h',
     'common/view_message_enums.h',
+    'common/websocket.h',
+    'common/websocket_messages.h',
     'common/worker_messages.h',
     'common/zygote_commands_linux.h',
     'port/common/input_event_ack_state.h',
@@ -441,11 +441,6 @@
       'sources': [
         'common/gpu/media/android_video_decode_accelerator.cc',
         'common/gpu/media/android_video_decode_accelerator.h',
-      ],
-    }],
-    ['java_bridge==1', {
-      'defines': [
-        'ENABLE_JAVA_BRIDGE',
       ],
     }],
     ['target_arch=="arm" and chromeos == 1 and use_x11 == 1', {

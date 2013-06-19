@@ -107,8 +107,7 @@ SuggestionState MockAutofillDialogController::SuggestionStateForSection(
                          gfx::Font::NORMAL,
                          gfx::Image(),
                          string16(),
-                         gfx::Image(),
-                         false);
+                         gfx::Image());
 }
 
 void MockAutofillDialogController::EditClickedForSection(
@@ -123,35 +122,39 @@ gfx::Image MockAutofillDialogController::IconForField(
 }
 
 string16 MockAutofillDialogController::InputValidityMessage(
+    DialogSection section,
     AutofillFieldType type,
-    const string16& value) const {
+    const string16& value) {
   return string16();
 }
 
 ValidityData MockAutofillDialogController::InputsAreValid(
+     DialogSection section,
      const DetailOutputMap& inputs,
-     ValidationType validation_type) const {
+     ValidationType validation_type) {
   return ValidityData();
 }
 
 void MockAutofillDialogController::UserEditedOrActivatedInput(
+    DialogSection section,
     const DetailInput* input,
     gfx::NativeView parent_view,
     const gfx::Rect& content_bounds,
     const string16& field_contents,
-    bool was_edit) {
-}
+    bool was_edit) {}
 
 bool MockAutofillDialogController::HandleKeyPressEventInInput(
      const content::NativeWebKeyboardEvent& event) {
   return false;
 }
 
-void MockAutofillDialogController::FocusMoved() {
+void MockAutofillDialogController::FocusMoved() {}
+
+gfx::Image MockAutofillDialogController::SplashPageImage() const {
+  return gfx::Image();
 }
 
-void MockAutofillDialogController::ViewClosed() {
-}
+void MockAutofillDialogController::ViewClosed() {}
 
 std::vector<DialogNotification> MockAutofillDialogController::
     CurrentNotifications() {

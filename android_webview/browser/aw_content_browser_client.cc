@@ -29,8 +29,6 @@
 namespace android_webview {
 namespace {
 
-AwBrowserContext* g_browser_context;
-
 class AwAccessTokenStore : public content::AccessTokenStore {
  public:
   AwAccessTokenStore() { }
@@ -67,7 +65,7 @@ std::string AwContentBrowserClient::GetAcceptLangsImpl() {
 }
 
 AwBrowserContext* AwContentBrowserClient::GetAwBrowserContext() {
-  return g_browser_context;
+  return AwBrowserContext::GetDefault();
 }
 
 AwContentBrowserClient::AwContentBrowserClient(
@@ -79,11 +77,9 @@ AwContentBrowserClient::AwContentBrowserClient(
   }
   browser_context_.reset(
       new AwBrowserContext(user_data_dir, native_factory_));
-  g_browser_context = browser_context_.get();
 }
 
 AwContentBrowserClient::~AwContentBrowserClient() {
-  g_browser_context = NULL;
 }
 
 void AwContentBrowserClient::AddCertificate(net::URLRequest* request,
@@ -257,8 +253,11 @@ void AwContentBrowserClient::AllowCertificateError(
       AwContentsClientBridgeBase::FromID(render_process_id, render_view_id);
   bool cancel_request = true;
   if (client)
-    client->AllowCertificateError(cert_error, ssl_info.cert, request_url,
-                                  callback, &cancel_request);
+    client->AllowCertificateError(cert_error,
+                                  ssl_info.cert.get(),
+                                  request_url,
+                                  callback,
+                                  &cancel_request);
   if (cancel_request)
     *result = content::CERTIFICATE_REQUEST_RESULT_TYPE_DENY;
 }
@@ -373,6 +372,7 @@ void AwContentBrowserClient::DidCreatePpapiPlugin(
 bool AwContentBrowserClient::AllowPepperSocketAPI(
     content::BrowserContext* browser_context,
     const GURL& url,
+    bool private_api,
     const content::SocketPermissionRequest& params) {
   NOTREACHED() << "Android WebView does not support plugins";
   return false;

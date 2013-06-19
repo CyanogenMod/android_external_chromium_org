@@ -4,7 +4,7 @@
 
 #include "content/browser/renderer_host/ui_events_helper.h"
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/events/event.h"
 #include "ui/base/events/event_constants.h"
 
@@ -90,9 +90,10 @@ WebKit::WebInputEvent::Type TouchEventTypeFromEvent(
 namespace content {
 
 bool MakeUITouchEventsFromWebTouchEvents(
-    const WebKit::WebTouchEvent& touch,
+    const TouchEventWithLatencyInfo& touch_with_latency,
     ScopedVector<ui::TouchEvent>* list,
     TouchEventCoordinateSystem coordinate_system) {
+  const WebKit::WebTouchEvent& touch = touch_with_latency.event;
   ui::EventType type = ui::ET_UNKNOWN;
   switch (touch.type) {
     case WebKit::WebInputEvent::TouchStart:
@@ -141,6 +142,7 @@ bool MakeUITouchEventsFromWebTouchEvents(
           point.radiusY,
           point.rotationAngle,
           point.force);
+    uievent->set_latency(touch_with_latency.latency);
     list->push_back(uievent);
   }
   return true;

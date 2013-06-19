@@ -22,7 +22,7 @@
 #include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/render_thread_impl.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gl/gl_switches.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
@@ -104,6 +104,11 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
   settings.force_direct_layer_drawing =
       cmd->HasSwitch(cc::switches::kForceDirectLayerDrawing);
+
+  // Android WebView does not support forced draw and this is to prevent
+  // crashes. Adding support for forced draw is tracked in crbug.com/250909.
+  settings.timeout_and_draw_when_animation_checkerboards =
+      !widget->UsingSynchronousRendererCompositor();
 
   int default_tile_width = settings.default_tile_size.width();
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {

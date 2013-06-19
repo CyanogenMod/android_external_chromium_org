@@ -169,7 +169,6 @@ void ExistingUserController::Init(const UserList& users) {
   UpdateLoginDisplay(users);
   ConfigurePublicSessionAutoLogin();
 
-  LoginUtils::Get()->PrewarmAuthentication();
   DBusThreadManager::Get()->GetSessionManagerClient()->EmitLoginPromptReady();
 }
 
@@ -593,6 +592,12 @@ void ExistingUserController::OnStartEnterpriseEnrollment() {
                  weak_factory_.GetWeakPtr()));
 }
 
+void ExistingUserController::OnStartKioskEnableScreen() {
+  KioskAppManager::Get()->GetConsumerKioskModeStatus(
+      base::Bind(&ExistingUserController::OnConsumerKioskModeCheckCompleted,
+                 weak_factory_.GetWeakPtr()));
+}
+
 void ExistingUserController::OnStartDeviceReset() {
   ShowResetScreen();
 }
@@ -621,6 +626,12 @@ void ExistingUserController::Signout() {
   NOTREACHED();
 }
 
+void ExistingUserController::OnConsumerKioskModeCheckCompleted(
+    KioskAppManager::ConsumerKioskModeStatus status) {
+  if (status == KioskAppManager::CONSUMER_KIOSK_MODE_CONFIGURABLE)
+    ShowKioskEnableScreen();
+}
+
 void ExistingUserController::OnEnrollmentOwnershipCheckCompleted(
     DeviceSettingsService::OwnershipStatus status,
     bool current_user_is_owner) {
@@ -633,9 +644,11 @@ void ExistingUserController::OnEnrollmentOwnershipCheckCompleted(
         CrosSettings::Get()->PrepareTrustedValues(
             base::Bind(
                 &ExistingUserController::OnEnrollmentOwnershipCheckCompleted,
-                weak_factory_.GetWeakPtr(), status, current_user_is_owner));
-    if (trusted_status == CrosSettingsProvider::PERMANENTLY_UNTRUSTED)
+                weak_factory_.GetWeakPtr(),
+                status, current_user_is_owner));
+    if (trusted_status == CrosSettingsProvider::PERMANENTLY_UNTRUSTED) {
       ShowEnrollmentScreen(false, std::string());
+    }
   } else {
     // OwnershipService::GetStatusAsync is supposed to return either
     // OWNERSHIP_NONE or OWNERSHIP_TAKEN.
@@ -659,6 +672,12 @@ void ExistingUserController::ShowEnrollmentScreen(bool is_auto_enrollment,
 void ExistingUserController::ShowResetScreen() {
   scoped_ptr<DictionaryValue> params;
   host_->StartWizard(WizardController::kResetScreenName, params.Pass());
+  login_display_->OnFadeOut();
+}
+
+void ExistingUserController::ShowKioskEnableScreen() {
+  scoped_ptr<DictionaryValue> params;
+  host_->StartWizard(WizardController::kKioskEnableScreenName, params.Pass());
   login_display_->OnFadeOut();
 }
 
@@ -1008,6 +1027,7 @@ void ExistingUserController::InitializeStartUrls() const {
   std::vector<std::string> start_urls;
 
   const base::ListValue *urls;
+  bool can_show_getstarted_guide = true;
   if (UserManager::Get()->IsLoggedInAsDemoUser()) {
     if (CrosSettings::Get()->GetList(kStartUpUrls, &urls)) {
       // The retail mode user will get start URLs from a special policy if it is
@@ -1019,6 +1039,7 @@ void ExistingUserController::InitializeStartUrls() const {
           start_urls.push_back(url);
       }
     }
+    can_show_getstarted_guide = false;
   // Skip the default first-run behavior for public accounts.
   } else if (!UserManager::Get()->IsLoggedInAsPublicAccount()) {
     if (AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
@@ -1028,6 +1049,7 @@ void ExistingUserController::InitializeStartUrls() const {
           StringToLowerASCII(prefs->GetString(prefs::kApplicationLocale));
       std::string vox_url = base::StringPrintf(url, current_locale.c_str());
       start_urls.push_back(vox_url);
+      can_show_getstarted_guide = false;
     }
   }
 
@@ -1039,11 +1061,13 @@ void ExistingUserController::InitializeStartUrls() const {
     customization->ApplyCustomization();
   }
 
+  // Only show getting started guide for a new user.
+  const bool should_show_getstarted_guide =
+      UserManager::Get()->IsCurrentUserNew();
 
-  // Don't open default Chrome window for the first login of a new
-  // user because it will hide the Getting Started App window (which is
-  // launched automatically in that situation).
-  if (UserManager::Get()->IsCurrentUserNew()) {
+  if (can_show_getstarted_guide && should_show_getstarted_guide) {
+    // Don't open default Chrome window if we're going to launch the GS app.
+    // Because we dont' want the GS app to be hidden in the background.
     CommandLine::ForCurrentProcess()->AppendSwitch(::switches::kSilentLaunch);
   } else {
     for (size_t i = 0; i < start_urls.size(); ++i) {

@@ -84,8 +84,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    bool can_compose_inline) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
@@ -132,8 +132,9 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
 #if defined(OS_WIN) || defined(USE_AURA)
-  virtual void ProcessAckedTouchEvent(const WebKit::WebTouchEvent& touch,
-                                      InputEventAckState ack_result) OVERRIDE;
+  virtual void ProcessAckedTouchEvent(
+      const TouchEventWithLatencyInfo& touch,
+      InputEventAckState ack_result) OVERRIDE;
 #endif  // defined(OS_WIN) || defined(USE_AURA)
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;

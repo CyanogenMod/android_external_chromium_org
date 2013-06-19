@@ -48,7 +48,8 @@ class CopyOperation {
                 JobScheduler* scheduler,
                 internal::ResourceMetadata* metadata,
                 internal::FileCache* cache,
-                google_apis::DriveServiceInterface* drive_service);
+                google_apis::DriveServiceInterface* drive_service,
+                const base::FilePath& temporary_file_directory);
   ~CopyOperation();
 
   // Performs the copy operation on the file at drive path |src_file_path|
@@ -94,6 +95,10 @@ class CopyOperation {
       const FileOperationCallback& callback,
       FileError error,
       scoped_ptr<ResourceEntry> entry);
+  void ScheduleTransferRegularFileAfterStore(
+      scoped_ptr<ResourceEntry> entry,
+      const FileOperationCallback& callback,
+      FileError error);
 
   // Invoked upon completion of GetFileByPath initiated by
   // TransferFileFromRemoteToLocal. If GetFileByPath reports no error, calls

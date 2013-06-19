@@ -15,8 +15,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_gyp)/skia_skia_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a
+	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -29,6 +28,9 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	content/child/android/child_jni_registrar.cc \
+	content/child/appcache_backend_proxy.cc \
+	content/child/appcache_dispatcher.cc \
 	content/child/child_histogram_message_filter.cc \
 	content/child/child_process.cc \
 	content/child/child_resource_message_filter.cc \
@@ -52,6 +54,7 @@ LOCAL_SRC_FILES := \
 	content/child/quota_dispatcher.cc \
 	content/child/request_extra_data.cc \
 	content/child/resource_dispatcher.cc \
+	content/child/runtime_features.cc \
 	content/child/socket_stream_dispatcher.cc \
 	content/child/thread_safe_sender.cc \
 	content/child/webblobregistry_impl.cc \
@@ -99,6 +102,7 @@ MY_CFLAGS_C :=
 
 MY_DEFS := \
 	'-DCONTENT_IMPLEMENTATION' \
+	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DUSE_LINUX_BREAKPAD' \
 	'-DNO_TCMALLOC' \
@@ -193,9 +197,9 @@ LOCAL_LDFLAGS := \
 
 
 LOCAL_STATIC_LIBRARIES := \
+	cpufeatures \
 	ui_ui_gyp \
-	skia_skia_gyp \
-	webkit_support_glue_gyp
+	skia_skia_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

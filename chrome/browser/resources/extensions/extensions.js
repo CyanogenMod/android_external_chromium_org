@@ -46,6 +46,8 @@ cr.define('extensions', function() {
     },
     // @inheritdoc
     doDrop: function(e) {
+      ExtensionSettings.showOverlay(null);
+
       // Only process files that look like extensions. Other files should
       // navigate the browser normally.
       if (!e.dataTransfer.files.length ||
@@ -54,7 +56,6 @@ cr.define('extensions', function() {
       }
 
       chrome.send('installDroppedFile');
-      ExtensionSettings.showOverlay(null);
       e.preventDefault();
     }
   };
@@ -118,11 +119,10 @@ cr.define('extensions', function() {
       extensionCommandsOverlay.initializePage();
 
       // Initialize the kiosk overlay.
-      if (cr.isChromeOS && loadTimeData.getBoolean('enableKiosk')) {
+      if (cr.isChromeOS) {
         var kioskOverlay = extensions.KioskAppsOverlay.getInstance();
         kioskOverlay.initialize();
 
-        $('add-kiosk-app').hidden = false;
         $('add-kiosk-app').addEventListener('click', function() {
           ExtensionSettings.showOverlay($('kiosk-apps-page'));
           kioskOverlay.didShowPage();

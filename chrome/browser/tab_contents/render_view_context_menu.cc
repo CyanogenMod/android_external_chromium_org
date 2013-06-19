@@ -86,14 +86,14 @@
 #include "extensions/browser/view_type_utils.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerAction.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginAction.h"
+#include "third_party/WebKit/public/web/WebContextMenuData.h"
+#include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
+#include "third_party/WebKit/public/web/WebPluginAction.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/favicon_size.h"
-#include "webkit/glue/webmenuitem.h"
+#include "webkit/common/webmenuitem.h"
 
 using WebKit::WebContextMenuData;
 using WebKit::WebMediaPlayerAction;
@@ -391,7 +391,11 @@ RenderViewContextMenu::RenderViewContextMenu(
       protocol_handler_submenu_model_(this),
       protocol_handler_registry_(
           ProtocolHandlerRegistryFactory::GetForProfile(profile_)),
-      command_executed_(false) {
+      command_executed_(false),
+      is_guest_(false) {
+  RenderViewHost* rvh = source_web_contents_->GetRenderViewHost();
+  if (rvh && rvh->GetProcess()->IsGuest())
+    is_guest_ = true;
 }
 
 RenderViewContextMenu::~RenderViewContextMenu() {
@@ -494,35 +498,39 @@ void RenderViewContextMenu::AppendAllExtensionItems() {
     return;  // In unit-tests, we may not have an ExtensionService.
   MenuManager* menu_manager = service->menu_manager();
 
-  // Get a list of extension id's that have context menu items, and sort it by
-  // the extension's name.
+  string16 printable_selection_text = PrintableSelectionText();
+  EscapeAmpersands(&printable_selection_text);
+
+  // Get a list of extension id's that have context menu items, and sort by the
+  // top level context menu title of the extension.
   std::set<std::string> ids = menu_manager->ExtensionIds();
-  std::vector<std::pair<std::string, std::string> > sorted_ids;
+  std::vector<base::string16> sorted_menu_titles;
+  std::map<base::string16, std::string> map_ids;
   for (std::set<std::string>::iterator i = ids.begin(); i != ids.end(); ++i) {
     const Extension* extension = service->GetExtensionById(*i, false);
     // Platform apps have their context menus created directly in
     // AppendPlatformAppItems.
-    if (extension && !extension->is_platform_app())
-      sorted_ids.push_back(
-          std::pair<std::string, std::string>(extension->name(), *i));
+    if (extension && !extension->is_platform_app()) {
+      base::string16 menu_title = extension_items_.GetTopLevelContextMenuTitle(
+          *i, printable_selection_text);
+      map_ids[menu_title] = *i;
+      sorted_menu_titles.push_back(menu_title);
+    }
   }
-  // TODO(asargent) - See if this works properly for i18n names (bug 32363).
-  std::sort(sorted_ids.begin(), sorted_ids.end());
-
-  if (sorted_ids.empty())
+  if (sorted_menu_titles.empty())
     return;
+
+  const std::string app_locale = g_browser_process->GetApplicationLocale();
+  l10n_util::SortStrings16(app_locale, &sorted_menu_titles);
 
   int index = 0;
   base::TimeTicks begin = base::TimeTicks::Now();
-  std::vector<std::pair<std::string, std::string> >::const_iterator i;
-  for (i = sorted_ids.begin();
-       i != sorted_ids.end(); ++i) {
-    string16 printable_selection_text = PrintableSelectionText();
-    EscapeAmpersands(&printable_selection_text);
-
-    extension_items_.AppendExtensionItems(i->second, printable_selection_text,
+  for (size_t i = 0; i < sorted_menu_titles.size(); ++i) {
+    const std::string& id = map_ids[sorted_menu_titles[i]];
+    extension_items_.AppendExtensionItems(id, printable_selection_text,
                                           &index);
   }
+
   UMA_HISTOGRAM_TIMES("Extensions.ContextMenus_BuildTime",
                       base::TimeTicks::Now() - begin);
   UMA_HISTOGRAM_COUNTS("Extensions.ContextMenus_ItemCount", index);
@@ -568,6 +576,7 @@ void RenderViewContextMenu::InitMenu() {
   if (params_.media_type == WebContextMenuData::MediaTypeNone &&
       !has_link &&
       !params_.is_editable &&
+      !is_guest_ &&
       !has_selection) {
     if (!params_.page_url.is_empty()) {
       bool is_devtools = IsDevToolsURL(params_.page_url);
@@ -619,7 +628,7 @@ void RenderViewContextMenu::InitMenu() {
   else if (has_selection)
     AppendCopyItem();
 
-  if (has_selection) {
+  if (!is_guest_ && has_selection) {
     AppendSearchProvider();
     if (!IsDevToolsURL(params_.page_url))
       AppendPrintItem();
@@ -630,16 +639,19 @@ void RenderViewContextMenu::InitMenu() {
 
   AppendDeveloperItems();
 
-  if (!print_preview_menu_observer_.get()) {
-    print_preview_menu_observer_.reset(
-        new PrintPreviewContextMenuObserver(source_web_contents_));
+  if (!is_guest_) {
+    if (!print_preview_menu_observer_.get()) {
+      print_preview_menu_observer_.reset(
+          new PrintPreviewContextMenuObserver(source_web_contents_));
+    }
+    if (!instant_extended_observer_.get()) {
+      instant_extended_observer_.reset(
+          new InstantExtendedContextMenuObserver(source_web_contents_));
+    }
+
+    observers_.AddObserver(print_preview_menu_observer_.get());
+    observers_.AddObserver(instant_extended_observer_.get());
   }
-  if (!instant_extended_observer_.get()) {
-    instant_extended_observer_.reset(
-        new InstantExtendedContextMenuObserver(source_web_contents_));
-  }
-  observers_.AddObserver(print_preview_menu_observer_.get());
-  observers_.AddObserver(instant_extended_observer_.get());
 }
 
 const Extension* RenderViewContextMenu::GetExtension() const {

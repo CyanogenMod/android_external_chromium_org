@@ -37,6 +37,28 @@ test.util.async = {};
 test.util.TESTING_EXTENSION_ID = 'oobinhbdbiehknkpbpejbbpdbkdjmoco';
 
 /**
+ * Interval of checking a condition in milliseconds.
+ * @type {number}
+ * @const
+ * @private
+ */
+test.util.WAITTING_INTERVAL_ = 50;
+
+/**
+ * Repeats the function until it returns true.
+ * @param {function()} closure Function expected to return true.
+ * @private
+ */
+test.util.repeatUntilTrue_ = function(closure) {
+  var step = function() {
+    if (closure())
+      return;
+    setTimeout(step, test.util.WAITTING_INTERVAL_);
+  };
+  step();
+};
+
+/**
  * Opens the main Files.app's window and waits until it is ready.
  *
  * @param {string} path Path of the directory to be opened.
@@ -44,25 +66,27 @@ test.util.TESTING_EXTENSION_ID = 'oobinhbdbiehknkpbpejbbpdbkdjmoco';
  *     App ID.
  */
 test.util.async.openMainWindow = function(path, callback) {
-  var appId;
-  function helper() {
-    if (appWindows[appId]) {
-      var contentWindow = appWindows[appId].contentWindow;
-      var table = contentWindow.document.querySelector('#detail-table');
-      if (table) {
+  var steps = [
+    function() {
+      launchFileManager({defaultPath: path},
+                        undefined,  // opt_type
+                        undefined,  // opt_id
+                        steps.shift());
+    },
+    function(appId) {
+      test.util.repeatUntilTrue_(function() {
+        if (!appWindows[appId])
+          return false;
+        var contentWindow = appWindows[appId].contentWindow;
+        var table = contentWindow.document.querySelector('#detail-table');
+        if (!table)
+          return false;
         callback(appId);
-        return;
-      }
+        return true;
+      });
     }
-    window.setTimeout(helper, 50);
-  }
-  launchFileManager({defaultPath: path},
-                    undefined,  // opt_type
-                    undefined,  // opt_id
-                    function(id) {
-                      appId = id;
-                      helper();
-                    });
+  ];
+  steps.shift()();
 };
 
 /**
@@ -74,17 +98,16 @@ test.util.async.openMainWindow = function(path, callback) {
  *     App ID.
  */
 test.util.async.waitForWindow = function(appIdPrefix, callback) {
-  var appId;
-  function helper() {
+  test.util.repeatUntilTrue_(function() {
     for (var appId in appWindows) {
-      if (appId.indexOf(appIdPrefix) == 0) {
+      if (appId.indexOf(appIdPrefix) == 0 &&
+          appWindows[appId].contentWindow) {
         callback(appId);
-        return;
+        return true;
       }
     }
-    window.setTimeout(helper, 50);
-  }
-  helper();
+    return false;
+  });
 };
 
 /**
@@ -182,15 +205,14 @@ test.util.sync.getFileList = function(contentWindow) {
  */
 test.util.async.waitForWindowGeometry = function(
     contentWindow, width, height, callback) {
-  function helper() {
+  test.util.repeatUntilTrue_(function() {
     if (contentWindow.innerWidth == width &&
         contentWindow.innerHeight == height) {
-       callback({width: width, height: height});
-       return;
+      callback({width: width, height: height});
+      return true;
     }
-    window.setTimeout(helper, 50);
-  }
-  helper();
+    return false;
+  });
 };
 
 /**
@@ -204,24 +226,22 @@ test.util.async.waitForWindowGeometry = function(
  */
 test.util.async.waitForElement = function(
     contentWindow, targetQuery, iframeQuery, callback) {
-  function helper() {
+  test.util.repeatUntilTrue_(function() {
     var doc = test.util.sync.getDocument_(contentWindow, iframeQuery);
-    if (doc) {
-      var element = doc.querySelector(targetQuery);
-      if (element) {
-        var attributes = {};
-        for (var i = 0; i < element.attributes.length; i++) {
-          attributes[element.attributes[i].nodeName] =
-              element.attributes[i].nodeValue;
-        }
-        var text = element.textContent;
-        callback({attributes: attributes, text: text});
-        return;
-      }
+    if (!doc)
+      return false;
+    var element = doc.querySelector(targetQuery);
+    if (!element)
+      return false;
+    var attributes = {};
+    for (var i = 0; i < element.attributes.length; i++) {
+      attributes[element.attributes[i].nodeName] =
+          element.attributes[i].nodeValue;
     }
-    window.setTimeout(helper, 50);
-  }
-  helper();
+    var text = element.textContent;
+    callback({attributes: attributes, text: text});
+    return true;
+  });
 };
 
 /**
@@ -234,7 +254,7 @@ test.util.async.waitForElement = function(
  */
 test.util.async.waitForFileListChange = function(
     contentWindow, lengthBefore, callback) {
-  function helper() {
+  test.util.repeatUntilTrue_(function() {
     var files = test.util.sync.getFileList(contentWindow);
     files.sort();
     var notReadyRows = files.filter(function(row) {
@@ -242,12 +262,13 @@ test.util.async.waitForFileListChange = function(
     });
     if (notReadyRows.length === 0 &&
         files.length !== lengthBefore &&
-        files.length !== 0)
+        files.length !== 0) {
       callback(files);
-    else
-      window.setTimeout(helper, 50);
-  }
-  helper();
+      return true;
+    } else {
+      return false;
+    }
+  });
 };
 
 /**
@@ -294,14 +315,15 @@ test.util.async.performAutocompleteAndWait = function(
   inputEvent.initEvent('input', true /* bubbles */, true /* cancelable */);
   searchBox.dispatchEvent(inputEvent);
 
-  function helper() {
+  test.util.repeatUntilTrue_(function() {
     var items = test.util.sync.getAutocompleteList(contentWindow);
-    if (items.length >= numExpectedItems)
+    if (items.length >= numExpectedItems) {
       callback(items);
-    else
-      window.setTimeout(helper, 50);
-  }
-  helper();
+      return true;
+    } else {
+      return false;
+    }
+  });
 };
 
 /**
@@ -311,16 +333,14 @@ test.util.async.performAutocompleteAndWait = function(
  * @param {function()} callback Success callback.
  */
 test.util.async.waitAndAcceptDialog = function(contentWindow, callback) {
-  var tryAccept = function() {
+  test.util.repeatUntilTrue_(function() {
     var button = contentWindow.document.querySelector('.cr-dialog-ok');
-    if (button) {
-      button.click();
-      callback();
-      return;
-    }
-    window.setTimeout(tryAccept, 50);
-  };
-  tryAccept();
+    if (!button)
+      return false;
+    button.click();
+    callback();
+    return true;
+  });
 };
 
 /**
@@ -402,17 +422,16 @@ test.util.async.selectVolume = function(contentWindow, iconName, callback) {
  */
 test.util.async.waitForFiles = function(
     contentWindow, expected, opt_orderCheck, callback) {
-  var step = function() {
-    var fileList = test.util.sync.getFileList(contentWindow);
+  test.util.repeatUntilTrue_(function() {
+    var files = test.util.sync.getFileList(contentWindow);
     if (!opt_orderCheck)
-      fileList.sort();
-    if (chrome.test.checkDeepEq(expected, fileList)) {
-      callback();
-      return;
+      files.sort();
+    if (chrome.test.checkDeepEq(expected, files)) {
+      callback(true);
+      return true;
     }
-    setTimeout(step, 50);
-  };
-  step();
+    return false;
+  });
 };
 
 /**
@@ -586,16 +605,30 @@ test.util.sync.deleteFile = function(contentWindow, filename) {
 };
 
 /**
- * Obtains computed styles of the elements specified by |queries|.
+ * Wait for the elements' style to be changed as the expected values.  The
+ * queries argument is a list of object that have the query property and the
+ * styles property. The query property is a string query to specify the
+ * element. The styles property is a string map of the style name and its
+ * expected value.
  *
  * @param {Window} contentWindow Window to be tested.
- * @param {Array.<string>>} queries List of elements to be computed styles.
- * @return {Array.<CSSStyleDeclaration>} List of computed styles.
+ * @param {Array.<object>} queries Queries that specifies the elements and
+ *   expected styles.
+ * @param {function()} callback Callback function to be notified the change of
+ *     the styles.
  */
-test.util.sync.getComputedStyles = function(contentWindow, queries) {
-  return queries.map(function(query) {
-    var element = contentWindow.document.querySelector(query);
-    return contentWindow.getComputedStyle(element);
+test.util.async.waitForStyles = function(contentWindow, queries, callback) {
+  test.util.repeatUntilTrue_(function() {
+    for (var i = 0; i < queries.length; i++) {
+      var element = contentWindow.document.querySelector(queries[i].query);
+      var styles = queries[i].styles;
+      for (var name in styles) {
+        if (contentWindow.getComputedStyle(element)[name] != styles[name])
+          return false;
+      }
+    }
+    callback();
+    return true;
   });
 };
 
@@ -639,7 +672,11 @@ test.util.registerRemoteTestUtils = function() {
     }
     // Call the test utility function and respond the result.
     if (test.util.async[request.func]) {
-      args[test.util.async[request.func].length - 1] = sendResponse;
+      args[test.util.async[request.func].length - 1] = function() {
+        console.debug('Received the result of ' + request.func);
+        sendResponse.apply(null, arguments);
+      };
+      console.debug('Waiting for the result of ' + request.func);
       test.util.async[request.func].apply(null, args);
       return true;
     } else if (test.util.sync[request.func]) {

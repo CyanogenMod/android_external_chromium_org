@@ -86,7 +86,7 @@ void InputHandlerManager::AddInputHandlerOnCompositorThread(
   TRACE_EVENT1("input",
       "InputHandlerManager::AddInputHandlerOnCompositorThread",
       "result", "AddingRoute");
-  client_->DidAddInputHandler(routing_id);
+  client_->DidAddInputHandler(routing_id, input_handler.get());
   input_handlers_[routing_id] =
       make_scoped_refptr(new InputHandlerWrapper(this,
           routing_id, main_loop, input_handler, render_view_impl));
@@ -119,5 +119,15 @@ InputEventAckState InputHandlerManager::HandleInputEvent(
   return InputEventDispositionToAck(
       proxy->HandleInputEventWithLatencyInfo(*input_event, latency_info));
 }
+
+void InputHandlerManager::DidOverscroll(int routing_id,
+                                        gfx::Vector2dF accumulated_overscroll,
+                                        gfx::Vector2dF current_fling_velocity) {
+  client_->DidOverscroll(routing_id,
+                         accumulated_overscroll,
+                         current_fling_velocity);
+}
+
+
 
 }  // namespace content

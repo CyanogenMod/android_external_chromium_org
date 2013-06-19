@@ -104,6 +104,7 @@ class Plugin : public pp::InstancePrivate {
   // Updates nacl_module_origin() and nacl_module_url().
   bool LoadNaClModule(nacl::DescWrapper* wrapper, ErrorInfo* error_info,
                       bool enable_dyncode_syscalls,
+                      bool enable_exception_handling,
                       pp::CompletionCallback init_done_cb,
                       pp::CompletionCallback crash_cb);
 
@@ -281,6 +282,8 @@ class Plugin : public pp::InstancePrivate {
   const nacl::string& mime_type() const { return mime_type_; }
   // The default MIME type for the NaCl plugin.
   static const char* const kNaClMIMEType;
+  // The MIME type for the plugin when using PNaCl.
+  static const char* const kPnaclMIMEType;
   // Returns true if PPAPI Dev interfaces should be allowed.
   bool enable_dev_interfaces() { return enable_dev_interfaces_; }
 
@@ -330,6 +333,7 @@ class Plugin : public pp::InstancePrivate {
                             bool uses_irt,
                             bool uses_ppapi,
                             bool enable_dyncode_syscalls,
+                            bool enable_exception_handling,
                             ErrorInfo* error_info,
                             pp::CompletionCallback init_done_cb,
                             pp::CompletionCallback crash_cb);

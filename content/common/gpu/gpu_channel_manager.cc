@@ -38,10 +38,10 @@ GpuChannelManager::GpuChannelManager(ChildThread* gpu_child_thread,
       shutdown_event_(shutdown_event),
       gpu_child_thread_(gpu_child_thread),
       gpu_memory_manager_(
-          this, GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit),
+          this,
+          GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit),
       watchdog_(watchdog),
-      sync_point_manager_(new SyncPointManager),
-      program_cache_(NULL) {
+      sync_point_manager_(new SyncPointManager) {
   DCHECK(gpu_child_thread);
   DCHECK(io_message_loop);
   DCHECK(shutdown_event);
@@ -291,7 +291,7 @@ void GpuChannelManager::OnLoseAllContexts() {
 gfx::GLSurface* GpuChannelManager::GetDefaultOffscreenSurface() {
   if (!default_offscreen_surface_.get()) {
     default_offscreen_surface_ =
-        gfx::GLSurface::CreateOffscreenGLSurface(false, gfx::Size(1, 1));
+        gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1));
   }
   return default_offscreen_surface_.get();
 }

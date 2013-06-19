@@ -582,7 +582,14 @@ bool OmniboxViewViews::IsImeComposing() const {
 }
 
 bool OmniboxViewViews::IsImeShowingPopup() const {
+#if defined(OS_CHROMEOS)
   return ime_candidate_window_open_;
+#else
+  // TODO(yukishiino): Implement detection of candidate windows on Windows.
+  // We can detect whether any candidate window is open or not on Windows.
+  // Currently we simply fall back to IsImeComposing() as a second best way.
+  return IsImeComposing();
+#endif
 }
 
 int OmniboxViewViews::GetMaxEditWidth(int entry_width) const {
@@ -751,9 +758,8 @@ bool OmniboxViewViews::IsCommandIdEnabled(int command_id) const {
   if (command_id == IDS_PASTE_AND_GO)
     return model()->CanPasteAndGo(GetClipboardText());
   if (command_id == IDC_COPY_URL) {
-    return !model()->user_input_in_progress() &&
-        (toolbar_model()->GetSearchTermsType() !=
-            ToolbarModel::NO_SEARCH_TERMS);
+    return toolbar_model()->WouldReplaceSearchURLWithSearchTerms() &&
+      !model()->user_input_in_progress();
   }
   return command_updater()->IsCommandEnabled(command_id);
 }
@@ -878,7 +884,6 @@ void OmniboxViewViews::CopyURL() {
 }
 
 void OmniboxViewViews::OnPaste() {
-  // Replace the selection if we have something to paste.
   const string16 text(GetClipboardText());
   if (!text.empty()) {
     // Record this paste, so we can do different behavior.
@@ -886,6 +891,6 @@ void OmniboxViewViews::OnPaste() {
     // Force a Paste operation to trigger the text_changed code in
     // OnAfterPossibleChange(), even if identical contents are pasted.
     text_before_change_.clear();
-    ReplaceSelection(text);
+    InsertOrReplaceText(text);
   }
 }

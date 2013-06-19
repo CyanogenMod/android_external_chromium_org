@@ -48,6 +48,10 @@ const char kAllowLegacyExtensionManifests[] =
 const char kAllowNaClCrxFsAPI[]             = "allow-nacl-crxfs-api";
 
 // Specifies comma-separated list of extension ids or hosts to grant
+// access to file handle APIs.
+const char kAllowNaClFileHandleAPI[]        = "allow-nacl-file-handle-api";
+
+// Specifies comma-separated list of extension ids or hosts to grant
 // access to TCP/UDP socket APIs.
 const char kAllowNaClSocketAPI[]            = "allow-nacl-socket-api";
 
@@ -926,9 +930,7 @@ const char kNaClBrokerProcess[]             = "nacl-broker";
 // if manifest URL does not match any pattern.
 const char kNaClDebugMask[]                 = "nacl-debug-mask";
 
-// Native Client GDB debugger for loader. It needs switches calculated
-// at run time in order to work correctly. That's why NaClLoadCmdPrefix
-// flag can't be used.
+// Native Client GDB debugger that will be launched automatically when needed.
 const char kNaClGdb[]                       = "nacl-gdb";
 
 // GDB script to pass to the nacl-gdb debugger at startup.
@@ -1246,6 +1248,13 @@ const char kSbDisableExtensionBlacklist[] =
 const char kSbDisableSideEffectFreeWhitelist[] =
     "safebrowsing-disable-side-effect-free-whitelist";
 
+// URL to send safebrowsing download feedback reports to.
+const char kSbDownloadFeedbackURL[] = "safebrowsing-download-feedback-url";
+
+// Enable safebrowsing download feedback.
+const char kSbEnableDownloadFeedback[] =
+    "safebrowsing-enable-download-feedback";
+
 // Enables or disables extension scripts badges in the location bar.
 const char kScriptBadges[]                  = "script-badges";
 
@@ -1388,6 +1397,10 @@ const char kSyncTrySsltcpFirstForXmpp[]     = "sync-try-ssltcp-first-for-xmpp";
 // Enables deferring sync backend initialization until user initiated changes
 // occur.
 const char kSyncEnableDeferredStartup[]     = "sync-enable-deferred-startup";
+
+// Disables use of OAuth2 token in sync components and reverts behavior to
+// ClientLogin token.
+const char kSyncDisableOAuth2Token[]         = "sync-disable-oauth2-token";
 
 // Enables directory support for sync filesystem
 const char kSyncfsEnableDirectoryOperation[] =
@@ -1540,6 +1553,9 @@ const char kEnableAppShims[]                = "enable-app-shims";
 
 // Enables the tabs expose feature ( http://crbug.com/50307 ).
 const char kEnableExposeForTabs[]           = "enable-expose-for-tabs";
+
+// Enables a simplified fullscreen UI on Mac.
+const char kEnableSimplifiedFullscreen[]    = "enable-simplified-fullscreen";
 
 // Performs Keychain reauthorization from the command line on behalf of a
 // special Keychain reauthorization stub executable. Used during auto-update.

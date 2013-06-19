@@ -4,6 +4,7 @@
 
 #include "chrome/browser/media_galleries/fileapi/itunes_data_provider.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
@@ -12,6 +13,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/media_galleries/fileapi/itunes_library_parser.h"
+#include "chrome/browser/media_galleries/fileapi/media_file_system_mount_point_provider.h"
+
+using chrome::MediaFileSystemMountPointProvider;
 
 namespace itunes {
 
@@ -90,19 +94,29 @@ ITunesDataProvider::Album MakeUniqueTrackNames(
 
 ITunesDataProvider::ITunesDataProvider(const base::FilePath& library_path)
     : library_path_(library_path),
-      needs_refresh_(true) {
+      needs_refresh_(true),
+      is_valid_(false),
+      weak_factory_(this) {
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
+  DCHECK(!library_path_.empty());
+  bool ret = library_watcher_.Watch(
+      library_path_, false /*recursive*/,
+      base::Bind(&ITunesDataProvider::OnLibraryChanged,
+                 weak_factory_.GetWeakPtr()));
+  if (!ret)
+    LOG(ERROR) << "Adding watch for " << library_path_.value() << " failed";
 }
 
 ITunesDataProvider::~ITunesDataProvider() {}
 
-// TODO(vandebo): add a file watch that resets |needs_refresh_| when the
-// file changes.
-void ITunesDataProvider::RefreshData(const base::Closure& ready_callback) {
+void ITunesDataProvider::RefreshData(
+    const base::Callback<void(bool)>& ready_callback) {
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
   if (needs_refresh_) {
-    ParseLibrary();
+    is_valid_ = ParseLibrary();
     needs_refresh_ = false;
   }
-  ready_callback.Run();
+  ready_callback.Run(is_valid_);
 }
 
 const base::FilePath& ITunesDataProvider::library_path() const {
@@ -110,13 +124,15 @@ const base::FilePath& ITunesDataProvider::library_path() const {
 }
 
 bool ITunesDataProvider::KnownArtist(const ArtistName& artist) const {
-  DCHECK(!needs_refresh_);
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
+  DCHECK(is_valid_);
   return ContainsKey(library_, artist);
 }
 
 bool ITunesDataProvider::KnownAlbum(const ArtistName& artist,
                                     const AlbumName& album) const {
-  DCHECK(!needs_refresh_);
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
+  DCHECK(is_valid_);
   Library::const_iterator library_it = library_.find(artist);
   if (library_it == library_.end())
     return false;
@@ -127,7 +143,8 @@ bool ITunesDataProvider::KnownAlbum(const ArtistName& artist,
 base::FilePath ITunesDataProvider::GetTrackLocation(
     const ArtistName& artist, const AlbumName& album,
     const TrackName& track) const {
-  DCHECK(!needs_refresh_);
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
+  DCHECK(is_valid_);
   Library::const_iterator library_it = library_.find(artist);
   if (library_it == library_.end())
     return base::FilePath();
@@ -144,7 +161,8 @@ base::FilePath ITunesDataProvider::GetTrackLocation(
 
 std::set<ITunesDataProvider::ArtistName>
 ITunesDataProvider::GetArtistNames() const {
-  DCHECK(!needs_refresh_);
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
+  DCHECK(is_valid_);
   std::set<ArtistName> result;
   Library::const_iterator it;
   for (it = library_.begin(); it != library_.end(); ++it) {
@@ -155,7 +173,8 @@ ITunesDataProvider::GetArtistNames() const {
 
 std::set<ITunesDataProvider::AlbumName> ITunesDataProvider::GetAlbumNames(
     const ArtistName& artist) const {
-  DCHECK(!needs_refresh_);
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
+  DCHECK(is_valid_);
   std::set<AlbumName> result;
   Library::const_iterator artist_lookup = library_.find(artist);
   if (artist_lookup == library_.end())
@@ -171,7 +190,8 @@ std::set<ITunesDataProvider::AlbumName> ITunesDataProvider::GetAlbumNames(
 
 ITunesDataProvider::Album ITunesDataProvider::GetAlbum(
     const ArtistName& artist, const AlbumName& album) const {
-  DCHECK(!needs_refresh_);
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
+  DCHECK(is_valid_);
   Album empty_result;
   Library::const_iterator artist_lookup = library_.find(artist);
   if (artist_lookup == library_.end())
@@ -184,13 +204,14 @@ ITunesDataProvider::Album ITunesDataProvider::GetAlbum(
   return album_lookup->second;
 }
 
-void ITunesDataProvider::ParseLibrary() {
+bool ITunesDataProvider::ParseLibrary() {
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
   std::string xml = ReadFile(library_path_);
 
   library_.clear();
   ITunesLibraryParser parser;
   if (!parser.Parse(xml))
-    return;
+    return false;
 
   ITunesLibraryParser::Library::const_iterator artist_it;
   ITunesLibraryParser::Albums::const_iterator album_it;
@@ -204,6 +225,16 @@ void ITunesDataProvider::ParseLibrary() {
           MakeUniqueTrackNames(album_it->second);
     }
   }
+  return true;
+}
+
+void ITunesDataProvider::OnLibraryChanged(const base::FilePath& path,
+                                          bool error) {
+  DCHECK(MediaFileSystemMountPointProvider::CurrentlyOnMediaTaskRunnerThread());
+  DCHECK_EQ(library_path_.value(), path.value());
+  if (error)
+    LOG(ERROR) << "Error watching " << library_path_.value();
+  needs_refresh_ = true;
 }
 
 }  // namespace itunes

@@ -11,7 +11,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/time.h"
 #include "chrome/browser/ui/autofill/account_chooser_model.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
@@ -138,12 +138,15 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual void EditCancelledForSection(DialogSection section) OVERRIDE;
   virtual gfx::Image IconForField(AutofillFieldType type,
                                   const string16& user_input) const OVERRIDE;
-  virtual string16 InputValidityMessage(AutofillFieldType type,
-                                        const string16& value) const OVERRIDE;
+  virtual string16 InputValidityMessage(DialogSection section,
+                                        AutofillFieldType type,
+                                        const string16& value) OVERRIDE;
   virtual ValidityData InputsAreValid(
+      DialogSection section,
       const DetailOutputMap& inputs,
-      ValidationType validation_type) const OVERRIDE;
-  virtual void UserEditedOrActivatedInput(const DetailInput* input,
+      ValidationType validation_type) OVERRIDE;
+  virtual void UserEditedOrActivatedInput(DialogSection section,
+                                          const DetailInput* input,
                                           gfx::NativeView parent_view,
                                           const gfx::Rect& content_bounds,
                                           const string16& field_contents,
@@ -151,6 +154,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   virtual bool HandleKeyPressEventInInput(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual void FocusMoved() OVERRIDE;
+  virtual gfx::Image SplashPageImage() const OVERRIDE;
   virtual void ViewClosed() OVERRIDE;
   virtual std::vector<DialogNotification> CurrentNotifications() OVERRIDE;
   virtual void SignInLinkClicked() OVERRIDE;
@@ -193,24 +197,27 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
       scoped_ptr<wallet::WalletItems> wallet_items) OVERRIDE;
   virtual void OnDidSaveAddress(
       const std::string& address_id,
-      const std::vector<wallet::RequiredAction>& required_actions) OVERRIDE;
+      const std::vector<wallet::RequiredAction>& required_actions,
+      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
   virtual void OnDidSaveInstrument(
       const std::string& instrument_id,
-      const std::vector<wallet::RequiredAction>& required_actions) OVERRIDE;
+      const std::vector<wallet::RequiredAction>& required_actions,
+      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
   virtual void OnDidSaveInstrumentAndAddress(
       const std::string& instrument_id,
       const std::string& address_id,
-      const std::vector<wallet::RequiredAction>& required_actions) OVERRIDE;
+      const std::vector<wallet::RequiredAction>& required_actions,
+      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
   virtual void OnDidUpdateAddress(
       const std::string& address_id,
-      const std::vector<wallet::RequiredAction>& required_actions) OVERRIDE;
+      const std::vector<wallet::RequiredAction>& required_actions,
+      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
   virtual void OnDidUpdateInstrument(
       const std::string& instrument_id,
-      const std::vector<wallet::RequiredAction>& required_actions) OVERRIDE;
+      const std::vector<wallet::RequiredAction>& required_actions,
+      const std::vector<wallet::FormFieldError>& form_field_errors) OVERRIDE;
   virtual void OnWalletError(
       wallet::WalletClient::ErrorType error_type) OVERRIDE;
-  virtual void OnMalformedResponse() OVERRIDE;
-  virtual void OnNetworkError(int response_code) OVERRIDE;
 
   // PersonalDataManagerObserver implementation.
   virtual void OnPersonalDataChanged() OVERRIDE;
@@ -258,7 +265,7 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
 
   // Call to disable communication to Online Wallet for this dialog.
   // Exposed for testing.
-  void DisableWallet();
+  void DisableWallet(wallet::WalletClient::ErrorType error_type);
 
   // Returns whether Wallet is the current data source. Exposed for testing.
   virtual bool IsPayingWithWallet() const;
@@ -305,6 +312,10 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
 
   // Refreshes the model on Wallet or sign-in state update.
   void OnWalletOrSigninUpdate();
+
+  // Called when a Save or Update call to Wallet has validation errors.
+  void OnWalletFormFieldError(
+      const std::vector<wallet::FormFieldError>& form_field_errors);
 
   // Calculates |legal_documents_text_| and |legal_document_link_ranges_| if
   // they have not already been calculated.
@@ -370,9 +381,6 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   string16 ExtraSuggestionTextForSection(DialogSection section) const;
   gfx::Image ExtraSuggestionIconForSection(DialogSection section) const;
 
-  // Whether |section| should be showing an "Edit" link.
-  bool EditEnabledForSection(DialogSection section) const;
-
   // Loads profiles that can suggest data for |type|. |field_contents| is the
   // part the user has already typed. |inputs| is the rest of section.
   // Identifying info is loaded into the last three outparams as well as
@@ -402,16 +410,20 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // Whether the user has chosen to enter all new data in at least one section.
   bool IsManuallyEditingAnySection() const;
 
+  // Returns validity message for a given credit card number.
+  base::string16 CreditCardNumberValidityMessage(
+      const base::string16& number) const;
+
   // Whether a particular DetailInput in |section| should be edited or not.
   bool InputIsEditable(const DetailInput& input, DialogSection section) const;
 
   // Whether all of the input fields currently showing in the dialog have valid
   // contents.
-  bool AllSectionsAreValid() const;
+  bool AllSectionsAreValid();
 
   // Whether all of the input fields currently showing in the given |section| of
   // the dialog have valid contents.
-  bool SectionIsValid(DialogSection section) const;
+  bool SectionIsValid(DialogSection section);
 
   // Whether the currently active credit card expiration date is valid.
   bool IsCreditCardExpirationValid(const base::string16& year,
@@ -631,15 +643,22 @@ class AutofillDialogControllerImpl : public AutofillDialogController,
   // continue to be true while processing required actions.
   bool is_submitting_;
 
-  // Whether or not there was a server side validation error saving or updating
-  // Wallet data.
-  bool wallet_server_validation_error_;
-
   // True if the last call to |GetFullWallet()| returned a
   // CHOOSE_ANOTHER_INSTRUMENT_OR_ADDRESS required action, indicating that the
   // selected instrument or address had become invalid since it was originally
   // returned in |GetWalletItems()|.
   bool choose_another_instrument_or_address_;
+
+  // Whether or not the server side validation errors returned by Wallet were
+  // recoverable.
+  bool wallet_server_validation_recoverable_;
+
+
+  typedef std::map<AutofillFieldType,
+      std::pair<base::string16, base::string16> > TypeErrorInputMap;
+  typedef std::map<DialogSection, TypeErrorInputMap> WalletValidationErrors;
+  // Wallet validation errors. section->type->(error_msg, input_value).
+  WalletValidationErrors wallet_errors_;
 
   // The current state of the Autocheckout flow.
   AutocheckoutState autocheckout_state_;

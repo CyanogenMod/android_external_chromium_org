@@ -11,7 +11,7 @@
 
 #include "build/build_config.h"
 
-#include "components/autofill/common/autofill_pref_names.h"
+#include "components/autofill/core/common/autofill_pref_names.h"
 
 namespace prefs {
 
@@ -274,6 +274,7 @@ extern const char kLanguageXkbAutoRepeatEnabled[];
 extern const char kLanguageXkbAutoRepeatDelay[];
 extern const char kLanguageXkbAutoRepeatInterval[];
 extern const char kLargeCursorEnabled[];
+extern const char kStickyKeysEnabled[];
 extern const char kSpokenFeedbackEnabled[];
 extern const char kHighContrastEnabled[];
 extern const char kScreenMagnifierEnabled[];
@@ -312,6 +313,7 @@ extern const char kPowerUseAudioActivity[];
 extern const char kPowerUseVideoActivity[];
 extern const char kPowerAllowScreenWakeLocks[];
 extern const char kPowerPresentationIdleDelayFactor[];
+extern const char kPowerPresentationScreenDimDelayFactor[];
 extern const char kPowerUserActivityScreenDimDelayFactor[];
 extern const char kTermsOfServiceURL[];
 extern const char kUsedPolicyCertificatesOnce[];
@@ -388,9 +390,10 @@ extern const char kBlockThirdPartyCookies[];
 extern const char kClearSiteDataOnExit[];
 extern const char kDefaultZoomLevel[];
 extern const char kPerHostZoomLevels[];
-extern const char kAutofillDialogAutofillDefault[];
+extern const char kAutofillDialogShowCount[];
 extern const char kAutofillDialogHasPaidWithWallet[];
 extern const char kAutofillDialogPayWithoutWallet[];
+extern const char kAutofillDialogAutofillDefault[];
 extern const char kEditBookmarksEnabled[];
 
 extern const char kEnableTranslate[];
@@ -475,13 +478,6 @@ extern const char kProfileCreatedByVersion[];
 
 extern const char kProfileMetrics[];
 extern const char kProfilePrefix[];
-
-extern const char kResetDefaultSearchEngine[];
-extern const char kResetHomepage[];
-extern const char kResetContentSettings[];
-extern const char kResetCookiesAndSiteData[];
-extern const char kResetExtensions[];
-extern const char kResetExtensionsHandling[];
 
 extern const char kStabilityExitedCleanly[];
 extern const char kStabilityStatsVersion[];
@@ -684,6 +680,10 @@ extern const char kWebAppCreateInQuickLaunchBar[];
 extern const char kGeolocationAccessToken[];
 #if defined(OS_ANDROID)
 extern const char kGeolocationEnabled[];
+#endif
+
+#if defined(ENABLE_GOOGLE_NOW)
+extern const char kGoogleGeolocationAccessEnabled[];
 #endif
 
 extern const char kDefaultAudioCaptureDevice[];

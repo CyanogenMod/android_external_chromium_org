@@ -139,10 +139,6 @@ class InstantExtendedTest : public InProcessBrowserTest,
     InstantTestBase::Init(instant_url);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
-    browser()->toolbar_model()->SetSupportsExtractionOfURLLikeSearchTerms(true);
-  }
-
   int64 GetHistogramCount(const char* name) {
     base::HistogramBase* histogram =
         base::StatisticsRecorder::FindHistogram(name);
@@ -2488,8 +2484,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, AcceptingURLSearchDoesNotNavigate) {
 
   // Accept the omnibox input.
   EXPECT_FALSE(omnibox()->model()->user_input_in_progress());
-  EXPECT_EQ(ToolbarModel::URL_LIKE_SEARCH_TERMS,
-            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_TRUE(
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
   GURL instant_tab_url = instant_tab->GetURL();
   browser()->window()->GetLocationBar()->AcceptInput();
   EXPECT_EQ(instant_tab_url, instant_tab->GetURL());
@@ -2524,8 +2520,8 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, AcceptingJSSearchDoesNotRunJS) {
 
   // Accept the omnibox input.
   EXPECT_FALSE(omnibox()->model()->user_input_in_progress());
-  EXPECT_EQ(ToolbarModel::URL_LIKE_SEARCH_TERMS,
-            browser()->toolbar_model()->GetSearchTermsType());
+  EXPECT_TRUE(
+      browser()->toolbar_model()->WouldReplaceSearchURLWithSearchTerms());
   browser()->window()->GetLocationBar()->AcceptInput();
   // Force some Javascript to run in the renderer so the inline javascript:
   // would be forced to run if it's going to.
@@ -2718,6 +2714,52 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, MAYBE_KeyboardTogglesVoiceSearch) {
   EXPECT_EQ(1, on_toggle_voice_search_calls_);
 }
 
+// Test to verify that the omnibox search query is updated on browser
+// back/forward button press events.
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, UpdateSearchQueryOnNavigation) {
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+
+  // Focus omnibox and confirm overlay isn't shown.
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+  content::WebContents* overlay = instant()->GetOverlayContents();
+  EXPECT_TRUE(overlay);
+  EXPECT_TRUE(instant()->model()->mode().is_default());
+  EXPECT_FALSE(instant()->IsOverlayingSearchResults());
+
+  // Typing in the omnibox should show the overlay.
+  SetOmniboxTextAndWaitForOverlayToShow("flowers");
+  EXPECT_TRUE(instant()->IsOverlayingSearchResults());
+  EXPECT_EQ(overlay, instant()->GetOverlayContents());
+
+  // Commit the search by pressing 'Enter'.
+  PressEnterAndWaitForNavigation();
+  EXPECT_EQ(ASCIIToUTF16("flowers"), omnibox()->GetText());
+
+  // Typing in the new search query in omnibox.
+  SetOmniboxText("cattles");
+  // Commit the search by pressing 'Enter'.
+  PressEnterAndWaitForNavigation();
+  // 'Enter' commits the query as it was typed. This creates a navigation entry
+  // in the history.
+  EXPECT_EQ(ASCIIToUTF16("cattles"), omnibox()->GetText());
+
+  content::WebContents* active_tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_TRUE(active_tab->GetController().CanGoBack());
+  content::WindowedNotificationObserver load_stop_observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::Source<content::NavigationController>(
+          &active_tab->GetController()));
+  active_tab->GetController().GoBack();
+  load_stop_observer.Wait();
+
+  EXPECT_EQ(ASCIIToUTF16("flowers"), omnibox()->GetText());
+  // Commit the search by pressing 'Enter'.
+  FocusOmnibox();
+  PressEnterAndWaitForNavigation();
+  EXPECT_EQ(ASCIIToUTF16("flowers"), omnibox()->GetText());
+}
+
 #endif  // HTML_INSTANT_EXTENDED_POPUP
 
 #if !defined(HTML_INSTANT_EXTENDED_POPUP)
@@ -2822,3 +2864,36 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, OmniboxMarginSetForSearchURLs) {
 }
 
 #endif  // if !defined(HTML_INSTANT_EXTENDED_POPUP)
+
+// Test to verify that switching tabs should not dispatch onmostvisitedchanged
+// events.
+IN_PROC_BROWSER_TEST_F(InstantExtendedTest, NoMostVisitedChangedOnTabSwitch) {
+  // Initialize Instant.
+  ASSERT_NO_FATAL_FAILURE(SetupInstant(browser()));
+  FocusOmniboxAndWaitForInstantOverlayAndNTPSupport();
+
+  // Open new tab. Preloaded NTP contents should have been used.
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(),
+      GURL(chrome::kChromeUINewTabURL),
+      NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+
+  // Make sure new tab received the onmostvisitedchanged event once.
+  content::WebContents* active_tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_TRUE(UpdateSearchState(active_tab));
+  EXPECT_EQ(2, on_most_visited_change_calls_);
+
+  // Activate the previous tab.
+  browser()->tab_strip_model()->ActivateTabAt(0, false);
+
+  // Switch back to new tab.
+  browser()->tab_strip_model()->ActivateTabAt(1, false);
+
+  // Confirm that new tab got no onmostvisitedchanged event.
+  active_tab = browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_TRUE(UpdateSearchState(active_tab));
+  EXPECT_EQ(2, on_most_visited_change_calls_);
+}

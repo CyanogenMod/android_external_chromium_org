@@ -5,7 +5,7 @@
 #include "chrome/browser/ui/app_list/search/history.h"
 
 #include "base/files/file_path.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/app_list/search/history_data.h"
 #include "chrome/browser/ui/app_list/search/history_data_store.h"
@@ -34,7 +34,8 @@ History::History(content::BrowserContext* context)
   const base::FilePath data_file =
       browser_context_->GetPath().AppendASCII(kStoreDataFileName);
   store_ = new HistoryDataStore(data_file);
-  data_.reset(new HistoryData(store_, kMaxQueryEntries, kMaxSecondaryQueries));
+  data_.reset(
+      new HistoryData(store_.get(), kMaxQueryEntries, kMaxSecondaryQueries));
   data_->AddObserver(this);
 }
 

@@ -553,6 +553,10 @@ void DesktopNativeWidgetAura::SetCursor(gfx::NativeCursor cursor) {
   desktop_root_window_host_->AsRootWindowHost()->SetCursor(cursor);
 }
 
+bool DesktopNativeWidgetAura::IsMouseEventsEnabled() const {
+  return true;
+}
+
 void DesktopNativeWidgetAura::ClearNativeFocus() {
   desktop_root_window_host_->ClearNativeFocus();
 
@@ -860,6 +864,13 @@ int DesktopNativeWidgetAura::OnPerformDrop(const ui::DropTargetEvent& event) {
 void DesktopNativeWidgetAura::OnRootWindowHostCloseRequested(
     const aura::RootWindow* root) {
   Close();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// DesktopNativeWidgetAura, NativeWidget implementation:
+
+ui::EventHandler* DesktopNativeWidgetAura::GetEventHandler() {
+  return this;
 }
 
 }  // namespace views

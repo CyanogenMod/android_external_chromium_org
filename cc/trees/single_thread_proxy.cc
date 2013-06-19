@@ -23,7 +23,7 @@ scoped_ptr<Proxy> SingleThreadProxy::Create(LayerTreeHost* layer_tree_host) {
 }
 
 SingleThreadProxy::SingleThreadProxy(LayerTreeHost* layer_tree_host)
-    : Proxy(scoped_ptr<Thread>(NULL)),
+    : Proxy(scoped_ptr<Thread>()),
       layer_tree_host_(layer_tree_host),
       created_offscreen_context_provider_(false),
       next_frame_is_newly_committed_frame_(false),
@@ -194,7 +194,7 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
     scoped_ptr<ResourceUpdateController> update_controller =
         ResourceUpdateController::Create(
             NULL,
-            Proxy::MainThread(),
+            Proxy::MainThread()->TaskRunner(),
             queue.Pass(),
             layer_tree_host_impl_->resource_provider());
     update_controller->Finalize();

@@ -10,7 +10,7 @@
 #include "build/build_config.h"
 
 #include "base/base_switches.h"
-#include "components/autofill/common/autofill_switches.h"
+#include "components/autofill/core/common/autofill_switches.h"
 #include "content/public/common/content_switches.h"
 
 namespace switches {
@@ -31,6 +31,7 @@ extern const char kAllowHTTPBackgroundPage[];
 extern const char kAllowHttpScreenCapture[];
 extern const char kAllowLegacyExtensionManifests[];
 extern const char kAllowNaClCrxFsAPI[];
+extern const char kAllowNaClFileHandleAPI[];
 extern const char kAllowNaClSocketAPI[];
 extern const char kAllowOutdatedPlugins[];
 extern const char kAllowRunningInsecureContent[];
@@ -328,6 +329,8 @@ extern const char kSbDisableAutoUpdate[];
 extern const char kSbDisableDownloadProtection[];
 extern const char kSbDisableExtensionBlacklist[];
 extern const char kSbDisableSideEffectFreeWhitelist[];
+extern const char kSbDownloadFeedbackURL[];
+extern const char kSbEnableDownloadFeedback[];
 extern const char kScriptBadges[];
 extern const char kScriptBubble[];
 extern const char kServiceProcess[];
@@ -366,6 +369,7 @@ extern const char kSyncTabFavicons[];
 extern const char kSyncThrowUnrecoverableError[];
 extern const char kSyncTrySsltcpFirstForXmpp[];
 extern const char kSyncEnableDeferredStartup[];
+extern const char kSyncDisableOAuth2Token[];
 extern const char kSyncfsEnableDirectoryOperation[];
 extern const char kTabBrowserDragging[];
 extern const char kTabCapture[];
@@ -426,6 +430,7 @@ extern const char kPasswordStore[];
 extern const char kEnableAppListShim[];
 extern const char kEnableAppShims[];
 extern const char kEnableExposeForTabs[];
+extern const char kEnableSimplifiedFullscreen[];
 extern const char kKeychainReauthorize[];
 extern const char kRelauncherProcess[];
 extern const char kUseMockKeychain[];

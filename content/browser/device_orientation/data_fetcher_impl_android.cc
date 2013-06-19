@@ -59,11 +59,11 @@ const Orientation* DataFetcherImplAndroid::GetOrientation() {
   // Do we have a new orientation value? (It's safe to do this outside the lock
   // because we only skip the lock if the value is null. We always enter the
   // lock if we're going to make use of the new value.)
-  if (next_orientation_) {
+  if (next_orientation_.get()) {
     base::AutoLock autolock(next_orientation_lock_);
     next_orientation_.swap(current_orientation_);
   }
-  if (!current_orientation_)
+  if (!current_orientation_.get())
     return new Orientation();
   return current_orientation_.get();
 }
@@ -109,6 +109,12 @@ void DataFetcherImplAndroid::Stop(DeviceData::Type event_type) {
   Java_DeviceMotionAndOrientation_stop(
       AttachCurrentThread(), device_orientation_.obj(),
       static_cast<jint>(event_type));
+}
+
+int DataFetcherImplAndroid::GetNumberActiveDeviceMotionSensors() {
+  DCHECK(!device_orientation_.is_null());
+  return Java_DeviceMotionAndOrientation_getNumberActiveDeviceMotionSensors(
+      AttachCurrentThread(), device_orientation_.obj());
 }
 
 }  // namespace content

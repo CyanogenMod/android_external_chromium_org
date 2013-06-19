@@ -19,7 +19,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/base/origin_url_conversions.h"
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
@@ -29,7 +28,9 @@
 #include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/browser/fileapi/sandbox_origin_database.h"
 #include "webkit/browser/fileapi/syncable/syncable_file_system_util.h"
+#include "webkit/browser/fileapi/timed_task_helper.h"
 #include "webkit/browser/quota/quota_manager.h"
+#include "webkit/common/database/database_identifier.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 // Example of various paths:
@@ -93,49 +94,6 @@ void TouchDirectory(SandboxDirectoryDatabase* db, FileId dir_id) {
   DCHECK(db);
   if (!db->UpdateModificationTime(dir_id, base::Time::Now()))
     NOTREACHED();
-}
-
-class Deleter {
- public:
-  explicit Deleter(ObfuscatedFileUtil* util) : util_(util) {}
-
-  void operator()(bool* ptr) const {
-    if (*ptr)
-      util_->ResetObjectLifetimeTracker();
-    delete ptr;
-  }
-
- private:
-  ObfuscatedFileUtil* util_;
-};
-
-void MaybeDropDatabases(
-    ObfuscatedFileUtil* util,
-    scoped_refptr<base::SequencedTaskRunner> file_task_runner,
-    scoped_ptr<bool, Deleter> object_still_alive,
-    int64 db_flush_delay_seconds) {
-  // If object isn't alive, DB has already been dropped by dtor.
-  if (!*object_still_alive)
-    return;
-
-  // Check to see if DB was recently used. If yes, restart timer so it triggers
-  // again in kFlushDelaySeconds from the last time it was used.
-  base::TimeDelta last_used_delta =
-      base::TimeTicks::Now() - util->db_last_use_time();
-  int64 next_timer_delta = db_flush_delay_seconds - last_used_delta.InSeconds();
-  if (next_timer_delta > 0) {
-    file_task_runner->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&MaybeDropDatabases,
-                   base::Unretained(util),
-                   file_task_runner,
-                   base::Passed(&object_still_alive),
-                   db_flush_delay_seconds),
-        base::TimeDelta::FromSeconds(next_timer_delta));
-    return;
-  }
-
-  util->DropDatabases();
 }
 
 const base::FilePath::CharType kTemporaryDirectoryName[] = FILE_PATH_LITERAL("t");
@@ -271,7 +229,7 @@ class ObfuscatedOriginEnumerator
       origins_.pop_back();
     }
     current_ = record;
-    return webkit_base::GetOriginURLFromIdentifier(UTF8ToUTF16(record.origin));
+    return webkit_database::GetOriginFromIdentifier(record.origin);
   }
 
   // Returns the current origin's information.
@@ -301,16 +259,11 @@ ObfuscatedFileUtil::ObfuscatedFileUtil(
     base::SequencedTaskRunner* file_task_runner)
     : special_storage_policy_(special_storage_policy),
       file_system_directory_(file_system_directory),
-      file_task_runner_(file_task_runner),
       db_flush_delay_seconds_(10 * 60), // 10 mins.
-      object_lifetime_tracker_(NULL) {
+      file_task_runner_(file_task_runner) {
 }
 
 ObfuscatedFileUtil::~ObfuscatedFileUtil() {
-  // Mark as deleted so that the callback doesn't run on invalid object.
-  if (object_lifetime_tracker_)
-    *object_lifetime_tracker_ = false;
-
   DropDatabases();
 }
 
@@ -980,7 +933,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
   InitOriginDatabase(false);
   if (origin_database_) {
     origin_database_->RemovePathForOrigin(
-        UTF16ToUTF8(webkit_base::GetOriginIdentifierFromURL(origin)));
+        webkit_database::GetIdentifierFromOrigin(origin));
   }
   if (!file_util::Delete(origin_path, true /* recursive */))
     return false;
@@ -1022,7 +975,7 @@ bool ObfuscatedFileUtil::DestroyDirectoryDatabase(
     return true;
   }
   std::string key =
-      UTF16ToUTF8(webkit_base::GetOriginIdentifierFromURL(origin)) +
+      webkit_database::GetIdentifierFromOrigin(origin) +
       type_string;
   DirectoryMap::iterator iter = directories_.find(key);
   if (iter != directories_.end()) {
@@ -1037,17 +990,6 @@ bool ObfuscatedFileUtil::DestroyDirectoryDatabase(
   if (path.empty() || error == base::PLATFORM_FILE_ERROR_NOT_FOUND)
     return true;
   return SandboxDirectoryDatabase::DestroyDatabase(path);
-}
-
-void ObfuscatedFileUtil::ResetObjectLifetimeTracker() {
-  object_lifetime_tracker_ = NULL;
-}
-
-void ObfuscatedFileUtil::DropDatabases() {
-  origin_database_.reset();
-  STLDeleteContainerPairSecondPointers(
-      directories_.begin(), directories_.end());
-  directories_.clear();
 }
 
 // static
@@ -1234,11 +1176,11 @@ std::string ObfuscatedFileUtil::GetDirectoryDatabaseKey(
     return std::string();
   }
   // For isolated origin we just use a type string as a key.
-  if (special_storage_policy_ &&
+  if (special_storage_policy_.get() &&
       special_storage_policy_->HasIsolatedStorage(origin)) {
     return type_string;
   }
-  return UTF16ToUTF8(webkit_base::GetOriginIdentifierFromURL(origin)) +
+  return webkit_database::GetIdentifierFromOrigin(origin) +
       type_string;
 }
 
@@ -1290,7 +1232,7 @@ base::FilePath ObfuscatedFileUtil::GetDirectoryForOrigin(
     return base::FilePath();
   }
   base::FilePath directory_name;
-  std::string id = UTF16ToUTF8(webkit_base::GetOriginIdentifierFromURL(origin));
+  std::string id = webkit_database::GetIdentifierFromOrigin(origin);
 
   bool exists_in_db = origin_database_->HasOriginPath(id);
   if (!exists_in_db && !create) {
@@ -1340,24 +1282,25 @@ void ObfuscatedFileUtil::InvalidateUsageCache(
 }
 
 void ObfuscatedFileUtil::MarkUsed() {
-  db_last_use_time_ = base::TimeTicks::Now();
+  if (!timer_)
+    timer_.reset(new TimedTaskHelper(file_task_runner_.get()));
 
-  // If object_lifetime_tracker_ is valid, then callback timer already running.
-  if (object_lifetime_tracker_)
-    return;
+  if (timer_->IsRunning()) {
+    timer_->Reset();
+  } else {
+    timer_->Start(FROM_HERE,
+                  base::TimeDelta::FromSeconds(db_flush_delay_seconds_),
+                  base::Bind(&ObfuscatedFileUtil::DropDatabases,
+                             base::Unretained(this)));
+  }
+}
 
-  // Initialize object lifetime tracker for the first time.
-  object_lifetime_tracker_ = new bool(true);
-
-  scoped_ptr<bool, Deleter> scoper(object_lifetime_tracker_, Deleter(this));
-  file_task_runner_->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&MaybeDropDatabases,
-                 base::Unretained(this),
-                 file_task_runner_,
-                 base::Passed(&scoper),
-                 db_flush_delay_seconds_),
-      base::TimeDelta::FromSeconds(db_flush_delay_seconds_));
+void ObfuscatedFileUtil::DropDatabases() {
+  origin_database_.reset();
+  STLDeleteContainerPairSecondPointers(
+      directories_.begin(), directories_.end());
+  directories_.clear();
+  timer_.reset();
 }
 
 bool ObfuscatedFileUtil::InitOriginDatabase(bool create) {
@@ -1376,8 +1319,7 @@ bool ObfuscatedFileUtil::InitOriginDatabase(bool create) {
     DCHECK(special_storage_policy_->HasIsolatedStorage(isolated_origin_));
     origin_database_.reset(
         new SandboxIsolatedOriginDatabase(
-            UTF16ToUTF8(webkit_base::GetOriginIdentifierFromURL(
-                    isolated_origin_)),
+            webkit_database::GetIdentifierFromOrigin(isolated_origin_),
             file_system_directory_));
     return true;
   }

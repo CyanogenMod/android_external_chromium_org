@@ -113,7 +113,7 @@
 #include "ash/display/display_error_dialog.h"
 #include "ash/display/output_configurator_animation.h"
 #include "base/chromeos/chromeos_version.h"
-#include "base/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_aurax11.h"
 #include "chromeos/display/output_configurator.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_switches.h"
@@ -621,7 +621,8 @@ void Shell::Init() {
   }
 }
 
-void Shell::ShowContextMenu(const gfx::Point& location_in_screen) {
+void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
+                            ui::MenuSourceType source_type) {
   // No context menus if there is no session with an active user.
   if (!session_state_delegate_->NumberOfLoggedInUsers())
     return;
@@ -639,7 +640,7 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen) {
   CHECK(rwc) << "root=" << root
              << ", location:" << location_in_screen.ToString();
   if (rwc)
-    rwc->ShowContextMenu(location_in_screen);
+    rwc->ShowContextMenu(location_in_screen, source_type);
 }
 
 void Shell::ToggleAppList(aura::Window* window) {

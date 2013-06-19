@@ -6,13 +6,12 @@
 
 #include <gdk/gdkkeysyms.h>
 
-#include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "grit/ui_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
+#include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_windowing.h"
@@ -29,6 +28,7 @@ namespace {
 const GdkColor kBorderColor = GDK_COLOR_RGB(0xc7, 0xca, 0xce);
 const GdkColor kHoveredBackgroundColor = GDK_COLOR_RGB(0xcd, 0xcd, 0xcd);
 const GdkColor kNameColor = GDK_COLOR_RGB(0x00, 0x00, 0x00);
+const GdkColor kWarningColor = GDK_COLOR_RGB(0x7f, 0x7f, 0x7f);
 const GdkColor kSubtextColor = GDK_COLOR_RGB(0x7f, 0x7f, 0x7f);
 
 }  // namespace
@@ -226,7 +226,7 @@ void AutofillPopupViewGtk::DrawAutofillEntry(cairo_t* cairo_context,
   // Draw the value.
   SetLayoutText(controller_->names()[index],
                 controller_->GetNameFontForRow(index),
-                kNameColor);
+                controller_->IsWarning(index) ? kWarningColor : kNameColor);
   int value_text_width = controller_->GetNameFontForRow(index).GetStringWidth(
       controller_->names()[index]);
 
@@ -237,7 +237,7 @@ void AutofillPopupViewGtk::DrawAutofillEntry(cairo_t* cairo_context,
       entry_rect.y() +
           (row_height - controller_->GetNameFontForRow(index).GetHeight()) / 2);
 
-  bool is_rtl = base::i18n::IsRTL();
+  bool is_rtl = controller_->IsRTL();
   int value_content_x = is_rtl ?
       entry_rect.width() - value_text_width - kEndPadding : kEndPadding;
 

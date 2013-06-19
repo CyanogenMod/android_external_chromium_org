@@ -55,7 +55,7 @@ void SimpleThumbnailCrop::ProcessBitmap(
        context->clip_result == CLIP_RESULT_TALLER_THAN_WIDE ||
        context->clip_result == CLIP_RESULT_NOT_CLIPPED);
 
-  callback.Run(*context, thumbnail);
+  callback.Run(*context.get(), thumbnail);
 }
 
 double SimpleThumbnailCrop::CalculateBoringScore(const SkBitmap& bitmap) {
@@ -130,7 +130,7 @@ gfx::Size SimpleThumbnailCrop::GetCopySizeForThumbnail(
       DLOG(WARNING) << "Unsupported scale factor. Use the same copy size as "
                     << "ui::SCALE_FACTOR_100P";
       copy_size = gfx::ToFlooredSize(gfx::ScaleSize(
-          copy_size, ui::GetScaleFactorScale(ui::SCALE_FACTOR_200P)));
+          copy_size, ui::GetMaxScaleFactor()));
       break;
   }
   return copy_size;
@@ -244,4 +244,4 @@ SkBitmap SimpleThumbnailCrop::CreateThumbnail(const SkBitmap& bitmap,
   return result;
 }
 
-}
+} // namespace thumbnails

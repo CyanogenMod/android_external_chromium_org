@@ -70,6 +70,7 @@ extern const char kDisableRendererAccessibility[];
 extern const char kDisableSSLFalseStart[];
 extern const char kDisableSeccompFilterSandbox[];
 extern const char kDisableSessionStorage[];
+extern const char kDisableSetuidSandbox[];
 extern const char kDisableSharedWorkers[];
 extern const char kDisableSiteSpecificQuirks[];
 CONTENT_EXPORT extern const char kDisableSpeechInput[];
@@ -78,14 +79,13 @@ CONTENT_EXPORT extern const char kEnableSpeechSynthesis[];
 #if defined(OS_ANDROID)
 CONTENT_EXPORT extern const char kDisableWebRTC[];
 CONTENT_EXPORT extern const char kEnableSpeechRecognition[];
-CONTENT_EXPORT extern const char kEnableWebAudio[];
-#else
-CONTENT_EXPORT extern const char kDisableWebAudio[];
 #endif
+CONTENT_EXPORT extern const char kDisableWebAudio[];
 #if defined(ENABLE_WEBRTC)
 extern const char kEnableWebRtcAecRecordings[];
 CONTENT_EXPORT extern const char kEnableSCTPDataChannels[];
 #endif
+extern const char kEnableWebRtcTcpServerSocket[];
 extern const char kEnableWebMIDI[];
 extern const char kDisableWebSecurity[];
 extern const char kEnableExperimentalWebSocket[];
@@ -108,6 +108,7 @@ CONTENT_EXPORT extern const char kEnableDelegatedRenderer[];
 CONTENT_EXPORT extern const char kEnableDeviceMotion[];
 CONTENT_EXPORT extern const char kEnableDownloadResumption[];
 CONTENT_EXPORT extern const char kEnableExperimentalWebKitFeatures[];
+CONTENT_EXPORT extern const char kEnableRegionBasedColumns[];
 CONTENT_EXPORT extern const char kDisableThreadedHTMLParser[];
 CONTENT_EXPORT extern const char kEnableFixedLayout[];
 CONTENT_EXPORT extern const char kDisableFullScreen[];
@@ -149,7 +150,6 @@ CONTENT_EXPORT extern const char kEnableTcpFastOpen[];
 CONTENT_EXPORT extern const char kDisableAcceleratedVideoDecode[];
 extern const char kEnableViewport[];
 CONTENT_EXPORT extern const char kExperimentalLocationFeatures[];
-CONTENT_EXPORT extern const char kExtraPluginDir[];
 CONTENT_EXPORT extern const char kForceCompositingMode[];
 extern const char kForceFieldTrials[];
 CONTENT_EXPORT extern const char kForceRendererAccessibility[];
@@ -166,7 +166,9 @@ CONTENT_EXPORT extern const char kIgnoreGpuBlacklist[];
 extern const char kInProcessGPU[];
 extern const char kInProcessPlugins[];
 CONTENT_EXPORT extern const char kJavaScriptFlags[];
+CONTENT_EXPORT extern const char kExtraPluginDir[];
 extern const char kLoadPlugin[];
+CONTENT_EXPORT extern const char kDisablePluginsDiscovery[];
 CONTENT_EXPORT extern const char kLoggingLevel[];
 extern const char kLogPluginMessages[];
 extern const char kMemoryMetrics[];
@@ -243,7 +245,6 @@ CONTENT_EXPORT extern const char kUseMobileUserAgent[];
 extern const char kDisableMediaHistoryLogging[];
 CONTENT_EXPORT extern const char kDisableGestureRequirementForMediaPlayback[];
 extern const char kNetworkCountryIso[];
-CONTENT_EXPORT extern const char kEnableWebViewSynchronousAPIs[];
 CONTENT_EXPORT extern const char kDisableOverscrollEdgeEffect[];
 #endif
 
@@ -262,10 +263,6 @@ extern const char kUseCoreAnimation[];
 
 #if defined(USE_AURA)
 CONTENT_EXPORT extern const char kTestCompositor[];
-#endif
-
-#ifndef NDEBUG
-CONTENT_EXPORT extern const char kDumpBrowserContextDependencyGraph[];
 #endif
 
 extern const char kEnableWebPInAcceptHeader[];

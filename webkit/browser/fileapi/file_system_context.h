@@ -18,8 +18,8 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/open_file_system_mode.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
 class FilePath;
@@ -67,7 +67,7 @@ struct DefaultContextDeleter;
 
 // This class keeps and provides a file system context for FileSystem API.
 // An instance of this class is created and owned by profile.
-class WEBKIT_STORAGE_EXPORT FileSystemContext
+class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
     : public base::RefCountedThreadSafe<FileSystemContext,
                                         DefaultContextDeleter> {
  public:
@@ -284,8 +284,11 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // Registered mount point providers.
   // The map must be constructed in the constructor since it can be accessed
   // on multiple threads.
-  // The ownership of each provider is held by mount_point_providers_.
+  // This map itself doesn't retain each provider's ownership; ownerships
+  // of the providers are held by additional_providers_ or other scoped_ptr
+  // provider fields.
   MountPointProviderMap provider_map_;
+
   // External mount points visible in the file system context (excluding system
   // external mount points).
   scoped_refptr<ExternalMountPoints> external_mount_points_;

@@ -8,6 +8,10 @@
 #include "allocator_shim/allocator_stub.h"
 #include "base/logging.h"
 
+#if defined(ENABLE_WEBRTC)
+#include "third_party/webrtc/system_wrappers/interface/event_tracer.h"
+#endif
+
 class CommandLine;
 
 namespace cricket {
@@ -41,6 +45,10 @@ typedef bool (*InitializeModuleFunction)(
     DellocateFunction dealloc,
 #endif
     logging::LogMessageHandlerFunction log_handler,
+#if defined(ENABLE_WEBRTC)
+    webrtc::GetCategoryEnabledPtr trace_get_category_enabled,
+    webrtc::AddTraceEventPtr trace_add_trace_event,
+#endif
     CreateWebRtcMediaEngineFunction* create_media_engine,
     DestroyWebRtcMediaEngineFunction* destroy_media_engine);
 

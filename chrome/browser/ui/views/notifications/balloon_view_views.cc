@@ -94,10 +94,7 @@ BalloonViewImpl::BalloonViewImpl(BalloonCollection* collection)
       collection_(collection),
       frame_container_(NULL),
       html_container_(NULL),
-      html_contents_(NULL),
       close_button_(NULL),
-      animation_(NULL),
-      options_menu_model_(NULL),
       options_menu_button_(NULL),
       enable_web_ui_(false),
       closed_by_user_(false) {
@@ -152,6 +149,7 @@ void BalloonViewImpl::OnMenuButtonClicked(views::View* source,
           options_menu_button_,
           gfx::Rect(screen_location, options_menu_button_->size()),
           views::MenuItemView::TOPRIGHT,
+          ui::MENU_SOURCE_NONE,
           views::MenuRunner::HAS_MNEMONICS) == views::MenuRunner::MENU_DELETED)
     return;
 }

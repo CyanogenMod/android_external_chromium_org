@@ -7,6 +7,8 @@
 
 #include "ppapi/thunk/interfaces_preamble.h"
 
+PROXIED_API(PPB_TCPSocket)
+
 // Map the old dev console interface to the stable one (which is the same) to
 // keep Flash, etc. working.
 PROXIED_IFACE(PPB_Instance, "PPB_Console(Dev);0.1", PPB_Console_1_0)
@@ -23,6 +25,8 @@ PROXIED_IFACE(NoAPIName, PPB_FILECHOOSER_DEV_INTERFACE_0_5,
 PROXIED_IFACE(NoAPIName, PPB_FILECHOOSER_DEV_INTERFACE_0_6,
               PPB_FileChooser_Dev_0_6)
 UNPROXIED_IFACE(PPB_Find, PPB_FIND_DEV_INTERFACE_0_3, PPB_Find_Dev_0_3)
+PROXIED_IFACE(NoAPIName, PPB_HOSTRESOLVER_DEV_INTERFACE_0_1,
+              PPB_HostResolver_Dev_0_1)
 PROXIED_IFACE(NoAPIName, PPB_IME_INPUT_EVENT_DEV_INTERFACE_0_2,
               PPB_IMEInputEvent_Dev_0_2)
 PROXIED_IFACE(NoAPIName, PPB_KEYBOARD_INPUT_EVENT_DEV_INTERFACE_0_1,
@@ -34,10 +38,14 @@ PROXIED_IFACE(NoAPIName, PPB_PRINTING_DEV_INTERFACE_0_7,
               PPB_Printing_Dev_0_7)
 PROXIED_IFACE(NoAPIName, PPB_RESOURCEARRAY_DEV_INTERFACE_0_1,
               PPB_ResourceArray_Dev_0_1)
+PROXIED_IFACE(PPB_TCPSocket, PPB_TCPSOCKET_DEV_INTERFACE_0_1,
+              PPB_TCPSocket_Dev_0_1)
 PROXIED_IFACE(PPB_Instance, PPB_TEXTINPUT_DEV_INTERFACE_0_2,
               PPB_TextInput_Dev_0_2)
 PROXIED_IFACE(NoAPIName, PPB_TRUETYPEFONT_DEV_INTERFACE_0_1,
               PPB_TrueTypeFont_Dev_0_1)
+PROXIED_IFACE(NoAPIName, PPB_UDPSOCKET_DEV_INTERFACE_0_1,
+              PPB_UDPSocket_Dev_0_1)
 PROXIED_IFACE(NoAPIName, PPB_VAR_ARRAY_DEV_INTERFACE_0_1, PPB_VarArray_Dev_0_1)
 PROXIED_IFACE(NoAPIName, PPB_VAR_DICTIONARY_DEV_INTERFACE_0_1,
               PPB_VarDictionary_Dev_0_1)

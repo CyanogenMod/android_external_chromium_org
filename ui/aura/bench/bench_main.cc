@@ -7,7 +7,7 @@
 #include "base/command_line.h"
 #include "base/i18n/icu_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_split.h"
 #include "base/time.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -35,7 +35,7 @@
 #include "third_party/khronos/GLES2/gl2ext.h"
 
 #if defined(USE_X11)
-#include "base/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_aurax11.h"
 #endif
 
 using base::TimeTicks;
@@ -212,7 +212,7 @@ class WebGLBench : public BenchCompositorObserver {
     texture_ = new WebGLTexture(context_.get(), bounds.size());
     fbo_ = context_->createFramebuffer();
     compositor->AddObserver(this);
-    webgl_.SetExternalTexture(texture_);
+    webgl_.SetExternalTexture(texture_.get());
     context_->bindFramebuffer(GL_FRAMEBUFFER, fbo_);
     context_->framebufferTexture2D(
         GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
@@ -237,7 +237,7 @@ class WebGLBench : public BenchCompositorObserver {
       context_->clear(GL_COLOR_BUFFER_BIT);
       context_->flush();
     }
-    webgl_.SetExternalTexture(texture_);
+    webgl_.SetExternalTexture(texture_.get());
     webgl_.SchedulePaint(gfx::Rect(webgl_.bounds().size()));
     compositor_->ScheduleDraw();
   }

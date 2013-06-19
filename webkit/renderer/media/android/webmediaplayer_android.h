@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/time.h"
 #include "cc/layers/video_frame_provider.h"
@@ -19,11 +20,12 @@
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayer.h"
+#include "third_party/WebKit/public/web/WebMediaPlayer.h"
 #include "ui/gfx/rect_f.h"
 #include "webkit/renderer/media/android/media_source_delegate.h"
 #include "webkit/renderer/media/android/stream_texture_factory_android.h"
 #include "webkit/renderer/media/crypto/proxy_decryptor.h"
+#include "webkit/renderer/media/media_info_loader.h"
 
 namespace media {
 class Demuxer;
@@ -41,6 +43,7 @@ class WebLayerImpl;
 namespace webkit_media {
 
 class MediaStreamClient;
+class WebMediaPlayerDelegate;
 class WebMediaPlayerManagerAndroid;
 class WebMediaPlayerProxyAndroid;
 
@@ -55,7 +58,8 @@ class MediaStreamAudioRenderer;
 class WebMediaPlayerAndroid
     : public WebKit::WebMediaPlayer,
       public cc::VideoFrameProvider,
-      public base::MessageLoop::DestructionObserver {
+      public base::MessageLoop::DestructionObserver,
+      public base::SupportsWeakPtr<WebMediaPlayerAndroid> {
  public:
   // Construct a WebMediaPlayerAndroid object. This class communicates
   // with the MediaPlayerAndroid object in the browser process through
@@ -66,6 +70,7 @@ class WebMediaPlayerAndroid
   // already in fullscreen.
   WebMediaPlayerAndroid(WebKit::WebFrame* frame,
                         WebKit::WebMediaPlayerClient* client,
+                        base::WeakPtr<WebMediaPlayerDelegate> delegate,
                         WebMediaPlayerManagerAndroid* manager,
                         WebMediaPlayerProxyAndroid* proxy,
                         StreamTextureFactory* factory,
@@ -156,6 +161,7 @@ class WebMediaPlayerAndroid
   void OnVideoSizeChanged(int width, int height);
   void OnMediaSeekRequest(base::TimeDelta time_to_seek);
   void OnMediaConfigRequest();
+  void OnDurationChange(const base::TimeDelta& duration);
 
   // Called to update the current time.
   void OnTimeUpdate(base::TimeDelta current_time);
@@ -202,18 +208,15 @@ class WebMediaPlayerAndroid
       const WebKit::WebString& key_system,
       const WebKit::WebString& session_id) OVERRIDE;
 
-  void OnKeyAdded(const std::string& key_system, const std::string& session_id);
-  void OnKeyError(const std::string& key_system,
-                  const std::string& session_id,
+  void OnKeyAdded(const std::string& session_id);
+  void OnKeyError(const std::string& session_id,
                   media::MediaKeys::KeyError error_code,
                   int system_code);
-  void OnKeyMessage(const std::string& key_system,
-                    const std::string& session_id,
+  void OnKeyMessage(const std::string& session_id,
                     const std::string& message,
                     const std::string& destination_url);
 
-  void OnNeedKey(const std::string& key_system,
-                 const std::string& type,
+  void OnNeedKey(const std::string& type,
                  const std::string& session_id,
                  scoped_ptr<uint8[]> init_data,
                  int init_data_size);
@@ -242,9 +245,7 @@ class WebMediaPlayerAndroid
   // Requesting whether the surface texture peer needs to be reestablished.
   void SetNeedsEstablishPeer(bool needs_establish_peer);
 
-  void InitializeMediaPlayer(
-      const WebKit::WebURL& url,
-      media::MediaPlayerAndroid::SourceType source_type);
+  void InitializeMediaPlayer(const WebKit::WebURL& url);
 
 #if defined(GOOGLE_TV)
   // Request external surface for out-of-band composition.
@@ -253,6 +254,7 @@ class WebMediaPlayerAndroid
 
  private:
   void ReallocateVideoFrame();
+  void DidLoadMediaInfo(MediaInfoLoader::Status status);
 
   // Actually do the work for generateKeyRequest/addKey so they can easily
   // report results to UMA.
@@ -274,6 +276,13 @@ class WebMediaPlayerAndroid
 
   WebKit::WebMediaPlayerClient* const client_;
 
+  // |delegate_| is used to notify the browser process of the player status, so
+  // that the browser process can control screen locks.
+  // TODO(qinmin): Currently android mediaplayer takes care of the screen
+  // lock. So this is only used for media source. Will apply this to regular
+  // media tag once http://crbug.com/247892 is fixed.
+  base::WeakPtr<WebMediaPlayerDelegate> delegate_;
+
   // Save the list of buffered time ranges.
   WebKit::WebTimeRanges buffered_;
 
@@ -284,13 +293,18 @@ class WebMediaPlayerAndroid
   scoped_refptr<media::VideoFrame> current_frame_;
 
   // Message loop for main renderer thread.
-  base::MessageLoop* main_loop_;
+  const scoped_refptr<base::MessageLoopProxy> main_loop_;
 
   // URL of the media file to be fetched.
   GURL url_;
 
   // Media duration.
   base::TimeDelta duration_;
+
+  // Flag to remember if we have a trusted duration_ value provided by
+  // MediaSourceDelegate notifying OnDurationChange(). In this case, ignore
+  // any subsequent duration value passed to OnMediaMetadataChange().
+  bool ignore_metadata_duration_change_;
 
   // The time android media player is trying to seek.
   double pending_seek_;
@@ -329,6 +343,10 @@ class WebMediaPlayerAndroid
   // Whether the video size info is available.
   bool has_size_info_;
 
+  // Whether the video metadata and info are available.
+  bool has_media_metadata_;
+  bool has_media_info_;
+
   // Object for allocating stream textures.
   scoped_ptr<StreamTextureFactory> stream_texture_factory_;
 
@@ -359,6 +377,8 @@ class WebMediaPlayerAndroid
   scoped_ptr<MediaSourceDelegate,
              MediaSourceDelegate::Destroyer> media_source_delegate_;
 
+  media::MediaPlayerAndroid::SourceType source_type_;
+
   // Proxy object that delegates method calls on Render Thread.
   // This object is created on the Render Thread and is only called in the
   // destructor.
@@ -371,6 +391,8 @@ class WebMediaPlayerAndroid
 
   media::MediaLog* media_log_;
   MediaStreamClient* media_stream_client_;
+
+  scoped_ptr<MediaInfoLoader> info_loader_;
 
   // The currently selected key system. Empty string means that no key system
   // has been selected.

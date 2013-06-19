@@ -8,8 +8,8 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
-#include "base/stringprintf.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/stringprintf.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -125,8 +125,12 @@ TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_FileBody) {
   ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir.path(),
                                                   &temp_file_path));
 
-  element_readers.push_back(new UploadFileElementReader(
-      base::MessageLoopProxy::current(), temp_file_path, 0, 0, base::Time()));
+  element_readers.push_back(
+      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
+                                  temp_file_path,
+                                  0,
+                                  0,
+                                  base::Time()));
 
   scoped_ptr<UploadDataStream> body(new UploadDataStream(&element_readers, 0));
   TestCompletionCallback callback;
@@ -401,7 +405,7 @@ TEST(HttpStreamParser, TruncatedHeaders) {
           EXPECT_EQ(ERR_CONNECTION_CLOSED, rv);
           EXPECT_TRUE(response_info.headers.get());
         } else {
-          EXPECT_EQ(ERR_HEADERS_TRUNCATED, rv);
+          EXPECT_EQ(ERR_RESPONSE_HEADERS_TRUNCATED, rv);
           EXPECT_FALSE(response_info.headers.get());
         }
       }

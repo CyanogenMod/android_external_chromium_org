@@ -170,6 +170,9 @@
       <structure type="chrome_scaled_image" name="IDR_BUTTON_PRESSED_TOP" file="common/button_pressed_top.png" />
       <structure type="chrome_scaled_image" name="IDR_BUTTON_PRESSED_TOP_LEFT" file="common/button_pressed_top_left.png" />
       <structure type="chrome_scaled_image" name="IDR_BUTTON_PRESSED_TOP_RIGHT" file="common/button_pressed_top_right.png" />
+      <structure type="chrome_scaled_image" name="IDR_BUY_WITH_GOOGLE_BUTTON" file="common/buy_with_google_button.png" />
+      <structure type="chrome_scaled_image" name="IDR_BUY_WITH_GOOGLE_BUTTON_H" file="common/buy_with_google_button_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_BUY_WITH_GOOGLE_BUTTON_P" file="common/buy_with_google_button_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_BLUE_BUTTON_FOCUSED_HOVER_BOTTOM" file="common/blue_button_focused_hover_bottom.png" />
       <structure type="chrome_scaled_image" name="IDR_BLUE_BUTTON_FOCUSED_HOVER_BOTTOM_LEFT" file="common/blue_button_focused_hover_bottom_left.png" />
       <structure type="chrome_scaled_image" name="IDR_BLUE_BUTTON_FOCUSED_HOVER_BOTTOM_RIGHT" file="common/blue_button_focused_hover_bottom_right.png" />
@@ -253,7 +256,7 @@
       <structure type="chrome_scaled_image" name="IDR_RADIO_FOCUSED_PRESSED" file="common/radio_focused_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_RADIO_HOVER" file="common/radio_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_RADIO_PRESSED" file="common/radio_pressed.png" />
-      <structure type="chrome_scaled_image" name="IDR_TEXT_SELECTION_HANDLE" file="common/text_selection_handle.png" />
+      <structure type="chrome_scaled_image" name="IDR_TEXT_SELECTION_HANDLE" file="common/text_selection_handle_small.png" />
       <if expr="not pp_ifdef('toolkit_views') and is_posix and not is_macosx">
         <structure type="chrome_scaled_image" name="IDR_CLOSE" file="linux/linux_close.png" />
       </if>

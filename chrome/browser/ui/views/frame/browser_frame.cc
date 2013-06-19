@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 
 #include "ash/shell.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/i18n/rtl.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -16,8 +15,10 @@
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
 #include "chrome/browser/ui/views/frame/browser_root_view.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/frame/native_browser_frame.h"
 #include "chrome/browser/ui/views/frame/system_menu_model_builder.h"
+#include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/common/chrome_switches.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -143,6 +144,20 @@ ui::ThemeProvider* BrowserFrame::GetThemeProvider() const {
   return theme_provider_;
 }
 
+void BrowserFrame::SchedulePaintInRect(const gfx::Rect& rect) {
+  views::Widget::SchedulePaintInRect(rect);
+
+  // Paint the frame caption area and window controls during immersive reveal.
+  if (browser_view_ &&
+      browser_view_->immersive_mode_controller()->IsRevealed()) {
+    // This function should not be reentrant because the TopContainerView
+    // paints to a layer for the duration of the immersive reveal.
+    views::View* top_container = browser_view_->top_container();
+    CHECK(top_container->layer());
+    top_container->SchedulePaintInRect(rect);
+  }
+}
+
 void BrowserFrame::OnNativeWidgetActivationChanged(bool active) {
   if (active) {
     // When running under remote desktop, if the remote desktop client is not
@@ -157,7 +172,8 @@ void BrowserFrame::OnNativeWidgetActivationChanged(bool active) {
 }
 
 void BrowserFrame::ShowContextMenuForView(views::View* source,
-                                          const gfx::Point& p) {
+                                          const gfx::Point& p,
+                                          ui::MenuSourceType source_type) {
   if (chrome::IsRunningInForcedAppMode())
     return;
 
@@ -172,6 +188,7 @@ void BrowserFrame::ShowContextMenuForView(views::View* source,
     menu_runner_.reset(new views::MenuRunner(GetSystemMenuModel()));
     if (menu_runner_->RunMenuAt(source->GetWidget(), NULL,
           gfx::Rect(p, gfx::Size(0,0)), views::MenuItemView::TOPLEFT,
+          source_type,
           views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
         views::MenuRunner::MENU_DELETED)
       return;

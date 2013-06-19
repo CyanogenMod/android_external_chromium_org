@@ -13,7 +13,7 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 
 namespace extensions {
 class ChromeV8Context;
@@ -30,11 +30,11 @@ class AppBindings : public ChromeV8Extension,
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  v8::Handle<v8::Value> GetIsInstalled(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetDetails(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetDetailsForFrame(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetInstallState(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetRunningState(const v8::Arguments& args);
+  void GetIsInstalled(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetDetails(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetDetailsForFrame(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetInstallState(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetRunningState(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   v8::Handle<v8::Value> GetDetailsForFrameImpl(WebKit::WebFrame* frame);
 

@@ -7,8 +7,8 @@
 #include <algorithm>
 #include <limits>
 
+#include "base/containers/hash_tables.h"
 #include "base/debug/alias.h"
-#include "base/hash_tables.h"
 #include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -343,12 +343,6 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
     if (resource->mailbox.IsTexture()) {
       WebGraphicsContext3D* context3d = output_surface_->context3d();
       DCHECK(context3d);
-      if (!lost_resource && resource->gl_id) {
-        GLC(context3d, context3d->bindTexture(
-            resource->mailbox.target(), resource->gl_id));
-        GLC(context3d, context3d->produceTextureCHROMIUM(
-            resource->mailbox.target(), resource->mailbox.data()));
-      }
       if (resource->gl_id)
         GLC(context3d, context3d->deleteTexture(resource->gl_id));
       if (!lost_resource && resource->gl_id)
@@ -863,9 +857,6 @@ void ResourceProvider::ReceiveFromParent(
     if (resource->gl_id) {
       if (it->sync_point)
         GLC(context3d, context3d->waitSyncPoint(it->sync_point));
-      GLC(context3d, context3d->bindTexture(GL_TEXTURE_2D, resource->gl_id));
-      GLC(context3d, context3d->consumeTextureCHROMIUM(GL_TEXTURE_2D,
-                                                       it->mailbox.name));
     } else {
       resource->mailbox = TextureMailbox(resource->mailbox.name(),
                                          resource->mailbox.callback(),
@@ -880,7 +871,6 @@ bool ResourceProvider::TransferResource(WebGraphicsContext3D* context,
                                         ResourceId id,
                                         TransferableResource* resource) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  WebGraphicsContext3D* context3d = output_surface_->context3d();
   ResourceMap::iterator it = resources_.find(id);
   CHECK(it != resources_.end());
   Resource* source = &it->second;
@@ -899,20 +889,22 @@ bool ResourceProvider::TransferResource(WebGraphicsContext3D* context,
   DCHECK(!source->mailbox.IsSharedMemory());
 
   if (!source->mailbox.IsTexture()) {
-    GLC(context3d, context3d->genMailboxCHROMIUM(resource->mailbox.name));
-    source->mailbox.SetName(resource->mailbox);
-  } else {
-    resource->mailbox = source->mailbox.name();
-  }
-
-  if (source->gl_id) {
+    // This is a resource allocated by the compositor, we need to produce it.
+    // Don't set a sync point, the caller will do it.
+    DCHECK(source->gl_id);
     GLC(context, context->bindTexture(GL_TEXTURE_2D, source->gl_id));
+    GLC(context, context->genMailboxCHROMIUM(resource->mailbox.name));
     GLC(context, context->produceTextureCHROMIUM(GL_TEXTURE_2D,
                                                  resource->mailbox.name));
+    source->mailbox.SetName(resource->mailbox);
   } else {
+    // This is either an external resource, or a compositor resource that we
+    // already exported. Make sure to forward the sync point that we were given.
+    resource->mailbox = source->mailbox.name();
     resource->sync_point = source->mailbox.sync_point();
     source->mailbox.ResetSyncPoint();
   }
+
   return true;
 }
 
@@ -957,6 +949,18 @@ void ResourceProvider::ReleasePixelBuffer(ResourceId id) {
   DCHECK(!resource->external);
   DCHECK(!resource->exported);
   DCHECK(!resource->image_id);
+
+  // The pixel buffer can be released while there is a pending "set pixels"
+  // if completion has been forced. Any shared memory associated with this
+  // pixel buffer will not be freed until the waitAsyncTexImage2DCHROMIUM
+  // command has been processed on the service side. It is also safe to
+  // reuse any query id associated with this resource before they complete
+  // as each new query has a unique submit count.
+  if (resource->pending_set_pixels) {
+    DCHECK(resource->set_pixels_completion_forced);
+    resource->pending_set_pixels = false;
+    UnlockForWrite(id);
+  }
 
   if (resource->type == GLTexture) {
     if (!resource->gl_pixel_buffer_id)
@@ -1210,32 +1214,6 @@ bool ResourceProvider::DidSetPixelsComplete(ResourceId id) {
   return true;
 }
 
-void ResourceProvider::AbortSetPixels(ResourceId id) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  ResourceMap::iterator it = resources_.find(id);
-  CHECK(it != resources_.end());
-  Resource* resource = &it->second;
-  DCHECK(resource->locked_for_write);
-  DCHECK(resource->pending_set_pixels);
-
-  if (resource->gl_id) {
-    WebGraphicsContext3D* context3d = output_surface_->context3d();
-    DCHECK(context3d);
-    DCHECK(resource->gl_upload_query_id);
-    // CHROMIUM_async_pixel_transfers currently doesn't have a way to
-    // abort an upload. The best we can do is delete the query and
-    // the texture.
-    context3d->deleteQueryEXT(resource->gl_upload_query_id);
-    resource->gl_upload_query_id = 0;
-    context3d->deleteTexture(resource->gl_id);
-    resource->gl_id = CreateTextureId(context3d);
-    resource->allocated = false;
-  }
-
-  resource->pending_set_pixels = false;
-  UnlockForWrite(id);
-}
-
 void ResourceProvider::CreateForTesting(ResourceId id) {
   ResourceMap::iterator it = resources_.find(id);
   CHECK(it != resources_.end());
@@ -1333,6 +1311,7 @@ void ResourceProvider::AcquireImage(ResourceId id) {
   DCHECK(context3d);
   resource->image_id = context3d->createImageCHROMIUM(
       resource->size.width(), resource->size.height(), GL_RGBA8_OES);
+  DCHECK(resource->image_id);
 }
 
 void ResourceProvider::ReleaseImage(ResourceId id) {

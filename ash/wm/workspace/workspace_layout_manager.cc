@@ -48,7 +48,7 @@ void BuildWindowBoundsMap(const aura::Window* window, BoundsMap* bounds_map) {
     BuildWindowBoundsMap(window->children()[i], bounds_map);
 }
 
-// Resets |window|s bounds from |bounds_map| if currently empty. Recusively
+// Resets |window|s bounds from |bounds_map| if currently empty. Recursively
 // invokes this for all children.
 void ResetBoundsIfNecessary(const BoundsMap& bounds_map, aura::Window* window) {
   if (window->bounds().IsEmpty() && window->GetTargetBounds().IsEmpty()) {
@@ -61,7 +61,7 @@ void ResetBoundsIfNecessary(const BoundsMap& bounds_map, aura::Window* window) {
 }
 
 // Resets |window|s bounds from |bounds_map| if |window| is marked as a
-// constrained window. Recusively invokes this for all children.
+// constrained window. Recursively invokes this for all children.
 // TODO(sky): this should key off window type.
 void ResetConstrainedWindowBoundsIfNecessary(const BoundsMap& bounds_map,
                                              aura::Window* window) {
@@ -87,15 +87,12 @@ WorkspaceLayoutManager::WorkspaceLayoutManager(Workspace* workspace)
       work_area_(ScreenAsh::GetDisplayWorkAreaBoundsInParent(
                      workspace->window()->parent())) {
   Shell::GetInstance()->AddShellObserver(this);
-  root_window_->AddRootWindowObserver(this);
   root_window_->AddObserver(this);
 }
 
 WorkspaceLayoutManager::~WorkspaceLayoutManager() {
-  if (root_window_) {
+  if (root_window_)
     root_window_->RemoveObserver(this);
-    root_window_->RemoveRootWindowObserver(this);
-  }
   for (WindowSet::const_iterator i = windows_.begin(); i != windows_.end(); ++i)
     (*i)->RemoveObserver(this);
   Shell::GetInstance()->RemoveShellObserver(this);
@@ -156,11 +153,6 @@ void WorkspaceLayoutManager::SetChildBounds(
     SetChildBoundsDirect(child, child_bounds);
   }
   workspace_manager()->OnWorkspaceWindowChildBoundsChanged(workspace_, child);
-}
-
-void WorkspaceLayoutManager::OnRootWindowResized(const aura::RootWindow* root,
-                                                 const gfx::Size& old_size) {
-  AdjustWindowSizesForScreenChange(ADJUST_WINDOW_SCREEN_SIZE_CHANGED);
 }
 
 void WorkspaceLayoutManager::OnDisplayWorkAreaInsetsChanged() {
@@ -259,6 +251,14 @@ void WorkspaceLayoutManager::OnWindowDestroying(aura::Window* window) {
     root_window_->RemoveObserver(this);
     root_window_ = NULL;
   }
+}
+
+void WorkspaceLayoutManager::OnWindowBoundsChanged(
+    aura::Window* window,
+    const gfx::Rect& old_bounds,
+    const gfx::Rect& new_bounds) {
+  if (root_window_ == window)
+    AdjustWindowSizesForScreenChange(ADJUST_WINDOW_SCREEN_SIZE_CHANGED);
 }
 
 void WorkspaceLayoutManager::ShowStateChanged(

@@ -7,14 +7,14 @@
 
 #include <string>
 
-#include "base/string16.h"
 #include "base/memory/weak_ptr.h"
-#include "ipc/ipc_message.h"
+#include "base/strings/string16.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/page_transition_types.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
+#include "ipc/ipc_message.h"
+#include "third_party/WebKit/public/web/WebNavigationPolicy.h"
+#include "third_party/WebKit/public/web/WebNavigationType.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "v8/include/v8.h"
 
 class GURL;
@@ -237,9 +237,16 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual void RegisterPPAPIInterfaceFactories(
       webkit::ppapi::PpapiInterfaceFactoryManager* factory_manager) {}
 
+  // Returns true if plugin living in the container can use
+  // pp::FileIO::RequestOSFileHandle.
+  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
+      WebKit::WebPluginContainer* container) const;
+
   // Returns whether BrowserPlugin should be allowed within the |container|.
   virtual bool AllowBrowserPlugin(WebKit::WebPluginContainer* container) const;
 
+  // Returns true if the page at |url| can use Pepper MediaStream APIs.
+  virtual bool AllowPepperMediaStreamAPI(const GURL& url) const;
 };
 
 }  // namespace content

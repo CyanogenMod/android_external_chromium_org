@@ -15,6 +15,7 @@ include $(LOCAL_PATH)/base/allocator/allocator_extension_thunks.target.linux-arm
 include $(LOCAL_PATH)/base/base.target.linux-arm.mk
 include $(LOCAL_PATH)/base/base_i18n.target.linux-arm.mk
 include $(LOCAL_PATH)/base/base_java_activity_state.target.linux-arm.mk
+include $(LOCAL_PATH)/base/base_java_memory_pressure_level_list.target.linux-arm.mk
 include $(LOCAL_PATH)/base/base_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/base/base_prefs.target.linux-arm.mk
 include $(LOCAL_PATH)/base/base_static.target.linux-arm.mk
@@ -24,12 +25,12 @@ include $(LOCAL_PATH)/build/temp_gyp/googleurl.target.linux-arm.mk
 include $(LOCAL_PATH)/cc/cc.target.linux-arm.mk
 include $(LOCAL_PATH)/components/auto_login_parser.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_browser.target.linux-arm.mk
-include $(LOCAL_PATH)/components/autofill_common.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_content_browser.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_content_risk_proto.target.linux-arm.mk
+include $(LOCAL_PATH)/components/autofill_core_common.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.linux-arm.mk
-include $(LOCAL_PATH)/components/component_resources.target.linux-arm.mk
+include $(LOCAL_PATH)/components/component_strings.target.linux-arm.mk
 include $(LOCAL_PATH)/components/encryptor.target.linux-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.linux-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.linux-arm.mk
@@ -61,6 +62,7 @@ include $(LOCAL_PATH)/content/generate_content_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/content/java_set_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/content/page_transition_types_java.target.linux-arm.mk
 include $(LOCAL_PATH)/content/result_codes_java.target.linux-arm.mk
+include $(LOCAL_PATH)/content/speech_recognition_error_java.target.linux-arm.mk
 include $(LOCAL_PATH)/crypto/crypto.target.linux-arm.mk
 include $(LOCAL_PATH)/google_apis/google_apis.target.linux-arm.mk
 include $(LOCAL_PATH)/gpu/command_buffer/gles2_utils.target.linux-arm.mk
@@ -100,8 +102,10 @@ include $(LOCAL_PATH)/sandbox/seccomp_bpf.target.linux-arm.mk
 include $(LOCAL_PATH)/sdch/sdch.target.linux-arm.mk
 include $(LOCAL_PATH)/skia/skia.target.linux-arm.mk
 include $(LOCAL_PATH)/skia/skia_opts.target.linux-arm.mk
+include $(LOCAL_PATH)/skia/skia_opts_neon.target.linux-arm.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-arm.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/blink_common.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/skia_webkit.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/WebKit/chromium/webkit.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-arm.mk
@@ -148,9 +152,10 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.linux
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf_config.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/angle/src/translator_common.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/angle/src/translator_glsl.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_common.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_glsl.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-arm.mk
@@ -227,6 +232,7 @@ include $(LOCAL_PATH)/webkit/plugins/plugins_common.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue.target.linux-arm.mk
+include $(LOCAL_PATH)/webkit/support/glue_child.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue_common.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/glue_renderer.target.linux-arm.mk
 include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.linux-arm.mk

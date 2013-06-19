@@ -119,7 +119,6 @@
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_platform_file.h"
 #include "ipc/ipc_switches.h"
-#include "ipc/ipc_sync_channel.h"
 #include "media/base/media_switches.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
@@ -393,9 +392,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
           storage_partition_impl_(storage_partition_impl),
           sudden_termination_allowed_(true),
           ignore_input_events_(false),
-#if defined(OS_ANDROID)
-          dummy_shutdown_event_(false, false),
-#endif
           supports_browser_plugin_(supports_browser_plugin),
           is_guest_(is_guest),
           gpu_observer_registered_(false) {
@@ -485,18 +481,11 @@ bool RenderProcessHostImpl::Init() {
   const std::string channel_id =
       IPC::Channel::GenerateVerifiedChannelID(std::string());
   channel_.reset(
-#if defined(OS_ANDROID)
-      // Android WebView needs to be able to wait from the UI thread to support
-      // the synchronous legacy APIs.
-      browser_command_line.HasSwitch(switches::kEnableWebViewSynchronousAPIs) ?
-          new IPC::SyncChannel(
-              channel_id, IPC::Channel::MODE_SERVER, this,
-              BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-              true, &dummy_shutdown_event_) :
-#endif
-      new IPC::ChannelProxy(
-          channel_id, IPC::Channel::MODE_SERVER, this,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+          new IPC::ChannelProxy(channel_id,
+                                IPC::Channel::MODE_SERVER,
+                                this,
+                                BrowserThread::GetMessageLoopProxyForThread(
+                                    BrowserThread::IO).get()));
 
   // Call the embedder first so that their IPC filters have priority.
   GetContentClient()->browser()->RenderProcessHostCreated(this);
@@ -716,9 +705,9 @@ int RenderProcessHostImpl::GetNextRoutingID() {
   return widget_helper_->GetNextRoutingID();
 }
 
-void RenderProcessHostImpl::SimulateSwapOutACK(
-    const ViewMsg_SwapOut_Params& params) {
-  widget_helper_->SimulateSwapOutACK(params);
+void RenderProcessHostImpl::ResumeDeferredNavigation(
+    const GlobalRequestID& request_id) {
+  widget_helper_->ResumeDeferredNavigation(request_id);
 }
 
 bool RenderProcessHostImpl::WaitForBackingStoreMsg(
@@ -850,10 +839,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #if defined(OS_ANDROID)
     switches::kDisableWebRTC,
     switches::kEnableSpeechRecognition,
-    switches::kEnableWebAudio,
-#else
-    switches::kDisableWebAudio,
 #endif
+    switches::kDisableWebAudio,
 #if defined(ENABLE_WEBRTC)
     switches::kEnableSCTPDataChannels,
 #endif
@@ -923,7 +910,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kMaxUntiledLayerHeight,
     switches::kEnableViewport,
     switches::kEnableOpusPlayback,
-    switches::kEnableVp9Playback,
     switches::kEnableVp8AlphaPlayback,
     switches::kEnableEac3Playback,
     switches::kForceDeviceScaleFactor,
@@ -976,7 +962,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kDisableColorEstimator,
     cc::switches::kDisableImplSidePainting,
     cc::switches::kDisableThreadedAnimation,
-    cc::switches::kEnableCompositorFrameMessage,
     cc::switches::kEnableImplSidePainting,
     cc::switches::kEnablePartialSwap,
     cc::switches::kEnablePerTilePainting,
@@ -1520,35 +1505,29 @@ RenderProcessHost* RenderProcessHost::GetExistingProcessHost(
 }
 
 // static
-bool RenderProcessHostImpl::ShouldUseProcessPerSite(
+bool RenderProcessHost::ShouldUseProcessPerSite(
     BrowserContext* browser_context,
     const GURL& url) {
   // Returns true if we should use the process-per-site model.  This will be
   // the case if the --process-per-site switch is specified, or in
   // process-per-site-instance for particular sites (e.g., WebUI).
-
+  // Note that --single-process is handled in ShouldTryToUseExistingProcessHost.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kProcessPerSite))
     return true;
 
-  // We want to consolidate particular sites like WebUI when we are using
-  // process-per-tab or process-per-site-instance models.
-  // Note that --single-process is handled in ShouldTryToUseExistingProcessHost.
-
-  if (GetContentClient()->browser()->
-          ShouldUseProcessPerSite(browser_context, url)) {
-    return true;
-  }
-
-  // DevTools pages have WebUI type but should not reuse the same host.
+  // We want to consolidate particular sites like WebUI even when we are using
+  // the process-per-tab or process-per-site-instance models.
+  // Note: DevTools pages have WebUI type but should not reuse the same host.
   if (WebUIControllerFactoryRegistry::GetInstance()->UseWebUIForURL(
           browser_context, url) &&
       !url.SchemeIs(chrome::kChromeDevToolsScheme)) {
     return true;
   }
 
-  // In all other cases, don't use process-per-site logic.
-  return false;
+  // Otherwise let the content client decide, defaulting to false.
+  return GetContentClient()->browser()->ShouldUseProcessPerSite(browser_context,
+                                                                url);
 }
 
 // static
@@ -1686,11 +1665,11 @@ void RenderProcessHostImpl::EndFrameSubscription(int route_id) {
 }
 
 void RenderProcessHostImpl::OnShutdownRequest() {
-  // Don't shut down if there are more active RenderViews than the one asking
-  // to close, or if there are pending RenderViews being swapped back in.
+  // Don't shut down if there are active RenderViews, or if there are pending
+  // RenderViews being swapped back in.
   // In single process mode, we never shutdown the renderer.
   int num_active_views = GetActiveViewCount();
-  if (pending_views_ || num_active_views > 1 || run_renderer_in_process())
+  if (pending_views_ || num_active_views > 0 || run_renderer_in_process())
     return;
 
   // Notify any contents that might have swapped out renderers from this

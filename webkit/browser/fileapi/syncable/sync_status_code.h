@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/platform_file.h"
-#include "webkit/storage/webkit_storage_export.h"
+#include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace leveldb {
 class Status;
@@ -59,14 +59,16 @@ enum SyncStatusCode {
   SYNC_STATUS_UNKNOWN_ORIGIN = -108,
   SYNC_STATUS_NOT_MODIFIED = -109,
   SYNC_STATUS_SYNC_DISABLED = -110,
+  SYNC_STATUS_ACCESS_FORBIDDEN = -111,
 };
 
-WEBKIT_STORAGE_EXPORT std::string SyncStatusCodeToString(SyncStatusCode status);
+WEBKIT_STORAGE_BROWSER_EXPORT const char* SyncStatusCodeToString(
+    SyncStatusCode status);
 
-WEBKIT_STORAGE_EXPORT SyncStatusCode LevelDBStatusToSyncStatusCode(
+WEBKIT_STORAGE_BROWSER_EXPORT SyncStatusCode LevelDBStatusToSyncStatusCode(
     const leveldb::Status& status);
 
-WEBKIT_STORAGE_EXPORT SyncStatusCode PlatformFileErrorToSyncStatusCode(
+WEBKIT_STORAGE_BROWSER_EXPORT SyncStatusCode PlatformFileErrorToSyncStatusCode(
     base::PlatformFileError file_error);
 
 }  // namespace sync_file_system

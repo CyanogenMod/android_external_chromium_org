@@ -14,9 +14,9 @@
 #include "base/files/memory_mapped_file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/win/pe_image.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
@@ -305,7 +305,11 @@ bool PluginList::ReadWebPluginInfo(const base::FilePath& filename,
   return true;
 }
 
-void PluginList::GetPluginDirectories(std::vector<base::FilePath>* plugin_dirs) {
+void PluginList::GetPluginDirectories(
+    std::vector<base::FilePath>* plugin_dirs) {
+  if (PluginList::plugins_discovery_disabled_)
+    return;
+
   // We use a set for uniqueness, which we require, over order, which we do not.
   std::set<base::FilePath> dirs;
 
@@ -356,7 +360,11 @@ void PluginList::GetPluginsInDir(
   FindClose(find_handle);
 }
 
-void PluginList::GetPluginPathsFromRegistry(std::vector<base::FilePath>* plugins) {
+void PluginList::GetPluginPathsFromRegistry(
+    std::vector<base::FilePath>* plugins) {
+  if (PluginList::plugins_discovery_disabled_)
+    return;
+
   std::set<base::FilePath> plugin_dirs;
 
   GetPluginsInRegistryDirectory(

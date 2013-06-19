@@ -15,16 +15,15 @@
         '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/sql/sql.gyp:sql',
-        '<(DEPTH)/third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
         '<(DEPTH)/third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
         '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
         '<(DEPTH)/webkit/base/webkit_base.gyp:webkit_base',
         '<(DEPTH)/webkit/storage_common.gyp:webkit_storage_common',
       ],
-      'defines': ['WEBKIT_STORAGE_IMPLEMENTATION'],
+      'defines': ['WEBKIT_STORAGE_BROWSER_IMPLEMENTATION'],
       'sources': [
-        # TODO(kinuko): Fix this export.
-        'storage/webkit_storage_export.h',
+        'browser/webkit_storage_browser_export.h',
         'browser/appcache/appcache.cc',
         'browser/appcache/appcache.h',
         'browser/appcache/appcache_backend_impl.cc',
@@ -34,6 +33,7 @@
         'browser/appcache/appcache_disk_cache.cc',
         'browser/appcache/appcache_disk_cache.h',
         'browser/appcache/appcache_entry.h',
+        'browser/appcache/appcache_executable_handler.h',
         'browser/appcache/appcache_group.cc',
         'browser/appcache/appcache_group.h',
         'browser/appcache/appcache_histograms.cc',
@@ -220,6 +220,8 @@
         'browser/fileapi/task_runner_bound_observer_list.h',
         'browser/fileapi/test_mount_point_provider.cc',
         'browser/fileapi/test_mount_point_provider.h',
+        'browser/fileapi/timed_task_helper.cc',
+        'browser/fileapi/timed_task_helper.h',
         'browser/fileapi/transient_file_util.cc',
         'browser/fileapi/transient_file_util.h',
         'browser/fileapi/upload_file_system_file_element_reader.cc',
@@ -257,6 +259,18 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
+      'target_name': 'dump_file_system',
+      'type': 'executable',
+      'sources': [
+        'browser/fileapi/dump_file_system.cc',
+      ],
+      'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/webkit/storage_common.gyp:webkit_storage_common',
+        'webkit_storage_browser',
+      ],
     },
   ],
 }

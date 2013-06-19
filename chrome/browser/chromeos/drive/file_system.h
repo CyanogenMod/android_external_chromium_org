@@ -65,7 +65,8 @@ class FileSystem : public FileSystemInterface,
              google_apis::DriveServiceInterface* drive_service,
              JobScheduler* scheduler,
              internal::ResourceMetadata* resource_metadata,
-             base::SequencedTaskRunner* blocking_task_runner);
+             base::SequencedTaskRunner* blocking_task_runner,
+             const base::FilePath& temporary_file_directory);
   virtual ~FileSystem();
 
   // FileSystemInterface overrides.
@@ -163,6 +164,8 @@ class FileSystem : public FileSystemInterface,
   // file_system::OperationObserver overrides.
   virtual void OnDirectoryChangedByOperation(
       const base::FilePath& directory_path) OVERRIDE;
+  virtual void OnCacheFileUploadNeededByOperation(
+      const std::string& resource_id) OVERRIDE;
 
   // ChangeListLoader::Observer overrides.
   // Used to propagate events from ChangeListLoader.
@@ -176,9 +179,10 @@ class FileSystem : public FileSystemInterface,
     return change_list_loader_.get();
   }
 
- private:
-  friend class DriveFileSystemTest;
+  // Used by tests.
+  internal::SyncClient* sync_client_for_testing() { return sync_client_.get(); }
 
+ private:
   // Used to implement Reload().
   void ReloadAfterReset(FileError error);
 
@@ -200,11 +204,17 @@ class FileSystem : public FileSystemInterface,
   void PinAfterGetResourceEntryByPath(const FileOperationCallback& callback,
                                       FileError error,
                                       scoped_ptr<ResourceEntry> entry);
+  void FinishPin(const FileOperationCallback& callback,
+                 const std::string& resource_id,
+                 FileError error);
 
   // Used to implement Unpin().
   void UnpinAfterGetResourceEntryByPath(const FileOperationCallback& callback,
                                         FileError error,
                                         scoped_ptr<ResourceEntry> entry);
+  void FinishUnpin(const FileOperationCallback& callback,
+                   const std::string& resource_id,
+                   FileError error);
 
   // Part of OpenFile(). Called after the file downloading is completed.
   void OpenFileAfterFileDownloaded(
@@ -239,9 +249,6 @@ class FileSystem : public FileSystemInterface,
                                       const FileOperationCallback& callback,
                                       FileError error,
                                       scoped_ptr<ResourceEntry> entry);
-  void CloseFileFinalize(const base::FilePath& file_path,
-                         const FileOperationCallback& callback,
-                         FileError result);
 
   // Callback for handling about resource fetch.
   void OnGetAboutResource(
@@ -377,6 +384,8 @@ class FileSystem : public FileSystemInterface,
   ObserverList<FileSystemObserver> observers_;
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+
+  base::FilePath temporary_file_directory_;
 
   // Implementation of each file system operation.
   scoped_ptr<file_system::CopyOperation> copy_operation_;

@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/dns/host_resolver_wrapper.h"
 #include "chrome/browser/extensions/api/socket/socket.h"
@@ -55,7 +55,7 @@ SocketAsyncApiFunction::~SocketAsyncApiFunction() {
 }
 
 bool SocketAsyncApiFunction::PrePrepare() {
-  manager_ = ExtensionSystem::Get(profile())->socket_manager();
+  manager_ = ApiResourceManager<Socket>::Get(profile());
   DCHECK(manager_) << "There is no socket manager. "
     "If this assertion is failing during a test, then it is likely that "
     "TestExtensionSystem is failing to provide an instance of "
@@ -288,9 +288,7 @@ void SocketBindFunction::Work() {
   SetResult(Value::CreateIntegerValue(result));
 }
 
-SocketListenFunction::SocketListenFunction()
-    : params_(NULL) {
-}
+SocketListenFunction::SocketListenFunction() {}
 
 SocketListenFunction::~SocketListenFunction() {}
 
@@ -328,9 +326,7 @@ void SocketListenFunction::Work() {
   SetResult(Value::CreateIntegerValue(result));
 }
 
-SocketAcceptFunction::SocketAcceptFunction()
-  : params_(NULL) {
-}
+SocketAcceptFunction::SocketAcceptFunction() {}
 
 SocketAcceptFunction::~SocketAcceptFunction() {}
 
@@ -363,9 +359,7 @@ void SocketAcceptFunction::OnAccept(int result_code,
   AsyncWorkCompleted();
 }
 
-SocketReadFunction::SocketReadFunction()
-    : params_(NULL) {
-}
+SocketReadFunction::SocketReadFunction() {}
 
 SocketReadFunction::~SocketReadFunction() {}
 
@@ -442,9 +436,7 @@ void SocketWriteFunction::OnCompleted(int bytes_written) {
   AsyncWorkCompleted();
 }
 
-SocketRecvFromFunction::SocketRecvFromFunction()
-    : params_(NULL) {
-}
+SocketRecvFromFunction::SocketRecvFromFunction() {}
 
 SocketRecvFromFunction::~SocketRecvFromFunction() {}
 
@@ -556,9 +548,7 @@ void SocketSendToFunction::OnCompleted(int bytes_written) {
   AsyncWorkCompleted();
 }
 
-SocketSetKeepAliveFunction::SocketSetKeepAliveFunction()
-    : params_(NULL) {
-}
+SocketSetKeepAliveFunction::SocketSetKeepAliveFunction() {}
 
 SocketSetKeepAliveFunction::~SocketSetKeepAliveFunction() {}
 
@@ -582,9 +572,7 @@ void SocketSetKeepAliveFunction::Work() {
   SetResult(Value::CreateBooleanValue(result));
 }
 
-SocketSetNoDelayFunction::SocketSetNoDelayFunction()
-    : params_(NULL) {
-}
+SocketSetNoDelayFunction::SocketSetNoDelayFunction() {}
 
 SocketSetNoDelayFunction::~SocketSetNoDelayFunction() {}
 
@@ -604,8 +592,7 @@ void SocketSetNoDelayFunction::Work() {
   SetResult(Value::CreateBooleanValue(result));
 }
 
-SocketGetInfoFunction::SocketGetInfoFunction()
-    : params_(NULL) {}
+SocketGetInfoFunction::SocketGetInfoFunction() {}
 
 SocketGetInfoFunction::~SocketGetInfoFunction() {}
 
@@ -699,8 +686,7 @@ void SocketGetNetworkListFunction::SendResponseOnUIThread(
   SendResponse(true);
 }
 
-SocketJoinGroupFunction::SocketJoinGroupFunction()
-    : params_(NULL) {}
+SocketJoinGroupFunction::SocketJoinGroupFunction() {}
 
 SocketJoinGroupFunction::~SocketJoinGroupFunction() {}
 
@@ -744,9 +730,7 @@ void SocketJoinGroupFunction::Work() {
   SetResult(Value::CreateIntegerValue(result));
 }
 
-
-SocketLeaveGroupFunction::SocketLeaveGroupFunction()
-  : params_(NULL) {}
+SocketLeaveGroupFunction::SocketLeaveGroupFunction() {}
 
 SocketLeaveGroupFunction::~SocketLeaveGroupFunction() {}
 
@@ -790,8 +774,7 @@ void SocketLeaveGroupFunction::Work() {
   SetResult(Value::CreateIntegerValue(result));
 }
 
-SocketSetMulticastTimeToLiveFunction::SocketSetMulticastTimeToLiveFunction()
-  : params_(NULL) {}
+SocketSetMulticastTimeToLiveFunction::SocketSetMulticastTimeToLiveFunction() {}
 
 SocketSetMulticastTimeToLiveFunction::~SocketSetMulticastTimeToLiveFunction() {}
 
@@ -822,8 +805,8 @@ void SocketSetMulticastTimeToLiveFunction::Work() {
   SetResult(Value::CreateIntegerValue(result));
 }
 
-SocketSetMulticastLoopbackModeFunction::SocketSetMulticastLoopbackModeFunction()
-  : params_(NULL) {}
+SocketSetMulticastLoopbackModeFunction::
+    SocketSetMulticastLoopbackModeFunction() {}
 
 SocketSetMulticastLoopbackModeFunction::
   ~SocketSetMulticastLoopbackModeFunction() {}
@@ -856,8 +839,7 @@ void SocketSetMulticastLoopbackModeFunction::Work() {
   SetResult(Value::CreateIntegerValue(result));
 }
 
-SocketGetJoinedGroupsFunction::SocketGetJoinedGroupsFunction()
-  : params_(NULL) {}
+SocketGetJoinedGroupsFunction::SocketGetJoinedGroupsFunction() {}
 
 SocketGetJoinedGroupsFunction::~SocketGetJoinedGroupsFunction() {}
 

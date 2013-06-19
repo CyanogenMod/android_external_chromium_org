@@ -19,6 +19,11 @@ namespace content {
 
 namespace {
 
+bool IsTcpClientSocket(P2PSocketType type) {
+  return (type == P2P_SOCKET_STUN_TCP_CLIENT) ||
+         (type == P2P_SOCKET_TCP_CLIENT);
+}
+
 // TODO(miu): This needs tuning.  http://crbug.com/237960
 const size_t kMaximumInFlightBytes = 64 * 1024;  // 64 KB
 
@@ -75,7 +80,6 @@ class IpcPacketSocket : public talk_base::AsyncPacketSocket,
   void InitAcceptedTcp(P2PSocketClient* client,
                        const talk_base::SocketAddress& local_address,
                        const talk_base::SocketAddress& remote_address);
-
   P2PSocketType type_;
 
   // Message loop on which this socket was created and being used.
@@ -132,9 +136,10 @@ IpcPacketSocket::~IpcPacketSocket() {
 }
 
 void IpcPacketSocket::TraceSendThrottlingState() const {
-  TRACE_COUNTER1("p2p", "P2PSendBytesAvailable", send_bytes_available_);
-  TRACE_COUNTER1("p2p", "P2PSendPacketsInFlight",
-                 in_flight_packet_sizes_.size());
+  TRACE_COUNTER_ID1("p2p", "P2PSendBytesAvailable", local_address_.port(),
+                    send_bytes_available_);
+  TRACE_COUNTER_ID1("p2p", "P2PSendPacketsInFlight", local_address_.port(),
+                    in_flight_packet_sizes_.size());
 }
 
 bool IpcPacketSocket::Init(P2PSocketType type, P2PSocketClient* client,
@@ -150,12 +155,14 @@ bool IpcPacketSocket::Init(P2PSocketType type, P2PSocketClient* client,
   state_ = IS_OPENING;
 
   net::IPEndPoint local_endpoint;
-  if (!jingle_glue::SocketAddressToIPEndPoint(local_address, &local_endpoint)) {
+  if (!jingle_glue::SocketAddressToIPEndPoint(
+          local_address, &local_endpoint)) {
     return false;
   }
 
   net::IPEndPoint remote_endpoint;
-  if (!jingle_glue::SocketAddressToIPEndPoint(
+  if (!remote_address.IsNil() &&
+      !jingle_glue::SocketAddressToIPEndPoint(
           remote_address, &remote_endpoint)) {
     return false;
   }
@@ -231,6 +238,7 @@ int IpcPacketSocket::SendTo(const void *data, size_t data_size,
   net::IPEndPoint address_chrome;
   if (!jingle_glue::SocketAddressToIPEndPoint(address, &address_chrome)) {
     NOTREACHED();
+    error_ = EINVAL;
     return -1;
   }
 
@@ -267,7 +275,7 @@ talk_base::AsyncPacketSocket::State IpcPacketSocket::GetState() const {
       return STATE_BINDING;
 
     case IS_OPEN:
-      if (type_ == P2P_SOCKET_TCP_CLIENT) {
+      if (IsTcpClientSocket(type_)) {
         return STATE_CONNECTED;
       } else {
         return STATE_BOUND;
@@ -316,7 +324,7 @@ void IpcPacketSocket::OnOpen(const net::IPEndPoint& address) {
   TraceSendThrottlingState();
 
   SignalAddressReady(this, local_address_);
-  if (type_ == P2P_SOCKET_TCP_CLIENT)
+  if (IsTcpClientSocket(type_))
     SignalConnect(this);
 }
 

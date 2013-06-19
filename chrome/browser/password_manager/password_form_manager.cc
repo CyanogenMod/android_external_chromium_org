@@ -14,7 +14,7 @@
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/autofill/browser/validation.h"
-#include "components/autofill/common/autofill_messages.h"
+#include "components/autofill/core/common/autofill_messages.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/password_form.h"
@@ -127,7 +127,7 @@ void PasswordFormManager::PermanentlyBlacklist() {
   if (!best_matches_.empty()) {
     PasswordFormMap::const_iterator iter;
     PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-        profile_, Profile::EXPLICIT_ACCESS);
+        profile_, Profile::EXPLICIT_ACCESS).get();
     if (!password_store) {
       NOTREACHED();
       return;
@@ -240,7 +240,7 @@ void PasswordFormManager::FetchMatchingLoginsFromPasswordStore() {
   DCHECK_EQ(state_, PRE_MATCHING_PHASE);
   state_ = MATCHING_PHASE;
   PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      profile_, Profile::EXPLICIT_ACCESS);
+      profile_, Profile::EXPLICIT_ACCESS).get();
   if (!password_store) {
     NOTREACHED();
     return;
@@ -398,7 +398,7 @@ void PasswordFormManager::SaveAsNewLogin(bool reset_preferred_login) {
   DCHECK(!profile_->IsOffTheRecord());
 
   PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      profile_, Profile::IMPLICIT_ACCESS);
+      profile_, Profile::IMPLICIT_ACCESS).get();
   if (!password_store) {
     NOTREACHED();
     return;
@@ -456,7 +456,7 @@ void PasswordFormManager::UpdateLogin() {
   DCHECK(!profile_->IsOffTheRecord());
 
   PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-      profile_, Profile::IMPLICIT_ACCESS);
+      profile_, Profile::IMPLICIT_ACCESS).get();
   if (!password_store) {
     NOTREACHED();
     return;
