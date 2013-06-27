@@ -40,9 +40,7 @@ MY_CFLAGS := \
 	-fPIC \
 	-EL \
 	-mhard-float \
-	-mips32r2 \
-	-Wa,-mips32r2 \
-	--sysroot=/automerger/android-src/external/chromium_org/mipsel-sysroot/sysroot \
+	--sysroot=/usr/local/google2/src/clank/webview/external/chromium_org/mipsel-sysroot/sysroot \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

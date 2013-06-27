@@ -261,9 +261,7 @@ MY_CFLAGS := \
 	-fPIC \
 	-EL \
 	-mhard-float \
-	-mips32r2 \
-	-Wa,-mips32r2 \
-	--sysroot=/automerger/android-src/external/chromium_org/mipsel-sysroot/sysroot \
+	--sysroot=/usr/local/google2/src/clank/webview/external/chromium_org/mipsel-sysroot/sysroot \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -343,7 +341,7 @@ LOCAL_LDFLAGS := \
 	-Wl,--no-fatal-warnings \
 	-EL \
 	-Wl,--no-keep-memory \
-	--sysroot=/automerger/android-src/external/chromium_org/mipsel-sysroot/sysroot \
+	--sysroot=/usr/local/google2/src/clank/webview/external/chromium_org/mipsel-sysroot/sysroot \
 	 \
 	-nostdlib \
 	-Wl,--no-undefined \
