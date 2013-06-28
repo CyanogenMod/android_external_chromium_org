@@ -57,7 +57,6 @@ MY_CFLAGS := \
 	-fPIC \
 	-EL \
 	-mhard-float \
-	--sysroot=/usr/local/google2/src/clank/webview/external/chromium_org/mipsel-sysroot/sysroot \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

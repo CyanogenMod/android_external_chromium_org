@@ -648,7 +648,7 @@
         ],
         }], # linux_lsb_release=="12.04"
 
-        ['target_arch=="mipsel"', {
+        ['OS=="linux" and target_arch=="mipsel"', {
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/mipsel-sysroot/sysroot',
           'CXX%': '<!(cd <(DEPTH) && pwd -P)/mipsel-sysroot/bin/mipsel-linux-gnu-gcc',
         }],
@@ -1127,6 +1127,8 @@
             'nacl_untrusted_build%': 0,
             'linux_use_tcmalloc%': 0,
             'linux_breakpad%': 0,
+          }],
+          ['OS=="linux" and target_arch=="mipsel"', {
             'sysroot%': '<(sysroot)',
             'CXX%': '<(CXX)',
           }],

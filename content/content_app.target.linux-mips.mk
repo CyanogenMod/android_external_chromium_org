@@ -49,7 +49,6 @@ MY_CFLAGS := \
 	-fPIC \
 	-EL \
 	-mhard-float \
-	--sysroot=/usr/local/google2/src/clank/webview/external/chromium_org/mipsel-sysroot/sysroot \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -154,8 +153,6 @@ LOCAL_LDFLAGS := \
 	-fPIC \
 	-EL \
 	-Wl,--no-keep-memory \
-	--sysroot=/usr/local/google2/src/clank/webview/external/chromium_org/mipsel-sysroot/sysroot \
-	 \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
