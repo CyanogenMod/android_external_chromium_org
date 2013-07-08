@@ -96,6 +96,9 @@ void SetContentCommandLineFlags(int max_render_process_count,
     parsed_command_line->AppendSwitchASCII(
         switches::kProfilerTiming, switches::kProfilerTimingDisabledValue);
   }
+
+  // Disable user gesture requirement for media playback
+  parsed_command_line->AppendSwitch(switches::kDisableGestureRequirementForMediaPlayback);
 }
 
 }  // namespace content
